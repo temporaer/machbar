@@ -98,6 +98,13 @@ Projects additionally carry:
 
 These views are **read-only projections** — they are not stored in SQLite; they are assembled per-request.
 
+The **Heute** agenda is also query-derived. It first selects planned, overdue,
+due-today, due-soon, and shared work. Any remaining unblocked `actionable`
+tasks without a `scheduledDate` appear under **Ohne Termin** when their
+effective owner is the selected member. Unassigned work already appears under
+**Gemeinsam / offen**. Future-scheduled, waiting, inbox, completed, cancelled,
+and dependency-blocked tasks do not enter the fallback bucket.
+
 ---
 
 ## 4. Transaction Rules

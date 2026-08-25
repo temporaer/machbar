@@ -54,7 +54,15 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     return tasks.map((t) => t.title);
   }
 
-  const bucketKeys = ["planned", "overdue", "dueToday", "dueSoon", "shared", "revisit"] as const;
+  const bucketKeys = [
+    "planned",
+    "overdue",
+    "dueToday",
+    "dueSoon",
+    "shared",
+    "unscheduled",
+    "revisit",
+  ] as const;
 
   async function bucketsContaining(title: string) {
     const agenda = await getAgenda();
@@ -81,6 +89,39 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     // bucket) yet — being unowned and actionable, it does still show up
     // under "shared" until it's assigned or claimed.
     expect(await bucketsContaining("Erst morgen geplant")).toEqual(["shared"]);
+  });
+
+  it("includes assigned actionable tasks without a scheduled date", async () => {
+    const ownerRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: { name: "Mira" },
+    });
+    const owner = ownerRes.json();
+    await createTask({
+      title: "Machbar ohne Termin",
+      ownerMemberId: owner.id,
+      ownerInheritanceMode: "explicit",
+    });
+
+    expect(await bucketsContaining("Machbar ohne Termin")).toEqual(["unscheduled"]);
+  });
+
+  it("does not treat future-scheduled assigned work as unscheduled", async () => {
+    const ownerRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: { name: "Theo" },
+    });
+    const owner = ownerRes.json();
+    await createTask({
+      title: "Erst morgen für Theo",
+      ownerMemberId: owner.id,
+      ownerInheritanceMode: "explicit",
+      scheduledDate: tomorrow,
+    });
+
+    expect(await bucketsContaining("Erst morgen für Theo")).toEqual([]);
   });
 
   it("excludes blocked tasks from every normal bucket, even when due today", async () => {
@@ -262,7 +303,15 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     return tasks.map((t) => t.title);
   }
 
-  const bucketKeys = ["planned", "overdue", "dueToday", "dueSoon", "shared", "revisit"] as const;
+  const bucketKeys = [
+    "planned",
+    "overdue",
+    "dueToday",
+    "dueSoon",
+    "shared",
+    "unscheduled",
+    "revisit",
+  ] as const;
 
   async function bucketsContaining(title: string, memberId?: number) {
     const res = await getAgenda(memberId);
@@ -295,6 +344,28 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     });
 
     expect(await bucketsContaining("Annas eigene Aufgabe", anna.id)).toEqual(["planned"]);
+  });
+
+  it("includes the selected member's unscheduled actionable tasks", async () => {
+    const anna = await createMember("Anna");
+    const ben = await createMember("Ben");
+    await createTask({
+      title: "Annas machbare Aufgabe ohne Termin",
+      ownerMemberId: anna.id,
+      ownerInheritanceMode: "explicit",
+    });
+    await createTask({
+      title: "Bens machbare Aufgabe ohne Termin",
+      ownerMemberId: ben.id,
+      ownerInheritanceMode: "explicit",
+    });
+
+    expect(
+      await bucketsContaining("Annas machbare Aufgabe ohne Termin", anna.id),
+    ).toEqual(["unscheduled"]);
+    expect(
+      await bucketsContaining("Bens machbare Aufgabe ohne Termin", anna.id),
+    ).toEqual([]);
   });
 
   it("excludes another member's explicitly-owned tasks", async () => {

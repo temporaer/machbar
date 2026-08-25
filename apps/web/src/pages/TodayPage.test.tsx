@@ -27,7 +27,15 @@ vi.mock("../lib/api", () => ({
 const mockedApi = vi.mocked(api, true);
 
 function makeEmptyAgenda(): Agenda {
-  return { planned: [], overdue: [], dueToday: [], dueSoon: [], shared: [], revisit: [] };
+  return {
+    planned: [],
+    overdue: [],
+    dueToday: [],
+    dueSoon: [],
+    shared: [],
+    unscheduled: [],
+    revisit: [],
+  };
 }
 
 describe("TodayPage", () => {
@@ -83,6 +91,17 @@ describe("TodayPage", () => {
 
     await screen.findByText("Etwas anderes");
     expect(screen.queryByText("Wiedervorlage")).not.toBeInTheDocument();
+  });
+
+  it("zeigt machbare Aufgaben ohne Termin in einem eigenen Abschnitt", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      unscheduled: [makeTask({ id: 4, title: "Keller aufräumen", scheduledDate: null })],
+    });
+    renderWithProviders(<TodayPage />);
+
+    expect(await screen.findByText("Ohne Termin")).toBeInTheDocument();
+    expect(screen.getByText("Keller aufräumen")).toBeInTheDocument();
   });
 
   it("fragt die Agenda ausschließlich für die aktuell ausgewählte Identität ab", async () => {

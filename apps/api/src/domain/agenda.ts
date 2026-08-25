@@ -55,8 +55,11 @@ export interface BuildAgendaOptions {
 /**
  * Builds the "Heute" (today) agenda. Categories are mutually exclusive:
  * a task is placed in the first matching bucket in the order
- * planned > overdue > dueToday > dueSoon > shared, so nothing is
- * duplicated across sections.
+ * planned > overdue > dueToday > dueSoon > shared > unscheduled, so
+ * nothing is duplicated across sections. The final bucket keeps actionable
+ * work assigned to the selected member visible even when it has no
+ * `scheduledDate`; unassigned actionable work has already been claimed by
+ * `shared`.
  *
  * Blocked tasks (unresolved dependencies) are normally excluded from every
  * bucket above — they aren't actionable, so surfacing them in "Heute"
@@ -105,6 +108,9 @@ export function buildAgenda(
   const shared = take(
     (t) => t.status === "actionable" && t.effectiveOwnerId === null,
   );
+  const unscheduled = take(
+    (t) => t.status === "actionable" && !t.scheduledDate,
+  );
 
   const revisit = graph
     .allTasks()
@@ -118,5 +124,5 @@ export function buildAgenda(
     )
     .sort(sortByDueThenPriority);
 
-  return { planned, overdue, dueToday, dueSoon, shared, revisit };
+  return { planned, overdue, dueToday, dueSoon, shared, unscheduled, revisit };
 }

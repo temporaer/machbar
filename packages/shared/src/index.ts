@@ -127,6 +127,7 @@ export interface Agenda {
   dueToday: Task[];
   dueSoon: Task[];
   shared: Task[];
+  unscheduled: Task[];
   /**
    * Tasks that are normally excluded from "Heute" because they are
    * `blocked` (unresolved dependencies), but whose own `scheduledDate` is
@@ -173,6 +174,7 @@ export const de = {
   dueToday: "Heute fällig",
   dueSoon: "Bald fällig",
   shared: "Gemeinsam / offen",
+  unscheduled: "Ohne Termin",
   revisit: "Wiedervorlage",
   revisitHint: "Blockiert, aber zur Wiedervorlage für heute geplant.",
   nextAction: "Nächster Schritt",

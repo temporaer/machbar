@@ -6,12 +6,16 @@ import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates"
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 
-const sections: Array<{ key: "planned" | "overdue" | "dueToday" | "dueSoon" | "shared"; label: string }> = [
+const sections: Array<{
+  key: "planned" | "overdue" | "dueToday" | "dueSoon" | "shared" | "unscheduled";
+  label: string;
+}> = [
   { key: "planned", label: strings.plannedToday },
   { key: "overdue", label: strings.overdue },
   { key: "dueToday", label: strings.dueToday },
   { key: "dueSoon", label: strings.dueSoon },
   { key: "shared", label: strings.shared },
+  { key: "unscheduled", label: strings.unscheduled },
 ];
 
 export function TodayPage() {
