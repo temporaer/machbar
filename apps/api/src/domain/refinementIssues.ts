@@ -60,9 +60,10 @@ const issueCopy: Record<
   },
   blocked_without_clear_path: {
     label: "Blockiert ohne klaren Weg",
-    explanation: "Offene Abhängigkeiten verhindern den nächsten Schritt.",
+    explanation:
+      "Mindestens eine Abhängigkeit endet ohne machbaren Schritt oder zukünftige Wiedervorlage.",
     actionCode: "resolve_blocker",
-    actionLabel: "Blockierung klären",
+    actionLabel: "Ende der Kette klären",
   },
   due_without_plan: {
     label: "Fällig, aber nicht machbar",
@@ -134,6 +135,77 @@ function isOpen(task: TaskRecord): boolean {
   return task.status !== "done" && task.status !== "cancelled";
 }
 
+function unresolvedDependencies(graph: Graph, task: TaskRecord): TaskRecord[] {
+  return task.dependencies
+    .filter((dependency) => !dependency.resolved)
+    .map((dependency) => graph.tasksById.get(dependency.dependsOnTaskId))
+    .filter((dependency): dependency is TaskRecord => dependency !== undefined);
+}
+
+/**
+ * An intentional dependency branch is clear when it ends at work that can be
+ * done now, or at waiting work deliberately parked until a future revisit.
+ * Every unresolved branch must be clear because one dead end still blocks the
+ * downstream task.
+ */
+function dependencyBranchHasClearPath(
+  graph: Graph,
+  task: TaskRecord,
+  today: string,
+  visiting: Set<number>,
+): boolean {
+  if (!isOpen(task)) return true;
+  if (task.needsClarification || visiting.has(task.id)) return false;
+  const project =
+    task.projectId === null ? null : graph.projectsById.get(task.projectId);
+  if (project?.status === "completed" || project?.status === "archived") {
+    return false;
+  }
+
+  const nextVisiting = new Set(visiting).add(task.id);
+  const dependencies = unresolvedDependencies(graph, task);
+
+  if (task.status === "actionable") {
+    return (
+      dependencies.length === 0 ||
+      dependencies.every((dependency) =>
+        dependencyBranchHasClearPath(
+          graph,
+          dependency,
+          today,
+          nextVisiting,
+        ),
+      )
+    );
+  }
+
+  if (
+    task.status === "waiting" &&
+    task.scheduledDate !== null &&
+    task.scheduledDate > today
+  ) {
+    return dependencies.every((dependency) =>
+      dependencyBranchHasClearPath(graph, dependency, today, nextVisiting),
+    );
+  }
+
+  return false;
+}
+
+export function blockedTaskHasClearPath(
+  graph: Graph,
+  task: TaskRecord,
+  today: string,
+): boolean {
+  const dependencies = unresolvedDependencies(graph, task);
+  return (
+    dependencies.length > 0 &&
+    dependencies.every((dependency) =>
+      dependencyBranchHasClearPath(graph, dependency, today, new Set([task.id])),
+    )
+  );
+}
+
 export interface RefinementIssueResult {
   issues: RefinementIssue[];
   projects: ProjectReadiness[];
@@ -174,7 +246,7 @@ export function buildRefinementIssues(
         (task) =>
           task.status === "actionable" &&
           !task.needsClarification &&
-          !task.blocked,
+          (!task.blocked || blockedTaskHasClearPath(graph, task, today)),
       ) &&
       !(
         openTasks.length > 0 &&
@@ -215,7 +287,7 @@ export function buildRefinementIssues(
     if (task.effectiveOwnerId === null) {
       issues.push(taskIssue(task, "unassigned_actionable", "warning"));
     }
-    if (task.blocked) {
+    if (task.blocked && !blockedTaskHasClearPath(graph, task, today)) {
       issues.push(taskIssue(task, "blocked_without_clear_path", "warning"));
     }
     if (task.size === "XL" && !task.children.some(isOpen)) {

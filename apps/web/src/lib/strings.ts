@@ -55,7 +55,8 @@ const extra = {
       "Setze eine Wiedervorlage oder plane einen eigenen nächsten Schritt.",
     followup_due:
       "Hake jetzt nach oder markiere eine wartende Aufgabe wieder als machbar.",
-    blocked_dependencies: "Löse die blockierenden Abhängigkeiten auf, damit eine Aufgabe machbar wird.",
+    blocked_dependencies:
+      "Kläre das Ende der Abhängigkeitskette, damit eine Aufgabe machbar wird.",
     unassigned_actionable: "Weise die offene machbare Aufgabe einer Person zu.",
     completion_review: "Prüfe das Ergebnis und schließe das Projekt ab oder ergänze die noch fehlende Arbeit.",
   } satisfies Record<StuckReason, string>,
@@ -156,6 +157,16 @@ const extra = {
   ownContext: "Eigenen Kontext setzen",
   noInheritance: "Keine Vererbung",
   addChildTitle: "Neue Teilaufgabe",
+  addSuccessor: "Nächsten Schritt danach hinzufügen",
+  successorPlaceholder: "Nächster Schritt",
+  addSequence: "Ablauf hinzufügen",
+  sequenceSteps: "Schritte in Reihenfolge",
+  sequencePlaceholder:
+    "Angebot einholen\nTermin vereinbaren\nArbeit abnehmen\nRechnung bezahlen",
+  sequenceHint:
+    "Eine Zeile pro Schritt. Jeder spätere Schritt wartet auf den vorherigen.",
+  addSequenceCount: (count: number) =>
+    count < 2 ? "Mindestens zwei Schritte" : `${count} Schritte hinzufügen`,
   deleteTaskConfirm: "Aufgabe endgültig löschen?",
   deleteProject: "Projekt löschen",
   deleteProjectConfirm:
@@ -247,6 +258,7 @@ const extra = {
   projectScopeMineOpen: "Meine & offen",
   projectScopeAll: "Alle",
   noMatchingProjects: "Keine Projekte für Suche/Filter.",
+  finishedProjectsSection: (count: number) => `Abgeschlossen & archiviert (${count})`,
 
   // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---
   editProject: "Projekt bearbeiten",

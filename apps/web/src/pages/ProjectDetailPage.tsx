@@ -11,12 +11,14 @@ import { countTasks } from "../lib/taskHelpers";
 import { useIdentity } from "../lib/identity";
 import { formatDate } from "../lib/format";
 import { ProjectStuckNotice } from "../components/ProjectStuckNotice";
+import { TaskSequenceSheet } from "../components/TaskSequenceSheet";
 
 export function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const projectId = Number(params.id);
   const { members } = useIdentity();
   const [editing, setEditing] = useState(false);
+  const [addingSequence, setAddingSequence] = useState(false);
   const {
     data: project,
     loading: projectLoading,
@@ -81,11 +83,33 @@ export function ProjectDetailPage() {
               <p style={{ whiteSpace: "pre-wrap" }}>{project.notes}</p>
             </section>
           ) : null}
-          <TaskOutline tasks={project.tasks} emptyMessage={strings.noTasks} organizable />
+          <section className="section">
+            <div className="row-between">
+              <h2 className="section-title">{strings.taskSummary}</h2>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setAddingSequence(true)}
+              >
+                {strings.addSequence}
+              </button>
+            </div>
+            <TaskOutline
+              tasks={project.tasks}
+              emptyMessage={strings.noTasks}
+              organizable
+            />
+          </section>
         </>
       ) : null}
       <QuickAdd projectId={projectId} />
       {editing && project ? <ProjectEditSheet project={project} onClose={() => setEditing(false)} /> : null}
+      {addingSequence ? (
+        <TaskSequenceSheet
+          projectId={projectId}
+          onClose={() => setAddingSequence(false)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -80,6 +80,13 @@ export const createChildTaskSchema = createTaskSchema.omit({
   parentTaskId: true,
 });
 
+export const createTaskSequenceSchema = z.object({
+  titles: z
+    .array(z.string().trim().min(1, "Jeder Schritt braucht einen Titel."))
+    .min(2, "Ein Ablauf braucht mindestens zwei Schritte."),
+  createdByMemberId: z.number().int().nullable().optional(),
+});
+
 export const updateTaskSchema = z.object({
   title: z.string().min(1).optional(),
   notes: z.string().optional(),

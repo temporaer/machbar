@@ -18,6 +18,7 @@ import {
   type TaskQuickAction,
 } from "./TaskQuickActionSheet";
 import { InlineChildComposer } from "./InlineChildComposer";
+import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskActionIcon } from "./TaskActionIcon";
 import { ActionableText } from "./ActionableText";
@@ -97,6 +98,7 @@ export function TaskRow({
   const [chipsOpen, setChipsOpen] = useState(false);
   const [quickAction, setQuickAction] = useState<TaskQuickAction | null>(null);
   const [childComposerOpen, setChildComposerOpen] = useState(false);
+  const [successorComposerOpen, setSuccessorComposerOpen] = useState(false);
   // Only reachable for a projectless task (see `projectChipClick`) — the
   // existing searchable/recent project picker, restricted to its
   // project-only step so no parent picker is shown for a plain assignment.
@@ -313,6 +315,11 @@ export function TaskRow({
     setChildComposerOpen(true);
   };
 
+  const openSuccessorComposer = () => {
+    setChipsOpen(false);
+    setSuccessorComposerOpen(true);
+  };
+
   // The kebab is `disabled` while a status mutation of this row is in
   // flight, and focusing a disabled button is a no-op that would drop the
   // caret to `<body>`. Fall back to the row's first focusable control so
@@ -333,6 +340,11 @@ export function TaskRow({
     returnFocusToRow();
   };
 
+  const closeSuccessorComposer = () => {
+    setSuccessorComposerOpen(false);
+    returnFocusToRow();
+  };
+
   // Closing the picker — whether by cancelling or after a successful
   // assignment (`MoveTaskSheet` calls `onClose` itself once the save
   // resolves) — returns focus to the row's vicinity, same as every other
@@ -349,6 +361,11 @@ export function TaskRow({
   const handleChildCreated = () => {
     setCollapsed(false);
     setChildComposerOpen(false);
+    returnFocusToRow();
+  };
+
+  const handleSuccessorCreated = () => {
+    setSuccessorComposerOpen(false);
     returnFocusToRow();
   };
 
@@ -514,6 +531,12 @@ export function TaskRow({
             onClick={openChildComposer}
           />
           <TaskActionIcon
+            kind="successor"
+            label={strings.addSuccessor}
+            disabled={busyId === task.id}
+            onClick={openSuccessorComposer}
+          />
+          <TaskActionIcon
             kind="project"
             label={task.projectId ? strings.toProject : strings.assignProject}
             onClick={goToProjectChip}
@@ -546,6 +569,14 @@ export function TaskRow({
           parentId={task.id}
           onCancel={closeChildComposer}
           onCreated={handleChildCreated}
+        />
+      ) : null}
+
+      {successorComposerOpen ? (
+        <InlineSuccessorComposer
+          predecessorId={task.id}
+          onCancel={closeSuccessorComposer}
+          onCreated={handleSuccessorCreated}
         />
       ) : null}
 

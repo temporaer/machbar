@@ -28,8 +28,8 @@ import type { Db } from "../db/client.js";
  *      A reached Wiedervorlage is `followup_due`; a missing one is
  *      `only_waiting_without_followup`.
  *   4. actionable work whose unresolved dependency graph consists only of
- *      clarified actionable links ending in scheduled, clarified waiting
- *      tasks with no unresolved dependencies of their own is also healthy.
+ *      clarified actionable links ending in either an unblocked actionable
+ *      task or a future scheduled, clarified waiting task is also healthy.
  *      Every other open task in the project must be
  *      either actionable or a scheduled waiting task; this prevents an
  *      unrelated someday/captured/unscheduled task from being hidden.
@@ -104,7 +104,15 @@ export function getStuckReasonsByProject(
       JOIN task_dependencies td ON td.task_id = current.id
       JOIN tasks dep ON dep.id = td.depends_on_task_id
       WHERE current.needs_clarification = 0
-        AND current.status = 'actionable'
+        AND (
+          current.status = 'actionable'
+          OR (
+            current.status = 'waiting'
+            AND current.scheduled_date IS NOT NULL
+            AND TRIM(current.scheduled_date) <> ''
+            AND current.scheduled_date > ${today}
+          )
+        )
         AND dep.status NOT IN ('done', 'cancelled')
     ),
     agg AS (
@@ -178,33 +186,23 @@ export function getStuckReasonsByProject(
             SELECT 1
             FROM dependency_walk dw
             JOIN tasks blocker ON blocker.id = dw.task_id
+            LEFT JOIN projects blocker_project
+              ON blocker_project.id = blocker.project_id
             WHERE dw.project_id = p.id
               AND NOT (
-                (
-                  blocker.needs_clarification = 0
-                  AND blocker.status = 'waiting'
-                  AND blocker.scheduled_date IS NOT NULL
-                  AND TRIM(blocker.scheduled_date) <> ''
-                  AND blocker.scheduled_date > ${today}
-                  AND NOT EXISTS (
-                    SELECT 1
-                    FROM task_dependencies waiting_td
-                    JOIN tasks waiting_dep
-                      ON waiting_dep.id = waiting_td.depends_on_task_id
-                    WHERE waiting_td.task_id = blocker.id
-                      AND waiting_dep.status NOT IN ('done', 'cancelled')
-                  )
+                blocker.needs_clarification = 0
+                AND (
+                  blocker.project_id IS NULL
+                  OR blocker_project.status NOT IN ('completed', 'archived')
                 )
-                OR (
-                  blocker.needs_clarification = 0
-                  AND blocker.status = 'actionable'
-                  AND EXISTS (
-                    SELECT 1
-                    FROM task_dependencies next_td
-                    JOIN tasks next_dep ON next_dep.id = next_td.depends_on_task_id
-                    WHERE next_td.task_id = blocker.id
-                      AND next_dep.status NOT IN ('done', 'cancelled')
+                AND (
+                  (
+                    blocker.status = 'waiting'
+                    AND blocker.scheduled_date IS NOT NULL
+                    AND TRIM(blocker.scheduled_date) <> ''
+                    AND blocker.scheduled_date > ${today}
                   )
+                  OR blocker.status = 'actionable'
                 )
               )
           ) THEN NULL

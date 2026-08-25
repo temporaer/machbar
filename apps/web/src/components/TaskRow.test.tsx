@@ -16,6 +16,7 @@ vi.mock("../lib/api", () => ({
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
     updateTask: vi.fn(),
+    createTaskSuccessor: vi.fn(),
     reorderTask: vi.fn(),
     indentTask: vi.fn(),
     outdentTask: vi.fn(),
@@ -253,7 +254,16 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
-    for (const name of ["Zuweisen", "Planen", "Notizen", "Teilaufgabe hinzufügen", "Zum Projekt", "Wartet", "Mehr"]) {
+    for (const name of [
+      "Zuweisen",
+      "Planen",
+      "Notizen",
+      "Teilaufgabe hinzufügen",
+      "Nächsten Schritt danach hinzufügen",
+      "Zum Projekt",
+      "Wartet",
+      "Mehr",
+    ]) {
       const button = screen.getByRole("button", { name });
       expect(button).toHaveClass("task-row-chip-icon");
       expect(button.textContent).toBe("");
@@ -261,6 +271,45 @@ describe("TaskRow – primary swipe direction mapping", () => {
       expect(glyph).toHaveAttribute("aria-hidden", "true");
       expect(glyph).toHaveAttribute("focusable", "false");
     }
+  });
+
+  it("adds a successor from the chip row and returns focus to the task", async () => {
+    const task = makeTask({
+      id: 11,
+      title: "Angebot einholen",
+      status: "actionable",
+      projectId: 2,
+    });
+    mockedApi.createTaskSuccessor.mockResolvedValue(
+      makeTask({ id: 12, title: "Termin vereinbaren", projectId: 2 }),
+    );
+    renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+    await screen.findByText("Angebot einholen");
+
+    const moreButton = screen.getByRole("button", {
+      name: "Weitere Aktionen",
+    });
+    await userEvent.click(moreButton);
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Nächsten Schritt danach hinzufügen",
+      }),
+    );
+    await userEvent.type(
+      screen.getByPlaceholderText("Nächster Schritt"),
+      "Termin vereinbaren",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTaskSuccessor).toHaveBeenCalledWith(
+        11,
+        expect.objectContaining({ title: "Termin vereinbaren" }),
+      ),
+    );
+    expect(moreButton).toHaveFocus();
   });
 });
 

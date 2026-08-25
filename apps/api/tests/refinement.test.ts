@@ -3,6 +3,7 @@ import { openDb, type DbHandle } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
 import * as schema from "../src/db/schema.js";
 import {
+  addDependency,
   createProject,
   createTask,
   updateTask,
@@ -154,6 +155,179 @@ describe("refinementRepo", () => {
       ).toBe(true);
       expect(issues.some((entry) => entry.entityId === done.id)).toBe(false);
       expect(issues.some((entry) => entry.entityId === cancelled.id)).toBe(false);
+    });
+
+    it("treats an actionable dependency sequence as an intentional clear path", () => {
+      const owner = handle.db
+        .insert(schema.members)
+        .values({ name: "Mira", color: "#123456" })
+        .returning()
+        .get();
+      const project = createProject(handle.db, {
+        title: "Handwerker beauftragen",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const quote = createTask(handle.db, {
+        projectId: project.id,
+        title: "Angebot einholen",
+      });
+      const appointment = createTask(handle.db, {
+        projectId: project.id,
+        title: "Termin vereinbaren",
+      });
+      const pay = createTask(handle.db, {
+        projectId: project.id,
+        title: "Rechnung bezahlen",
+      });
+      addDependency(handle.db, appointment.id, quote.id);
+      addDependency(handle.db, pay.id, appointment.id);
+
+      const result = buildRefinementIssues(Graph.load(handle.db), today);
+      expect(
+        result.issues.some(
+          (issue) =>
+            (issue.entityId === appointment.id || issue.entityId === pay.id) &&
+            issue.code === "blocked_without_clear_path",
+        ),
+      ).toBe(false);
+      expect(
+        result.issues.some(
+          (issue) =>
+            issue.projectId === project.id &&
+            issue.code === "missing_next_action",
+        ),
+      ).toBe(false);
+    });
+
+    it("flags a dependency branch that ends in waiting without a follow-up", () => {
+      const waiting = createTask(handle.db, {
+        title: "Auf Rückmeldung warten",
+        status: "waiting",
+      });
+      const downstream = createTask(handle.db, {
+        title: "Termin vereinbaren",
+        status: "actionable",
+      });
+      addDependency(handle.db, downstream.id, waiting.id);
+
+      const issues = issueCodes();
+      expect(
+        issues.find(
+          (issue) =>
+            issue.entityId === waiting.id &&
+            issue.code === "waiting_without_followup",
+        ),
+      ).toBeDefined();
+      expect(
+        issues.find(
+          (issue) =>
+            issue.entityId === downstream.id &&
+            issue.code === "blocked_without_clear_path",
+        ),
+      ).toBeDefined();
+    });
+
+    it("accepts a future waiting endpoint but flags a reached follow-up endpoint", () => {
+      const future = createTask(handle.db, {
+        title: "Geparkte Rückmeldung",
+        status: "waiting",
+        scheduledDate: "2026-08-26",
+      });
+      const afterFuture = createTask(handle.db, {
+        title: "Nach geparkter Rückmeldung",
+        needsClarification: false,
+      });
+      addDependency(handle.db, afterFuture.id, future.id);
+
+      const due = createTask(handle.db, {
+        title: "Fällige Rückmeldung",
+        status: "waiting",
+        scheduledDate: today,
+      });
+      const afterDue = createTask(handle.db, {
+        title: "Nach fälliger Rückmeldung",
+        needsClarification: false,
+      });
+      addDependency(handle.db, afterDue.id, due.id);
+
+      const issues = issueCodes();
+      expect(
+        issues.some(
+          (issue) =>
+            issue.entityId === afterFuture.id &&
+            issue.code === "blocked_without_clear_path",
+        ),
+      ).toBe(false);
+      expect(
+        issues.some(
+          (issue) =>
+            issue.entityId === afterDue.id &&
+            issue.code === "blocked_without_clear_path",
+        ),
+      ).toBe(true);
+      expect(
+        issues.some(
+          (issue) =>
+            issue.entityId === due.id && issue.code === "followup_due",
+        ),
+      ).toBe(true);
+    });
+
+    it("does not report a missing next action for an intentional parked chain", () => {
+      const owner = handle.db
+        .insert(schema.members)
+        .values({ name: "Theo", color: "#654321" })
+        .returning()
+        .get();
+      const project = createProject(handle.db, {
+        title: "Auf Rückmeldung warten",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const waiting = createTask(handle.db, {
+        projectId: project.id,
+        title: "Angebot kommt",
+        status: "waiting",
+        scheduledDate: "2026-08-26",
+      });
+      const downstream = createTask(handle.db, {
+        projectId: project.id,
+        title: "Termin vereinbaren",
+      });
+      addDependency(handle.db, downstream.id, waiting.id);
+
+      expect(
+        issueCodes().some(
+          (issue) =>
+            issue.projectId === project.id &&
+            issue.code === "missing_next_action",
+        ),
+      ).toBe(false);
+    });
+
+    it("flags a dependency endpoint hidden in a completed project", () => {
+      const completedProject = createProject(handle.db, {
+        title: "Schon abgeschlossen",
+        status: "completed",
+      });
+      const hiddenAction = createTask(handle.db, {
+        projectId: completedProject.id,
+        title: "Doch noch offen",
+      });
+      const downstream = createTask(handle.db, {
+        title: "Kann sonst nicht weiter",
+        needsClarification: false,
+      });
+      addDependency(handle.db, downstream.id, hiddenAction.id);
+
+      expect(
+        issueCodes().some(
+          (issue) =>
+            issue.entityId === downstream.id &&
+            issue.code === "blocked_without_clear_path",
+        ),
+      ).toBe(true);
     });
   });
 

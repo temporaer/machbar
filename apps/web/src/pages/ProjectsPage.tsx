@@ -5,7 +5,11 @@ import { useRefresh } from "../lib/refresh";
 import { strings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
-import { filterAndSortProjects, type ProjectVisibilityScope } from "../lib/projectListFilter";
+import {
+  filterAndSortProjects,
+  isTerminalProjectStatus,
+  type ProjectVisibilityScope,
+} from "../lib/projectListFilter";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { BottomSheet } from "../components/BottomSheet";
@@ -55,6 +59,22 @@ export function ProjectsPage() {
   const allProjects = [...listed, ...retainedOnly];
 
   const filteredProjects = filterAndSortProjects(allProjects, { query, scope, currentMemberId });
+  // Active/backlog stories stay primary and always visible; completed and
+  // archived ones are terminal — they no longer need day-to-day attention,
+  // so they fold into one counted section below instead of crowding the
+  // primary list. `filteredProjects` is already sorted, so both slices keep
+  // that same relative order. A story mid-transition is judged by its
+  // optimistic (retained) status rather than the last-fetched one, so e.g.
+  // reopening a completed story moves it back to the primary list right
+  // away instead of leaving it stranded in the terminal fold until the next
+  // reload — matching what `ProjectStoryRow` already renders for it.
+  const effectiveStatusOf = (p: (typeof filteredProjects)[number]) => actions.retained.get(p.id)?.story ?? p;
+  const primaryProjects = filteredProjects.filter((p) => !isTerminalProjectStatus(effectiveStatusOf(p)));
+  const terminalProjects = filteredProjects.filter((p) => isTerminalProjectStatus(effectiveStatusOf(p)));
+  // A non-empty search that actually matches a terminal story should reveal
+  // it automatically instead of hiding a real match behind a fold; with no
+  // search (or no terminal matches) the section stays folded by default.
+  const revealTerminalProjects = query.trim() !== "" && terminalProjects.length > 0;
 
   return (
     <div>
@@ -94,11 +114,27 @@ export function ProjectsPage() {
         ) : filteredProjects.length === 0 ? (
           <EmptyState message={strings.noMatchingProjects} />
         ) : (
-          <ul className="list story-row-list">
-            {filteredProjects.map((p) => (
-              <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
-            ))}
-          </ul>
+          <>
+            {primaryProjects.length > 0 ? (
+              <ul className="list story-row-list">
+                {primaryProjects.map((p) => (
+                  <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
+                ))}
+              </ul>
+            ) : null}
+            {terminalProjects.length > 0 ? (
+              <details className="section" open={revealTerminalProjects}>
+                <summary className="section-title">
+                  {strings.finishedProjectsSection(terminalProjects.length)}
+                </summary>
+                <ul className="list story-row-list">
+                  {terminalProjects.map((p) => (
+                    <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </>
         )
       ) : null}
       {creating ? (

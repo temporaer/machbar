@@ -10,6 +10,7 @@ import {
   changeTaskParent,
   completeTask,
   createChildTask,
+  createTaskSuccessor,
   createTask,
   deleteTask,
   indentTask,
@@ -79,6 +80,22 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const parentId = parseId(request.params.id);
       const body = parseOrThrow(createChildTaskSchema, request.body);
       const task = createChildTask(db, parentId, {
+        ...body,
+        ...(request.authMember
+          ? { createdByMemberId: request.authMember.id }
+          : {}),
+      });
+      reply.status(201);
+      return taskOrThrow(db, task.id);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/tasks/:id/successors",
+    async (request, reply) => {
+      const predecessorId = parseId(request.params.id);
+      const body = parseOrThrow(createChildTaskSchema, request.body);
+      const task = createTaskSuccessor(db, predecessorId, {
         ...body,
         ...(request.authMember
           ? { createdByMemberId: request.authMember.id }

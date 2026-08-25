@@ -730,61 +730,66 @@ function nextPositionForGroup(
   return filtered.reduce((max, r) => Math.max(max, r.position), -1) + 1;
 }
 
-export function createTask(db: Db, input: CreateTaskInput) {
+function insertTask(
+  db: Db,
+  input: CreateTaskInput,
+  positionOverride?: number,
+) {
   if (!input.title || input.title.trim() === "") {
     throw AppError.badRequest("Der Aufgabentitel darf nicht leer sein.");
   }
-  return db.transaction((tx) => {
-    let projectId = input.projectId ?? null;
-    const parentTaskId = input.parentTaskId ?? null;
+  let projectId = input.projectId ?? null;
+  const parentTaskId = input.parentTaskId ?? null;
 
-    if (parentTaskId !== null) {
-      const parent = getTaskOrThrow(tx as unknown as Db, parentTaskId);
-      projectId = parent.projectId;
-    } else if (projectId !== null) {
-      getProjectOrThrow(tx as unknown as Db, projectId);
-    }
+  if (parentTaskId !== null) {
+    const parent = getTaskOrThrow(db, parentTaskId);
+    projectId = parent.projectId;
+  } else if (projectId !== null) {
+    getProjectOrThrow(db, projectId);
+  }
 
-    const position = nextPositionForGroup(
-      tx as unknown as Db,
-      parentTaskId,
+  const position =
+    positionOverride ?? nextPositionForGroup(db, parentTaskId, projectId);
+
+  const task = db
+    .insert(schema.tasks)
+    .values({
       projectId,
-    );
+      parentTaskId,
+      title: input.title.trim(),
+      notes: input.notes ?? "",
+      status: input.status ?? "actionable",
+      needsClarification:
+        input.needsClarification ??
+        (input.status === undefined &&
+          projectId === null &&
+          parentTaskId === null),
+      ownerMemberId: input.ownerMemberId ?? null,
+      ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
+      createdByMemberId: input.createdByMemberId ?? null,
+      dueDate: input.dueDate ?? null,
+      scheduledDate: input.scheduledDate ?? null,
+      waitingFor: input.waitingFor ?? null,
+      context: input.context ?? null,
+      contextInheritanceMode: input.contextInheritanceMode ?? "inherit",
+      priority: input.priority ?? null,
+      size: input.size ?? null,
+      position,
+    })
+    .returning()
+    .get();
 
-    const task = tx
-      .insert(schema.tasks)
-      .values({
-        projectId,
-        parentTaskId,
-        title: input.title.trim(),
-        notes: input.notes ?? "",
-        status: input.status ?? "actionable",
-        needsClarification:
-          input.needsClarification ??
-          (input.status === undefined &&
-            projectId === null &&
-            parentTaskId === null),
-        ownerMemberId: input.ownerMemberId ?? null,
-        ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
-        createdByMemberId: input.createdByMemberId ?? null,
-        dueDate: input.dueDate ?? null,
-        scheduledDate: input.scheduledDate ?? null,
-        waitingFor: input.waitingFor ?? null,
-        context: input.context ?? null,
-        contextInheritanceMode: input.contextInheritanceMode ?? "inherit",
-        priority: input.priority ?? null,
-        size: input.size ?? null,
-        position,
-      })
-      .returning()
-      .get();
-
-    if (input.tagIds && input.tagIds.length > 0) {
-      for (const tagId of input.tagIds) {
-        tx.insert(schema.taskTags).values({ taskId: task.id, tagId }).run();
-      }
+  if (input.tagIds && input.tagIds.length > 0) {
+    for (const tagId of input.tagIds) {
+      db.insert(schema.taskTags).values({ taskId: task.id, tagId }).run();
     }
-    return task;
+  }
+  return task;
+}
+
+export function createTask(db: Db, input: CreateTaskInput) {
+  return db.transaction((tx) => {
+    return insertTask(tx as unknown as Db, input);
   });
 }
 
@@ -795,6 +800,97 @@ export function createChildTask(
 ) {
   getTaskOrThrow(db, parentTaskId);
   return createTask(db, { ...input, parentTaskId });
+}
+
+export interface CreateTaskSequenceInput {
+  titles: string[];
+  createdByMemberId?: number | null;
+}
+
+function normalizedSequenceTitles(titles: string[]): string[] {
+  const normalized = titles.map((title) => title.trim()).filter(Boolean);
+  if (normalized.length < 2) {
+    throw AppError.badRequest(
+      "Ein Ablauf braucht mindestens zwei benannte Schritte.",
+    );
+  }
+  return normalized;
+}
+
+/** Creates a self-contained top-level project chain atomically. */
+export function createProjectTaskSequence(
+  db: Db,
+  projectId: number,
+  input: CreateTaskSequenceInput,
+) {
+  const titles = normalizedSequenceTitles(input.titles);
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    getProjectOrThrow(txDb, projectId);
+    const created: ReturnType<typeof insertTask>[] = [];
+
+    for (const title of titles) {
+      const task = insertTask(txDb, {
+        projectId,
+        title,
+        status: "actionable",
+        needsClarification: false,
+        createdByMemberId: input.createdByMemberId ?? null,
+      });
+      const predecessor = created.at(-1);
+      if (predecessor) {
+        tx
+          .insert(schema.taskDependencies)
+          .values({ taskId: task.id, dependsOnTaskId: predecessor.id })
+          .run();
+      }
+      created.push(task);
+    }
+
+    return created;
+  });
+}
+
+/** Creates one sibling immediately downstream of an existing task. */
+export function createTaskSuccessor(
+  db: Db,
+  taskId: number,
+  input: Omit<CreateTaskInput, "parentTaskId" | "projectId">,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const predecessor = getTaskOrThrow(txDb, taskId);
+    const successorPosition = predecessor.position + 1;
+    const laterSiblings = tx
+      .select()
+      .from(schema.tasks)
+      .all()
+      .filter(
+        (task) =>
+          task.parentTaskId === predecessor.parentTaskId &&
+          task.projectId === predecessor.projectId &&
+          task.position >= successorPosition,
+      );
+    for (const sibling of laterSiblings) {
+      tx
+        .update(schema.tasks)
+        .set({ position: sibling.position + 1, updatedAt: nowIso() })
+        .where(eq(schema.tasks.id, sibling.id))
+        .run();
+    }
+    const successor = insertTask(txDb, {
+      ...input,
+      projectId: predecessor.projectId,
+      parentTaskId: predecessor.parentTaskId,
+      status: input.status ?? "actionable",
+      needsClarification: input.needsClarification ?? false,
+    }, successorPosition);
+    tx
+      .insert(schema.taskDependencies)
+      .values({ taskId: successor.id, dependsOnTaskId: predecessor.id })
+      .run();
+    return successor;
+  });
 }
 
 export interface UpdateTaskInput {

@@ -326,3 +326,104 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     expect(screen.getAllByText("Miras aktive Geschichte")).toHaveLength(1);
   });
 });
+
+describe("ProjectsPage – completed/archived stories fold into one counted section", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+  });
+
+  it("keeps active/backlog stories primary and folds completed+archived into one closed, counted section", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 1, title: "Aktive Geschichte", status: "active", ownerMemberId: 1 }),
+      makeProject({ id: 2, title: "Backlog-Geschichte", status: "backlog", ownerMemberId: null }),
+      makeProject({ id: 3, title: "Fertige Geschichte", status: "completed", ownerMemberId: 1 }),
+      makeProject({ id: 4, title: "Archivierte Geschichte", status: "archived", ownerMemberId: 1 }),
+    ]);
+    const { container } = renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Aktive Geschichte");
+
+    // Active/backlog rows are not nested inside any <details> fold.
+    expect(rowFor(container, "Aktive Geschichte").closest("details")).toBeNull();
+    expect(rowFor(container, "Backlog-Geschichte").closest("details")).toBeNull();
+
+    const summary = screen.getByText("Abgeschlossen & archiviert (2)");
+    const details = summary.closest("details");
+    expect(details).not.toBeNull();
+    // Folded by default — no search is active.
+    expect(details).not.toHaveAttribute("open");
+    expect(rowFor(container, "Fertige Geschichte").closest("details")).toBe(details);
+    expect(rowFor(container, "Archivierte Geschichte").closest("details")).toBe(details);
+  });
+
+  it("shows only the folded section, with no empty primary list, when every matching story is terminal", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 3, title: "Fertige Geschichte", status: "completed", ownerMemberId: 1 }),
+      makeProject({ id: 4, title: "Archivierte Geschichte", status: "archived", ownerMemberId: 1 }),
+    ]);
+    const { container } = renderWithProviders(<ProjectsPage />);
+
+    await screen.findByText("Abgeschlossen & archiviert (2)");
+    const lists = container.querySelectorAll(".story-row-list");
+    expect(lists).toHaveLength(1);
+    expect(lists[0]?.closest("details")).not.toBeNull();
+  });
+
+  it("auto-opens the folded section when a non-empty search matches a terminal story", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 1, title: "Aktive Geschichte", status: "active", ownerMemberId: 1 }),
+      makeProject({ id: 3, title: "Küche gestrichen", status: "completed", ownerMemberId: 1 }),
+    ]);
+    renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Aktive Geschichte");
+
+    fireEvent.change(screen.getByLabelText("Suchen"), { target: { value: "gestrichen" } });
+
+    const match = await screen.findByText("Küche gestrichen");
+    expect(match.closest("details")).toHaveAttribute("open");
+  });
+
+  it("folds the section shut again once a revealing search is cleared", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 1, title: "Aktive Geschichte", status: "active", ownerMemberId: 1 }),
+      makeProject({ id: 3, title: "Küche gestrichen", status: "completed", ownerMemberId: 1 }),
+    ]);
+    renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Aktive Geschichte");
+
+    const searchInput = screen.getByLabelText("Suchen");
+    fireEvent.change(searchInput, { target: { value: "gestrichen" } });
+    const match = await screen.findByText("Küche gestrichen");
+    expect(match.closest("details")).toHaveAttribute("open");
+
+    fireEvent.change(searchInput, { target: { value: "" } });
+
+    await waitFor(() => {
+      const summary = screen.getByText("Abgeschlossen & archiviert (1)");
+      expect(summary.closest("details")).not.toHaveAttribute("open");
+    });
+  });
+
+  it("moves a story into the folded terminal section once it optimistically completes", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 1, title: "Aktive Geschichte", status: "active", ownerMemberId: 1 }),
+    ]);
+    mockedApi.completeProject.mockResolvedValue(
+      makeProject({ id: 1, title: "Aktive Geschichte", status: "completed", ownerMemberId: 1 }),
+    );
+    const { container } = renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Aktive Geschichte");
+    expect(rowFor(container, "Aktive Geschichte").closest("details")).toBeNull();
+
+    swipeRow(rowFor(container, "Aktive Geschichte"), 100);
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(1);
+    expect(screen.getByText("Abgeschlossen & archiviert (1)")).toBeInTheDocument();
+    expect(rowFor(container, "Aktive Geschichte").closest("details")).not.toBeNull();
+  });
+});

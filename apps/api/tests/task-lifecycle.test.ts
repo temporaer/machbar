@@ -63,6 +63,136 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(childRes.json().needsClarification).toBe(false);
   });
 
+  it("creates an ordered project task sequence atomically", async () => {
+    const projectRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "Heizung reparieren" },
+    });
+    const projectId = projectRes.json().id;
+
+    const sequenceRes = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${projectId}/task-sequence`,
+      payload: {
+        titles: [
+          "Angebot einholen",
+          "Termin vereinbaren",
+          "Rechnung bezahlen",
+        ],
+      },
+    });
+
+    expect(sequenceRes.statusCode).toBe(201);
+    const tasks = sequenceRes.json();
+    expect(tasks.map((task: { title: string }) => task.title)).toEqual([
+      "Angebot einholen",
+      "Termin vereinbaren",
+      "Rechnung bezahlen",
+    ]);
+    expect(tasks[0].dependencies).toEqual([]);
+    expect(tasks[1].dependencies).toEqual([
+      expect.objectContaining({ dependsOnTaskId: tasks[0].id }),
+    ]);
+    expect(tasks[2].dependencies).toEqual([
+      expect.objectContaining({ dependsOnTaskId: tasks[1].id }),
+    ]);
+    expect(
+      tasks.every(
+        (task: { status: string; needsClarification: boolean }) =>
+          task.status === "actionable" && task.needsClarification === false,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not leave a partial task sequence when validation fails", async () => {
+    const projectRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "Leeres Projekt" },
+    });
+    const projectId = projectRes.json().id;
+
+    const sequenceRes = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${projectId}/task-sequence`,
+      payload: { titles: ["Erster Schritt", ""] },
+    });
+    expect(sequenceRes.statusCode).toBe(400);
+
+    const detailRes = await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${projectId}`,
+    });
+    expect(detailRes.json().tasks).toEqual([]);
+  });
+
+  it("creates a successor at the same outline level with an atomic dependency", async () => {
+    const projectRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "Steuerunterlagen" },
+    });
+    const root = await createTask({
+      projectId: projectRes.json().id,
+      title: "Rechnungen sammeln",
+    });
+    const childRes = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${root.id}/children`,
+      payload: { title: "Handwerkerrechnung suchen" },
+    });
+    const child = childRes.json();
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${root.id}/children`,
+      payload: { title: "Späterer bestehender Schritt" },
+    });
+
+    const successorRes = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${child.id}/successors`,
+      payload: { title: "Rechnung archivieren" },
+    });
+
+    expect(successorRes.statusCode).toBe(201);
+    expect(successorRes.json()).toMatchObject({
+      title: "Rechnung archivieren",
+      projectId: projectRes.json().id,
+      parentTaskId: root.id,
+      status: "actionable",
+      needsClarification: false,
+      dependencies: [
+        expect.objectContaining({ dependsOnTaskId: child.id }),
+      ],
+    });
+
+    const projectDetail = await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${projectRes.json().id}`,
+    });
+    expect(
+      projectDetail
+        .json()
+        .tasks[0].children.map((task: { title: string }) => task.title),
+    ).toEqual([
+      "Handwerkerrechnung suchen",
+      "Rechnung archivieren",
+      "Späterer bestehender Schritt",
+    ]);
+
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${child.id}/complete`,
+      payload: {},
+    });
+    const unlockedRes = await ctx.app.inject({
+      method: "GET",
+      url: `/api/tasks/${successorRes.json().id}`,
+    });
+    expect(unlockedRes.json().blocked).toBe(false);
+  });
+
   it("honors explicit clarification input over creation defaults", async () => {
     const clarifiedCapture = await createTask({
       title: "Schon geklärt",

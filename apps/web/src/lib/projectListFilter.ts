@@ -48,6 +48,16 @@ function bucketOf(project: ProjectWithActions): number {
 }
 
 /**
+ * A story is "terminal" once it has left the active workflow for good:
+ * completed or archived. The Projekte tab groups these two statuses into
+ * one folded section below the primary (active/backlog) list, so this is
+ * the single place that decides which statuses count as terminal.
+ */
+export function isTerminalProjectStatus(project: ProjectWithActions): boolean {
+  return project.status === "completed" || project.status === "archived";
+}
+
+/**
  * Filters (search text + visibility scope), then deterministically sorts, the
  * Projekte tab's story list. Filtering always runs before sorting so a
  * bucket never contains a story the current search/scope would hide.

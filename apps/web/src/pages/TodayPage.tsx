@@ -89,10 +89,10 @@ export function TodayPage() {
                 </div>
               ) : null}
               {additionalTasks.length > 0 ? (
-                <details className="section">
-                  <summary className="section-title">{strings.unscheduled}</summary>
+                <div className="section">
+                  <div className="section-title">{strings.unscheduled}</div>
                   <TaskOutline tasks={additionalTasks} emptyMessage={strings.noItems} />
-                </details>
+                </div>
               ) : null}
             </>
           );

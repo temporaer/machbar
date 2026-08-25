@@ -5,6 +5,7 @@ export type TaskActionIconKind =
   | "schedule"
   | "notes"
   | "child"
+  | "successor"
   | "project"
   | "waiting"
   | "actionable"
@@ -41,6 +42,11 @@ function Glyph({ kind }: { kind: TaskActionIconKind }) {
         <>
           <path d="M5 5v8h7M9 10l3 3-3 3" {...common} />
           <path d="M17 12v8M13 16h8" {...common} />
+        </>
+      ) : kind === "successor" ? (
+        <>
+          <path d="M4 12h13M13 8l4 4-4 4" {...common} />
+          <path d="M20 6v12" {...common} />
         </>
       ) : kind === "project" ? (
         <path d="M3.5 6.5h6l2 2h9v10.5h-17z" {...common} />

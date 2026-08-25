@@ -95,16 +95,18 @@ describe("TodayPage", () => {
     expect(screen.queryByText("Wiedervorlage")).not.toBeInTheDocument();
   });
 
-  it("zeigt machbare Aufgaben ohne Termin nur in einem eingeklappten Nebenabschnitt", async () => {
+  it("zeigt machbare Aufgaben ohne Termin sofort sichtbar in einem normalen Nebenabschnitt", async () => {
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
       unscheduled: [makeTask({ id: 4, title: "Keller aufräumen", scheduledDate: null })],
     });
     renderWithProviders(<TodayPage />);
 
-    const summary = await screen.findByText("Weitere machbare Aufgaben");
-    expect(summary.closest("details")).not.toHaveAttribute("open");
-    expect(screen.getByText("Keller aufräumen")).toBeInTheDocument();
+    const heading = await screen.findByText("Weitere machbare Aufgaben");
+    // No longer a collapsed <details>/<summary> — it's a normal, always
+    // visible section like every other one on this page.
+    expect(heading.closest("details")).toBeNull();
+    expect(screen.getByText("Keller aufräumen")).toBeVisible();
   });
 
   it("zeigt fällige Wiedervorlagen wartender Aufgaben unter Nachhaken", async () => {

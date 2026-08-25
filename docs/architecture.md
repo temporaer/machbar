@@ -111,8 +111,9 @@ The **Heute** agenda is also query-derived. Its primary sections contain work
 explicitly scheduled for today or earlier, overdue work, work due today,
 soon-due work, and waiting tasks whose Wiedervorlage is due (**Nachhaken**).
 Undated actionable work is returned only as the secondary `shared` /
-`unscheduled` buckets and rendered in a collapsed **Weitere machbare
-Aufgaben** section. It never floods the main agenda. Future-scheduled work,
+`unscheduled` buckets and rendered in the visibly separate **Weitere machbare
+Aufgaben** section. It stays immediately available without being mixed into
+the scheduled/due agenda. Future-scheduled work,
 captured work, completed/cancelled work, and ordinary dependency-blocked work
 stay out.
 
@@ -246,12 +247,38 @@ responsible person; the clarification service flags them urgently.
 | `unassigned_actionable` | Has actionable tasks with no effective owner |
 | *(healthy)* | Every open task is `waiting` and has a future `scheduledDate`; the project is intentionally parked |
 | `followup_due` | Waiting work has a Wiedervorlage today or in the past and needs attention again |
-| *(healthy)* | Every actionable task is dependency-blocked, and every unresolved dependency path consists only of clarified actionable links ending in clarified waiting tasks with a future, non-blank `scheduledDate` and no unresolved dependencies of their own |
+| *(healthy)* | Every actionable task is dependency-blocked, and every unresolved dependency branch ends at either a clarified, unblocked actionable task or clarified waiting work with a future Wiedervorlage |
 | `only_waiting_without_followup` | Open work is waiting without a complete future Wiedervorlage plan |
 | `no_next_action` | No clarified actionable task, including projects whose open work still needs clarification, and not the all-waiting case above |
 | `blocked_dependencies` | Every actionable task is blocked by an unresolved dependency |
 
-The dependency-parking rule also covers direct and transitive scheduled blockers, but is deliberately all-or-nothing. An unassigned actionable task retains its higher-priority diagnosis; an unscheduled or captured blocker, a scheduled waiting task that is itself blocked, a dependency chain ending in other work, or unrelated captured/someday/unscheduled work keeps the project stuck. Once all scheduled waiting tasks close, normal next-action or completion-review semantics take over.
+Dependency chains are deliberately **not** defects by themselves. A sequence
+such as `Angebot → Termin → Arbeit → Rechnung → Bezahlen` is healthy while
+every unresolved branch leads back to a task that can be done now or to work
+intentionally parked with a future Wiedervorlage. An unscheduled/due waiting
+endpoint, captured blocker, someday task, or any other branch without a
+progression anchor produces `blocked_without_clear_path` and may keep the
+project stuck. Open tasks in completed/archived projects are not valid
+progression anchors. More specific issues remain attached to the terminal blocker
+so the repair action points at the cause rather than every downstream task.
+Once all blockers close, normal next-action or completion-review semantics
+take over.
+
+### Entering task sequences
+
+Sequence entry has two lightweight surfaces:
+
+- **Ablauf hinzufügen** on a project accepts one title per line. The API
+  creates top-level actionable tasks in that order and links each later task
+  to its predecessor.
+- **Nächsten Schritt danach hinzufügen** on a task creates one actionable
+  sibling at the same outline level and makes it depend on the source task.
+
+`POST /api/projects/:id/task-sequence` and
+`POST /api/tasks/:id/successors` perform creation and dependency insertion in
+one SQLite transaction. A failed request therefore never leaves a partial
+chain. The entry surfaces intentionally collect titles only; existing focused
+actions handle waiting state, Wiedervorlage, ownership, notes, and dates.
 
 ---
 
@@ -308,6 +335,10 @@ without opening a separate planning screen.
 - **Search** folds diacritics (`NFD` + combining-mark strip) and lower-cases both sides, then substring-matches the title **and** every `acceptanceCriteria[].text`. The list endpoint already returns criteria (`Graph.load`), so no extra request is needed.
 - **Scope** is `mine` by default — the selected member's stories plus `ownerMemberId === null`. With no identity selected there is no "mine", so it collapses to unassigned-only rather than to everything. `all` disables the filter.
 - **Sort buckets**, in order: active & healthy, active & `stuckReason`, backlog, completed, archived; ties break on `position`, then `title.localeCompare(…, "de")`, then `id`, so the order is stable across reloads and retentions.
+- Active/backlog rows form the primary list. Completed and archived rows keep
+  that same deterministic order inside the folded **Abgeschlossen &
+  archiviert** section. A non-empty search reveals matching terminal
+  rows automatically.
 - Filtering runs **before** sorting, and retained (optimistic) rows are merged into the same input list, so a retained row obeys the current search/scope and can never render twice next to its refetched counterpart.
 - `ProjectsPage` distinguishes *no stories at all* (`noProjects`) from *nothing matches* (`noMatchingProjects`) by testing the unfiltered list first.
 

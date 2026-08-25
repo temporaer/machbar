@@ -136,6 +136,11 @@ export interface CreateTaskInput {
 /** Body for `POST /api/tasks/:id/children` (no `projectId`/`parentTaskId`, both implied). */
 export type CreateChildTaskInput = Omit<CreateTaskInput, "projectId" | "parentTaskId">;
 
+export interface CreateTaskSequenceInput {
+  titles: string[];
+  createdByMemberId?: number | null;
+}
+
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "parentTaskId" | "projectId">> & {
   excludedTagIds?: number[];
 };
@@ -367,6 +372,16 @@ export const api = {
     request<Task>("/tasks", { method: "POST", body: JSON.stringify(input) }),
   createChildTask: (parentId: number, input: CreateChildTaskInput) =>
     request<Task>(`/tasks/${parentId}/children`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  createTaskSuccessor: (predecessorId: number, input: CreateChildTaskInput) =>
+    request<Task>(`/tasks/${predecessorId}/successors`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  createTaskSequence: (projectId: number, input: CreateTaskSequenceInput) =>
+    request<Task[]>(`/projects/${projectId}/task-sequence`, {
       method: "POST",
       body: JSON.stringify(input),
     }),

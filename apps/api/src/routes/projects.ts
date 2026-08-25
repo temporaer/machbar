@@ -8,6 +8,7 @@ import {
   addCriterion,
   archiveProject,
   completeProject,
+  createProjectTaskSequence,
   createProject,
   deleteProject,
   removeCriterion,
@@ -23,6 +24,7 @@ import {
   addCriterionSchema,
   checkCriterionSchema,
   createProjectSchema,
+  createTaskSequenceSchema,
   reorderCriteriaSchema,
   updateCriterionSchema,
   updateProjectSchema,
@@ -97,6 +99,23 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     const graph = Graph.load(db);
     return projectWithIssues(graph, id);
   });
+
+  app.post<{ Params: { id: string } }>(
+    "/api/projects/:id/task-sequence",
+    async (request, reply) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(createTaskSequenceSchema, request.body);
+      const created = createProjectTaskSequence(db, id, {
+        ...body,
+        ...(request.authMember
+          ? { createdByMemberId: request.authMember.id }
+          : {}),
+      });
+      const graph = Graph.load(db);
+      reply.status(201);
+      return created.map((task) => graph.tasksById.get(task.id)!);
+    },
+  );
 
   app.delete<{ Params: { id: string } }>(
     "/api/projects/:id",

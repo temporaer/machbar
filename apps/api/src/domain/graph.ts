@@ -47,7 +47,7 @@ export const repairActionByReason: Record<StuckReason, string> = {
   followup_due:
     "Hake jetzt nach oder markiere eine wartende Aufgabe wieder als machbar.",
   blocked_dependencies:
-    "Löse die blockierenden Abhängigkeiten auf, um weiterzukommen.",
+    "Kläre das Ende der Abhängigkeitskette, damit ein machbarer Schritt entsteht.",
   unassigned_actionable:
     "Weise die offene Aufgabe einer zuständigen Person zu.",
   completion_review:

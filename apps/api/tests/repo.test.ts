@@ -684,9 +684,9 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(reasons.get(unassignedProject.id)).toBe("unassigned_actionable");
     });
 
-    it("does not park a scheduled waiting blocker that has unresolved dependencies of its own", () => {
+    it("requires every branch beneath future waiting work to have a clear endpoint", () => {
       const owner = createMember("Verschachtelt blockiert");
-      const projects: number[] = [];
+      const blockedProjects: number[] = [];
 
       const makeCase = (
         title: string,
@@ -728,16 +728,21 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         });
         addDependency(handle.db, scheduledWaiting.id, child.id);
         addDependency(handle.db, action.id, scheduledWaiting.id);
-        projects.push(project.id);
         return { project, scheduledWaiting };
       };
 
-      makeCase("Unterminiert unter Wiedervorlage", "waiting");
-      makeCase("Erfasst unter Wiedervorlage", "waiting", true);
-      makeCase("Irgendwann unter Wiedervorlage", "someday");
-      makeCase("Aktion unter Wiedervorlage", "actionable");
+      blockedProjects.push(
+        makeCase("Unterminiert unter Wiedervorlage", "waiting").project.id,
+        makeCase("Erfasst unter Wiedervorlage", "waiting", true).project.id,
+        makeCase("Irgendwann unter Wiedervorlage", "someday").project.id,
+      );
+      const actionable = makeCase(
+        "Aktion unter Wiedervorlage",
+        "actionable",
+      );
 
       const branched = makeCase("Verzweigte Wiedervorlage", "waiting");
+      blockedProjects.push(branched.project.id);
       const validBranchProject = createProject(handle.db, {
         title: "Terminierter externer Zweig",
         status: "backlog",
@@ -752,9 +757,10 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       addDependency(handle.db, branched.scheduledWaiting.id, validBranch.id);
 
       const reasons = getStuckReasonsByProject(handle.db);
-      for (const projectId of projects) {
+      for (const projectId of blockedProjects) {
         expect(reasons.get(projectId)).toBe("blocked_dependencies");
       }
+      expect(reasons.has(actionable.project.id)).toBe(false);
     });
 
     it("keeps completion_review once the scheduled waiting task is closed", () => {
@@ -765,6 +771,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         status: "active",
         ownerMemberId: owner.id,
       });
+
       const waitingTask = createTask(handle.db, {
         projectId: project.id,
         title: "Wartet mit Termin",
@@ -780,6 +787,33 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
 
       expect(getStuckReasonsByProject(handle.db).get(project.id)).toBe(
         "completion_review",
+      );
+    });
+
+    it("does not treat open work in a terminal project as a viable dependency endpoint", () => {
+      const owner = createMember("Terminaler Blocker");
+      const activeProject = createProject(handle.db, {
+        title: "Aktives Projekt",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const archivedProject = createProject(handle.db, {
+        title: "Archiviertes Projekt",
+        status: "archived",
+        ownerMemberId: owner.id,
+      });
+      const archivedAction = createTask(handle.db, {
+        projectId: archivedProject.id,
+        title: "Versteckte offene Aufgabe",
+      });
+      const downstream = createTask(handle.db, {
+        projectId: activeProject.id,
+        title: "Davon abhängig",
+      });
+      addDependency(handle.db, downstream.id, archivedAction.id);
+
+      expect(getStuckReasonsByProject(handle.db).get(activeProject.id)).toBe(
+        "blocked_dependencies",
       );
     });
 
