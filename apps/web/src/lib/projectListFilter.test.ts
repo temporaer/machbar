@@ -59,6 +59,7 @@ describe("filterAndSortProjects", () => {
       title: "Küche",
       acceptanceCriteria: [makeCriterion({ id: 1, projectId: 1, text: "Fliesen sind café-farben lackiert" })],
     });
+
     const withoutMatch = makeProject({ id: 2, title: "Garten" });
 
     const result = filterAndSortProjects([withCriterion, withoutMatch], {
@@ -68,6 +69,23 @@ describe("filterAndSortProjects", () => {
     });
 
     expect(result.map((p) => p.id)).toEqual([1]);
+  });
+
+  it("matches free-form project notes independently from completion criteria", () => {
+    const withNotes = makeProject({
+      id: 1,
+      title: "Waschmaschine",
+      notes: "Kellerzugang ist sehr eng",
+    });
+    const other = makeProject({ id: 2, title: "Garten" });
+
+    const result = filterAndSortProjects([withNotes, other], {
+      query: "kellerzugang",
+      scope: "all",
+      currentMemberId: null,
+    });
+
+    expect(result.map((project) => project.id)).toEqual([1]);
   });
 
   it("with a selected identity, default (mine) scope shows that member's stories plus unassigned ones", () => {

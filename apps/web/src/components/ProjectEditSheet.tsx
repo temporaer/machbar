@@ -12,11 +12,12 @@ import { TagPicker } from "./TagPicker";
 /** The subset of story fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
   title: string;
+  notes: string;
   context: string;
 }
 
 function textFieldsSnapshot(project: ProjectDetail): TextFieldsSnapshot {
-  return { title: project.title, context: project.context ?? "" };
+  return { title: project.title, notes: project.notes, context: project.context ?? "" };
 }
 
 function errorMessage(err: unknown): string {
@@ -52,6 +53,7 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
   const { data: tags } = useAsync(() => api.getTags(), []);
 
   const [titleDraft, setTitleDraft] = useState(project.title);
+  const [notesDraft, setNotesDraft] = useState(project.notes);
   const [contextDraft, setContextDraft] = useState(project.context ?? "");
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot>(textFieldsSnapshot(project));
   const [savingTextFields, setSavingTextFields] = useState(false);
@@ -69,9 +71,13 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
     const nextBaseline = textFieldsSnapshot(project);
     const isNewProject = lastLoadedProjectIdRef.current !== project.id;
     const hasUnsavedEdits =
-      !isNewProject && (titleDraft !== textFieldsBaseline.title || contextDraft !== textFieldsBaseline.context);
+      !isNewProject &&
+      (titleDraft !== textFieldsBaseline.title ||
+        notesDraft !== textFieldsBaseline.notes ||
+        contextDraft !== textFieldsBaseline.context);
     if (!hasUnsavedEdits) {
       setTitleDraft(nextBaseline.title);
+      setNotesDraft(nextBaseline.notes);
       setContextDraft(nextBaseline.context);
       setTextFieldsBaseline(nextBaseline);
     }
@@ -80,17 +86,25 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
   }, [project]);
 
   const titleIsValid = titleDraft.trim().length > 0;
-  const textFieldsDirty = titleDraft !== textFieldsBaseline.title || contextDraft !== textFieldsBaseline.context;
+  const textFieldsDirty =
+    titleDraft !== textFieldsBaseline.title ||
+    notesDraft !== textFieldsBaseline.notes ||
+    contextDraft !== textFieldsBaseline.context;
   const saveChangesDisabled = !textFieldsDirty || !titleIsValid || savingTextFields;
 
   const saveTextFields = async () => {
     if (!titleIsValid) return;
-    const snapshot: TextFieldsSnapshot = { title: titleDraft.trim(), context: contextDraft };
+    const snapshot: TextFieldsSnapshot = {
+      title: titleDraft.trim(),
+      notes: notesDraft,
+      context: contextDraft,
+    };
     setSavingTextFields(true);
     setActionError(null);
     try {
       await api.updateProject(project.id, {
         title: snapshot.title,
+        notes: snapshot.notes,
         context: snapshot.context || null,
       });
       // Adopt the just-saved values as the new baseline right away so the
@@ -152,6 +166,17 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
             {actionError}
           </p>
         ) : null}
+
+        <div className="field">
+          <label htmlFor="project-notes">{strings.notes}</label>
+          <textarea
+            id="project-notes"
+            value={notesDraft}
+            onChange={(e) => setNotesDraft(e.target.value)}
+            onBlur={() => void saveTextFields()}
+            rows={4}
+          />
+        </div>
 
         <div className="field">
           <label htmlFor="project-title">{strings.projectTitle}</label>

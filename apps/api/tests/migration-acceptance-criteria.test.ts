@@ -103,6 +103,12 @@ describe("0002 migration: acceptance criteria + task size", () => {
     const newProjectColumns = tableInfo(sqlite, "projects").map((c) => c.name);
     expect(newProjectColumns).not.toContain("description");
     expect(newProjectColumns).toContain("status");
+    expect(newProjectColumns).toContain("notes");
+    expect(
+      sqlite
+        .prepare(`SELECT notes FROM projects WHERE id = ?`)
+        .get(withDescription.lastInsertRowid),
+    ).toEqual({ notes: "" });
 
     const criteriaTableColumns = tableInfo(
       sqlite,

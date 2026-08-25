@@ -373,7 +373,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
 
       const reasons = getStuckReasonsByProject(handle.db);
       expect(reasons.get(unassigned.id)).toBe("unassigned_actionable");
-      expect(reasons.get(onlyWaiting.id)).toBe("only_waiting");
+      expect(reasons.get(onlyWaiting.id)).toBe("only_waiting_without_followup");
       expect(reasons.get(noNextAction.id)).toBe("no_next_action");
       expect(reasons.get(blockedProject.id)).toBe("blocked_dependencies");
       expect(reasons.has(healthy.id)).toBe(false);
@@ -434,7 +434,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(reasons.has(mixed.id)).toBe(false);
     });
 
-    it("keeps a waiting-only project healthy when a waiting task has a scheduled revisit", () => {
+    it("keeps all-future waiting work parked, but flags a mixed missing Wiedervorlage", () => {
       const owner = createMember("Wiedervorlage-Zuständige");
 
       const withRevisit = createProject(handle.db, {
@@ -458,11 +458,11 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         ownerInheritanceMode: "explicit",
       });
 
-      const reasons = getStuckReasonsByProject(handle.db);
-      expect(reasons.has(withRevisit.id)).toBe(false);
+      const reasons = getStuckReasonsByProject(handle.db, "2026-08-25");
+      expect(reasons.get(withRevisit.id)).toBe("only_waiting_without_followup");
     });
 
-    it("treats past, today and future revisits alike — a scheduled date is an explicit decision", () => {
+    it("treats future revisits as parked and today/past revisits as due", () => {
       const owner = createMember("Termin-Zuständige");
       const today = new Date().toISOString().slice(0, 10);
 
@@ -483,8 +483,10 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         return project.id;
       });
 
-      const reasons = getStuckReasonsByProject(handle.db);
-      for (const id of projectIds) expect(reasons.has(id)).toBe(false);
+      const reasons = getStuckReasonsByProject(handle.db, today);
+      expect(reasons.get(projectIds[0]!)).toBe("followup_due");
+      expect(reasons.get(projectIds[1]!)).toBe("followup_due");
+      expect(reasons.has(projectIds[2]!)).toBe(false);
     });
 
     it("still flags only_waiting when the revisit date is missing or blank", () => {
@@ -523,8 +525,8 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         .run();
 
       const reasons = getStuckReasonsByProject(handle.db);
-      expect(reasons.get(nullDate.id)).toBe("only_waiting");
-      expect(reasons.get(blankDate.id)).toBe("only_waiting");
+      expect(reasons.get(nullDate.id)).toBe("only_waiting_without_followup");
+      expect(reasons.get(blankDate.id)).toBe("only_waiting_without_followup");
     });
 
     it("does not let a scheduled revisit mask other stuck reasons", () => {

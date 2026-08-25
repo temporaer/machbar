@@ -162,7 +162,7 @@ describe("RefinementTaskRow", () => {
     mockedApi.updateTask.mockResolvedValue({ ...task, size: "M" } as never);
     renderRow(task);
 
-    await userEvent.click(screen.getByRole("button", { name: /Aktuelle Größe: S/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Aufwand: S/ }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -182,7 +182,7 @@ describe("RefinementTaskRow", () => {
     for (const label of ["S", "M", "L", "XL"]) {
       expect(screen.getAllByRole("button", { name: label }).length).toBeGreaterThan(0);
     }
-    expect(screen.getByRole("button", { name: "Schätzung entfernen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Aufwand entfernen" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Zuweisen" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Zum Projekt" })).toBeInTheDocument();
   });
@@ -211,13 +211,13 @@ describe("RefinementTaskRow", () => {
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
   });
 
-  it("'Schätzung entfernen' clears the size to null", async () => {
+  it("'Aufwand entfernen' clears the size to null", async () => {
     const task = makeItem({ id: 26, size: "L" });
     mockedApi.updateTask.mockResolvedValue({ ...task, size: null } as never);
     const { container } = renderRow(task);
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Schätzung entfernen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufwand entfernen" }));
     await act(async () => {
       await flushMicrotasks();
     });

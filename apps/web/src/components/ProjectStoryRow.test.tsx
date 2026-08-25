@@ -114,7 +114,7 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
 
     expect(mockedApi.activateProject).toHaveBeenCalledWith(20, undefined);
     expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
-    expect(screen.getByText("Aktiviert")).toBeInTheDocument();
+    expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
   });
 
   it("completes an active story", async () => {
@@ -159,7 +159,7 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
     });
 
     expect(mockedApi.activateProject).toHaveBeenCalledWith(23, undefined);
-    expect(screen.getByText("Aktiviert")).toBeInTheDocument();
+    expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
   });
 
   it("never offers a transition the backend does not advertise", async () => {
@@ -235,7 +235,7 @@ describe("ProjectStoryRow – missing driver popup on activation", () => {
     await screen.findByText("Archiv ohne Driver");
 
     const chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Aktivieren" }));
+    await userEvent.click(within(chips).getByRole("button", { name: "Aktiv machen" }));
 
     expect(await screen.findByRole("heading", { name: "Verantwortliche Person zuweisen" })).toBeInTheDocument();
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
@@ -257,12 +257,12 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     swipe(container, -100);
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
     expect(within(chips).getByRole("button", { name: "Verantwortlich" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Akzeptanzkriterien" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Erledigt, wenn …" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Planen" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Bearbeiten" })).toBeInTheDocument();
     // Secondary workflow actions, derived from `availableActions` — the
     // primary one (Abschließen) is not repeated here.
-    expect(within(chips).getByRole("button", { name: "In Backlog zurücklegen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Auf später verschieben" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Archivieren" })).toBeInTheDocument();
     expect(within(chips).queryByRole("button", { name: "Abschließen" })).not.toBeInTheDocument();
   });
@@ -273,7 +273,7 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     await screen.findByText("Fertige Geschichte");
     let chips = openChips();
     expect(within(chips).getByRole("button", { name: "Archivieren" })).toBeInTheDocument();
-    expect(within(chips).queryByRole("button", { name: "In Backlog zurücklegen" })).not.toBeInTheDocument();
+    expect(within(chips).queryByRole("button", { name: "Auf später verschieben" })).not.toBeInTheDocument();
     expect(within(chips).queryByRole("button", { name: "Wieder öffnen" })).not.toBeInTheDocument();
     unmount();
 
@@ -281,7 +281,7 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     renderWithProviders(<Harness story={archived} />);
     await screen.findByText("Archivierte Geschichte");
     chips = openChips();
-    expect(within(chips).getByRole("button", { name: "In Backlog zurücklegen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Auf später verschieben" })).toBeInTheDocument();
     expect(within(chips).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
 
@@ -292,13 +292,13 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     await screen.findByText("Doch nicht jetzt");
 
     const chips = openChips();
-    fireEvent.click(within(chips).getByRole("button", { name: "In Backlog zurücklegen" }));
+    fireEvent.click(within(chips).getByRole("button", { name: "Auf später verschieben" }));
     await act(async () => {
       await flushMicrotasks();
     });
 
     expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(43);
-    expect(screen.getByText("Zurück im Backlog")).toBeInTheDocument();
+    expect(screen.getByText("Auf später verschoben")).toBeInTheDocument();
   });
 
   it("respects the driver invariant: an active story's driver can be reassigned but not cleared", async () => {
@@ -313,7 +313,7 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     const group = screen.getByRole("group", { name: "Verantwortlich" });
     expect(within(group).queryByRole("button", { name: "Niemand zugewiesen" })).not.toBeInTheDocument();
     expect(
-      screen.getByText("Die verantwortliche Person kann erst entfernt werden, wenn die Geschichte wieder im Backlog liegt."),
+      screen.getByText("Die verantwortliche Person kann erst entfernt werden, wenn das Projekt wieder auf „Später / noch nicht aktiv“ steht."),
     ).toBeInTheDocument();
 
     await userEvent.click(within(group).getByRole("button", { name: "Noah" }));
@@ -336,7 +336,7 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     const group = screen.getByRole("group", { name: "Verantwortlich" });
     expect(within(group).getByRole("button", { name: "Niemand zugewiesen" })).toBeInTheDocument();
     expect(
-      screen.queryByText("Die verantwortliche Person kann erst entfernt werden, wenn die Geschichte wieder im Backlog liegt."),
+      screen.queryByText("Die verantwortliche Person kann erst entfernt werden, wenn das Projekt wieder auf „Später / noch nicht aktiv“ steht."),
     ).not.toBeInTheDocument();
   });
 
@@ -354,7 +354,7 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     await screen.findByText("Popup-Geschichte");
 
     let chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Akzeptanzkriterien" }));
+    await userEvent.click(within(chips).getByRole("button", { name: "Erledigt, wenn …" }));
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
     expect(await screen.findByDisplayValue("Angebot eingeholt")).toBeInTheDocument();
     // The sheet header's ✕ and the criteria sheet's own footer button share
@@ -394,10 +394,10 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
   });
 
   it.each<[ProjectStatus, string, string]>([
-    ["backlog", "Backlog", "Aktivieren"],
+    ["backlog", "Später / noch nicht aktiv", "Aktiv machen"],
     ["active", "Aktiv", "Abschließen"],
     ["completed", "Abgeschlossen", "Wieder öffnen"],
-    ["archived", "Archiviert", "Aktivieren"],
+    ["archived", "Archiviert", "Aktiv machen"],
   ])(
     "shows the current status (%s) and a labelled non-gesture primary control",
     async (status, statusLabel, actionLabel) => {
@@ -440,7 +440,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(screen.getByText("Status:")).toHaveClass("sr-only");
 
     // … and every status change is an explicitly named button.
-    for (const label of ["Abschließen", "In Backlog zurücklegen", "Archivieren"]) {
+    for (const label of ["Abschließen", "Auf später verschieben", "Archivieren"]) {
       expect(screen.getByRole("button", { name: label })).toBeEnabled();
     }
     expect((container.querySelector(".story-row-primary") as HTMLElement).getAttribute("aria-label")).toBe(
@@ -549,7 +549,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Umzug organisieren");
 
-    expect(screen.getByText("Akzeptanzkriterien: 1/3")).toBeInTheDocument();
+    expect(screen.getByText("Erledigt, wenn …: 1/3")).toBeInTheDocument();
     expect(screen.getByText("Aufgaben: 2/4")).toBeInTheDocument();
     expect(screen.getByText("Nächster Schritt: Kartons kaufen")).toBeInTheDocument();
     expect(screen.getByText("Mira")).toBeInTheDocument();
@@ -696,7 +696,7 @@ describe("ProjectStoryRow – compact icon-only targeted actions", () => {
     const chips = openChips();
     const targeted = [
       { name: "Verantwortlich" },
-      { name: "Akzeptanzkriterien" },
+      { name: "Erledigt, wenn …" },
       { name: "Planen" },
       { name: "Bearbeiten" },
     ];

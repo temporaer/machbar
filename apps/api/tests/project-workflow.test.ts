@@ -137,7 +137,7 @@ describe("project workflow (HTTP routes)", () => {
       payload: { ownerMemberId: null },
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error.message).toContain("Backlog");
+    expect(res.json().error.message).toContain("Später / noch nicht aktiv");
 
     const unchanged = (
       await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })

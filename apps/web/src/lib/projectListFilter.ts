@@ -4,7 +4,7 @@ import type { ProjectWithActions } from "./api";
 export type ProjectVisibilityScope = "mine" | "all";
 
 export interface ProjectListFilterOptions {
-  /** Free-text query, matched against the title and every acceptance-criterion text. */
+  /** Free-text query, matched against title, notes, and completion criteria. */
   query: string;
   scope: ProjectVisibilityScope;
   /** The currently selected identity, or `null` when no member is selected yet. */
@@ -22,6 +22,7 @@ function foldForSearch(value: string): string {
 function matchesQuery(project: ProjectWithActions, foldedQuery: string): boolean {
   if (!foldedQuery) return true;
   if (foldForSearch(project.title).includes(foldedQuery)) return true;
+  if (foldForSearch(project.notes).includes(foldedQuery)) return true;
   return (project.acceptanceCriteria ?? []).some((c) => foldForSearch(c.text).includes(foldedQuery));
 }
 

@@ -42,8 +42,10 @@ export interface StuckProjectRecord extends ProjectRecord {
 export const repairActionByReason: Record<StuckReason, string> = {
   no_next_action:
     "Lege eine machbare nächste Aufgabe für dieses Projekt fest.",
-  only_waiting:
-    "Hake bei den wartenden Aufgaben nach, setze eine Wiedervorlage oder plane einen eigenen nächsten Schritt.",
+  only_waiting_without_followup:
+    "Setze für eine wartende Aufgabe eine Wiedervorlage oder plane einen eigenen nächsten Schritt.",
+  followup_due:
+    "Hake jetzt nach oder markiere eine wartende Aufgabe wieder als machbar.",
   blocked_dependencies:
     "Löse die blockierenden Abhängigkeiten auf, um weiterzukommen.",
   unassigned_actionable:
@@ -90,6 +92,7 @@ interface RawTask {
 interface RawProject {
   id: number;
   title: string;
+  notes: string;
   status: ProjectStatus;
   ownerMemberId: number | null;
   context: string | null;
@@ -211,6 +214,7 @@ export class Graph {
       graph.projectsById.set(p.id, {
         id: p.id,
         title: p.title,
+        notes: p.notes,
         status: p.status,
         ownerMemberId: p.ownerMemberId,
         context: p.context,

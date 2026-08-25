@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { taskSizeLabels } from "@machbar/shared";
+import type { RefinementIssue } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { strings } from "../lib/strings";
@@ -9,6 +11,7 @@ import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates"
 import { RefinementMatrix } from "../components/RefinementMatrix";
 import type { RefinementMatrixSelection } from "../components/RefinementMatrix";
 import { RefinementTaskRow } from "../components/RefinementTaskRow";
+import { useTaskDetail } from "../lib/taskDetailContext";
 import "./RefinementPage.css";
 
 function selectionLabel(
@@ -40,6 +43,14 @@ function selectionLabel(
 export function RefinementPage() {
   const [selection, setSelection] = useState<RefinementMatrixSelection | null>(null);
   const actions = useRefinementActions();
+  const navigate = useNavigate();
+  const taskDetail = useTaskDetail();
+  const {
+    data: issueResult,
+    loading: issuesLoading,
+    error: issuesError,
+    reload: reloadIssues,
+  } = useAsync(() => api.getRefinementIssues(), []);
 
   const {
     data: ownerRows,
@@ -86,8 +97,24 @@ export function RefinementPage() {
     });
   }, [listItems, selection]);
 
-  const loading = ownersLoading || tasksLoading;
-  const error = ownersError ?? tasksError;
+  const loading = issuesLoading || ownersLoading || tasksLoading;
+  const error = issuesError ?? ownersError ?? tasksError;
+
+  const repair = (issue: RefinementIssue) => {
+    if (issue.entityType === "project") {
+      navigate(`/projekte/${issue.entityId}`);
+      return;
+    }
+    const focus =
+      issue.suggestedAction.code === "assign_task"
+        ? "owner"
+        : issue.suggestedAction.code === "set_followup" ||
+            issue.suggestedAction.code === "follow_up" ||
+            issue.suggestedAction.code === "plan_task"
+          ? "schedule"
+          : undefined;
+    taskDetail.open(issue.entityId, focus);
+  };
 
   return (
     <div>
@@ -96,11 +123,55 @@ export function RefinementPage() {
       </div>
 
       {loading ? <LoadingState /> : null}
-      {error ? <ErrorState message={error} onRetry={() => { reloadOwners(); reloadTasks(); }} /> : null}
+      {error ? (
+        <ErrorState
+          message={error}
+          onRetry={() => {
+            reloadIssues();
+            reloadOwners();
+            reloadTasks();
+          }}
+        />
+      ) : null}
+
+      <section className="section" aria-labelledby="clarification-needs-heading">
+        <h2 className="section-title" id="clarification-needs-heading">
+          {strings.clarificationNeeds}
+        </h2>
+        <p className="text-muted">{strings.clarificationNeedsHint}</p>
+        {issueResult?.issues.length === 0 ? (
+          <EmptyState message={strings.clarificationNeedsEmpty} />
+        ) : null}
+        <div className="clarification-issue-list">
+          {issueResult?.issues.map((issue) => (
+            <article
+              className={`card clarification-issue clarification-issue--${issue.severity}`}
+              key={`${issue.entityType}-${issue.entityId}-${issue.code}`}
+            >
+              <div>
+                <strong>{issue.entityTitle}</strong>
+                {issue.projectTitle && issue.entityType === "task" ? (
+                  <span className="text-muted"> · {issue.projectTitle}</span>
+                ) : null}
+              </div>
+              <div className="clarification-issue-label">{issue.label}</div>
+              <p className="text-muted">{issue.explanation}</p>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => repair(issue)}
+              >
+                {issue.suggestedAction.label}
+              </button>
+            </article>
+          ))}
+        </div>
+      </section>
 
       {ownerRows ? (
-        <div className="section">
-          <div className="section-title">{strings.refinementMatrixTitle}</div>
+        <div className="section refinement-secondary">
+          <div className="section-title">{strings.effortGuide}</div>
+          <p className="text-muted">{strings.effortGuideHint}</p>
           <p className="text-muted">{strings.refinementMatrixHint}</p>
           <RefinementMatrix rows={ownerRows} selection={selection} onSelect={setSelection} />
         </div>

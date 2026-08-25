@@ -86,7 +86,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     const badges = [...container.querySelectorAll(".story-row-status-badge")].map((b) => b.textContent);
     // New deterministic sort order: active healthy/stuck, then backlog,
     // completed, archived — not the fetch order.
-    expect(badges).toEqual(["Aktiv", "Backlog", "Abgeschlossen", "Archiviert"]);
+    expect(badges).toEqual(["Aktiv", "Später / noch nicht aktiv", "Abgeschlossen", "Archiviert"]);
   });
 
   it("changes a status only through named buttons, never through a status dropdown", async () => {
@@ -99,10 +99,10 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     // Every row exposes its next workflow step as an explicitly labelled
     // control, and the status badge itself is not interactive.
     const expected: [string, string][] = [
-      ["Backlog-Geschichte", "Aktivieren"],
+      ["Backlog-Geschichte", "Aktiv machen"],
       ["Aktive Geschichte", "Abschließen"],
       ["Fertige Geschichte", "Wieder öffnen"],
-      ["Archivierte Geschichte", "Aktivieren"],
+      ["Archivierte Geschichte", "Aktiv machen"],
     ];
     for (const [title, label] of expected) {
       const row = rowFor(container, title);
@@ -158,7 +158,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     swipeRow(row, -100);
     const chips = within(row).getByRole("group", { name: "Weitere Aktionen" });
     expect(within(chips).getByRole("button", { name: "Verantwortlich" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "In Backlog zurücklegen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Auf später verschieben" })).toBeInTheDocument();
     expect(within(chips).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
 

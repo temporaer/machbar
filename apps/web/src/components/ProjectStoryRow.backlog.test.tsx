@@ -112,7 +112,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Wohnzimmer neu einrichten");
     await screen.findByText("Mira");
 
-    expect(screen.getByText(/Akzeptanzkriterien: 1\/2/)).toBeInTheDocument();
+    expect(screen.getByText(/Erledigt, wenn …: 1\/2/)).toBeInTheDocument();
     expect(screen.getByText(/Fällig: 01.03.2026/)).toBeInTheDocument();
     expect(screen.getByText(/Geplant: 15.02.2026/)).toBeInTheDocument();
     expect(screen.getByText(/Aufgaben: 1\/3/)).toBeInTheDocument();
@@ -142,7 +142,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     // Optimistic: still shown, muted, with the new status while retained.
     expect(screen.getByText("Garten aufräumen")).toBeInTheDocument();
     expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
-    expect(screen.getByText("Aktiviert")).toBeInTheDocument();
+    expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
   });
 
   it("reveals the driver-assignment sheet instead of failing when right-swiping a story without a driver, then activates once one is picked", async () => {
@@ -190,7 +190,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     swipe(container, -100);
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
     expect(within(chips).getByRole("button", { name: "Verantwortlich" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Akzeptanzkriterien" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Erledigt, wenn …" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Planen" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Bearbeiten" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Archivieren" })).toBeInTheDocument();
@@ -286,17 +286,17 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Speicherplatz aufräumen");
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Akzeptanzkriterien" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erledigt, wenn …" }));
 
     // Stays on the backlog list — a focused sheet, not the project page.
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
     expect(await screen.findByDisplayValue("Alte Fotos gesichert")).toBeInTheDocument();
 
     await userEvent.type(
-      screen.getByPlaceholderText("Neues Akzeptanzkriterium"),
+      screen.getByPlaceholderText("Erledigt, wenn …"),
       "Papierkram entsorgt",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Kriterium hinzufügen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Punkt hinzufügen" }));
 
     await waitFor(() => expect(mockedApi.addCriterion).toHaveBeenCalledWith(18, "Papierkram entsorgt"));
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();

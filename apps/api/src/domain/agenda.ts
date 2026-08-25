@@ -60,7 +60,7 @@ export interface BuildAgendaOptions {
 /**
  * Builds the "Heute" (today) agenda. Categories are mutually exclusive:
  * a task is placed in the first matching bucket in the order
- * planned > overdue > dueToday > dueSoon > shared > unscheduled, so
+ * followUp > planned > overdue > dueToday > dueSoon > shared > unscheduled, so
  * nothing is duplicated across sections. The final bucket keeps actionable
  * work assigned to the selected member visible even when it has no
  * `scheduledDate`; unassigned actionable work has already been claimed by
@@ -104,8 +104,24 @@ export function buildAgenda(
     return results;
   };
 
+  const followUp = graph
+    .allTasks()
+    .filter(
+      (t) =>
+        isOpen(t) &&
+        !t.needsClarification &&
+        t.status === "waiting" &&
+        !!t.scheduledDate &&
+        t.scheduledDate <= today &&
+        matchesSelectedOwner(t, memberId),
+    )
+    .sort(sortByDueThenPriority);
+  for (const task of followUp) seen.add(task.id);
   const planned = take(
-    (t) => !!t.scheduledDate && t.scheduledDate <= today,
+    (t) =>
+      t.status === "actionable" &&
+      !!t.scheduledDate &&
+      t.scheduledDate <= today,
   );
   const overdue = take((t) => !!t.dueDate && t.dueDate < today);
   const dueToday = take((t) => t.dueDate === today);
@@ -113,10 +129,18 @@ export function buildAgenda(
     (t) => !!t.dueDate && t.dueDate > today && t.dueDate <= soonLimit,
   );
   const shared = take(
-    (t) => t.status === "actionable" && t.effectiveOwnerId === null,
+    (t) =>
+      t.status === "actionable" &&
+      t.effectiveOwnerId === null &&
+      !t.scheduledDate &&
+      !t.dueDate,
   );
   const unscheduled = take(
-    (t) => t.status === "actionable" && !t.scheduledDate,
+    (t) =>
+      t.status === "actionable" &&
+      t.effectiveOwnerId !== null &&
+      !t.scheduledDate &&
+      !t.dueDate,
   );
 
   const revisit = graph
@@ -125,7 +149,9 @@ export function buildAgenda(
       (t) =>
         isOpen(t) &&
         !t.needsClarification &&
+        t.status === "actionable" &&
         t.blocked &&
+        !seen.has(t.id) &&
         !!t.scheduledDate &&
         t.scheduledDate <= today &&
         matchesSelectedOwner(t, memberId),
@@ -186,6 +212,7 @@ export function buildAgenda(
     });
 
   return {
+    followUp,
     planned,
     overdue,
     dueToday,

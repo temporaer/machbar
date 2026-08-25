@@ -294,13 +294,13 @@ describe("project acceptance criteria (service layer)", () => {
     const b = addCriterion(handle.db, project.id, "B");
 
     expect(() => reorderCriteria(handle.db, project.id, [a.id])).toThrow(
-      /vorhandenen Akzeptanzkriterien/,
+      /vorhandenen „Erledigt, wenn …“-Punkte/,
     );
     expect(() => reorderCriteria(handle.db, project.id, [a.id, a.id])).toThrow(
-      /vorhandenen Akzeptanzkriterien/,
+      /vorhandenen „Erledigt, wenn …“-Punkte/,
     );
     expect(() => reorderCriteria(handle.db, project.id, [a.id, b.id, 999999])).toThrow(
-      /vorhandenen Akzeptanzkriterien/,
+      /vorhandenen „Erledigt, wenn …“-Punkte/,
     );
   });
 

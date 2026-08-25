@@ -12,6 +12,8 @@ import {
   getRefinementOwnerSizeCounts,
   getRefinementTasks,
 } from "../src/repo/refinementRepo.js";
+import { Graph } from "../src/domain/graph.js";
+import { buildRefinementIssues } from "../src/domain/refinementIssues.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 /**
@@ -27,6 +29,132 @@ describe("refinementRepo", () => {
   beforeEach(() => {
     handle = openDb(":memory:");
     runMigrations(handle.db);
+  });
+
+  describe("household clarification issues", () => {
+    let handle: DbHandle;
+    const today = "2026-08-25";
+
+    beforeEach(() => {
+      handle = openDb(":memory:");
+      runMigrations(handle.db);
+    });
+
+    afterEach(() => {
+      handle.close();
+    });
+
+    function issueCodes() {
+      return buildRefinementIssues(Graph.load(handle.db), today).issues;
+    }
+
+    it("flags a legacy active project without a responsible person as urgent", () => {
+      const project = createProject(handle.db, {
+        title: "Legacy aktiv",
+        status: "active",
+      });
+      const issue = issueCodes().find(
+        (entry) =>
+          entry.projectId === project.id && entry.code === "missing_driver",
+      );
+      expect(issue).toMatchObject({ severity: "urgent", entityType: "project" });
+    });
+
+    it("keeps an inactive project without a responsible person valid but not ready", () => {
+      const project = createProject(handle.db, { title: "Später" });
+      const result = buildRefinementIssues(Graph.load(handle.db), today);
+      expect(
+        result.issues.find(
+          (entry) =>
+            entry.projectId === project.id && entry.code === "missing_driver",
+        ),
+      ).toMatchObject({ severity: "info" });
+      expect(
+        result.projects.find((entry) => entry.projectId === project.id)?.ready,
+      ).toBe(false);
+    });
+
+    it("flags a project with no executable next action", () => {
+      const project = createProject(handle.db, {
+        title: "Ohne nächsten Schritt",
+        status: "active",
+        ownerMemberId: handle.db
+          .insert(schema.members)
+          .values({ name: "Mira", color: "#123456" })
+          .returning()
+          .get().id,
+      });
+      expect(
+        issueCodes().some(
+          (entry) =>
+            entry.projectId === project.id &&
+            entry.code === "missing_next_action",
+        ),
+      ).toBe(true);
+    });
+
+    it("distinguishes missing, future, and due waiting follow-ups", () => {
+      const missing = createTask(handle.db, {
+        title: "Ohne Wiedervorlage",
+        status: "waiting",
+      });
+      const future = createTask(handle.db, {
+        title: "Später nachhaken",
+        status: "waiting",
+        scheduledDate: "2026-08-26",
+      });
+      const todayTask = createTask(handle.db, {
+        title: "Heute nachhaken",
+        status: "waiting",
+        scheduledDate: today,
+      });
+      const past = createTask(handle.db, {
+        title: "Gestern nachhaken",
+        status: "waiting",
+        scheduledDate: "2026-08-24",
+      });
+      const issues = issueCodes();
+      expect(
+        issues.find((entry) => entry.entityId === missing.id)?.code,
+      ).toBe("waiting_without_followup");
+      expect(issues.some((entry) => entry.entityId === future.id)).toBe(false);
+      expect(
+        issues.find((entry) => entry.entityId === todayTask.id)?.code,
+      ).toBe("followup_due");
+      expect(
+        issues.find((entry) => entry.entityId === past.id)?.code,
+      ).toBe("followup_due");
+    });
+
+    it("flags an open XL task without open children, but not completed/cancelled work", () => {
+      const large = createTask(handle.db, {
+        title: "Zu großer Block",
+        status: "actionable",
+        size: "XL",
+      });
+      const done = createTask(handle.db, {
+        title: "Erledigt",
+        status: "done",
+        size: "XL",
+        needsClarification: true,
+      });
+      const cancelled = createTask(handle.db, {
+        title: "Verworfen",
+        status: "cancelled",
+        size: "XL",
+        needsClarification: true,
+      });
+      const issues = issueCodes();
+      expect(
+        issues.some(
+          (entry) =>
+            entry.entityId === large.id &&
+            entry.code === "too_large_without_children",
+        ),
+      ).toBe(true);
+      expect(issues.some((entry) => entry.entityId === done.id)).toBe(false);
+      expect(issues.some((entry) => entry.entityId === cancelled.id)).toBe(false);
+    });
   });
 
   afterEach(() => {

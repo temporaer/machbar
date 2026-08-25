@@ -6,6 +6,8 @@ import type {
   Project,
   ProjectAgendaEntry,
   ProjectStatus,
+  ProjectReadiness,
+  RefinementIssue,
   SearchFilters,
   StuckProject,
   Tag,
@@ -139,14 +141,12 @@ export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "parentTaskId" | "pr
 };
 
 /**
- * Projects are user stories: there is no free-text `description` field
- * (see `apps/api/src/schemas.ts::createProjectSchema`/`updateProjectSchema`)
- * — a story's intent is expressed entirely through its title plus its
- * ordered acceptance criteria (`api.addCriterion`/`updateCriterion`/etc.
- * below), added once the project exists.
+ * Project notes hold free-form context independently from the structured
+ * "Erledigt, wenn …" checklist.
  */
 export interface CreateProjectInput {
   title: string;
+  notes?: string;
   status?: ProjectStatus;
   ownerMemberId?: number | null;
   context?: string | null;
@@ -216,6 +216,11 @@ export interface RefinementFilters {
   /** A positive member id, or the literal `"none"` for the shared/unassigned bucket. */
   ownerId?: number | "none";
   projectId?: number;
+}
+
+export interface RefinementIssueResponse {
+  issues: RefinementIssue[];
+  projects: ProjectReadiness[];
 }
 
 export interface CreateMemberInput {
@@ -315,6 +320,8 @@ export const api = {
     request<RefinementTaskRow[]>(
       `/refinement/tasks${query({ ownerId: filters?.ownerId, projectId: filters?.projectId })}`,
     ),
+  getRefinementIssues: () =>
+    request<RefinementIssueResponse>("/refinement/issues"),
 
   /**
    * `memberId` scopes the agenda to a single member (the currently

@@ -61,6 +61,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     "dueSoon",
     "shared",
     "unscheduled",
+    "followUp",
     "revisit",
   ] as const;
 
@@ -86,9 +87,8 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(plannedTitles).not.toContain("Erst morgen geplant");
 
     // The future-scheduled task doesn't land in planned (or any date-based
-    // bucket) yet — being unowned and actionable, it does still show up
-    // under "shared" until it's assigned or claimed.
-    expect(await bucketsContaining("Erst morgen geplant")).toEqual(["shared"]);
+    // Future-planned work stays out of the current agenda entirely.
+    expect(await bucketsContaining("Erst morgen geplant")).toEqual([]);
   });
 
   it("includes assigned actionable tasks without a scheduled date", async () => {
@@ -113,6 +113,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
       url: "/api/members",
       payload: { name: "Theo" },
     });
+
     const owner = ownerRes.json();
     await createTask({
       title: "Erst morgen für Theo",
@@ -122,6 +123,24 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     });
 
     expect(await bucketsContaining("Erst morgen für Theo")).toEqual([]);
+  });
+
+  it("puts due waiting follow-ups under Nachhaken and keeps future waits out", async () => {
+    const blocker = await createTask({ title: "Offene Abhängigkeit" });
+    const dueWaiting = await createTask({
+      title: "Heute nachhaken",
+      status: "waiting",
+      scheduledDate: today,
+    });
+    await addDependency(dueWaiting.id, blocker.id);
+    await createTask({
+      title: "Später nachhaken",
+      status: "waiting",
+      scheduledDate: tomorrow,
+    });
+
+    expect(await bucketsContaining("Heute nachhaken")).toEqual(["followUp"]);
+    expect(await bucketsContaining("Später nachhaken")).toEqual([]);
   });
 
   it("excludes blocked tasks from every normal bucket, even when due today", async () => {

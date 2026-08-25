@@ -206,6 +206,7 @@ export function deleteTag(db: Db, id: number): void {
 
 export interface CreateProjectInput {
   title: string;
+  notes?: string;
   status?: ProjectStatus;
   ownerMemberId?: number | null;
   context?: string | null;
@@ -247,6 +248,7 @@ export function createProject(db: Db, input: CreateProjectInput) {
       .insert(schema.projects)
       .values({
         title: input.title.trim(),
+        notes: input.notes ?? "",
         status: input.status ?? "backlog",
         ownerMemberId: input.ownerMemberId ?? null,
         context: input.context ?? null,
@@ -270,6 +272,7 @@ export function createProject(db: Db, input: CreateProjectInput) {
 
 export interface UpdateProjectInput {
   title?: string;
+  notes?: string;
   ownerMemberId?: number | null;
   context?: string | null;
   dueDate?: string | null;
@@ -301,13 +304,14 @@ export function updateProject(db: Db, id: number, input: UpdateProjectInput) {
     }
     if (input.ownerMemberId === null && project.status !== "backlog") {
       throw AppError.conflict(
-        `Die verantwortliche Person (Driver) von "${project.title}" kann erst entfernt werden, wenn das Projekt wieder im Backlog ist.`,
+        `Die verantwortliche Person von "${project.title}" kann erst entfernt werden, wenn das Projekt wieder auf „Später / noch nicht aktiv“ steht.`,
       );
     }
     const patch: Partial<typeof schema.projects.$inferInsert> = {
       updatedAt: nowIso(),
     };
     if (input.title !== undefined) patch.title = input.title.trim();
+    if (input.notes !== undefined) patch.notes = input.notes;
     if (input.ownerMemberId !== undefined) patch.ownerMemberId = input.ownerMemberId;
     if (input.context !== undefined) patch.context = input.context;
     if (input.dueDate !== undefined) patch.dueDate = input.dueDate;
@@ -397,7 +401,7 @@ export function activateProject(
       input.ownerMemberId !== undefined ? input.ownerMemberId : project.ownerMemberId;
     if (ownerMemberId === null) {
       throw AppError.badRequest(
-        `Für die Aktivierung von "${project.title}" muss zuerst eine verantwortliche Person (Driver) zugewiesen werden.`,
+        `Bevor "${project.title}" aktiv werden kann, muss eine verantwortliche Person zugewiesen werden.`,
       );
     }
     tx.update(schema.projects)
@@ -419,7 +423,7 @@ export function returnProjectToBacklog(db: Db, id: number) {
     assertWorkflowAction(
       project,
       "return_to_backlog",
-      `Projekt "${project.title}" kann aus dem Status "${project.status}" nicht in den Backlog zurückgelegt werden.`,
+      `Projekt "${project.title}" kann aus dem Status "${project.status}" nicht auf „Später / noch nicht aktiv“ verschoben werden.`,
     );
     tx.update(schema.projects)
       .set({ status: "backlog", updatedAt: nowIso() })
@@ -504,7 +508,7 @@ function getCriterionOrThrow(db: Db, projectId: number, criterionId: number) {
     .get();
   if (!criterion || criterion.projectId !== projectId) {
     throw AppError.notFound(
-      `Akzeptanzkriterium mit ID ${criterionId} wurde im Projekt ${projectId} nicht gefunden.`,
+      `Der „Erledigt, wenn …“-Punkt mit ID ${criterionId} wurde im Projekt ${projectId} nicht gefunden.`,
     );
   }
   return criterion;
@@ -514,7 +518,7 @@ function normalizeCriterionText(text: string): string {
   const trimmed = text.trim();
   if (trimmed === "") {
     throw AppError.badRequest(
-      "Der Text des Akzeptanzkriteriums darf nicht leer sein.",
+      "Der Text für „Erledigt, wenn …“ darf nicht leer sein.",
     );
   }
   return trimmed;
@@ -614,7 +618,7 @@ export function reorderCriteria(
       orderedCriterionIds.every((id) => existingIds.has(id));
     if (!isValidReordering) {
       throw AppError.badRequest(
-        "Die Reihenfolge muss genau die vorhandenen Akzeptanzkriterien des Projekts enthalten.",
+        "Die Reihenfolge muss genau die vorhandenen „Erledigt, wenn …“-Punkte des Projekts enthalten.",
       );
     }
     orderedCriterionIds.forEach((criterionId, index) => {

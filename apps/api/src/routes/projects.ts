@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
+import { buildRefinementIssues } from "../domain/refinementIssues.js";
 import {
   activateProject,
   addCriterion,
@@ -41,18 +42,37 @@ function projectOrThrow(db: Db, id: number) {
   if (!project) {
     throw AppError.notFound(`Projekt mit ID ${id} wurde nicht gefunden.`);
   }
-  return { graph, project };
+  const issues = buildRefinementIssues(graph).issues.filter(
+    (issue) => issue.projectId === id,
+  );
+  return { graph, project: { ...project, refinementIssues: issues } };
+}
+
+function projectsWithIssues(graph: Graph) {
+  const issues = buildRefinementIssues(graph).issues;
+  return graph.listProjectsWithComputed().map((project) => ({
+    ...project,
+    refinementIssues: issues.filter((issue) => issue.projectId === project.id),
+  }));
+}
+
+function projectWithIssues(graph: Graph, id: number) {
+  return projectsWithIssues(graph).find((project) => project.id === id) ?? null;
 }
 
 export function registerProjectRoutes(app: FastifyInstance, db: Db) {
   app.get("/api/projects", async () => {
     const graph = Graph.load(db);
-    return graph.listProjectsWithComputed();
+    return projectsWithIssues(graph);
   });
 
   app.get("/api/projects/stuck", async () => {
     const graph = Graph.load(db);
-    return graph.listStuckProjects();
+    const issues = buildRefinementIssues(graph).issues;
+    return graph.listStuckProjects().map((project) => ({
+      ...project,
+      refinementIssues: issues.filter((issue) => issue.projectId === project.id),
+    }));
   });
 
   app.get<{ Params: { id: string } }>("/api/projects/:id", async (request) => {
@@ -66,7 +86,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     const project = createProject(db, body);
     const graph = Graph.load(db);
     reply.status(201);
-    return graph.projectWithComputed(project.id);
+    return projectWithIssues(graph, project.id);
   });
 
   app.patch<{ Params: { id: string } }>("/api/projects/:id", async (request) => {
@@ -74,7 +94,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     const body = parseOrThrow(updateProjectSchema, request.body);
     updateProject(db, id, body);
     const graph = Graph.load(db);
-    return graph.projectWithComputed(id);
+    return projectWithIssues(graph, id);
   });
 
   // --- explicit workflow transitions --------------------------------------
@@ -88,7 +108,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(activateProjectSchema, request.body ?? {});
       activateProject(db, id, body);
       const graph = Graph.load(db);
-      return graph.projectWithComputed(id);
+      return projectWithIssues(graph, id);
     },
   );
 
@@ -98,7 +118,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const id = parseId(request.params.id);
       returnProjectToBacklog(db, id);
       const graph = Graph.load(db);
-      return graph.projectWithComputed(id);
+      return projectWithIssues(graph, id);
     },
   );
 
@@ -108,7 +128,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const id = parseId(request.params.id);
       completeProject(db, id);
       const graph = Graph.load(db);
-      return graph.projectWithComputed(id);
+      return projectWithIssues(graph, id);
     },
   );
 
@@ -118,7 +138,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const id = parseId(request.params.id);
       reopenProject(db, id);
       const graph = Graph.load(db);
-      return graph.projectWithComputed(id);
+      return projectWithIssues(graph, id);
     },
   );
 
@@ -128,7 +148,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const id = parseId(request.params.id);
       archiveProject(db, id);
       const graph = Graph.load(db);
-      return graph.projectWithComputed(id);
+      return projectWithIssues(graph, id);
     },
   );
 
@@ -142,7 +162,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       addCriterion(db, id, body.text);
       const graph = Graph.load(db);
       reply.status(201);
-      return graph.projectWithComputed(id);
+      return projectWithIssues(graph, id);
     },
   );
 
@@ -153,7 +173,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(reorderCriteriaSchema, request.body);
       reorderCriteria(db, id, body.orderedCriterionIds);
       const graph = Graph.load(db);
-      return graph.projectWithComputed(id);
+      return projectWithIssues(graph, id);
     },
   );
 
@@ -165,7 +185,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(updateCriterionSchema, request.body);
       updateCriterionText(db, id, criterionId, body.text);
       const graph = Graph.load(db);
-      return graph.projectWithComputed(id);
+      return projectWithIssues(graph, id);
     },
   );
 
@@ -177,7 +197,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const body = parseOrThrow(checkCriterionSchema, request.body);
       setCriterionChecked(db, id, criterionId, body.checked);
       const graph = Graph.load(db);
-      return graph.projectWithComputed(id);
+      return projectWithIssues(graph, id);
     },
   );
 
@@ -188,7 +208,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const criterionId = parseId(request.params.criterionId);
       removeCriterion(db, id, criterionId);
       const graph = Graph.load(db);
-      return graph.projectWithComputed(id);
+      return projectWithIssues(graph, id);
     },
   );
 }

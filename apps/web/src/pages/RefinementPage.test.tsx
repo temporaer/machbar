@@ -14,6 +14,7 @@ vi.mock("../lib/api", () => ({
     searchTasks: vi.fn(),
     getRefinementOwners: vi.fn(),
     getRefinementTasks: vi.fn(),
+    getRefinementIssues: vi.fn(),
     updateTask: vi.fn(),
   },
 }));
@@ -52,6 +53,7 @@ describe("RefinementPage", () => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([]);
     mockedApi.searchTasks.mockResolvedValue([]);
+    mockedApi.getRefinementIssues.mockResolvedValue({ issues: [], projects: [] });
   });
 
   afterEach(() => {
@@ -130,7 +132,7 @@ describe("RefinementPage", () => {
     mockedApi.getRefinementTasks.mockResolvedValue([]);
 
     renderWithProviders(<RefinementPage />);
-    expect(await screen.findByText("Keine offenen Aufgaben zur Verfeinerung.")).toBeInTheDocument();
+    expect(await screen.findByText("Keine offenen Aufgaben in dieser Übersicht.")).toBeInTheDocument();
   });
 
   it("defers the owner/list refetch (so the matrix regrouping is visible) until the retention window elapses after a swipe-driven size change", async () => {

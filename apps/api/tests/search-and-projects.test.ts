@@ -56,7 +56,10 @@ describe("search/filter and project CRUD/archive", () => {
       await ctx.app.inject({
         method: "POST",
         url: "/api/projects",
-        payload: { title: "Neues Projekt" },
+        payload: {
+          title: "Neues Projekt",
+          notes: "Freie Notizen mit Link und Telefonnummer",
+        },
       })
     ).json();
     // New stories always start in the backlog (see project-workflow.test.ts
@@ -64,17 +67,23 @@ describe("search/filter and project CRUD/archive", () => {
     // state machine and its driver invariants).
     expect(created.status).toBe("backlog");
     expect(created.acceptanceCriteria).toEqual([]);
+    expect(created.notes).toBe("Freie Notizen mit Link und Telefonnummer");
     expect(created.availableActions).toEqual(["activate", "archive"]);
 
     const updated = (
       await ctx.app.inject({
         method: "PATCH",
         url: `/api/projects/${created.id}`,
-        payload: { title: "Umbenanntes Projekt", context: "Büro" },
+        payload: {
+          title: "Umbenanntes Projekt",
+          notes: "Aktualisierter Hintergrund",
+          context: "Büro",
+        },
       })
     ).json();
     expect(updated.title).toBe("Umbenanntes Projekt");
     expect(updated.context).toBe("Büro");
+    expect(updated.notes).toBe("Aktualisierter Hintergrund");
 
     const archived = (
       await ctx.app.inject({ method: "POST", url: `/api/projects/${created.id}/archive` })
@@ -101,29 +110,38 @@ describe("search/filter and project CRUD/archive", () => {
       .then((r) => r.json())) as Array<{ id: number; title: string }>;
     const waitingProject = projects.find((p) => p.title === "Wartungsplan Auto")!;
 
-    expect(await stuckTitles()).toContain("Wartungsplan Auto:only_waiting");
+    expect(await stuckTitles()).toContain(
+      "Wartungsplan Auto:only_waiting_without_followup",
+    );
 
     const detail = (await ctx.app
       .inject({ method: "GET", url: `/api/projects/${waitingProject.id}` })
       .then((r) => r.json())) as { tasks: Array<{ id: number; status: string }> };
-    const waitingTask = detail.tasks.find((t) => t.status === "waiting")!;
+    const waitingTasks = detail.tasks.filter((t) => t.status === "waiting");
+    for (const waitingTask of waitingTasks) {
+      const scheduled = await ctx.app.inject({
+        method: "PATCH",
+        url: `/api/tasks/${waitingTask.id}`,
+        payload: { scheduledDate: "2099-10-01" },
+      });
+      expect(scheduled.statusCode).toBe(200);
+    }
 
-    const scheduled = await ctx.app.inject({
-      method: "PATCH",
-      url: `/api/tasks/${waitingTask.id}`,
-      payload: { scheduledDate: "2026-10-01" },
-    });
-    expect(scheduled.statusCode).toBe(200);
+    expect(await stuckTitles()).not.toContain(
+      "Wartungsplan Auto:only_waiting_without_followup",
+    );
 
-    expect(await stuckTitles()).not.toContain("Wartungsplan Auto:only_waiting");
+    for (const waitingTask of waitingTasks) {
+      await ctx.app.inject({
+        method: "PATCH",
+        url: `/api/tasks/${waitingTask.id}`,
+        payload: { scheduledDate: null },
+      });
+    }
 
-    await ctx.app.inject({
-      method: "PATCH",
-      url: `/api/tasks/${waitingTask.id}`,
-      payload: { scheduledDate: null },
-    });
-
-    expect(await stuckTitles()).toContain("Wartungsplan Auto:only_waiting");
+    expect(await stuckTitles()).toContain(
+      "Wartungsplan Auto:only_waiting_without_followup",
+    );
   });
 
   it("omits only exclusively scheduled dependency chains from /api/projects/stuck", async () => {

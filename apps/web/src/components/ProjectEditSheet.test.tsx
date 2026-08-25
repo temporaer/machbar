@@ -57,6 +57,7 @@ describe("ProjectEditSheet", () => {
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(42, {
         title: "Umzug nach Berlin",
+        notes: "",
         context: null,
       }),
     );
@@ -72,7 +73,7 @@ describe("ProjectEditSheet", () => {
     renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
 
     await screen.findByDisplayValue(project.title);
-    expect(screen.getByRole("button", { name: "Aktivieren" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Aktiv machen" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Archivieren" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Abschließen" })).not.toBeInTheDocument();
   });
@@ -102,7 +103,7 @@ describe("ProjectEditSheet", () => {
     const actionLabels = within(group)
       .getAllByRole("button")
       .map((b) => b.textContent);
-    expect(actionLabels).toEqual(["Abschließen", "In Backlog zurücklegen", "Archivieren"]);
+    expect(actionLabels).toEqual(["Abschließen", "Auf später verschieben", "Archivieren"]);
   });
 
   it("zeigt den German-Fehler des Backends an, wenn die Aktivierung ohne Driver fehlschlägt", async () => {
@@ -113,18 +114,16 @@ describe("ProjectEditSheet", () => {
       availableActions: ["activate", "archive"],
     });
     mockedApi.activateProject.mockRejectedValue(
-      new Error(
-        'Für die Aktivierung von "Beispielprojekt" muss zuerst eine verantwortliche Person (Driver) zugewiesen werden.',
-      ),
+      new Error('Bevor "Beispielprojekt" aktiv werden kann, muss eine verantwortliche Person zugewiesen werden.'),
     );
     renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
 
     await screen.findByDisplayValue(project.title);
-    await userEvent.click(screen.getByRole("button", { name: "Aktivieren" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aktiv machen" }));
 
     expect(
       await screen.findByText(
-        'Für die Aktivierung von "Beispielprojekt" muss zuerst eine verantwortliche Person (Driver) zugewiesen werden.',
+        'Bevor "Beispielprojekt" aktiv werden kann, muss eine verantwortliche Person zugewiesen werden.',
       ),
     ).toBeInTheDocument();
   });
@@ -139,13 +138,13 @@ describe("ProjectEditSheet", () => {
     renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
 
     await screen.findByDisplayValue("Kisten sind gepackt");
-    expect(screen.getByText("0/1 Akzeptanzkriterien")).toBeInTheDocument();
+    expect(screen.getByText("0/1 Erledigt, wenn …")).toBeInTheDocument();
 
     await userEvent.type(
-      screen.getByPlaceholderText("Neues Akzeptanzkriterium"),
+      screen.getByPlaceholderText("Erledigt, wenn …"),
       "Umzugswagen ist gebucht",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Kriterium hinzufügen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Punkt hinzufügen" }));
     await waitFor(() => expect(mockedApi.addCriterion).toHaveBeenCalledWith(42, "Umzugswagen ist gebucht"));
 
     await userEvent.click(screen.getByRole("checkbox", { name: "Kisten sind gepackt" }));

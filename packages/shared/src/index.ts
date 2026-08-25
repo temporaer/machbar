@@ -52,6 +52,7 @@ export interface AcceptanceCriterion {
 export interface Project {
   id: number;
   title: string;
+  notes: string;
   status: ProjectStatus;
   ownerMemberId: number | null;
   context: string | null;
@@ -64,6 +65,7 @@ export interface Project {
   doneCount?: number;
   nextAction?: Task | null;
   stuckReason?: StuckReason | null;
+  refinementIssues?: RefinementIssue[];
 }
 
 export interface Dependency {
@@ -115,7 +117,8 @@ export interface Task {
 
 export type StuckReason =
   | "no_next_action"
-  | "only_waiting"
+  | "only_waiting_without_followup"
+  | "followup_due"
   | "blocked_dependencies"
   | "unassigned_actionable"
   // An `active` project whose tasks are all `done`/`cancelled`: it is not
@@ -148,6 +151,8 @@ export interface Agenda {
   dueSoon: Task[];
   shared: Task[];
   unscheduled: Task[];
+  /** Waiting tasks whose Wiedervorlage has arrived. */
+  followUp: Task[];
   /**
    * Tasks that are normally excluded from "Heute" because they are
    * `blocked` (unresolved dependencies), but whose own `scheduledDate` is
@@ -162,6 +167,59 @@ export interface Agenda {
 export interface WaitingGroup {
   waitingFor: string;
   tasks: Task[];
+}
+
+export type RefinementIssueSeverity = "info" | "warning" | "urgent";
+
+export type RefinementIssueCode =
+  | "missing_driver"
+  | "missing_outcome"
+  | "missing_next_action"
+  | "needs_clarification"
+  | "unassigned_actionable"
+  | "waiting_without_followup"
+  | "followup_due"
+  | "blocked_without_clear_path"
+  | "due_without_plan"
+  | "scheduled_in_past"
+  | "too_large_without_children"
+  | "completion_review";
+
+export type RefinementActionCode =
+  | "assign_driver"
+  | "add_outcome"
+  | "add_next_action"
+  | "clarify_task"
+  | "assign_task"
+  | "set_followup"
+  | "follow_up"
+  | "resolve_blocker"
+  | "plan_task"
+  | "add_child"
+  | "review_completion";
+
+export interface RefinementAction {
+  code: RefinementActionCode;
+  label: string;
+}
+
+export interface RefinementIssue {
+  code: RefinementIssueCode;
+  severity: RefinementIssueSeverity;
+  label: string;
+  explanation: string;
+  suggestedAction: RefinementAction;
+  entityType: "project" | "task";
+  entityId: number;
+  entityTitle: string;
+  projectId: number | null;
+  projectTitle: string | null;
+}
+
+export interface ProjectReadiness {
+  projectId: number;
+  ready: boolean;
+  issues: RefinementIssue[];
 }
 
 export interface SearchFilters {
@@ -194,9 +252,11 @@ export const de = {
   dueToday: "Heute fällig",
   dueSoon: "Bald fällig",
   shared: "Gemeinsam / offen",
-  unscheduled: "Ohne Termin",
-  revisit: "Wiedervorlage",
-  revisitHint: "Blockiert, aber zur Wiedervorlage für heute geplant.",
+  unscheduled: "Weitere machbare Aufgaben",
+  followUp: "Nachhaken",
+  followUpHint: "Die Wiedervorlage ist erreicht. Jetzt nachhaken oder die Aufgabe wieder machbar machen.",
+  revisit: "Blockiert prüfen",
+  revisitHint: "Blockiert, aber heute wieder zu prüfen.",
   nextAction: "Nächster Schritt",
   noNextAction: "Kein nächster Schritt",
   addTask: "Aufgabe hinzufügen",
@@ -240,7 +300,6 @@ export const de = {
   filter: "Filtern",
   noItems: "Hier ist gerade nichts zu tun.",
   saveNext: "Speichern & nächste klären",
-  followUp: "Nachhaken",
   makeActionable: "Wieder machbar",
   blockedBy: "Blockiert durch",
   taskHasOpenChildren: "Diese Aufgabe hat offene Teilaufgaben.",
@@ -260,14 +319,15 @@ export const taskStatusLabels: Record<TaskStatus, string> = {
 
 export const stuckReasonLabels: Record<StuckReason, string> = {
   no_next_action: "Kein nächster Schritt",
-  only_waiting: "Nur wartende Aufgaben",
+  only_waiting_without_followup: "Wartet ohne Wiedervorlage",
+  followup_due: "Nachhaken fällig",
   blocked_dependencies: "Durch Abhängigkeiten blockiert",
   unassigned_actionable: "Offene Aufgabe ohne Zuständigkeit",
-  completion_review: "Bereit zur Abnahme",
+  completion_review: "Bereit zum Abschließen",
 };
 
 export const projectStatusLabels: Record<ProjectStatus, string> = {
-  backlog: "Backlog",
+  backlog: "Später / noch nicht aktiv",
   active: "Aktiv",
   completed: "Abgeschlossen",
   archived: "Archiviert",

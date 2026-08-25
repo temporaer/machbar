@@ -36,9 +36,17 @@ Project ──── Task ──── SubTask (Task.parentTaskId)
 ```
 
 - **Members** are the people who use the app. Every task and project can be assigned an owner (`ownerMemberId`).
-- **Projects are user stories.** A project has a single owner — the **driver** — an optional due/scheduled date, and an ordered list of **acceptance criteria**.
-- **Acceptance criteria** (`project_acceptance_criteria`) are structured, individually checkable, position-ordered rows. They replace the former free-text `projects.description` column.
-- **Tasks** belong to at most one project and at most one parent task (forming a tree of arbitrary depth). Each task carries an optional **size** estimate (`S | M | L | XL`).
+- **Projects are household projects or plans.** A project has one responsible
+  person, optional due/scheduled dates, free-form `notes`, and an ordered
+  **“Erledigt, wenn …”** checklist.
+- **Project notes and completion criteria are separate.** `projects.notes`
+  stores context, constraints, links, phone numbers, decisions, and
+  background. `project_acceptance_criteria` stores structured, individually
+  checkable, position-ordered completion rows. Neither replaces the other.
+- **Tasks** belong to at most one project and at most one parent task (forming
+  a tree of arbitrary depth). Each task carries optional household effort
+  (`S | M | L | XL`); effort guides splitting and sorting only and never
+  changes eligibility or workflow.
 - **Tags** are many-to-many with both projects and tasks. Every tag has a
   persisted colour; newly created names map deterministically onto the
   application palette, so colours do not change between clients or renders.
@@ -91,20 +99,22 @@ Projects additionally carry:
 | Field | Computed as |
 |-------|-------------|
 | `availableActions` | Workflow transitions legal for the current status (see §6) — the single source of truth for which buttons the UI renders |
-| `acceptanceCriteria` | Ordered criteria rows with `checked` state |
+| `notes` | Free-form project context, independent from completion criteria |
+| `acceptanceCriteria` | Ordered “Erledigt, wenn …” rows with `checked` state |
 | `openCount` / `doneCount` | Task rollups |
 | `nextAction` | First actionable, unblocked task |
 | `stuckReason` | Diagnosis for `active` projects only (see §6) |
 
 These views are **read-only projections** — they are not stored in SQLite; they are assembled per-request.
 
-The **Heute** agenda is also query-derived. It first selects planned, overdue,
-due-today, due-soon, and shared work. Any remaining unblocked `actionable`
-tasks without a `scheduledDate` appear under **Ohne Termin** when their
-effective owner is the selected member. Unassigned work already appears under
-**Gemeinsam / offen**. Tasks with `needsClarification = true`,
-future-scheduled, waiting, completed, cancelled, and dependency-blocked tasks
-do not enter the fallback bucket.
+The **Heute** agenda is also query-derived. Its primary sections contain work
+explicitly scheduled for today or earlier, overdue work, work due today,
+soon-due work, and waiting tasks whose Wiedervorlage is due (**Nachhaken**).
+Undated actionable work is returned only as the secondary `shared` /
+`unscheduled` buckets and rendered in a collapsed **Weitere machbare
+Aufgaben** section. It never floods the main agenda. Future-scheduled work,
+captured work, completed/cancelled work, and ordinary dependency-blocked work
+stay out.
 
 Active projects have a separate compiled `projects` bucket. A project enters
 Heute seven local calendar days before its `dueDate`, or once its
@@ -191,7 +201,7 @@ and actionable stuck counts.
 
 Tasks in `done` or `cancelled` are retained in the database and visible in search/history views.
 
-### Projects (user stories)
+### Projects
 
 `ProjectStatus`: `backlog → active → completed`, with `archived` reachable from — and escapable back to — `backlog`.
 
@@ -208,14 +218,19 @@ backlog ──activate──► active ──complete──► completed
 - `PATCH /api/projects/:id` **refuses status changes** — status only moves through the dedicated workflow endpoints (`/activate`, `/complete`, `/return-to-backlog`, `/archive`, `/unarchive`).
 - Nothing auto-completes a story; completion is always an explicit human decision.
 
-### Driver invariant
+### Responsible-person invariant
 
-Every non-`backlog` story must have a **driver** (`ownerMemberId`) — one accountable person:
+Every non-`backlog` project must have a responsible person (`ownerMemberId`):
 
-- `POST /api/projects/:id/activate` fails with `bad_request` unless the story already has a driver or one is supplied inline (`{"ownerMemberId": n}`).
-- `PATCH /api/projects/:id` with `ownerMemberId: null` fails with `conflict` unless the story is in `backlog`. Reassigning to a *different* member is always allowed.
+- `POST /api/projects/:id/activate` fails with `bad_request` unless the project
+  already has a responsible person or one is supplied inline
+  (`{"ownerMemberId": n}`).
+- `PATCH /api/projects/:id` with `ownerMemberId: null` fails with `conflict`
+  unless the project is in `backlog`. Reassigning to a different member is
+  always allowed. Individual task ownership remains independent.
 
-Legacy rows migrated from before the invariant may still be `active` without a driver; the migration never rewrites status, and the UI surfaces them so a driver can be assigned.
+Legacy rows migrated from before the invariant may still be `active` without a
+responsible person; the clarification service flags them urgently.
 
 ### Stuck detection
 
@@ -226,9 +241,10 @@ Legacy rows migrated from before the invariant may still be `active` without a d
 | `no_next_action` | Project has no tasks at all |
 | `completion_review` | Project has tasks but **zero open** ones — everything is `done`/`cancelled`, so the story is ready to be completed or extended |
 | `unassigned_actionable` | Has actionable tasks with no effective owner |
-| *(healthy)* | Every open task is `waiting` **and at least one carries a `scheduledDate`** — a scheduled revisit ("Wiedervorlage") is an explicit decision about when to look again, so the story is parked, not stuck. The date is **not** compared against today: past, present and future revisits all count |
-| *(healthy)* | Every actionable task is dependency-blocked, and every unresolved dependency path consists only of clarified actionable links ending in clarified waiting tasks with a non-blank `scheduledDate` and no unresolved dependencies of their own. Other open tasks in the project may only be actionable or scheduled waiting tasks |
-| `only_waiting` | Every open task is `waiting` and **none** has a `scheduledDate` |
+| *(healthy)* | Every open task is `waiting` and has a future `scheduledDate`; the project is intentionally parked |
+| `followup_due` | Waiting work has a Wiedervorlage today or in the past and needs attention again |
+| *(healthy)* | Every actionable task is dependency-blocked, and every unresolved dependency path consists only of clarified actionable links ending in clarified waiting tasks with a future, non-blank `scheduledDate` and no unresolved dependencies of their own |
+| `only_waiting_without_followup` | Open work is waiting without a complete future Wiedervorlage plan |
 | `no_next_action` | No clarified actionable task, including projects whose open work still needs clarification, and not the all-waiting case above |
 | `blocked_dependencies` | Every actionable task is blocked by an unresolved dependency |
 
@@ -236,29 +252,45 @@ The dependency-parking rule also covers direct and transitive scheduled blockers
 
 ---
 
-## 7. Backlog Review and Refinement
+## 7. Projektklärung, Aufgabenklärung und Klärungsbedarf
 
-Two dedicated Scrum-style surfaces live under **Mehr** (`MorePage`) and are routed in `App.tsx`:
+The two routes under **Mehr** keep their technical paths for compatibility,
+but their product model is lightweight household clarification rather than
+backlog grooming.
 
-### Backlog Review — `/mehr/backlog`
+`apps/api/src/domain/refinementIssues.ts` is the central service for project
+and task diagnostics. It returns typed issue codes, severity, German
+label/explanation, and one suggested repair action. The same result enriches
+project rows and powers the default **Klärungsbedarf** queue at
+`GET /api/refinement/issues`. It also computes readiness for inactive/active
+projects: responsible person, clear “Erledigt, wenn …” outcome, an executable
+next action, coherent waiting follow-ups, and no urgent issue. Readiness is
+guidance, not a wizard or a second workflow state.
 
-Lists `backlog` stories (`BacklogReviewPage` → `ProjectStoryRow`, compact variant). Every mutation flows through `useProjectWorkflowActions`, which reuses the optimistic **retain** pattern (`RETENTION_MS` imported from `useTaskActions` so both windows agree).
+### Projektklärung — `/mehr/backlog`
+
+Lists technically `backlog` projects as **Später / noch nicht aktiv**
+(`BacklogReviewPage` → `ProjectStoryRow`, compact variant). Every mutation
+flows through `useProjectWorkflowActions`, preserving optimistic retention.
 
 Row gestures/chips open **targeted popups** rather than navigating away:
 
 | Chip | Opens |
 |------|-------|
 | Verantwortlich | `AssignDriverSheet` |
-| Akzeptanzkriterien | `StoryCriteriaSheet` (wraps `AcceptanceCriteriaEditor`) |
+| Erledigt, wenn … | `StoryCriteriaSheet` (wraps `AcceptanceCriteriaEditor`) |
 | Planen | `PlanDatesSheet` |
 | Bearbeiten | Full project detail page (deliberately the only navigation) |
 | Archivieren | Direct action |
 
-Activation (`api.activateProject`) surfaces the driver requirement inline: if no driver is set the sheet asks for one before activating.
+**Aktiv machen** (`api.activateProject`) surfaces the responsible-person
+requirement inline.
 
 ### Projects tab — `/projekte`
 
-`ProjectsPage` renders **the same `ProjectStoryRow`** (card variant) for stories of *every* status, so the whole Scrum workflow is reachable from the main tab, not just from Backlog Review.
+`ProjectsPage` renders the same `ProjectStoryRow` (card variant) for projects
+of every status. Compact issue badges make missing clarification visible
+without opening a separate planning screen.
 
 - **Right swipe / primary button** runs the status-appropriate next step: `backlog → aktivieren`, `active → abschließen`, `completed → wieder öffnen`, `archived → aktivieren`. The button (`.story-row-primary`, `aria-label` = the action) is the explicit non-gesture equivalent and stays available on touch.
 - **Left swipe / ⋯** reveals the chip strip: the targeted popups above plus every *remaining* legal transition from the row's `availableActions` (e.g. `In Backlog zurücklegen`, `Archivieren`).
@@ -296,13 +328,23 @@ The outline's structural drag is a *separate* gesture and deliberately uses wind
 
 Because that drag takes no pointer capture, the click the browser synthesises on release is *not* retargeted. A long press therefore arms `TaskRow`'s `swallowNextClick` too, so finishing a move on the row it started on does not also open the detail sheet; the flag is one-shot and cleared by the next `pointerdown`. The mirror-image case lives in `useOutlineOrganize`: it swallows the handle's own post-drag click only when the session actually started on a handle (`DragSession.fromHandle`), otherwise a long-press drag would eat the user's next, unrelated tap on some handle.
 
-### Refinement — `/mehr/refinement`
+### Aufgabenklärung — `/mehr/refinement`
 
-`RefinementPage` renders an **owner × size matrix** (`RefinementMatrix`) over open tasks, backed by `GET /api/refinement/owners` and `GET /api/refinement/tasks`. Selecting a cell filters the task list below.
+`RefinementPage` defaults to **Klärungsbedarf** cards grouped by operational
+defect: needs clarification, no responsibility, waiting without follow-up,
+follow-up due, blocked, due without a plan, XL without children, or ready to
+complete. Tapping the single suggested action opens an existing focused task
+sheet or the project detail. The interaction is repair-one-thing-at-a-time,
+not a mandatory multi-step wizard.
+
+The owner × effort matrix remains collapsed as a secondary view, backed by
+`GET /api/refinement/owners` and `GET /api/refinement/tasks`.
 
 `RefinementTaskRow` supports:
 
-- **Sizing** — swipe or tap cycles `S → M → L → XL → (none)` via `useRefinementActions.cycleSize`/`setSize`/`clearSize`.
+- **Effort** — swipe or tap cycles `S → M → L → XL → (none)` via
+  `useRefinementActions.cycleSize`/`setSize`/`clearSize`. `XL` with no open
+  child produces `too_large_without_children` and suggests adding a child.
 - **Assignment** — the *Zuweisen* chip opens `AssignOwnerSheet` (a focused popup), **not** the full task detail sheet. `useRefinementActions.assignOwner` optimistically retains the row and rethrows on failure so the still-open sheet renders the error.
 
 `useRefinementActions` deliberately defines its own `REFINEMENT_RETENTION_MS` instead of depending on `useTaskActions` internals.

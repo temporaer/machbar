@@ -79,6 +79,7 @@ export const tags = sqliteTable("tags", {
 export const projects = sqliteTable("projects", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   title: text("title").notNull(),
+  notes: text("notes").notNull().default(""),
   status: text("status").notNull().default("backlog"), // backlog | active | completed | archived
   ownerMemberId: integer("owner_member_id").references(() => members.id, {
     onDelete: "set null",
@@ -96,8 +97,8 @@ export const projects = sqliteTable("projects", {
 });
 
 /**
- * Structured acceptance criteria replacing the former free-text
- * `Project.description`. Each row is one checkable criterion line,
+ * Structured completion criteria complementing the project's free-form
+ * notes. Each row is one checkable "Erledigt, wenn …" line,
  * ordered by `position` within its project.
  */
 export const projectAcceptanceCriteria = sqliteTable(

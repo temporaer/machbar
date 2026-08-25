@@ -75,6 +75,12 @@ export function ProjectDetailPage() {
             ) : null}
           </div>
           {project.stuckReason ? <ProjectStuckNotice reason={project.stuckReason} /> : null}
+          {project.notes ? (
+            <section className="section">
+              <h2 className="section-title">{strings.notes}</h2>
+              <p style={{ whiteSpace: "pre-wrap" }}>{project.notes}</p>
+            </section>
+          ) : null}
           <TaskOutline tasks={project.tasks} emptyMessage={strings.noTasks} organizable />
         </>
       ) : null}

@@ -328,6 +328,14 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
               {strings.taskSummary}: {totalTasks > 0 ? `${doneCount}/${totalTasks}` : strings.taskSummaryNone}
             </span>
           </div>
+          {story.refinementIssues?.slice(0, 2).map((issue) => (
+            <span
+              className={issue.severity === "urgent" ? "badge badge-stuck" : "badge"}
+              key={`${issue.entityType}-${issue.entityId}-${issue.code}`}
+            >
+              {issue.label}
+            </span>
+          ))}
           {variant === "card" ? (
             <>
               <p className="story-row-next-action">

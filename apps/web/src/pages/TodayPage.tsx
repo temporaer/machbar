@@ -8,15 +8,13 @@ import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaCard } from "../components/ProjectAgendaCard";
 
 const sections: Array<{
-  key: "planned" | "overdue" | "dueToday" | "dueSoon" | "shared" | "unscheduled";
+  key: "planned" | "overdue" | "dueToday" | "dueSoon";
   label: string;
 }> = [
   { key: "planned", label: strings.plannedToday },
   { key: "overdue", label: strings.overdue },
   { key: "dueToday", label: strings.dueToday },
   { key: "dueSoon", label: strings.dueSoon },
-  { key: "shared", label: strings.shared },
-  { key: "unscheduled", label: strings.unscheduled },
 ];
 
 export function TodayPage() {
@@ -33,6 +31,8 @@ export function TodayPage() {
     [currentMemberId],
   );
   const revisitTasks = agenda?.revisit ?? [];
+  const followUpTasks = agenda?.followUp ?? [];
+  const additionalTasks = [...(agenda?.shared ?? []), ...(agenda?.unscheduled ?? [])];
   const projectAgenda = agenda?.projects ?? [];
 
   return (
@@ -47,6 +47,8 @@ export function TodayPage() {
         (() => {
           const total =
             sections.reduce((sum, s) => sum + agenda[s.key].length, 0) +
+            followUpTasks.length +
+            additionalTasks.length +
             revisitTasks.length +
             projectAgenda.length;
           if (total === 0) return <EmptyState message={strings.todayEmpty} />;
@@ -72,12 +74,25 @@ export function TodayPage() {
                     <TaskOutline tasks={agenda[s.key]} emptyMessage={strings.noItems} />
                   </div>
                 ))}
+              {followUpTasks.length > 0 ? (
+                <div className="section">
+                  <div className="section-title">{strings.followUp}</div>
+                  <p className="text-muted">{strings.followUpHint}</p>
+                  <TaskOutline tasks={followUpTasks} emptyMessage={strings.noItems} />
+                </div>
+              ) : null}
               {revisitTasks.length > 0 ? (
                 <div className="section" key="revisit">
                   <div className="section-title">{strings.revisit}</div>
                   <p className="text-muted">{strings.revisitHint}</p>
                   <TaskOutline tasks={revisitTasks} emptyMessage={strings.noItems} />
                 </div>
+              ) : null}
+              {additionalTasks.length > 0 ? (
+                <details className="section">
+                  <summary className="section-title">{strings.unscheduled}</summary>
+                  <TaskOutline tasks={additionalTasks} emptyMessage={strings.noItems} />
+                </details>
               ) : null}
             </>
           );

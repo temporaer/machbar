@@ -13,6 +13,7 @@ const isoDateTime = z.string().min(1);
 
 export const createProjectSchema = z.object({
   title: z.string().min(1, "Der Projekttitel darf nicht leer sein."),
+  notes: z.string().optional(),
   status: z.enum(projectStatuses).optional(),
   ownerMemberId: z.number().int().nullable().optional(),
   context: z.string().nullable().optional(),
@@ -23,6 +24,7 @@ export const createProjectSchema = z.object({
 
 export const updateProjectSchema = z.object({
   title: z.string().min(1).optional(),
+  notes: z.string().optional(),
   ownerMemberId: z.number().int().nullable().optional(),
   context: z.string().nullable().optional(),
   dueDate: isoDate.nullable().optional(),
@@ -36,11 +38,11 @@ export const activateProjectSchema = z.object({
 });
 
 export const addCriterionSchema = z.object({
-  text: z.string().min(1, "Der Text des Akzeptanzkriteriums darf nicht leer sein."),
+  text: z.string().min(1, "Der Text für „Erledigt, wenn …“ darf nicht leer sein."),
 });
 
 export const updateCriterionSchema = z.object({
-  text: z.string().min(1, "Der Text des Akzeptanzkriteriums darf nicht leer sein."),
+  text: z.string().min(1, "Der Text für „Erledigt, wenn …“ darf nicht leer sein."),
 });
 
 export const checkCriterionSchema = z.object({

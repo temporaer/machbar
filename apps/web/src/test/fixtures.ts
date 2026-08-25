@@ -62,6 +62,7 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
   return {
     id: nextId(),
     title: "Beispielprojekt",
+    notes: "",
     status,
     ownerMemberId: null,
     context: null,

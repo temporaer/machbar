@@ -35,6 +35,7 @@ function makeEmptyAgenda(): Agenda {
     dueSoon: [],
     shared: [],
     unscheduled: [],
+    followUp: [],
     revisit: [],
   };
 }
@@ -76,8 +77,8 @@ describe("TodayPage", () => {
     });
     renderWithProviders(<TodayPage />);
 
-    expect(await screen.findByText("Wiedervorlage")).toBeInTheDocument();
-    expect(screen.getByText("Blockiert, aber zur Wiedervorlage für heute geplant.")).toBeInTheDocument();
+    expect(await screen.findByText("Blockiert prüfen")).toBeInTheDocument();
+    expect(screen.getByText("Blockiert, aber heute wieder zu prüfen.")).toBeInTheDocument();
     expect(screen.getByText("Leiter zurückbringen")).toBeInTheDocument();
     // The normal blocked lock indicator from TaskRow must still show up.
     expect(screen.getByLabelText("Blockiert durch")).toBeInTheDocument();
@@ -94,15 +95,34 @@ describe("TodayPage", () => {
     expect(screen.queryByText("Wiedervorlage")).not.toBeInTheDocument();
   });
 
-  it("zeigt machbare Aufgaben ohne Termin in einem eigenen Abschnitt", async () => {
+  it("zeigt machbare Aufgaben ohne Termin nur in einem eingeklappten Nebenabschnitt", async () => {
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
       unscheduled: [makeTask({ id: 4, title: "Keller aufräumen", scheduledDate: null })],
     });
     renderWithProviders(<TodayPage />);
 
-    expect(await screen.findByText("Ohne Termin")).toBeInTheDocument();
+    const summary = await screen.findByText("Weitere machbare Aufgaben");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
     expect(screen.getByText("Keller aufräumen")).toBeInTheDocument();
+  });
+
+  it("zeigt fällige Wiedervorlagen wartender Aufgaben unter Nachhaken", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      followUp: [
+        makeTask({
+          id: 5,
+          title: "Installateur anrufen",
+          status: "waiting",
+          scheduledDate: "2026-01-01",
+        }),
+      ],
+    });
+    renderWithProviders(<TodayPage />);
+
+    expect(await screen.findByText("Nachhaken")).toBeInTheDocument();
+    expect(screen.getByText("Installateur anrufen")).toBeInTheDocument();
   });
 
   it("zeigt Projekttermine in einem eigenen Abschnitt der Heute-Ansicht", async () => {

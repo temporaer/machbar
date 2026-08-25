@@ -43,7 +43,7 @@ describe("BacklogReviewPage", () => {
     mockedApi.getProjects.mockResolvedValue([makeProject({ id: 5, title: "Läuft schon", status: "active" })]);
     renderWithProviders(<BacklogReviewPage />);
 
-    expect(await screen.findByText("Keine Geschichten im Backlog.")).toBeInTheDocument();
+    expect(await screen.findByText("Keine Projekte unter „Später / noch nicht aktiv“.")).toBeInTheDocument();
   });
 
   it("renders criteria progress, driver, dates and task summary for each backlog story", async () => {
@@ -61,7 +61,7 @@ describe("BacklogReviewPage", () => {
     renderWithProviders(<BacklogReviewPage />);
 
     await screen.findByText("Wohnzimmer neu einrichten");
-    expect(screen.getByText(/Akzeptanzkriterien: 0\/1/)).toBeInTheDocument();
+    expect(screen.getByText(/Erledigt, wenn …: 0\/1/)).toBeInTheDocument();
     expect(screen.getByText("Niemand zugewiesen")).toBeInTheDocument();
     expect(screen.getByText(/Aufgaben: Noch keine Aufgaben/)).toBeInTheDocument();
   });
@@ -70,10 +70,10 @@ describe("BacklogReviewPage", () => {
     mockedApi.getProjects.mockResolvedValue([]);
     renderWithProviders(<BacklogReviewPage />);
 
-    expect(await screen.findByRole("heading", { name: "Backlog prüfen" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Projektklärung" })).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Nach rechts wischen aktiviert eine Geschichte, nach links wischen oder ⋯ zeigt weitere Aktionen.",
+        "Noch nicht aktive Projekte prüfen, gezielt ergänzen und erst dann aktiv machen.",
       ),
     ).toBeInTheDocument();
   });

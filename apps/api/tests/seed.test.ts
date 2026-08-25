@@ -42,7 +42,9 @@ describe("seed data", () => {
     );
     expect(byTitle["Steuererklärung 2025"]).toBe("unassigned_actionable");
     expect(byTitle["Küche renovieren"]).toBe("no_next_action");
-    expect(byTitle["Wartungsplan Auto"]).toBe("only_waiting");
+    expect(byTitle["Wartungsplan Auto"]).toBe(
+      "only_waiting_without_followup",
+    );
     expect(byTitle["Bücherregal aufbauen"]).toBe("blocked_dependencies");
     expect(byTitle["Umzug nach Leipzig"]).toBeUndefined();
     expect(byTitle["Garten winterfest machen"]).toBeUndefined();

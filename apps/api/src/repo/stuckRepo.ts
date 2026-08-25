@@ -23,12 +23,10 @@ import type { Db } from "../db/client.js";
  *   2. tasks exist but none are open (all `done`/`cancelled`) => the
  *      project isn't "stuck" for lack of a next step, it just needs a
  *      human decision (complete/reopen/archive) => `completion_review`.
- *   3. every open task is `waiting` **and at least one of them carries a
- *      `scheduled_date`** => healthy. A scheduled waiting task is an
- *      explicit revisit ("Wiedervorlage"), so the project is deliberately
- *      parked rather than forgotten. The date is not compared against
- *      today: past, present and future revisits all count, because the
- *      point is that a human already decided when to look again.
+ *   3. every open task is `waiting` and every one carries a future
+ *      `scheduled_date` => healthy. The project is deliberately parked.
+ *      A reached Wiedervorlage is `followup_due`; a missing one is
+ *      `only_waiting_without_followup`.
  *   4. actionable work whose unresolved dependency graph consists only of
  *      clarified actionable links ending in scheduled, clarified waiting
  *      tasks with no unresolved dependencies of their own is also healthy.
@@ -44,6 +42,7 @@ import type { Db } from "../db/client.js";
  */
 export function getStuckReasonsByProject(
   db: Db,
+  today = new Date().toISOString().slice(0, 10),
 ): Map<number, StuckReason> {
   const rows = db.all<{ project_id: number; stuck_reason: StuckReason | null }>(
     sql`
@@ -136,9 +135,20 @@ export function getStuckReasonsByProject(
               AND needs_clarification = 0
               AND scheduled_date IS NOT NULL
               AND TRIM(scheduled_date) <> ''
+              AND scheduled_date > ${today}
             THEN 1 ELSE 0
           END
-        ) AS waiting_scheduled_count
+        ) AS waiting_future_count,
+        SUM(
+          CASE
+            WHEN status = 'waiting'
+              AND needs_clarification = 0
+              AND scheduled_date IS NOT NULL
+              AND TRIM(scheduled_date) <> ''
+              AND scheduled_date <= ${today}
+            THEN 1 ELSE 0
+          END
+        ) AS waiting_due_count
       FROM open_tasks
       GROUP BY project_id
     ),
@@ -156,8 +166,11 @@ export function getStuckReasonsByProject(
         WHEN agg.unassigned_actionable_count > 0 THEN 'unassigned_actionable'
         WHEN agg.actionable_count = 0
           AND agg.waiting_count = agg.open_count
-          AND agg.waiting_scheduled_count > 0 THEN NULL
-        WHEN agg.actionable_count = 0 AND agg.waiting_count = agg.open_count THEN 'only_waiting'
+          AND agg.waiting_future_count = agg.open_count THEN NULL
+        WHEN agg.actionable_count = 0
+          AND agg.waiting_count = agg.open_count
+          AND agg.waiting_due_count > 0 THEN 'followup_due'
+        WHEN agg.actionable_count = 0 AND agg.waiting_count = agg.open_count THEN 'only_waiting_without_followup'
         WHEN agg.actionable_count = 0 THEN 'no_next_action'
         WHEN agg.actionable_unblocked_count = 0
           AND agg.parking_disqualifier_count = 0
@@ -172,6 +185,7 @@ export function getStuckReasonsByProject(
                   AND blocker.status = 'waiting'
                   AND blocker.scheduled_date IS NOT NULL
                   AND TRIM(blocker.scheduled_date) <> ''
+                  AND blocker.scheduled_date > ${today}
                   AND NOT EXISTS (
                     SELECT 1
                     FROM task_dependencies waiting_td
