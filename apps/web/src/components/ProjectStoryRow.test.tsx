@@ -553,17 +553,23 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(screen.getByText("Aufgaben: 2/4")).toBeInTheDocument();
     expect(screen.getByText("Nächster Schritt: Kartons kaufen")).toBeInTheDocument();
     expect(screen.getByText("Mira")).toBeInTheDocument();
+    // Only the task-completion bar remains — the second, unlabelled
+    // acceptance-criteria bar was removed from list/card rows (the criteria
+    // *count* above is retained; the bar itself still lives in the
+    // detail/editor screens, unaffected by this component).
     expect(container.querySelector(".project-card-progress")).toBeInTheDocument();
-    expect(container.querySelector(".criteria-progress")).toBeInTheDocument();
+    expect(container.querySelector(".criteria-progress")).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(1);
   });
 
-  it("omits the progress bars when there is nothing to show", async () => {
+  it("omits the progress bar when there is nothing to show", async () => {
     const story = makeProject({ id: 54, title: "Ohne Kriterien", status: "backlog", acceptanceCriteria: [] });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Ohne Kriterien");
 
     expect(container.querySelector(".criteria-progress")).not.toBeInTheDocument();
     expect(container.querySelector(".project-card-progress")).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
     expect(screen.getByText("Kein nächster Schritt")).toBeInTheDocument();
   });
 });
@@ -672,5 +678,119 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Schließen" }));
     expect(screen.queryByText("Netzwerkfehler")).not.toBeInTheDocument();
+  });
+});
+
+describe("ProjectStoryRow – compact icon-only targeted actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+  });
+
+  it("renders Verantwortlich/Akzeptanzkriterien/Planen/Bearbeiten as icon-only 44px buttons with a full German accessible name", async () => {
+    const story = makeProject({ id: 70, title: "Kompakte Chips", status: "active", ownerMemberId: 1 });
+    renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Kompakte Chips");
+
+    const chips = openChips();
+    const targeted = [
+      { name: "Verantwortlich" },
+      { name: "Akzeptanzkriterien" },
+      { name: "Planen" },
+      { name: "Bearbeiten" },
+    ];
+    for (const { name } of targeted) {
+      const button = within(chips).getByRole("button", { name });
+      // Icon-only: no visible text label, only the accessible name/tooltip.
+      expect(button).toHaveClass("story-row-chip-icon");
+      expect(button.textContent).toBe("");
+      expect(button).toHaveAttribute("aria-label", name);
+      expect(button).toHaveAttribute("title", name);
+
+      // A single decorative, non-focusable SVG glyph that never itself gets
+      // announced (the button already carries the full label).
+      const svg = button.querySelector("svg");
+      expect(svg).toBeInTheDocument();
+      expect(svg).toHaveAttribute("aria-hidden", "true");
+      expect(svg).toHaveAttribute("focusable", "false");
+
+      // 44px meets the coarse-pointer touch-target size everywhere, not just
+      // behind a `(pointer: coarse)` media query.
+      const style = getComputedStyle(button);
+      expect(style.width).toBe("44px");
+      expect(style.height).toBe("44px");
+    }
+
+    // The workflow-transition chips stay plain, labelled text buttons.
+    const workflowChip = within(chips).getByRole("button", { name: "Archivieren" });
+    expect(workflowChip).not.toHaveClass("story-row-chip-icon");
+    expect(workflowChip.textContent).toBe("Archivieren");
+  });
+});
+
+describe("ProjectStoryRow – semantic status accents", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+  });
+
+  it.each<[ProjectStatus, string]>([
+    ["backlog", "backlog"],
+    ["active", "active"],
+    ["completed", "completed"],
+    ["archived", "archived"],
+  ])("gives a %s story its own distinct accent classes (not the same as any other status)", async (status, accent) => {
+    const story = makeProject({ id: 80, title: `Akzent ${status}`, status, ownerMemberId: 1 });
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText(`Akzent ${status}`);
+
+    expect(container.querySelector(".story-row")).toHaveClass(`story-row-accent-${accent}`);
+    expect(container.querySelector(".story-row-status-badge")).toHaveClass(`story-row-status-badge--${accent}`);
+    expect(container.querySelector(".story-row-primary")).toHaveClass(`story-row-primary--${accent}`);
+  });
+
+  it("gives an active story a healthy green accent, distinct from an active-but-stuck one", async () => {
+    const healthy = makeProject({ id: 81, title: "Gesund aktiv", status: "active", ownerMemberId: 1 });
+    const { container: healthyContainer, unmount } = renderWithProviders(<Harness story={healthy} />);
+    await screen.findByText("Gesund aktiv");
+    expect(healthyContainer.querySelector(".story-row")).toHaveClass("story-row-accent-active");
+    expect(healthyContainer.querySelector(".story-row")).not.toHaveClass("story-row-accent-stuck");
+    unmount();
+
+    const stuck = makeProject({
+      id: 82,
+      title: "Festgefahren aktiv",
+      status: "active",
+      ownerMemberId: 1,
+      stuckReason: "no_next_action",
+    });
+    const { container: stuckContainer } = renderWithProviders(<Harness story={stuck} />);
+    await screen.findByText("Festgefahren aktiv");
+
+    // Backlog is never rendered as green ("healthy"); a stuck active story
+    // gets the same warning accent as a backlog story does not.
+    expect(stuckContainer.querySelector(".story-row")).toHaveClass("story-row-accent-stuck");
+    expect(stuckContainer.querySelector(".story-row")).not.toHaveClass("story-row-accent-active");
+    expect(stuckContainer.querySelector(".story-row-status-badge")).toHaveClass("story-row-status-badge--stuck");
+    expect(stuckContainer.querySelector(".story-row-primary")).toHaveClass("story-row-primary--stuck");
+  });
+
+  it("never gives the backlog accent the same green used for a healthy active story", async () => {
+    const backlog = makeProject({ id: 83, title: "Neu im Backlog", status: "backlog" });
+    const { container } = renderWithProviders(<Harness story={backlog} />);
+    await screen.findByText("Neu im Backlog");
+
+    const badge = container.querySelector(".story-row-status-badge") as HTMLElement;
+    expect(badge).toHaveClass("story-row-status-badge--backlog");
+    expect(getComputedStyle(badge).color).not.toBe(getComputedStyle(document.createElement("div")).color);
+    // The backlog badge must not reuse the exact green tone reserved for an
+    // active/healthy story.
+    const activeProbe = makeProject({ id: 84, title: "Aktiv-Probe", status: "active", ownerMemberId: 1 });
+    const { container: activeContainer } = renderWithProviders(<Harness story={activeProbe} />);
+    await screen.findByText("Aktiv-Probe");
+    const activeBadge = activeContainer.querySelector(".story-row-status-badge") as HTMLElement;
+    expect(getComputedStyle(badge).color).not.toBe(getComputedStyle(activeBadge).color);
   });
 });

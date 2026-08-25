@@ -79,17 +79,22 @@ describe("TaskOutline", () => {
     await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledWith(3, "leave_open"));
   });
 
-  it("zeigt im Sortiermodus explizite Werkzeuge statt Gesten", async () => {
-    const task = makeTask({ id: 4, title: "Sortieraufgabe" });
-    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+  it("wiederholt keine Sortierwerkzeuge unter jeder Zeile", async () => {
+    const child = makeTask({ id: 5, title: "Teilaufgabe", parentTaskId: 4, position: 0 });
+    const task = makeTask({ id: 4, title: "Sortieraufgabe", position: 0, children: [child] });
+    const second = makeTask({ id: 6, title: "Zweite Aufgabe", position: 1 });
+    renderWithProviders(<TaskOutline tasks={[task, second]} emptyMessage="Nichts da" organizable />);
 
     await screen.findByText("Sortieraufgabe");
-    await userEvent.click(screen.getByRole("button", { name: "Sortieren" }));
 
-    expect(screen.getByRole("button", { name: /Nach oben/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Nach unten/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Übergeordnete Aufgabe ändern" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "In Projekt verschieben" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Teilbaum verschieben" })).toBeInTheDocument();
+    // Kein globaler Sortiermodus mehr …
+    expect(screen.queryByRole("button", { name: "Sortieren" })).toBeNull();
+    // … und keine Werkzeugleiste je Zeile, solange nichts ausgewählt ist.
+    expect(screen.queryByRole("toolbar")).toBeNull();
+    expect(screen.queryAllByRole("button", { name: "Nach oben" })).toHaveLength(0);
+    expect(screen.queryAllByRole("button", { name: "Teilbaum verschieben" })).toHaveLength(0);
+
+    // Genau ein sichtbarer Ziehgriff pro Zeile.
+    expect(screen.getAllByRole("button", { name: /^Verschieben:/ })).toHaveLength(3);
   });
 });

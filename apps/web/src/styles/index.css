@@ -504,10 +504,10 @@ a {
  * backgrounds and `.task-row-content` are all placed in the same
  * (1,1) cell so they stack and stretch to match `.task-row-content`'s own
  * height exactly — they must NOT span the whole `.task-row`, since that
- * would grow past the visible chip strip (and any error/organize/children
+ * would grow past the visible chip strip (and any error/children
  * sections) once those are rendered below, painting a red/green rectangle
  * over them. Everything without an explicit grid-row (chips, the error
- * banner, organize controls, nested children) auto-flows into its own row
+ * banner, nested children) auto-flows into its own row
  * beneath the swipe cell, fully out of the backgrounds' box, so it can
  * never be visually covered nor clipped by the `overflow: hidden` below
  * (which only clips the horizontal drag translation of row 1).
@@ -571,9 +571,26 @@ a {
   border: 1px solid transparent;
 }
 
-.task-row-content.organizing {
+/*
+ * The row currently being dragged. It stays in place (the insertion line
+ * below shows where it would land) but is dimmed and outlined so it is
+ * obvious which task the gesture is carrying, and it shifts horizontally
+ * by whole indent steps to preview the projected level.
+ */
+.task-row-content.dragging {
   border-color: var(--color-primary);
   background: var(--color-surface-alt);
+  opacity: 0.85;
+}
+
+/* The task the single selected-task toolbar currently acts on. */
+.task-row-content.organize-selected {
+  border-color: var(--color-primary);
+}
+
+/* A structural move is in flight; the row already shows its new place. */
+.task-row-content.moving {
+  opacity: 0.7;
 }
 
 /*
@@ -665,6 +682,27 @@ a {
   padding: 8px 14px;
 }
 
+/*
+ * Auto-flows into its own grid row of `.task-row`, exactly like
+ * `.task-row-chips` above — rendered directly beneath the task instead of
+ * a full sheet, so adding a subtask never covers/replaces the row itself.
+ */
+.inline-child-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 8px 10px 44px;
+  background: var(--color-surface-alt);
+}
+
+.inline-child-composer input {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  background: var(--color-surface);
+  width: 100%;
+}
+
 .task-row-error {
   display: flex;
   align-items: center;
@@ -729,18 +767,104 @@ a {
   color: var(--color-text-muted);
 }
 
-.organize-controls {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+/*
+ * Drag editing (see `useOutlineOrganize`): one visible handle per row, one
+ * insertion line for the whole outline, and one toolbar for the selected
+ * task — deliberately not a control panel repeated under every row.
+ */
+.task-outline {
+  position: relative;
+}
+
+.task-row-drag-handle {
+  border: none;
+  background: transparent;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: grab;
+  /* The gesture is vertical *and* horizontal, so the browser must not claim it. */
+  touch-action: none;
+}
+
+.task-row-drag-handle:hover,
+.task-row-drag-handle[aria-pressed="true"] {
+  background: var(--color-surface-alt);
+  color: var(--color-primary);
+}
+
+.task-row-drag-handle:disabled {
+  opacity: 0.4;
+}
+
+.task-drop-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-primary);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.task-drop-indicator::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+.task-organize-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
-  margin: 8px 0 4px 0;
+  margin-top: 8px;
   padding: 8px;
   background: var(--color-surface-alt);
+  border: 1px solid var(--color-primary);
   border-radius: var(--radius-sm);
 }
 
-.organize-controls button {
-  font-size: 0.72rem;
+.task-organize-bar-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-organize-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.task-organize-bar-actions .btn {
+  min-height: 40px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .tab-strip {

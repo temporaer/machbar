@@ -24,6 +24,92 @@ const SWIPE_THRESHOLD = 72;
 /** Beyond this the pointer sequence counts as a drag, not a tap. */
 const DRAG_SLOP = 8;
 
+/**
+ * Semantic accent driving the row's status badge, left-edge stripe, primary
+ * swipe background and dedicated primary button: five distinguishable looks
+ * instead of one blanket "green means go" treatment, so an active story that
+ * is actually stuck reads as a warning rather than as healthy progress.
+ */
+type StatusAccent = "backlog" | "active" | "stuck" | "completed" | "archived";
+
+function statusAccent(story: ProjectWithActions): StatusAccent {
+  if (story.status === "active" && story.stuckReason) return "stuck";
+  return story.status;
+}
+
+/**
+ * Minimal inline icon set for the four targeted actions (Verantwortlich,
+ * Akzeptanzkriterien, Planen, Bearbeiten): no icon dependency, 18px
+ * stroke-based glyphs sized/colored entirely from CSS (`.story-row-chip-icon
+ * svg`). Purely decorative — the button's `aria-label`/`title` carry the
+ * accessible name, so every glyph is `aria-hidden`.
+ */
+function PersonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="8" r="3.6" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M4.5 19.5c0-4.1 3.4-6.5 7.5-6.5s7.5 2.4 7.5 6.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ChecklistIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M3.5 6.5l1.7 1.7L8 5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M11 6.2h9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path
+        d="M3.5 14.5l1.7 1.7L8 13"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M11 14.2h9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="3.5" y="5" width="17" height="15" rx="2.2" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M3.5 9.7h17" stroke="currentColor" strokeWidth="2" />
+      <path d="M8 3v4M16 3v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M4 20l0.9-4.3L15.4 5.2l3.4 3.4L8.3 19.1 4 20z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <path d="M13.4 7.2l3.4 3.4" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
 export interface ProjectStoryRowProps {
   story: ProjectWithActions;
   actions: ReturnType<typeof useProjectWorkflowActions>;
@@ -87,7 +173,6 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
   const driver = story.ownerMemberId ? members.find((m) => m.id === story.ownerMemberId) : null;
   const criteria = story.acceptanceCriteria ?? [];
   const criteriaChecked = criteria.filter((c) => c.checked).length;
-  const criteriaPct = criteria.length > 0 ? Math.round((criteriaChecked / criteria.length) * 100) : 0;
   const dueLabel = formatDate(story.dueDate);
   const scheduledLabel = formatDate(story.scheduledDate);
   const openCount = story.openCount ?? 0;
@@ -101,6 +186,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
   const statusLabel = retainedEntry
     ? projectTransitionLabels[retainedEntry.action]
     : projectStatusLabels[story.status];
+  const accent = statusAccent(story);
 
   const showPrimaryBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
@@ -190,7 +276,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
   };
 
   return (
-    <li className="story-row" style={{ listStyle: "none" }}>
+    <li className={`story-row story-row-accent-${accent}`} style={{ listStyle: "none" }}>
       <div className={`story-row-swipe-bg primary${showPrimaryBg ? " visible" : ""}`} aria-hidden="true">
         {primaryLabel}
       </div>
@@ -207,7 +293,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
       >
         <button
           type="button"
-          className="story-row-primary"
+          className={`story-row-primary story-row-primary--${accent}`}
           aria-label={primaryLabel}
           disabled={busy || !primaryAction}
           onClick={doPrimary}
@@ -218,7 +304,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
           <div className="story-row-title">
             {story.title}
             <span className="sr-only">{strings.projectStatus}: </span>
-            <span className="story-row-status-badge">{statusLabel}</span>
+            <span className={`story-row-status-badge story-row-status-badge--${accent}`}>{statusLabel}</span>
             {story.stuckReason ? (
               <span className="badge badge-stuck">{stuckReasonLabels[story.stuckReason]}</span>
             ) : null}
@@ -248,13 +334,16 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
                 {story.nextAction ? `${strings.nextAction}: ${story.nextAction.title}` : strings.noNextAction}
               </p>
               {totalTasks > 0 ? (
-                <div className="project-card-progress">
+                <div
+                  className="project-card-progress"
+                  role="progressbar"
+                  aria-label={strings.taskProgress}
+                  aria-valuenow={doneCount}
+                  aria-valuemin={0}
+                  aria-valuemax={totalTasks}
+                  aria-valuetext={`${doneCount}/${totalTasks}`}
+                >
                   <span style={{ width: `${taskPct}%` }} />
-                </div>
-              ) : null}
-              {criteria.length > 0 ? (
-                <div className="criteria-progress">
-                  <span style={{ width: `${criteriaPct}%` }} />
                 </div>
               ) : null}
             </>
@@ -274,17 +363,41 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
       {chipsOpen ? (
         <div className="story-row-chips" role="group" aria-label={strings.moreActions}>
-          <button type="button" className="btn btn-sm" onClick={() => openSheet("assign-driver")}>
-            {strings.driver}
+          <button
+            type="button"
+            className="story-row-chip-icon"
+            aria-label={strings.driver}
+            title={strings.driver}
+            onClick={() => openSheet("assign-driver")}
+          >
+            <PersonIcon />
           </button>
-          <button type="button" className="btn btn-sm" onClick={() => openSheet("criteria")}>
-            {strings.criteria}
+          <button
+            type="button"
+            className="story-row-chip-icon"
+            aria-label={strings.criteria}
+            title={strings.criteria}
+            onClick={() => openSheet("criteria")}
+          >
+            <ChecklistIcon />
           </button>
-          <button type="button" className="btn btn-sm" onClick={() => openSheet("plan-dates")}>
-            {strings.planDates}
+          <button
+            type="button"
+            className="story-row-chip-icon"
+            aria-label={strings.planDates}
+            title={strings.planDates}
+            onClick={() => openSheet("plan-dates")}
+          >
+            <CalendarIcon />
           </button>
-          <button type="button" className="btn btn-sm" onClick={goToDetail}>
-            {strings.edit}
+          <button
+            type="button"
+            className="story-row-chip-icon"
+            aria-label={strings.edit}
+            title={strings.edit}
+            onClick={goToDetail}
+          >
+            <PencilIcon />
           </button>
           {secondaryActions.map((action) => (
             <button

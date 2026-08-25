@@ -3,7 +3,9 @@ import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useRefresh } from "../lib/refresh";
 import { strings } from "../lib/strings";
+import { useIdentity } from "../lib/identity";
 import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
+import { filterAndSortProjects, type ProjectVisibilityScope } from "../lib/projectListFilter";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { BottomSheet } from "../components/BottomSheet";
@@ -19,10 +21,13 @@ import { BottomSheet } from "../components/BottomSheet";
 export function ProjectsPage() {
   const { data: projects, loading, error, reload } = useAsync(() => api.getProjects(), []);
   const { bump } = useRefresh();
+  const { currentMemberId } = useIdentity();
   const actions = useProjectWorkflowActions();
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
+  const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<ProjectVisibilityScope>("mine");
 
   const submit = async () => {
     const trimmed = title.trim();
@@ -41,11 +46,15 @@ export function ProjectsPage() {
 
   const listed = projects ?? [];
   // A story that just transitioned optimistically must keep rendering during
-  // its retention window even if a refetch drops it from this list.
+  // its retention window even if a refetch drops it from this list — but,
+  // just like every other row, it still obeys the current search/scope and
+  // must never appear twice alongside its refetched counterpart.
   const retainedOnly = [...actions.retained.values()]
     .map((entry) => entry.story)
     .filter((story) => !listed.some((p) => p.id === story.id));
-  const visibleProjects = [...listed, ...retainedOnly];
+  const allProjects = [...listed, ...retainedOnly];
+
+  const filteredProjects = filterAndSortProjects(allProjects, { query, scope, currentMemberId });
 
   return (
     <div>
@@ -56,14 +65,37 @@ export function ProjectsPage() {
         </button>
       </div>
       <p className="text-muted">{strings.projectsSwipeHint}</p>
+      <div className="stack">
+        <input
+          aria-label={strings.search}
+          placeholder={strings.projectSearchPlaceholder}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <div className="row" role="group" aria-label={strings.filters}>
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={scope === "mine"}
+            onClick={() => setScope("mine")}
+          >
+            {strings.projectScopeMineOpen}
+          </button>
+          <button type="button" className="chip" aria-pressed={scope === "all"} onClick={() => setScope("all")}>
+            {strings.projectScopeAll}
+          </button>
+        </div>
+      </div>
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {projects ? (
-        visibleProjects.length === 0 ? (
+        allProjects.length === 0 ? (
           <EmptyState message={strings.noProjects} />
+        ) : filteredProjects.length === 0 ? (
+          <EmptyState message={strings.noMatchingProjects} />
         ) : (
           <ul className="list story-row-list">
-            {visibleProjects.map((p) => (
+            {filteredProjects.map((p) => (
               <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
             ))}
           </ul>

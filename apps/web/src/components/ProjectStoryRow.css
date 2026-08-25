@@ -25,6 +25,40 @@
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
+  /*
+   * Palette for the five distinguishable "row moods" below — neutral slate
+   * for the backlog (deliberately *not* green: nothing has been achieved
+   * yet), a muted/desaturated green for completed (calmer than an active
+   * story's healthy green) and a plain gray for archived. Scoped locally so
+   * they never leak into the global custom-property namespace.
+   */
+  --story-row-slate: #64748b;
+  --story-row-muted-success: #4b7a5a;
+  --story-row-gray: #8a8f8c;
+  border-left: 4px solid transparent;
+}
+
+/*
+ * Left-edge accent + status-badge/primary-swipe colors below all key off
+ * this single class, computed once in the component (`statusAccent`): the
+ * backlog stays neutral, a healthy active story is green, an active-but-
+ * stuck one turns to warning amber, completed is a muted/desaturated
+ * success tone, and archived is plain gray.
+ */
+.story-row-accent-backlog {
+  border-left-color: var(--story-row-slate);
+}
+.story-row-accent-active {
+  border-left-color: var(--color-success);
+}
+.story-row-accent-stuck {
+  border-left-color: var(--color-warning);
+}
+.story-row-accent-completed {
+  border-left-color: var(--story-row-muted-success);
+}
+.story-row-accent-archived {
+  border-left-color: var(--story-row-gray);
 }
 
 .story-row-swipe-bg {
@@ -46,8 +80,25 @@
 }
 
 .story-row-swipe-bg.primary {
-  background: var(--color-success);
+  /* Neutral fallback; overridden per accent below. */
+  background: var(--story-row-slate);
   justify-content: flex-start;
+}
+
+.story-row-accent-backlog .story-row-swipe-bg.primary {
+  background: var(--story-row-slate);
+}
+.story-row-accent-active .story-row-swipe-bg.primary {
+  background: var(--color-success);
+}
+.story-row-accent-stuck .story-row-swipe-bg.primary {
+  background: var(--color-warning);
+}
+.story-row-accent-completed .story-row-swipe-bg.primary {
+  background: var(--story-row-muted-success);
+}
+.story-row-accent-archived .story-row-swipe-bg.primary {
+  background: var(--story-row-gray);
 }
 
 .story-row-swipe-bg.chips {
@@ -85,15 +136,38 @@
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  border: 2px solid var(--color-success);
+  border: 2px solid var(--story-row-slate);
   background: transparent;
-  color: var(--color-success);
+  color: var(--story-row-slate);
   flex-shrink: 0;
   margin-top: 1px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0.75rem;
+}
+
+/* The dedicated primary control's color mirrors the row's own accent, so the
+   button visually reflects the transition it is about to perform. */
+.story-row-primary--backlog {
+  border-color: var(--story-row-slate);
+  color: var(--story-row-slate);
+}
+.story-row-primary--active {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+.story-row-primary--stuck {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+.story-row-primary--completed {
+  border-color: var(--story-row-muted-success);
+  color: var(--story-row-muted-success);
+}
+.story-row-primary--archived {
+  border-color: var(--story-row-gray);
+  color: var(--story-row-gray);
 }
 
 .story-row-primary:disabled {
@@ -138,6 +212,35 @@
   border-radius: 999px;
   background: var(--color-surface-alt);
   color: var(--color-text-muted);
+}
+
+/*
+ * Semantic status-badge tints, mirroring the tinted-background/colored-text
+ * pattern already used by `.badge-status-*` in `styles/index.css`, but
+ * scoped to this component: backlog reads as neutral slate (not the green
+ * used for an active/healthy story), active-and-stuck turns to the same
+ * warning amber as `.badge-stuck`, completed is a muted/desaturated
+ * success tone, and archived is plain gray.
+ */
+.story-row-status-badge--backlog {
+  background: #e2e8f0;
+  color: #475569;
+}
+.story-row-status-badge--active {
+  background: #dcf3e6;
+  color: var(--color-success);
+}
+.story-row-status-badge--stuck {
+  background: #fdecc8;
+  color: var(--color-warning);
+}
+.story-row-status-badge--completed {
+  background: #e3ece6;
+  color: var(--story-row-muted-success);
+}
+.story-row-status-badge--archived {
+  background: #ececeb;
+  color: var(--story-row-gray);
 }
 
 .story-row-meta {
@@ -186,6 +289,38 @@
 .story-row-chips .btn {
   min-height: 40px;
   padding: 8px 14px;
+}
+
+/*
+ * The four targeted actions (Verantwortlich, Akzeptanzkriterien, Planen,
+ * Bearbeiten) are compact icon-only buttons rather than the wordy `.btn`
+ * chips: same 44px touch target the rest of the app uses for coarse
+ * pointers, but a fraction of the horizontal space of a labelled button.
+ * Every one of them still carries a full German `aria-label`/`title` (see
+ * `ProjectStoryRow.tsx`), so screen readers announce the same word a
+ * sighted user would have read on the old text chip.
+ */
+.story-row-chip-icon {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0;
+}
+
+.story-row-chip-icon:hover {
+  background: var(--color-surface-alt);
+}
+
+.story-row-chip-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .story-row-error {

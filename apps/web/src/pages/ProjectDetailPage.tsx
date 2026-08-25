@@ -78,7 +78,7 @@ export function ProjectDetailPage() {
               </div>
             ) : null}
           </div>
-          <TaskOutline tasks={project.tasks} emptyMessage={strings.noTasks} />
+          <TaskOutline tasks={project.tasks} emptyMessage={strings.noTasks} organizable />
         </>
       ) : null}
       <QuickAdd projectId={projectId} />

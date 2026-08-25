@@ -413,13 +413,44 @@ The main **Projekte** tab lists stories of *every* status and offers the same ge
 | Gesture / control | Effect |
 |-------------------|--------|
 | **Swipe right** (or the round button on the left of the row) | The next workflow step for that status: Backlog → **Aktivieren**, Aktiv → **Abschließen**, Abgeschlossen → **Wieder öffnen**, Archiviert → **Aktivieren** |
-| **Swipe left** or the **⋯** button | Chip strip: *Verantwortlich*, *Akzeptanzkriterien*, *Planen*, *Bearbeiten* plus the remaining legal transitions (e.g. *In Backlog zurücklegen*, *Archivieren*) |
+| **Swipe left** or the **⋯** button | Chip strip: compact icon buttons for *Verantwortlich*, *Akzeptanzkriterien*, *Planen*, *Bearbeiten* plus the remaining legal transitions as named text chips (e.g. *In Backlog zurücklegen*, *Archivieren*) |
 | **Tap the row** | Opens the story page, exactly as before |
 
 - Only steps the backend actually allows for the current status are offered.
 - Activating a story without a driver asks for one first and activates in the same step.
 - Every row shows its **status**; right after a transition the badge briefly shows what happened (*Aktiviert*, *Abgeschlossen*, *Wieder geöffnet*, *Zurück im Backlog*, *Archiviert*) and stays actionable, so a workflow can be cycled straight away.
 - **The status is never a dropdown.** It is a read-only badge everywhere — on the row, on the story page and in the *Bearbeiten* sheet — and only changes through the named transition buttons/chips that are legal right now.
+
+**Finding the story you mean.** The tab has a search box and two scope chips above the list:
+
+| Control | Effect |
+|---------|--------|
+| **Search** (*Titel oder Akzeptanzkriterium suchen …*) | Substring match over the story title **and** every acceptance-criterion text, case-insensitive and diacritic-tolerant (`cafe` finds *Café*) |
+| **Meine & offen** (default) | The selected member's own stories plus every story with no driver — nothing anyone could still pick up is hidden. With no member selected yet, this shows the unassigned ones |
+| **Alle** | Every story, regardless of driver |
+
+The list order is deterministic, never the fetch order: **active & healthy → active but stuck → backlog → completed → archived**, ties broken by stored position, then title, then id. If stories exist but none match, the list says *Keine Projekte für Suche/Filter.* — distinct from *Keine Projekte vorhanden.*
+
+**Reading a row at a glance.** Each status has its own colour — a left-edge stripe, the status badge and the primary button all share it: neutral slate for backlog (nothing achieved yet, so deliberately not green), green for a healthy active story, **warning amber for an active story that is stuck**, a muted green for completed, grey for archived. Every row shows one progress bar only — task completion, exposed as a real `progressbar` with `2/4`-style value text. The acceptance-criteria *count* stays in the meta line; its separate, unlabelled bar was removed as visual noise (the criteria bar still exists on the story page and in the criteria editor, where it is labelled).
+
+### Project outline — drag to organise (`/projekte/:id`)
+
+A story's task outline is edited **in place**, without a global "sort mode" and without a control panel repeated under every row. Each row carries exactly one structural control, the ⠿ handle on its left:
+
+| Gesture / control | Effect |
+|-------------------|--------|
+| **Drag the handle** (or **long-press the row** on touch) | Move the task: vertically to reorder, sideways to change level. An insertion line shows the exact drop slot and level while dragging; the dragged row previews its projected indent |
+| **Escape** / lifting the finger outside | Cancels — nothing is mutated |
+| **Arrow keys on the focused handle** | ↑/↓ reorder, →/← indent/outdent. The pointer-free equivalent of dragging, and focus follows the row as it moves |
+| **Activate the handle** (tap/click/Enter) | Selects the task and opens the single *Sortier-Werkzeuge* toolbar at the bottom: ↑ ↓ → ← plus **Ablegen** |
+| **Ablegen** | The searchable refile sheet, for destinations that are nowhere near on screen (another project and/or another parent task) |
+
+- Moves are **optimistic**: the outline reorders immediately and the server is asked afterwards. A rejected move (e.g. a hierarchy cycle) puts the tree back and shows *Verschieben fehlgeschlagen* plus the server's German reason on that row — nothing else on the page is reset.
+- Dropping a task into a **collapsed** parent expands that parent, so the moved row never disappears.
+- Screen readers get a live announcement of the current drop target while dragging (*„Unter ‚X'· Position 2"*).
+- Structural editing is offered **only in a project's own outline**, where the rows on screen are the complete, stored sibling group. Compiled views (Heute, Eingang, Suche) show a filtered slice of unrelated tasks, so a position read off the screen there would be meaningless — refiling stays available in those views through the task detail sheet's *Ablegen* pickers.
+
+**Adding a subtask without leaving the row.** The chip strip (swipe left or **⋯**) has a **+ Teilaufgabe hinzufügen** chip. It opens a one-field composer directly beneath the task — not the full detail sheet. Enter or *Speichern* creates the child, expands the parent if it was collapsed, refreshes and hands focus back into the row; *Abbrechen* and <kbd>Esc</kbd> never call the API. A failed create keeps the composer open with the typed title and a visible error, and a double submit cannot fire a second request.
 
 ### Refinement — *Mehr → Refinement* (`/mehr/refinement`)
 
@@ -434,7 +465,8 @@ An **owner × size matrix** over all open tasks. Tap a cell to filter the list b
 - **Focused quick sheets.** Owner, dates, tags, criteria and driver each have their own small sheet. Full detail pages are reserved for deliberate deep edits.
 - **Assignment is a tap, not a dropdown.** Since a household has at most a handful of members, every assignment popup shows all of them as chips — including an explicit *Gemeinsam / offen* (tasks) or *Niemand zugewiesen* (stories) chip wherever leaving it unassigned is allowed. The current choice stays highlighted while you pick.
 - **Waiting follow-ups are append-only.** Logging a follow-up on a `waiting` task appends to its notes under a generated header — `[dd.mm.yy, hh:mm · Name]` — so the history stays intact and attributable. Setting a **Wiedervorlage** in the same sheet also clears the story's `only_waiting` flag.
-- **Refiling searches.** *Ablegen* / *Verschieben* lists every target project or parent task with a search box on top: type any part of a project or task title (the owning project counts too) and the list filters as you type. With an empty box the five destinations you used most recently come first under *Zuletzt verwendet*, everything else under *Alle Ziele*. Recents live in the browser only and are dropped automatically when a destination no longer applies.
+- **Refiling searches.** *Ablegen* / *Verschieben* lists every target project or parent task with a search box on top: type any part of a project or task title (the owning project counts too) and the list filters as you type. With an empty box the five destinations you used most recently come first under *Zuletzt verwendet*, everything else under *Alle Ziele*. Recents live in the browser only and are dropped automatically when a destination no longer applies. It is reached from the outline's selected-task toolbar (*Ablegen*) and from the task detail sheet, so no structural move ever requires a gesture.
+- **Structure is dragged, not configured.** The task outline has no organize mode: one ⠿ handle per row, one insertion line, one toolbar for the selected task — with arrow keys on the handle as the full pointer-free equivalent. See *Project outline* above.
 
 ---
 

@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectsPage } from "./ProjectsPage";
+import { IdentitySelector } from "../components/IdentitySelector";
 import { api } from "../lib/api";
 import { makeCriterion, makeMember, makeProject } from "../test/fixtures";
 import "../styles/index.css";
@@ -53,6 +54,11 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+    // The default "Meine & offen" scope only shows the selected member's own
+    // stories plus unassigned ones (see the dedicated filtering describe
+    // block below) — this whole suite is about the workflow gestures, not
+    // filtering, so it selects Mira up front to keep every fixture visible.
+    window.localStorage.setItem("machbar:identity-member-id", "1");
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
@@ -78,7 +84,9 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
       ),
     ).toBeInTheDocument();
     const badges = [...container.querySelectorAll(".story-row-status-badge")].map((b) => b.textContent);
-    expect(badges).toEqual(["Backlog", "Aktiv", "Abgeschlossen", "Archiviert"]);
+    // New deterministic sort order: active healthy/stuck, then backlog,
+    // completed, archived — not the fetch order.
+    expect(badges).toEqual(["Aktiv", "Backlog", "Abgeschlossen", "Archiviert"]);
   });
 
   it("changes a status only through named buttons, never through a status dropdown", async () => {
@@ -171,5 +179,150 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(72);
     expect(screen.getByText("Fertige Geschichte")).toBeInTheDocument();
     expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
+  });
+});
+
+describe("ProjectsPage – search, visibility scope and sort", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Theo" })]);
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 1, title: "Miras aktive Geschichte", status: "active", ownerMemberId: 1 }),
+      makeProject({
+        id: 2,
+        title: "Festgefahrene Geschichte",
+        status: "active",
+        ownerMemberId: 1,
+        stuckReason: "no_next_action",
+      }),
+      makeProject({
+        id: 3,
+        title: "Küche renovieren",
+        status: "backlog",
+        ownerMemberId: null,
+        acceptanceCriteria: [makeCriterion({ id: 30, projectId: 3, text: "Fliesen sind café-farben lackiert" })],
+      }),
+      makeProject({ id: 4, title: "Theos Geschichte", status: "active", ownerMemberId: 2 }),
+    ]);
+  });
+
+  it("defaults the scope to the selected member's stories plus unassigned ones ('Meine & offen')", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Miras aktive Geschichte");
+
+    expect(screen.getByText("Festgefahrene Geschichte")).toBeInTheDocument();
+    expect(screen.getByText("Küche renovieren")).toBeInTheDocument();
+    expect(screen.queryByText("Theos Geschichte")).not.toBeInTheDocument();
+  });
+
+  it("shows only unassigned stories in the default scope when no identity is selected", async () => {
+    renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Küche renovieren");
+
+    expect(screen.queryByText("Miras aktive Geschichte")).not.toBeInTheDocument();
+    expect(screen.queryByText("Festgefahrene Geschichte")).not.toBeInTheDocument();
+    expect(screen.queryByText("Theos Geschichte")).not.toBeInTheDocument();
+  });
+
+  it("re-evaluates visibility immediately when the selected identity changes", async () => {
+    renderWithProviders(
+      <>
+        <IdentitySelector />
+        <ProjectsPage />
+      </>,
+    );
+    await screen.findByText("Küche renovieren");
+    expect(screen.queryByText("Theos Geschichte")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("option", { name: /Theo/ }));
+
+    await waitFor(() => expect(screen.getByText("Theos Geschichte")).toBeInTheDocument());
+    expect(screen.queryByText("Miras aktive Geschichte")).not.toBeInTheDocument();
+    expect(screen.getByText("Küche renovieren")).toBeInTheDocument();
+  });
+
+  it("the 'Alle' chip reveals every story regardless of owner", async () => {
+    renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Küche renovieren");
+
+    fireEvent.click(screen.getByRole("button", { name: "Alle" }));
+
+    await waitFor(() => expect(screen.getByText("Theos Geschichte")).toBeInTheDocument());
+    expect(screen.getByText("Miras aktive Geschichte")).toBeInTheDocument();
+    expect(screen.getByText("Festgefahrene Geschichte")).toBeInTheDocument();
+  });
+
+  it("searches both the title and acceptance-criteria text, case-insensitively and diacritic-tolerantly", async () => {
+    renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Küche renovieren");
+    fireEvent.click(screen.getByRole("button", { name: "Alle" }));
+    await screen.findByText("Theos Geschichte");
+
+    const searchInput = screen.getByLabelText("Suchen");
+    fireEvent.change(searchInput, { target: { value: "cafe" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Küche renovieren")).toBeInTheDocument();
+      expect(screen.queryByText("Theos Geschichte")).not.toBeInTheDocument();
+      expect(screen.queryByText("Miras aktive Geschichte")).not.toBeInTheDocument();
+    });
+  });
+
+  it("sorts active-stuck stories after active-healthy ones but before backlog", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    const { container } = renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Miras aktive Geschichte");
+
+    const titles = [...container.querySelectorAll(".story-row-title")].map((n) => n.childNodes[0]?.textContent);
+    expect(titles).toEqual(["Miras aktive Geschichte", "Festgefahrene Geschichte", "Küche renovieren"]);
+  });
+
+  it("distinguishes 'no projects at all' from 'no projects match the filter'", async () => {
+    mockedApi.getProjects.mockResolvedValue([]);
+    renderWithProviders(<ProjectsPage />);
+    expect(await screen.findByText("Keine Projekte vorhanden.")).toBeInTheDocument();
+  });
+
+  it("shows the filtered-empty state when stories exist but none match the current search", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Miras aktive Geschichte");
+
+    fireEvent.change(screen.getByLabelText("Suchen"), { target: { value: "nichts passt hier" } });
+
+    expect(await screen.findByText("Keine Projekte für Suche/Filter.")).toBeInTheDocument();
+    expect(screen.queryByText("Miras aktive Geschichte")).not.toBeInTheDocument();
+  });
+
+  it("keeps a retained row subject to the same filter/search and never duplicates it against a refetch", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    const { container } = renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Miras aktive Geschichte");
+    mockedApi.completeProject.mockResolvedValue(
+      makeProject({ id: 1, title: "Miras aktive Geschichte", status: "completed", ownerMemberId: 1 }),
+    );
+    // The refetch after completion still returns the same story — the
+    // retained (optimistic) and refetched copies must not both render.
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 1, title: "Miras aktive Geschichte", status: "completed", ownerMemberId: 1 }),
+      makeProject({
+        id: 2,
+        title: "Festgefahrene Geschichte",
+        status: "active",
+        ownerMemberId: 1,
+        stuckReason: "no_next_action",
+      }),
+      makeProject({ id: 3, title: "Küche renovieren", status: "backlog", ownerMemberId: null }),
+    ]);
+
+    swipeRow(rowFor(container, "Miras aktive Geschichte"), 100);
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(1);
+    expect(screen.getAllByText("Miras aktive Geschichte")).toHaveLength(1);
   });
 });

@@ -54,9 +54,18 @@ const extra = {
   removeDependency: "Entfernen",
   resolved: "Erledigt",
   unresolved: "Offen",
-  organizeMode: "Sortiermodus",
   exitOrganizeMode: "Fertig",
-  longPressHint: "Lange drücken zum Sortieren",
+  /**
+   * Drag editing replaced the old global organize mode: there is no
+   * "Sortiermodus" toggle and no control panel under every row any more —
+   * one handle per row, one insertion line, one selected-task toolbar.
+   */
+  moveTask: "Verschieben",
+  dragHint: "Griff ziehen oder lange drücken: Aufgabe verschieben",
+  moveFailed: "Verschieben fehlgeschlagen",
+  dropTopLevel: "Auf oberste Ebene",
+  dropUnder: "Unter",
+  dropPosition: "Position",
   swipeHintComplete: "Nach rechts wischen: erledigen",
   swipeHintDelete: "Nach links wischen: verwerfen",
   selectParent: "Übergeordnete Aufgabe wählen",
@@ -194,6 +203,10 @@ const extra = {
     "Nach rechts wischen führt den nächsten Workflow-Schritt aus, nach links wischen oder ⋯ zeigt weitere Aktionen.",
   projectStatus: "Status",
   workflowStep: "Workflow-Schritt",
+  projectSearchPlaceholder: "Titel oder Akzeptanzkriterium suchen …",
+  projectScopeMineOpen: "Meine & offen",
+  projectScopeAll: "Alle",
+  noMatchingProjects: "Keine Projekte für Suche/Filter.",
 
   // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---
   editProject: "Projekt bearbeiten",

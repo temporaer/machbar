@@ -65,7 +65,9 @@ function InheritanceControl({
  * Full-metadata editor for a single task, opened as a bottom sheet from any
  * list (Today, Inbox, project outline, search, waiting). Every field on the
  * shared `Task` contract is represented, including inheritance modes, tag
- * exclusion, dependencies, subtasks and the organize-mode move actions.
+ * exclusion, dependencies, subtasks and the explicit refile/move actions
+ * (`Sortier-Werkzeuge`), which is how compiled views — where the outline's
+ * drag editing is deliberately unavailable — still reach them.
  */
 export function TaskDetailSheet() {
   const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close } = useTaskDetail();

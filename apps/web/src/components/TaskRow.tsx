@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Task, TaskStatus } from "@machbar/shared";
@@ -9,30 +9,34 @@ import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useSwipeSettings } from "../lib/swipeSettings";
 import type { PrimarySwipeAction } from "../lib/swipeSettings";
-import { useRefresh } from "../lib/refresh";
-import { api } from "../lib/api";
+import { useOutlineOrganizeRow } from "../lib/useOutlineOrganize";
+import type { OrganizeDirection } from "../lib/useOutlineOrganize";
+import { INDENT_WIDTH } from "../lib/taskTreeMove";
 import { useIdentity } from "../lib/identity";
 import {
   TaskQuickActionSheet,
   type TaskQuickAction,
 } from "./TaskQuickActionSheet";
+import { InlineChildComposer } from "./InlineChildComposer";
 
 const SWIPE_THRESHOLD = 72;
 const LONG_PRESS_MS = 480;
+
+/** Arrow keys on the focused drag handle are the pointer-free equivalent of dragging. */
+const KEY_DIRECTIONS: Record<string, OrganizeDirection> = {
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowRight: "indent",
+  ArrowLeft: "outdent",
+};
 
 export interface TaskRowProps {
   task: Task;
   /** The immediate parent task, or null when `task` sits at the project root. */
   parentTask: Task | null;
+  /** Nesting level, used for the outline's flat drag/drop projection. */
   depth: number;
-  index: number;
-  /** Sorted sibling list (including `task` itself) so indent/reorder can find neighbours. */
-  siblings: Task[];
-  organizeMode: boolean;
-  onEnterOrganizeMode: () => void;
   onOpenDetail: (taskId: number, focusField?: TaskDetailFocusField) => void;
-  onPickParent: (task: Task) => void;
-  onPickProject: (task: Task, subtree: boolean) => void;
   taskActions: ReturnType<typeof useTaskActions>;
 }
 
@@ -56,19 +60,20 @@ export function TaskRow({
   task: taskProp,
   parentTask,
   depth,
-  index,
-  siblings,
-  organizeMode,
-  onEnterOrganizeMode,
   onOpenDetail,
-  onPickParent,
-  onPickProject,
   taskActions,
 }: TaskRowProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dragX, setDragX] = useState(0);
   const [chipsOpen, setChipsOpen] = useState(false);
   const [quickAction, setQuickAction] = useState<TaskQuickAction | null>(null);
+  const [childComposerOpen, setChildComposerOpen] = useState(false);
+  // The "Teilaufgabe hinzufügen" button itself lives inside the collapsible
+  // chip strip (unmounted whenever the composer replaces it), so focus is
+  // returned to the always-mounted kebab button instead — the closest
+  // stable element in this task's own row ("vicinity" of the task/new
+  // child), which also re-opens the chip strip if pressed again.
+  const kebabButtonRef = useRef<HTMLButtonElement>(null);
   const dragState = useRef<{ startX: number; dragging: boolean; pointerId: number | null; captured: boolean }>({
     startX: 0,
     dragging: false,
@@ -76,10 +81,22 @@ export function TaskRow({
     captured: false,
   });
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { bump } = useRefresh();
+  // A long press turns into a structural drag, but the browser still
+  // synthesises a click on whatever the finger came down on when it is
+  // lifted — which would open the detail sheet right after the move. Same
+  // one-shot idea as `ProjectStoryRow`'s `swallowNextClick`, reset by the
+  // next `pointerdown` so ordinary taps are never affected. (The swipe
+  // gesture doesn't need it: it takes pointer capture past the 8 px slop,
+  // which retargets the compatibility mouse events to the container.)
+  const swallowNextClick = useRef(false);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const { members } = useIdentity();
   const { primarySwipeAction } = useSwipeSettings();
   const navigate = useNavigate();
+  // Structural editing (drag handle, keyboard moves, drop preview) is
+  // provided by the surrounding `TaskOutline`; it stays absent — and every
+  // handle with it — in views whose row order carries no hierarchy meaning.
+  const organize = useOutlineOrganizeRow();
   const {
     requestToggle,
     requestPrimarySwipe,
@@ -100,7 +117,37 @@ export function TaskRow({
   const retainedTask = retained.get(taskProp.id);
   const task = retainedTask ?? taskProp;
   const isRetained = Boolean(retainedTask);
-  const rowError = errors[taskProp.id];
+  const statusError = errors[taskProp.id];
+  const organizeError = organize?.errors[taskProp.id];
+  const rowError = statusError ?? organizeError;
+
+  const organizeEnabled = organize?.enabled ?? false;
+  const isDragged = organize?.activeId === taskProp.id;
+  const isSelectedForOrganize = organize?.selectedId === taskProp.id;
+  const isMoving = organize?.pendingId === taskProp.id;
+  // While dragging, the row itself previews the projected level so the drop
+  // depth is obvious even before the insertion line is read.
+  const dragDepthShift = isDragged ? (organize?.dragDepthDelta ?? 0) * INDENT_WIDTH : 0;
+
+  // Keep the outline's row registry in sync: it is what turns the rendered
+  // (and therefore currently *visible*, i.e. non-collapsed) tree into the
+  // flat, ordered list a pointer drag projects against.
+  const registerRow = organize?.registerRow;
+  const parentTaskId = parentTask?.id ?? null;
+  useEffect(() => {
+    if (!registerRow) return undefined;
+    const row = { taskId: taskProp.id, parentId: parentTaskId, depth };
+    registerRow(taskProp.id, row, contentRef.current);
+    return () => registerRow(taskProp.id, row, null);
+  }, [registerRow, taskProp.id, parentTaskId, depth]);
+
+  // A task dropped into this row while it was collapsed would be invisible
+  // right after the move, so the outline asks the destination parent to
+  // reveal its children (collapse state is per row and lives here).
+  const expandRequest = organize?.expandRequest ?? null;
+  useEffect(() => {
+    if (expandRequest?.taskId === taskProp.id) setCollapsed(false);
+  }, [expandRequest, taskProp.id]);
 
   // Only one swipe background may be visible at a time — mid-drag it
   // follows the live direction, and once a left-swipe has opened the chip
@@ -115,7 +162,6 @@ export function TaskRow({
   const overdue = isOverdue(task.dueDate, task.status);
   const ownerName = task.effectiveOwnerId ? members.find((m) => m.id === task.effectiveOwnerId)?.name : null;
   const due = formatDate(task.dueDate);
-  const previousSibling = index > 0 ? siblings[index - 1] : undefined;
 
   const clearLongPress = () => {
     if (longPressTimer.current) {
@@ -126,15 +172,23 @@ export function TaskRow({
 
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (organizeMode || busyId === task.id) return;
+      if (busyId === task.id || organize?.activeId != null) return;
+      swallowNextClick.current = false;
       dragState.current = { startX: e.clientX, dragging: true, pointerId: e.pointerId, captured: false };
+      // Long press is the touch shortcut into the same drag the visible
+      // handle starts; the coordinates of the press become the drag origin.
+      // Without structural editing there is nothing for it to start, and
+      // arming it anyway would only cancel the swipe the user is making.
+      if (!organizeEnabled) return;
+      const { clientX, clientY } = e;
       longPressTimer.current = setTimeout(() => {
-        onEnterOrganizeMode();
         dragState.current.dragging = false;
         setDragX(0);
+        swallowNextClick.current = true;
+        organize?.beginLongPressDrag(task.id, clientX, clientY);
       }, LONG_PRESS_MS);
     },
-    [organizeMode, busyId, task.id, onEnterOrganizeMode],
+    [busyId, task.id, organize, organizeEnabled],
   );
 
   const handlePointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
@@ -170,11 +224,6 @@ export function TaskRow({
     setDragX(0);
   }, [dragX, requestPrimarySwipe, task, primarySwipeAction]);
 
-  const moveUp = () => void api.reorderTask(task.id, index - 1).then(bump);
-  const moveDown = () => void api.reorderTask(task.id, index + 1).then(bump);
-  const indent = () => void api.indentTask(task.id).then(bump);
-  const outdent = () => void api.outdentTask(task.id).then(bump);
-
   const openQuickAction = (action: TaskQuickAction) => {
     setQuickAction(action);
     setChipsOpen(false);
@@ -202,6 +251,41 @@ export function TaskRow({
     navigate(`/projekte/${task.projectId}`);
   };
 
+  const openChildComposer = () => {
+    setChipsOpen(false);
+    setChildComposerOpen(true);
+  };
+
+  // The kebab is `disabled` while a status mutation of this row is in
+  // flight, and focusing a disabled button is a no-op that would drop the
+  // caret to `<body>`. Fall back to the row's first focusable control so
+  // keyboard users always land back inside the task they were editing.
+  const returnFocusToRow = () => {
+    const kebab = kebabButtonRef.current;
+    if (kebab && !kebab.disabled) {
+      kebab.focus();
+      return;
+    }
+    contentRef.current?.querySelector<HTMLElement>("button:not(:disabled), a[href]")?.focus();
+  };
+
+  // Cancel never mutates anything — the composer just unmounts, and focus
+  // returns to the button that opened it (the task/new-child vicinity).
+  const closeChildComposer = () => {
+    setChildComposerOpen(false);
+    returnFocusToRow();
+  };
+
+  // Collapsed state lives in this component only, so a freshly created
+  // child (nested under a possibly-collapsed row) must be made visible
+  // right here once creation succeeds — the refresh bus alone wouldn't
+  // reopen it.
+  const handleChildCreated = () => {
+    setCollapsed(false);
+    setChildComposerOpen(false);
+    returnFocusToRow();
+  };
+
   return (
     <li className="task-row" style={{ listStyle: "none" }}>
       <div className={`task-row-swipe-bg complete${showCompleteBg ? " visible" : ""}`} aria-hidden="true">
@@ -211,8 +295,13 @@ export function TaskRow({
         {strings.moreActions}
       </div>
       <div
-        className={`task-row-content${organizeMode ? " organizing" : ""}${isRetained ? " retained" : ""}`}
-        style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
+        ref={contentRef}
+        className={`task-row-content${isDragged ? " dragging" : ""}${isSelectedForOrganize ? " organize-selected" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}`}
+        style={
+          dragX || dragDepthShift
+            ? { transform: `translateX(${dragX + dragDepthShift}px)` }
+            : undefined
+        }
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishDrag}
@@ -221,7 +310,45 @@ export function TaskRow({
           dragState.current.dragging = false;
           setDragX(0);
         }}
+        onClickCapture={(e) => {
+          if (!swallowNextClick.current) return;
+          swallowNextClick.current = false;
+          e.preventDefault();
+          e.stopPropagation();
+        }}
       >
+        {organizeEnabled ? (
+          // The one always-visible structural control per row: press and
+          // drag it to move the task, or activate it (mouse, tap or
+          // keyboard) to open the single selected-task toolbar. Arrow keys
+          // move the task directly, without any pointer at all.
+          <button
+            type="button"
+            className="task-row-drag-handle"
+            aria-label={`${strings.moveTask}: ${task.title}`}
+            title={strings.moveTask}
+            aria-pressed={isSelectedForOrganize}
+            aria-busy={isMoving}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              organize?.beginDrag(taskProp.id, e.clientX, e.clientY);
+            }}
+            onClick={() => {
+              // A real drag ends with a click on the handle; that click must
+              // not also toggle the selection.
+              if (organize?.consumeDragClick()) return;
+              organize?.toggleSelect(taskProp.id);
+            }}
+            onKeyDown={(e) => {
+              const direction = KEY_DIRECTIONS[e.key];
+              if (!direction) return;
+              e.preventDefault();
+              organize?.moveBy(taskProp.id, direction);
+            }}
+          >
+            ⠿
+          </button>
+        ) : null}
         {children.length > 0 ? (
           <button
             type="button"
@@ -282,6 +409,7 @@ export function TaskRow({
           aria-label={strings.moreActions}
           aria-expanded={chipsOpen}
           disabled={busyId === task.id}
+          ref={kebabButtonRef}
           onClick={() => setChipsOpen((o) => !o)}
         >
           ⋯
@@ -298,6 +426,16 @@ export function TaskRow({
           </button>
           <button type="button" className="btn btn-sm" onClick={() => openQuickAction("notes")}>
             {strings.notes}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            title={strings.addChild}
+            disabled={busyId === task.id}
+            onClick={openChildComposer}
+          >
+            <span aria-hidden="true">＋ </span>
+            {strings.addChild}
           </button>
           <button
             type="button"
@@ -328,6 +466,14 @@ export function TaskRow({
         </div>
       ) : null}
 
+      {childComposerOpen ? (
+        <InlineChildComposer
+          parentId={task.id}
+          onCancel={closeChildComposer}
+          onCreated={handleChildCreated}
+        />
+      ) : null}
+
       {quickAction ? (
         <TaskQuickActionSheet
           task={task}
@@ -341,55 +487,30 @@ export function TaskRow({
 
       {rowError ? (
         <div className="task-row-error" role="alert">
-          <span>{strings.error}</span>
+          <span>{organizeError && !statusError ? strings.moveFailed : strings.error}</span>
           <span className="text-muted">{rowError}</span>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => clearError(task.id)}>
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            onClick={() => {
+              clearError(task.id);
+              organize?.clearError(taskProp.id);
+            }}
+          >
             {strings.close}
-          </button>
-        </div>
-      ) : null}
-
-      {organizeMode ? (
-        <div className="organize-controls" role="group" aria-label={strings.organizeControls}>
-          <button type="button" className="btn btn-sm" disabled={index === 0} onClick={moveUp}>
-            ↑ {strings.moveUp}
-          </button>
-          <button type="button" className="btn btn-sm" disabled={index === siblings.length - 1} onClick={moveDown}>
-            ↓ {strings.moveDown}
-          </button>
-          <button type="button" className="btn btn-sm" disabled={!previousSibling} onClick={indent}>
-            → {strings.indent}
-          </button>
-          <button type="button" className="btn btn-sm" disabled={!parentTask} onClick={outdent}>
-            ← {strings.outdent}
-          </button>
-          <button type="button" className="btn btn-sm" onClick={() => onPickParent(task)}>
-            {strings.changeParent}
-          </button>
-          <button type="button" className="btn btn-sm" onClick={() => onPickProject(task, false)}>
-            {strings.moveProject}
-          </button>
-          <button type="button" className="btn btn-sm" onClick={() => onPickProject(task, true)}>
-            {strings.moveSubtree}
           </button>
         </div>
       ) : null}
 
       {!collapsed && children.length > 0 ? (
         <ul className="task-row-children">
-          {children.map((child, i) => (
+          {children.map((child) => (
             <TaskRow
               key={child.id}
               task={child}
               parentTask={task}
               depth={depth + 1}
-              index={i}
-              siblings={children}
-              organizeMode={organizeMode}
-              onEnterOrganizeMode={onEnterOrganizeMode}
               onOpenDetail={onOpenDetail}
-              onPickParent={onPickParent}
-              onPickProject={onPickProject}
               taskActions={taskActions}
             />
           ))}

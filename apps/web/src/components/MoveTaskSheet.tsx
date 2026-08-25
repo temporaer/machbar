@@ -12,9 +12,11 @@ import { LoadingState, ErrorState } from "./AsyncStates";
 export type MoveMode = "parent" | "project" | "subtree";
 
 /**
- * Explicit picker used by the organize-mode controls: change parent, move
- * to another project, or move a whole subtree (project + parent in one
- * step). All three are reachable without any drag gesture.
+ * Explicit picker for destinations that are nowhere near on screen: change
+ * parent, move to another project, or move a whole subtree (project +
+ * parent in one step). Reached from the selected-task toolbar ("Ablegen")
+ * and from the task detail sheet, so all three stay available without any
+ * drag gesture.
  *
  * Both destination lists are `DestinationPicker`s: searchable, with the
  * recently used targets on top. The candidate sets are unchanged — the
