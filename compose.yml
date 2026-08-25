@@ -1,0 +1,26 @@
+services:
+  machbar:
+    build: .
+    restart: unless-stopped
+    # MACHBAR_PORT on the host (default 3000); container always listens on 3000
+    ports:
+      - "${MACHBAR_PORT:-3000}:3000"
+    environment:
+      PORT: "3000"
+      HOST: "0.0.0.0"
+      DATA_DIR: /data
+      DATABASE_FILE: machbar.db
+      BASE_PATH: /
+      SEED_DATABASE: "false"
+      NODE_ENV: production
+    volumes:
+      - machbar-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  machbar-data:

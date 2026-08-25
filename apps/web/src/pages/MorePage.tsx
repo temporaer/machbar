@@ -1,0 +1,63 @@
+import { Link } from "react-router-dom";
+import { strings } from "../lib/strings";
+import { useIdentity } from "../lib/identity";
+import { IdentitySelector } from "../components/IdentitySelector";
+import { fallbackColor, initials } from "../lib/format";
+
+export function MorePage() {
+  const { currentMember } = useIdentity();
+
+  return (
+    <div>
+      <div className="page-header">
+        <h1>{strings.moreTitle}</h1>
+      </div>
+      <div className="stack">
+        <Link to="/mehr/suche" className="card list-link">
+          <span className="row-between">
+            <span>{strings.search}</span>
+            <span aria-hidden="true">›</span>
+          </span>
+        </Link>
+        <Link to="/mehr/festgefahren" className="card list-link">
+          <span className="row-between">
+            <span>{strings.stuckProjects}</span>
+            <span aria-hidden="true">›</span>
+          </span>
+        </Link>
+
+        <div className="card">
+          <div className="row-between">
+            <h3 style={{ margin: 0 }}>{strings.identity}</h3>
+            {currentMember ? (
+              <span className="row">
+                <span
+                  className="avatar"
+                  style={{
+                    width: 28,
+                    height: 28,
+                    fontSize: "0.7rem",
+                    background: currentMember.color || fallbackColor(currentMember.id),
+                  }}
+                >
+                  {initials(currentMember.name)}
+                </span>
+                <span>{currentMember.name}</span>
+              </span>
+            ) : null}
+          </div>
+          <p className="text-muted">{strings.switchIdentity}</p>
+          <IdentitySelector />
+        </div>
+
+        <div className="card">
+          <h3 style={{ margin: 0 }}>{strings.about}</h3>
+          <p className="text-muted">{strings.tagline}</p>
+          <p className="text-muted">
+            {strings.version} 0.1.0
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

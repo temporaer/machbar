@@ -1,0 +1,41 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { renderWithProviders } from "../test/testUtils";
+import { IdentitySelector } from "./IdentitySelector";
+import { api } from "../lib/api";
+import { makeMember } from "../test/fixtures";
+
+vi.mock("../lib/api", () => ({
+  api: {
+    getMembers: vi.fn(),
+  },
+}));
+
+const mockedApi = vi.mocked(api, true);
+
+describe("IdentitySelector", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it("zeigt alle Personen zur Auswahl (Wer bist du?)", async () => {
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Jonas" })]);
+    renderWithProviders(<IdentitySelector />);
+
+    expect(await screen.findByText("Mira")).toBeInTheDocument();
+    expect(screen.getByText("Jonas")).toBeInTheDocument();
+  });
+
+  it("wählt eine Person per Klick aus", async () => {
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+    renderWithProviders(<IdentitySelector />);
+
+    const option = await screen.findByRole("option", { name: /Mira/ });
+    await userEvent.click(option);
+
+    await waitFor(() => expect(option).toHaveAttribute("aria-selected", "true"));
+    expect(window.localStorage.getItem("machbar:identity-member-id")).toBe("1");
+  });
+});

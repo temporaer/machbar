@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "declaration": false,
+    "noEmitOnError": false,
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src", "tests"]
+}

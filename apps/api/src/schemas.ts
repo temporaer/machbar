@@ -1,0 +1,143 @@
+import { z } from "zod";
+import {
+  inheritanceModes,
+  projectStatuses,
+  taskStatuses,
+} from "@machbar/shared";
+
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Datum muss im Format JJJJ-MM-TT sein.");
+const isoDateTime = z.string().min(1);
+
+export const createProjectSchema = z.object({
+  title: z.string().min(1, "Der Projekttitel darf nicht leer sein."),
+  description: z.string().optional(),
+  status: z.enum(projectStatuses).optional(),
+  ownerMemberId: z.number().int().nullable().optional(),
+  context: z.string().nullable().optional(),
+  dueDate: isoDate.nullable().optional(),
+  scheduledDate: isoDate.nullable().optional(),
+  tagIds: z.array(z.number().int()).optional(),
+});
+
+export const updateProjectSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().optional(),
+  status: z.enum(projectStatuses).optional(),
+  ownerMemberId: z.number().int().nullable().optional(),
+  context: z.string().nullable().optional(),
+  dueDate: isoDate.nullable().optional(),
+  scheduledDate: isoDate.nullable().optional(),
+  position: z.number().int().optional(),
+  tagIds: z.array(z.number().int()).optional(),
+});
+
+export const createTaskSchema = z.object({
+  projectId: z.number().int().nullable().optional(),
+  parentTaskId: z.number().int().nullable().optional(),
+  title: z.string().min(1, "Der Aufgabentitel darf nicht leer sein."),
+  notes: z.string().optional(),
+  status: z.enum(taskStatuses).optional(),
+  ownerMemberId: z.number().int().nullable().optional(),
+  ownerInheritanceMode: z.enum(inheritanceModes).optional(),
+  createdByMemberId: z.number().int().nullable().optional(),
+  dueDate: isoDate.nullable().optional(),
+  scheduledDate: isoDate.nullable().optional(),
+  waitingFor: z.string().nullable().optional(),
+  context: z.string().nullable().optional(),
+  contextInheritanceMode: z.enum(inheritanceModes).optional(),
+  priority: z.number().int().nullable().optional(),
+  markedToday: z.boolean().optional(),
+  recurrenceRule: z.string().nullable().optional(),
+  reminderAt: isoDateTime.nullable().optional(),
+  tagIds: z.array(z.number().int()).optional(),
+});
+
+export const createChildTaskSchema = createTaskSchema.omit({
+  projectId: true,
+  parentTaskId: true,
+});
+
+export const updateTaskSchema = z.object({
+  title: z.string().min(1).optional(),
+  notes: z.string().optional(),
+  status: z.enum(taskStatuses).optional(),
+  ownerMemberId: z.number().int().nullable().optional(),
+  ownerInheritanceMode: z.enum(inheritanceModes).optional(),
+  dueDate: isoDate.nullable().optional(),
+  scheduledDate: isoDate.nullable().optional(),
+  waitingFor: z.string().nullable().optional(),
+  context: z.string().nullable().optional(),
+  contextInheritanceMode: z.enum(inheritanceModes).optional(),
+  priority: z.number().int().nullable().optional(),
+  markedToday: z.boolean().optional(),
+  recurrenceRule: z.string().nullable().optional(),
+  reminderAt: isoDateTime.nullable().optional(),
+  tagIds: z.array(z.number().int()).optional(),
+  excludedTagIds: z.array(z.number().int()).optional(),
+});
+
+export const completeTaskSchema = z.object({
+  descendantsPolicy: z.enum(["leave_open", "complete_children"]).optional(),
+});
+
+export const cancelTaskSchema = z.object({
+  descendantsPolicy: z.enum(["leave_open", "cancel_children"]).optional(),
+});
+
+export const moveTaskSchema = z.object({
+  parentTaskId: z.number().int().nullable().optional(),
+  projectId: z.number().int().nullable().optional(),
+  position: z.number().int().min(0).optional(),
+});
+
+export const reorderTaskSchema = z.object({
+  position: z.number().int().min(0),
+});
+
+export const changeParentSchema = z.object({
+  parentTaskId: z.number().int().nullable(),
+  projectId: z.number().int().nullable().optional(),
+});
+
+export const moveSubtreeSchema = z.object({
+  projectId: z.number().int().nullable(),
+});
+
+export const dependencySchema = z.object({
+  dependsOnTaskId: z.number().int(),
+});
+
+export const tagRefSchema = z.object({
+  tagId: z.number().int(),
+});
+
+export const createTagSchema = z.object({
+  name: z.string().min(1, "Der Tag-Name darf nicht leer sein."),
+});
+
+export const searchQuerySchema = z.object({
+  text: z.string().optional(),
+  ownerId: z.coerce.number().int().optional(),
+  projectId: z.coerce.number().int().optional(),
+  effectiveContext: z.string().optional(),
+  explicitContext: z.string().optional(),
+  tagIds: z
+    .string()
+    .optional()
+    .transform((v) =>
+      v
+        ? v
+            .split(",")
+            .map((s) => Number.parseInt(s.trim(), 10))
+            .filter((n) => !Number.isNaN(n))
+        : undefined,
+    ),
+  status: z.enum(taskStatuses).optional(),
+  dueFrom: isoDate.optional(),
+  dueTo: isoDate.optional(),
+  scheduledFrom: isoDate.optional(),
+  scheduledTo: isoDate.optional(),
+  waitingFor: z.string().optional(),
+});

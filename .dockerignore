@@ -1,0 +1,38 @@
+# ── Build artefacts ──────────────────────────────────────────────────────────
+node_modules/
+dist/
+.vite/
+
+# ── Test output ───────────────────────────────────────────────────────────────
+coverage/
+playwright-report/
+test-results/
+playwright.config.ts
+
+# ── Runtime / persistent data ─────────────────────────────────────────────────
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+.env.*
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Documentation (not needed inside the image) ───────────────────────────────
+README.md
+*.md
+docs/
+
+# ── Editor / OS artefacts ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+
+# home-assistant/ is intentionally NOT excluded here so that
+# `docker build -f home-assistant/Dockerfile .` can COPY home-assistant/run.sh.
+# The main Dockerfile never COPYs from that directory.

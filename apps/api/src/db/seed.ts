@@ -1,0 +1,382 @@
+import { loadEnv } from "../env.js";
+import { openDb, type Db } from "./client.js";
+import { runMigrations } from "./migrate.js";
+import * as schema from "./schema.js";
+
+function todayIso(offsetDays = 0): string {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return d.toISOString().slice(0, 10);
+}
+
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+interface SeedTaskInput {
+  title: string;
+  notes?: string;
+  status?: (typeof schema.tasks.$inferInsert)["status"];
+  ownerMemberId?: number | null;
+  ownerInheritanceMode?: (typeof schema.tasks.$inferInsert)["ownerInheritanceMode"];
+  context?: string | null;
+  contextInheritanceMode?: (typeof schema.tasks.$inferInsert)["contextInheritanceMode"];
+  dueDate?: string | null;
+  scheduledDate?: string | null;
+  waitingFor?: string | null;
+  priority?: number | null;
+  markedToday?: boolean;
+  tagNames?: string[];
+  dependsOn?: string[]; // titles of sibling/earlier tasks within the same seed run
+  children?: SeedTaskInput[];
+}
+
+/**
+ * Clears all application tables (in FK-safe order) and inserts a small,
+ * realistic German household/team dataset covering every status, stuck
+ * classification, inheritance mode and dependency scenario the API needs
+ * to demonstrate.
+ */
+export function seedDatabase(db: Db): void {
+  db.transaction((tx) => {
+    tx.delete(schema.taskDependencies).run();
+    tx.delete(schema.taskExcludedTags).run();
+    tx.delete(schema.taskTags).run();
+    tx.delete(schema.tasks).run();
+    tx.delete(schema.projectTags).run();
+    tx.delete(schema.projects).run();
+    tx.delete(schema.tags).run();
+    tx.delete(schema.members).run();
+
+    const anna = tx
+      .insert(schema.members)
+      .values({ name: "Anna Weber", color: "#f97316" })
+      .returning()
+      .get();
+    const jonas = tx
+      .insert(schema.members)
+      .values({ name: "Jonas Weber", color: "#3b82f6" })
+      .returning()
+      .get();
+    const mia = tx
+      .insert(schema.members)
+      .values({ name: "Mia Weber", color: "#10b981" })
+      .returning()
+      .get();
+
+    const tagNames = [
+      "Zuhause",
+      "Büro",
+      "Telefon",
+      "Erledigungen",
+      "Garten",
+      "Finanzen",
+      "Gesundheit",
+      "Online",
+    ];
+    const tagsByName = new Map<string, { id: number; name: string }>();
+    for (const name of tagNames) {
+      const tag = tx.insert(schema.tags).values({ name }).returning().get();
+      tagsByName.set(name, tag);
+    }
+    const tagIds = (names: string[]) =>
+      names.map((n) => tagsByName.get(n)!.id);
+
+    function insertTaskTree(
+      inputs: SeedTaskInput[],
+      projectId: number | null,
+      parentTaskId: number | null,
+    ): Map<string, number> {
+      const idsByTitle = new Map<string, number>();
+      inputs.forEach((input, index) => {
+        const now = nowIso();
+        const row = tx
+          .insert(schema.tasks)
+          .values({
+            projectId,
+            parentTaskId,
+            title: input.title,
+            notes: input.notes ?? "",
+            status: input.status ?? "inbox",
+            ownerMemberId: input.ownerMemberId ?? null,
+            ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
+            createdByMemberId: anna.id,
+            dueDate: input.dueDate ?? null,
+            scheduledDate: input.scheduledDate ?? null,
+            waitingFor: input.waitingFor ?? null,
+            context: input.context ?? null,
+            contextInheritanceMode: input.contextInheritanceMode ?? "inherit",
+            priority: input.priority ?? null,
+            position: index,
+            markedToday: input.markedToday ?? false,
+            completedAt: input.status === "done" ? now : null,
+            cancelledAt: input.status === "cancelled" ? now : null,
+          })
+          .returning()
+          .get();
+        idsByTitle.set(input.title, row.id);
+
+        if (input.tagNames && input.tagNames.length > 0) {
+          for (const tagId of tagIds(input.tagNames)) {
+            tx.insert(schema.taskTags).values({ taskId: row.id, tagId }).run();
+          }
+        }
+
+        if (input.children && input.children.length > 0) {
+          const childIds = insertTaskTree(input.children, projectId, row.id);
+          for (const [title, id] of childIds) idsByTitle.set(title, id);
+        }
+      });
+
+      // Second pass: wire up dependencies now that all sibling ids exist.
+      inputs.forEach((input) => {
+        if (!input.dependsOn || input.dependsOn.length === 0) return;
+        const taskId = idsByTitle.get(input.title)!;
+        for (const dependsOnTitle of input.dependsOn) {
+          const dependsOnId = idsByTitle.get(dependsOnTitle);
+          if (dependsOnId === undefined) continue;
+          tx.insert(schema.taskDependencies)
+            .values({ taskId, dependsOnTaskId: dependsOnId })
+            .run();
+        }
+      });
+
+      return idsByTitle;
+    }
+
+    function createProject(input: {
+      title: string;
+      description: string;
+      ownerMemberId: number | null;
+      context: string | null;
+      dueDate?: string | null;
+      tagNames?: string[];
+      position: number;
+      tasks: SeedTaskInput[];
+    }) {
+      const project = tx
+        .insert(schema.projects)
+        .values({
+          title: input.title,
+          description: input.description,
+          status: "active",
+          ownerMemberId: input.ownerMemberId,
+          context: input.context,
+          dueDate: input.dueDate ?? null,
+          position: input.position,
+        })
+        .returning()
+        .get();
+      if (input.tagNames) {
+        for (const tagId of tagIds(input.tagNames)) {
+          tx.insert(schema.projectTags)
+            .values({ projectId: project.id, tagId })
+            .run();
+        }
+      }
+      insertTaskTree(input.tasks, project.id, null);
+      return project;
+    }
+
+    // 1. Umzug nach Leipzig — mix of statuses, a waiting dependency chain,
+    //    and a due date soon for the "Heute" agenda's dueSoon bucket.
+    createProject({
+      title: "Umzug nach Leipzig",
+      description: "Alle Aufgaben rund um den Umzug in die neue Wohnung.",
+      ownerMemberId: anna.id,
+      context: "Zuhause",
+      dueDate: todayIso(10),
+      tagNames: ["Zuhause", "Finanzen"],
+      position: 0,
+      tasks: [
+        {
+          title: "Umzugsunternehmen beauftragen",
+          status: "actionable",
+          ownerMemberId: jonas.id,
+          ownerInheritanceMode: "explicit",
+          tagNames: ["Telefon"],
+          children: [
+            {
+              title: "Angebote einholen",
+              status: "done",
+            },
+            {
+              title: "Vertrag unterschreiben",
+              status: "waiting",
+              waitingFor: "Umzugsunternehmen Rückmeldung",
+              dependsOn: ["Angebote einholen"],
+            },
+          ],
+        },
+        {
+          title: "Ummeldung Wohnsitz",
+          status: "inbox",
+        },
+        {
+          title: "Kartons besorgen",
+          status: "actionable",
+          markedToday: true,
+          dueDate: todayIso(2),
+        },
+        {
+          title: "Nebenkostenabrechnung klären",
+          status: "waiting",
+          waitingFor: "Vermieter",
+        },
+      ],
+    });
+
+    // 2. Garten winterfest machen — a dependency that blocks one actionable
+    //    task while another actionable task in the same project stays free,
+    //    so the project itself is NOT stuck.
+    createProject({
+      title: "Garten winterfest machen",
+      description: "Den Garten auf den Winter vorbereiten.",
+      ownerMemberId: jonas.id,
+      context: "Garten",
+      dueDate: todayIso(-1),
+      tagNames: ["Garten"],
+      position: 1,
+      tasks: [
+        {
+          title: "Laub entfernen",
+          status: "actionable",
+          markedToday: true,
+        },
+        {
+          title: "Rasen mähen",
+          status: "done",
+        },
+        {
+          title: "Gartenmöbel einlagern",
+          status: "actionable",
+          dependsOn: ["Laub entfernen"],
+        },
+      ],
+    });
+
+    // 3. Steuererklärung 2025 — an actionable task with an explicit "none"
+    //    owner override to demonstrate the "unassigned_actionable" stuck
+    //    reason even though the project itself has an owner.
+    createProject({
+      title: "Steuererklärung 2025",
+      description: "Unterlagen sammeln und die Steuererklärung einreichen.",
+      ownerMemberId: anna.id,
+      context: "Büro",
+      dueDate: todayIso(30),
+      tagNames: ["Finanzen", "Büro"],
+      position: 2,
+      tasks: [
+        {
+          title: "Belege sammeln",
+          status: "actionable",
+          ownerInheritanceMode: "none",
+        },
+        {
+          title: "Formular ausfüllen",
+          status: "actionable",
+          dependsOn: ["Belege sammeln"],
+        },
+        {
+          title: "Steuerberater kontaktieren",
+          status: "waiting",
+          waitingFor: "Steuerberater Rückruf",
+        },
+      ],
+    });
+
+    // 4. Küche renovieren — every open task is "someday", so there is no
+    //    next action at all ("no_next_action").
+    createProject({
+      title: "Küche renovieren",
+      description: "Langfristige Küchenrenovierung planen.",
+      ownerMemberId: anna.id,
+      context: "Zuhause",
+      tagNames: ["Zuhause"],
+      position: 3,
+      tasks: [
+        { title: "Fliesen aussuchen", status: "someday" },
+        { title: "Handwerker anfragen", status: "someday" },
+      ],
+    });
+
+    // 5. Wartungsplan Auto — every open task is "waiting" ("only_waiting").
+    createProject({
+      title: "Wartungsplan Auto",
+      description: "Anstehende Wartungsarbeiten am Auto verfolgen.",
+      ownerMemberId: jonas.id,
+      context: "Unterwegs",
+      position: 4,
+      tasks: [
+        {
+          title: "Werkstatt Rückmeldung abwarten",
+          status: "waiting",
+          waitingFor: "Werkstatt",
+        },
+        {
+          title: "Ersatzteil Lieferung abwarten",
+          status: "waiting",
+          waitingFor: "Zulieferer",
+        },
+      ],
+    });
+
+    // 6. Bücherregal aufbauen — the only actionable task is blocked by a
+    //    dependency that is itself not actionable ("blocked_dependencies").
+    createProject({
+      title: "Bücherregal aufbauen",
+      description: "Neues Bücherregal im Arbeitszimmer aufbauen.",
+      ownerMemberId: mia.id,
+      context: "Zuhause",
+      position: 5,
+      tasks: [
+        {
+          title: "Farbe kaufen",
+          status: "waiting",
+          waitingFor: "Baumarkt Lieferung",
+        },
+        {
+          title: "Regal aufbauen",
+          status: "actionable",
+          ownerMemberId: jonas.id,
+          ownerInheritanceMode: "explicit",
+          dependsOn: ["Farbe kaufen"],
+        },
+      ],
+    });
+
+    // Free-standing inbox tasks (Eingang) with no project yet.
+    insertTaskTree(
+      [
+        { title: "Zahnarzttermin ausmachen", status: "inbox" },
+        { title: "Geschenk für Oma kaufen", status: "inbox" },
+        { title: "Nachbarn wegen Leiter fragen", status: "inbox" },
+        {
+          title: "Fahrrad reparieren",
+          status: "actionable",
+          context: "Zuhause",
+          contextInheritanceMode: "explicit",
+          dueDate: todayIso(0),
+        },
+      ],
+      null,
+      null,
+    );
+  });
+}
+
+async function main() {
+  const env = loadEnv();
+  const { db, close } = openDb(env.databasePath);
+  runMigrations(db);
+  seedDatabase(db);
+  console.log(`Seeded database at ${env.databasePath}`);
+  close();
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

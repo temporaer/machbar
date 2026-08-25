@@ -1,0 +1,8 @@
+# Base images for each supported architecture.
+# HA base images (Alpine-based) include bashio for reading add-on options.
+# Pin to a specific version tag once the add-on is stable.
+build_from:
+  aarch64: "ghcr.io/home-assistant/aarch64-base:3.20"
+  amd64:   "ghcr.io/home-assistant/amd64-base:3.20"
+  armhf:   "ghcr.io/home-assistant/armhf-base:3.20"
+  armv7:   "ghcr.io/home-assistant/armv7-base:3.20"
