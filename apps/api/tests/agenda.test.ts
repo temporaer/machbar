@@ -200,3 +200,201 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Revisit-Kandidat")).toEqual(["revisit"]);
   });
 });
+
+describe("Heute agenda: filtering by selected member (effective owner)", () => {
+  let ctx: TestContext;
+  const today = todayIso();
+
+  beforeEach(() => {
+    ctx = createTestContext();
+  });
+
+  afterEach(async () => {
+    await closeTestContext(ctx);
+  });
+
+  async function createMember(name: string): Promise<{ id: number; name: string }> {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: { name },
+    });
+    expect(res.statusCode).toBe(201);
+    return res.json();
+  }
+
+  async function createTask(payload: Record<string, unknown>) {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { status: "actionable", ...payload },
+    });
+    return res.json();
+  }
+
+  async function createProject(payload: Record<string, unknown>) {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload,
+    });
+    return res.json();
+  }
+
+  async function addDependency(taskId: number, dependsOnTaskId: number) {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${taskId}/dependencies`,
+      payload: { dependsOnTaskId },
+    });
+    expect(res.statusCode).toBe(201);
+    return res.json();
+  }
+
+  async function getAgenda(memberId?: number) {
+    const url =
+      memberId === undefined ? "/api/agenda/today" : `/api/agenda/today?memberId=${memberId}`;
+    const res = await ctx.app.inject({ method: "GET", url });
+    return res;
+  }
+
+  function titlesOf(tasks: Array<{ title: string }>): string[] {
+    return tasks.map((t) => t.title);
+  }
+
+  const bucketKeys = ["planned", "overdue", "dueToday", "dueSoon", "shared", "revisit"] as const;
+
+  async function bucketsContaining(title: string, memberId?: number) {
+    const res = await getAgenda(memberId);
+    expect(res.statusCode).toBe(200);
+    const agenda = res.json();
+    return bucketKeys.filter((key) => titlesOf(agenda[key]).includes(title));
+  }
+
+  it("without a memberId, preserves the unfiltered all-household response (backward compatible)", async () => {
+    const anna = await createMember("Anna");
+    const ben = await createMember("Ben");
+    await createTask({ title: "Annas Aufgabe heute", ownerMemberId: anna.id, ownerInheritanceMode: "explicit", scheduledDate: today });
+    await createTask({ title: "Bens Aufgabe heute", ownerMemberId: ben.id, ownerInheritanceMode: "explicit", scheduledDate: today });
+    await createTask({ title: "Gemeinsame Aufgabe heute", scheduledDate: today });
+
+    const agenda = (await getAgenda()).json();
+    const plannedTitles = titlesOf(agenda.planned);
+    expect(plannedTitles).toContain("Annas Aufgabe heute");
+    expect(plannedTitles).toContain("Bens Aufgabe heute");
+    expect(plannedTitles).toContain("Gemeinsame Aufgabe heute");
+  });
+
+  it("includes the selected member's own explicitly-owned tasks", async () => {
+    const anna = await createMember("Anna");
+    await createTask({
+      title: "Annas eigene Aufgabe",
+      ownerMemberId: anna.id,
+      ownerInheritanceMode: "explicit",
+      scheduledDate: today,
+    });
+
+    expect(await bucketsContaining("Annas eigene Aufgabe", anna.id)).toEqual(["planned"]);
+  });
+
+  it("excludes another member's explicitly-owned tasks", async () => {
+    const anna = await createMember("Anna");
+    const ben = await createMember("Ben");
+    await createTask({
+      title: "Bens Aufgabe",
+      ownerMemberId: ben.id,
+      ownerInheritanceMode: "explicit",
+      scheduledDate: today,
+    });
+
+    expect(await bucketsContaining("Bens Aufgabe", anna.id)).toEqual([]);
+  });
+
+  it("includes tasks whose owner is inherited from an ancestor/project (effective owner), not just explicit owner", async () => {
+    const anna = await createMember("Anna");
+    const ben = await createMember("Ben");
+    const project = await createProject({
+      title: "Annas Projekt",
+      ownerMemberId: anna.id,
+    });
+
+    // The task has no explicit owner of its own (defaults to "inherit"), so
+    // its *effective* owner comes from the project — this must count as
+    // Anna's task even though task.ownerMemberId itself is null.
+    const inherited = await createTask({
+      title: "Von Projekt geerbte Aufgabe",
+      projectId: project.id,
+      scheduledDate: today,
+    });
+    expect(inherited.ownerMemberId).toBeNull();
+    expect(inherited.effectiveOwnerId).toBe(anna.id);
+
+    expect(await bucketsContaining("Von Projekt geerbte Aufgabe", anna.id)).toEqual(["planned"]);
+    expect(await bucketsContaining("Von Projekt geerbte Aufgabe", ben.id)).toEqual([]);
+  });
+
+  it("includes tasks with no owner (explicit 'none' / Gemeinsam) for every member", async () => {
+    const anna = await createMember("Anna");
+    const ben = await createMember("Ben");
+    const project = await createProject({
+      title: "Projekt mit Besitzer",
+      ownerMemberId: anna.id,
+    });
+    // Explicitly opts out of inheriting the project's owner -> shared/none.
+    await createTask({
+      title: "Bewusst niemandem zugeordnet",
+      projectId: project.id,
+      ownerInheritanceMode: "none",
+      scheduledDate: today,
+    });
+
+    expect(await bucketsContaining("Bewusst niemandem zugeordnet", anna.id)).toEqual(["planned"]);
+    expect(await bucketsContaining("Bewusst niemandem zugeordnet", ben.id)).toEqual(["planned"]);
+  });
+
+  it("filters the 'revisit' bucket too: a blocked task owned by someone else stays hidden", async () => {
+    const anna = await createMember("Anna");
+    const ben = await createMember("Ben");
+    const blocker = await createTask({ title: "Blockierer (Owner-Filter)" });
+    const blocked = await createTask({
+      title: "Bens blockierte Wiedervorlage",
+      ownerMemberId: ben.id,
+      ownerInheritanceMode: "explicit",
+      scheduledDate: today,
+    });
+    await addDependency(blocked.id, blocker.id);
+
+    expect(await bucketsContaining("Bens blockierte Wiedervorlage", ben.id)).toEqual(["revisit"]);
+    expect(await bucketsContaining("Bens blockierte Wiedervorlage", anna.id)).toEqual([]);
+  });
+
+  it("filters the 'revisit' bucket to include shared/unowned blocked tasks for any member", async () => {
+    const anna = await createMember("Anna");
+    const blocker = await createTask({ title: "Blockierer (gemeinsam)" });
+    const blocked = await createTask({
+      title: "Gemeinsame blockierte Wiedervorlage",
+      scheduledDate: today,
+    });
+    await addDependency(blocked.id, blocker.id);
+
+    expect(await bucketsContaining("Gemeinsame blockierte Wiedervorlage", anna.id)).toEqual([
+      "revisit",
+    ]);
+  });
+
+  it("rejects a non-positive-integer memberId with a German 400", async () => {
+    for (const bad of ["0", "-1", "abc", "1.5"]) {
+      const res = await getAgenda(bad as unknown as number);
+      expect(res.statusCode).toBe(400);
+      const body = res.json();
+      expect(body.error.message).toMatch(/Zahl/i);
+    }
+  });
+
+  it("rejects an unknown memberId with a German 404", async () => {
+    const res = await getAgenda(999999);
+    expect(res.statusCode).toBe(404);
+    const body = res.json();
+    expect(body.error.message).toMatch(/Mitglied/);
+  });
+});

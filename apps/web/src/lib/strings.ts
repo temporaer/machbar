@@ -132,10 +132,12 @@ const extra = {
   swipeSettingTitle: "Wischgeste",
   swipeSettingHint:
     "Bestimmt, was ein Wisch nach rechts in Aufgabenlisten auslöst. Nach links wischen zeigt immer Zuweisen, Planen, Notizen sowie Warten/Mehr. Bereits erledigte oder verworfene Aufgaben werden durch die Wischgeste immer wieder geöffnet.",
-  swipeHintChips: "Nach links wischen oder ⋯: Zuweisen, Planen, Notizen, Warten, Mehr",
+  swipeHintChips: "Nach links wischen oder ⋯: Zuweisen, Planen, Notizen, Zum Projekt, Warten, Mehr",
   assign: "Zuweisen",
   schedule: "Planen",
   moreActions: "Weitere Aktionen",
+  toProject: "Zum Projekt",
+  noProjectChipHint: "Kein Projekt zugeordnet",
   primarySwipeActionLabels: {
     complete: "Erledigen / Wieder öffnen",
     waiting: "Warten",

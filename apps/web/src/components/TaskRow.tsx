@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import type { Task, TaskStatus } from "@machbar/shared";
 import type { TaskDetailFocusField } from "../lib/taskDetailContext";
 import { strings } from "../lib/strings";
@@ -72,6 +73,7 @@ export function TaskRow({
   const { bump } = useRefresh();
   const { members } = useIdentity();
   const { primarySwipeAction } = useSwipeSettings();
+  const navigate = useNavigate();
   const { requestToggle, requestPrimarySwipe, setStatus, busyId, retained, errors, clearError } = taskActions;
 
   // A row that just transitioned keeps rendering with its optimistic status
@@ -83,6 +85,13 @@ export function TaskRow({
   const task = retainedTask ?? taskProp;
   const isRetained = Boolean(retainedTask);
   const rowError = errors[taskProp.id];
+
+  // Only one swipe background may be visible at a time — mid-drag it
+  // follows the live direction, and once a left-swipe has opened the chip
+  // strip the red "more actions" background stays shown (matching the
+  // "remains open after drag reset" requirement) until the chips close.
+  const showCompleteBg = dragX > 0;
+  const showCancelBg = dragX < 0 || chipsOpen;
 
   const children = sortByPosition(task.children);
   const isDone = task.status === "done";
@@ -160,12 +169,23 @@ export function TaskRow({
     setChipsOpen(false);
   };
 
+  // Inbox/projectless tasks have no `projectId` to navigate to — the chip
+  // stays rendered (so the chip strip's layout/count is predictable) but
+  // disabled, per the "clearly disabled rather than navigating nowhere"
+  // requirement, and this guard is a second line of defense even if a
+  // disabled button's click were ever to fire.
+  const goToProjectChip = () => {
+    if (!task.projectId) return;
+    setChipsOpen(false);
+    navigate(`/projekte/${task.projectId}`);
+  };
+
   return (
     <li className="task-row" style={{ listStyle: "none" }}>
-      <div className="task-row-swipe-bg complete" aria-hidden="true">
+      <div className={`task-row-swipe-bg complete${showCompleteBg ? " visible" : ""}`} aria-hidden="true">
         {primaryActionBgLabel(task, primarySwipeAction)}
       </div>
-      <div className="task-row-swipe-bg cancel" aria-hidden="true">
+      <div className={`task-row-swipe-bg cancel${showCancelBg ? " visible" : ""}`} aria-hidden="true">
         {strings.moreActions}
       </div>
       <div
@@ -256,6 +276,16 @@ export function TaskRow({
           </button>
           <button type="button" className="btn btn-sm" onClick={() => openChip("notes")}>
             {strings.notes}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={!task.projectId}
+            aria-disabled={!task.projectId}
+            title={task.projectId ? undefined : strings.noProjectChipHint}
+            onClick={goToProjectChip}
+          >
+            {strings.toProject}
           </button>
           {isDone || isCancelled ? (
             // A finished/cancelled task has no "waiting" state to toggle —

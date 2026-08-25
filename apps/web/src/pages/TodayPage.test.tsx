@@ -1,7 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TodayPage } from "./TodayPage";
+import { IdentitySelector } from "../components/IdentitySelector";
 import { api } from "../lib/api";
 import { makeMember, makeTask } from "../test/fixtures";
 import type { Agenda } from "@machbar/shared";
@@ -30,6 +32,7 @@ function makeEmptyAgenda(): Agenda {
 
 describe("TodayPage", () => {
   beforeEach(() => {
+    window.localStorage.clear();
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
   });
@@ -80,5 +83,58 @@ describe("TodayPage", () => {
 
     await screen.findByText("Etwas anderes");
     expect(screen.queryByText("Wiedervorlage")).not.toBeInTheDocument();
+  });
+
+  it("fragt die Agenda ausschließlich für die aktuell ausgewählte Identität ab", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
+    renderWithProviders(<TodayPage />);
+
+    // Once the member list has resolved and confirmed the stored id, the
+    // agenda must be requested for exactly that member — never a
+    // different/other member's id (only a transient `null` may precede it,
+    // while identity is still resolving on first mount).
+    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledWith(1));
+    for (const [memberId] of mockedApi.getAgenda.mock.calls) {
+      expect(memberId === null || memberId === 1).toBe(true);
+    }
+  });
+
+  it("bleibt sicher, wenn (noch) keine Identität ausgewählt ist", async () => {
+    // No stored identity and an empty member list -> currentMemberId stays
+    // null. The page must render without throwing and simply request the
+    // agenda unscoped (shared/unassigned tasks still come back from the
+    // backend), rather than guessing at another member's id.
+    mockedApi.getMembers.mockResolvedValue([]);
+    mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
+    renderWithProviders(<TodayPage />);
+
+    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledWith(null));
+  });
+
+  it("lädt die Agenda automatisch neu, wenn die ausgewählte Identität wechselt", async () => {
+    mockedApi.getMembers.mockResolvedValue([
+      makeMember({ id: 1, name: "Mira" }),
+      makeMember({ id: 2, name: "Jonas" }),
+    ]);
+    mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
+    renderWithProviders(
+      <>
+        <IdentitySelector />
+        <TodayPage />
+      </>,
+    );
+
+    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledWith(null));
+    const initialCalls = mockedApi.getAgenda.mock.calls.length;
+
+    const option = await screen.findByRole("option", { name: /Jonas/ });
+    await userEvent.click(option);
+
+    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledWith(2));
+    expect(mockedApi.getAgenda.mock.calls.length).toBeGreaterThan(initialCalls);
+    // The last call must reflect only the newly selected member — the
+    // previous member's id must never be requested again after switching.
+    expect(mockedApi.getAgenda.mock.calls.at(-1)).toEqual([2]);
   });
 });

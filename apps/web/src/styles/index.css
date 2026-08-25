@@ -409,22 +409,52 @@ a {
   margin: 0;
 }
 
+/*
+ * `.task-row` is a single-column grid, not a plain block. The swipe
+ * backgrounds and `.task-row-content` are all placed in the same
+ * (1,1) cell so they stack and stretch to match `.task-row-content`'s own
+ * height exactly — they must NOT span the whole `.task-row`, since that
+ * would grow past the visible chip strip (and any error/organize/children
+ * sections) once those are rendered below, painting a red/green rectangle
+ * over them. Everything without an explicit grid-row (chips, the error
+ * banner, organize controls, nested children) auto-flows into its own row
+ * beneath the swipe cell, fully out of the backgrounds' box, so it can
+ * never be visually covered nor clipped by the `overflow: hidden` below
+ * (which only clips the horizontal drag translation of row 1).
+ */
 .task-row {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
   border-radius: var(--radius-sm);
   background: var(--color-surface);
 }
 
 .task-row-swipe-bg {
-  position: absolute;
-  inset: 0;
+  grid-column: 1;
+  grid-row: 1;
+  z-index: 0;
   display: flex;
   align-items: center;
   font-weight: 600;
   font-size: 0.85rem;
   padding: 0 16px;
   color: #fff;
+  /*
+   * Both backgrounds are always mounted (so their layout/size stays stable),
+   * but only the one matching the live drag direction — or the persisted
+   * "chips are open" state for the cancel/more-actions side — is actually
+   * shown. Without this, the later-in-DOM `.cancel` background would always
+   * paint over `.complete` (same auto z-index, so DOM order wins), and the
+   * row would look permanently red even while idle or swiping the other way.
+   */
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.task-row-swipe-bg.visible {
+  opacity: 1;
 }
 
 .task-row-swipe-bg.complete {
@@ -438,6 +468,9 @@ a {
 }
 
 .task-row-content {
+  grid-column: 1;
+  grid-row: 1;
+  z-index: 1;
   position: relative;
   display: flex;
   align-items: flex-start;
@@ -519,11 +552,27 @@ a {
   background: var(--color-surface-alt);
 }
 
+/*
+ * Auto-flows into grid row 2 of `.task-row` (below the row-1 swipe/content
+ * cell — see `.task-row` above), so it never shares space with the swipe
+ * backgrounds. `position: relative` + `z-index` is kept defensively so it
+ * always paints above them even if that layout assumption ever changes.
+ */
 .task-row-chips {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 0 8px 8px 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 10px 44px;
+  background: var(--color-surface-alt);
+}
+
+/* Touch-friendly hit target (~40px tall) for the swipe/kebab action chips. */
+.task-row-chips .btn {
+  min-height: 40px;
+  padding: 8px 14px;
 }
 
 .task-row-error {

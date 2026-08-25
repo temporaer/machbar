@@ -19,6 +19,23 @@ import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
 
+/** The subset of task fields edited as free-text drafts in this sheet. */
+interface TextFieldsSnapshot {
+  title: string;
+  notes: string;
+  context: string;
+  waitingFor: string;
+}
+
+function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
+  return {
+    title: task.title,
+    notes: task.notes ?? "",
+    context: task.context ?? "",
+    waitingFor: task.waitingFor ?? "",
+  };
+}
+
 function InheritanceControl({
   mode,
   onChange,
@@ -62,9 +79,12 @@ export function TaskDetailSheet() {
   const [notesDraft, setNotesDraft] = useState("");
   const [contextDraft, setContextDraft] = useState("");
   const [waitingForDraft, setWaitingForDraft] = useState("");
+  const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
+  const [savingTextFields, setSavingTextFields] = useState(false);
   const ownerFieldRef = useRef<HTMLDivElement>(null);
   const scheduleFieldRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
+  const lastLoadedTaskIdRef = useRef<number | null>(null);
 
   const {
     data: task,
@@ -74,13 +94,38 @@ export function TaskDetailSheet() {
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
   const { data: tags } = useAsync(() => api.getTags(), []);
 
+  // Resets the drafts (and the dirty-check baseline) whenever a *different*
+  // task is opened, or whenever this task's data arrives from the server and
+  // the user has no unsaved edits. A background reload triggered while the
+  // user is mid-edit (e.g. another patch on this task, or an unrelated
+  // refresh elsewhere in the app) must never clobber in-progress typing, so
+  // it is skipped whenever the current drafts still differ from the last
+  // known-saved baseline.
   useEffect(() => {
-    if (task) {
-      setTitleDraft(task.title);
-      setNotesDraft(task.notes ?? "");
-      setContextDraft(task.context ?? "");
-      setWaitingForDraft(task.waitingFor ?? "");
+    if (!task) {
+      lastLoadedTaskIdRef.current = null;
+      setTextFieldsBaseline(null);
+      return;
     }
+    const nextBaseline = textFieldsSnapshot(task);
+    const isNewTask = lastLoadedTaskIdRef.current !== task.id;
+    const hasUnsavedEdits =
+      !isNewTask &&
+      textFieldsBaseline !== null &&
+      (titleDraft !== textFieldsBaseline.title ||
+        notesDraft !== textFieldsBaseline.notes ||
+        contextDraft !== textFieldsBaseline.context ||
+        waitingForDraft !== textFieldsBaseline.waitingFor);
+
+    if (!hasUnsavedEdits) {
+      setTitleDraft(nextBaseline.title);
+      setNotesDraft(nextBaseline.notes);
+      setContextDraft(nextBaseline.context);
+      setWaitingForDraft(nextBaseline.waitingFor);
+      setTextFieldsBaseline(nextBaseline);
+    }
+    lastLoadedTaskIdRef.current = task.id;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task]);
 
   // Chip-driven opens (Zuweisen/Planen/Notizen) land the user directly on the
@@ -120,14 +165,41 @@ export function TaskDetailSheet() {
     reload();
   };
 
-  const saveTextFields = () => {
-    if (!task) return;
-    void patch({
-      title: titleDraft.trim() || task.title,
+  const titleIsValid = titleDraft.trim().length > 0;
+  const textFieldsDirty =
+    textFieldsBaseline !== null &&
+    (titleDraft !== textFieldsBaseline.title ||
+      notesDraft !== textFieldsBaseline.notes ||
+      contextDraft !== textFieldsBaseline.context ||
+      waitingForDraft !== textFieldsBaseline.waitingFor);
+  const saveChangesDisabled = !textFieldsDirty || !titleIsValid || savingTextFields;
+  const saveNextDisabled = !titleIsValid || savingTextFields;
+
+  const saveTextFields = async () => {
+    if (!task || !titleIsValid) return;
+    const snapshot: TextFieldsSnapshot = {
+      title: titleDraft.trim(),
       notes: notesDraft,
-      context: contextDraft || null,
-      waitingFor: waitingForDraft || null,
-    });
+      context: contextDraft,
+      waitingFor: waitingForDraft,
+    };
+    setSavingTextFields(true);
+    try {
+      await api.updateTask(task.id, {
+        title: snapshot.title,
+        notes: snapshot.notes,
+        context: snapshot.context || null,
+        waitingFor: snapshot.waitingFor || null,
+      });
+      // Adopt the just-saved values as the new baseline right away so the
+      // save button disables immediately, without waiting for the follow-up
+      // reload's round trip (which may race with further typing).
+      setTextFieldsBaseline(snapshot);
+      bump();
+      reload();
+    } finally {
+      setSavingTextFields(false);
+    }
   };
 
   const runDependencySearch = async (value: string) => {
@@ -154,7 +226,7 @@ export function TaskDetailSheet() {
               id="task-title"
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={saveTextFields}
+              onBlur={() => void saveTextFields()}
             />
           </div>
 
@@ -194,7 +266,7 @@ export function TaskDetailSheet() {
                 value={waitingForDraft}
                 placeholder={strings.waitingForPlaceholder}
                 onChange={(e) => setWaitingForDraft(e.target.value)}
-                onBlur={saveTextFields}
+                onBlur={() => void saveTextFields()}
               />
             </div>
           ) : null}
@@ -239,7 +311,7 @@ export function TaskDetailSheet() {
                 value={contextDraft}
                 placeholder={strings.contextPlaceholder}
                 onChange={(e) => setContextDraft(e.target.value)}
-                onBlur={saveTextFields}
+                onBlur={() => void saveTextFields()}
               />
             ) : (
               <p className="text-muted">{task.effectiveContext ?? strings.noContext}</p>
@@ -346,11 +418,16 @@ export function TaskDetailSheet() {
               ref={notesRef}
               value={notesDraft}
               onChange={(e) => setNotesDraft(e.target.value)}
-              onBlur={saveTextFields}
+              onBlur={() => void saveTextFields()}
             />
           </div>
 
-          <button type="button" className="btn btn-block" onClick={saveTextFields}>
+          <button
+            type="button"
+            className={`btn btn-block${saveChangesDisabled ? "" : " btn-primary"}`}
+            disabled={saveChangesDisabled}
+            onClick={() => void saveTextFields()}
+          >
             {strings.saveChanges}
           </button>
 
@@ -358,9 +435,9 @@ export function TaskDetailSheet() {
             <button
               type="button"
               className="btn btn-block btn-primary"
+              disabled={saveNextDisabled}
               onClick={() => {
-                saveTextFields();
-                advanceQueue();
+                void saveTextFields().then(() => advanceQueue());
               }}
             >
               {strings.saveNext}

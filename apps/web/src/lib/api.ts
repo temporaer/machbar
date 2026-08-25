@@ -37,12 +37,21 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Only defaults `Content-Type: application/json` when the request actually
+ * carries a body. Fastify's JSON body parser raises `FST_ERR_CTP_EMPTY_JSON_BODY`
+ * (a 400) whenever it sees that content type on a bodyless request — which
+ * every bodyless `DELETE` call (e.g. `deleteMember`/`deleteTask`) used to
+ * trigger, since this header was previously sent unconditionally. Any header
+ * explicitly supplied by the caller (via `init.headers`) still wins, since it
+ * is spread in after this default.
+ */
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_ROOT}${path}`;
   const res = await fetch(url, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(init?.body !== undefined ? { "Content-Type": "application/json" } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -179,7 +188,16 @@ export const api = {
   unarchiveProject: (id: number) =>
     request<Project>(`/projects/${id}/unarchive`, { method: "POST" }),
 
-  getAgenda: () => request<AgendaResponse>("/agenda/today"),
+  /**
+   * `memberId` scopes the agenda to a single member (the currently
+   * selected identity from `useIdentity`) so the frontend never fetches
+   * -- and thus never accidentally renders -- another member's tasks.
+   * Shared/unassigned tasks still come back regardless, since the
+   * backend includes those for every member. Passing `null`/`undefined`
+   * (e.g. while no identity is selected yet) omits the param entirely.
+   */
+  getAgenda: (memberId?: number | null) =>
+    request<AgendaResponse>(`/agenda/today${query({ memberId })}`),
   getInbox: () => request<Task[]>("/inbox"),
   getWaiting: () => request<WaitingGroup[]>("/waiting"),
   searchTasks: (filters: SearchFilters) =>

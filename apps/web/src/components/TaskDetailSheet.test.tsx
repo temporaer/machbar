@@ -114,4 +114,110 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Ausschließen" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(43, { excludedTagIds: [11] }));
   });
+
+  it("aktiviert Änderungen speichern erst, nachdem die Notizen bearbeitet wurden", async () => {
+    const task = makeTask({ id: 45, title: "Wäsche waschen", notes: "" });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(45);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Wäsche waschen");
+
+    const saveButton = screen.getByRole("button", { name: "Änderungen speichern" });
+    expect(saveButton).toBeDisabled();
+
+    const notesField = screen.getByLabelText("Notizen") as HTMLTextAreaElement;
+    await userEvent.type(notesField, "Feinwäsche zuerst");
+
+    expect(saveButton).toBeEnabled();
+  });
+
+  it("aktiviert Änderungen speichern nach Bearbeitung von Titel/Metadaten und sendet den Request beim Klick", async () => {
+    const task = makeTask({ id: 46, title: "Einkaufen", notes: "Milch" });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(46);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Einkaufen");
+
+    const saveButton = screen.getByRole("button", { name: "Änderungen speichern" });
+    expect(saveButton).toBeDisabled();
+
+    const titleField = screen.getByLabelText("Titel") as HTMLInputElement;
+    await userEvent.clear(titleField);
+    await userEvent.type(titleField, "Einkaufen gehen");
+
+    expect(saveButton).toBeEnabled();
+
+    await userEvent.click(saveButton);
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(46, {
+        title: "Einkaufen gehen",
+        notes: "Milch",
+        context: null,
+        waitingFor: null,
+      }),
+    );
+  });
+
+  it("deaktiviert Änderungen speichern wieder, sobald alle Felder auf den Ursprungszustand zurückgesetzt werden", async () => {
+    const task = makeTask({ id: 47, title: "Rechnung prüfen", notes: "" });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(47);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Rechnung prüfen");
+
+    const saveButton = screen.getByRole("button", { name: "Änderungen speichern" });
+    const notesField = screen.getByLabelText("Notizen") as HTMLTextAreaElement;
+
+    await userEvent.type(notesField, "Beleg suchen");
+    expect(saveButton).toBeEnabled();
+
+    await userEvent.clear(notesField);
+    expect(saveButton).toBeDisabled();
+  });
+
+  it("deaktiviert Änderungen speichern bei leerem Titel, auch wenn andere Felder geändert wurden", async () => {
+    const task = makeTask({ id: 48, title: "Termin vereinbaren", notes: "" });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(48);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Termin vereinbaren");
+
+    const saveButton = screen.getByRole("button", { name: "Änderungen speichern" });
+    const notesField = screen.getByLabelText("Notizen") as HTMLTextAreaElement;
+    const titleField = screen.getByLabelText("Titel") as HTMLInputElement;
+
+    // Clear the title first, then move focus into notes (blurring the now-
+    // invalid title) before typing, so the only blur-triggered auto-save
+    // attempt happens while the title is empty.
+    await userEvent.clear(titleField);
+    await userEvent.type(notesField, "Kalender prüfen");
+    expect(saveButton).toBeDisabled();
+
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("behält bearbeitete Notizen bei einem Reload durch einen anderen Patch auf derselben Aufgabe", async () => {
+    const task = makeTask({ id: 49, title: "Garten pflegen", notes: "alt" });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.updateTask.mockResolvedValue({ ...task, priority: 2 });
+
+    renderSheet(49);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Garten pflegen");
+
+    const notesField = screen.getByLabelText("Notizen") as HTMLTextAreaElement;
+    await userEvent.type(notesField, " neu");
+
+    // Trigger an unrelated patch (priority change) which reloads this same task.
+    await userEvent.selectOptions(screen.getByLabelText("Priorität"), "2");
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(49, { priority: 2 }));
+
+    // The in-progress notes edit must survive the reload triggered above.
+    expect(screen.getByLabelText("Notizen")).toHaveValue("alt neu");
+  });
 });

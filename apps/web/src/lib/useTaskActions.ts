@@ -74,11 +74,18 @@ function reopenedStatus(task: Task): TaskStatus {
  * `retained`, so any list still rendering that row can keep showing it —
  * crossed out or muted — instead of yanking it away the moment the
  * compiled view (Heute/Eingang/Suche/…) refetches and no longer includes
- * it. The global refresh (`bump()`) still fires immediately so counts and
- * badges elsewhere update right away; only *this* row's visible removal is
- * delayed by `RETENTION_MS`. A failed mutation clears the retained entry
- * immediately, which restores the row to its last known-good (pre-mutation)
- * state, and records a message consumers can surface inline.
+ * it. Crucially, the global refresh (`bump()`) does *not* fire the instant
+ * the mutation succeeds: several compiled views only render a section (and
+ * the `TaskOutline` within it) while that section is non-empty, so an
+ * immediate refetch can unmount the very `TaskOutline` holding the
+ * `retained` snapshot — cutting the "stays crossed out" window down to a
+ * single render frame instead of `RETENTION_MS`. Instead, `bump()` is
+ * deferred to fire exactly once, precisely when the retention window
+ * naturally elapses (see `retain`), so counts/badges elsewhere and this
+ * row's removal settle together. A failed mutation clears the retained
+ * entry (and cancels that pending bump) immediately, which restores the row
+ * to its last known-good (pre-mutation) state, and records a message
+ * consumers can surface inline — no delayed refresh is left behind.
  */
 export function useTaskActions() {
   const { bump } = useRefresh();
@@ -112,25 +119,31 @@ export function useTaskActions() {
     });
   }, []);
 
-  const retain = useCallback((optimisticTask: Task) => {
-    setRetained((prev) => {
-      const next = new Map(prev);
-      next.set(optimisticTask.id, optimisticTask);
-      return next;
-    });
-    const existing = timers.current.get(optimisticTask.id);
-    if (existing) clearTimeout(existing);
-    const timeout = setTimeout(() => {
-      timers.current.delete(optimisticTask.id);
+  /**
+   * Starts (or restarts) the retention window for a task. When it naturally
+   * expires — i.e. it is never pre-empted by `release` (mutation failure) or
+   * superseded by a later `retain` call for the same id (a follow-up
+   * transition on the same task) — the row is released *and only then* is
+   * the global refresh bumped. See `runTransition` for why the bump must not
+   * happen any earlier.
+   */
+  const retain = useCallback(
+    (optimisticTask: Task) => {
       setRetained((prev) => {
-        if (!prev.has(optimisticTask.id)) return prev;
         const next = new Map(prev);
-        next.delete(optimisticTask.id);
+        next.set(optimisticTask.id, optimisticTask);
         return next;
       });
-    }, RETENTION_MS);
-    timers.current.set(optimisticTask.id, timeout);
-  }, []);
+      const existing = timers.current.get(optimisticTask.id);
+      if (existing) clearTimeout(existing);
+      const timeout = setTimeout(() => {
+        release(optimisticTask.id);
+        bump();
+      }, RETENTION_MS);
+      timers.current.set(optimisticTask.id, timeout);
+    },
+    [release, bump],
+  );
 
   const clearError = useCallback((id: number) => {
     setErrors((prev) => {
@@ -148,7 +161,17 @@ export function useTaskActions() {
       retain(optimisticTask);
       try {
         await job();
-        bump();
+        // Deliberately no `bump()` here. Bumping now would let every
+        // subscribed compiled view (Heute/Eingang/Suche/…) refetch
+        // immediately — before the retention window is up — and some of
+        // those views conditionally render their child `TaskOutline` only
+        // while its section is non-empty (see e.g. `TodayPage`'s
+        // `.filter((s) => agenda[s.key].length > 0)`). An immediate refetch
+        // can therefore unmount *this very* `TaskOutline`, destroying the
+        // `retained` state we just optimistically set and cutting the
+        // crossed-out row's visible lifetime down to a single render frame
+        // instead of the full window. `retain`'s own timer releases the row
+        // and bumps exactly once, once the window has fully elapsed.
       } catch (err) {
         release(task.id);
         setErrors((prev) => ({ ...prev, [task.id]: errorMessage(err) }));
@@ -157,7 +180,7 @@ export function useTaskActions() {
         setPending(null);
       }
     },
-    [bump, clearError, retain, release],
+    [clearError, retain, release],
   );
 
   const complete = useCallback(
