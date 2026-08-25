@@ -125,6 +125,7 @@ const extra = {
   saveChanges: "Änderungen speichern",
   identityRequiredTitle: "Bitte wähle deine Identität",
   identityRequiredBody: "Machbar merkt sich, wer du bist, damit Zuständigkeiten und die Heute-Ansicht stimmen.",
+  firstMemberHint: "Noch ist niemand angelegt. Erstelle die erste Person, um Machbar zu starten.",
   installApp: "Als App installieren",
   version: "Version",
   followUpFor: "Wartet auf",

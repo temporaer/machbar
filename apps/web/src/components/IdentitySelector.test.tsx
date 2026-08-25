@@ -9,6 +9,7 @@ import { makeMember } from "../test/fixtures";
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
+    createMember: vi.fn(),
   },
 }));
 
@@ -37,6 +38,35 @@ describe("IdentitySelector", () => {
 
     await waitFor(() => expect(option).toHaveAttribute("aria-selected", "true"));
     expect(window.localStorage.getItem("machbar:identity-member-id")).toBe("1");
+  });
+
+  it("legt auf einer leeren Installation die erste Person an und wählt sie sofort aus", async () => {
+    const hannes = makeMember({ id: 7, name: "Hannes" });
+    mockedApi.getMembers.mockResolvedValueOnce([]).mockResolvedValueOnce([hannes]);
+    mockedApi.createMember.mockResolvedValue(hannes);
+    renderWithProviders(<IdentitySelector />);
+
+    expect(await screen.findByText("Noch ist niemand angelegt. Erstelle die erste Person, um Machbar zu starten."))
+      .toBeInTheDocument();
+    await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Hannes");
+    await userEvent.click(screen.getByRole("button", { name: "Person hinzufügen" }));
+
+    await waitFor(() => expect(mockedApi.createMember).toHaveBeenCalledWith({ name: "Hannes" }));
+    await waitFor(() => expect(window.localStorage.getItem("machbar:identity-member-id")).toBe("7"));
+    expect(await screen.findByRole("option", { name: /Hannes/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("zeigt einen Fehler und behält den Namen, wenn das Bootstrap-Anlegen fehlschlägt", async () => {
+    mockedApi.getMembers.mockResolvedValue([]);
+    mockedApi.createMember.mockRejectedValue(new Error("Name bereits vergeben"));
+    renderWithProviders(<IdentitySelector />);
+
+    const input = await screen.findByRole("textbox", { name: "Name" });
+    await userEvent.type(input, "Hannes");
+    await userEvent.click(screen.getByRole("button", { name: "Person hinzufügen" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Name bereits vergeben");
+    expect(input).toHaveValue("Hannes");
   });
 
   it("verwirft eine ausgewählte Person, die nach einer Löschung nicht mehr in der Liste ist", async () => {
