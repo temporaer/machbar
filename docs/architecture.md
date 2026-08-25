@@ -39,7 +39,9 @@ Project ──── Task ──── SubTask (Task.parentTaskId)
 - **Projects are user stories.** A project has a single owner — the **driver** — an optional due/scheduled date, and an ordered list of **acceptance criteria**.
 - **Acceptance criteria** (`project_acceptance_criteria`) are structured, individually checkable, position-ordered rows. They replace the former free-text `projects.description` column.
 - **Tasks** belong to at most one project and at most one parent task (forming a tree of arbitrary depth). Each task carries an optional **size** estimate (`S | M | L | XL`).
-- **Tags** are many-to-many with both projects and tasks.
+- **Tags** are many-to-many with both projects and tasks. Every tag has a
+  persisted colour; newly created names map deterministically onto the
+  application palette, so colours do not change between clients or renders.
 
 ### Inheritance chains
 
@@ -58,6 +60,15 @@ Three fields cascade down the task tree:
 - `none` — explicitly clear the value (no further upward lookup)
 
 The resolved values are exposed as `effectiveOwnerId`, `effectiveContext`, and `effectiveTags` on the `Task` type in `@machbar/shared`.
+
+Tag selection is a reusable compact chip picker in both task and project
+editors. It loads the shared tag catalogue, creates missing tags through
+`POST /api/tags`, and selects a newly created tag immediately. Inherited task
+tags remain separately excludable rather than being converted into explicit
+task tags. `TagManager` exposes catalogue creation/deletion under **Mehr**;
+`DELETE /api/tags/:id` relies on the three join tables' `ON DELETE CASCADE`
+constraints, so deleting a tag removes its associations without deleting
+projects or tasks.
 
 ---
 

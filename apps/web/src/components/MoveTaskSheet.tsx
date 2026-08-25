@@ -34,6 +34,11 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Separate from the load `error` above: a failed *submit* must not blank
+  // out the picker (the user's selection and search state are still worth
+  // keeping around to retry), so it renders inline instead of swapping the
+  // whole sheet for `ErrorState`.
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const needsProjectStep = mode === "project" || mode === "subtree";
   const needsParentStep = mode === "parent" || mode === "subtree";
@@ -95,6 +100,7 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
 
   const submit = async () => {
     setSaving(true);
+    setSubmitError(null);
     try {
       if (mode === "parent") {
         if (selectedParentId === null) {
@@ -115,6 +121,8 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
       if (needsParentStep) rememberDestination("parent", selectedParentId);
       bump();
       onClose();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
@@ -152,6 +160,11 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
               onChange={setSelectedParentId}
               noneLabel={strings.noParent}
             />
+          ) : null}
+          {submitError ? (
+            <p className="text-muted" role="alert">
+              {strings.moveFailed}: {submitError}
+            </p>
           ) : null}
           <div className="row">
             <button type="button" className="btn" onClick={onClose}>

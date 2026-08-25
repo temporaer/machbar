@@ -308,6 +308,8 @@ npm run db:migrate
 Migrations are idempotent — running them more than once is safe.
 
 > **`0002_project_acceptance_criteria_task_size`** rebuilds the `projects` table: it drops the free-text `description` column (copying every non-empty description into the story's first acceptance criterion), defaults `status` to `backlog`, and adds `tasks.size`. No projects, tasks, tags, or dependencies are lost.
+>
+> **`0003_colored_default_tags`** adds a stable colour to every existing tag and inserts the standard household/person tags (`Lars`, `Lea`, `Jonas`, `Hannes`, `Sarah`, `Schule`, `Kita`, `Urlaub`, `Haus`, `Garten`) without replacing existing data.
 
 To rehearse a migration against production data, always work on a **copy**:
 
@@ -463,8 +465,11 @@ An **owner × size matrix** over all open tasks. Tap a cell to filter the list b
 
 - **Retained rows stay actionable.** After completing a task it stays visible, crossed out, for a few seconds. It is only disabled while the request is in flight; once the request completes the row is interactive again, so a second swipe immediately reopens it.
 - **Focused quick sheets.** Owner, dates, tags, criteria and driver each have their own small sheet. Full detail pages are reserved for deliberate deep edits.
+- **Tags are compact and reusable.** Project and task editors show the available tags as small, coloured, directly tappable chips. A new tag can be created inline and is selected immediately; its stable colour is assigned automatically. Project tags flow down the task tree unless a task excludes them. The global catalogue can be created and deleted under **Mehr › Tags verwalten**; deletion removes only the tag associations, never their projects or tasks.
 - **Assignment is a tap, not a dropdown.** Since a household has at most a handful of members, every assignment popup shows all of them as chips — including an explicit *Gemeinsam / offen* (tasks) or *Niemand zugewiesen* (stories) chip wherever leaving it unassigned is allowed. The current choice stays highlighted while you pick.
 - **Waiting follow-ups are append-only.** Logging a follow-up on a `waiting` task appends to its notes under a generated header — `[dd.mm.yy, hh:mm · Name]` — so the history stays intact and attributable. Setting a **Wiedervorlage** in the same sheet also clears the story's `only_waiting` flag.
+- **Waiting uses normal task rows.** The Wartet view is one flat, deterministically ordered outline with `Wartet auf: …` inside each row. Right-swipe always means *Wieder machbar* in this view; *Nachhaken* remains a focused action in the compact icon strip.
+- **Projectless tasks can be filed in place.** Their project icon opens the same searchable picker with recent destinations used by task refiling, and moves the complete subtree into the chosen project.
 - **Refiling searches.** *Ablegen* / *Verschieben* lists every target project or parent task with a search box on top: type any part of a project or task title (the owning project counts too) and the list filters as you type. With an empty box the five destinations you used most recently come first under *Zuletzt verwendet*, everything else under *Alle Ziele*. Recents live in the browser only and are dropped automatically when a destination no longer applies. It is reached from the outline's selected-task toolbar (*Ablegen*) and from the task detail sheet, so no structural move ever requires a gesture.
 - **Structure is dragged, not configured.** The task outline has no organize mode: one ⠿ handle per row, one insertion line, one toolbar for the selected task — with arrow keys on the handle as the full pointer-free equivalent. See *Project outline* above.
 

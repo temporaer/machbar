@@ -4,6 +4,7 @@ import { useIdentity } from "../lib/identity";
 import { useSwipeSettings, primarySwipeActions } from "../lib/swipeSettings";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { MemberManager } from "../components/MemberManager";
+import { TagManager } from "../components/TagManager";
 import { fallbackColor, initials } from "../lib/format";
 
 export function MorePage() {
@@ -88,6 +89,12 @@ export function MorePage() {
           <h3 style={{ margin: 0 }}>{strings.manageMembers}</h3>
           <p className="text-muted">{strings.manageMembersHint}</p>
           <MemberManager />
+        </div>
+
+        <div className="card">
+          <h3 style={{ margin: 0 }}>{strings.manageTags}</h3>
+          <p className="text-muted">{strings.manageTagsHint}</p>
+          <TagManager />
         </div>
 
         <div className="card">

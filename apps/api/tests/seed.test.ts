@@ -12,12 +12,26 @@ describe("seed data", () => {
     await closeTestContext(ctx);
   });
 
-  it("seeds three members and eight tags", async () => {
+  it("seeds three members and the standard tag catalogue", async () => {
     const members = await ctx.app.inject({ method: "GET", url: "/api/members" });
     expect(members.json()).toHaveLength(3);
 
     const tags = await ctx.app.inject({ method: "GET", url: "/api/tags" });
-    expect(tags.json().length).toBeGreaterThanOrEqual(8);
+    const tagNames = tags.json().map((tag: { name: string }) => tag.name);
+    expect(tagNames).toEqual(
+      expect.arrayContaining([
+        "Lars",
+        "Lea",
+        "Jonas",
+        "Hannes",
+        "Sarah",
+        "Schule",
+        "Kita",
+        "Urlaub",
+        "Haus",
+        "Garten",
+      ]),
+    );
   });
 
   it("classifies every Festgefahren scenario correctly", async () => {

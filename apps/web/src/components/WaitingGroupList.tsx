@@ -1,67 +1,52 @@
-import type { WaitingGroup } from "@machbar/shared";
-import { strings } from "../lib/strings";
-import { useTaskDetail } from "../lib/taskDetailContext";
-import { useRefresh } from "../lib/refresh";
-import { api } from "../lib/api";
-import { EmptyState } from "./AsyncStates";
-import { StatusBadge } from "./StatusBadge";
-import { formatDate } from "../lib/format";
 import { useState } from "react";
+import type { Task, WaitingGroup } from "@machbar/shared";
+import { strings } from "../lib/strings";
+import { TaskOutline } from "./TaskOutline";
 import { WaitingFollowUpSheet } from "./WaitingFollowUpSheet";
 
-export function WaitingGroupList({ groups }: { groups: WaitingGroup[] }) {
-  const { open } = useTaskDetail();
-  const { bump } = useRefresh();
-  const [followUpTask, setFollowUpTask] = useState<WaitingGroup["tasks"][number] | null>(null);
+/**
+ * Flattens the backend's `WaitingGroup[]` (tasks bucketed by `waitingFor`)
+ * into a single ordered `Task[]` for `TaskOutline`, preserving group order
+ * and each group's task order exactly — no regrouping, no external group
+ * headings, and no duplicates, since every task appears in exactly one
+ * backend group.
+ *
+ * Each task's `waitingFor` is displayed via `TaskRow`'s existing meta line;
+ * when a task's own `waitingFor` is null/blank, `group.waitingFor` (e.g.
+ * "Unbekannt") is used as a display-only fallback. This never touches the
+ * API — it's purely a shallow copy for rendering.
+ *
+ * `position` is also rewritten to a sequential index matching this flat
+ * order, since `TaskOutline` sorts its root tasks by `position` even when
+ * `organizable` is false; the tasks here come from unrelated sibling groups
+ * whose real `position` values aren't comparable across groups.
+ */
+function toDisplayTasks(groups: WaitingGroup[]): Task[] {
+  const tasks: Task[] = [];
+  let position = 0;
+  for (const group of groups) {
+    for (const task of group.tasks) {
+      const waitingFor = task.waitingFor?.trim() ? task.waitingFor : group.waitingFor;
+      tasks.push({ ...task, waitingFor, position: position++ });
+    }
+  }
+  return tasks;
+}
 
-  if (groups.length === 0) return <EmptyState message={strings.waitingEmpty} />;
+export function WaitingGroupList({ groups }: { groups: WaitingGroup[] }) {
+  const [followUpTask, setFollowUpTask] = useState<Task | null>(null);
 
   return (
-    <div className="stack">
-      {groups.map((group) => (
-        <div key={group.waitingFor} className="section">
-          <div className="section-title">
-            <span>
-              {strings.followUpFor}: {group.waitingFor}
-            </span>
-          </div>
-          <ul className="list" style={{ padding: 0, margin: 0 }}>
-            {group.tasks.map((task) => (
-              <li key={task.id} className="card">
-                <div className="row-between">
-                  <button type="button" className="link-plain" onClick={() => open(task.id)}>
-                    {task.title}
-                  </button>
-                  <StatusBadge status={task.status} />
-                </div>
-                {task.dueDate ? (
-                  <p className="text-muted" style={{ margin: "4px 0 0" }}>
-                    {strings.due}: {formatDate(task.dueDate)}
-                  </p>
-                ) : null}
-                <div className="row" style={{ marginTop: 8 }}>
-                  <button type="button" className="btn btn-sm" onClick={() => setFollowUpTask(task)}>
-                    {strings.followUp}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
-                    onClick={() => void api.updateTask(task.id, { status: "actionable" }).then(bump)}
-                  >
-                    {strings.makeActionable}
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+    <>
+      <TaskOutline
+        tasks={toDisplayTasks(groups)}
+        emptyMessage={strings.waitingEmpty}
+        organizable={false}
+        waitingInteraction={{ onFollowUp: setFollowUpTask }}
+      />
       {followUpTask ? (
-        <WaitingFollowUpSheet
-          task={followUpTask}
-          onClose={() => setFollowUpTask(null)}
-        />
+        <WaitingFollowUpSheet task={followUpTask} onClose={() => setFollowUpTask(null)} />
       ) : null}
-    </div>
+    </>
   );
 }

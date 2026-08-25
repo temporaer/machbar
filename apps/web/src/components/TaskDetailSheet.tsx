@@ -15,6 +15,7 @@ import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
 import { TagChip } from "./TagChip";
+import { TagPicker } from "./TagPicker";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
@@ -363,15 +364,6 @@ export function TaskDetailSheet() {
               {task.explicitTags.length === 0 && inheritedTags.length === 0 ? (
                 <span className="text-muted">{strings.noTags}</span>
               ) : null}
-              {task.explicitTags.map((tag) => (
-                <TagChip
-                  key={tag.id}
-                  tag={tag}
-                  onRemove={() =>
-                    void patch({ tagIds: task.explicitTags.filter((t) => t.id !== tag.id).map((t) => t.id) })
-                  }
-                />
-              ))}
               {inheritedTags.map((tag) => {
                 const excluded = task.excludedTagIds.includes(tag.id);
                 return (
@@ -390,27 +382,12 @@ export function TaskDetailSheet() {
                 );
               })}
             </div>
-            <label htmlFor="task-add-tag" className="text-muted">
-              {strings.addTag}
-            </label>
-            <select
-              id="task-add-tag"
-              value=""
-              onChange={(e) => {
-                const id = Number(e.target.value);
-                if (!id) return;
-                void patch({ tagIds: [...task.explicitTags.map((t) => t.id), id] });
-              }}
-            >
-              <option value="">{strings.addTag}</option>
-              {(tags ?? [])
-                .filter((t) => !task.explicitTags.some((e) => e.id === t.id))
-                .map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-            </select>
+            <TagPicker
+              tags={tags ?? []}
+              selectedIds={task.explicitTags.map((tag) => tag.id)}
+              hiddenIds={inheritedTags.map((tag) => tag.id)}
+              onChange={(tagIds) => patch({ tagIds })}
+            />
           </div>
 
           <div className="field">

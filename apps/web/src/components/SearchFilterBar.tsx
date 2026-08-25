@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { Project, SearchFilters, Tag, TaskStatus } from "@machbar/shared";
 import { taskStatuses } from "@machbar/shared";
 import { strings, taskStatusLabels } from "../lib/strings";
@@ -131,15 +131,12 @@ export function SearchFilterBar({
                   <button
                     key={tag.id}
                     type="button"
-                    className="chip"
+                    className="tag-choice"
                     aria-pressed={(filters.tagIds ?? []).includes(tag.id)}
-                    style={
-                      (filters.tagIds ?? []).includes(tag.id)
-                        ? { background: "var(--color-primary)", color: "#fff" }
-                        : undefined
-                    }
+                    style={{ "--tag-color": tag.color } as CSSProperties}
                     onClick={() => toggleTag(tag.id)}
                   >
+                    <span className="tag-color-dot" aria-hidden="true" />
                     {tag.name}
                   </button>
                 ))}

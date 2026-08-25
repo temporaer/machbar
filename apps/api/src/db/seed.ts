@@ -1,4 +1,5 @@
 import { loadEnv } from "../env.js";
+import { colorForTag } from "../domain/mutations.js";
 import { openDb, type Db } from "./client.js";
 import { runMigrations } from "./migrate.js";
 import * as schema from "./schema.js";
@@ -75,14 +76,27 @@ export function seedDatabase(db: Db): void {
       "Büro",
       "Telefon",
       "Erledigungen",
-      "Garten",
       "Finanzen",
       "Gesundheit",
       "Online",
+      "Lars",
+      "Lea",
+      "Jonas",
+      "Hannes",
+      "Sarah",
+      "Schule",
+      "Kita",
+      "Urlaub",
+      "Haus",
+      "Garten",
     ];
-    const tagsByName = new Map<string, { id: number; name: string }>();
+    const tagsByName = new Map<string, { id: number; name: string; color: string }>();
     for (const name of tagNames) {
-      const tag = tx.insert(schema.tags).values({ name }).returning().get();
+      const tag = tx
+        .insert(schema.tags)
+        .values({ name, color: colorForTag(name) })
+        .returning()
+        .get();
       tagsByName.set(name, tag);
     }
     const tagIds = (names: string[]) =>

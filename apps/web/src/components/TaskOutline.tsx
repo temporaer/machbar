@@ -6,6 +6,7 @@ import { useTaskActions } from "../lib/useTaskActions";
 import { useSwipeSettings } from "../lib/swipeSettings";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
 import { TaskRow } from "./TaskRow";
+import type { TaskRowWaitingInteraction } from "./TaskRow";
 import { TaskOrganizeBar } from "./TaskOrganizeBar";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
@@ -27,9 +28,17 @@ export interface TaskOutlineProps {
    * sheet's searchable pickers.
    */
   organizable?: boolean;
+  /**
+   * Host interaction config for "waiting row mode" — currently only passed
+   * by the Warten page. See `TaskRowWaitingInteraction` for exactly what it
+   * changes about a row's primary swipe and chip strip. Left undefined
+   * everywhere else, which keeps every other outline's swipe/chip behavior
+   * completely unchanged.
+   */
+  waitingInteraction?: TaskRowWaitingInteraction | undefined;
 }
 
-export function TaskOutline({ tasks, emptyMessage, organizable = false }: TaskOutlineProps) {
+export function TaskOutline({ tasks, emptyMessage, organizable = false, waitingInteraction }: TaskOutlineProps) {
   const [movePrompt, setMovePrompt] = useState<{ task: Task; mode: MoveMode } | null>(null);
   const taskActions = useTaskActions();
   const { open } = useTaskDetail();
@@ -84,6 +93,7 @@ export function TaskOutline({ tasks, emptyMessage, organizable = false }: TaskOu
               depth={0}
               onOpenDetail={open}
               taskActions={taskActions}
+              waitingInteraction={waitingInteraction}
             />
           ))}
         </ul>
@@ -92,7 +102,15 @@ export function TaskOutline({ tasks, emptyMessage, organizable = false }: TaskOu
         // `marginTop` replaces the flex `gap` the two lists cannot share.
         <ul className="list" style={{ padding: 0, margin: "8px 0 0" }}>
           {ghosts.map((task) => (
-            <TaskRow key={task.id} task={task} parentTask={null} depth={0} onOpenDetail={open} taskActions={taskActions} />
+            <TaskRow
+              key={task.id}
+              task={task}
+              parentTask={null}
+              depth={0}
+              onOpenDetail={open}
+              taskActions={taskActions}
+              waitingInteraction={waitingInteraction}
+            />
           ))}
         </ul>
       ) : null}

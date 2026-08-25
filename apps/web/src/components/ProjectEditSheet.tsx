@@ -7,7 +7,7 @@ import { useRefresh } from "../lib/refresh";
 import { strings, projectStatusLabels } from "../lib/strings";
 import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { BottomSheet } from "./BottomSheet";
-import { TagChip } from "./TagChip";
+import { TagPicker } from "./TagPicker";
 
 /** The subset of story fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -241,37 +241,11 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
 
         <div className="field">
           <label>{strings.tags}</label>
-          <div className="row" style={{ flexWrap: "wrap" }}>
-            {project.tags.length === 0 ? <span className="text-muted">{strings.noTags}</span> : null}
-            {project.tags.map((tag) => (
-              <TagChip
-                key={tag.id}
-                tag={tag}
-                onRemove={() => void patch({ tagIds: project.tags.filter((t) => t.id !== tag.id).map((t) => t.id) })}
-              />
-            ))}
-          </div>
-          <label htmlFor="project-add-tag" className="text-muted">
-            {strings.addTag}
-          </label>
-          <select
-            id="project-add-tag"
-            value=""
-            onChange={(e) => {
-              const id = Number(e.target.value);
-              if (!id) return;
-              void patch({ tagIds: [...project.tags.map((t) => t.id), id] });
-            }}
-          >
-            <option value="">{strings.addTag}</option>
-            {(tags ?? [])
-              .filter((t) => !project.tags.some((e) => e.id === t.id))
-              .map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-          </select>
+          <TagPicker
+            tags={tags ?? []}
+            selectedIds={project.tags.map((tag) => tag.id)}
+            onChange={(tagIds) => patch({ tagIds })}
+          />
         </div>
 
         <button

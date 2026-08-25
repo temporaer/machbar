@@ -368,6 +368,63 @@ a {
   text-decoration: line-through;
 }
 
+.tag-chip {
+  border-color: var(--tag-color);
+}
+
+.tag-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tag-choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.tag-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--tag-color) 65%, var(--color-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tag-color) 8%, var(--color-surface));
+  color: var(--color-text);
+  font-size: 0.72rem;
+}
+
+.tag-choice[aria-pressed="true"] {
+  background: var(--tag-color);
+  border-color: var(--tag-color);
+  color: #fff;
+  font-weight: 600;
+}
+
+.tag-color-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tag-color);
+}
+
+.tag-choice[aria-pressed="true"] .tag-color-dot {
+  background: currentColor;
+}
+
+.tag-create {
+  display: flex;
+  gap: 6px;
+}
+
+.tag-create input {
+  min-width: 0;
+  flex: 1;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

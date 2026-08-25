@@ -244,6 +244,7 @@ export const api = {
   getTags: () => request<Tag[]>("/tags"),
   createTag: (name: string) =>
     request<Tag>("/tags", { method: "POST", body: JSON.stringify({ name }) }),
+  deleteTag: (id: number) => request<void>(`/tags/${id}`, { method: "DELETE" }),
 
   getProjects: () => request<ProjectWithActions[]>("/projects"),
   getStuckProjects: () => request<StuckProjectWithActions[]>("/projects/stuck"),

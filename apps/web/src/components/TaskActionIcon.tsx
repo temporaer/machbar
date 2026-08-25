@@ -9,6 +9,7 @@ export type TaskActionIconKind =
   | "waiting"
   | "actionable"
   | "reopen"
+  | "followUp"
   | "more";
 
 function Glyph({ kind }: { kind: TaskActionIconKind }) {
@@ -51,6 +52,11 @@ function Glyph({ kind }: { kind: TaskActionIconKind }) {
         <path d="M7 4.5l11 7.5L7 19.5z" {...common} />
       ) : kind === "reopen" ? (
         <path d="M5 8V3.5M5 3.5h4.5M5.5 4.5A8 8 0 1 1 4 14" {...common} />
+      ) : kind === "followUp" ? (
+        <>
+          <path d="M4 5h16v10.5H10L5 20v-4.5H4z" {...common} />
+          <path d="M12 8v3.2M12 13.7v.01" {...common} />
+        </>
       ) : (
         <>
           <path d="M4 6h16M4 12h16M4 18h16" {...common} />

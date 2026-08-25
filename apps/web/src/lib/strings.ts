@@ -46,6 +46,13 @@ const extra = {
   noProjects: "Keine Projekte vorhanden.",
   noTasks: "Keine Aufgaben vorhanden.",
   addTag: "Tag hinzufügen",
+  newTag: "Neuer Tag",
+  newTagPlaceholder: "Tag-Name …",
+  createTag: "Anlegen",
+  manageTags: "Tags verwalten",
+  manageTagsHint: "Tags anlegen oder aus allen Projekten und Aufgaben entfernen.",
+  tagDeleteConfirm: (name: string) =>
+    `Tag „${name}“ endgültig löschen? Er wird aus allen Projekten und Aufgaben entfernt.`,
   removeTag: "Entfernen",
   excludeInheritedTag: "Ausschließen",
   includeInheritedTag: "Ausschluss aufheben",
@@ -153,6 +160,7 @@ const extra = {
   moreActions: "Weitere Aktionen",
   toProject: "Zum Projekt",
   noProjectChipHint: "Kein Projekt zugeordnet",
+  assignProject: "Projekt zuweisen",
   primarySwipeActionLabels: {
     complete: "Erledigen / Wieder öffnen",
     waiting: "Warten",

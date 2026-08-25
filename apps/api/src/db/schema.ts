@@ -21,6 +21,7 @@ export const members = sqliteTable("members", {
 export const tags = sqliteTable("tags", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull().unique(),
+  color: text("color").notNull().default("#64748b"),
 });
 
 export const projects = sqliteTable("projects", {

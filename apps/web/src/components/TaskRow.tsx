@@ -18,6 +18,7 @@ import {
   type TaskQuickAction,
 } from "./TaskQuickActionSheet";
 import { InlineChildComposer } from "./InlineChildComposer";
+import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskActionIcon } from "./TaskActionIcon";
 
 const SWIPE_THRESHOLD = 72;
@@ -31,6 +32,27 @@ const KEY_DIRECTIONS: Record<string, OrganizeDirection> = {
   ArrowLeft: "outdent",
 };
 
+/**
+ * Opts a `TaskOutline`/`TaskRow` tree into "waiting row mode", used by the
+ * Warten page's own outline. Its mere presence (regardless of `onFollowUp`
+ * actually doing anything) switches the primary (right) swipe from the
+ * globally configured `PrimarySwipeAction` to always setting the task back
+ * to `actionable` — "erledigen"/"Irgendwann"/"Verwerfen" make no sense
+ * against a row that is, by construction, always `waiting` here — while
+ * still going through the existing optimistic retention/error flow (see
+ * `useTaskActions`), completely independent of the global swipe setting
+ * stored by `useSwipeSettings`.
+ */
+export interface TaskRowWaitingInteraction {
+  /**
+   * Hands a waiting task back to the host so it can open its own follow-up
+   * UI (e.g. `WaitingFollowUpSheet`). Only offered as a chip when the task
+   * is still `waiting` — a row that a swipe/chip already turned actionable
+   * has nothing left to "follow up" on.
+   */
+  onFollowUp: (task: Task) => void;
+}
+
 export interface TaskRowProps {
   task: Task;
   /** The immediate parent task, or null when `task` sits at the project root. */
@@ -39,6 +61,8 @@ export interface TaskRowProps {
   depth: number;
   onOpenDetail: (taskId: number, focusField?: TaskDetailFocusField) => void;
   taskActions: ReturnType<typeof useTaskActions>;
+  /** See `TaskRowWaitingInteraction`. Absent everywhere but the Warten page's outline. */
+  waitingInteraction?: TaskRowWaitingInteraction | undefined;
 }
 
 /** Short, status-like label for the primary-swipe reveal background. */
@@ -63,12 +87,17 @@ export function TaskRow({
   depth,
   onOpenDetail,
   taskActions,
+  waitingInteraction,
 }: TaskRowProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dragX, setDragX] = useState(0);
   const [chipsOpen, setChipsOpen] = useState(false);
   const [quickAction, setQuickAction] = useState<TaskQuickAction | null>(null);
   const [childComposerOpen, setChildComposerOpen] = useState(false);
+  // Only reachable for a projectless task (see `projectChipClick`) — the
+  // existing searchable/recent project picker, restricted to its
+  // project-only step so no parent picker is shown for a plain assignment.
+  const [assignProjectOpen, setAssignProjectOpen] = useState(false);
   // The "Teilaufgabe hinzufügen" button itself lives inside the collapsible
   // chip strip (unmounted whenever the composer replaces it), so focus is
   // returned to the always-mounted kebab button instead — the closest
@@ -216,14 +245,24 @@ export function TaskRow({
     if (!dragState.current.dragging) return;
     dragState.current.dragging = false;
     if (dragX > SWIPE_THRESHOLD) {
-      // One configurable direction performs the primary state transition.
-      requestPrimarySwipe(task, primarySwipeAction);
+      if (waitingInteraction) {
+        // Waiting row mode overrides the globally configured primary swipe
+        // action: the one transition that ever makes sense against a
+        // waiting row is "wieder machbar", so it always applies here
+        // regardless of what `useSwipeSettings` currently holds — while
+        // still going through `setStatus`'s existing optimistic
+        // retention/error flow, same as every other status swipe.
+        setStatus(task, "actionable");
+      } else {
+        // One configurable direction performs the primary state transition.
+        requestPrimarySwipe(task, primarySwipeAction);
+      }
     } else if (dragX < -SWIPE_THRESHOLD) {
       // The opposite direction reveals the touch-chip row instead of acting.
       setChipsOpen(true);
     }
     setDragX(0);
-  }, [dragX, requestPrimarySwipe, task, primarySwipeAction]);
+  }, [dragX, requestPrimarySwipe, setStatus, task, primarySwipeAction, waitingInteraction]);
 
   const openQuickAction = (action: TaskQuickAction) => {
     setQuickAction(action);
@@ -241,15 +280,26 @@ export function TaskRow({
     setChipsOpen(false);
   };
 
-  // Inbox/projectless tasks have no `projectId` to navigate to — the chip
-  // stays rendered (so the chip strip's layout/count is predictable) but
-  // disabled, per the "clearly disabled rather than navigating nowhere"
-  // requirement, and this guard is a second line of defense even if a
-  // disabled button's click were ever to fire.
-  const goToProjectChip = () => {
-    if (!task.projectId) return;
+  // Only wired up by the host of "waiting row mode" (the Warten page) — see
+  // `TaskRowWaitingInteraction`. The icon itself never renders without both
+  // `waitingInteraction` and a `waiting` task, so this is only ever called
+  // in that combination.
+  const followUpChip = () => {
+    waitingInteraction?.onFollowUp(task);
     setChipsOpen(false);
-    navigate(`/projekte/${task.projectId}`);
+  };
+
+  // A task that already belongs to a project keeps navigating straight
+  // there. A projectless task has nowhere to navigate to, so the very same
+  // icon instead opens the existing project picker (search + recents) —
+  // never a disabled dead end.
+  const goToProjectChip = () => {
+    setChipsOpen(false);
+    if (task.projectId) {
+      navigate(`/projekte/${task.projectId}`);
+    } else {
+      setAssignProjectOpen(true);
+    }
   };
 
   const openChildComposer = () => {
@@ -277,6 +327,15 @@ export function TaskRow({
     returnFocusToRow();
   };
 
+  // Closing the picker — whether by cancelling or after a successful
+  // assignment (`MoveTaskSheet` calls `onClose` itself once the save
+  // resolves) — returns focus to the row's vicinity, same as every other
+  // sheet opened from this row.
+  const closeAssignProject = () => {
+    setAssignProjectOpen(false);
+    returnFocusToRow();
+  };
+
   // Collapsed state lives in this component only, so a freshly created
   // child (nested under a possibly-collapsed row) must be made visible
   // right here once creation succeeds — the refresh bus alone wouldn't
@@ -290,7 +349,7 @@ export function TaskRow({
   return (
     <li className="task-row" style={{ listStyle: "none" }}>
       <div className={`task-row-swipe-bg complete${showCompleteBg ? " visible" : ""}`} aria-hidden="true">
-        {primaryActionBgLabel(task, primarySwipeAction)}
+        {waitingInteraction ? strings.makeActionable : primaryActionBgLabel(task, primarySwipeAction)}
       </div>
       <div className={`task-row-swipe-bg cancel${showCancelBg ? " visible" : ""}`} aria-hidden="true">
         {strings.moreActions}
@@ -430,9 +489,7 @@ export function TaskRow({
           />
           <TaskActionIcon
             kind="project"
-            label={strings.toProject}
-            disabled={!task.projectId}
-            title={task.projectId ? undefined : strings.noProjectChipHint}
+            label={task.projectId ? strings.toProject : strings.assignProject}
             onClick={goToProjectChip}
           />
           {isDone || isCancelled ? (
@@ -448,6 +505,12 @@ export function TaskRow({
               onClick={toggleWaitingChip}
             />
           )}
+          {waitingInteraction && task.status === "waiting" ? (
+            // Only offered by the host of "waiting row mode" (the Warten
+            // page) and only against a still-waiting task — see
+            // `TaskRowWaitingInteraction`.
+            <TaskActionIcon kind="followUp" label={strings.followUp} onClick={followUpChip} />
+          ) : null}
           <TaskActionIcon kind="more" label={strings.more} onClick={() => onOpenDetail(task.id)} />
         </div>
       ) : null}
@@ -469,6 +532,10 @@ export function TaskRow({
             quickUpdate(task, patch, optimisticPatch)
           }
         />
+      ) : null}
+
+      {assignProjectOpen ? (
+        <MoveTaskSheet task={task} mode="project" onClose={closeAssignProject} />
       ) : null}
 
       {rowError ? (
@@ -498,6 +565,7 @@ export function TaskRow({
               depth={depth + 1}
               onOpenDetail={onOpenDetail}
               taskActions={taskActions}
+              waitingInteraction={waitingInteraction}
             />
           ))}
         </ul>

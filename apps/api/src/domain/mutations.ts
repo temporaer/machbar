@@ -119,7 +119,28 @@ export function deleteMember(db: Db, id: number) {
 }
 
 export function listTags(db: Db) {
-  return db.select().from(schema.tags).all();
+  return db.select().from(schema.tags).orderBy(schema.tags.name).all();
+}
+
+const tagColors = [
+  "#2563eb",
+  "#7c3aed",
+  "#c026d3",
+  "#db2777",
+  "#dc2626",
+  "#ea580c",
+  "#ca8a04",
+  "#16a34a",
+  "#0891b2",
+  "#4f46e5",
+] as const;
+
+export function colorForTag(name: string): string {
+  let hash = 0;
+  for (const character of name) {
+    hash = (hash * 31 + character.codePointAt(0)!) >>> 0;
+  }
+  return tagColors[hash % tagColors.length]!;
 }
 
 export function getOrCreateTag(db: Db, name: string) {
@@ -133,7 +154,19 @@ export function getOrCreateTag(db: Db, name: string) {
     .where(eq(schema.tags.name, trimmed))
     .get();
   if (existing) return existing;
-  return db.insert(schema.tags).values({ name: trimmed }).returning().get();
+  return db
+    .insert(schema.tags)
+    .values({ name: trimmed, color: colorForTag(trimmed) })
+    .returning()
+    .get();
+}
+
+export function deleteTag(db: Db, id: number): void {
+  const tag = db.select().from(schema.tags).where(eq(schema.tags.id, id)).get();
+  if (!tag) {
+    throw AppError.notFound(`Tag mit ID ${id} wurde nicht gefunden.`);
+  }
+  db.delete(schema.tags).where(eq(schema.tags.id, id)).run();
 }
 
 // ---------------------------------------------------------------------------

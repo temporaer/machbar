@@ -13,7 +13,7 @@ export function makeMember(overrides: Partial<Member> = {}): Member {
 }
 
 export function makeTag(overrides: Partial<Tag> = {}): Tag {
-  return { id: nextId(), name: "zuhause", ...overrides };
+  return { id: nextId(), name: "zuhause", color: "#2563eb", ...overrides };
 }
 
 export function makeTask(overrides: Partial<Task> = {}): Task {
