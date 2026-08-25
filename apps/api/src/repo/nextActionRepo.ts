@@ -3,7 +3,8 @@ import type { Db } from "../db/client.js";
 
 /**
  * "Next action" selection: the first actionable, unblocked task in a
- * project's tree, in depth-first pre-order (top-to-bottom, following
+ * project's tree that no longer needs clarification, in depth-first
+ * pre-order (top-to-bottom, following
  * sibling `position` order at every level). Implemented as a single
  * SQLite recursive CTE that builds a lexicographically-sortable materialized
  * path per task (zero-padded position segments joined by `.`), combined
@@ -25,6 +26,7 @@ export function getNextActionTaskIdsByProject(db: Db): Map<number, number> {
       JOIN tasks t ON t.id = sk.task_id
       WHERE sk.project_id IS NOT NULL
         AND t.status = 'actionable'
+        AND t.needs_clarification = 0
         AND NOT EXISTS (
           SELECT 1 FROM task_dependencies td
           JOIN tasks dep ON dep.id = td.depends_on_task_id

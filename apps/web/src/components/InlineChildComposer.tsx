@@ -41,7 +41,12 @@ export function InlineChildComposer({ parentId, onCancel, onCreated }: InlineChi
     setSaving(true);
     setError(null);
     try {
-      await api.createChildTask(parentId, { title: trimmed, createdByMemberId: currentMemberId });
+      await api.createChildTask(parentId, {
+        title: trimmed,
+        createdByMemberId: currentMemberId,
+        status: "actionable",
+        needsClarification: false,
+      });
       bump();
       onCreated();
     } catch (err) {

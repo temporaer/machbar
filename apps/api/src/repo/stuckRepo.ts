@@ -14,6 +14,11 @@ import type { Db } from "../db/client.js";
  * state. Within `active` projects, the classification (highest priority
  * first) is:
  *
+ * Captured open tasks contribute to `open_count`, but not to actionable,
+ * unassigned-actionable, waiting, or revisit counts until clarified. This
+ * keeps captured-only projects open while correctly classifying them as
+ * `no_next_action`.
+ *
  *   1. no `next_action` at all: zero tasks in the project => `no_next_action`.
  *   2. tasks exist but none are open (all `done`/`cancelled`) => the
  *      project isn't "stuck" for lack of a next step, it just needs a
@@ -65,6 +70,7 @@ export function getStuckReasonsByProject(
         t.id,
         t.project_id,
         t.status,
+        t.needs_clarification,
         t.scheduled_date,
         oe.owner_id,
         EXISTS (
@@ -80,13 +86,14 @@ export function getStuckReasonsByProject(
       SELECT
         project_id,
         COUNT(*) AS open_count,
-        SUM(CASE WHEN status = 'actionable' THEN 1 ELSE 0 END) AS actionable_count,
-        SUM(CASE WHEN status = 'actionable' AND blocked = 0 THEN 1 ELSE 0 END) AS actionable_unblocked_count,
-        SUM(CASE WHEN status = 'actionable' AND owner_id IS NULL THEN 1 ELSE 0 END) AS unassigned_actionable_count,
-        SUM(CASE WHEN status = 'waiting' THEN 1 ELSE 0 END) AS waiting_count,
+        SUM(CASE WHEN needs_clarification = 0 AND status = 'actionable' THEN 1 ELSE 0 END) AS actionable_count,
+        SUM(CASE WHEN needs_clarification = 0 AND status = 'actionable' AND blocked = 0 THEN 1 ELSE 0 END) AS actionable_unblocked_count,
+        SUM(CASE WHEN needs_clarification = 0 AND status = 'actionable' AND owner_id IS NULL THEN 1 ELSE 0 END) AS unassigned_actionable_count,
+        SUM(CASE WHEN needs_clarification = 0 AND status = 'waiting' THEN 1 ELSE 0 END) AS waiting_count,
         SUM(
           CASE
             WHEN status = 'waiting'
+              AND needs_clarification = 0
               AND scheduled_date IS NOT NULL
               AND TRIM(scheduled_date) <> ''
             THEN 1 ELSE 0

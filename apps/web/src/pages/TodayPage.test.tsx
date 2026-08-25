@@ -5,7 +5,7 @@ import { renderWithProviders } from "../test/testUtils";
 import { TodayPage } from "./TodayPage";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { api } from "../lib/api";
-import { makeMember, makeTask } from "../test/fixtures";
+import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import type { Agenda } from "@machbar/shared";
 
 vi.mock("../lib/api", () => ({
@@ -28,6 +28,7 @@ const mockedApi = vi.mocked(api, true);
 
 function makeEmptyAgenda(): Agenda {
   return {
+    projects: [],
     planned: [],
     overdue: [],
     dueToday: [],
@@ -102,6 +103,32 @@ describe("TodayPage", () => {
 
     expect(await screen.findByText("Ohne Termin")).toBeInTheDocument();
     expect(screen.getByText("Keller aufräumen")).toBeInTheDocument();
+  });
+
+  it("zeigt Projekttermine in einem eigenen Abschnitt der Heute-Ansicht", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      projects: [
+        {
+          project: makeProject({
+            id: 77,
+            title: "Umzug organisieren",
+            dueDate: "2026-09-01",
+          }),
+          qualification: "due",
+          nextAction: makeTask({ title: "Transporter reservieren" }),
+          stuck: null,
+        },
+      ],
+    });
+    renderWithProviders(<TodayPage />);
+
+    expect(await screen.findByRole("heading", { name: "Projekte" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Umzug organisieren" })).toHaveAttribute(
+      "href",
+      "/projekte/77",
+    );
+    expect(screen.getByText(/Transporter reservieren/)).toBeInTheDocument();
   });
 
   it("fragt die Agenda ausschließlich für die aktuell ausgewählte Identität ab", async () => {

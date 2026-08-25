@@ -84,6 +84,7 @@ export function TaskDetailSheet() {
   const [waitingForDraft, setWaitingForDraft] = useState("");
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
   const [savingTextFields, setSavingTextFields] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const ownerFieldRef = useRef<HTMLDivElement>(null);
   const scheduleFieldRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
@@ -112,6 +113,7 @@ export function TaskDetailSheet() {
     }
     const nextBaseline = textFieldsSnapshot(task);
     const isNewTask = lastLoadedTaskIdRef.current !== task.id;
+    if (isNewTask) setSaveError(null);
     const hasUnsavedEdits =
       !isNewTask &&
       textFieldsBaseline !== null &&
@@ -178,8 +180,9 @@ export function TaskDetailSheet() {
   const saveChangesDisabled = !textFieldsDirty || !titleIsValid || savingTextFields;
   const saveNextDisabled = !titleIsValid || savingTextFields;
 
-  const saveTextFields = async () => {
-    if (!task || !titleIsValid) return;
+  const saveTextFields = async (clarify = false): Promise<boolean> => {
+    if (!task || !titleIsValid || savingTextFields) return false;
+    if (!clarify && !textFieldsDirty) return true;
     const snapshot: TextFieldsSnapshot = {
       title: titleDraft.trim(),
       notes: notesDraft,
@@ -187,12 +190,14 @@ export function TaskDetailSheet() {
       waitingFor: waitingForDraft,
     };
     setSavingTextFields(true);
+    setSaveError(null);
     try {
       await api.updateTask(task.id, {
         title: snapshot.title,
         notes: snapshot.notes,
         context: snapshot.context || null,
         waitingFor: snapshot.waitingFor || null,
+        ...(clarify ? { needsClarification: false } : {}),
       });
       // Adopt the just-saved values as the new baseline right away so the
       // save button disables immediately, without waiting for the follow-up
@@ -200,9 +205,18 @@ export function TaskDetailSheet() {
       setTextFieldsBaseline(snapshot);
       bump();
       reload();
+      return true;
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+      return false;
     } finally {
       setSavingTextFields(false);
     }
+  };
+
+  const saveOnBlur = (relatedTarget: EventTarget | null) => {
+    if (relatedTarget instanceof Element && relatedTarget.closest("[data-text-save]")) return;
+    void saveTextFields();
   };
 
   const runDependencySearch = async (value: string) => {
@@ -229,12 +243,17 @@ export function TaskDetailSheet() {
               id="task-title"
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={() => void saveTextFields()}
+              onBlur={(e) => saveOnBlur(e.relatedTarget)}
             />
           </div>
 
           <div className="row-between">
-            <StatusBadge status={task.status} />
+            <div className="row">
+              <StatusBadge status={task.status} />
+              {task.needsClarification ? (
+                <span className="badge badge-clarification">{strings.needsClarification}</span>
+              ) : null}
+            </div>
             {task.status === "done" || task.status === "cancelled" ? (
               <button type="button" className="btn btn-sm" onClick={() => void taskActions.reopen(task).then(reload)}>
                 {strings.reopen}
@@ -251,7 +270,12 @@ export function TaskDetailSheet() {
             <select
               id="task-status"
               value={task.status}
-              onChange={(e) => void patch({ status: e.target.value as Task["status"] })}
+              onChange={(e) =>
+                void patch({
+                  status: e.target.value as Task["status"],
+                  needsClarification: false,
+                })
+              }
             >
               {taskStatuses.map((s) => (
                 <option key={s} value={s}>
@@ -269,7 +293,7 @@ export function TaskDetailSheet() {
                 value={waitingForDraft}
                 placeholder={strings.waitingForPlaceholder}
                 onChange={(e) => setWaitingForDraft(e.target.value)}
-                onBlur={() => void saveTextFields()}
+                onBlur={(e) => saveOnBlur(e.relatedTarget)}
               />
             </div>
           ) : null}
@@ -314,7 +338,7 @@ export function TaskDetailSheet() {
                 value={contextDraft}
                 placeholder={strings.contextPlaceholder}
                 onChange={(e) => setContextDraft(e.target.value)}
-                onBlur={() => void saveTextFields()}
+                onBlur={(e) => saveOnBlur(e.relatedTarget)}
               />
             ) : (
               <p className="text-muted">{task.effectiveContext ?? strings.noContext}</p>
@@ -397,7 +421,7 @@ export function TaskDetailSheet() {
               ref={notesRef}
               value={notesDraft}
               onChange={(e) => setNotesDraft(e.target.value)}
-              onBlur={() => void saveTextFields()}
+              onBlur={(e) => saveOnBlur(e.relatedTarget)}
             />
           </div>
 
@@ -405,6 +429,7 @@ export function TaskDetailSheet() {
             type="button"
             className={`btn btn-block${saveChangesDisabled ? "" : " btn-primary"}`}
             disabled={saveChangesDisabled}
+            data-text-save
             onClick={() => void saveTextFields()}
           >
             {strings.saveChanges}
@@ -415,12 +440,22 @@ export function TaskDetailSheet() {
               type="button"
               className="btn btn-block btn-primary"
               disabled={saveNextDisabled}
+              data-text-save
               onClick={() => {
-                void saveTextFields().then(() => advanceQueue());
+                void saveTextFields(true).then((saved) => {
+                  if (saved) advanceQueue();
+                });
               }}
             >
               {strings.saveNext}
             </button>
+          ) : null}
+
+          {saveError ? (
+            <div className="task-row-error" role="alert">
+              <span>{strings.error}</span>
+              <span className="text-muted">{saveError}</span>
+            </div>
           ) : null}
 
           <div className="field">

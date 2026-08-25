@@ -89,6 +89,8 @@ describe("TaskRow – inline child (subtask) composer", () => {
       expect(mockedApi.createChildTask).toHaveBeenCalledWith(201, {
         title: "Redner einladen",
         createdByMemberId: null,
+        status: "actionable",
+        needsClarification: false,
       }),
     );
 
@@ -139,6 +141,8 @@ describe("TaskRow – inline child (subtask) composer", () => {
       expect(mockedApi.createChildTask).toHaveBeenCalledWith(401, {
         title: "Enkel-Aufgabe",
         createdByMemberId: null,
+        status: "actionable",
+        needsClarification: false,
       }),
     );
   });

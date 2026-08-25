@@ -1,5 +1,4 @@
 export const taskStatuses = [
-  "inbox",
   "actionable",
   "waiting",
   "someday",
@@ -82,6 +81,7 @@ export interface Task {
   title: string;
   notes: string;
   status: TaskStatus;
+  needsClarification: boolean;
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
   createdByMemberId: number | null;
@@ -128,7 +128,20 @@ export interface StuckProject extends Project {
   repairAction: string;
 }
 
+export type ProjectAgendaQualification = "due" | "scheduled" | "both";
+
+export interface ProjectAgendaEntry {
+  project: Project;
+  qualification: ProjectAgendaQualification;
+  nextAction: Task | null;
+  stuck: {
+    reason: StuckReason;
+    repairAction: string;
+  } | null;
+}
+
 export interface Agenda {
+  projects: ProjectAgendaEntry[];
   planned: Task[];
   overdue: Task[];
   dueToday: Task[];
@@ -238,7 +251,6 @@ export const de = {
 } as const;
 
 export const taskStatusLabels: Record<TaskStatus, string> = {
-  inbox: "Eingang",
   actionable: "Machbar",
   waiting: "Wartet",
   someday: "Irgendwann",

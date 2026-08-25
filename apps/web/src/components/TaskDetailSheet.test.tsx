@@ -37,6 +37,18 @@ function OpenerHarness({ taskId, children }: { taskId: number; children: ReactNo
   );
 }
 
+function QueueOpenerHarness({ taskIds, children }: { taskIds: number[]; children: ReactNode }) {
+  const { openQueue } = useTaskDetail();
+  return (
+    <div>
+      <button type="button" onClick={() => openQueue(taskIds)}>
+        open queue
+      </button>
+      {children}
+    </div>
+  );
+}
+
 function renderSheet(taskId: number) {
   return render(
     <MemoryRouter>
@@ -46,6 +58,22 @@ function renderSheet(taskId: number) {
             <OpenerHarness taskId={taskId}>
               <TaskDetailSheet />
             </OpenerHarness>
+          </TaskDetailProvider>
+        </RefreshProvider>
+      </IdentityProvider>
+    </MemoryRouter>,
+  );
+}
+
+function renderQueueSheet(taskIds: number[]) {
+  return render(
+    <MemoryRouter>
+      <IdentityProvider>
+        <RefreshProvider>
+          <TaskDetailProvider>
+            <QueueOpenerHarness taskIds={taskIds}>
+              <TaskDetailSheet />
+            </QueueOpenerHarness>
           </TaskDetailProvider>
         </RefreshProvider>
       </IdentityProvider>
@@ -219,5 +247,83 @@ describe("TaskDetailSheet", () => {
 
     // The in-progress notes edit must survive the reload triggered above.
     expect(screen.getByLabelText("Notizen")).toHaveValue("alt neu");
+  });
+
+  it("klärt mit Speichern & weiter auch unveränderte Aufgaben und öffnet erst nach Erfolg die nächste", async () => {
+    const first = makeTask({ id: 50, title: "Erste Erfassung", needsClarification: true });
+    const second = makeTask({ id: 51, title: "Zweite Erfassung", needsClarification: true });
+    mockedApi.getTask.mockImplementation(async (id) => (id === 50 ? first : second));
+
+    renderQueueSheet([50, 51]);
+    await userEvent.click(screen.getByText("open queue"));
+    await screen.findByDisplayValue("Erste Erfassung");
+
+    await userEvent.click(screen.getByRole("button", { name: "Speichern & weiter" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(50, {
+        title: "Erste Erfassung",
+        notes: "",
+        context: null,
+        waitingFor: null,
+        needsClarification: false,
+      }),
+    );
+    expect(await screen.findByDisplayValue("Zweite Erfassung")).toBeInTheDocument();
+  });
+
+  it("behält bei einem Fehler die aktuelle Klärungsaufgabe und zeigt den Fehler an", async () => {
+    const task = makeTask({ id: 52, title: "Nicht verlieren", needsClarification: true });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.updateTask.mockRejectedValueOnce(new Error("Speichern fehlgeschlagen"));
+
+    renderQueueSheet([52, 53]);
+    await userEvent.click(screen.getByText("open queue"));
+    await screen.findByDisplayValue("Nicht verlieren");
+
+    await userEvent.click(screen.getByRole("button", { name: "Speichern & weiter" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Speichern fehlgeschlagen");
+    expect(screen.getByDisplayValue("Nicht verlieren")).toBeInTheDocument();
+    expect(mockedApi.getTask).toHaveBeenCalledWith(52);
+    expect(mockedApi.getTask).not.toHaveBeenCalledWith(53);
+  });
+
+  it("klärt bei gewöhnlichem Speichern oder Unschärfe nicht automatisch", async () => {
+    const task = makeTask({ id: 54, title: "Roh erfasst", notes: "", needsClarification: true });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(54);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Roh erfasst");
+
+    await userEvent.type(screen.getByLabelText("Notizen"), "Ergänzung");
+    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
+
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalled());
+    expect(mockedApi.updateTask).toHaveBeenLastCalledWith(54, {
+      title: "Roh erfasst",
+      notes: "Ergänzung",
+      context: null,
+      waitingFor: null,
+    });
+  });
+
+  it("löscht die Klärungsmarkierung bei einer expliziten Statuswahl", async () => {
+    const task = makeTask({ id: 55, title: "Status wählen", needsClarification: true });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(55);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Status wählen");
+
+    await userEvent.selectOptions(screen.getByLabelText("Status"), "waiting");
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(55, {
+        status: "waiting",
+        needsClarification: false,
+      }),
+    );
   });
 });

@@ -263,6 +263,38 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       createTask(handle.db, { projectId: project.id, title: "Wartet", status: "waiting" });
       expect(getNextActionTaskIdsByProject(handle.db).has(project.id)).toBe(false);
     });
+
+    it("skips captured candidates while preserving descendant order and effective blocking", () => {
+      const project = createProject(handle.db, { title: "Gemischter Baum" });
+      const capturedRoot = createTask(handle.db, {
+        projectId: project.id,
+        title: "Erfasste Wurzel",
+        status: "actionable",
+      });
+      const blockedChild = createTask(handle.db, {
+        parentTaskId: capturedRoot.id,
+        title: "Geklärtes, blockiertes Kind",
+        status: "actionable",
+      });
+      const capturedBlocker = createTask(handle.db, {
+        parentTaskId: capturedRoot.id,
+        title: "Erfasster Blockierer",
+        status: "actionable",
+      });
+      addDependency(handle.db, blockedChild.id, capturedBlocker.id);
+      const laterChild = createTask(handle.db, {
+        parentTaskId: capturedRoot.id,
+        title: "Späteres geklärtes Kind",
+        status: "actionable",
+      });
+      handle.sqlite
+        .prepare("UPDATE tasks SET needs_clarification = 1 WHERE id IN (?, ?)")
+        .run(capturedRoot.id, capturedBlocker.id);
+
+      expect(getNextActionTaskIdsByProject(handle.db).get(project.id)).toBe(
+        laterChild.id,
+      );
+    });
   });
 
   describe("stuck-project classification", () => {
@@ -351,6 +383,55 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       const empty = createProject(handle.db, { title: "Leer", status: "active" });
       const reasons = getStuckReasonsByProject(handle.db);
       expect(reasons.get(empty.id)).toBe("no_next_action");
+    });
+
+    it("counts captured tasks as open but not actionable, including mixed inherited descendants", () => {
+      const owner = createMember("Projektzuständige");
+      const capturedOnly = createProject(handle.db, {
+        title: "Nur erfasst",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const capturedRoot = createTask(handle.db, {
+        projectId: capturedOnly.id,
+        title: "Erfasste Wurzel",
+        status: "actionable",
+        ownerInheritanceMode: "none",
+      });
+      const capturedWaiting = createTask(handle.db, {
+        parentTaskId: capturedRoot.id,
+        title: "Erfasstes wartendes Kind",
+        status: "waiting",
+      });
+      handle.sqlite
+        .prepare("UPDATE tasks SET needs_clarification = 1 WHERE id IN (?, ?)")
+        .run(capturedRoot.id, capturedWaiting.id);
+
+      const mixed = createProject(handle.db, {
+        title: "Erfasst plus geklärt",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const mixedRoot = createTask(handle.db, {
+        projectId: mixed.id,
+        title: "Erfasster unzugewiesener Elternknoten",
+        status: "actionable",
+        ownerInheritanceMode: "none",
+      });
+      createTask(handle.db, {
+        parentTaskId: mixedRoot.id,
+        title: "Geklärtes Kind mit Projektzuständigkeit",
+        status: "actionable",
+        ownerInheritanceMode: "explicit",
+        ownerMemberId: owner.id,
+      });
+      handle.sqlite
+        .prepare("UPDATE tasks SET needs_clarification = 1 WHERE id = ?")
+        .run(mixedRoot.id);
+
+      const reasons = getStuckReasonsByProject(handle.db);
+      expect(reasons.get(capturedOnly.id)).toBe("no_next_action");
+      expect(reasons.has(mixed.id)).toBe(false);
     });
 
     it("keeps a waiting-only project healthy when a waiting task has a scheduled revisit", () => {

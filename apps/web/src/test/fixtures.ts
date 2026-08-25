@@ -25,6 +25,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     title: "Beispielaufgabe",
     notes: "",
     status: "actionable",
+    needsClarification: false,
     ownerMemberId: null,
     ownerInheritanceMode: "inherit",
     createdByMemberId: null,

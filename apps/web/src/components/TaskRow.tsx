@@ -21,6 +21,7 @@ import { InlineChildComposer } from "./InlineChildComposer";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskActionIcon } from "./TaskActionIcon";
 import { ActionableText } from "./ActionableText";
+import { formatExactLocalDate, formatRelativeDueDate } from "../lib/relativeDate";
 
 const SWIPE_THRESHOLD = 72;
 const LONG_PRESS_MS = 480;
@@ -69,7 +70,7 @@ export interface TaskRowProps {
 /** Short, status-like label for the primary-swipe reveal background. */
 function primaryActionBgLabel(task: Task, action: PrimarySwipeAction): string {
   if (task.status === "done" || task.status === "cancelled") return strings.reopen;
-  if (task.status === "inbox") return strings.actionable;
+  if (task.needsClarification) return strings.actionable;
   switch (action) {
     case "waiting":
       return strings.waiting;
@@ -194,6 +195,12 @@ export function TaskRow({
   const overdue = isOverdue(task.dueDate, task.status);
   const ownerName = task.effectiveOwnerId ? members.find((m) => m.id === task.effectiveOwnerId)?.name : null;
   const due = formatDate(task.dueDate);
+  const projectDueRelative = task.projectDueDate
+    ? formatRelativeDueDate(task.projectDueDate)
+    : null;
+  const projectDueExact = task.projectDueDate
+    ? formatExactLocalDate(task.projectDueDate)
+    : null;
 
   const clearLongPress = () => {
     if (longPressTimer.current) {
@@ -247,13 +254,13 @@ export function TaskRow({
     if (!dragState.current.dragging) return;
     dragState.current.dragging = false;
     if (dragX > SWIPE_THRESHOLD) {
-      if (waitingInteraction || task.status === "inbox") {
-        // Waiting rows and unclarified inbox rows always move to "Machbar"
-        // before any configurable terminal transition can apply. This still
-        // uses the standard optimistic retention/error flow.
+      if (waitingInteraction) {
+        // Waiting rows always move to "Machbar" before any configurable
+        // terminal transition can apply.
         setStatus(task, "actionable");
       } else {
-        // One configurable direction performs the primary state transition.
+        // Captured tasks are clarified by requestPrimarySwipe before the
+        // configured transition may apply.
         requestPrimarySwipe(task, primarySwipeAction);
       }
     } else if (dragX < -SWIPE_THRESHOLD) {
@@ -447,6 +454,9 @@ export function TaskRow({
               <span className={`badge badge-status-${task.status}`}>
                 {taskStatusLabels[task.status]}
               </span>
+              {task.needsClarification ? (
+                <span className="badge badge-clarification">{strings.needsClarification}</span>
+              ) : null}
               {task.status === "waiting" && task.waitingFor ? (
                 <span>
                   {strings.waitingFor}: {task.waitingFor}
@@ -455,6 +465,15 @@ export function TaskRow({
               {due ? (
                 <span className={overdue ? "overdue" : undefined}>
                   {strings.due}: {due}
+                </span>
+              ) : null}
+              {projectDueRelative && projectDueExact ? (
+                <span
+                  className="task-row-project-due"
+                  title={`${strings.projectDue}: ${projectDueExact}`}
+                  aria-label={`${strings.projectDue}: ${projectDueRelative} (${projectDueExact})`}
+                >
+                  {strings.projectDue}: {projectDueRelative}
                 </span>
               ) : null}
               {ownerName ? <span>{ownerName}</span> : null}

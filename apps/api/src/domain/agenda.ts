@@ -1,4 +1,7 @@
-import type { Agenda } from "@machbar/shared";
+import type {
+  Agenda,
+  ProjectAgendaEntry,
+} from "@machbar/shared";
 import type { Graph } from "./graph.js";
 import type { TaskRecord } from "./graph.js";
 
@@ -43,6 +46,8 @@ function matchesSelectedOwner(t: TaskRecord, memberId?: number): boolean {
 
 export interface BuildAgendaOptions {
   dueSoonDays?: number;
+  /** Browser-local calendar date used consistently for task and project boundaries. */
+  today?: string;
   /**
    * The currently selected household member. When provided, every bucket
    * (including `revisit`) is restricted to tasks whose *effective* owner is
@@ -61,9 +66,11 @@ export interface BuildAgendaOptions {
  * `scheduledDate`; unassigned actionable work has already been claimed by
  * `shared`.
  *
- * Blocked tasks (unresolved dependencies) are normally excluded from every
- * bucket above — they aren't actionable, so surfacing them in "Heute"
- * would just be noise. The one exception is `revisit`: a blocked task
+ * Captured tasks that still need clarification are excluded from every
+ * bucket. Among clarified work, blocked tasks (unresolved dependencies)
+ * are normally excluded from every bucket above — they aren't actionable,
+ * so surfacing them in "Heute" would just be noise. The one exception is
+ * `revisit`: a blocked task
  * whose own `scheduledDate` (never inherited from a project or parent) is
  * today or earlier reappears there as a reminder that it's worth checking
  * on, even though it can't be worked on directly yet.
@@ -76,8 +83,7 @@ export function buildAgenda(
   graph: Graph,
   options: BuildAgendaOptions = {},
 ): Agenda {
-  const { dueSoonDays = 3, memberId } = options;
-  const today = todayIso();
+  const { dueSoonDays = 3, memberId, today = todayIso() } = options;
   const soonLimit = addDaysIso(today, dueSoonDays);
   const seen = new Set<number>();
 
@@ -87,6 +93,7 @@ export function buildAgenda(
       .filter(
         (t) =>
           isOpen(t) &&
+          !t.needsClarification &&
           !t.blocked &&
           !seen.has(t.id) &&
           matchesSelectedOwner(t, memberId) &&
@@ -117,6 +124,7 @@ export function buildAgenda(
     .filter(
       (t) =>
         isOpen(t) &&
+        !t.needsClarification &&
         t.blocked &&
         !!t.scheduledDate &&
         t.scheduledDate <= today &&
@@ -124,5 +132,67 @@ export function buildAgenda(
     )
     .sort(sortByDueThenPriority);
 
-  return { planned, overdue, dueToday, dueSoon, shared, unscheduled, revisit };
+  const projectDueLimit = addDaysIso(today, 7);
+  const stuckByProject = new Map(
+    graph.listStuckProjects().map((project) => [project.id, project]),
+  );
+  const projects = [...graph.projectsById.values()]
+    .filter(
+      (project) =>
+        project.status === "active" &&
+        (memberId === undefined ||
+          project.ownerMemberId === null ||
+          project.ownerMemberId === memberId),
+    )
+    .flatMap((project): ProjectAgendaEntry[] => {
+      const due =
+        project.dueDate !== null && project.dueDate <= projectDueLimit;
+      const scheduled =
+        project.scheduledDate !== null &&
+        project.scheduledDate <= today;
+      if (!due && !scheduled) return [];
+
+      const computed = graph.projectWithComputed(project.id);
+      if (!computed) return [];
+      const nextAction = graph.nextActionFor(project.id);
+      const stuckProject = nextAction
+        ? undefined
+        : stuckByProject.get(project.id);
+      return [
+        {
+          project: computed,
+          qualification: due && scheduled ? "both" : due ? "due" : "scheduled",
+          nextAction,
+          stuck: stuckProject
+            ? {
+                reason: stuckProject.stuckReason,
+                repairAction: stuckProject.repairAction,
+              }
+            : null,
+        },
+      ];
+    })
+    .sort((a, b) => {
+      const aDate =
+        a.qualification === "scheduled"
+          ? a.project.scheduledDate
+          : a.project.dueDate;
+      const bDate =
+        b.qualification === "scheduled"
+          ? b.project.scheduledDate
+          : b.project.dueDate;
+      if (aDate !== bDate) return (aDate ?? "").localeCompare(bDate ?? "");
+      return a.project.position - b.project.position;
+    });
+
+  return {
+    planned,
+    overdue,
+    dueToday,
+    dueSoon,
+    shared,
+    unscheduled,
+    revisit,
+    projects,
+  };
 }

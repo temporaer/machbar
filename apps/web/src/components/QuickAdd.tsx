@@ -33,7 +33,8 @@ export function QuickAdd({ projectId, parentTaskId }: { projectId?: number | nul
         projectId: projectId ?? null,
         parentTaskId: parentTaskId ?? null,
         createdByMemberId: currentMemberId,
-        status: "inbox",
+        status: "actionable",
+        needsClarification: projectId == null && parentTaskId == null,
       });
       bump();
       close();

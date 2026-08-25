@@ -21,7 +21,7 @@ describe("QuickAdd", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
   });
 
-  it("legt per Titel eine neue Aufgabe im Eingang an", async () => {
+  it("legt global eine machbare Aufgabe zur Klärung an", async () => {
     mockedApi.createTask.mockResolvedValue(makeTask({ title: "Milch kaufen" }));
     renderWithProviders(<QuickAdd />);
 
@@ -33,7 +33,30 @@ describe("QuickAdd", () => {
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Milch kaufen", status: "inbox" }),
+        expect.objectContaining({
+          title: "Milch kaufen",
+          status: "actionable",
+          needsClarification: true,
+        }),
+      ),
+    );
+  });
+
+  it("legt in einem Projekt eine bereits geklärte machbare Aufgabe an", async () => {
+    mockedApi.createTask.mockResolvedValue(makeTask({ title: "Angebot senden", projectId: 7 }));
+    renderWithProviders(<QuickAdd projectId={7} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
+    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Angebot senden");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: 7,
+          status: "actionable",
+          needsClarification: false,
+        }),
       ),
     );
   });

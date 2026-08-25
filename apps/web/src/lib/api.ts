@@ -4,6 +4,7 @@ import type {
   InheritanceMode,
   Member,
   Project,
+  ProjectAgendaEntry,
   ProjectStatus,
   SearchFilters,
   StuckProject,
@@ -111,6 +112,7 @@ export interface MoveTaskInput {
 export interface CreateTaskInput {
   title: string;
   notes?: string;
+  needsClarification?: boolean;
   projectId?: number | null;
   parentTaskId?: number | null;
   status?: TaskStatus;
@@ -237,6 +239,8 @@ export type AgendaResponse = Agenda & {
   revisit?: Task[];
 };
 
+export type { ProjectAgendaEntry };
+
 export const api = {
   getAuthStatus: () => request<AuthStatus>("/auth/status"),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
@@ -320,8 +324,15 @@ export const api = {
    * backend includes those for every member. Passing `null`/`undefined`
    * (e.g. while no identity is selected yet) omits the param entirely.
    */
-  getAgenda: (memberId?: number | null) =>
-    request<AgendaResponse>(`/agenda/today${query({ memberId })}`),
+  getAgenda: (memberId?: number | null) => {
+    const now = new Date();
+    const date = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+    ].join("-");
+    return request<AgendaResponse>(`/agenda/today${query({ memberId, date })}`);
+  },
   getInbox: () => request<Task[]>("/inbox"),
   getWaiting: () => request<WaitingGroup[]>("/waiting"),
   searchTasks: (filters: SearchFilters) =>

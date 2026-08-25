@@ -145,7 +145,10 @@ export const tasks = sqliteTable(
     }),
     title: text("title").notNull(),
     notes: text("notes").notNull().default(""),
-    status: text("status").notNull().default("inbox"),
+    status: text("status").notNull().default("actionable"),
+    needsClarification: integer("needs_clarification", { mode: "boolean" })
+      .notNull()
+      .default(false),
     ownerMemberId: integer("owner_member_id").references(() => members.id, {
       onDelete: "set null",
     }),

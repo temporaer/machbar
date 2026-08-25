@@ -1,0 +1,68 @@
+import { describe, expect, it, vi, afterEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { makeProject, makeTask } from "../test/fixtures";
+import { ProjectAgendaCard } from "./ProjectAgendaCard";
+
+describe("ProjectAgendaCard", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("combines review and due prompts and opens the project as its primary navigation", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 25, 12));
+
+    render(
+      <MemoryRouter>
+        <ProjectAgendaCard
+          entry={{
+            project: makeProject({
+              id: 42,
+              title: "Sommerfest vorbereiten",
+              scheduledDate: "2026-08-25",
+              dueDate: "2026-08-28",
+            }),
+            qualification: "both",
+            nextAction: makeTask({ title: "Catering anrufen" }),
+            stuck: {
+              reason: "blocked_dependencies",
+              repairAction: "Abhängigkeit klären.",
+            },
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Projekt prüfen & fällig")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sommerfest vorbereiten" })).toHaveAttribute(
+      "href",
+      "/projekte/42",
+    );
+    expect(screen.getByText(/Catering anrufen/)).toBeInTheDocument();
+    expect(screen.getByText(/Abhängigkeit klären/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Prüfen: heute (25.08.2026)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Fällig: in 3 Tagen (28.08.2026)")).toBeInTheDocument();
+  });
+
+  it("labels a schedule-only prompt as project review", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 25, 12));
+    render(
+      <MemoryRouter>
+        <ProjectAgendaCard
+          entry={{
+            project: makeProject({ scheduledDate: "2026-08-22" }),
+            qualification: "scheduled",
+            nextAction: null,
+            stuck: null,
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Projekt prüfen")).toBeInTheDocument();
+    expect(screen.getByText("Prüfen: seit 3 Tagen")).toBeInTheDocument();
+    expect(screen.queryByText(/^Fällig:/)).not.toBeInTheDocument();
+  });
+});

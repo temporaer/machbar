@@ -114,6 +114,42 @@ a {
   margin-top: 10px;
 }
 
+.project-agenda-card {
+  display: grid;
+  gap: 8px;
+}
+
+.project-agenda-heading,
+.project-agenda-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.project-agenda-link {
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.project-agenda-link:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.project-agenda-date {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+.project-agenda-context {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
 .list {
   display: flex;
   flex-direction: column;
@@ -435,9 +471,11 @@ a {
   font-weight: 600;
 }
 
-.badge-status-inbox {
+.badge-clarification {
   background: #e8e2f8;
   color: #4c3b96;
+  padding: 1px 6px;
+  font-size: 0.66rem;
 }
 .badge-status-actionable {
   background: #dcf3e6;
@@ -861,6 +899,11 @@ a {
 
 .task-row-meta .overdue {
   color: var(--color-danger);
+  font-weight: 600;
+}
+
+.task-row-project-due {
+  color: var(--color-primary);
   font-weight: 600;
 }
 

@@ -346,4 +346,29 @@ describe("refinement API routes", () => {
     const res = await ctx.app.inject({ method: "GET", url: "/api/refinement/tasks" });
     expect(res.json().map((r: { id: number }) => r.id)).not.toContain(task.id);
   });
+
+  it("keeps captured open work available for refinement", async () => {
+    const created = await post("/api/tasks", {
+      title: "Noch zu klären",
+      status: "actionable",
+      needsClarification: true,
+      size: "M",
+    });
+    const task = created.json();
+
+    const tasks = await ctx.app.inject({
+      method: "GET",
+      url: "/api/refinement/tasks",
+    });
+    expect(tasks.json().map((row: { id: number }) => row.id)).toContain(task.id);
+
+    const owners = await ctx.app.inject({
+      method: "GET",
+      url: "/api/refinement/owners",
+    });
+    const shared = (
+      owners.json() as Array<{ ownerId: number | null; M: number }>
+    ).find((row) => row.ownerId === null);
+    expect(shared?.M).toBe(1);
+  });
 });

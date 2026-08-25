@@ -196,8 +196,8 @@ describe("TaskRow – parent retention snapshot covers the whole optimistic subt
   });
 
   it("marks every open descendant (recursively, at any depth) done when completing a parent with 'complete_children'", async () => {
-    const grandchild = makeTask({ id: 303, title: "Enkel", status: "actionable" });
-    const openChild = makeTask({ id: 302, title: "Kind offen", status: "actionable", children: [grandchild] });
+    const grandchild = makeTask({ id: 303, title: "Enkel", status: "actionable", needsClarification: true });
+    const openChild = makeTask({ id: 302, title: "Kind offen", status: "actionable", needsClarification: true, children: [grandchild] });
     const alreadyDoneChild = makeTask({
       id: 304,
       title: "Kind bereits erledigt",
@@ -231,6 +231,7 @@ describe("TaskRow – parent retention snapshot covers the whole optimistic subt
     expect(screen.getByText("Elternaufgabe").className).toContain("done");
     expect(screen.getByText("Kind offen").className).toContain("done");
     expect(screen.getByText("Enkel").className).toContain("done");
+    expect(screen.queryByText("Zu klären")).not.toBeInTheDocument();
     // An already-closed descendant keeps its own (done) state untouched.
     expect(screen.getByText("Kind bereits erledigt").className).toContain("done");
   });

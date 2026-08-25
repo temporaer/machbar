@@ -686,6 +686,7 @@ export interface CreateTaskInput {
   title: string;
   notes?: string;
   status?: TaskStatus;
+  needsClarification?: boolean;
   ownerMemberId?: number | null;
   ownerInheritanceMode?: InheritanceMode;
   createdByMemberId?: number | null;
@@ -743,7 +744,12 @@ export function createTask(db: Db, input: CreateTaskInput) {
         parentTaskId,
         title: input.title.trim(),
         notes: input.notes ?? "",
-        status: input.status ?? "inbox",
+        status: input.status ?? "actionable",
+        needsClarification:
+          input.needsClarification ??
+          (input.status === undefined &&
+            projectId === null &&
+            parentTaskId === null),
         ownerMemberId: input.ownerMemberId ?? null,
         ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
         createdByMemberId: input.createdByMemberId ?? null,
@@ -781,6 +787,7 @@ export interface UpdateTaskInput {
   title?: string;
   notes?: string;
   status?: TaskStatus;
+  needsClarification?: boolean;
   ownerMemberId?: number | null;
   ownerInheritanceMode?: InheritanceMode;
   dueDate?: string | null;
@@ -808,6 +815,11 @@ export function updateTask(db: Db, id: number, input: UpdateTaskInput) {
     if (input.title !== undefined) patch.title = input.title.trim();
     if (input.notes !== undefined) patch.notes = input.notes;
     if (input.status !== undefined) patch.status = input.status;
+    if (input.needsClarification !== undefined) {
+      patch.needsClarification = input.needsClarification;
+    } else if (input.status !== undefined) {
+      patch.needsClarification = false;
+    }
     if (input.ownerMemberId !== undefined) patch.ownerMemberId = input.ownerMemberId;
     if (input.ownerInheritanceMode !== undefined)
       patch.ownerInheritanceMode = input.ownerInheritanceMode;
@@ -883,14 +895,24 @@ export function completeTask(
     }
     const now = nowIso();
     tx.update(schema.tasks)
-      .set({ status: "done", completedAt: now, updatedAt: now })
+      .set({
+        status: "done",
+        needsClarification: false,
+        completedAt: now,
+        updatedAt: now,
+      })
       .where(eq(schema.tasks.id, id))
       .run();
 
     if (descendantsPolicy === "complete_children") {
       for (const child of openChildren) {
         tx.update(schema.tasks)
-          .set({ status: "done", completedAt: now, updatedAt: now })
+          .set({
+            status: "done",
+            needsClarification: false,
+            completedAt: now,
+            updatedAt: now,
+          })
           .where(eq(schema.tasks.id, child.id))
           .run();
       }
@@ -920,14 +942,24 @@ export function cancelTask(
     }
     const now = nowIso();
     tx.update(schema.tasks)
-      .set({ status: "cancelled", cancelledAt: now, updatedAt: now })
+      .set({
+        status: "cancelled",
+        needsClarification: false,
+        cancelledAt: now,
+        updatedAt: now,
+      })
       .where(eq(schema.tasks.id, id))
       .run();
 
     if (descendantsPolicy === "cancel_children") {
       for (const child of openChildren) {
         tx.update(schema.tasks)
-          .set({ status: "cancelled", cancelledAt: now, updatedAt: now })
+          .set({
+            status: "cancelled",
+            needsClarification: false,
+            cancelledAt: now,
+            updatedAt: now,
+          })
           .where(eq(schema.tasks.id, child.id))
           .run();
       }
@@ -938,17 +970,12 @@ export function cancelTask(
 
 export function reopenTask(db: Db, id: number) {
   return db.transaction((tx) => {
-    const task = getTaskOrThrow(tx as unknown as Db, id);
-    const looksClarified =
-      task.projectId !== null ||
-      task.context !== null ||
-      task.ownerMemberId !== null ||
-      task.dueDate !== null ||
-      task.scheduledDate !== null;
+    getTaskOrThrow(tx as unknown as Db, id);
     const now = nowIso();
     tx.update(schema.tasks)
       .set({
-        status: looksClarified ? "actionable" : "inbox",
+        status: "actionable",
+        needsClarification: false,
         completedAt: null,
         cancelledAt: null,
         updatedAt: now,

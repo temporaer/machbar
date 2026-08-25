@@ -17,9 +17,10 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     return res.json();
   }
 
-  it("creates, updates and deletes a task", async () => {
+  it("creates global captures as actionable and needing clarification", async () => {
     const created = await createTask({ title: "Neue Aufgabe", notes: "Notiz" });
-    expect(created.status).toBe("inbox");
+    expect(created.status).toBe("actionable");
+    expect(created.needsClarification).toBe(true);
 
     const updateRes = await ctx.app.inject({
       method: "PATCH",
@@ -28,6 +29,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     });
     expect(updateRes.json().title).toBe("Geänderte Aufgabe");
     expect(updateRes.json().status).toBe("actionable");
+    expect(updateRes.json().needsClarification).toBe(false);
 
     const deleteRes = await ctx.app.inject({
       method: "DELETE",
@@ -37,6 +39,84 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
 
     const getRes = await ctx.app.inject({ method: "GET", url: `/api/tasks/${created.id}` });
     expect(getRes.statusCode).toBe(404);
+  });
+
+  it("defaults project and child tasks to clarified actionable tasks", async () => {
+    const projectRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "Projekt" },
+    });
+    const projectTask = await createTask({
+      projectId: projectRes.json().id,
+      title: "Projektaufgabe",
+    });
+    expect(projectTask.status).toBe("actionable");
+    expect(projectTask.needsClarification).toBe(false);
+
+    const childRes = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${projectTask.id}/children`,
+      payload: { title: "Kindaufgabe" },
+    });
+    expect(childRes.json().status).toBe("actionable");
+    expect(childRes.json().needsClarification).toBe(false);
+  });
+
+  it("honors explicit clarification input over creation defaults", async () => {
+    const clarifiedCapture = await createTask({
+      title: "Schon geklärt",
+      needsClarification: false,
+    });
+    expect(clarifiedCapture.needsClarification).toBe(false);
+
+    const projectRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "Sammelprojekt" },
+    });
+    const projectCapture = await createTask({
+      projectId: projectRes.json().id,
+      title: "Noch zu klären",
+      needsClarification: true,
+    });
+    expect(projectCapture.needsClarification).toBe(true);
+  });
+
+  it.each(["actionable", "waiting", "someday", "done", "cancelled"])(
+    "clears capture when deliberately transitioning to %s",
+    async (status) => {
+      const task = await createTask({ title: `Status ${status}` });
+      const res = await ctx.app.inject({
+        method: "PATCH",
+        url: `/api/tasks/${task.id}`,
+        payload: { status },
+      });
+      expect(res.json().status).toBe(status);
+      expect(res.json().needsClarification).toBe(false);
+    },
+  );
+
+  it("does not clear capture for metadata updates or refiling", async () => {
+    const task = await createTask({ title: "Ungeklärte Aufgabe" });
+    const metadataRes = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: { notes: "Zusätzliche Notiz" },
+    });
+    expect(metadataRes.json().needsClarification).toBe(true);
+
+    const projectRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: { title: "Neues Projekt" },
+    });
+    const moveRes = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/move`,
+      payload: { projectId: projectRes.json().id },
+    });
+    expect(moveRes.json().needsClarification).toBe(true);
   });
 
   it("rejects an empty title", async () => {
@@ -86,6 +166,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
       payload: { descendantsPolicy: "leave_open" },
     });
     expect(completeRes.json().status).toBe("done");
+    expect(completeRes.json().needsClarification).toBe(false);
 
     const childReloaded = await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` });
     expect(childReloaded.json().status).toBe("actionable");
@@ -148,17 +229,19 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
       url: `/api/tasks/${task.id}/reopen`,
     });
     expect(reopenRes.json().status).toBe("actionable");
+    expect(reopenRes.json().needsClarification).toBe(false);
     expect(reopenRes.json().completedAt).toBeNull();
   });
 
-  it("reopens a never-clarified task back to inbox", async () => {
+  it("reopens a never-clarified task as clarified actionable", async () => {
     const task = await createTask({ title: "Ganz neu" });
     await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/cancel` });
     const reopenRes = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${task.id}/reopen`,
     });
-    expect(reopenRes.json().status).toBe("inbox");
+    expect(reopenRes.json().status).toBe("actionable");
+    expect(reopenRes.json().needsClarification).toBe(false);
     expect(reopenRes.json().cancelledAt).toBeNull();
   });
 

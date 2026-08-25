@@ -5,6 +5,7 @@ import { strings } from "../lib/strings";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
+import { ProjectAgendaCard } from "../components/ProjectAgendaCard";
 
 const sections: Array<{
   key: "planned" | "overdue" | "dueToday" | "dueSoon" | "shared" | "unscheduled";
@@ -32,6 +33,7 @@ export function TodayPage() {
     [currentMemberId],
   );
   const revisitTasks = agenda?.revisit ?? [];
+  const projectAgenda = agenda?.projects ?? [];
 
   return (
     <div>
@@ -43,10 +45,25 @@ export function TodayPage() {
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {agenda ? (
         (() => {
-          const total = sections.reduce((sum, s) => sum + agenda[s.key].length, 0) + revisitTasks.length;
+          const total =
+            sections.reduce((sum, s) => sum + agenda[s.key].length, 0) +
+            revisitTasks.length +
+            projectAgenda.length;
           if (total === 0) return <EmptyState message={strings.todayEmpty} />;
           return (
             <>
+              {projectAgenda.length > 0 ? (
+                <section className="section" aria-labelledby="today-projects-heading">
+                  <h2 className="section-title" id="today-projects-heading">
+                    {strings.projectAgenda}
+                  </h2>
+                  <div className="list">
+                    {projectAgenda.map((entry) => (
+                      <ProjectAgendaCard key={entry.project.id} entry={entry} />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
               {sections
                 .filter((s) => agenda[s.key].length > 0)
                 .map((s) => (

@@ -102,8 +102,17 @@ The **Heute** agenda is also query-derived. It first selects planned, overdue,
 due-today, due-soon, and shared work. Any remaining unblocked `actionable`
 tasks without a `scheduledDate` appear under **Ohne Termin** when their
 effective owner is the selected member. Unassigned work already appears under
-**Gemeinsam / offen**. Future-scheduled, waiting, inbox, completed, cancelled,
-and dependency-blocked tasks do not enter the fallback bucket.
+**Gemeinsam / offen**. Tasks with `needsClarification = true`,
+future-scheduled, waiting, completed, cancelled, and dependency-blocked tasks
+do not enter the fallback bucket.
+
+Active projects have a separate compiled `projects` bucket. A project enters
+Heute seven local calendar days before its `dueDate`, or once its
+`scheduledDate` is reached; reached scheduling prompts persist until the
+project is rescheduled or completed. A project qualifying through both dates
+appears once with both reasons and its clarified next action, or its existing
+stuck diagnosis when no executable next action exists. Project dates never
+become task dates.
 
 ---
 
@@ -165,12 +174,20 @@ Home Assistant strips the dynamic Ingress prefix while proxying to the add-on. M
 ### Tasks
 
 ```
-inbox ──► actionable ──► done
-  │            │
-  │            ├──► waiting ──► actionable
-  │            └──► someday ──► actionable
-  └──► cancelled
+actionable ──► done
+    │
+    ├──► waiting ──► actionable
+    ├──► someday ──► actionable
+    └──► cancelled
 ```
+
+Capture is independent of this workflow. `needsClarification = true` places a
+task in **Eingang** and marks it **Zu klären** even when it already belongs to
+a project. Global Quick Add captures an actionable task; project and child
+creation start clarified. Explicit workflow choices and **Speichern & weiter**
+clear the flag, while metadata edits and refiling do not. Captured tasks stay
+visible in project trees but are excluded from Heute, next-action selection,
+and actionable stuck counts.
 
 Tasks in `done` or `cancelled` are retained in the database and visible in search/history views.
 
@@ -211,7 +228,7 @@ Legacy rows migrated from before the invariant may still be `active` without a d
 | `unassigned_actionable` | Has actionable tasks with no effective owner |
 | *(healthy)* | Every open task is `waiting` **and at least one carries a `scheduledDate`** — a scheduled revisit ("Wiedervorlage") is an explicit decision about when to look again, so the story is parked, not stuck. The date is **not** compared against today: past, present and future revisits all count |
 | `only_waiting` | Every open task is `waiting` and **none** has a `scheduledDate` |
-| `no_next_action` | No actionable task, and not the all-waiting case above |
+| `no_next_action` | No clarified actionable task, including projects whose open work still needs clarification, and not the all-waiting case above |
 | `blocked_dependencies` | Every actionable task is blocked by an unresolved dependency |
 
 The healthy-revisit rule only exempts the all-waiting case. A scheduled waiting task never masks a higher- or lower-priority reason: mixed open states still yield `unassigned_actionable`, `no_next_action` or `blocked_dependencies` as before, and once the scheduled task closes, `completion_review` takes over.

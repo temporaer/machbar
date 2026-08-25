@@ -240,6 +240,25 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     // also in dueToday/planned because of its matching dueDate/scheduledDate.
     expect(await bucketsContaining("Revisit-Kandidat")).toEqual(["revisit"]);
   });
+
+  it("excludes captured work from normal and revisit buckets", async () => {
+    const blocker = await createTask({ title: "Capture-Blockierer" });
+    const planned = await createTask({
+      title: "Erfasst und geplant",
+      scheduledDate: today,
+    });
+    const revisit = await createTask({
+      title: "Erfasst und blockiert",
+      scheduledDate: today,
+    });
+    await addDependency(revisit.id, blocker.id);
+    ctx.handle.sqlite
+      .prepare("UPDATE tasks SET needs_clarification = 1 WHERE id IN (?, ?)")
+      .run(planned.id, revisit.id);
+
+    expect(await bucketsContaining("Erfasst und geplant")).toEqual([]);
+    expect(await bucketsContaining("Erfasst und blockiert")).toEqual([]);
+  });
 });
 
 describe("Heute agenda: filtering by selected member (effective owner)", () => {
@@ -467,5 +486,279 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     expect(res.statusCode).toBe(404);
     const body = res.json();
     expect(body.error.message).toMatch(/Mitglied/);
+  });
+
+  it("uses the caller's calendar date consistently instead of the server timezone", async () => {
+    const task = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Lokaler Kalendertag",
+        status: "actionable",
+        scheduledDate: "2030-01-02",
+      },
+    });
+    expect(task.statusCode).toBe(201);
+
+    const before = await ctx.app.inject({
+      method: "GET",
+      url: "/api/agenda/today?date=2030-01-01",
+    });
+    const onDay = await ctx.app.inject({
+      method: "GET",
+      url: "/api/agenda/today?date=2030-01-02",
+    });
+    expect(
+      before.json().planned.some((entry: { title: string }) => entry.title === "Lokaler Kalendertag"),
+    ).toBe(false);
+    expect(
+      onDay.json().planned.some((entry: { title: string }) => entry.title === "Lokaler Kalendertag"),
+    ).toBe(true);
+  });
+
+  it("rejects invalid caller calendar dates", async () => {
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: "/api/agenda/today?date=2030-02-30",
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.message).toMatch(/Kalenderdatum/);
+  });
+});
+
+describe("Heute agenda: compiled project prompts", () => {
+  let ctx: TestContext;
+
+  beforeEach(() => {
+    ctx = createTestContext();
+  });
+
+  afterEach(async () => {
+    await closeTestContext(ctx);
+  });
+
+  function localTodayIso(): string {
+    const date = new Date();
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0"),
+    ].join("-");
+  }
+
+  async function createActiveProject(payload: Record<string, unknown>) {
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload,
+    });
+    expect(response.statusCode).toBe(201);
+    const project = response.json();
+    ctx.handle.sqlite
+      .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+      .run(project.id);
+    return project;
+  }
+
+  async function createTask(payload: Record<string, unknown>) {
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { status: "actionable", ...payload },
+    });
+    expect(response.statusCode).toBe(201);
+    return response.json();
+  }
+
+  async function projectPrompts(memberId?: number) {
+    const suffix = memberId === undefined ? "" : `?memberId=${memberId}`;
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: `/api/agenda/today${suffix}`,
+    });
+    expect(response.statusCode).toBe(200);
+    return response.json().projects as Array<{
+      project: {
+        id: number;
+        title: string;
+        dueDate: string | null;
+        scheduledDate: string | null;
+      };
+      qualification: "due" | "scheduled" | "both";
+      nextAction: { id: number; title: string } | null;
+      stuck: { reason: string; repairAction: string } | null;
+    }>;
+  }
+
+  it("starts due prompts at the seven-local-calendar-day boundary and persists overdue", async () => {
+    const today = localTodayIso();
+    const boundary = await createActiveProject({
+      title: "Genau in sieben Tagen",
+      dueDate: addDaysIso(today, 7),
+    });
+    const outside = await createActiveProject({
+      title: "Erst in acht Tagen",
+      dueDate: addDaysIso(today, 8),
+    });
+    const overdue = await createActiveProject({
+      title: "Seit Langem überfällig",
+      dueDate: addDaysIso(today, -30),
+    });
+
+    const ids = (await projectPrompts()).map((entry) => entry.project.id);
+    expect(ids).toContain(boundary.id);
+    expect(ids).toContain(overdue.id);
+    expect(ids).not.toContain(outside.id);
+  });
+
+  it("persists reached schedules until rescheduled or completed", async () => {
+    const today = localTodayIso();
+    const project = await createActiveProject({
+      title: "Projekt-Wiedervorlage",
+      scheduledDate: addDaysIso(today, -2),
+    });
+
+    expect((await projectPrompts()).map((entry) => entry.project.id)).toContain(
+      project.id,
+    );
+
+    ctx.handle.sqlite
+      .prepare("UPDATE projects SET scheduled_date = ? WHERE id = ?")
+      .run(addDaysIso(today, 1), project.id);
+    expect(
+      (await projectPrompts()).map((entry) => entry.project.id),
+    ).not.toContain(project.id);
+
+    ctx.handle.sqlite
+      .prepare(
+        "UPDATE projects SET scheduled_date = ?, status = 'completed' WHERE id = ?",
+      )
+      .run(today, project.id);
+    expect(
+      (await projectPrompts()).map((entry) => entry.project.id),
+    ).not.toContain(project.id);
+  });
+
+  it("deduplicates due and scheduled reasons and applies driver/shared identity semantics", async () => {
+    const today = localTodayIso();
+    const annaResponse = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: { name: "Anna Projekt" },
+    });
+    const benResponse = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: { name: "Ben Projekt" },
+    });
+    const anna = annaResponse.json();
+    const ben = benResponse.json();
+    const both = await createActiveProject({
+      title: "Annas fällige Wiedervorlage",
+      ownerMemberId: anna.id,
+      dueDate: today,
+      scheduledDate: today,
+    });
+    const shared = await createActiveProject({
+      title: "Gemeinsames Projekt",
+      dueDate: today,
+    });
+    const other = await createActiveProject({
+      title: "Bens Projekt",
+      ownerMemberId: ben.id,
+      dueDate: today,
+    });
+    await createActiveProject({
+      title: "Backlog trotz Termin",
+      dueDate: today,
+    }).then((project) => {
+      ctx.handle.sqlite
+        .prepare("UPDATE projects SET status = 'backlog' WHERE id = ?")
+        .run(project.id);
+    });
+
+    const prompts = await projectPrompts(anna.id);
+    expect(prompts.filter((entry) => entry.project.id === both.id)).toHaveLength(
+      1,
+    );
+    expect(
+      prompts.find((entry) => entry.project.id === both.id)?.qualification,
+    ).toBe("both");
+    expect(prompts.map((entry) => entry.project.id)).toContain(shared.id);
+    expect(prompts.map((entry) => entry.project.id)).not.toContain(other.id);
+  });
+
+  it("attaches clarified next actions or existing blocked/capture repair context", async () => {
+    const today = localTodayIso();
+    const ownerResponse = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: { name: "Projekt-Treiber" },
+    });
+    const owner = ownerResponse.json();
+
+    const healthy = await createActiveProject({
+      title: "Mit nächstem Schritt",
+      ownerMemberId: owner.id,
+      dueDate: today,
+    });
+    const next = await createTask({
+      projectId: healthy.id,
+      title: "Geklärter nächster Schritt",
+    });
+    await createTask({
+      projectId: healthy.id,
+      title: "Erfasst davor",
+      needsClarification: true,
+      position: -1,
+    });
+
+    const blocked = await createActiveProject({
+      title: "Blockiertes Projekt",
+      ownerMemberId: owner.id,
+      dueDate: today,
+    });
+    const blocker = await createTask({
+      projectId: blocked.id,
+      title: "Offener Blockierer",
+      status: "waiting",
+    });
+    const blockedAction = await createTask({
+      projectId: blocked.id,
+      title: "Blockierter Schritt",
+    });
+    const dependency = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${blockedAction.id}/dependencies`,
+      payload: { dependsOnTaskId: blocker.id },
+    });
+    expect(dependency.statusCode).toBe(201);
+
+    const captured = await createActiveProject({
+      title: "Nur erfasstes Projekt",
+      ownerMemberId: owner.id,
+      scheduledDate: today,
+    });
+    await createTask({
+      projectId: captured.id,
+      title: "Noch zu klären",
+      needsClarification: true,
+    });
+
+    const prompts = await projectPrompts(owner.id);
+    expect(
+      prompts.find((entry) => entry.project.id === healthy.id)?.nextAction?.id,
+    ).toBe(next.id);
+    expect(
+      prompts.find((entry) => entry.project.id === blocked.id)?.stuck?.reason,
+    ).toBe("blocked_dependencies");
+    const capturedEntry = prompts.find(
+      (entry) => entry.project.id === captured.id,
+    );
+    expect(capturedEntry?.nextAction).toBeNull();
+    expect(capturedEntry?.stuck?.reason).toBe("no_next_action");
+    expect(capturedEntry?.stuck?.repairAction).toMatch(
+      /Kläre die erfassten Aufgaben/,
+    );
   });
 });

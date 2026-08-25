@@ -55,25 +55,35 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
-  it("promotes an inbox task to Machbar before it can be completed", async () => {
-    const task = makeTask({ id: 13, title: "Nächsten Schritt klären", status: "inbox" });
+  it("clarifies a captured task before it can be completed", async () => {
+    const task = makeTask({
+      id: 13,
+      title: "Nächsten Schritt klären",
+      status: "actionable",
+      needsClarification: true,
+    });
     const { container } = renderWithProviders(
       <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
     );
     await screen.findByText("Nächsten Schritt klären");
 
-    const badge = container.querySelector(".badge-status-inbox");
-    expect(badge).toHaveTextContent("Eingang");
+    expect(container.querySelector(".badge-status-actionable")).toHaveTextContent("Machbar");
+    expect(container.querySelector(".badge-clarification")).toHaveTextContent("Zu klären");
     swipe(container, 100);
 
     await waitFor(() =>
-      expect(mockedApi.updateTask).toHaveBeenCalledWith(13, { status: "actionable" }),
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(13, { needsClarification: false }),
     );
     expect(mockedApi.completeTask).not.toHaveBeenCalled();
   });
 
-  it("announces Machbar while an inbox task is swiped right", async () => {
-    const task = makeTask({ id: 14, title: "Ungeklärte Aufgabe", status: "inbox" });
+  it("announces Machbar while a captured task is swiped right", async () => {
+    const task = makeTask({
+      id: 14,
+      title: "Ungeklärte Aufgabe",
+      status: "actionable",
+      needsClarification: true,
+    });
     const { container } = renderWithProviders(
       <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
     );
@@ -84,6 +94,30 @@ describe("TaskRow – primary swipe direction mapping", () => {
     fireEvent.pointerMove(content, { clientX: 70, pointerId: 1 });
 
     expect(container.querySelector(".task-row-swipe-bg.complete")).toHaveTextContent("Machbar");
+  });
+
+  it("clarifies a captured task before a configured defer action outside Eingang", async () => {
+    window.localStorage.setItem(STORAGE_KEY, "waiting");
+    const task = makeTask({
+      id: 15,
+      title: "Später einordnen",
+      status: "actionable",
+      needsClarification: true,
+    });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+    await screen.findByText("Später einordnen");
+
+    swipe(container, 100);
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(15, { needsClarification: false }),
+    );
+    expect(mockedApi.updateTask).not.toHaveBeenCalledWith(
+      15,
+      expect.objectContaining({ status: "waiting" }),
+    );
   });
 
   it("can swipe the retained crossed-out row again to reopen it", async () => {

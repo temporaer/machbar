@@ -362,6 +362,10 @@ Migrations are idempotent — running them more than once is safe.
 >
 > **`0004_oidc_authentication`** adds separate identity, one-time login-flow,
 > and hashed-session tables. It does not rebuild `members`, projects, or tasks.
+>
+> **`0005_capture_persistence`** adds `tasks.needs_clarification` without
+> rebuilding `tasks`, marks legacy `inbox` rows for clarification, and converts
+> their workflow status to `actionable`.
 
 To rehearse a migration against production data, always work on a **copy**:
 
@@ -516,7 +520,20 @@ An **owner × size matrix** over all open tasks. Tap a cell to filter the list b
 ### Interaction notes
 
 - **Retained rows stay actionable.** After completing a task it stays visible, crossed out, for a few seconds. It is only disabled while the request is in flight; once the request completes the row is interactive again, so a second swipe immediately reopens it.
-- **Inbox tasks are clarified before completion.** A newly captured task is visibly labelled *Eingang*. Its first right-swipe always promotes it to *Machbar*; only a subsequent swipe can apply the configured completion/waiting/someday action.
+- **Capture and workflow are separate.** Global Quick Add creates a *Machbar*
+  task marked **Zu klären**; project Quick Add and inline child creation start
+  clarified. **Eingang** lists the clarification flag rather than a status.
+  Captured tasks remain visible inside projects but stay out of Heute and
+  next-action selection. Their first right-swipe clears **Zu klären**; explicit
+  workflow choices and *Speichern & nächste klären* do the same, while
+  metadata edits and refiling do not.
+- **Project dates surface once, not on every task.** Heute shows a dedicated
+  project card from seven days before a project deadline and from a reached
+  project scheduling date onward. Scheduling prompts remain until the project
+  is rescheduled or completed. The card shows its clarified next action or
+  repair guidance; task rows show the project deadline as relative context
+  such as *in 2 Wochen* or *3 Tage überfällig*. No project date is copied into
+  a task's own date fields.
 - **Focused quick sheets.** Owner, dates, tags, criteria and driver each have their own small sheet. Full detail pages are reserved for deliberate deep edits.
 - **Tags are compact and reusable.** Project and task editors show the available tags as small, coloured, directly tappable chips. A new tag can be created inline and is selected immediately; its stable colour is assigned automatically. Project tags flow down the task tree unless a task excludes them. The global catalogue can be created and deleted under **Mehr › Tags verwalten**; deletion removes only the tag associations, never their projects or tasks.
 - **Assignment is a tap, not a dropdown.** Since a household has at most a handful of members, every assignment popup shows all of them as chips — including an explicit *Gemeinsam / offen* (tasks) or *Niemand zugewiesen* (stories) chip wherever leaving it unassigned is allowed. The current choice stays highlighted while you pick.
@@ -524,7 +541,7 @@ An **owner × size matrix** over all open tasks. Tap a cell to filter the list b
 - **Notes contain actionable links.** Task rows show a compact two-line note preview; phone numbers, email addresses, and web URLs become safe `tel:`, `mailto:`, and HTTPS links for direct use on mobile.
 - **Waiting uses normal task rows.** The Wartet view is one flat, deterministically ordered outline with `Wartet auf: …` inside each row. Right-swipe always means *Wieder machbar* in this view; *Nachhaken* remains a focused action in the compact icon strip.
 - **Projectless tasks can be filed in place.** Their project icon opens the same searchable picker with recent destinations used by task refiling, and moves the complete subtree into the chosen project.
-- **Stuck guidance sits with the work.** A stuck project shows a prominent reason and process-specific repair step directly above its editable task outline, so an inbox task can be promoted to *Machbar* without leaving the project.
+- **Stuck guidance sits with the work.** A stuck project shows a prominent reason and process-specific repair step directly above its editable task outline, so a **Zu klären** task can be clarified without leaving the project.
 - **Refiling searches.** *Ablegen* / *Verschieben* lists every target project or parent task with a search box on top: type any part of a project or task title (the owning project counts too) and the list filters as you type. With an empty box the five destinations you used most recently come first under *Zuletzt verwendet*, everything else under *Alle Ziele*. Recents live in the browser only and are dropped automatically when a destination no longer applies. It is reached from the outline's selected-task toolbar (*Ablegen*) and from the task detail sheet, so no structural move ever requires a gesture.
 - **Structure is dragged, not configured.** The task outline has no organize mode: one ⠿ handle per row, one insertion line, one toolbar for the selected task — with arrow keys on the handle as the full pointer-free equivalent. See *Project outline* above.
 

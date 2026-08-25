@@ -67,6 +67,7 @@ interface RawTask {
   title: string;
   notes: string;
   status: TaskStatus;
+  needsClarification: boolean;
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
   createdByMemberId: number | null;
@@ -275,6 +276,7 @@ export class Graph {
         title: raw.title,
         notes: raw.notes,
         status: raw.status,
+        needsClarification: raw.needsClarification,
         ownerMemberId: raw.ownerMemberId,
         ownerInheritanceMode: raw.ownerInheritanceMode,
         createdByMemberId: raw.createdByMemberId,
@@ -388,7 +390,16 @@ export class Graph {
       result.push({
         ...project,
         stuckReason: reason,
-        repairAction: repairActionByReason[reason],
+        repairAction:
+          reason === "no_next_action" &&
+          this.tasksForProject(project.id).some(
+            (task) =>
+              task.needsClarification &&
+              task.status !== "done" &&
+              task.status !== "cancelled",
+          )
+            ? "Kläre die erfassten Aufgaben und lege danach einen machbaren nächsten Schritt fest."
+            : repairActionByReason[reason],
       });
     }
     return result;

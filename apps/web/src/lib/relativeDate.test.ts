@@ -1,0 +1,28 @@
+import { describe, expect, it } from "vitest";
+import { formatRelativeDueDate, formatRelativeScheduleDate } from "./relativeDate";
+
+const TODAY = new Date(2026, 7, 25, 23, 30);
+
+describe("relative calendar dates", () => {
+  it.each([
+    ["2026-08-22", "3 Tage überfällig"],
+    ["2026-08-25", "heute"],
+    ["2026-08-28", "in 3 Tagen"],
+    ["2026-09-08", "in 2 Wochen"],
+  ])("formats %s as %s", (date, expected) => {
+    expect(formatRelativeDueDate(date, TODAY)).toBe(expected);
+  });
+
+  it("keeps an elapsed schedule prompt persistent", () => {
+    expect(formatRelativeScheduleDate("2026-08-22", TODAY)).toBe("seit 3 Tagen");
+  });
+
+  it("uses local calendar days across a daylight-saving boundary", () => {
+    const beforeDstChange = new Date(2026, 2, 28, 23, 45);
+    expect(formatRelativeDueDate("2026-03-30", beforeDstChange)).toBe("in 2 Tagen");
+  });
+
+  it("rejects invalid calendar dates", () => {
+    expect(formatRelativeDueDate("2026-02-30", TODAY)).toBeNull();
+  });
+});

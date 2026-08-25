@@ -18,6 +18,7 @@ interface SeedTaskInput {
   title: string;
   notes?: string;
   status?: (typeof schema.tasks.$inferInsert)["status"];
+  needsClarification?: boolean;
   ownerMemberId?: number | null;
   ownerInheritanceMode?: (typeof schema.tasks.$inferInsert)["ownerInheritanceMode"];
   context?: string | null;
@@ -117,7 +118,8 @@ export function seedDatabase(db: Db): void {
             parentTaskId,
             title: input.title,
             notes: input.notes ?? "",
-            status: input.status ?? "inbox",
+            status: input.status ?? "actionable",
+            needsClarification: input.needsClarification ?? false,
             ownerMemberId: input.ownerMemberId ?? null,
             ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
             createdByMemberId: anna.id,
@@ -246,7 +248,7 @@ export function seedDatabase(db: Db): void {
         },
         {
           title: "Ummeldung Wohnsitz",
-          status: "inbox",
+          needsClarification: true,
         },
         {
           title: "Kartons besorgen",
@@ -482,12 +484,12 @@ export function seedDatabase(db: Db): void {
       ],
     });
 
-    // Free-standing inbox tasks (Eingang) with no project yet.
+    // Free-standing capture tasks (Eingang) with no project yet.
     insertTaskTree(
       [
-        { title: "Zahnarzttermin ausmachen", status: "inbox" },
-        { title: "Geschenk für Oma kaufen", status: "inbox" },
-        { title: "Nachbarn wegen Leiter fragen", status: "inbox" },
+        { title: "Zahnarzttermin ausmachen", needsClarification: true },
+        { title: "Geschenk für Oma kaufen", needsClarification: true },
+        { title: "Nachbarn wegen Leiter fragen", needsClarification: true },
         {
           title: "Fahrrad reparieren",
           status: "actionable",

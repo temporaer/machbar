@@ -39,21 +39,15 @@ function markOpenDescendantsTerminal(children: Task[], status: Extract<TaskStatu
       ...child,
       ...(alreadyClosed
         ? {}
-        : { status, completedAt: status === "done" ? at : null, cancelledAt: status === "cancelled" ? at : null }),
+        : {
+            status,
+            needsClarification: false,
+            completedAt: status === "done" ? at : null,
+            cancelledAt: status === "cancelled" ? at : null,
+          }),
       children: markOpenDescendantsTerminal(child.children, status, at),
     };
   });
-}
-
-/** Mirrors the backend's `reopenTask` heuristic (see `apps/api/src/domain/mutations.ts`). */
-function reopenedStatus(task: Task): TaskStatus {
-  const looksClarified =
-    task.projectId !== null ||
-    task.context !== null ||
-    task.ownerMemberId !== null ||
-    task.dueDate !== null ||
-    task.scheduledDate !== null;
-  return looksClarified ? "actionable" : "inbox";
 }
 
 /**
@@ -197,6 +191,7 @@ export function useTaskActions() {
       const optimistic: Task = {
         ...task,
         status: "done",
+        needsClarification: false,
         completedAt: now,
         cancelledAt: null,
         children: descendantStatus ? markOpenDescendantsTerminal(task.children, descendantStatus, now) : task.children,
@@ -222,6 +217,7 @@ export function useTaskActions() {
       const optimistic: Task = {
         ...task,
         status: "cancelled",
+        needsClarification: false,
         cancelledAt: now,
         completedAt: null,
         children: descendantStatus ? markOpenDescendantsTerminal(task.children, descendantStatus, now) : task.children,
@@ -241,7 +237,13 @@ export function useTaskActions() {
 
   const reopen = useCallback(
     (task: Task) => {
-      const optimistic: Task = { ...task, status: reopenedStatus(task), completedAt: null, cancelledAt: null };
+      const optimistic: Task = {
+        ...task,
+        status: "actionable",
+        needsClarification: false,
+        completedAt: null,
+        cancelledAt: null,
+      };
       return runTransition(task, optimistic, () => api.reopenTask(task.id));
     },
     [runTransition],
@@ -250,8 +252,34 @@ export function useTaskActions() {
   /** Quick, prompt-free status change (used by the "Warten" swipe chip / config). Never terminal. */
   const setStatus = useCallback(
     (task: Task, status: Extract<TaskStatus, "waiting" | "someday" | "actionable">) => {
-      const optimistic: Task = { ...task, status, completedAt: null, cancelledAt: null };
-      return runTransition(task, optimistic, () => api.updateTask(task.id, { status }));
+      const optimistic: Task = {
+        ...task,
+        status,
+        needsClarification: false,
+        completedAt: null,
+        cancelledAt: null,
+      };
+      return runTransition(task, optimistic, () =>
+        api.updateTask(task.id, {
+          status,
+          ...(task.needsClarification ? { needsClarification: false } : {}),
+        }),
+      );
+    },
+    [runTransition],
+  );
+
+  /** Clears only the capture flag; the workflow status remains unchanged. */
+  const clarify = useCallback(
+    (task: Task) => {
+      const optimistic: Task = {
+        ...task,
+        needsClarification: false,
+        updatedAt: new Date().toISOString(),
+      };
+      return runTransition(task, optimistic, () =>
+        api.updateTask(task.id, { needsClarification: false }),
+      );
     },
     [runTransition],
   );
@@ -319,6 +347,10 @@ export function useTaskActions() {
         void reopen(task);
         return;
       }
+      if (task.needsClarification) {
+        void clarify(task);
+        return;
+      }
       switch (action) {
         case "waiting":
           void setStatus(task, "waiting");
@@ -334,7 +366,7 @@ export function useTaskActions() {
           requestToggle(task);
       }
     },
-    [reopen, setStatus, requestCancel, requestToggle],
+    [reopen, clarify, setStatus, requestCancel, requestToggle],
   );
 
   const resolvePolicy = useCallback(
@@ -359,6 +391,7 @@ export function useTaskActions() {
     requestCancel,
     requestPrimarySwipe,
     setStatus,
+    clarify,
     quickUpdate,
     resolvePolicy,
     cancelPrompt,

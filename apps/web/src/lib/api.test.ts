@@ -77,9 +77,12 @@ describe("api request() Content-Type handling", () => {
 describe("api.getAgenda memberId scoping", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
-  it("serializes the given memberId as a query param", async () => {
+  it("serializes the given memberId and browser-local date as query params", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2030, 0, 2, 0, 30));
     const fetchMock = mockFetchOnce({
       text: async () => JSON.stringify({ planned: [], overdue: [], dueToday: [], dueSoon: [], shared: [] }),
     });
@@ -87,10 +90,12 @@ describe("api.getAgenda memberId scoping", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/api/agenda/today?memberId=7");
+    expect(url).toBe("/api/agenda/today?memberId=7&date=2030-01-02");
   });
 
-  it("omits the memberId query param when called with null or no argument", async () => {
+  it("omits only memberId when called with null or no argument", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2030, 0, 2, 0, 30));
     const fetchMock = mockFetchOnce({
       text: async () => JSON.stringify({ planned: [], overdue: [], dueToday: [], dueSoon: [], shared: [] }),
     });
@@ -98,8 +103,8 @@ describe("api.getAgenda memberId scoping", () => {
     await api.getAgenda();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect((fetchMock.mock.calls[0] as [string])[0]).toBe("/api/agenda/today");
-    expect((fetchMock.mock.calls[1] as [string])[0]).toBe("/api/agenda/today");
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe("/api/agenda/today?date=2030-01-02");
+    expect((fetchMock.mock.calls[1] as [string])[0]).toBe("/api/agenda/today?date=2030-01-02");
   });
 });
 

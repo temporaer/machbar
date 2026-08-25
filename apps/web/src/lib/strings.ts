@@ -109,6 +109,7 @@ const extra = {
   newTask: "Neue Aufgabe",
   quickAddPlaceholder: "Was ist zu tun?",
   clarifyNow: "Jetzt klären",
+  needsClarification: "Zu klären",
   clarifyEmpty: "Der Eingang ist leer. Gute Arbeit!",
   waitingEmpty: "Nichts wartet gerade.",
   todayEmpty: "Für heute ist nichts geplant.",
@@ -141,6 +142,7 @@ const extra = {
   effectiveTags: "Wirksame Tags",
   ownTags: "Eigene Tags",
   saveChanges: "Änderungen speichern",
+  saveNext: "Speichern & weiter",
   identityRequiredTitle: "Bitte wähle deine Identität",
   identityRequiredBody: "Machbar merkt sich, wer du bist, damit Zuständigkeiten und die Heute-Ansicht stimmen.",
   firstMemberHint: "Noch ist niemand angelegt. Erstelle die erste Person, um Machbar zu starten.",
@@ -247,6 +249,11 @@ const extra = {
   moveCriterionUp: "Kriterium nach oben",
   moveCriterionDown: "Kriterium nach unten",
   noCriteria: "Noch keine Akzeptanzkriterien.",
+  projectAgenda: "Projekte",
+  projectReview: "Projekt prüfen",
+  projectDue: "Projekt fällig",
+  projectReviewAndDue: "Projekt prüfen & fällig",
+  review: "Prüfen",
 } as const;
 
 export const strings = { ...de, ...extra };
