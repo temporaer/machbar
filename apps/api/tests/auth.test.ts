@@ -199,6 +199,33 @@ describe("Pocket ID authentication", () => {
     ).toHaveLength(1);
   });
 
+  it("links an existing member by preferred username when the display name is fuller", async () => {
+    const existing = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Hannes", color: "#123456" })
+      .returning()
+      .get();
+    provider.claims = {
+      ...provider.claims,
+      name: "Hannes Schulz",
+      preferredUsername: "hannes",
+    };
+
+    const callback = await login();
+    const status = await ctx.app.inject({
+      method: "GET",
+      url: "/api/auth/status",
+      headers: { cookie: sessionCookie(callback.headers["set-cookie"]) },
+    });
+
+    expect(status.json().member).toMatchObject({
+      id: existing.id,
+      name: "Hannes Schulz",
+      managedByOidc: true,
+    });
+    expect(ctx.handle.db.select().from(schema.members).all()).toHaveLength(1);
+  });
+
   it("never lets a second Pocket ID subject claim an already-linked name", async () => {
     expect((await login()).statusCode).toBe(302);
     provider.claims = {

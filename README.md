@@ -228,14 +228,16 @@ the existing local “Wer bist du?” identity flow. A partial configuration is 
 startup error rather than an unauthenticated fallback.
 
 On first login, Machbar links the validated Pocket ID subject to one unlinked
-member with the exact same display name, or creates a member when no exact
-match exists. Later logins synchronize that member's name from Pocket ID.
+member with the exact same display name. If the full name differs, a unique
+case-insensitive match between Pocket ID's `preferred_username` and an existing
+member name is accepted (for example `hannes` → `Hannes`); otherwise Machbar
+creates a member. Later logins synchronize that member's name from Pocket ID.
 OIDC-linked members remain assignment targets but can no longer be renamed or
 deleted inside Machbar. Access to the client should be restricted to the
-desired trusted household users/groups in Pocket ID. Exact-name adoption is a
-one-time migration convenience and assumes those allowed users cannot
-impersonate each other's display names in Pocket ID; the immutable OIDC subject
-is authoritative after linking.
+desired trusted household users/groups in Pocket ID. Name/username adoption is
+a one-time migration convenience and assumes those allowed users cannot
+impersonate each other's identity fields in Pocket ID; the immutable OIDC
+subject is authoritative after linking.
 
 The direct OIDC origin must be HTTPS and must exactly match `OIDC_PUBLIC_URL`.
 OIDC cookies are origin-bound, so a separately hosted Home Assistant Ingress

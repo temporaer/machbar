@@ -158,6 +158,25 @@ export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
       .where(eq(schema.members.name, name))
       .get();
 
+    const preferredUsername = claims.preferredUsername?.trim();
+    if (!member && preferredUsername) {
+      const normalizedUsername = preferredUsername.toLocaleLowerCase("de-DE");
+      const usernameMatches = tx
+        .select()
+        .from(schema.members)
+        .all()
+        .filter(
+          (candidate) =>
+            candidate.name.toLocaleLowerCase("de-DE") === normalizedUsername,
+        );
+      if (usernameMatches.length > 1) {
+        throw AppError.conflict(
+          `Der Pocket-ID-Benutzername "${preferredUsername}" passt zu mehreren Mitgliedern.`,
+        );
+      }
+      member = usernameMatches[0];
+    }
+
     if (member) {
       const existingLink = tx
         .select()
@@ -168,6 +187,23 @@ export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
         throw AppError.conflict(
           `Das Mitglied "${name}" ist bereits mit einem anderen Pocket-ID-Konto verknüpft.`,
         );
+      }
+      if (member.name !== name) {
+        const displayNameCollision = tx
+          .select()
+          .from(schema.members)
+          .where(eq(schema.members.name, name))
+          .get();
+        if (displayNameCollision && displayNameCollision.id !== member.id) {
+          throw AppError.conflict(
+            `Der Pocket-ID-Name "${name}" wird bereits von einem anderen Mitglied verwendet.`,
+          );
+        }
+        tx.update(schema.members)
+          .set({ name })
+          .where(eq(schema.members.id, member.id))
+          .run();
+        member = { ...member, name };
       }
     } else {
       member = tx
