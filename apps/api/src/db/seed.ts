@@ -25,7 +25,6 @@ interface SeedTaskInput {
   scheduledDate?: string | null;
   waitingFor?: string | null;
   priority?: number | null;
-  markedToday?: boolean;
   tagNames?: string[];
   dependsOn?: string[]; // titles of sibling/earlier tasks within the same seed run
   children?: SeedTaskInput[];
@@ -108,7 +107,6 @@ export function seedDatabase(db: Db): void {
             contextInheritanceMode: input.contextInheritanceMode ?? "inherit",
             priority: input.priority ?? null,
             position: index,
-            markedToday: input.markedToday ?? false,
             completedAt: input.status === "done" ? now : null,
             cancelledAt: input.status === "cancelled" ? now : null,
           })
@@ -215,7 +213,7 @@ export function seedDatabase(db: Db): void {
         {
           title: "Kartons besorgen",
           status: "actionable",
-          markedToday: true,
+          scheduledDate: todayIso(0),
           dueDate: todayIso(2),
         },
         {
@@ -241,7 +239,7 @@ export function seedDatabase(db: Db): void {
         {
           title: "Laub entfernen",
           status: "actionable",
-          markedToday: true,
+          scheduledDate: todayIso(0),
         },
         {
           title: "Rasen mähen",
@@ -357,6 +355,16 @@ export function seedDatabase(db: Db): void {
           context: "Zuhause",
           contextInheritanceMode: "explicit",
           dueDate: todayIso(0),
+        },
+        // Blocked (depends on the still-open "Nachbarn wegen Leiter fragen"
+        // above) but scheduled for today: demonstrates the "Heute" revisit
+        // reminder — normally-excluded blocked tasks reappear when their
+        // own scheduledDate is today or earlier.
+        {
+          title: "Leiter zurückbringen",
+          status: "actionable",
+          scheduledDate: todayIso(0),
+          dependsOn: ["Nachbarn wegen Leiter fragen"],
         },
       ],
       null,

@@ -67,7 +67,6 @@ export interface Task {
   contextInheritanceMode: InheritanceMode;
   priority: number | null;
   position: number;
-  markedToday: boolean;
   completedAt: string | null;
   cancelledAt: string | null;
   recurrenceRule: string | null;
@@ -105,6 +104,15 @@ export interface Agenda {
   dueToday: Task[];
   dueSoon: Task[];
   shared: Task[];
+  /**
+   * Tasks that are normally excluded from "Heute" because they are
+   * `blocked` (unresolved dependencies), but whose own `scheduledDate` is
+   * today or earlier. These reappear here — and only here, never in any
+   * other bucket — as a distinct "revisit"/reminder signal so the UI can
+   * explain that the task is blocked yet due for a look today. Dates are
+   * never inherited from a project or parent task for this purpose.
+   */
+  revisit: Task[];
 }
 
 export interface WaitingGroup {
@@ -142,6 +150,8 @@ export const de = {
   dueToday: "Heute fällig",
   dueSoon: "Bald fällig",
   shared: "Gemeinsam / offen",
+  revisit: "Wiedervorlage",
+  revisitHint: "Blockiert, aber zur Wiedervorlage für heute geplant.",
   nextAction: "Nächster Schritt",
   noNextAction: "Kein nächster Schritt",
   addTask: "Aufgabe hinzufügen",

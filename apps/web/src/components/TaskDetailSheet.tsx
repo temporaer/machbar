@@ -173,15 +173,6 @@ export function TaskDetailSheet() {
             </div>
           ) : null}
 
-          <label className="row">
-            <input
-              type="checkbox"
-              checked={task.markedToday}
-              onChange={(e) => void patch({ markedToday: e.target.checked })}
-            />
-            {strings.markedTodayLabel}
-          </label>
-
           <div className="field">
             <label>{strings.owner}</label>
             <InheritanceControl

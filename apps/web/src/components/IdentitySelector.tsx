@@ -5,9 +5,11 @@ import { fallbackColor, initials } from "../lib/format";
 import { LoadingState, ErrorState } from "./AsyncStates";
 
 /**
- * The real backend only exposes `GET /api/members` (members are seeded
- * server-side, see `apps/api/src/domain/mutations.ts::listMembers`) — there
- * is no member-creation endpoint, so this is a pure selection list.
+ * A pure selection list for "Wer bist du?". The real backend now also
+ * exposes `POST/PATCH/DELETE /api/members` for household-member management
+ * (see `MemberManager`, mounted under Mehr) — this component stays
+ * selection-only and always reflects the freshly reloaded member list, so it
+ * can never show a member that was just renamed or deleted elsewhere.
  */
 export function IdentitySelector({ onSelected }: { onSelected?: (member: Member) => void }) {
   const { members, membersLoading, membersError, reloadMembers, currentMemberId, setCurrentMemberId } =

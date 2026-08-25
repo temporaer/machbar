@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { strings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { IdentitySelector } from "../components/IdentitySelector";
+import { MemberManager } from "../components/MemberManager";
 import { fallbackColor, initials } from "../lib/format";
 
 export function MorePage() {
@@ -48,6 +49,12 @@ export function MorePage() {
           </div>
           <p className="text-muted">{strings.switchIdentity}</p>
           <IdentitySelector />
+        </div>
+
+        <div className="card">
+          <h3 style={{ margin: 0 }}>{strings.manageMembers}</h3>
+          <p className="text-muted">{strings.manageMembersHint}</p>
+          <MemberManager />
         </div>
 
         <div className="card">

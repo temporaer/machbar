@@ -33,7 +33,6 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     contextInheritanceMode: "inherit",
     priority: null,
     position: 0,
-    markedToday: false,
     completedAt: null,
     cancelledAt: null,
     recurrenceRule: null,

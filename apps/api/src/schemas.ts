@@ -48,7 +48,6 @@ export const createTaskSchema = z.object({
   context: z.string().nullable().optional(),
   contextInheritanceMode: z.enum(inheritanceModes).optional(),
   priority: z.number().int().nullable().optional(),
-  markedToday: z.boolean().optional(),
   recurrenceRule: z.string().nullable().optional(),
   reminderAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
@@ -71,7 +70,6 @@ export const updateTaskSchema = z.object({
   context: z.string().nullable().optional(),
   contextInheritanceMode: z.enum(inheritanceModes).optional(),
   priority: z.number().int().nullable().optional(),
-  markedToday: z.boolean().optional(),
   recurrenceRule: z.string().nullable().optional(),
   reminderAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
@@ -115,6 +113,14 @@ export const tagRefSchema = z.object({
 
 export const createTagSchema = z.object({
   name: z.string().min(1, "Der Tag-Name darf nicht leer sein."),
+});
+
+export const createMemberSchema = z.object({
+  name: z.string().min(1, "Der Name darf nicht leer sein."),
+});
+
+export const renameMemberSchema = z.object({
+  name: z.string().min(1, "Der Name darf nicht leer sein."),
 });
 
 export const searchQuerySchema = z.object({

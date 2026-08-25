@@ -14,7 +14,7 @@ import {
  */
 export const members = sqliteTable("members", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  name: text("name").notNull(),
+  name: text("name").notNull().unique(),
   color: text("color").notNull(),
 });
 
@@ -88,9 +88,6 @@ export const tasks = sqliteTable(
       .default("inherit"), // inherit | explicit | none
     priority: integer("priority"),
     position: integer("position").notNull().default(0),
-    markedToday: integer("marked_today", { mode: "boolean" })
-      .notNull()
-      .default(false),
     completedAt: text("completed_at"),
     cancelledAt: text("cancelled_at"),
     recurrenceRule: text("recurrence_rule"),

@@ -83,6 +83,19 @@ describe("TaskDetailSheet", () => {
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(42, { ownerInheritanceMode: "explicit" }));
   });
 
+  it("zeigt keinen manuellen Heute-Umschalter/-Haken mehr an", async () => {
+    const task = makeTask({ id: 44, title: "Keller aufräumen" });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(44);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Keller aufräumen");
+
+    expect(screen.queryByText("Heute erledigen")).not.toBeInTheDocument();
+    expect(screen.queryByText("Für heute markieren")).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
   it("schließt einen ausgeschlossenen geerbten Tag über den Umschalter aus", async () => {
     const inheritedTag = makeTag({ id: 11, name: "eilig" });
     const task = makeTask({

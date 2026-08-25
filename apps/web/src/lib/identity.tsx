@@ -56,6 +56,17 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // After a member is deleted (or otherwise disappears, e.g. server reseed),
+  // don't let a stale id linger in state/storage once the fresh member list
+  // has loaded and no longer contains it — the "Wer bist du?" selector must
+  // never keep a phantom selection.
+  useEffect(() => {
+    if (membersLoading) return;
+    if (currentMemberId !== null && !members.some((m) => m.id === currentMemberId)) {
+      setCurrentMemberId(null);
+    }
+  }, [membersLoading, members, currentMemberId, setCurrentMemberId]);
+
   const currentMember = useMemo(
     () => members.find((m) => m.id === currentMemberId) ?? null,
     [members, currentMemberId],

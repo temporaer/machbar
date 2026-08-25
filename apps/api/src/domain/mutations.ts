@@ -25,6 +25,94 @@ export function listMembers(db: Db) {
   return db.select().from(schema.members).all();
 }
 
+export function getMemberOrThrow(db: Db, id: number) {
+  const member = db.select().from(schema.members).where(eq(schema.members.id, id)).get();
+  if (!member) {
+    throw AppError.notFound(`Mitglied mit ID ${id} wurde nicht gefunden.`);
+  }
+  return member;
+}
+
+function normalizeMemberName(name: string): string {
+  const trimmed = name.trim();
+  if (trimmed === "") {
+    throw AppError.badRequest("Der Name darf nicht leer sein.");
+  }
+  return trimmed;
+}
+
+export function createMember(db: Db, name: string) {
+  const trimmed = normalizeMemberName(name);
+  return db.transaction((tx) => {
+    const existing = tx
+      .select()
+      .from(schema.members)
+      .where(eq(schema.members.name, trimmed))
+      .get();
+    if (existing) {
+      throw AppError.conflict(
+        `Ein Mitglied mit dem Namen "${trimmed}" existiert bereits.`,
+      );
+    }
+    return tx
+      .insert(schema.members)
+      .values({ name: trimmed, color: "" })
+      .returning()
+      .get();
+  });
+}
+
+export function renameMember(db: Db, id: number, name: string) {
+  const trimmed = normalizeMemberName(name);
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    getMemberOrThrow(txDb, id);
+    const existing = tx
+      .select()
+      .from(schema.members)
+      .where(eq(schema.members.name, trimmed))
+      .get();
+    if (existing && existing.id !== id) {
+      throw AppError.conflict(
+        `Ein Mitglied mit dem Namen "${trimmed}" existiert bereits.`,
+      );
+    }
+    tx.update(schema.members).set({ name: trimmed }).where(eq(schema.members.id, id)).run();
+    return tx.select().from(schema.members).where(eq(schema.members.id, id)).get()!;
+  });
+}
+
+export function deleteMember(db: Db, id: number) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const member = getMemberOrThrow(txDb, id);
+
+    const ownedProjects = tx
+      .select({ id: schema.projects.id })
+      .from(schema.projects)
+      .where(eq(schema.projects.ownerMemberId, id))
+      .all();
+    const ownedTasks = tx
+      .select({ id: schema.tasks.id })
+      .from(schema.tasks)
+      .where(eq(schema.tasks.ownerMemberId, id))
+      .all();
+    const createdTasks = tx
+      .select({ id: schema.tasks.id })
+      .from(schema.tasks)
+      .where(eq(schema.tasks.createdByMemberId, id))
+      .all();
+
+    if (ownedProjects.length > 0 || ownedTasks.length > 0 || createdTasks.length > 0) {
+      throw AppError.conflict(
+        `Mitglied "${member.name}" kann nicht gelöscht werden, solange es noch Projekten oder Aufgaben (als Zuständige/r oder Ersteller/in) zugeordnet ist.`,
+      );
+    }
+
+    tx.delete(schema.members).where(eq(schema.members.id, id)).run();
+  });
+}
+
 export function listTags(db: Db) {
   return db.select().from(schema.tags).all();
 }
@@ -196,7 +284,6 @@ export interface CreateTaskInput {
   context?: string | null;
   contextInheritanceMode?: InheritanceMode;
   priority?: number | null;
-  markedToday?: boolean;
   recurrenceRule?: string | null;
   reminderAt?: string | null;
   tagIds?: number[];
@@ -255,7 +342,6 @@ export function createTask(db: Db, input: CreateTaskInput) {
         contextInheritanceMode: input.contextInheritanceMode ?? "inherit",
         priority: input.priority ?? null,
         position,
-        markedToday: input.markedToday ?? false,
       })
       .returning()
       .get();
@@ -290,7 +376,6 @@ export interface UpdateTaskInput {
   context?: string | null;
   contextInheritanceMode?: InheritanceMode;
   priority?: number | null;
-  markedToday?: boolean;
   recurrenceRule?: string | null;
   reminderAt?: string | null;
   tagIds?: number[];
@@ -319,7 +404,6 @@ export function updateTask(db: Db, id: number, input: UpdateTaskInput) {
     if (input.contextInheritanceMode !== undefined)
       patch.contextInheritanceMode = input.contextInheritanceMode;
     if (input.priority !== undefined) patch.priority = input.priority;
-    if (input.markedToday !== undefined) patch.markedToday = input.markedToday;
     if (input.recurrenceRule !== undefined) patch.recurrenceRule = input.recurrenceRule;
     if (input.reminderAt !== undefined) patch.reminderAt = input.reminderAt;
 

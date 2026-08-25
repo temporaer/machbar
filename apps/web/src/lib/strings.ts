@@ -45,8 +45,6 @@ const extra = {
   description: "Beschreibung",
   noProjects: "Keine Projekte vorhanden.",
   noTasks: "Keine Aufgaben vorhanden.",
-  markToday: "Für heute markieren",
-  unmarkToday: "Nicht mehr für heute",
   addTag: "Tag hinzufügen",
   removeTag: "Entfernen",
   excludeInheritedTag: "Ausschließen",
@@ -113,13 +111,23 @@ const extra = {
   noInheritance: "Keine Vererbung",
   addChildTitle: "Neue Teilaufgabe",
   deleteTaskConfirm: "Aufgabe endgültig löschen?",
-  markedTodayLabel: "Heute erledigen",
   waitingForPlaceholder: "z. B. Antwort von Steuerberater",
   contextPlaceholder: "z. B. Zuhause, Büro, Telefon",
   noDependencies: "Keine Abhängigkeiten.",
   noTags: "Keine Tags.",
   searchDependency: "Aufgabe suchen …",
   addTaskToProject: "Aufgabe im Projekt anlegen",
+  todayExplanation:
+    "Diese Übersicht wird automatisch aus Terminen, Fälligkeiten und dem Status berechnet – ohne manuelle Markierung.",
+  manageMembers: "Personen verwalten",
+  manageMembersHint: "Lege Personen an, benenne sie um oder entferne sie.",
+  memberName: "Name",
+  editMemberName: "Name bearbeiten",
+  memberNamePlaceholder: "z. B. Mira",
+  addMember: "Person hinzufügen",
+  renameMember: "Umbenennen",
+  memberDeleteConfirm: "Person endgültig löschen?",
+  noMembers: "Noch keine Personen angelegt.",
 } as const;
 
 export const strings = { ...de, ...extra };

@@ -38,4 +38,14 @@ describe("IdentitySelector", () => {
     await waitFor(() => expect(option).toHaveAttribute("aria-selected", "true"));
     expect(window.localStorage.getItem("machbar:identity-member-id")).toBe("1");
   });
+
+  it("verwirft eine ausgewählte Person, die nach einer Löschung nicht mehr in der Liste ist", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 2, name: "Jonas" })]);
+    renderWithProviders(<IdentitySelector />);
+
+    const option = await screen.findByRole("option", { name: /Jonas/ });
+    await waitFor(() => expect(option).toHaveAttribute("aria-selected", "false"));
+    await waitFor(() => expect(window.localStorage.getItem("machbar:identity-member-id")).toBeNull());
+  });
 });

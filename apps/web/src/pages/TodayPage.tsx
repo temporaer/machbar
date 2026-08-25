@@ -15,17 +15,19 @@ const sections: Array<{ key: "planned" | "overdue" | "dueToday" | "dueSoon" | "s
 
 export function TodayPage() {
   const { data: agenda, loading, error, reload } = useAsync(() => api.getAgenda(), []);
+  const revisitTasks = agenda?.revisit ?? [];
 
   return (
     <div>
       <div className="page-header">
         <h1>{strings.today}</h1>
       </div>
+      <p className="text-muted">{strings.todayExplanation}</p>
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {agenda ? (
         (() => {
-          const total = sections.reduce((sum, s) => sum + agenda[s.key].length, 0);
+          const total = sections.reduce((sum, s) => sum + agenda[s.key].length, 0) + revisitTasks.length;
           if (total === 0) return <EmptyState message={strings.todayEmpty} />;
           return (
             <>
@@ -37,6 +39,13 @@ export function TodayPage() {
                     <TaskOutline tasks={agenda[s.key]} emptyMessage={strings.noItems} />
                   </div>
                 ))}
+              {revisitTasks.length > 0 ? (
+                <div className="section" key="revisit">
+                  <div className="section-title">{strings.revisit}</div>
+                  <p className="text-muted">{strings.revisitHint}</p>
+                  <TaskOutline tasks={revisitTasks} emptyMessage={strings.noItems} />
+                </div>
+              ) : null}
             </>
           );
         })()

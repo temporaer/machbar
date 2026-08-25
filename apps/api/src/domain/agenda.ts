@@ -31,6 +31,13 @@ function sortByDueThenPriority(a: TaskRecord, b: TaskRecord): number {
  * a task is placed in the first matching bucket in the order
  * planned > overdue > dueToday > dueSoon > shared, so nothing is
  * duplicated across sections.
+ *
+ * Blocked tasks (unresolved dependencies) are normally excluded from every
+ * bucket above — they aren't actionable, so surfacing them in "Heute"
+ * would just be noise. The one exception is `revisit`: a blocked task
+ * whose own `scheduledDate` (never inherited from a project or parent) is
+ * today or earlier reappears there as a reminder that it's worth checking
+ * on, even though it can't be worked on directly yet.
  */
 export function buildAgenda(graph: Graph, dueSoonDays = 3): Agenda {
   const today = todayIso();
@@ -40,13 +47,15 @@ export function buildAgenda(graph: Graph, dueSoonDays = 3): Agenda {
   const take = (predicate: (t: TaskRecord) => boolean): TaskRecord[] => {
     const results = graph
       .allTasks()
-      .filter((t) => isOpen(t) && !seen.has(t.id) && predicate(t))
+      .filter((t) => isOpen(t) && !t.blocked && !seen.has(t.id) && predicate(t))
       .sort(sortByDueThenPriority);
     for (const t of results) seen.add(t.id);
     return results;
   };
 
-  const planned = take((t) => t.markedToday);
+  const planned = take(
+    (t) => !!t.scheduledDate && t.scheduledDate <= today,
+  );
   const overdue = take((t) => !!t.dueDate && t.dueDate < today);
   const dueToday = take((t) => t.dueDate === today);
   const dueSoon = take(
@@ -56,5 +65,16 @@ export function buildAgenda(graph: Graph, dueSoonDays = 3): Agenda {
     (t) => t.status === "actionable" && t.effectiveOwnerId === null,
   );
 
-  return { planned, overdue, dueToday, dueSoon, shared };
+  const revisit = graph
+    .allTasks()
+    .filter(
+      (t) =>
+        isOpen(t) &&
+        t.blocked &&
+        !!t.scheduledDate &&
+        t.scheduledDate <= today,
+    )
+    .sort(sortByDueThenPriority);
+
+  return { planned, overdue, dueToday, dueSoon, shared, revisit };
 }

@@ -63,7 +63,6 @@ interface RawTask {
   contextInheritanceMode: InheritanceMode;
   priority: number | null;
   position: number;
-  markedToday: boolean;
   completedAt: string | null;
   cancelledAt: string | null;
   recurrenceRule: string | null;
@@ -249,7 +248,6 @@ export class Graph {
         contextInheritanceMode: raw.contextInheritanceMode,
         priority: raw.priority,
         position: raw.position,
-        markedToday: raw.markedToday,
         completedAt: raw.completedAt,
         cancelledAt: raw.cancelledAt,
         recurrenceRule: raw.recurrenceRule,

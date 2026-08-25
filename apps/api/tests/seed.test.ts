@@ -64,10 +64,28 @@ describe("seed data", () => {
       ...agenda.dueToday,
       ...agenda.dueSoon,
       ...agenda.shared,
+      ...agenda.revisit,
     ].map((t: { id: number }) => t.id);
     expect(new Set(allIds).size).toBe(allIds.length);
     expect(agenda.planned.map((t: { title: string }) => t.title)).toContain(
       "Kartons besorgen",
     );
+  });
+
+  it("surfaces the blocked-but-scheduled-for-today seed task as a revisit reminder", async () => {
+    const res = await ctx.app.inject({ method: "GET", url: "/api/agenda/today" });
+    const agenda = res.json();
+    const revisitTitles = agenda.revisit.map((t: { title: string }) => t.title);
+    expect(revisitTitles).toContain("Leiter zurückbringen");
+    const revisitTask = agenda.revisit.find(
+      (t: { title: string }) => t.title === "Leiter zurückbringen",
+    );
+    expect(revisitTask.blocked).toBe(true);
+    // It must never also show up in one of the "normal" buckets.
+    for (const key of ["planned", "overdue", "dueToday", "dueSoon", "shared"] as const) {
+      expect(
+        agenda[key].some((t: { title: string }) => t.title === "Leiter zurückbringen"),
+      ).toBe(false);
+    }
   });
 });

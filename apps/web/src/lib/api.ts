@@ -109,7 +109,6 @@ export interface CreateTaskInput {
   context?: string | null;
   contextInheritanceMode?: InheritanceMode;
   priority?: number | null;
-  markedToday?: boolean;
   recurrenceRule?: string | null;
   reminderAt?: string | null;
   tagIds?: number[];
@@ -135,8 +134,34 @@ export interface CreateProjectInput {
 
 export type UpdateProjectInput = Partial<CreateProjectInput> & { position?: number };
 
+export interface CreateMemberInput {
+  name: string;
+}
+
+export type UpdateMemberInput = Partial<CreateMemberInput>;
+
+/**
+ * `@machbar/shared`'s `Agenda` type now declares a `revisit` bucket for
+ * blocked tasks whose `scheduledDate` has arrived (see
+ * `apps/api/src/domain/agenda.ts` / the shared `Agenda` interface), but the
+ * compiled `@machbar/shared` artifact this app builds against may still lag
+ * behind that source change depending on build order. Extending the type
+ * locally with an optional `revisit` keeps the frontend typechecking and
+ * rendering correctly either way — before the field exists, while it's
+ * being wired up, and once it's guaranteed present — with no further
+ * frontend change needed once every build is in sync.
+ */
+export type AgendaResponse = Agenda & {
+  revisit?: Task[];
+};
+
 export const api = {
   getMembers: () => request<Member[]>("/members"),
+  createMember: (input: CreateMemberInput) =>
+    request<Member>("/members", { method: "POST", body: JSON.stringify(input) }),
+  updateMember: (id: number, patch: UpdateMemberInput) =>
+    request<Member>(`/members/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteMember: (id: number) => request<void>(`/members/${id}`, { method: "DELETE" }),
 
   getTags: () => request<Tag[]>("/tags"),
   createTag: (name: string) =>
@@ -154,7 +179,7 @@ export const api = {
   unarchiveProject: (id: number) =>
     request<Project>(`/projects/${id}/unarchive`, { method: "POST" }),
 
-  getAgenda: () => request<Agenda>("/agenda/today"),
+  getAgenda: () => request<AgendaResponse>("/agenda/today"),
   getInbox: () => request<Task[]>("/inbox"),
   getWaiting: () => request<WaitingGroup[]>("/waiting"),
   searchTasks: (filters: SearchFilters) =>
