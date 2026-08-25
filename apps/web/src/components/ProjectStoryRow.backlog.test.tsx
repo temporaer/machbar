@@ -7,13 +7,14 @@ import { render } from "@testing-library/react";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { renderWithProviders } from "../test/testUtils";
-import { BacklogStoryRow } from "./BacklogStoryRow";
-import { useBacklogReviewActions } from "../lib/useBacklogReviewActions";
+import { ProjectStoryRow } from "./ProjectStoryRow";
+import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import { makeCriterion, makeMember, makeProject } from "../test/fixtures";
 import "../styles/index.css";
 import "./../pages/BacklogReviewPage.css";
+import "./ProjectStoryRow.css";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -40,16 +41,16 @@ async function flushMicrotasks(times = 3) {
 }
 
 function Harness({ story }: { story: ReturnType<typeof makeProject> }) {
-  const actions = useBacklogReviewActions();
+  const actions = useProjectWorkflowActions();
   return (
     <ul>
-      <BacklogStoryRow story={story} actions={actions} />
+      <ProjectStoryRow story={story} actions={actions} />
     </ul>
   );
 }
 
 function swipe(container: HTMLElement, deltaX: number) {
-  const content = container.querySelector(".backlog-row-content") as HTMLElement;
+  const content = container.querySelector(".story-row-content") as HTMLElement;
   fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
   fireEvent.pointerMove(content, { clientX: deltaX, pointerId: 1 });
   fireEvent.pointerUp(content, { clientX: deltaX, pointerId: 1 });
@@ -81,7 +82,7 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
   );
 }
 
-describe("BacklogStoryRow", () => {
+describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
@@ -140,7 +141,7 @@ describe("BacklogStoryRow", () => {
     expect(mockedApi.activateProject).toHaveBeenCalledWith(12, undefined);
     // Optimistic: still shown, muted, with the new status while retained.
     expect(screen.getByText("Garten aufräumen")).toBeInTheDocument();
-    expect(container.querySelector(".backlog-row-content.retained")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
     expect(screen.getByText("Aktiviert")).toBeInTheDocument();
   });
 
@@ -242,7 +243,7 @@ describe("BacklogStoryRow", () => {
       await flushMicrotasks();
     });
     expect(mockedApi.archiveProject).toHaveBeenCalledWith(16);
-    expect(container.querySelector(".backlog-row-content.retained")).toBeInTheDocument();
+    expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
     expect(screen.getByText("Archiviert")).toBeInTheDocument();
 
     await act(async () => {
@@ -256,7 +257,7 @@ describe("BacklogStoryRow", () => {
     // Retention window elapsed: no longer rendered as retained. The row prop
     // itself (`storyProp`) is unchanged in this harness, so it keeps
     // rendering — but no longer with the retained/optimistic styling.
-    expect(container.querySelector(".backlog-row-content.retained")).not.toBeInTheDocument();
+    expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
   });
 
   it("shows an inline, dismissible error and does not retain the story when activation fails", async () => {
@@ -267,7 +268,7 @@ describe("BacklogStoryRow", () => {
 
     swipe(container, 100);
     await screen.findByText("Netzwerkfehler");
-    expect(container.querySelector(".backlog-row-content.retained")).not.toBeInTheDocument();
+    expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Schließen" }));
     expect(screen.queryByText("Netzwerkfehler")).not.toBeInTheDocument();

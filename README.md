@@ -406,6 +406,21 @@ Groom the backlog without leaving the list. Each story row offers targeted popup
 | **Bearbeiten** | Open the full story page (the only action that navigates away) |
 | **Archivieren** | Park the story |
 
+### Projekte tab — swipe the whole workflow (`/projekte`)
+
+The main **Projekte** tab lists stories of *every* status and offers the same gestures as Backlog Review — the complete Scrum workflow, one thumb:
+
+| Gesture / control | Effect |
+|-------------------|--------|
+| **Swipe right** (or the round button on the left of the row) | The next workflow step for that status: Backlog → **Aktivieren**, Aktiv → **Abschließen**, Abgeschlossen → **Wieder öffnen**, Archiviert → **Aktivieren** |
+| **Swipe left** or the **⋯** button | Chip strip: *Verantwortlich*, *Akzeptanzkriterien*, *Planen*, *Bearbeiten* plus the remaining legal transitions (e.g. *In Backlog zurücklegen*, *Archivieren*) |
+| **Tap the row** | Opens the story page, exactly as before |
+
+- Only steps the backend actually allows for the current status are offered.
+- Activating a story without a driver asks for one first and activates in the same step.
+- Every row shows its **status**; right after a transition the badge briefly shows what happened (*Aktiviert*, *Abgeschlossen*, *Wieder geöffnet*, *Zurück im Backlog*, *Archiviert*) and stays actionable, so a workflow can be cycled straight away.
+- **The status is never a dropdown.** It is a read-only badge everywhere — on the row, on the story page and in the *Bearbeiten* sheet — and only changes through the named transition buttons/chips that are legal right now.
+
 ### Refinement — *Mehr → Refinement* (`/mehr/refinement`)
 
 An **owner × size matrix** over all open tasks. Tap a cell to filter the list below, then:

@@ -5,21 +5,23 @@ import { BottomSheet } from "./BottomSheet";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
 
 /**
- * Bottom sheet used both by the "Verantwortlich" chip (assign only, driver
- * may be cleared again since the story stays in the backlog) and by the
- * right-swipe/activate control when a story has no driver yet (assign +
+ * Bottom sheet used both by the "Verantwortlich" chip (assign only) and by
+ * the right-swipe/activate control when a story has no driver yet (assign +
  * activate in one step — the sheet's copy adapts via `activateHint`, but the
  * assignment itself is always a plain `ownerMemberId` pick either way).
  *
  * Like every other focused assignment popup it picks from tap chips
- * (`MemberChoiceGroup`) instead of a `<select>`. In `activateHint` mode the
- * "Niemand zugewiesen" chip is omitted entirely, because activating without
- * a driver is not a legal outcome — the API rejects it.
+ * (`MemberChoiceGroup`) instead of a `<select>`. The "Niemand zugewiesen"
+ * chip is omitted whenever clearing the driver is not a legal outcome: while
+ * activating (the API rejects an activation without driver) and for any
+ * story that has left the backlog (`allowUnassigned={false}`; see the driver
+ * invariant in `apps/api/src/domain/mutations.ts::updateProject`).
  */
 export function AssignDriverSheet({
   members,
   currentOwnerMemberId,
   activateHint,
+  allowUnassigned,
   onClose,
   onAssign,
 }: {
@@ -27,11 +29,14 @@ export function AssignDriverSheet({
   currentOwnerMemberId: number | null;
   /** When true, the sheet is being used to unblock activation (no "Niemand" option). */
   activateHint: boolean;
+  /** Whether clearing the driver is legal; defaults to "yes, unless activating". */
+  allowUnassigned?: boolean;
   onClose: () => void;
   onAssign: (ownerMemberId: number | null) => Promise<void>;
 }) {
   const [selected, setSelected] = useState<number | null>(currentOwnerMemberId);
   const [saving, setSaving] = useState(false);
+  const canUnassign = allowUnassigned ?? !activateHint;
 
   const submit = async () => {
     setSaving(true);
@@ -46,6 +51,7 @@ export function AssignDriverSheet({
   return (
     <BottomSheet title={strings.assignDriver} onClose={onClose} labelledBy="assign-driver-title">
       {activateHint ? <p className="text-muted">{strings.assignDriverToActivateHint}</p> : null}
+      {!activateHint && !canUnassign ? <p className="text-muted">{strings.driverLockedHint}</p> : null}
       <div className="stack">
         <MemberChoiceGroup
           label={strings.driver}
@@ -53,7 +59,7 @@ export function AssignDriverSheet({
           members={members}
           value={selected}
           onChange={setSelected}
-          unassignedLabel={activateHint ? null : strings.noDriver}
+          unassignedLabel={canUnassign ? strings.noDriver : null}
           disabled={saving}
           autoFocus
         />
@@ -64,7 +70,7 @@ export function AssignDriverSheet({
           <button
             type="button"
             className="btn btn-primary btn-block"
-            disabled={saving || (activateHint && selected === null)}
+            disabled={saving || (!canUnassign && selected === null)}
             onClick={() => void submit()}
           >
             {strings.save}

@@ -3,13 +3,23 @@ import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useRefresh } from "../lib/refresh";
 import { strings } from "../lib/strings";
+import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
-import { ProjectCard } from "../components/ProjectCard";
+import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { BottomSheet } from "../components/BottomSheet";
 
+/**
+ * The Projekte tab: every project is a user story, and every row carries the
+ * full Scrum-style workflow directly — right swipe (or the dedicated primary
+ * button) performs the status-appropriate next step, left swipe or ⋯ reveals
+ * the driver/criteria/dates/edit chips plus the remaining legal transitions.
+ * See `components/ProjectStoryRow.tsx` for the gesture behaviour and
+ * `lib/useProjectWorkflowActions.ts` for the optimistic retention.
+ */
 export function ProjectsPage() {
   const { data: projects, loading, error, reload } = useAsync(() => api.getProjects(), []);
   const { bump } = useRefresh();
+  const actions = useProjectWorkflowActions();
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
@@ -29,6 +39,14 @@ export function ProjectsPage() {
     }
   };
 
+  const listed = projects ?? [];
+  // A story that just transitioned optimistically must keep rendering during
+  // its retention window even if a refetch drops it from this list.
+  const retainedOnly = [...actions.retained.values()]
+    .map((entry) => entry.story)
+    .filter((story) => !listed.some((p) => p.id === story.id));
+  const visibleProjects = [...listed, ...retainedOnly];
+
   return (
     <div>
       <div className="page-header">
@@ -37,17 +55,18 @@ export function ProjectsPage() {
           {strings.addProject}
         </button>
       </div>
+      <p className="text-muted">{strings.projectsSwipeHint}</p>
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {projects ? (
-        projects.length === 0 ? (
+        visibleProjects.length === 0 ? (
           <EmptyState message={strings.noProjects} />
         ) : (
-          <div className="stack">
-            {projects.map((p) => (
-              <ProjectCard key={p.id} project={p} />
+          <ul className="list story-row-list">
+            {visibleProjects.map((p) => (
+              <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
             ))}
-          </div>
+          </ul>
         )
       ) : null}
       {creating ? (

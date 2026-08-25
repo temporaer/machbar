@@ -174,6 +174,8 @@ const extra = {
   driver: "Verantwortlich",
   assignDriver: "Verantwortliche Person zuweisen",
   assignDriverToActivateHint: "Für die Aktivierung muss zuerst eine verantwortliche Person zugewiesen werden.",
+  driverLockedHint:
+    "Die verantwortliche Person kann erst entfernt werden, wenn die Geschichte wieder im Backlog liegt.",
   noDriver: "Niemand zugewiesen",
   criteria: "Akzeptanzkriterien",
   planDates: "Planen",
@@ -183,6 +185,15 @@ const extra = {
   archiveStory: "Archivieren",
   storyActivated: "Aktiviert",
   storyArchived: "Archiviert",
+  storyCompleted: "Abgeschlossen",
+  storyReopened: "Wieder geöffnet",
+  storyReturnedToBacklog: "Zurück im Backlog",
+
+  // --- Projects tab (Projekte) -----------------------------------------
+  projectsSwipeHint:
+    "Nach rechts wischen führt den nächsten Workflow-Schritt aus, nach links wischen oder ⋯ zeigt weitere Aktionen.",
+  projectStatus: "Status",
+  workflowStep: "Workflow-Schritt",
 
   // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---
   editProject: "Projekt bearbeiten",

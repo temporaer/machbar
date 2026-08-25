@@ -835,6 +835,22 @@ a {
   color: var(--color-text-muted);
 }
 
+/*
+  Text that is only announced by screen readers — used to give otherwise
+  self-explanatory visual badges (e.g. a story's status) a spoken label.
+*/
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .project-card-progress {
   height: 6px;
   background: var(--color-surface-alt);

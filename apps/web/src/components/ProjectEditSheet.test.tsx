@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectEditSheet } from "./ProjectEditSheet";
@@ -75,6 +75,34 @@ describe("ProjectEditSheet", () => {
     expect(screen.getByRole("button", { name: "Aktivieren" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Archivieren" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Abschließen" })).not.toBeInTheDocument();
+  });
+
+  it("zeigt den Status als nicht editierbares Badge – niemals als Dropdown", async () => {
+    const project = makeProjectDetail({
+      id: 6,
+      status: "active",
+      availableActions: ["complete", "return_to_backlog", "archive"],
+    });
+    const { container } = renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
+
+    await screen.findByDisplayValue(project.title);
+
+    // Der Status wird angezeigt, aber nicht als Auswahlfeld angeboten.
+    expect(screen.getByText("Status")).toHaveClass("field-label");
+    expect(screen.getByText("Aktiv")).toHaveClass("badge");
+    expect(screen.queryByRole("combobox", { name: "Status" })).not.toBeInTheDocument();
+    expect(container.querySelector("#project-status")).toBeNull();
+    for (const select of Array.from(container.querySelectorAll("select"))) {
+      expect(select.id).not.toMatch(/status/i);
+    }
+
+    // Statuswechsel laufen ausschließlich über benannte Buttons in einer
+    // beschrifteten Gruppe.
+    const group = screen.getByRole("group", { name: "Status" });
+    const actionLabels = within(group)
+      .getAllByRole("button")
+      .map((b) => b.textContent);
+    expect(actionLabels).toEqual(["Abschließen", "In Backlog zurücklegen", "Archivieren"]);
   });
 
   it("zeigt den German-Fehler des Backends an, wenn die Aktivierung ohne Driver fehlschlägt", async () => {

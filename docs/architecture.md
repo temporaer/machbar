@@ -177,7 +177,7 @@ Two dedicated Scrum-style surfaces live under **Mehr** (`MorePage`) and are rout
 
 ### Backlog Review — `/mehr/backlog`
 
-Lists `backlog` stories (`BacklogReviewPage` → `BacklogStoryRow`). Every mutation flows through `useBacklogReviewActions`, which reuses the optimistic **retain** pattern (`RETENTION_MS` imported from `useTaskActions` so both windows agree).
+Lists `backlog` stories (`BacklogReviewPage` → `ProjectStoryRow`, compact variant). Every mutation flows through `useProjectWorkflowActions`, which reuses the optimistic **retain** pattern (`RETENTION_MS` imported from `useTaskActions` so both windows agree).
 
 Row gestures/chips open **targeted popups** rather than navigating away:
 
@@ -190,6 +190,24 @@ Row gestures/chips open **targeted popups** rather than navigating away:
 | Archivieren | Direct action |
 
 Activation (`api.activateProject`) surfaces the driver requirement inline: if no driver is set the sheet asks for one before activating.
+
+### Projects tab — `/projekte`
+
+`ProjectsPage` renders **the same `ProjectStoryRow`** (card variant, with criteria/task progress bars) for stories of *every* status, so the whole Scrum workflow is reachable from the main tab, not just from Backlog Review.
+
+- **Right swipe / primary button** runs the status-appropriate next step: `backlog → aktivieren`, `active → abschließen`, `completed → wieder öffnen`, `archived → aktivieren`. The button (`.story-row-primary`, `aria-label` = the action) is the explicit non-gesture equivalent and stays available on touch.
+- **Left swipe / ⋯** reveals the chip strip: the targeted popups above plus every *remaining* legal transition from the row's `availableActions` (e.g. `In Backlog zurücklegen`, `Archivieren`).
+- The candidate action is always intersected with `availableActions`; `lib/projectWorkflow.ts` mirrors the backend's `workflowActionsByStatus` map (and is reused by the test fixtures) so the UI never offers an illegal step.
+- Activating a story without a driver opens `AssignDriverSheet` first and then activates **atomically** via `activateProject(id, { ownerMemberId })`.
+- Every row shows its status; inside the retention window the same badge shows what just happened (`Aktiviert`, `Abgeschlossen`, `Wieder geöffnet`, `Zurück im Backlog`, `Archiviert`).
+
+### Status is a badge, transitions are buttons
+
+No surface offers the project status as a `<select>`. `ProjectStoryRow`, `ProjectDetailPage` and `ProjectEditSheet` all render the status as a read-only badge (`projectStatusLabels`, plus an `.sr-only` "Status:" prefix on the row) and expose the change itself as thumb-sized, explicitly named buttons for exactly the transitions in `availableActions` — the sheet groups them in a `role="group"` labelled by its status field. Tests assert the absence of a status combobox, so a dropdown cannot creep back in.
+
+### Pointer capture only after a real drag
+
+`ProjectStoryRow` and `TaskRow` call `setPointerCapture` from `pointermove`, once the drag passes the 8 px slop — never from `pointerdown`. A captured container also receives the *compatibility mouse events* of everything inside it, which silently swallowed mouse clicks on the row buttons and the detail link (touch taps were unaffected). A drag additionally sets a one-shot `swallowNextClick` flag, reset on the next `pointerdown`, so the click the browser synthesises after a swipe never navigates while a later tap still does.
 
 ### Refinement — `/mehr/refinement`
 
@@ -220,10 +238,10 @@ Interactions target one field at a time instead of opening the full detail sheet
 |-----------|---------|
 | `TaskQuickActionSheet` | Dispatches a single task field (owner, dates, tags, …); its `owner` branch delegates to `AssignOwnerSheet` and it exports the shared `ownerAssignmentPatch()` helper |
 | `AssignOwnerSheet` | Reusable owner picker (`Zuständig`, incl. `Gemeinsam / offen`); shared by `TaskQuickActionSheet` and `RefinementTaskRow` |
-| `AssignDriverSheet` | Project driver picker for Backlog Review (assign-only, or assign-and-activate) |
+| `AssignDriverSheet` | Project driver picker (`Verantwortlich`) for any story row: assign-only, assign-and-activate, or reassign. `allowUnassigned` mirrors the backend invariant — only a `backlog` story may be left without a driver |
 | `MemberChoiceGroup` | The tap-chip picker both assignment sheets render (see below) |
 | `AcceptanceCriteriaEditor` | Reusable ordered criteria editor; shared by `ProjectEditSheet` and `StoryCriteriaSheet` |
-| `StoryCriteriaSheet` | Targeted criteria popup for a backlog row |
+| `StoryCriteriaSheet` | Targeted criteria popup for a story row |
 | `PlanDatesSheet` | Due/scheduled dates only |
 | `WaitingFollowUpSheet` | Append-only follow-up log for `waiting` tasks |
 | `DestinationPicker` | Searchable refile destination list with recents (see below) |

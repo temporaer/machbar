@@ -69,10 +69,11 @@ export function TaskRow({
   const [dragX, setDragX] = useState(0);
   const [chipsOpen, setChipsOpen] = useState(false);
   const [quickAction, setQuickAction] = useState<TaskQuickAction | null>(null);
-  const dragState = useRef<{ startX: number; dragging: boolean; pointerId: number | null }>({
+  const dragState = useRef<{ startX: number; dragging: boolean; pointerId: number | null; captured: boolean }>({
     startX: 0,
     dragging: false,
     pointerId: null,
+    captured: false,
   });
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { bump } = useRefresh();
@@ -126,13 +127,7 @@ export function TaskRow({
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (organizeMode || busyId === task.id) return;
-      dragState.current = { startX: e.clientX, dragging: true, pointerId: e.pointerId };
-      // Not every environment implements pointer capture (e.g. jsdom in
-      // tests), so guard the call instead of assuming it always exists.
-      const target = e.currentTarget;
-      if (typeof target.setPointerCapture === "function") {
-        target.setPointerCapture(e.pointerId);
-      }
+      dragState.current = { startX: e.clientX, dragging: true, pointerId: e.pointerId, captured: false };
       longPressTimer.current = setTimeout(() => {
         onEnterOrganizeMode();
         dragState.current.dragging = false;
@@ -146,6 +141,18 @@ export function TaskRow({
     if (!dragState.current.dragging) return;
     const delta = e.clientX - dragState.current.startX;
     if (Math.abs(delta) > 8) clearLongPress();
+    // Capture the pointer only once this is a real drag: a captured pointer
+    // also retargets the compatibility mouse events of the row's buttons and
+    // links to this container, which would swallow plain clicks. Not every
+    // environment implements pointer capture (e.g. jsdom in tests), so the
+    // call stays guarded.
+    if (!dragState.current.captured && Math.abs(delta) > 8) {
+      dragState.current.captured = true;
+      const target = e.currentTarget;
+      if (typeof target.setPointerCapture === "function") {
+        target.setPointerCapture(e.pointerId);
+      }
+    }
     setDragX(Math.max(-140, Math.min(140, delta)));
   }, []);
 

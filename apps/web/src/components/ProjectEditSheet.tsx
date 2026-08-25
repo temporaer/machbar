@@ -4,7 +4,7 @@ import type { ProjectDetail, ProjectWorkflowAction } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
-import { strings } from "../lib/strings";
+import { strings, projectStatusLabels } from "../lib/strings";
 import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { BottomSheet } from "./BottomSheet";
 import { TagChip } from "./TagChip";
@@ -40,6 +40,11 @@ const lifecycleLabels: Record<ProjectWorkflowAction, string> = {
  * `TaskDetailSheet`'s dirty-draft/baseline pattern for free-text fields so
  * unsaved edits are never silently lost or overwritten by a background
  * reload.
+ *
+ * The status itself is **never** a `<select>`: it is displayed as a
+ * read-only badge, and it changes only through the labelled group of
+ * thumb-sized transition buttons next to it — the same set of legal steps a
+ * `ProjectStoryRow` offers via swipe/chips.
  */
 export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail; onClose: () => void }) {
   const { members } = useIdentity();
@@ -158,7 +163,16 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
           />
         </div>
 
-        <div className="lifecycle-actions">
+        <div className="field">
+          <span className="field-label" id="project-status-label">
+            {strings.projectStatus}
+          </span>
+          <div>
+            <span className="badge">{projectStatusLabels[project.status]}</span>
+          </div>
+        </div>
+
+        <div className="lifecycle-actions" role="group" aria-labelledby="project-status-label">
           {project.availableActions.map((action) => (
             <button
               key={action}

@@ -1,14 +1,6 @@
-import type { AcceptanceCriterion, Member, Project, Tag, Task, WaitingGroup } from "@machbar/shared";
-import type { ProjectWithActions, ProjectWorkflowAction, StuckProjectWithActions } from "../lib/api";
-
-/** Mirrors `apps/api/src/domain/mutations.ts::workflowActionsByStatus` so fixtures
- * default to the same legal lifecycle actions the real API would compute. */
-const defaultActionsByStatus: Record<Project["status"], ProjectWorkflowAction[]> = {
-  backlog: ["activate", "archive"],
-  active: ["return_to_backlog", "complete", "archive"],
-  completed: ["reopen", "archive"],
-  archived: ["activate", "return_to_backlog"],
-};
+import type { AcceptanceCriterion, Member, Tag, Task, WaitingGroup } from "@machbar/shared";
+import type { ProjectWithActions, StuckProjectWithActions } from "../lib/api";
+import { workflowActionsByStatus } from "../lib/projectWorkflow";
 
 let idCounter = 1000;
 function nextId() {
@@ -77,7 +69,7 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
     position: 0,
     tags: [],
     acceptanceCriteria: [],
-    availableActions: defaultActionsByStatus[status],
+    availableActions: workflowActionsByStatus[status],
     ...overrides,
   };
 }
