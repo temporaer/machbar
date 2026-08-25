@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
@@ -53,6 +53,26 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledWith(1, "leave_open"));
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("can swipe the retained crossed-out row again to reopen it", async () => {
+    const task = makeTask({ id: 9, title: "Status direkt wechseln", status: "actionable" });
+    const completed = makeTask({ ...task, status: "done" });
+    mockedApi.completeTask.mockResolvedValue(completed);
+    mockedApi.reopenTask.mockResolvedValue(task);
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+    await screen.findByText("Status direkt wechseln");
+
+    swipe(container, 100);
+    await waitFor(() =>
+      expect(mockedApi.completeTask).toHaveBeenCalledWith(9, "leave_open"),
+    );
+    expect(container.querySelector(".task-row-content.retained")).toBeInTheDocument();
+
+    swipe(container, 100);
+    await waitFor(() => expect(mockedApi.reopenTask).toHaveBeenCalledWith(9));
   });
 
   it("respects a configured 'Warten' primary swipe action on an open task", async () => {
@@ -144,7 +164,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
   });
 });
 
-describe("TaskRow – action chips invoke existing task detail/edit flows", () => {
+describe("TaskRow – action chips use focused quick-edit flows", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
@@ -163,7 +183,7 @@ describe("TaskRow – action chips invoke existing task detail/edit flows", () =
     );
   }
 
-  it("opens the real task detail sheet from the 'Zuweisen' chip", async () => {
+  it("assigns from a focused sheet and returns without opening full details", async () => {
     const task = makeTask({ id: 30, title: "Kunde anrufen", status: "actionable" });
     renderOutlineWithDetail(task);
     await screen.findByText("Kunde anrufen");
@@ -171,11 +191,33 @@ describe("TaskRow – action chips invoke existing task detail/edit flows", () =
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Zuweisen" }));
 
-    // The sheet is the real edit flow — it shows the loaded task's title field.
-    expect(await screen.findByDisplayValue("Kunde anrufen")).toBeInTheDocument();
+    const group = await screen.findByRole("group", { name: "Zuständig" });
+    expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
+    // Tap chips rather than a native <select>, with the shared/unassigned
+    // bucket offered explicitly and pressed while nobody is assigned.
+    expect(within(group).queryByRole("combobox")).not.toBeInTheDocument();
+    expect(within(group).getByRole("button", { name: "Gemeinsam / offen" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await userEvent.click(within(group).getByRole("button", { name: "Mira" }));
+    expect(within(group).getByRole("button", { name: "Mira" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(30, {
+        ownerMemberId: 1,
+        ownerInheritanceMode: "explicit",
+      }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("opens the real task detail sheet from the 'Planen' chip", async () => {
+  it("schedules from a focused sheet", async () => {
     const task = makeTask({ id: 31, title: "Termin vereinbaren", status: "actionable" });
     renderOutlineWithDetail(task);
     await screen.findByText("Termin vereinbaren");
@@ -183,10 +225,19 @@ describe("TaskRow – action chips invoke existing task detail/edit flows", () =
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Planen" }));
 
-    expect(await screen.findByLabelText("Geplant")).toBeInTheDocument();
+    const scheduled = await screen.findByLabelText("Geplant");
+    expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
+    await userEvent.type(scheduled, "2026-09-03");
+    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
+        scheduledDate: "2026-09-03",
+      }),
+    );
   });
 
-  it("opens the real task detail sheet from the 'Notizen' chip", async () => {
+  it("edits notes from a focused sheet", async () => {
     const task = makeTask({ id: 32, title: "Vertrag prüfen", status: "actionable" });
     renderOutlineWithDetail(task);
     await screen.findByText("Vertrag prüfen");
@@ -194,7 +245,16 @@ describe("TaskRow – action chips invoke existing task detail/edit flows", () =
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Notizen" }));
 
-    expect(await screen.findByLabelText("Notizen")).toBeInTheDocument();
+    const notes = await screen.findByLabelText("Notizen");
+    expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
+    await userEvent.type(notes, "Rückfrage vorbereiten");
+    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(32, {
+        notes: "Rückfrage vorbereiten",
+      }),
+    );
   });
 
   it("opens the full task detail sheet from the 'Mehr' chip", async () => {

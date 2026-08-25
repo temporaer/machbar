@@ -1,0 +1,180 @@
+/*
+ * Dedicated stylesheet for `BacklogReviewPage`/`BacklogStoryRow`, imported
+ * only by `BacklogReviewPage.tsx` — kept separate from the shared
+ * `styles/index.css` per this feature's ownership boundaries. It reuses the
+ * same CSS custom properties defined globally in `styles/index.css`
+ * (`--color-*`, `--radius-*`, …) and mirrors `.task-row`'s single-cell grid
+ * pattern from that file (see the comment above `.task-row` there) so the
+ * swipe backgrounds and row content stack/stretch together identically.
+ */
+
+.backlog-review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backlog-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.backlog-row-swipe-bg {
+  grid-column: 1;
+  grid-row: 1;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0 16px;
+  color: #fff;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.backlog-row-swipe-bg.visible {
+  opacity: 1;
+}
+
+.backlog-row-swipe-bg.activate {
+  background: var(--color-success);
+  justify-content: flex-start;
+}
+
+.backlog-row-swipe-bg.chips {
+  background: var(--color-danger);
+  justify-content: flex-end;
+}
+
+.backlog-row-content {
+  grid-column: 1;
+  grid-row: 1;
+  z-index: 1;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 10px;
+  background: var(--color-surface);
+  touch-action: pan-y;
+  border: 1px solid transparent;
+}
+
+/* See `.task-row-content.retained` in `styles/index.css` for the rationale. */
+.backlog-row-content.retained {
+  opacity: 0.55;
+}
+
+.backlog-row-activate {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--color-success);
+  background: transparent;
+  color: var(--color-success);
+  flex-shrink: 0;
+  margin-top: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+}
+
+.backlog-row-activate:disabled {
+  opacity: 0.4;
+}
+
+/*
+ * Same reasoning as `.task-row-checkbox`'s coarse-pointer rule in
+ * `styles/index.css`: touch users reach "activate" via the right swipe (or
+ * the kebab/chips strip), so the dedicated button is only needed for
+ * mouse/keyboard use.
+ */
+@media (pointer: coarse) {
+  .backlog-row-activate {
+    display: none;
+  }
+}
+
+.backlog-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.backlog-row-title {
+  font-size: 0.95rem;
+  line-height: 1.3;
+  font-weight: 600;
+  word-break: break-word;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.backlog-row-status-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-surface-alt);
+  color: var(--color-text-muted);
+}
+
+.backlog-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.backlog-row-kebab {
+  border: none;
+  background: transparent;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.backlog-row-kebab:hover {
+  background: var(--color-surface-alt);
+}
+
+/* Auto-flows into grid row 2 of `.backlog-row`, below the swipe/content cell — see `.task-row-chips` for the same pattern. */
+.backlog-row-chips {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 10px 10px;
+  background: var(--color-surface-alt);
+}
+
+.backlog-row-chips .btn {
+  min-height: 40px;
+  padding: 8px 14px;
+}
+
+.backlog-row-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 10px 8px 10px;
+  font-size: 0.78rem;
+  color: var(--color-danger);
+}

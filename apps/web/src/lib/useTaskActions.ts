@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Task, TaskStatus } from "@machbar/shared";
 import { api } from "./api";
+import type { UpdateTaskInput } from "./api";
 import { useRefresh } from "./refresh";
 import { hasOpenDescendants, openDescendantRoots } from "./taskHelpers";
 import type { PrimarySwipeAction } from "./swipeSettings";
@@ -255,6 +256,27 @@ export function useTaskActions() {
     [runTransition],
   );
 
+  /**
+   * Applies a focused metadata edit while retaining the row in its current
+   * view. This gives quick sheets the same stable, optimistic UX as status
+   * swipes without opening the full task editor.
+   */
+  const quickUpdate = useCallback(
+    (
+      task: Task,
+      patch: UpdateTaskInput,
+      optimisticPatch: Partial<Task> = patch,
+    ) => {
+      const optimistic: Task = {
+        ...task,
+        ...optimisticPatch,
+        updatedAt: new Date().toISOString(),
+      };
+      return runTransition(task, optimistic, () => api.updateTask(task.id, patch));
+    },
+    [runTransition],
+  );
+
   /** Toggle from a checkbox: asks first when there are open children. */
   const requestToggle = useCallback(
     (task: Task) => {
@@ -337,6 +359,7 @@ export function useTaskActions() {
     requestCancel,
     requestPrimarySwipe,
     setStatus,
+    quickUpdate,
     resolvePolicy,
     cancelPrompt,
     complete,

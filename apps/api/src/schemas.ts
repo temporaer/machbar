@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   inheritanceModes,
   projectStatuses,
+  taskSizes,
   taskStatuses,
 } from "@machbar/shared";
 
@@ -12,7 +13,6 @@ const isoDateTime = z.string().min(1);
 
 export const createProjectSchema = z.object({
   title: z.string().min(1, "Der Projekttitel darf nicht leer sein."),
-  description: z.string().optional(),
   status: z.enum(projectStatuses).optional(),
   ownerMemberId: z.number().int().nullable().optional(),
   context: z.string().nullable().optional(),
@@ -23,14 +23,32 @@ export const createProjectSchema = z.object({
 
 export const updateProjectSchema = z.object({
   title: z.string().min(1).optional(),
-  description: z.string().optional(),
-  status: z.enum(projectStatuses).optional(),
   ownerMemberId: z.number().int().nullable().optional(),
   context: z.string().nullable().optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   position: z.number().int().optional(),
   tagIds: z.array(z.number().int()).optional(),
+});
+
+export const activateProjectSchema = z.object({
+  ownerMemberId: z.number().int().nullable().optional(),
+});
+
+export const addCriterionSchema = z.object({
+  text: z.string().min(1, "Der Text des Akzeptanzkriteriums darf nicht leer sein."),
+});
+
+export const updateCriterionSchema = z.object({
+  text: z.string().min(1, "Der Text des Akzeptanzkriteriums darf nicht leer sein."),
+});
+
+export const checkCriterionSchema = z.object({
+  checked: z.boolean(),
+});
+
+export const reorderCriteriaSchema = z.object({
+  orderedCriterionIds: z.array(z.number().int()).min(1),
 });
 
 export const createTaskSchema = z.object({
@@ -48,6 +66,7 @@ export const createTaskSchema = z.object({
   context: z.string().nullable().optional(),
   contextInheritanceMode: z.enum(inheritanceModes).optional(),
   priority: z.number().int().nullable().optional(),
+  size: z.enum(taskSizes).nullable().optional(),
   recurrenceRule: z.string().nullable().optional(),
   reminderAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
@@ -70,6 +89,7 @@ export const updateTaskSchema = z.object({
   context: z.string().nullable().optional(),
   contextInheritanceMode: z.enum(inheritanceModes).optional(),
   priority: z.number().int().nullable().optional(),
+  size: z.enum(taskSizes).nullable().optional(),
   recurrenceRule: z.string().nullable().optional(),
   reminderAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),

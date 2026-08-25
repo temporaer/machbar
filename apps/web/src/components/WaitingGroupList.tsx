@@ -6,10 +6,13 @@ import { api } from "../lib/api";
 import { EmptyState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
 import { formatDate } from "../lib/format";
+import { useState } from "react";
+import { WaitingFollowUpSheet } from "./WaitingFollowUpSheet";
 
 export function WaitingGroupList({ groups }: { groups: WaitingGroup[] }) {
   const { open } = useTaskDetail();
   const { bump } = useRefresh();
+  const [followUpTask, setFollowUpTask] = useState<WaitingGroup["tasks"][number] | null>(null);
 
   if (groups.length === 0) return <EmptyState message={strings.waitingEmpty} />;
 
@@ -37,7 +40,7 @@ export function WaitingGroupList({ groups }: { groups: WaitingGroup[] }) {
                   </p>
                 ) : null}
                 <div className="row" style={{ marginTop: 8 }}>
-                  <button type="button" className="btn btn-sm" onClick={() => open(task.id)}>
+                  <button type="button" className="btn btn-sm" onClick={() => setFollowUpTask(task)}>
                     {strings.followUp}
                   </button>
                   <button
@@ -53,6 +56,12 @@ export function WaitingGroupList({ groups }: { groups: WaitingGroup[] }) {
           </ul>
         </div>
       ))}
+      {followUpTask ? (
+        <WaitingFollowUpSheet
+          task={followUpTask}
+          onClose={() => setFollowUpTask(null)}
+        />
+      ) : null}
     </div>
   );
 }

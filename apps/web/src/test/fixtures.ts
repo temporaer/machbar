@@ -1,4 +1,14 @@
-import type { Member, Project, StuckProject, Tag, Task, WaitingGroup } from "@machbar/shared";
+import type { AcceptanceCriterion, Member, Project, Tag, Task, WaitingGroup } from "@machbar/shared";
+import type { ProjectWithActions, ProjectWorkflowAction, StuckProjectWithActions } from "../lib/api";
+
+/** Mirrors `apps/api/src/domain/mutations.ts::workflowActionsByStatus` so fixtures
+ * default to the same legal lifecycle actions the real API would compute. */
+const defaultActionsByStatus: Record<Project["status"], ProjectWorkflowAction[]> = {
+  backlog: ["activate", "archive"],
+  active: ["return_to_backlog", "complete", "archive"],
+  completed: ["reopen", "archive"],
+  archived: ["activate", "return_to_backlog"],
+};
 
 let idCounter = 1000;
 function nextId() {
@@ -32,6 +42,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     context: null,
     contextInheritanceMode: "inherit",
     priority: null,
+    size: null,
     position: 0,
     completedAt: null,
     cancelledAt: null,
@@ -53,23 +64,38 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-export function makeProject(overrides: Partial<Project> = {}): Project {
+export function makeProject(overrides: Partial<ProjectWithActions> = {}): ProjectWithActions {
+  const status = overrides.status ?? "active";
   return {
     id: nextId(),
     title: "Beispielprojekt",
-    description: "",
-    status: "active",
+    status,
     ownerMemberId: null,
     context: null,
     dueDate: null,
     scheduledDate: null,
     position: 0,
     tags: [],
+    acceptanceCriteria: [],
+    availableActions: defaultActionsByStatus[status],
     ...overrides,
   };
 }
 
-export function makeStuckProject(overrides: Partial<StuckProject> = {}): StuckProject {
+export function makeCriterion(overrides: Partial<AcceptanceCriterion> = {}): AcceptanceCriterion {
+  return {
+    id: nextId(),
+    projectId: 0,
+    text: "Beispielkriterium",
+    checked: false,
+    position: 0,
+    createdAt: new Date("2026-01-01T09:00:00Z").toISOString(),
+    updatedAt: new Date("2026-01-01T09:00:00Z").toISOString(),
+    ...overrides,
+  };
+}
+
+export function makeStuckProject(overrides: Partial<StuckProjectWithActions> = {}): StuckProjectWithActions {
   return {
     ...makeProject(),
     stuckReason: "no_next_action",

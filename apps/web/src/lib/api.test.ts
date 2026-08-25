@@ -102,3 +102,65 @@ describe("api.getAgenda memberId scoping", () => {
     expect((fetchMock.mock.calls[1] as [string])[0]).toBe("/api/agenda/today");
   });
 });
+
+describe("api project workflow/criteria/refinement contracts", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("hits the explicit workflow transition endpoints (backlog <-> active -> completed, archive)", async () => {
+    const fetchMock = mockFetchOnce({ text: async () => JSON.stringify({}) });
+    await api.activateProject(1, { ownerMemberId: 2 });
+    await api.returnProjectToBacklog(1);
+    await api.completeProject(1);
+    await api.reopenProject(1);
+    await api.archiveProject(1);
+
+    const urls = fetchMock.mock.calls.map((c) => (c as [string, RequestInit])[0]);
+    expect(urls).toEqual([
+      "/api/projects/1/activate",
+      "/api/projects/1/return-to-backlog",
+      "/api/projects/1/complete",
+      "/api/projects/1/reopen",
+      "/api/projects/1/archive",
+    ]);
+    const activateInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(activateInit.method).toBe("POST");
+    expect(activateInit.body).toBe(JSON.stringify({ ownerMemberId: 2 }));
+  });
+
+  it("hits the ordered acceptance-criteria endpoints", async () => {
+    const fetchMock = mockFetchOnce({ text: async () => JSON.stringify({}) });
+    await api.addCriterion(1, "Kisten gepackt");
+    await api.updateCriterion(1, 9, "Kisten sind gepackt");
+    await api.checkCriterion(1, 9, true);
+    await api.reorderCriteria(1, [9, 8]);
+    await api.removeCriterion(1, 9);
+
+    const calls = fetchMock.mock.calls as [string, RequestInit][];
+    expect(calls.map(([url, init]) => [url, init.method])).toEqual([
+      ["/api/projects/1/criteria", "POST"],
+      ["/api/projects/1/criteria/9", "PATCH"],
+      ["/api/projects/1/criteria/9/check", "POST"],
+      ["/api/projects/1/criteria/reorder", "POST"],
+      ["/api/projects/1/criteria/9", "DELETE"],
+    ]);
+    expect(calls[3]?.[1].body).toBe(JSON.stringify({ orderedCriterionIds: [9, 8] }));
+  });
+
+  it("serializes refinement filters (owner id, the 'none' literal, and project id)", async () => {
+    const fetchMock = mockFetchOnce({ text: async () => JSON.stringify([]) });
+    await api.getRefinementOwners({ ownerId: 3 });
+    await api.getRefinementOwners({ ownerId: "none" });
+    await api.getRefinementTasks({ projectId: 5 });
+    await api.getRefinementTasks();
+
+    const urls = fetchMock.mock.calls.map((c) => (c as [string])[0]);
+    expect(urls).toEqual([
+      "/api/refinement/owners?ownerId=3",
+      "/api/refinement/owners?ownerId=none",
+      "/api/refinement/tasks?projectId=5",
+      "/api/refinement/tasks",
+    ]);
+  });
+});

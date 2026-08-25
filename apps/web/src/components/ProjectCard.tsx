@@ -9,6 +9,9 @@ export function ProjectCard({ project }: { project: Project }) {
   const owner = members.find((m) => m.id === project.ownerMemberId);
   const total = (project.openCount ?? 0) + (project.doneCount ?? 0);
   const pct = total > 0 ? Math.round(((project.doneCount ?? 0) / total) * 100) : 0;
+  const criteriaTotal = project.acceptanceCriteria.length;
+  const criteriaDone = project.acceptanceCriteria.filter((c) => c.checked).length;
+  const criteriaPct = criteriaTotal > 0 ? Math.round((criteriaDone / criteriaTotal) * 100) : 0;
   const due = formatDate(project.dueDate);
 
   return (
@@ -20,7 +23,6 @@ export function ProjectCard({ project }: { project: Project }) {
             <span className="badge badge-stuck">{stuckReasonLabels[project.stuckReason]}</span>
           ) : null}
         </div>
-        {project.description ? <p className="text-muted" style={{ margin: "4px 0" }}>{project.description}</p> : null}
         <div className="row-between text-muted" style={{ fontSize: "0.78rem" }}>
           <span>{owner ? owner.name : strings.unassigned}</span>
           {due ? <span>{strings.due}: {due}</span> : null}
@@ -32,6 +34,16 @@ export function ProjectCard({ project }: { project: Project }) {
           <div className="project-card-progress">
             <span style={{ width: `${pct}%` }} />
           </div>
+        ) : null}
+        {criteriaTotal > 0 ? (
+          <>
+            <p className="text-muted" style={{ fontSize: "0.78rem", margin: "6px 0 0" }}>
+              {strings.criteria}: {criteriaDone}/{criteriaTotal}
+            </p>
+            <div className="criteria-progress">
+              <span style={{ width: `${criteriaPct}%` }} />
+            </div>
+          </>
         ) : null}
       </div>
     </Link>

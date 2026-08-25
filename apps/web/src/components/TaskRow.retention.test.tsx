@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import type { Task } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
@@ -45,7 +46,14 @@ describe("TaskRow – retention of recently mutated rows", () => {
   it("keeps a completed row visible with crossed-out styling after it leaves the compiled view, then drops it once the retention window elapses", async () => {
     vi.useFakeTimers();
     const task = makeTask({ id: 100, title: "Bericht abschicken", status: "actionable" });
-    mockedApi.completeTask.mockResolvedValue({ ...task, status: "done" });
+    // Held open so the in-flight (busy) phase can be observed before the
+    // mutation resolves.
+    let resolveComplete: (value: Task) => void = () => {};
+    mockedApi.completeTask.mockReturnValue(
+      new Promise<Task>((resolve) => {
+        resolveComplete = resolve;
+      }),
+    );
 
     const { rerender, container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     expect(screen.getByText("Bericht abschicken")).toBeInTheDocument();
@@ -61,8 +69,22 @@ describe("TaskRow – retention of recently mutated rows", () => {
     const title = screen.getByText("Bericht abschicken");
     expect(title.className).toContain("done");
     expect(container.querySelector(".task-row-content.retained")).toBeInTheDocument();
-    // A retained row's own checkbox is disabled so it can't be mutated a second time mid-flight.
+    // Only *while the request is still in flight* is the row's own control
+    // disabled, so the same task can't be mutated twice concurrently.
     expect(screen.getByRole("button", { name: "Wieder öffnen" })).toBeDisabled();
+
+    await act(async () => {
+      resolveComplete({ ...task, status: "done" });
+      await flushMicrotasks();
+    });
+
+    // Once the request has completed the retained row is deliberately
+    // actionable again — it keeps its optimistic crossed-out styling, but a
+    // further tap/swipe may immediately continue the state cycle
+    // (erledigt -> wieder offen) without waiting for retention to elapse.
+    expect(container.querySelector(".task-row-content.retained")).toBeInTheDocument();
+    expect(screen.getByText("Bericht abschicken").className).toContain("done");
+    expect(screen.getByRole("button", { name: "Wieder öffnen" })).not.toBeDisabled();
 
     // The compiled view (Heute/Eingang/Suche/…) refetches and this task's new
     // status no longer matches that view's criteria — simulate it vanishing

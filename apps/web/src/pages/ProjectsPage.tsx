@@ -12,7 +12,6 @@ export function ProjectsPage() {
   const { bump } = useRefresh();
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
@@ -20,9 +19,8 @@ export function ProjectsPage() {
     if (!trimmed) return;
     setSaving(true);
     try {
-      await api.createProject({ title: trimmed, description });
+      await api.createProject({ title: trimmed });
       setTitle("");
-      setDescription("");
       setCreating(false);
       bump();
       reload();
@@ -65,14 +63,7 @@ export function ProjectsPage() {
               <label htmlFor="new-project-name">{strings.projectTitle}</label>
               <input id="new-project-name" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} />
             </div>
-            <div className="field">
-              <label htmlFor="new-project-description">{strings.description}</label>
-              <textarea
-                id="new-project-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
+            <p className="text-muted">{strings.titleEnough}</p>
             <div className="row">
               <button type="button" className="btn" onClick={() => setCreating(false)}>
                 {strings.cancel}

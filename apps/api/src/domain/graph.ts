@@ -1,15 +1,22 @@
 import type {
+  AcceptanceCriterion,
   Dependency,
   InheritanceMode,
   Project as SharedProject,
+  ProjectStatus,
   StuckReason,
   Tag,
   Task as SharedTask,
+  TaskSize,
   TaskStatus,
 } from "@machbar/shared";
 import { stuckReasonLabels } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
+import {
+  availableProjectWorkflowActions,
+  type ProjectWorkflowAction,
+} from "./mutations.js";
 import {
   getBlockedTaskIds,
   getEffectiveOwnersAndContexts,
@@ -18,7 +25,12 @@ import {
   getStuckReasonsByProject,
 } from "../repo/index.js";
 
-export interface ProjectRecord extends SharedProject {}
+export interface ProjectRecord extends SharedProject {
+  /** Workflow actions currently legal for this project's status (see
+   * `availableProjectWorkflowActions` in `domain/mutations.ts`); not part
+   * of the shared `Project` contract, purely an API-response convenience. */
+  availableActions: ProjectWorkflowAction[];
+}
 
 export interface TaskRecord extends SharedTask {}
 
@@ -31,11 +43,13 @@ export const repairActionByReason: Record<StuckReason, string> = {
   no_next_action:
     "Lege eine machbare nächste Aufgabe für dieses Projekt fest.",
   only_waiting:
-    "Hake bei den wartenden Aufgaben nach oder plane einen eigenen nächsten Schritt.",
+    "Hake bei den wartenden Aufgaben nach, setze eine Wiedervorlage oder plane einen eigenen nächsten Schritt.",
   blocked_dependencies:
     "Löse die blockierenden Abhängigkeiten auf, um weiterzukommen.",
   unassigned_actionable:
     "Weise die offene Aufgabe einer zuständigen Person zu.",
+  completion_review:
+    "Schließe das Projekt ab, öffne es erneut oder archiviere es.",
 };
 
 function dedupeTags(tags: Tag[]): Tag[] {
@@ -62,6 +76,7 @@ interface RawTask {
   context: string | null;
   contextInheritanceMode: InheritanceMode;
   priority: number | null;
+  size: TaskSize | null;
   position: number;
   completedAt: string | null;
   cancelledAt: string | null;
@@ -74,8 +89,7 @@ interface RawTask {
 interface RawProject {
   id: number;
   title: string;
-  description: string;
-  status: SharedProject["status"];
+  status: ProjectStatus;
   ownerMemberId: number | null;
   context: string | null;
   dueDate: string | null;
@@ -168,13 +182,34 @@ export class Graph {
       dependenciesByTask.set(row.taskId, list);
     }
 
+    const criteriaRows = db
+      .select()
+      .from(schema.projectAcceptanceCriteria)
+      .all();
+    const criteriaByProject = new Map<number, AcceptanceCriterion[]>();
+    for (const row of criteriaRows) {
+      const list = criteriaByProject.get(row.projectId) ?? [];
+      list.push({
+        id: row.id,
+        projectId: row.projectId,
+        text: row.text,
+        checked: row.checked,
+        position: row.position,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      });
+      criteriaByProject.set(row.projectId, list);
+    }
+    for (const list of criteriaByProject.values()) {
+      list.sort((a, b) => a.position - b.position);
+    }
+
     const rawTasksById = new Map(rawTasks.map((t) => [t.id, t]));
 
     for (const p of rawProjects) {
       graph.projectsById.set(p.id, {
         id: p.id,
         title: p.title,
-        description: p.description,
         status: p.status,
         ownerMemberId: p.ownerMemberId,
         context: p.context,
@@ -182,6 +217,8 @@ export class Graph {
         scheduledDate: p.scheduledDate,
         position: p.position,
         tags: dedupeTags(projectTagsByProject.get(p.id) ?? []),
+        acceptanceCriteria: criteriaByProject.get(p.id) ?? [],
+        availableActions: availableProjectWorkflowActions(p.status),
       });
     }
 
@@ -247,6 +284,7 @@ export class Graph {
         context: raw.context,
         contextInheritanceMode: raw.contextInheritanceMode,
         priority: raw.priority,
+        size: raw.size,
         position: raw.position,
         completedAt: raw.completedAt,
         cancelledAt: raw.cancelledAt,

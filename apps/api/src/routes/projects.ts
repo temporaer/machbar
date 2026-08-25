@@ -3,14 +3,46 @@ import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
 import {
+  activateProject,
+  addCriterion,
   archiveProject,
+  completeProject,
   createProject,
-  getProjectOrThrow,
-  unarchiveProject,
+  removeCriterion,
+  reopenProject,
+  reorderCriteria,
+  returnProjectToBacklog,
+  setCriterionChecked,
+  updateCriterionText,
   updateProject,
 } from "../domain/mutations.js";
-import { createProjectSchema, updateProjectSchema } from "../schemas.js";
+import {
+  activateProjectSchema,
+  addCriterionSchema,
+  checkCriterionSchema,
+  createProjectSchema,
+  reorderCriteriaSchema,
+  updateCriterionSchema,
+  updateProjectSchema,
+} from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
+
+function parseId(raw: string): number {
+  const id = Number.parseInt(raw, 10);
+  if (Number.isNaN(id)) {
+    throw AppError.badRequest("Die ID muss eine Zahl sein.");
+  }
+  return id;
+}
+
+function projectOrThrow(db: Db, id: number) {
+  const graph = Graph.load(db);
+  const project = graph.projectWithComputed(id);
+  if (!project) {
+    throw AppError.notFound(`Projekt mit ID ${id} wurde nicht gefunden.`);
+  }
+  return { graph, project };
+}
 
 export function registerProjectRoutes(app: FastifyInstance, db: Db) {
   app.get("/api/projects", async () => {
@@ -24,12 +56,8 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
   });
 
   app.get<{ Params: { id: string } }>("/api/projects/:id", async (request) => {
-    const id = Number.parseInt(request.params.id, 10);
-    const graph = Graph.load(db);
-    const project = graph.projectWithComputed(id);
-    if (!project) {
-      throw AppError.notFound(`Projekt mit ID ${id} wurde nicht gefunden.`);
-    }
+    const id = parseId(request.params.id);
+    const { graph, project } = projectOrThrow(db, id);
     return { ...project, tasks: graph.rootsByProject.get(id) ?? [] };
   });
 
@@ -42,30 +70,123 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
   });
 
   app.patch<{ Params: { id: string } }>("/api/projects/:id", async (request) => {
-    const id = Number.parseInt(request.params.id, 10);
+    const id = parseId(request.params.id);
     const body = parseOrThrow(updateProjectSchema, request.body);
     updateProject(db, id, body);
     const graph = Graph.load(db);
     return graph.projectWithComputed(id);
   });
 
+  // --- explicit workflow transitions --------------------------------------
+  // backlog <-> active -> completed <-> active, archive/return from
+  // anywhere legal (see `availableProjectWorkflowActions` in mutations.ts).
+
   app.post<{ Params: { id: string } }>(
-    "/api/projects/:id/archive",
+    "/api/projects/:id/activate",
     async (request) => {
-      const id = Number.parseInt(request.params.id, 10);
-      getProjectOrThrow(db, id);
-      archiveProject(db, id);
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(activateProjectSchema, request.body ?? {});
+      activateProject(db, id, body);
       const graph = Graph.load(db);
       return graph.projectWithComputed(id);
     },
   );
 
   app.post<{ Params: { id: string } }>(
-    "/api/projects/:id/unarchive",
+    "/api/projects/:id/return-to-backlog",
     async (request) => {
-      const id = Number.parseInt(request.params.id, 10);
-      getProjectOrThrow(db, id);
-      unarchiveProject(db, id);
+      const id = parseId(request.params.id);
+      returnProjectToBacklog(db, id);
+      const graph = Graph.load(db);
+      return graph.projectWithComputed(id);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/projects/:id/complete",
+    async (request) => {
+      const id = parseId(request.params.id);
+      completeProject(db, id);
+      const graph = Graph.load(db);
+      return graph.projectWithComputed(id);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/projects/:id/reopen",
+    async (request) => {
+      const id = parseId(request.params.id);
+      reopenProject(db, id);
+      const graph = Graph.load(db);
+      return graph.projectWithComputed(id);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/projects/:id/archive",
+    async (request) => {
+      const id = parseId(request.params.id);
+      archiveProject(db, id);
+      const graph = Graph.load(db);
+      return graph.projectWithComputed(id);
+    },
+  );
+
+  // --- acceptance criteria (ordered, structured; replaces description) ---
+
+  app.post<{ Params: { id: string } }>(
+    "/api/projects/:id/criteria",
+    async (request, reply) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(addCriterionSchema, request.body);
+      addCriterion(db, id, body.text);
+      const graph = Graph.load(db);
+      reply.status(201);
+      return graph.projectWithComputed(id);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/projects/:id/criteria/reorder",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(reorderCriteriaSchema, request.body);
+      reorderCriteria(db, id, body.orderedCriterionIds);
+      const graph = Graph.load(db);
+      return graph.projectWithComputed(id);
+    },
+  );
+
+  app.patch<{ Params: { id: string; criterionId: string } }>(
+    "/api/projects/:id/criteria/:criterionId",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const criterionId = parseId(request.params.criterionId);
+      const body = parseOrThrow(updateCriterionSchema, request.body);
+      updateCriterionText(db, id, criterionId, body.text);
+      const graph = Graph.load(db);
+      return graph.projectWithComputed(id);
+    },
+  );
+
+  app.post<{ Params: { id: string; criterionId: string } }>(
+    "/api/projects/:id/criteria/:criterionId/check",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const criterionId = parseId(request.params.criterionId);
+      const body = parseOrThrow(checkCriterionSchema, request.body);
+      setCriterionChecked(db, id, criterionId, body.checked);
+      const graph = Graph.load(db);
+      return graph.projectWithComputed(id);
+    },
+  );
+
+  app.delete<{ Params: { id: string; criterionId: string } }>(
+    "/api/projects/:id/criteria/:criterionId",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const criterionId = parseId(request.params.criterionId);
+      removeCriterion(db, id, criterionId);
       const graph = Graph.load(db);
       return graph.projectWithComputed(id);
     },

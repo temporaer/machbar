@@ -2,7 +2,7 @@
 
 > **Das ist machbar.** — A GTD-style task manager for families and small teams.
 
-Machbar helps you collect, clarify, and organise tasks into projects with per-member context, tag inheritance, and a shared agenda view. Built with React/Vite + Fastify + SQLite; runs as a single process or container with zero external service dependencies.
+Machbar helps you collect, clarify, and organise work as **user stories** (projects) with acceptance criteria, a single accountable **driver**, estimated tasks, per-member context, tag inheritance, and a shared agenda view. Built with React/Vite + Fastify + SQLite; runs as a single process or container with zero external service dependencies.
 
 ---
 
@@ -17,8 +17,9 @@ Machbar helps you collect, clarify, and organise tasks into projects with per-me
 7. [Environment Variables](#7-environment-variables)
 8. [Database — Migrations & Seeding](#8-database--migrations--seeding)
 9. [Architecture](#9-architecture)
-10. [Known Limitations & Future Work](#10-known-limitations--future-work)
-11. [Future Home Assistant Integration](#11-future-home-assistant-integration)
+10. [Workflow — User Stories, Backlog Review & Refinement](#10-workflow--user-stories-backlog-review--refinement)
+11. [Known Limitations & Future Work](#11-known-limitations--future-work)
+12. [Future Home Assistant Integration](#12-future-home-assistant-integration)
 
 ---
 
@@ -306,6 +307,17 @@ npm run db:migrate
 
 Migrations are idempotent — running them more than once is safe.
 
+> **`0002_project_acceptance_criteria_task_size`** rebuilds the `projects` table: it drops the free-text `description` column (copying every non-empty description into the story's first acceptance criterion), defaults `status` to `backlog`, and adds `tasks.size`. No projects, tasks, tags, or dependencies are lost.
+
+To rehearse a migration against production data, always work on a **copy**:
+
+```bash
+sqlite3 data/machbar.db ".backup /absolute/path/to/copy/machbar.db"
+DATA_DIR=/absolute/path/to/copy npm run db:migrate
+```
+
+> Use an **absolute** `DATA_DIR`: the script runs with `apps/api` as its working directory, so a relative path would resolve there.
+
 ### Seeding
 
 Seeding creates a small set of sample members, tags, and projects. It is intended for first-run setup and demos only.
@@ -342,13 +354,76 @@ See **[docs/architecture.md](docs/architecture.md)** for:
 - Monorepo package boundaries (`@machbar/api`, `@machbar/web`, `@machbar/shared`)
 - SQLite entity hierarchy: Members → Projects → Tasks → Sub-tasks
 - Ownership/context/tag **inheritance chains** and `inheritanceMode`
-- Compiled/resolved view fields (`effectiveOwnerId`, `effectiveTags`, `blocked`, …)
-- Transaction rules and WAL mode
+- Compiled/resolved view fields (`effectiveOwnerId`, `effectiveTags`, `blocked`, `availableActions`, …)
+- The project workflow state machine, driver invariant, and stuck detection
+- Web interaction patterns (optimistic retention, focused quick sheets)
+- Transaction rules, WAL mode, and the acceptance-criteria migration
 - `BASE_PATH` and HA Ingress handling
 
 ---
 
-## 10. Known Limitations & Future Work
+## 10. Workflow — User Stories, Backlog Review & Refinement
+
+### Projects are user stories
+
+A project is a **user story**: a title, an ordered list of **acceptance criteria**, and exactly one **driver** (the accountable person). Stories move through three states:
+
+```
+backlog  ──activate──►  active  ──complete──►  completed
+```
+
+`archived` is reachable from `backlog` and can be un-archived back into it. Every project response carries `availableActions`, so the UI only ever offers legal transitions. Status is changed **only** through the workflow endpoints — a plain `PATCH` that tries to set `status` is rejected.
+
+Nothing auto-completes a story. When every task of an `active` story is done or cancelled, the story is flagged with the stuck reason **`completion_review`**: a prompt for a human to either complete it or add the work that is still missing.
+
+A story whose open tasks are **all waiting** is normally flagged `only_waiting` — but not if at least one of those waiting tasks has a **Wiedervorlage** (scheduled revisit date). Setting a revisit is an explicit decision about when to look again, so the story counts as deliberately parked rather than forgotten. Past, today's and future dates all count.
+
+### The driver invariant
+
+Every story that has left the backlog must have a driver:
+
+- Activating a story without a driver fails; the UI asks for one inline and activates in the same step.
+- The driver of an `active` or `completed` story cannot be cleared — only reassigned. To leave a story unassigned, return it to the backlog first.
+
+### Acceptance criteria
+
+The old free-text project description was replaced by structured, individually checkable, reorderable criteria. Existing descriptions are **not lost**: migration `0002` copies each one into the story's first acceptance criterion.
+
+### Task sizing
+
+Tasks carry an optional size estimate — `S`, `M`, `L`, `XL`, or unestimated.
+
+### Backlog Review — *Mehr → Backlog Review* (`/mehr/backlog`)
+
+Groom the backlog without leaving the list. Each story row offers targeted popups:
+
+| Action | Effect |
+|--------|--------|
+| **Verantwortlich** | Pick the driver |
+| **Akzeptanzkriterien** | Add/edit/check/reorder criteria in place |
+| **Planen** | Set due / scheduled dates |
+| **Aktivieren** | Move to `active` (asks for a driver if none is set) |
+| **Bearbeiten** | Open the full story page (the only action that navigates away) |
+| **Archivieren** | Park the story |
+
+### Refinement — *Mehr → Refinement* (`/mehr/refinement`)
+
+An **owner × size matrix** over all open tasks. Tap a cell to filter the list below, then:
+
+- **Size** a task by cycling `S → M → L → XL → unestimated`.
+- **Assign** a task through a focused owner popup — assignment never drags you into the full task detail sheet.
+
+### Interaction notes
+
+- **Retained rows stay actionable.** After completing a task it stays visible, crossed out, for a few seconds. It is only disabled while the request is in flight; once the request completes the row is interactive again, so a second swipe immediately reopens it.
+- **Focused quick sheets.** Owner, dates, tags, criteria and driver each have their own small sheet. Full detail pages are reserved for deliberate deep edits.
+- **Assignment is a tap, not a dropdown.** Since a household has at most a handful of members, every assignment popup shows all of them as chips — including an explicit *Gemeinsam / offen* (tasks) or *Niemand zugewiesen* (stories) chip wherever leaving it unassigned is allowed. The current choice stays highlighted while you pick.
+- **Waiting follow-ups are append-only.** Logging a follow-up on a `waiting` task appends to its notes under a generated header — `[dd.mm.yy, hh:mm · Name]` — so the history stays intact and attributable. Setting a **Wiedervorlage** in the same sheet also clears the story's `only_waiting` flag.
+- **Refiling searches.** *Ablegen* / *Verschieben* lists every target project or parent task with a search box on top: type any part of a project or task title (the owning project counts too) and the list filters as you type. With an empty box the five destinations you used most recently come first under *Zuletzt verwendet*, everything else under *Alle Ziele*. Recents live in the browser only and are dropped automatically when a destination no longer applies.
+
+---
+
+## 11. Known Limitations & Future Work
 
 | Area | Current state | Planned |
 |------|--------------|---------|
@@ -364,7 +439,7 @@ See **[docs/architecture.md](docs/architecture.md)** for:
 
 ---
 
-## 11. Future Home Assistant Integration
+## 12. Future Home Assistant Integration
 
 Machbar can be extended to emit HA entities and respond to HA service calls. Below are illustrative examples of what a future HA integration could look like.
 

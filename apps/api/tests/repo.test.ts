@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { openDb, type DbHandle } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
 import * as schema from "../src/db/schema.js";
@@ -268,7 +269,10 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
     it("classifies unassigned_actionable, only_waiting, no_next_action, blocked_dependencies and healthy projects", () => {
       const owner = createMember("Zuständige Person");
 
-      const unassigned = createProject(handle.db, { title: "Unzugewiesen" });
+      const unassigned = createProject(handle.db, {
+        title: "Unzugewiesen",
+        status: "active",
+      });
       createTask(handle.db, {
         projectId: unassigned.id,
         title: "Offen",
@@ -277,6 +281,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
 
       const onlyWaiting = createProject(handle.db, {
         title: "Nur Warten",
+        status: "active",
         ownerMemberId: owner.id,
       });
       createTask(handle.db, {
@@ -289,6 +294,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
 
       const noNextAction = createProject(handle.db, {
         title: "Kein Nächstes",
+        status: "active",
         ownerMemberId: owner.id,
       });
       createTask(handle.db, {
@@ -301,6 +307,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
 
       const blockedProject = createProject(handle.db, {
         title: "Blockiert",
+        status: "active",
         ownerMemberId: owner.id,
       });
       const blockerTask = createTask(handle.db, {
@@ -319,7 +326,11 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       });
       addDependency(handle.db, blockedTask.id, blockerTask.id);
 
-      const healthy = createProject(handle.db, { title: "Gesund", ownerMemberId: owner.id });
+      const healthy = createProject(handle.db, {
+        title: "Gesund",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
       createTask(handle.db, {
         projectId: healthy.id,
         title: "Machbar",
@@ -334,6 +345,278 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(reasons.get(noNextAction.id)).toBe("no_next_action");
       expect(reasons.get(blockedProject.id)).toBe("blocked_dependencies");
       expect(reasons.has(healthy.id)).toBe(false);
+    });
+
+    it("flags an active project with zero tasks as no_next_action", () => {
+      const empty = createProject(handle.db, { title: "Leer", status: "active" });
+      const reasons = getStuckReasonsByProject(handle.db);
+      expect(reasons.get(empty.id)).toBe("no_next_action");
+    });
+
+    it("keeps a waiting-only project healthy when a waiting task has a scheduled revisit", () => {
+      const owner = createMember("Wiedervorlage-Zuständige");
+
+      const withRevisit = createProject(handle.db, {
+        title: "Warten mit Wiedervorlage",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      createTask(handle.db, {
+        projectId: withRevisit.id,
+        title: "Wartet mit Termin",
+        status: "waiting",
+        scheduledDate: "2026-09-01",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+      createTask(handle.db, {
+        projectId: withRevisit.id,
+        title: "Wartet ohne Termin",
+        status: "waiting",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+
+      const reasons = getStuckReasonsByProject(handle.db);
+      expect(reasons.has(withRevisit.id)).toBe(false);
+    });
+
+    it("treats past, today and future revisits alike — a scheduled date is an explicit decision", () => {
+      const owner = createMember("Termin-Zuständige");
+      const today = new Date().toISOString().slice(0, 10);
+
+      const projectIds = ["2020-01-01", today, "2099-12-31"].map((scheduledDate) => {
+        const project = createProject(handle.db, {
+          title: `Warten bis ${scheduledDate}`,
+          status: "active",
+          ownerMemberId: owner.id,
+        });
+        createTask(handle.db, {
+          projectId: project.id,
+          title: "Wartet",
+          status: "waiting",
+          scheduledDate,
+          ownerMemberId: owner.id,
+          ownerInheritanceMode: "explicit",
+        });
+        return project.id;
+      });
+
+      const reasons = getStuckReasonsByProject(handle.db);
+      for (const id of projectIds) expect(reasons.has(id)).toBe(false);
+    });
+
+    it("still flags only_waiting when the revisit date is missing or blank", () => {
+      const owner = createMember("Ohne-Termin-Zuständige");
+
+      const nullDate = createProject(handle.db, {
+        title: "Warten ohne Termin",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      createTask(handle.db, {
+        projectId: nullDate.id,
+        title: "Wartet",
+        status: "waiting",
+        scheduledDate: null,
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+
+      const blankDate = createProject(handle.db, {
+        title: "Warten mit leerem Termin",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const blankTask = createTask(handle.db, {
+        projectId: blankDate.id,
+        title: "Wartet",
+        status: "waiting",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+      handle.db
+        .update(schema.tasks)
+        .set({ scheduledDate: "   " })
+        .where(eq(schema.tasks.id, blankTask.id))
+        .run();
+
+      const reasons = getStuckReasonsByProject(handle.db);
+      expect(reasons.get(nullDate.id)).toBe("only_waiting");
+      expect(reasons.get(blankDate.id)).toBe("only_waiting");
+    });
+
+    it("does not let a scheduled revisit mask other stuck reasons", () => {
+      const owner = createMember("Vorrang-Zuständige");
+
+      // Not every open task is waiting: a `someday` task keeps the project
+      // stuck for lack of a next action.
+      const mixedSomeday = createProject(handle.db, {
+        title: "Warten und Irgendwann",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      createTask(handle.db, {
+        projectId: mixedSomeday.id,
+        title: "Wartet mit Termin",
+        status: "waiting",
+        scheduledDate: "2026-09-01",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+      createTask(handle.db, {
+        projectId: mixedSomeday.id,
+        title: "Irgendwann",
+        status: "someday",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+
+      // An unassigned actionable task keeps its higher-priority reason.
+      const mixedUnassigned = createProject(handle.db, {
+        title: "Warten und Unzugewiesen",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      createTask(handle.db, {
+        projectId: mixedUnassigned.id,
+        title: "Wartet mit Termin",
+        status: "waiting",
+        scheduledDate: "2026-09-01",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+      createTask(handle.db, {
+        projectId: mixedUnassigned.id,
+        title: "Offen ohne Zuständige",
+        status: "actionable",
+        ownerInheritanceMode: "none",
+      });
+
+      const reasons = getStuckReasonsByProject(handle.db);
+      expect(reasons.get(mixedSomeday.id)).toBe("no_next_action");
+      expect(reasons.get(mixedUnassigned.id)).toBe("unassigned_actionable");
+    });
+
+    it("keeps completion_review once the scheduled waiting task is closed", () => {
+      const owner = createMember("Abschluss-Zuständige");
+
+      const project = createProject(handle.db, {
+        title: "Warten dann fertig",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const waitingTask = createTask(handle.db, {
+        projectId: project.id,
+        title: "Wartet mit Termin",
+        status: "waiting",
+        scheduledDate: "2026-09-01",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+
+      expect(getStuckReasonsByProject(handle.db).has(project.id)).toBe(false);
+
+      updateTask(handle.db, waitingTask.id, { status: "done" });
+
+      expect(getStuckReasonsByProject(handle.db).get(project.id)).toBe(
+        "completion_review",
+      );
+    });
+
+    it("flags an active project whose tasks are all done/cancelled as completion_review", () => {
+      const owner = createMember("Abnahme-Zuständige");
+
+      const allDone = createProject(handle.db, {
+        title: "Alles Erledigt",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const doneTask = createTask(handle.db, {
+        projectId: allDone.id,
+        title: "Erledigt",
+        status: "actionable",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+      updateTask(handle.db, doneTask.id, { status: "done" });
+
+      const allClosedMixed = createProject(handle.db, {
+        title: "Erledigt und Verworfen",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const cancelledTask = createTask(handle.db, {
+        projectId: allClosedMixed.id,
+        title: "Verworfen",
+        status: "actionable",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+      updateTask(handle.db, cancelledTask.id, { status: "cancelled" });
+      const doneTask2 = createTask(handle.db, {
+        projectId: allClosedMixed.id,
+        title: "Auch Erledigt",
+        status: "actionable",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+      updateTask(handle.db, doneTask2.id, { status: "done" });
+
+      const reasons = getStuckReasonsByProject(handle.db);
+      expect(reasons.get(allDone.id)).toBe("completion_review");
+      expect(reasons.get(allClosedMixed.id)).toBe("completion_review");
+    });
+
+    it("excludes non-active projects regardless of task state (backlog, completed, archived)", () => {
+      const owner = createMember("Backlog-Zuständige");
+
+      const backlogEmpty = createProject(handle.db, {
+        title: "Backlog Leer",
+        status: "backlog",
+      });
+
+      const backlogOpen = createProject(handle.db, {
+        title: "Backlog Offen",
+        status: "backlog",
+      });
+      createTask(handle.db, {
+        projectId: backlogOpen.id,
+        title: "Wäre unassigned_actionable, wenn aktiv",
+        status: "actionable",
+      });
+
+      const completedOpen = createProject(handle.db, {
+        title: "Abgeschlossen mit offener Aufgabe",
+        status: "completed",
+        ownerMemberId: owner.id,
+      });
+      createTask(handle.db, {
+        projectId: completedOpen.id,
+        title: "Wäre blocked, wenn aktiv",
+        status: "actionable",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+
+      const archivedOpen = createProject(handle.db, {
+        title: "Archiviert mit offener Aufgabe",
+        status: "archived",
+        ownerMemberId: owner.id,
+      });
+      createTask(handle.db, {
+        projectId: archivedOpen.id,
+        title: "Wäre actionable, wenn aktiv",
+        status: "actionable",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+
+      const reasons = getStuckReasonsByProject(handle.db);
+      expect(reasons.has(backlogEmpty.id)).toBe(false);
+      expect(reasons.has(backlogOpen.id)).toBe(false);
+      expect(reasons.has(completedOpen.id)).toBe(false);
+      expect(reasons.has(archivedOpen.id)).toBe(false);
     });
   });
 

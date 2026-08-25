@@ -2,6 +2,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import type {
   InheritanceMode,
   ProjectStatus,
+  TaskSize,
   TaskStatus,
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
@@ -141,7 +142,6 @@ export function getOrCreateTag(db: Db, name: string) {
 
 export interface CreateProjectInput {
   title: string;
-  description?: string;
   status?: ProjectStatus;
   ownerMemberId?: number | null;
   context?: string | null;
@@ -162,6 +162,12 @@ export function getProjectOrThrow(db: Db, id: number) {
   return project;
 }
 
+/**
+ * New stories always start in `backlog` unless a status is explicitly
+ * requested (used by fixtures/tests and direct API creation) — there is no
+ * driver requirement at creation time itself, only when a story is
+ * explicitly *activated* via {@link activateProject} (see below).
+ */
 export function createProject(db: Db, input: CreateProjectInput) {
   if (!input.title || input.title.trim() === "") {
     throw AppError.badRequest("Der Projekttitel darf nicht leer sein.");
@@ -177,8 +183,7 @@ export function createProject(db: Db, input: CreateProjectInput) {
       .insert(schema.projects)
       .values({
         title: input.title.trim(),
-        description: input.description ?? "",
-        status: input.status ?? "active",
+        status: input.status ?? "backlog",
         ownerMemberId: input.ownerMemberId ?? null,
         context: input.context ?? null,
         dueDate: input.dueDate ?? null,
@@ -201,8 +206,6 @@ export function createProject(db: Db, input: CreateProjectInput) {
 
 export interface UpdateProjectInput {
   title?: string;
-  description?: string;
-  status?: ProjectStatus;
   ownerMemberId?: number | null;
   context?: string | null;
   dueDate?: string | null;
@@ -211,18 +214,36 @@ export interface UpdateProjectInput {
   tagIds?: number[];
 }
 
+/**
+ * Editable project/story metadata: title, driver (`ownerMemberId`),
+ * context, due/scheduled dates and tags. Status transitions are
+ * deliberately **not** accepted here — they only ever happen through the
+ * explicit {@link activateProject}/{@link returnProjectToBacklog}/
+ * {@link completeProject}/{@link reopenProject}/{@link archiveProject}
+ * operations below, so every workflow invariant is enforced in exactly one
+ * place.
+ *
+ * A story's driver can never be cleared (`ownerMemberId: null`) while it is
+ * `active`/`completed`/`archived` — an `active`/`completed` story must
+ * always retain its driver, and clearing it requires first sending the
+ * story back to `backlog`.
+ */
 export function updateProject(db: Db, id: number, input: UpdateProjectInput) {
   return db.transaction((tx) => {
-    getProjectOrThrow(tx as unknown as Db, id);
+    const txDb = tx as unknown as Db;
+    const project = getProjectOrThrow(txDb, id);
     if (input.title !== undefined && input.title.trim() === "") {
       throw AppError.badRequest("Der Projekttitel darf nicht leer sein.");
+    }
+    if (input.ownerMemberId === null && project.status !== "backlog") {
+      throw AppError.conflict(
+        `Die verantwortliche Person (Driver) von "${project.title}" kann erst entfernt werden, wenn das Projekt wieder im Backlog ist.`,
+      );
     }
     const patch: Partial<typeof schema.projects.$inferInsert> = {
       updatedAt: nowIso(),
     };
     if (input.title !== undefined) patch.title = input.title.trim();
-    if (input.description !== undefined) patch.description = input.description;
-    if (input.status !== undefined) patch.status = input.status;
     if (input.ownerMemberId !== undefined) patch.ownerMemberId = input.ownerMemberId;
     if (input.context !== undefined) patch.context = input.context;
     if (input.dueDate !== undefined) patch.dueDate = input.dueDate;
@@ -243,12 +264,334 @@ export function updateProject(db: Db, id: number, input: UpdateProjectInput) {
   });
 }
 
-export function archiveProject(db: Db, id: number) {
-  return updateProject(db, id, { status: "archived" });
+// ---------------------------------------------------------------------------
+// Explicit workflow transitions
+// ---------------------------------------------------------------------------
+//
+// A story moves through `backlog -> active -> completed`, with `archived`
+// reachable (and, symmetrically, escapable back into `backlog`/`active`)
+// from any point. Every transition is its own small, transactional
+// function; `availableProjectWorkflowActions` is the single source of
+// truth both for validating a requested transition and for advertising
+// which actions are currently legal in API responses.
+
+export type ProjectWorkflowAction =
+  | "activate"
+  | "return_to_backlog"
+  | "complete"
+  | "reopen"
+  | "archive";
+
+const workflowActionsByStatus: Record<ProjectStatus, ProjectWorkflowAction[]> = {
+  backlog: ["activate", "archive"],
+  active: ["return_to_backlog", "complete", "archive"],
+  completed: ["reopen", "archive"],
+  archived: ["activate", "return_to_backlog"],
+};
+
+export function availableProjectWorkflowActions(
+  status: ProjectStatus,
+): ProjectWorkflowAction[] {
+  return workflowActionsByStatus[status];
 }
 
-export function unarchiveProject(db: Db, id: number) {
-  return updateProject(db, id, { status: "active" });
+function assertWorkflowAction(
+  project: { title: string; status: string },
+  action: ProjectWorkflowAction,
+  conflictMessage: string,
+) {
+  const status = project.status as ProjectStatus;
+  if (!availableProjectWorkflowActions(status).includes(action)) {
+    throw AppError.conflict(conflictMessage);
+  }
+}
+
+export interface ActivateProjectInput {
+  ownerMemberId?: number | null;
+}
+
+/**
+ * `backlog`/`archived` -> `active`. A story can only ever become active
+ * once it has a driver: either already set on the project, or supplied
+ * here in the same call (which also lets activation double as "assign the
+ * driver and start work" in one step).
+ */
+export function activateProject(
+  db: Db,
+  id: number,
+  input: ActivateProjectInput = {},
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const project = getProjectOrThrow(txDb, id);
+    assertWorkflowAction(
+      project,
+      "activate",
+      `Projekt "${project.title}" kann aus dem Status "${project.status}" nicht aktiviert werden.`,
+    );
+    const ownerMemberId =
+      input.ownerMemberId !== undefined ? input.ownerMemberId : project.ownerMemberId;
+    if (ownerMemberId === null) {
+      throw AppError.badRequest(
+        `Für die Aktivierung von "${project.title}" muss zuerst eine verantwortliche Person (Driver) zugewiesen werden.`,
+      );
+    }
+    tx.update(schema.projects)
+      .set({ status: "active", ownerMemberId, updatedAt: nowIso() })
+      .where(eq(schema.projects.id, id))
+      .run();
+    return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+  });
+}
+
+/**
+ * `active`/`archived` -> `backlog`. The only way for a story to reach a
+ * state where its driver may be cleared again.
+ */
+export function returnProjectToBacklog(db: Db, id: number) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const project = getProjectOrThrow(txDb, id);
+    assertWorkflowAction(
+      project,
+      "return_to_backlog",
+      `Projekt "${project.title}" kann aus dem Status "${project.status}" nicht in den Backlog zurückgelegt werden.`,
+    );
+    tx.update(schema.projects)
+      .set({ status: "backlog", updatedAt: nowIso() })
+      .where(eq(schema.projects.id, id))
+      .run();
+    return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+  });
+}
+
+/**
+ * `active` -> `completed`. Always a deliberate, manual decision: nothing
+ * auto-completes a story just because every task is done/cancelled — that
+ * situation only ever surfaces as the `completion_review` stuck reason,
+ * prompting a human to call this action (or {@link reopenProject}/
+ * {@link archiveProject} instead).
+ */
+export function completeProject(db: Db, id: number) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const project = getProjectOrThrow(txDb, id);
+    assertWorkflowAction(
+      project,
+      "complete",
+      `Nur aktive Projekte können abgeschlossen werden (aktueller Status von "${project.title}": "${project.status}").`,
+    );
+    tx.update(schema.projects)
+      .set({ status: "completed", updatedAt: nowIso() })
+      .where(eq(schema.projects.id, id))
+      .run();
+    return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+  });
+}
+
+/** `completed` -> `active` again. The driver is retained unchanged. */
+export function reopenProject(db: Db, id: number) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const project = getProjectOrThrow(txDb, id);
+    assertWorkflowAction(
+      project,
+      "reopen",
+      `Nur abgeschlossene Projekte können wieder geöffnet werden (aktueller Status von "${project.title}": "${project.status}").`,
+    );
+    tx.update(schema.projects)
+      .set({ status: "active", updatedAt: nowIso() })
+      .where(eq(schema.projects.id, id))
+      .run();
+    return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+  });
+}
+
+/**
+ * `backlog`/`active`/`completed` -> `archived`. Shelves/retires a story
+ * without touching its driver.
+ */
+export function archiveProject(db: Db, id: number) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const project = getProjectOrThrow(txDb, id);
+    assertWorkflowAction(
+      project,
+      "archive",
+      `Projekt "${project.title}" ist bereits archiviert.`,
+    );
+    tx.update(schema.projects)
+      .set({ status: "archived", updatedAt: nowIso() })
+      .where(eq(schema.projects.id, id))
+      .run();
+    return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Acceptance criteria (ordered, structured; replaces free-text description)
+// ---------------------------------------------------------------------------
+
+function getCriterionOrThrow(db: Db, projectId: number, criterionId: number) {
+  const criterion = db
+    .select()
+    .from(schema.projectAcceptanceCriteria)
+    .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+    .get();
+  if (!criterion || criterion.projectId !== projectId) {
+    throw AppError.notFound(
+      `Akzeptanzkriterium mit ID ${criterionId} wurde im Projekt ${projectId} nicht gefunden.`,
+    );
+  }
+  return criterion;
+}
+
+function normalizeCriterionText(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed === "") {
+    throw AppError.badRequest(
+      "Der Text des Akzeptanzkriteriums darf nicht leer sein.",
+    );
+  }
+  return trimmed;
+}
+
+/** Appends a new criterion at the end of the project's ordered list. */
+export function addCriterion(db: Db, projectId: number, text: string) {
+  const trimmed = normalizeCriterionText(text);
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    getProjectOrThrow(txDb, projectId);
+    const maxPosition = tx
+      .select({ position: schema.projectAcceptanceCriteria.position })
+      .from(schema.projectAcceptanceCriteria)
+      .where(eq(schema.projectAcceptanceCriteria.projectId, projectId))
+      .all()
+      .reduce((max, c) => Math.max(max, c.position), -1);
+    return tx
+      .insert(schema.projectAcceptanceCriteria)
+      .values({ projectId, text: trimmed, position: maxPosition + 1 })
+      .returning()
+      .get();
+  });
+}
+
+/** Edits a criterion's text without changing its position/checked state. */
+export function updateCriterionText(
+  db: Db,
+  projectId: number,
+  criterionId: number,
+  text: string,
+) {
+  const trimmed = normalizeCriterionText(text);
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    getProjectOrThrow(txDb, projectId);
+    getCriterionOrThrow(txDb, projectId, criterionId);
+    tx.update(schema.projectAcceptanceCriteria)
+      .set({ text: trimmed, updatedAt: nowIso() })
+      .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+      .run();
+    return tx
+      .select()
+      .from(schema.projectAcceptanceCriteria)
+      .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+      .get()!;
+  });
+}
+
+/** Checks/unchecks a single criterion (completion itself stays manual). */
+export function setCriterionChecked(
+  db: Db,
+  projectId: number,
+  criterionId: number,
+  checked: boolean,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    getProjectOrThrow(txDb, projectId);
+    getCriterionOrThrow(txDb, projectId, criterionId);
+    tx.update(schema.projectAcceptanceCriteria)
+      .set({ checked, updatedAt: nowIso() })
+      .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+      .run();
+    return tx
+      .select()
+      .from(schema.projectAcceptanceCriteria)
+      .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+      .get()!;
+  });
+}
+
+/**
+ * Reorders a project's criteria: `orderedCriterionIds` must be exactly the
+ * project's existing criterion ids, each listed once, in the desired
+ * order — anything else (missing/extra/duplicate/foreign ids) is rejected
+ * so positions can never end up sparse or ambiguous.
+ */
+export function reorderCriteria(
+  db: Db,
+  projectId: number,
+  orderedCriterionIds: number[],
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    getProjectOrThrow(txDb, projectId);
+    const existing = tx
+      .select()
+      .from(schema.projectAcceptanceCriteria)
+      .where(eq(schema.projectAcceptanceCriteria.projectId, projectId))
+      .all();
+    const existingIds = new Set(existing.map((c) => c.id));
+    const uniqueRequestedIds = new Set(orderedCriterionIds);
+    const isValidReordering =
+      orderedCriterionIds.length === existing.length &&
+      uniqueRequestedIds.size === orderedCriterionIds.length &&
+      orderedCriterionIds.every((id) => existingIds.has(id));
+    if (!isValidReordering) {
+      throw AppError.badRequest(
+        "Die Reihenfolge muss genau die vorhandenen Akzeptanzkriterien des Projekts enthalten.",
+      );
+    }
+    orderedCriterionIds.forEach((criterionId, index) => {
+      tx.update(schema.projectAcceptanceCriteria)
+        .set({ position: index, updatedAt: nowIso() })
+        .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+        .run();
+    });
+    return tx
+      .select()
+      .from(schema.projectAcceptanceCriteria)
+      .where(eq(schema.projectAcceptanceCriteria.projectId, projectId))
+      .all()
+      .sort((a, b) => a.position - b.position);
+  });
+}
+
+/** Removes a criterion and compacts the remaining positions (no gaps). */
+export function removeCriterion(db: Db, projectId: number, criterionId: number) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    getProjectOrThrow(txDb, projectId);
+    getCriterionOrThrow(txDb, projectId, criterionId);
+    tx.delete(schema.projectAcceptanceCriteria)
+      .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+      .run();
+    const remaining = tx
+      .select()
+      .from(schema.projectAcceptanceCriteria)
+      .where(eq(schema.projectAcceptanceCriteria.projectId, projectId))
+      .all()
+      .sort((a, b) => a.position - b.position);
+    remaining.forEach((criterion, index) => {
+      if (criterion.position !== index) {
+        tx.update(schema.projectAcceptanceCriteria)
+          .set({ position: index, updatedAt: nowIso() })
+          .where(eq(schema.projectAcceptanceCriteria.id, criterion.id))
+          .run();
+      }
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -288,6 +631,7 @@ export interface CreateTaskInput {
   context?: string | null;
   contextInheritanceMode?: InheritanceMode;
   priority?: number | null;
+  size?: TaskSize | null;
   recurrenceRule?: string | null;
   reminderAt?: string | null;
   tagIds?: number[];
@@ -345,6 +689,7 @@ export function createTask(db: Db, input: CreateTaskInput) {
         context: input.context ?? null,
         contextInheritanceMode: input.contextInheritanceMode ?? "inherit",
         priority: input.priority ?? null,
+        size: input.size ?? null,
         position,
       })
       .returning()
@@ -380,6 +725,7 @@ export interface UpdateTaskInput {
   context?: string | null;
   contextInheritanceMode?: InheritanceMode;
   priority?: number | null;
+  size?: TaskSize | null;
   recurrenceRule?: string | null;
   reminderAt?: string | null;
   tagIds?: number[];
@@ -408,6 +754,7 @@ export function updateTask(db: Db, id: number, input: UpdateTaskInput) {
     if (input.contextInheritanceMode !== undefined)
       patch.contextInheritanceMode = input.contextInheritanceMode;
     if (input.priority !== undefined) patch.priority = input.priority;
+    if (input.size !== undefined) patch.size = input.size;
     if (input.recurrenceRule !== undefined) patch.recurrenceRule = input.recurrenceRule;
     if (input.reminderAt !== undefined) patch.reminderAt = input.reminderAt;
 

@@ -28,6 +28,18 @@ export function MorePage() {
             <span aria-hidden="true">›</span>
           </span>
         </Link>
+        <Link to="/mehr/backlog" className="card list-link">
+          <span className="row-between">
+            <span>{strings.backlogReview}</span>
+            <span aria-hidden="true">›</span>
+          </span>
+        </Link>
+        <Link to="/mehr/refinement" className="card list-link">
+          <span className="row-between">
+            <span>{strings.refinement}</span>
+            <span aria-hidden="true">›</span>
+          </span>
+        </Link>
 
         <div className="card">
           <h3 style={{ margin: 0 }}>{strings.swipeSettingTitle}</h3>

@@ -1,4 +1,4 @@
-import { de, taskStatusLabels, stuckReasonLabels } from "@machbar/shared";
+import { de, taskStatusLabels, stuckReasonLabels, projectStatusLabels } from "@machbar/shared";
 import type { PrimarySwipeAction } from "./swipeSettings";
 
 /**
@@ -43,7 +43,6 @@ const extra = {
   doneTasks: "Erledigt",
   addProject: "Projekt anlegen",
   projectTitle: "Projekttitel",
-  description: "Beschreibung",
   noProjects: "Keine Projekte vorhanden.",
   noTasks: "Keine Aufgaben vorhanden.",
   addTag: "Tag hinzufügen",
@@ -99,6 +98,11 @@ const extra = {
   moveProjectTitle: "In anderes Projekt verschieben",
   currentParent: "Aktuell übergeordnet",
   currentProject: "Aktuelles Projekt",
+  searchDestination: "Ziel suchen",
+  searchDestinationPlaceholder: "Projekt oder Aufgabe suchen …",
+  recentDestinations: "Zuletzt verwendet",
+  allDestinations: "Alle Ziele",
+  destinationSearchEmpty: "Kein Ziel passt zu dieser Suche.",
   blockedHint: "Diese Aufgabe kann erst gestartet werden, wenn alle Abhängigkeiten erledigt sind.",
   effectiveTags: "Wirksame Tags",
   ownTags: "Eigene Tags",
@@ -108,6 +112,8 @@ const extra = {
   installApp: "Als App installieren",
   version: "Version",
   followUpFor: "Wartet auf",
+  newRevisitDate: "Neue Wiedervorlage",
+  unknownMember: "Unbekannte Person",
   ownContext: "Eigenen Kontext setzen",
   noInheritance: "Keine Vererbung",
   addChildTitle: "Neue Teilaufgabe",
@@ -144,8 +150,54 @@ const extra = {
     someday: "Irgendwann",
     cancel: "Verwerfen",
   } satisfies Record<PrimarySwipeAction, string>,
+  refinementMatrixTitle: "Zuständig × Größe",
+  refinementMatrixHint: "Zeile oder Spalte antippen, um die Liste unten zu filtern.",
+  refinementListTitle: "Offene Aufgaben zur Verfeinerung",
+  unestimated: "Ohne Schätzung",
+  total: "Gesamt",
+  allSizes: "Alle Größen",
+  clearSize: "Schätzung entfernen",
+  story: "Story",
+  currentSize: "Aktuelle Größe",
+  swipeHintSize: "Nach rechts wischen: Größe weiterschalten (S → M → L → XL → ohne)",
+  swipeHintSizeChips: "Nach links wischen oder ⋯: Größe direkt wählen, Zuweisen, Zum Projekt",
+  refinementEmpty: "Keine offenen Aufgaben zur Verfeinerung.",
+  resetFilter: "Filter zurücksetzen",
+  filteredBy: "Gefiltert nach",
+
+  // --- Backlog review (Mehr › Backlog prüfen) --------------------------
+  backlogReview: "Backlog prüfen",
+  refinement: "Refinement",
+  backlogReviewHint: "Nach rechts wischen aktiviert eine Geschichte, nach links wischen oder ⋯ zeigt weitere Aktionen.",
+  backlogReviewEmpty: "Keine Geschichten im Backlog.",
+  activateStory: "Aktivieren",
+  driver: "Verantwortlich",
+  assignDriver: "Verantwortliche Person zuweisen",
+  assignDriverToActivateHint: "Für die Aktivierung muss zuerst eine verantwortliche Person zugewiesen werden.",
+  noDriver: "Niemand zugewiesen",
+  criteria: "Akzeptanzkriterien",
+  planDates: "Planen",
+  planDatesTitle: "Termine planen",
+  taskSummary: "Aufgaben",
+  taskSummaryNone: "Noch keine Aufgaben",
+  archiveStory: "Archivieren",
+  storyActivated: "Aktiviert",
+  storyArchived: "Archiviert",
+
+  // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---
+  editProject: "Projekt bearbeiten",
+  returnToBacklogStory: "In Backlog zurücklegen",
+  completeStory: "Abschließen",
+  lifecycleActions: "Workflow-Aktionen",
+  taskProgress: "Aufgaben",
+  addCriterion: "Kriterium hinzufügen",
+  addCriterionPlaceholder: "Neues Akzeptanzkriterium",
+  removeCriterion: "Kriterium entfernen",
+  moveCriterionUp: "Kriterium nach oben",
+  moveCriterionDown: "Kriterium nach unten",
+  noCriteria: "Noch keine Akzeptanzkriterien.",
 } as const;
 
 export const strings = { ...de, ...extra };
-export { taskStatusLabels, stuckReasonLabels };
+export { taskStatusLabels, stuckReasonLabels, projectStatusLabels };
 export type Strings = typeof strings;

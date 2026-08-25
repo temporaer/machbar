@@ -264,6 +264,96 @@ a {
   border: 1px solid transparent;
 }
 
+/*
+ * Assignment pickers (`MemberChoiceGroup`) inside focused popups. A household
+ * has at most a handful of members, so every choice is a directly tappable
+ * chip; they wrap instead of scrolling and keep a ~44px touch target.
+ */
+.choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.choice-chip {
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.85rem;
+}
+
+.choice-chip[aria-pressed="true"] {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-contrast);
+  font-weight: 600;
+}
+
+.choice-chip:disabled {
+  opacity: 0.5;
+}
+
+.field-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/*
+ * Searchable refile destination list (`DestinationPicker`). Full-width tap
+ * rows with a bounded, scrollable body so the sheet's action buttons stay
+ * reachable no matter how many projects/tasks match.
+ */
+.destination-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 45vh;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.destination-group-label {
+  margin: 8px 0 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.destination-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: left;
+}
+
+.destination-row[aria-pressed="true"] {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-contrast);
+}
+
+.destination-row-title {
+  font-size: 0.9rem;
+}
+
+.destination-row-subtitle {
+  font-size: 0.75rem;
+  opacity: 0.75;
+}
+
 .chip button {
   border: none;
   background: transparent;
@@ -763,6 +853,49 @@ a {
   text-decoration: none;
   color: inherit;
   display: block;
+}
+
+.criteria-progress {
+  height: 6px;
+  background: var(--color-surface-alt);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.criteria-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--color-warning);
+}
+
+.criterion-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.criterion-row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  background: var(--color-surface);
+}
+
+.criterion-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.lifecycle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
 }
 
 .link-plain {

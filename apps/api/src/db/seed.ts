@@ -25,9 +25,15 @@ interface SeedTaskInput {
   scheduledDate?: string | null;
   waitingFor?: string | null;
   priority?: number | null;
+  size?: (typeof schema.tasks.$inferInsert)["size"];
   tagNames?: string[];
   dependsOn?: string[]; // titles of sibling/earlier tasks within the same seed run
   children?: SeedTaskInput[];
+}
+
+interface SeedCriterionInput {
+  text: string;
+  checked?: boolean;
 }
 
 /**
@@ -42,6 +48,7 @@ export function seedDatabase(db: Db): void {
     tx.delete(schema.taskExcludedTags).run();
     tx.delete(schema.taskTags).run();
     tx.delete(schema.tasks).run();
+    tx.delete(schema.projectAcceptanceCriteria).run();
     tx.delete(schema.projectTags).run();
     tx.delete(schema.projects).run();
     tx.delete(schema.tags).run();
@@ -106,6 +113,7 @@ export function seedDatabase(db: Db): void {
             context: input.context ?? null,
             contextInheritanceMode: input.contextInheritanceMode ?? "inherit",
             priority: input.priority ?? null,
+            size: input.size ?? null,
             position: index,
             completedAt: input.status === "done" ? now : null,
             cancelledAt: input.status === "cancelled" ? now : null,
@@ -144,7 +152,8 @@ export function seedDatabase(db: Db): void {
 
     function createProject(input: {
       title: string;
-      description: string;
+      criteria?: SeedCriterionInput[];
+      status?: (typeof schema.projects.$inferInsert)["status"];
       ownerMemberId: number | null;
       context: string | null;
       dueDate?: string | null;
@@ -156,8 +165,7 @@ export function seedDatabase(db: Db): void {
         .insert(schema.projects)
         .values({
           title: input.title,
-          description: input.description,
-          status: "active",
+          status: input.status ?? "active",
           ownerMemberId: input.ownerMemberId,
           context: input.context,
           dueDate: input.dueDate ?? null,
@@ -172,6 +180,16 @@ export function seedDatabase(db: Db): void {
             .run();
         }
       }
+      (input.criteria ?? []).forEach((criterion, index) => {
+        tx.insert(schema.projectAcceptanceCriteria)
+          .values({
+            projectId: project.id,
+            text: criterion.text,
+            checked: criterion.checked ?? false,
+            position: index,
+          })
+          .run();
+      });
       insertTaskTree(input.tasks, project.id, null);
       return project;
     }
@@ -180,7 +198,11 @@ export function seedDatabase(db: Db): void {
     //    and a due date soon for the "Heute" agenda's dueSoon bucket.
     createProject({
       title: "Umzug nach Leipzig",
-      description: "Alle Aufgaben rund um den Umzug in die neue Wohnung.",
+      criteria: [
+        { text: "Umzugsunternehmen ist beauftragt", checked: false },
+        { text: "Kartons und Material sind organisiert", checked: true },
+        { text: "Ummeldung des Wohnsitzes ist erledigt", checked: false },
+      ],
       ownerMemberId: anna.id,
       context: "Zuhause",
       dueDate: todayIso(10),
@@ -192,11 +214,13 @@ export function seedDatabase(db: Db): void {
           status: "actionable",
           ownerMemberId: jonas.id,
           ownerInheritanceMode: "explicit",
+          size: "M",
           tagNames: ["Telefon"],
           children: [
             {
               title: "Angebote einholen",
               status: "done",
+              size: "S",
             },
             {
               title: "Vertrag unterschreiben",
@@ -215,6 +239,7 @@ export function seedDatabase(db: Db): void {
           status: "actionable",
           scheduledDate: todayIso(0),
           dueDate: todayIso(2),
+          size: "S",
         },
         {
           title: "Nebenkostenabrechnung klären",
@@ -229,7 +254,10 @@ export function seedDatabase(db: Db): void {
     //    so the project itself is NOT stuck.
     createProject({
       title: "Garten winterfest machen",
-      description: "Den Garten auf den Winter vorbereiten.",
+      criteria: [
+        { text: "Laub ist entfernt", checked: false },
+        { text: "Gartenmöbel sind eingelagert", checked: false },
+      ],
       ownerMemberId: jonas.id,
       context: "Garten",
       dueDate: todayIso(-1),
@@ -240,10 +268,12 @@ export function seedDatabase(db: Db): void {
           title: "Laub entfernen",
           status: "actionable",
           scheduledDate: todayIso(0),
+          size: "S",
         },
         {
           title: "Rasen mähen",
           status: "done",
+          size: "S",
         },
         {
           title: "Gartenmöbel einlagern",
@@ -258,7 +288,10 @@ export function seedDatabase(db: Db): void {
     //    reason even though the project itself has an owner.
     createProject({
       title: "Steuererklärung 2025",
-      description: "Unterlagen sammeln und die Steuererklärung einreichen.",
+      criteria: [
+        { text: "Belege sind vollständig gesammelt", checked: false },
+        { text: "Formular ist eingereicht", checked: false },
+      ],
       ownerMemberId: anna.id,
       context: "Büro",
       dueDate: todayIso(30),
@@ -274,6 +307,7 @@ export function seedDatabase(db: Db): void {
           title: "Formular ausfüllen",
           status: "actionable",
           dependsOn: ["Belege sammeln"],
+          size: "L",
         },
         {
           title: "Steuerberater kontaktieren",
@@ -287,13 +321,16 @@ export function seedDatabase(db: Db): void {
     //    next action at all ("no_next_action").
     createProject({
       title: "Küche renovieren",
-      description: "Langfristige Küchenrenovierung planen.",
+      criteria: [
+        { text: "Fliesen sind ausgesucht", checked: false },
+        { text: "Budget ist festgelegt", checked: true },
+      ],
       ownerMemberId: anna.id,
       context: "Zuhause",
       tagNames: ["Zuhause"],
       position: 3,
       tasks: [
-        { title: "Fliesen aussuchen", status: "someday" },
+        { title: "Fliesen aussuchen", status: "someday", size: "M" },
         { title: "Handwerker anfragen", status: "someday" },
       ],
     });
@@ -301,7 +338,10 @@ export function seedDatabase(db: Db): void {
     // 5. Wartungsplan Auto — every open task is "waiting" ("only_waiting").
     createProject({
       title: "Wartungsplan Auto",
-      description: "Anstehende Wartungsarbeiten am Auto verfolgen.",
+      criteria: [
+        { text: "Werkstatttermin ist vereinbart", checked: true },
+        { text: "Ersatzteile sind bestellt", checked: false },
+      ],
       ownerMemberId: jonas.id,
       context: "Unterwegs",
       position: 4,
@@ -323,7 +363,10 @@ export function seedDatabase(db: Db): void {
     //    dependency that is itself not actionable ("blocked_dependencies").
     createProject({
       title: "Bücherregal aufbauen",
-      description: "Neues Bücherregal im Arbeitszimmer aufbauen.",
+      criteria: [
+        { text: "Farbe ist ausgesucht", checked: true },
+        { text: "Regal steht am vorgesehenen Platz", checked: false },
+      ],
       ownerMemberId: mia.id,
       context: "Zuhause",
       position: 5,
@@ -339,7 +382,89 @@ export function seedDatabase(db: Db): void {
           ownerMemberId: jonas.id,
           ownerInheritanceMode: "explicit",
           dependsOn: ["Farbe kaufen"],
+          size: "M",
         },
+      ],
+    });
+
+    // 7. Wohnzimmer neu einrichten — a Backlog story: not yet started, no
+    //    driver assigned yet, and its acceptance criteria are still fully
+    //    open (unchecked).
+    createProject({
+      title: "Wohnzimmer neu einrichten",
+      status: "backlog",
+      criteria: [
+        { text: "Einrichtungsideen sind gesammelt", checked: false },
+        { text: "Budget ist geschätzt", checked: false },
+      ],
+      ownerMemberId: null,
+      context: "Zuhause",
+      tagNames: ["Zuhause"],
+      position: 6,
+      tasks: [
+        { title: "Einrichtungsstile recherchieren", status: "someday" },
+        { title: "Möbelhäuser vergleichen", status: "someday" },
+      ],
+    });
+
+    // 8. Fahrrad Sommer-Check — a Completed story: it has a driver, every
+    //    task is done, and every acceptance criterion is checked off.
+    createProject({
+      title: "Fahrrad Sommer-Check",
+      status: "completed",
+      criteria: [
+        { text: "Reifen sind geprüft", checked: true },
+        { text: "Bremsen sind eingestellt", checked: true },
+        { text: "Kette ist geölt", checked: true },
+      ],
+      ownerMemberId: mia.id,
+      context: "Zuhause",
+      dueDate: todayIso(-14),
+      tagNames: ["Zuhause"],
+      position: 7,
+      tasks: [
+        { title: "Reifen prüfen", status: "done", size: "S" },
+        { title: "Bremsen einstellen", status: "done", size: "S" },
+        { title: "Kette ölen", status: "done", size: "S" },
+      ],
+    });
+
+    // 9. Altes Gartenhaus abreißen — an Archived story: shelved with no
+    //    driver, and a mix of checked/unchecked criteria left behind from
+    //    before it was abandoned.
+    createProject({
+      title: "Altes Gartenhaus abreißen",
+      status: "archived",
+      criteria: [
+        { text: "Genehmigung wurde eingeholt", checked: true },
+        { text: "Abriss wurde durchgeführt", checked: false },
+      ],
+      ownerMemberId: null,
+      context: "Garten",
+      tagNames: ["Garten"],
+      position: 8,
+      tasks: [{ title: "Entsorgung organisieren", status: "cancelled" }],
+    });
+
+    // 10. Homeoffice-Ecke einrichten — an Active story with a driver where
+    //     every task is already done/cancelled but its acceptance criteria
+    //     are still open: the "completion_review" stuck scenario (ready
+    //     for a human to complete/reopen/archive it).
+    createProject({
+      title: "Homeoffice-Ecke einrichten",
+      status: "active",
+      criteria: [
+        { text: "Schreibtisch und Stuhl sind eingerichtet", checked: true },
+        { text: "Beleuchtung ist abgenommen", checked: false },
+      ],
+      ownerMemberId: jonas.id,
+      context: "Zuhause",
+      tagNames: ["Zuhause"],
+      position: 9,
+      tasks: [
+        { title: "Schreibtisch aufbauen", status: "done", size: "M" },
+        { title: "Monitorarm montieren", status: "done", size: "S" },
+        { title: "Kabel verlegen", status: "cancelled" },
       ],
     });
 

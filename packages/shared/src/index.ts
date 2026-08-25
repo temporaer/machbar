@@ -7,12 +7,19 @@ export const taskStatuses = [
   "cancelled",
 ] as const;
 
-export const projectStatuses = ["active", "completed", "archived"] as const;
+export const projectStatuses = [
+  "backlog",
+  "active",
+  "completed",
+  "archived",
+] as const;
 export const inheritanceModes = ["inherit", "explicit", "none"] as const;
+export const taskSizes = ["S", "M", "L", "XL"] as const;
 
 export type TaskStatus = (typeof taskStatuses)[number];
 export type ProjectStatus = (typeof projectStatuses)[number];
 export type InheritanceMode = (typeof inheritanceModes)[number];
+export type TaskSize = (typeof taskSizes)[number];
 
 export interface Member {
   id: number;
@@ -25,10 +32,19 @@ export interface Tag {
   name: string;
 }
 
+export interface AcceptanceCriterion {
+  id: number;
+  projectId: number;
+  text: string;
+  checked: boolean;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Project {
   id: number;
   title: string;
-  description: string;
   status: ProjectStatus;
   ownerMemberId: number | null;
   context: string | null;
@@ -36,6 +52,7 @@ export interface Project {
   scheduledDate: string | null;
   position: number;
   tags: Tag[];
+  acceptanceCriteria: AcceptanceCriterion[];
   openCount?: number;
   doneCount?: number;
   nextAction?: Task | null;
@@ -66,6 +83,7 @@ export interface Task {
   context: string | null;
   contextInheritanceMode: InheritanceMode;
   priority: number | null;
+  size: TaskSize | null;
   position: number;
   completedAt: string | null;
   cancelledAt: string | null;
@@ -91,7 +109,11 @@ export type StuckReason =
   | "no_next_action"
   | "only_waiting"
   | "blocked_dependencies"
-  | "unassigned_actionable";
+  | "unassigned_actionable"
+  // An `active` project whose tasks are all `done`/`cancelled`: it is not
+  // "stuck" from a next-action standpoint, but it needs a human decision
+  // (complete/reopen/archive) before it can move on.
+  | "completion_review";
 
 export interface StuckProject extends Project {
   stuckReason: StuckReason;
@@ -219,4 +241,19 @@ export const stuckReasonLabels: Record<StuckReason, string> = {
   only_waiting: "Nur wartende Aufgaben",
   blocked_dependencies: "Durch Abhängigkeiten blockiert",
   unassigned_actionable: "Offene Aufgabe ohne Zuständigkeit",
+  completion_review: "Bereit zur Abnahme",
+};
+
+export const projectStatusLabels: Record<ProjectStatus, string> = {
+  backlog: "Backlog",
+  active: "Aktiv",
+  completed: "Abgeschlossen",
+  archived: "Archiviert",
+};
+
+export const taskSizeLabels: Record<TaskSize, string> = {
+  S: "S",
+  M: "M",
+  L: "L",
+  XL: "XL",
 };

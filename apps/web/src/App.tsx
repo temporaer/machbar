@@ -14,6 +14,8 @@ import { WaitingPage } from "./pages/WaitingPage";
 import { MorePage } from "./pages/MorePage";
 import { SearchPage } from "./pages/SearchPage";
 import { StuckPage } from "./pages/StuckPage";
+import { BacklogReviewPage } from "./pages/BacklogReviewPage";
+import { RefinementPage } from "./pages/RefinementPage";
 
 function TaskDetailHost() {
   const { openTaskId } = useTaskDetail();
@@ -37,6 +39,8 @@ function Shell() {
             <Route path="/mehr" element={<MorePage />} />
             <Route path="/mehr/suche" element={<SearchPage />} />
             <Route path="/mehr/festgefahren" element={<StuckPage />} />
+            <Route path="/mehr/backlog" element={<BacklogReviewPage />} />
+            <Route path="/mehr/refinement" element={<RefinementPage />} />
             <Route path="*" element={<Navigate to="/heute" replace />} />
           </Routes>
           <TaskDetailHost />

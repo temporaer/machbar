@@ -8,6 +8,7 @@ import type {
   StuckProject,
   Tag,
   Task,
+  TaskSize,
   TaskStatus,
   WaitingGroup,
 } from "@machbar/shared";
@@ -118,6 +119,7 @@ export interface CreateTaskInput {
   context?: string | null;
   contextInheritanceMode?: InheritanceMode;
   priority?: number | null;
+  size?: TaskSize | null;
   recurrenceRule?: string | null;
   reminderAt?: string | null;
   tagIds?: number[];
@@ -130,9 +132,15 @@ export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "parentTaskId" | "pr
   excludedTagIds?: number[];
 };
 
+/**
+ * Projects are user stories: there is no free-text `description` field
+ * (see `apps/api/src/schemas.ts::createProjectSchema`/`updateProjectSchema`)
+ * — a story's intent is expressed entirely through its title plus its
+ * ordered acceptance criteria (`api.addCriterion`/`updateCriterion`/etc.
+ * below), added once the project exists.
+ */
 export interface CreateProjectInput {
   title: string;
-  description?: string;
   status?: ProjectStatus;
   ownerMemberId?: number | null;
   context?: string | null;
@@ -142,6 +150,67 @@ export interface CreateProjectInput {
 }
 
 export type UpdateProjectInput = Partial<CreateProjectInput> & { position?: number };
+
+/** Matches `apps/api/src/domain/mutations.ts::ProjectWorkflowAction`. */
+export type ProjectWorkflowAction =
+  | "activate"
+  | "return_to_backlog"
+  | "complete"
+  | "reopen"
+  | "archive";
+
+/**
+ * Every project/story API response carries `availableActions` (see
+ * `apps/api/src/domain/graph.ts::ProjectRecord`) alongside the shared
+ * `Project`/`StuckProject` fields — the single source of truth for which
+ * lifecycle transitions are currently legal, so the UI never has to
+ * reimplement the backlog/active/completed/archived state machine itself.
+ */
+export type ProjectWithActions = Project & { availableActions: ProjectWorkflowAction[] };
+export type StuckProjectWithActions = StuckProject & { availableActions: ProjectWorkflowAction[] };
+export type ProjectDetail = ProjectWithActions & { tasks: Task[] };
+
+/** Body for `POST /api/projects/:id/activate` (matches `activateProjectSchema`). */
+export interface ActivateProjectInput {
+  ownerMemberId?: number | null;
+}
+
+/**
+ * Owner×size aggregation row for the refinement matrix (see
+ * `apps/api/src/repo/refinementRepo.ts::OwnerSizeCounts`). `ownerId: null`
+ * is the shared/unassigned bucket.
+ */
+export interface OwnerSizeCounts {
+  ownerId: number | null;
+  ownerName: string | null;
+  S: number;
+  M: number;
+  L: number;
+  XL: number;
+  unestimated: number;
+  total: number;
+}
+
+/** Matches `apps/api/src/repo/refinementRepo.ts::RefinementTaskRow`. */
+export interface RefinementTaskRow {
+  id: number;
+  title: string;
+  status: TaskStatus;
+  size: TaskSize | null;
+  projectId: number | null;
+  projectTitle: string | null;
+  effectiveOwnerId: number | null;
+  effectiveOwnerSource: "task" | "parent" | "project" | "none";
+  position: number;
+  updatedAt: string;
+}
+
+/** Matches `apps/api/src/routes/refinement.ts`'s query params. */
+export interface RefinementFilters {
+  /** A positive member id, or the literal `"none"` for the shared/unassigned bucket. */
+  ownerId?: number | "none";
+  projectId?: number;
+}
 
 export interface CreateMemberInput {
   name: string;
@@ -176,17 +245,64 @@ export const api = {
   createTag: (name: string) =>
     request<Tag>("/tags", { method: "POST", body: JSON.stringify({ name }) }),
 
-  getProjects: () => request<Project[]>("/projects"),
-  getStuckProjects: () => request<StuckProject[]>("/projects/stuck"),
-  getProject: (id: number) => request<Project & { tasks: Task[] }>(`/projects/${id}`),
+  getProjects: () => request<ProjectWithActions[]>("/projects"),
+  getStuckProjects: () => request<StuckProjectWithActions[]>("/projects/stuck"),
+  getProject: (id: number) => request<ProjectDetail>(`/projects/${id}`),
   createProject: (input: CreateProjectInput) =>
-    request<Project>("/projects", { method: "POST", body: JSON.stringify(input) }),
+    request<ProjectWithActions>("/projects", { method: "POST", body: JSON.stringify(input) }),
   updateProject: (id: number, patch: UpdateProjectInput) =>
-    request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+    request<ProjectWithActions>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+
+  // --- explicit workflow transitions (see `ProjectWorkflowAction` above) --
+  activateProject: (id: number, input?: ActivateProjectInput) =>
+    request<ProjectWithActions>(`/projects/${id}/activate`, {
+      method: "POST",
+      body: JSON.stringify(input ?? {}),
+    }),
+  returnProjectToBacklog: (id: number) =>
+    request<ProjectWithActions>(`/projects/${id}/return-to-backlog`, { method: "POST" }),
+  completeProject: (id: number) =>
+    request<ProjectWithActions>(`/projects/${id}/complete`, { method: "POST" }),
+  reopenProject: (id: number) =>
+    request<ProjectWithActions>(`/projects/${id}/reopen`, { method: "POST" }),
   archiveProject: (id: number) =>
-    request<Project>(`/projects/${id}/archive`, { method: "POST" }),
-  unarchiveProject: (id: number) =>
-    request<Project>(`/projects/${id}/unarchive`, { method: "POST" }),
+    request<ProjectWithActions>(`/projects/${id}/archive`, { method: "POST" }),
+
+  // --- acceptance criteria (ordered, structured; replaces free-text description) ---
+  addCriterion: (projectId: number, text: string) =>
+    request<ProjectWithActions>(`/projects/${projectId}/criteria`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  updateCriterion: (projectId: number, criterionId: number, text: string) =>
+    request<ProjectWithActions>(`/projects/${projectId}/criteria/${criterionId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ text }),
+    }),
+  checkCriterion: (projectId: number, criterionId: number, checked: boolean) =>
+    request<ProjectWithActions>(`/projects/${projectId}/criteria/${criterionId}/check`, {
+      method: "POST",
+      body: JSON.stringify({ checked }),
+    }),
+  reorderCriteria: (projectId: number, orderedCriterionIds: number[]) =>
+    request<ProjectWithActions>(`/projects/${projectId}/criteria/reorder`, {
+      method: "POST",
+      body: JSON.stringify({ orderedCriterionIds }),
+    }),
+  removeCriterion: (projectId: number, criterionId: number) =>
+    request<ProjectWithActions>(`/projects/${projectId}/criteria/${criterionId}`, {
+      method: "DELETE",
+    }),
+
+  // --- refinement (owner×size matrix + task list; see `apps/api/src/routes/refinement.ts`) ---
+  getRefinementOwners: (filters?: RefinementFilters) =>
+    request<OwnerSizeCounts[]>(
+      `/refinement/owners${query({ ownerId: filters?.ownerId, projectId: filters?.projectId })}`,
+    ),
+  getRefinementTasks: (filters?: RefinementFilters) =>
+    request<RefinementTaskRow[]>(
+      `/refinement/tasks${query({ ownerId: filters?.ownerId, projectId: filters?.projectId })}`,
+    ),
 
   /**
    * `memberId` scopes the agenda to a single member (the currently

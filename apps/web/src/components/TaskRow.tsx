@@ -12,6 +12,10 @@ import type { PrimarySwipeAction } from "../lib/swipeSettings";
 import { useRefresh } from "../lib/refresh";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
+import {
+  TaskQuickActionSheet,
+  type TaskQuickAction,
+} from "./TaskQuickActionSheet";
 
 const SWIPE_THRESHOLD = 72;
 const LONG_PRESS_MS = 480;
@@ -64,6 +68,7 @@ export function TaskRow({
   const [collapsed, setCollapsed] = useState(false);
   const [dragX, setDragX] = useState(0);
   const [chipsOpen, setChipsOpen] = useState(false);
+  const [quickAction, setQuickAction] = useState<TaskQuickAction | null>(null);
   const dragState = useRef<{ startX: number; dragging: boolean; pointerId: number | null }>({
     startX: 0,
     dragging: false,
@@ -74,13 +79,23 @@ export function TaskRow({
   const { members } = useIdentity();
   const { primarySwipeAction } = useSwipeSettings();
   const navigate = useNavigate();
-  const { requestToggle, requestPrimarySwipe, setStatus, busyId, retained, errors, clearError } = taskActions;
+  const {
+    requestToggle,
+    requestPrimarySwipe,
+    setStatus,
+    quickUpdate,
+    busyId,
+    retained,
+    errors,
+    clearError,
+  } = taskActions;
 
   // A row that just transitioned keeps rendering with its optimistic status
   // (crossed out / muted) for a few seconds even once the compiled view
   // (Heute/Eingang/Suche/…) no longer contains it — see `useTaskActions`'s
-  // `retained` map. While retained, this row's own controls are disabled so
-  // a stale/mid-flight task can't be mutated a second time from here.
+  // `retained` map. Once the request is no longer busy, the optimistic row
+  // remains fully actionable so another swipe can immediately continue the
+  // state cycle (for example erledigt -> wieder offen).
   const retainedTask = retained.get(taskProp.id);
   const task = retainedTask ?? taskProp;
   const isRetained = Boolean(retainedTask);
@@ -110,7 +125,7 @@ export function TaskRow({
 
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (organizeMode || isRetained) return;
+      if (organizeMode || busyId === task.id) return;
       dragState.current = { startX: e.clientX, dragging: true, pointerId: e.pointerId };
       // Not every environment implements pointer capture (e.g. jsdom in
       // tests), so guard the call instead of assuming it always exists.
@@ -124,7 +139,7 @@ export function TaskRow({
         setDragX(0);
       }, LONG_PRESS_MS);
     },
-    [organizeMode, isRetained, onEnterOrganizeMode],
+    [organizeMode, busyId, task.id, onEnterOrganizeMode],
   );
 
   const handlePointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
@@ -153,8 +168,8 @@ export function TaskRow({
   const indent = () => void api.indentTask(task.id).then(bump);
   const outdent = () => void api.outdentTask(task.id).then(bump);
 
-  const openChip = (field?: TaskDetailFocusField) => {
-    onOpenDetail(task.id, field);
+  const openQuickAction = (action: TaskQuickAction) => {
+    setQuickAction(action);
     setChipsOpen(false);
   };
 
@@ -224,7 +239,7 @@ export function TaskRow({
           type="button"
           className={`task-row-checkbox${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}
           aria-label={isDone || isCancelled ? strings.reopen : strings.done}
-          disabled={busyId === task.id || isRetained}
+          disabled={busyId === task.id}
           onClick={() => requestToggle(task)}
         >
           {isDone ? "✓" : isCancelled ? "×" : ""}
@@ -259,7 +274,7 @@ export function TaskRow({
           className="task-row-kebab"
           aria-label={strings.moreActions}
           aria-expanded={chipsOpen}
-          disabled={isRetained}
+          disabled={busyId === task.id}
           onClick={() => setChipsOpen((o) => !o)}
         >
           ⋯
@@ -268,13 +283,13 @@ export function TaskRow({
 
       {chipsOpen ? (
         <div className="task-row-chips" role="group" aria-label={strings.moreActions}>
-          <button type="button" className="btn btn-sm" onClick={() => openChip("owner")}>
+          <button type="button" className="btn btn-sm" onClick={() => openQuickAction("owner")}>
             {strings.assign}
           </button>
-          <button type="button" className="btn btn-sm" onClick={() => openChip("schedule")}>
+          <button type="button" className="btn btn-sm" onClick={() => openQuickAction("schedule")}>
             {strings.schedule}
           </button>
-          <button type="button" className="btn btn-sm" onClick={() => openChip("notes")}>
+          <button type="button" className="btn btn-sm" onClick={() => openQuickAction("notes")}>
             {strings.notes}
           </button>
           <button
@@ -300,10 +315,21 @@ export function TaskRow({
               {task.status === "waiting" ? strings.makeActionable : strings.waiting}
             </button>
           )}
-          <button type="button" className="btn btn-sm" onClick={() => openChip()}>
+          <button type="button" className="btn btn-sm" onClick={() => onOpenDetail(task.id)}>
             {strings.more}
           </button>
         </div>
+      ) : null}
+
+      {quickAction ? (
+        <TaskQuickActionSheet
+          task={task}
+          action={quickAction}
+          onClose={() => setQuickAction(null)}
+          onSave={(patch, optimisticPatch) =>
+            quickUpdate(task, patch, optimisticPatch)
+          }
+        />
       ) : null}
 
       {rowError ? (

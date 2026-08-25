@@ -18,7 +18,8 @@ const mockedApi = vi.mocked(api, true);
 describe("WaitingGroupList", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.updateTask.mockResolvedValue(makeTask());
   });
 
@@ -38,5 +39,53 @@ describe("WaitingGroupList", () => {
   it("zeigt einen leeren Zustand ohne Gruppen", () => {
     renderWithProviders(<WaitingGroupList groups={[]} />);
     expect(screen.getByText("Nichts wartet gerade.")).toBeInTheDocument();
+  });
+
+  it("öffnet ein fokussiertes Nachhaken-Popup mit Zeitstempel und Benutzer", async () => {
+    const task = makeTask({
+      id: 8,
+      title: "Angebot nachfragen",
+      notes: "Erste Anfrage versendet.",
+      status: "waiting",
+    });
+    renderWithProviders(
+      <WaitingGroupList
+        groups={[makeWaitingGroup({ waitingFor: "Handwerker", tasks: [task] })]}
+      />,
+    );
+    await screen.findByText("Angebot nachfragen");
+
+    await userEvent.click(screen.getByRole("button", { name: "Nachhaken" }));
+
+    const notes = (await screen.findByLabelText("Notizen")) as HTMLTextAreaElement;
+    expect(notes.value).toContain("Erste Anfrage versendet.");
+    expect(notes.value).toContain("· Mira]");
+    expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
+  });
+
+  it("speichert Notiz, Wiedervorlage und optional den bearbeitbaren Status", async () => {
+    const task = makeTask({ id: 9, title: "Rückruf nachhalten", status: "waiting" });
+    renderWithProviders(
+      <WaitingGroupList
+        groups={[makeWaitingGroup({ waitingFor: "Praxis", tasks: [task] })]}
+      />,
+    );
+    await screen.findByText("Rückruf nachhalten");
+    await userEvent.click(screen.getByRole("button", { name: "Nachhaken" }));
+
+    const notes = await screen.findByLabelText("Notizen");
+    await userEvent.type(notes, "Erneut angerufen.");
+    await userEvent.type(screen.getByLabelText("Neue Wiedervorlage"), "2026-09-05");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Wieder machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(9, {
+        notes: expect.stringContaining("Erneut angerufen."),
+        scheduledDate: "2026-09-05",
+        status: "actionable",
+      }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

@@ -7,10 +7,29 @@ import type { Db } from "../db/client.js";
  * single self-contained SQL statement: a recursive CTE resolves effective
  * owner ids (mirroring effectiveRepo's owner rule), open/actionable/waiting
  * counts and the blocked flag are aggregated per project, and the final
- * priority-ordered classification (unassigned_actionable > only_waiting /
- * no_next_action > blocked_dependencies > healthy) is a single SQL `CASE`.
- * Projects with no open tasks, or that are not stuck, are simply absent
- * from the returned map.
+ * priority-ordered classification is a single SQL `CASE`.
+ *
+ * Only `active` projects can be stuck — `backlog`, `completed` and
+ * `archived` projects are excluded outright, regardless of their task
+ * state. Within `active` projects, the classification (highest priority
+ * first) is:
+ *
+ *   1. no `next_action` at all: zero tasks in the project => `no_next_action`.
+ *   2. tasks exist but none are open (all `done`/`cancelled`) => the
+ *      project isn't "stuck" for lack of a next step, it just needs a
+ *      human decision (complete/reopen/archive) => `completion_review`.
+ *   3. every open task is `waiting` **and at least one of them carries a
+ *      `scheduled_date`** => healthy. A scheduled waiting task is an
+ *      explicit revisit ("Wiedervorlage"), so the project is deliberately
+ *      parked rather than forgotten. The date is not compared against
+ *      today: past, present and future revisits all count, because the
+ *      point is that a human already decided when to look again.
+ *   4. otherwise, the original open-task-based rules apply unchanged:
+ *      `unassigned_actionable` > `only_waiting` / `no_next_action` >
+ *      `blocked_dependencies` > healthy (absent from the map).
+ *
+ * Projects that are not stuck (healthy, or excluded by status) are simply
+ * absent from the returned map.
  */
 export function getStuckReasonsByProject(
   db: Db,
@@ -46,6 +65,7 @@ export function getStuckReasonsByProject(
         t.id,
         t.project_id,
         t.status,
+        t.scheduled_date,
         oe.owner_id,
         EXISTS (
           SELECT 1 FROM task_dependencies td
@@ -63,20 +83,42 @@ export function getStuckReasonsByProject(
         SUM(CASE WHEN status = 'actionable' THEN 1 ELSE 0 END) AS actionable_count,
         SUM(CASE WHEN status = 'actionable' AND blocked = 0 THEN 1 ELSE 0 END) AS actionable_unblocked_count,
         SUM(CASE WHEN status = 'actionable' AND owner_id IS NULL THEN 1 ELSE 0 END) AS unassigned_actionable_count,
-        SUM(CASE WHEN status = 'waiting' THEN 1 ELSE 0 END) AS waiting_count
+        SUM(CASE WHEN status = 'waiting' THEN 1 ELSE 0 END) AS waiting_count,
+        SUM(
+          CASE
+            WHEN status = 'waiting'
+              AND scheduled_date IS NOT NULL
+              AND TRIM(scheduled_date) <> ''
+            THEN 1 ELSE 0
+          END
+        ) AS waiting_scheduled_count
       FROM open_tasks
+      GROUP BY project_id
+    ),
+    totals AS (
+      SELECT project_id, COUNT(*) AS total_count
+      FROM tasks
+      WHERE project_id IS NOT NULL
       GROUP BY project_id
     )
     SELECT
-      project_id,
+      p.id AS project_id,
       CASE
-        WHEN unassigned_actionable_count > 0 THEN 'unassigned_actionable'
-        WHEN actionable_count = 0 AND waiting_count = open_count THEN 'only_waiting'
-        WHEN actionable_count = 0 THEN 'no_next_action'
-        WHEN actionable_unblocked_count = 0 THEN 'blocked_dependencies'
+        WHEN COALESCE(tot.total_count, 0) = 0 THEN 'no_next_action'
+        WHEN COALESCE(agg.open_count, 0) = 0 THEN 'completion_review'
+        WHEN agg.unassigned_actionable_count > 0 THEN 'unassigned_actionable'
+        WHEN agg.actionable_count = 0
+          AND agg.waiting_count = agg.open_count
+          AND agg.waiting_scheduled_count > 0 THEN NULL
+        WHEN agg.actionable_count = 0 AND agg.waiting_count = agg.open_count THEN 'only_waiting'
+        WHEN agg.actionable_count = 0 THEN 'no_next_action'
+        WHEN agg.actionable_unblocked_count = 0 THEN 'blocked_dependencies'
         ELSE NULL
       END AS stuck_reason
-    FROM agg
+    FROM projects p
+    LEFT JOIN totals tot ON tot.project_id = p.id
+    LEFT JOIN agg ON agg.project_id = p.id
+    WHERE p.status = 'active'
   `,
   );
 
