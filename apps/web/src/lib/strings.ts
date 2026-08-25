@@ -23,6 +23,13 @@ const extra = {
   members: "Personen",
   continueAs: "Weiter als",
   switchIdentity: "Person wechseln",
+  signInTitle: "Bei Machbar anmelden",
+  signInBody: "Melde dich mit deinem Pocket-ID-Konto an.",
+  signInWithPocketId: "Mit Pocket ID anmelden",
+  logout: "Abmelden",
+  identityManagedByPocketId:
+    "Deine Identität und dein Name werden von Pocket ID verwaltet.",
+  pocketIdManaged: "Pocket ID",
   loading: "Lädt …",
   error: "Etwas ist schiefgelaufen.",
   retry: "Erneut versuchen",

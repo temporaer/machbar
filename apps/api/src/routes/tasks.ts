@@ -63,7 +63,12 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
 
   app.post("/api/tasks", async (request, reply) => {
     const body = parseOrThrow(createTaskSchema, request.body);
-    const task = createTask(db, body);
+    const task = createTask(db, {
+      ...body,
+      ...(request.authMember
+        ? { createdByMemberId: request.authMember.id }
+        : {}),
+    });
     reply.status(201);
     return taskOrThrow(db, task.id);
   });
@@ -73,7 +78,12 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request, reply) => {
       const parentId = parseId(request.params.id);
       const body = parseOrThrow(createChildTaskSchema, request.body);
-      const task = createChildTask(db, parentId, body);
+      const task = createChildTask(db, parentId, {
+        ...body,
+        ...(request.authMember
+          ? { createdByMemberId: request.authMember.id }
+          : {}),
+      });
       reply.status(201);
       return taskOrThrow(db, task.id);
     },

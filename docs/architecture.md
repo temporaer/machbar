@@ -125,6 +125,33 @@ The `BASE_PATH` environment variable (default `/`) tells the server where static
 
 No frontend rebuild is required for a Home Assistant Ingress path.
 
+### OIDC authentication
+
+OIDC is an optional runtime mode configured by issuer, client ID/secret, and
+one explicit public HTTPS origin. All required variables must be present or
+startup fails; with none present, local development retains the browser-local
+member picker.
+
+The Fastify server performs Authorization Code exchange with PKCE, state, and
+nonce. One-time auth flows are stored briefly in `oidc_auth_flows`, with the
+state stored only as a SHA-256 hash. After validating the Pocket ID token and
+UserInfo response, Machbar discards all provider tokens and maps the stable
+`(issuer, sub)` pair in `member_oidc_identities`.
+
+An exact, unlinked member name is adopted on first login; otherwise a member is
+created. Names are synchronized from Pocket ID on later logins, but the subject
+mapping never changes. Collisions fail rather than rebinding a member.
+Assignment-only members without an OIDC identity remain supported.
+
+Machbar creates its own random opaque 30-day session. Only the SHA-256 token
+hash is stored in `auth_sessions`; the raw value exists solely in the
+`__Host-machbar-session` Secure/HttpOnly/SameSite=Lax cookie. Ordinary API
+routes require that session, and unsafe methods additionally require an exact
+same-origin `Origin` header. Health and login bootstrap routes remain public.
+The authenticated member overrides caller-supplied creator/Heute identity
+fields, while normal household owner assignment remains collaborative rather
+than becoming a per-record ACL.
+
 ### Home Assistant Ingress
 
 Home Assistant strips the dynamic Ingress prefix while proxying to the add-on. Machbar therefore listens at `/` internally and uses relative browser URLs.

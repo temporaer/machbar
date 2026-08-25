@@ -30,7 +30,8 @@ function parseAgendaMemberId(query: unknown): number | undefined {
 
 export function registerViewRoutes(app: FastifyInstance, db: Db) {
   app.get("/api/agenda/today", async (request) => {
-    const memberId = parseAgendaMemberId(request.query);
+    const requestedMemberId = parseAgendaMemberId(request.query);
+    const memberId = request.authMember?.id ?? requestedMemberId;
     if (memberId !== undefined) {
       // Throws a German 404 (AppError.notFound) if the member doesn't exist.
       getMemberOrThrow(db, memberId);

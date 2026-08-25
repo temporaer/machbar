@@ -4,16 +4,24 @@ import type { Env } from "./env.js";
 import { AppError } from "./errors.js";
 import { registerRoutes } from "./routes/index.js";
 import { registerStatic } from "./static.js";
+import { registerAuthentication } from "./auth/routes.js";
+import type { OidcProvider } from "./auth/oidcClient.js";
 
 export interface BuildAppOptions {
   db: Db;
   env: Env;
   logger?: boolean;
+  oidcProvider?: OidcProvider;
 }
 
 /** Builds a fully configured Fastify instance. Used by both the production
  * server entrypoint and the integration tests (which pass an in-memory db). */
-export function buildApp({ db, env, logger = false }: BuildAppOptions): FastifyInstance {
+export function buildApp({
+  db,
+  env,
+  logger = false,
+  oidcProvider,
+}: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger });
 
   app.setErrorHandler<FastifyError | AppError>((error, request, reply) => {
@@ -57,6 +65,7 @@ export function buildApp({ db, env, logger = false }: BuildAppOptions): FastifyI
 
   app.get("/api/health", async () => ({ status: "ok" }));
 
+  registerAuthentication(app, db, env, { provider: oidcProvider });
   registerRoutes(app, db);
   registerStatic(app, env);
 

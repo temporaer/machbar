@@ -142,20 +142,27 @@ export function MemberManager() {
                 </form>
               ) : (
                 <>
-                  <span>{member.name}</span>
                   <span className="row">
-                    <button type="button" className="btn btn-sm" onClick={() => startEdit(member)}>
-                      {strings.renameMember}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-danger"
-                      disabled={deletingId === member.id}
-                      onClick={() => void remove(member)}
-                    >
-                      {strings.delete}
-                    </button>
+                    <span>{member.name}</span>
+                    {member.managedByOidc ? (
+                      <span className="badge">{strings.pocketIdManaged}</span>
+                    ) : null}
                   </span>
+                  {!member.managedByOidc ? (
+                    <span className="row">
+                      <button type="button" className="btn btn-sm" onClick={() => startEdit(member)}>
+                        {strings.renameMember}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        disabled={deletingId === member.id}
+                        onClick={() => void remove(member)}
+                      >
+                        {strings.delete}
+                      </button>
+                    </span>
+                  ) : null}
                 </>
               )}
               {rowErrors[member.id] ? (

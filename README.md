@@ -200,6 +200,48 @@ If a reverse proxy preserves a non-root prefix (for example `/tasks/`), set
 routing, so no rebuild is required. Home Assistant strips its Ingress prefix
 before forwarding requests and therefore keeps `BASE_PATH=/`.
 
+### Pocket ID / OpenID Connect
+
+Machbar can require Pocket ID authentication at its direct HTTPS origin. Create
+an OIDC client in Pocket ID with:
+
+- redirect URI: `https://machbar.example.com/api/auth/callback`
+- scopes: `openid profile email`
+- response type: authorization code
+- PKCE: S256
+
+Then configure all required OIDC variables together:
+
+```dotenv
+OIDC_ISSUER_URL=https://pocketid.example.com
+OIDC_CLIENT_ID=replace-with-client-id
+OIDC_CLIENT_SECRET=replace-with-client-secret
+OIDC_PUBLIC_URL=https://machbar.example.com
+OIDC_SESSION_TTL_DAYS=30
+```
+
+With these variables set, every API except health and the login endpoints
+requires a Pocket ID-backed Machbar session. The browser receives only a
+30-day opaque `Secure`, `HttpOnly`, `SameSite=Lax` cookie; provider tokens and
+the client secret remain server-side. Leaving all OIDC variables unset keeps
+the existing local “Wer bist du?” identity flow. A partial configuration is a
+startup error rather than an unauthenticated fallback.
+
+On first login, Machbar links the validated Pocket ID subject to one unlinked
+member with the exact same display name, or creates a member when no exact
+match exists. Later logins synchronize that member's name from Pocket ID.
+OIDC-linked members remain assignment targets but can no longer be renamed or
+deleted inside Machbar. Access to the client should be restricted to the
+desired trusted household users/groups in Pocket ID. Exact-name adoption is a
+one-time migration convenience and assumes those allowed users cannot
+impersonate each other's display names in Pocket ID; the immutable OIDC subject
+is authoritative after linking.
+
+The direct OIDC origin must be HTTPS and must exactly match `OIDC_PUBLIC_URL`.
+OIDC cookies are origin-bound, so a separately hosted Home Assistant Ingress
+origin cannot share this login session; use Machbar's configured direct origin
+when OIDC is enabled.
+
 ---
 
 ## 6. Home Assistant Add-on
@@ -290,6 +332,11 @@ ports:
 | `BASE_PATH` | `/` | URL prefix; set to `/sub/path` for sub-path deployments |
 | `SEED_DATABASE` | `false` | Run `db:seed` automatically on startup when `true` |
 | `NODE_ENV` | `development` | Set to `production` in Docker/deployed environments |
+| `OIDC_ISSUER_URL` | unset | Pocket ID issuer URL; enables OIDC only when all required OIDC variables are present |
+| `OIDC_CLIENT_ID` | unset | Pocket ID client ID |
+| `OIDC_CLIENT_SECRET` | unset | Pocket ID client secret; keep only in runtime secrets / `.env` |
+| `OIDC_PUBLIC_URL` | unset | Exact external HTTPS origin used for callback, cookies, redirects, and origin checks |
+| `OIDC_SESSION_TTL_DAYS` | `30` | Local Machbar session duration, from 1 to 365 days |
 
 Copy `.env.example` to `.env` for local development.
 
@@ -310,6 +357,9 @@ Migrations are idempotent — running them more than once is safe.
 > **`0002_project_acceptance_criteria_task_size`** rebuilds the `projects` table: it drops the free-text `description` column (copying every non-empty description into the story's first acceptance criterion), defaults `status` to `backlog`, and adds `tasks.size`. No projects, tasks, tags, or dependencies are lost.
 >
 > **`0003_colored_default_tags`** adds a stable colour to every existing tag and inserts the standard household/person tags (`Lars`, `Lea`, `Jonas`, `Hannes`, `Sarah`, `Schule`, `Kita`, `Urlaub`, `Haus`, `Garten`) without replacing existing data.
+>
+> **`0004_oidc_authentication`** adds separate identity, one-time login-flow,
+> and hashed-session tables. It does not rebuild `members`, projects, or tasks.
 
 To rehearse a migration against production data, always work on a **copy**:
 

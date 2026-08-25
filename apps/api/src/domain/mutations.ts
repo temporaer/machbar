@@ -23,7 +23,23 @@ function nowIso(): string {
 // ---------------------------------------------------------------------------
 
 export function listMembers(db: Db) {
-  return db.select().from(schema.members).all();
+  return db
+    .select({
+      id: schema.members.id,
+      name: schema.members.name,
+      color: schema.members.color,
+      oidcMemberId: schema.memberOidcIdentities.memberId,
+    })
+    .from(schema.members)
+    .leftJoin(
+      schema.memberOidcIdentities,
+      eq(schema.members.id, schema.memberOidcIdentities.memberId),
+    )
+    .all()
+    .map(({ oidcMemberId, ...member }) => ({
+      ...member,
+      managedByOidc: oidcMemberId !== null,
+    }));
 }
 
 export function getMemberOrThrow(db: Db, id: number) {
@@ -40,6 +56,19 @@ function normalizeMemberName(name: string): string {
     throw AppError.badRequest("Der Name darf nicht leer sein.");
   }
   return trimmed;
+}
+
+function assertMemberNotOidcManaged(db: Db, id: number): void {
+  const identity = db
+    .select({ memberId: schema.memberOidcIdentities.memberId })
+    .from(schema.memberOidcIdentities)
+    .where(eq(schema.memberOidcIdentities.memberId, id))
+    .get();
+  if (identity) {
+    throw AppError.conflict(
+      "Dieses Mitglied wird von Pocket ID verwaltet und kann hier nicht umbenannt oder gelöscht werden.",
+    );
+  }
 }
 
 export function createMember(db: Db, name: string) {
@@ -68,6 +97,7 @@ export function renameMember(db: Db, id: number, name: string) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     getMemberOrThrow(txDb, id);
+    assertMemberNotOidcManaged(txDb, id);
     const existing = tx
       .select()
       .from(schema.members)
@@ -99,6 +129,7 @@ export function deleteMember(db: Db, id: number) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     getMemberOrThrow(txDb, id);
+    assertMemberNotOidcManaged(txDb, id);
 
     const now = nowIso();
     tx.update(schema.projects)

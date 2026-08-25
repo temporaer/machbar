@@ -29,6 +29,13 @@
       "when": 1787661787488,
       "tag": "0003_colored_default_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787666558280,
+      "tag": "0004_oidc_authentication",
+      "breakpoints": true
     }
   ]
 }

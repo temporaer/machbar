@@ -1,5 +1,6 @@
 import type {
   Agenda,
+  AuthStatus,
   InheritanceMode,
   Member,
   Project,
@@ -57,6 +58,9 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new Event("machbar:authentication-required"));
+    }
     let message = res.statusText;
     let code: string | undefined;
     let details: unknown;
@@ -234,6 +238,9 @@ export type AgendaResponse = Agenda & {
 };
 
 export const api = {
+  getAuthStatus: () => request<AuthStatus>("/auth/status"),
+  logout: () => request<void>("/auth/logout", { method: "POST" }),
+
   getMembers: () => request<Member[]>("/members"),
   createMember: (input: CreateMemberInput) =>
     request<Member>("/members", { method: "POST", body: JSON.stringify(input) }),

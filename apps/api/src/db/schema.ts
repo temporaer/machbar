@@ -18,6 +18,58 @@ export const members = sqliteTable("members", {
   color: text("color").notNull(),
 });
 
+export const memberOidcIdentities = sqliteTable(
+  "member_oidc_identities",
+  {
+    issuer: text("issuer").notNull(),
+    subject: text("subject").notNull(),
+    memberId: integer("member_id")
+      .notNull()
+      .references(() => members.id, { onDelete: "cascade" }),
+    email: text("email"),
+    preferredUsername: text("preferred_username"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (t) => [
+    primaryKey({ columns: [t.issuer, t.subject] }),
+    unique("member_oidc_identities_member_unique").on(t.memberId),
+  ],
+);
+
+export const oidcAuthFlows = sqliteTable("oidc_auth_flows", {
+  stateHash: text("state_hash").primaryKey(),
+  nonce: text("nonce").notNull(),
+  pkceVerifier: text("pkce_verifier").notNull(),
+  returnTo: text("return_to").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+});
+
+export const authSessions = sqliteTable(
+  "auth_sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    memberId: integer("member_id")
+      .notNull()
+      .references(() => members.id, { onDelete: "cascade" }),
+    expiresAt: text("expires_at").notNull(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    lastSeenAt: text("last_seen_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (t) => [index("auth_sessions_member_idx").on(t.memberId)],
+);
+
 export const tags = sqliteTable("tags", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull().unique(),

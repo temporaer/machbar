@@ -6,6 +6,8 @@ import { openDb, type DbHandle } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
 import { seedDatabase } from "../src/db/seed.js";
 import type { Env } from "../src/env.js";
+import type { OidcConfig } from "../src/env.js";
+import type { OidcProvider } from "../src/auth/oidcClient.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -15,7 +17,11 @@ export interface TestContext {
 }
 
 /** Builds a fresh in-memory database + Fastify app for a single test file. */
-export function createTestContext(options?: { seed?: boolean }): TestContext {
+export function createTestContext(options?: {
+  seed?: boolean;
+  oidc?: OidcConfig;
+  oidcProvider?: OidcProvider;
+}): TestContext {
   const handle = openDb(":memory:");
   runMigrations(handle.db);
   if (options?.seed) {
@@ -30,8 +36,14 @@ export function createTestContext(options?: { seed?: boolean }): TestContext {
     basePath: "/",
     seedDatabase: false,
     webDistDir: path.join(__dirname, "__no_web_dist__"),
+    oidc: options?.oidc ?? null,
   };
-  const app = buildApp({ db: handle.db, env, logger: false });
+  const app = buildApp({
+    db: handle.db,
+    env,
+    logger: false,
+    oidcProvider: options?.oidcProvider,
+  });
   return { app, handle };
 }
 

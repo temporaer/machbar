@@ -106,4 +106,20 @@ describe("MemberManager", () => {
     expect(mockedApi.deleteMember).not.toHaveBeenCalled();
     expect(screen.getByText("Alex")).toBeInTheDocument();
   });
+
+  it("kennzeichnet Pocket-ID-Personen und bietet weder Umbenennen noch Löschen an", async () => {
+    mockedApi.getMembers.mockResolvedValue([
+      makeMember({ id: 12, name: "Hannes", managedByOidc: true }),
+    ]);
+    renderWithProviders(<MemberManager />);
+
+    const row = (await screen.findByText("Hannes")).closest("li")!;
+    expect(within(row).getByText("Pocket ID")).toBeInTheDocument();
+    expect(
+      within(row).queryByRole("button", { name: "Umbenennen" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(row).queryByRole("button", { name: "Löschen" }),
+    ).not.toBeInTheDocument();
+  });
 });

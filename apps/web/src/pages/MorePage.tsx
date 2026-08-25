@@ -6,10 +6,13 @@ import { IdentitySelector } from "../components/IdentitySelector";
 import { MemberManager } from "../components/MemberManager";
 import { TagManager } from "../components/TagManager";
 import { fallbackColor, initials } from "../lib/format";
+import { useState } from "react";
 
 export function MorePage() {
-  const { currentMember } = useIdentity();
+  const { currentMember, authEnabled, logout } = useIdentity();
   const { primarySwipeAction, setPrimarySwipeAction } = useSwipeSettings();
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
 
   return (
     <div>
@@ -81,8 +84,37 @@ export function MorePage() {
               </span>
             ) : null}
           </div>
-          <p className="text-muted">{strings.switchIdentity}</p>
-          <IdentitySelector />
+          {authEnabled ? (
+            <>
+              <p className="text-muted">{strings.identityManagedByPocketId}</p>
+              <button
+                type="button"
+                className="btn"
+                disabled={loggingOut}
+                onClick={() => {
+                  setLoggingOut(true);
+                  setLogoutError(null);
+                  void logout()
+                    .catch((cause: unknown) =>
+                      setLogoutError(
+                        cause instanceof Error ? cause.message : strings.error,
+                      ),
+                    )
+                    .finally(() => setLoggingOut(false));
+                }}
+              >
+                {strings.logout}
+              </button>
+              {logoutError ? (
+                <p className="text-muted" role="alert">{logoutError}</p>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <p className="text-muted">{strings.switchIdentity}</p>
+              <IdentitySelector />
+            </>
+          )}
         </div>
 
         <div className="card">

@@ -13,6 +13,11 @@ services:
       BASE_PATH: /
       SEED_DATABASE: "false"
       NODE_ENV: production
+      OIDC_ISSUER_URL: "${OIDC_ISSUER_URL:-}"
+      OIDC_CLIENT_ID: "${OIDC_CLIENT_ID:-}"
+      OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET:-}"
+      OIDC_PUBLIC_URL: "${OIDC_PUBLIC_URL:-}"
+      OIDC_SESSION_TTL_DAYS: "${OIDC_SESSION_TTL_DAYS:-30}"
     volumes:
       - machbar-data:/data
     healthcheck:

@@ -25,6 +25,13 @@ export interface Member {
   id: number;
   name: string;
   color: string;
+  managedByOidc?: boolean;
+}
+
+export interface AuthStatus {
+  enabled: boolean;
+  authenticated: boolean;
+  member: Member | null;
 }
 
 export interface Tag {
