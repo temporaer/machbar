@@ -29,7 +29,13 @@ import type { Db } from "../db/client.js";
  *      parked rather than forgotten. The date is not compared against
  *      today: past, present and future revisits all count, because the
  *      point is that a human already decided when to look again.
- *   4. otherwise, the original open-task-based rules apply unchanged:
+ *   4. actionable work whose unresolved dependency graph consists only of
+ *      clarified actionable links ending in scheduled, clarified waiting
+ *      tasks with no unresolved dependencies of their own is also healthy.
+ *      Every other open task in the project must be
+ *      either actionable or a scheduled waiting task; this prevents an
+ *      unrelated someday/captured/unscheduled task from being hidden.
+ *   5. otherwise, the original open-task-based rules apply unchanged:
  *      `unassigned_actionable` > `only_waiting` / `no_next_action` >
  *      `blocked_dependencies` > healthy (absent from the map).
  *
@@ -82,6 +88,26 @@ export function getStuckReasonsByProject(
       JOIN owner_eff oe ON oe.task_id = t.id
       WHERE t.project_id IS NOT NULL AND t.status NOT IN ('done', 'cancelled')
     ),
+    dependency_walk(project_id, task_id) AS (
+      SELECT ot.project_id, dep.id
+      FROM open_tasks ot
+      JOIN task_dependencies td ON td.task_id = ot.id
+      JOIN tasks dep ON dep.id = td.depends_on_task_id
+      WHERE ot.needs_clarification = 0
+        AND ot.status = 'actionable'
+        AND dep.status NOT IN ('done', 'cancelled')
+
+      UNION
+
+      SELECT dw.project_id, dep.id
+      FROM dependency_walk dw
+      JOIN tasks current ON current.id = dw.task_id
+      JOIN task_dependencies td ON td.task_id = current.id
+      JOIN tasks dep ON dep.id = td.depends_on_task_id
+      WHERE current.needs_clarification = 0
+        AND current.status = 'actionable'
+        AND dep.status NOT IN ('done', 'cancelled')
+    ),
     agg AS (
       SELECT
         project_id,
@@ -90,6 +116,20 @@ export function getStuckReasonsByProject(
         SUM(CASE WHEN needs_clarification = 0 AND status = 'actionable' AND blocked = 0 THEN 1 ELSE 0 END) AS actionable_unblocked_count,
         SUM(CASE WHEN needs_clarification = 0 AND status = 'actionable' AND owner_id IS NULL THEN 1 ELSE 0 END) AS unassigned_actionable_count,
         SUM(CASE WHEN needs_clarification = 0 AND status = 'waiting' THEN 1 ELSE 0 END) AS waiting_count,
+        SUM(
+          CASE
+            WHEN needs_clarification = 0
+              AND (
+                status = 'actionable'
+                OR (
+                  status = 'waiting'
+                  AND scheduled_date IS NOT NULL
+                  AND TRIM(scheduled_date) <> ''
+                )
+              )
+            THEN 0 ELSE 1
+          END
+        ) AS parking_disqualifier_count,
         SUM(
           CASE
             WHEN status = 'waiting'
@@ -119,6 +159,41 @@ export function getStuckReasonsByProject(
           AND agg.waiting_scheduled_count > 0 THEN NULL
         WHEN agg.actionable_count = 0 AND agg.waiting_count = agg.open_count THEN 'only_waiting'
         WHEN agg.actionable_count = 0 THEN 'no_next_action'
+        WHEN agg.actionable_unblocked_count = 0
+          AND agg.parking_disqualifier_count = 0
+          AND NOT EXISTS (
+            SELECT 1
+            FROM dependency_walk dw
+            JOIN tasks blocker ON blocker.id = dw.task_id
+            WHERE dw.project_id = p.id
+              AND NOT (
+                (
+                  blocker.needs_clarification = 0
+                  AND blocker.status = 'waiting'
+                  AND blocker.scheduled_date IS NOT NULL
+                  AND TRIM(blocker.scheduled_date) <> ''
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM task_dependencies waiting_td
+                    JOIN tasks waiting_dep
+                      ON waiting_dep.id = waiting_td.depends_on_task_id
+                    WHERE waiting_td.task_id = blocker.id
+                      AND waiting_dep.status NOT IN ('done', 'cancelled')
+                  )
+                )
+                OR (
+                  blocker.needs_clarification = 0
+                  AND blocker.status = 'actionable'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM task_dependencies next_td
+                    JOIN tasks next_dep ON next_dep.id = next_td.depends_on_task_id
+                    WHERE next_td.task_id = blocker.id
+                      AND next_dep.status NOT IN ('done', 'cancelled')
+                  )
+                )
+              )
+          ) THEN NULL
         WHEN agg.actionable_unblocked_count = 0 THEN 'blocked_dependencies'
         ELSE NULL
       END AS stuck_reason

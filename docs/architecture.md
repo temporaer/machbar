@@ -227,11 +227,12 @@ Legacy rows migrated from before the invariant may still be `active` without a d
 | `completion_review` | Project has tasks but **zero open** ones — everything is `done`/`cancelled`, so the story is ready to be completed or extended |
 | `unassigned_actionable` | Has actionable tasks with no effective owner |
 | *(healthy)* | Every open task is `waiting` **and at least one carries a `scheduledDate`** — a scheduled revisit ("Wiedervorlage") is an explicit decision about when to look again, so the story is parked, not stuck. The date is **not** compared against today: past, present and future revisits all count |
+| *(healthy)* | Every actionable task is dependency-blocked, and every unresolved dependency path consists only of clarified actionable links ending in clarified waiting tasks with a non-blank `scheduledDate` and no unresolved dependencies of their own. Other open tasks in the project may only be actionable or scheduled waiting tasks |
 | `only_waiting` | Every open task is `waiting` and **none** has a `scheduledDate` |
 | `no_next_action` | No clarified actionable task, including projects whose open work still needs clarification, and not the all-waiting case above |
 | `blocked_dependencies` | Every actionable task is blocked by an unresolved dependency |
 
-The healthy-revisit rule only exempts the all-waiting case. A scheduled waiting task never masks a higher- or lower-priority reason: mixed open states still yield `unassigned_actionable`, `no_next_action` or `blocked_dependencies` as before, and once the scheduled task closes, `completion_review` takes over.
+The dependency-parking rule also covers direct and transitive scheduled blockers, but is deliberately all-or-nothing. An unassigned actionable task retains its higher-priority diagnosis; an unscheduled or captured blocker, a scheduled waiting task that is itself blocked, a dependency chain ending in other work, or unrelated captured/someday/unscheduled work keeps the project stuck. Once all scheduled waiting tasks close, normal next-action or completion-review semantics take over.
 
 ---
 

@@ -579,6 +579,182 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(reasons.get(mixedUnassigned.id)).toBe("unassigned_actionable");
     });
 
+    it("parks actionable work blocked directly or transitively only by scheduled waiting tasks", () => {
+      const owner = createMember("Geplant blockiert");
+      const project = createProject(handle.db, {
+        title: "Geplant geparkt",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const scheduled = createTask(handle.db, {
+        projectId: project.id,
+        title: "Terminierter Blockierer",
+        status: "waiting",
+        scheduledDate: "2026-10-15",
+      });
+      const intermediate = createTask(handle.db, {
+        projectId: project.id,
+        title: "Zwischenschritt",
+        status: "actionable",
+      });
+      const direct = createTask(handle.db, {
+        projectId: project.id,
+        title: "Direkt blockiert",
+        status: "actionable",
+      });
+      const transitive = createTask(handle.db, {
+        projectId: project.id,
+        title: "Transitiv blockiert",
+        status: "actionable",
+      });
+      addDependency(handle.db, intermediate.id, scheduled.id);
+      addDependency(handle.db, direct.id, scheduled.id);
+      addDependency(handle.db, transitive.id, intermediate.id);
+
+      expect(getStuckReasonsByProject(handle.db).has(project.id)).toBe(false);
+    });
+
+    it("does not park mixed, unscheduled, captured, or unassigned blocked work", () => {
+      const owner = createMember("Nicht geparkt");
+      const makeProject = (title: string) =>
+        createProject(handle.db, { title, status: "active", ownerMemberId: owner.id });
+      const makeAction = (projectId: number, title: string) =>
+        createTask(handle.db, { projectId, title, status: "actionable" });
+
+      const unscheduledProject = makeProject("Unterminierter Blockierer");
+      const unscheduled = createTask(handle.db, {
+        projectId: unscheduledProject.id,
+        title: "Warten ohne Termin",
+        status: "waiting",
+      });
+      const unscheduledAction = makeAction(unscheduledProject.id, "Blockiert");
+      addDependency(handle.db, unscheduledAction.id, unscheduled.id);
+
+      const capturedProject = makeProject("Erfasster Blockierer");
+      const captured = createTask(handle.db, {
+        projectId: capturedProject.id,
+        title: "Erfasst und terminiert",
+        status: "waiting",
+        scheduledDate: "2026-10-15",
+      });
+      handle.db
+        .update(schema.tasks)
+        .set({ needsClarification: true })
+        .where(eq(schema.tasks.id, captured.id))
+        .run();
+      const capturedAction = makeAction(capturedProject.id, "Blockiert");
+      addDependency(handle.db, capturedAction.id, captured.id);
+
+      const mixedProject = makeProject("Unabhängige offene Arbeit");
+      const scheduled = createTask(handle.db, {
+        projectId: mixedProject.id,
+        title: "Terminiert",
+        status: "waiting",
+        scheduledDate: "2026-10-15",
+      });
+      const mixedAction = makeAction(mixedProject.id, "Blockiert");
+      addDependency(handle.db, mixedAction.id, scheduled.id);
+      createTask(handle.db, {
+        projectId: mixedProject.id,
+        title: "Unabhängig irgendwann",
+        status: "someday",
+      });
+
+      const unassignedProject = makeProject("Unzugewiesene Arbeit");
+      const assignedScheduled = createTask(handle.db, {
+        projectId: unassignedProject.id,
+        title: "Terminiert",
+        status: "waiting",
+        scheduledDate: "2026-10-15",
+      });
+      const unassignedAction = createTask(handle.db, {
+        projectId: unassignedProject.id,
+        title: "Unzugewiesen blockiert",
+        status: "actionable",
+        ownerInheritanceMode: "none",
+      });
+      addDependency(handle.db, unassignedAction.id, assignedScheduled.id);
+
+      const reasons = getStuckReasonsByProject(handle.db);
+      expect(reasons.get(unscheduledProject.id)).toBe("blocked_dependencies");
+      expect(reasons.get(capturedProject.id)).toBe("blocked_dependencies");
+      expect(reasons.get(mixedProject.id)).toBe("blocked_dependencies");
+      expect(reasons.get(unassignedProject.id)).toBe("unassigned_actionable");
+    });
+
+    it("does not park a scheduled waiting blocker that has unresolved dependencies of its own", () => {
+      const owner = createMember("Verschachtelt blockiert");
+      const projects: number[] = [];
+
+      const makeCase = (
+        title: string,
+        childStatus: "waiting" | "someday" | "actionable",
+        captured = false,
+      ) => {
+        const project = createProject(handle.db, {
+          title,
+          status: "active",
+          ownerMemberId: owner.id,
+        });
+        const scheduledWaiting = createTask(handle.db, {
+          projectId: project.id,
+          title: `${title} Wiedervorlage`,
+          status: "waiting",
+          scheduledDate: "2026-10-15",
+        });
+        const externalProject = createProject(handle.db, {
+          title: `${title} externe Abhängigkeit`,
+          status: "backlog",
+          ownerMemberId: owner.id,
+        });
+        const child = createTask(handle.db, {
+          projectId: externalProject.id,
+          title: `${title} Unterblockierer`,
+          status: childStatus,
+        });
+        if (captured) {
+          handle.db
+            .update(schema.tasks)
+            .set({ needsClarification: true })
+            .where(eq(schema.tasks.id, child.id))
+            .run();
+        }
+        const action = createTask(handle.db, {
+          projectId: project.id,
+          title: `${title} Aktion`,
+          status: "actionable",
+        });
+        addDependency(handle.db, scheduledWaiting.id, child.id);
+        addDependency(handle.db, action.id, scheduledWaiting.id);
+        projects.push(project.id);
+        return { project, scheduledWaiting };
+      };
+
+      makeCase("Unterminiert unter Wiedervorlage", "waiting");
+      makeCase("Erfasst unter Wiedervorlage", "waiting", true);
+      makeCase("Irgendwann unter Wiedervorlage", "someday");
+      makeCase("Aktion unter Wiedervorlage", "actionable");
+
+      const branched = makeCase("Verzweigte Wiedervorlage", "waiting");
+      const validBranchProject = createProject(handle.db, {
+        title: "Terminierter externer Zweig",
+        status: "backlog",
+        ownerMemberId: owner.id,
+      });
+      const validBranch = createTask(handle.db, {
+        projectId: validBranchProject.id,
+        title: "Terminierter zweiter Zweig",
+        status: "waiting",
+        scheduledDate: "2026-10-20",
+      });
+      addDependency(handle.db, branched.scheduledWaiting.id, validBranch.id);
+
+      const reasons = getStuckReasonsByProject(handle.db);
+      for (const projectId of projects) {
+        expect(reasons.get(projectId)).toBe("blocked_dependencies");
+      }
+    });
+
     it("keeps completion_review once the scheduled waiting task is closed", () => {
       const owner = createMember("Abschluss-Zuständige");
 

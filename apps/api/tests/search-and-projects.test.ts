@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { addDependency, createProject, createTask } from "../src/domain/mutations.js";
+import * as schema from "../src/db/schema.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 describe("search/filter and project CRUD/archive", () => {
@@ -122,5 +124,61 @@ describe("search/filter and project CRUD/archive", () => {
     });
 
     expect(await stuckTitles()).toContain("Wartungsplan Auto:only_waiting");
+  });
+
+  it("omits only exclusively scheduled dependency chains from /api/projects/stuck", async () => {
+    const owner = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "API-Parkzuständige", color: "#123456" })
+      .returning()
+      .get();
+    const parked = createProject(ctx.handle.db, {
+      title: "API geplant geparkt",
+      status: "active",
+      ownerMemberId: owner.id,
+    });
+    const blocker = createTask(ctx.handle.db, {
+      projectId: parked.id,
+      title: "API Wiedervorlage",
+      status: "waiting",
+      scheduledDate: "2026-11-01",
+    });
+    const action = createTask(ctx.handle.db, {
+      projectId: parked.id,
+      title: "API blockierte Aktion",
+      status: "actionable",
+    });
+    addDependency(ctx.handle.db, action.id, blocker.id);
+
+    const mixed = createProject(ctx.handle.db, {
+      title: "API gemischt blockiert",
+      status: "active",
+      ownerMemberId: owner.id,
+    });
+    const mixedBlocker = createTask(ctx.handle.db, {
+      projectId: mixed.id,
+      title: "API unterminierter Blockierer",
+      status: "waiting",
+    });
+    const mixedAction = createTask(ctx.handle.db, {
+      projectId: mixed.id,
+      title: "API blockiert",
+      status: "actionable",
+    });
+    addDependency(ctx.handle.db, mixedAction.id, mixedBlocker.id);
+
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: "/api/projects/stuck",
+    });
+    expect(response.statusCode).toBe(200);
+    const stuck = response.json() as Array<{ id: number; stuckReason: string }>;
+    expect(stuck.some((project) => project.id === parked.id)).toBe(false);
+    expect(stuck).toContainEqual(
+      expect.objectContaining({
+        id: mixed.id,
+        stuckReason: "blocked_dependencies",
+      }),
+    );
   });
 });
