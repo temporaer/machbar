@@ -18,6 +18,7 @@ import {
   type TaskQuickAction,
 } from "./TaskQuickActionSheet";
 import { InlineChildComposer } from "./InlineChildComposer";
+import { TaskActionIcon } from "./TaskActionIcon";
 
 const SWIPE_THRESHOLD = 72;
 const LONG_PRESS_MS = 480;
@@ -418,51 +419,36 @@ export function TaskRow({
 
       {chipsOpen ? (
         <div className="task-row-chips" role="group" aria-label={strings.moreActions}>
-          <button type="button" className="btn btn-sm" onClick={() => openQuickAction("owner")}>
-            {strings.assign}
-          </button>
-          <button type="button" className="btn btn-sm" onClick={() => openQuickAction("schedule")}>
-            {strings.schedule}
-          </button>
-          <button type="button" className="btn btn-sm" onClick={() => openQuickAction("notes")}>
-            {strings.notes}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            title={strings.addChild}
+          <TaskActionIcon kind="owner" label={strings.assign} onClick={() => openQuickAction("owner")} />
+          <TaskActionIcon kind="schedule" label={strings.schedule} onClick={() => openQuickAction("schedule")} />
+          <TaskActionIcon kind="notes" label={strings.notes} onClick={() => openQuickAction("notes")} />
+          <TaskActionIcon
+            kind="child"
+            label={strings.addChild}
             disabled={busyId === task.id}
             onClick={openChildComposer}
-          >
-            <span aria-hidden="true">＋ </span>
-            {strings.addChild}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
+          />
+          <TaskActionIcon
+            kind="project"
+            label={strings.toProject}
             disabled={!task.projectId}
-            aria-disabled={!task.projectId}
             title={task.projectId ? undefined : strings.noProjectChipHint}
             onClick={goToProjectChip}
-          >
-            {strings.toProject}
-          </button>
+          />
           {isDone || isCancelled ? (
             // A finished/cancelled task has no "waiting" state to toggle —
             // offer the real reopen flow instead of letting this chip fall
             // through to a generic status update (which wouldn't clear
             // completedAt/cancelledAt and would leave them stale).
-            <button type="button" className="btn btn-sm" onClick={reopenChip}>
-              {strings.reopen}
-            </button>
+            <TaskActionIcon kind="reopen" label={strings.reopen} onClick={reopenChip} />
           ) : (
-            <button type="button" className="btn btn-sm" onClick={toggleWaitingChip}>
-              {task.status === "waiting" ? strings.makeActionable : strings.waiting}
-            </button>
+            <TaskActionIcon
+              kind={task.status === "waiting" ? "actionable" : "waiting"}
+              label={task.status === "waiting" ? strings.makeActionable : strings.waiting}
+              onClick={toggleWaitingChip}
+            />
           )}
-          <button type="button" className="btn btn-sm" onClick={() => onOpenDetail(task.id)}>
-            {strings.more}
-          </button>
+          <TaskActionIcon kind="more" label={strings.more} onClick={() => onOpenDetail(task.id)} />
         </div>
       ) : null}
 

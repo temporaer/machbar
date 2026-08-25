@@ -162,6 +162,23 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     expect(screen.getByRole("button", { name: "Zuweisen" })).toBeInTheDocument();
   });
+
+  it("renders task actions as compact SVG buttons rather than visible text", async () => {
+    const task = makeTask({ id: 10, title: "Kompakte Aktionen", status: "actionable", projectId: 2 });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Kompakte Aktionen");
+
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+
+    for (const name of ["Zuweisen", "Planen", "Notizen", "Teilaufgabe hinzufügen", "Zum Projekt", "Wartet", "Mehr"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveClass("task-row-chip-icon");
+      expect(button.textContent).toBe("");
+      const glyph = button.querySelector("svg");
+      expect(glyph).toHaveAttribute("aria-hidden", "true");
+      expect(glyph).toHaveAttribute("focusable", "false");
+    }
+  });
 });
 
 describe("TaskRow – action chips use focused quick-edit flows", () => {
