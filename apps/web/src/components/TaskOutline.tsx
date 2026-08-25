@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Task } from "@machbar/shared";
 import { strings } from "../lib/strings";
-import { sortByPosition } from "../lib/taskHelpers";
+import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useSwipeSettings } from "../lib/swipeSettings";
 import { TaskRow } from "./TaskRow";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
@@ -15,14 +16,37 @@ export function TaskOutline({ tasks, emptyMessage }: { tasks: Task[]; emptyMessa
   const [movePrompt, setMovePrompt] = useState<{ task: Task; mode: MoveMode } | null>(null);
   const taskActions = useTaskActions();
   const { open } = useTaskDetail();
-  const roots = sortByPosition(tasks);
+  const { primarySwipeAction } = useSwipeSettings();
+
+  // Root-level rows that just transitioned may no longer be present in
+  // `tasks` once the compiled view (Heute/Eingang/Suche/…) refetches — see
+  // `useTaskActions`'s retention window. Re-insert them (with their
+  // optimistic status) at the end so the row keeps rendering instead of
+  // disappearing the instant the underlying list updates.
+  //
+  // `presentIds` must cover the *whole* tree (every nested descendant), not
+  // just root ids: a retained task that is a nested child stays nested
+  // inside its still-present parent's `children` array and is rendered from
+  // there. Checking only root ids would never find it there, so it would
+  // wrongly get appended a second time as a duplicate top-level row on every
+  // render while retained.
+  const roots = useMemo(() => {
+    const sorted = sortByPosition(tasks);
+    const presentIds = new Set(flattenTasks(sorted).map((t) => t.id));
+    const stillRetained = [...taskActions.retained.values()].filter((t) => !presentIds.has(t.id));
+    return [...sorted, ...stillRetained];
+  }, [tasks, taskActions.retained]);
 
   if (roots.length === 0) return <EmptyState message={emptyMessage} />;
 
   return (
     <div>
       <div className="row-between" style={{ marginBottom: 8 }}>
-        <span className="text-muted">{organizeMode ? strings.longPressHint : strings.swipeHintComplete}</span>
+        <span className="text-muted">
+          {organizeMode
+            ? strings.longPressHint
+            : `${strings.primarySwipeActionLabels[primarySwipeAction]} · ${strings.swipeHintChips}`}
+        </span>
         <button type="button" className="btn btn-sm" onClick={() => setOrganizeMode((m) => !m)} aria-pressed={organizeMode}>
           {organizeMode ? strings.exitOrganizeMode : strings.organize}
         </button>

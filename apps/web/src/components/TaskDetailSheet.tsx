@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { InheritanceMode, Task } from "@machbar/shared";
 import { inheritanceModes, taskStatuses } from "@machbar/shared";
 import { api } from "../lib/api";
@@ -7,6 +7,7 @@ import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import type { TaskDetailFocusField } from "../lib/taskDetailContext";
 import { strings, taskStatusLabels } from "../lib/strings";
 import { formatDateTime } from "../lib/format";
 import { sortByPosition } from "../lib/taskHelpers";
@@ -50,7 +51,7 @@ function InheritanceControl({
  * exclusion, dependencies, subtasks and the organize-mode move actions.
  */
 export function TaskDetailSheet() {
-  const { openTaskId, queueActive, open, advanceQueue, close } = useTaskDetail();
+  const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
@@ -61,6 +62,9 @@ export function TaskDetailSheet() {
   const [notesDraft, setNotesDraft] = useState("");
   const [contextDraft, setContextDraft] = useState("");
   const [waitingForDraft, setWaitingForDraft] = useState("");
+  const ownerFieldRef = useRef<HTMLDivElement>(null);
+  const scheduleFieldRef = useRef<HTMLDivElement>(null);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
 
   const {
     data: task,
@@ -78,6 +82,28 @@ export function TaskDetailSheet() {
       setWaitingForDraft(task.waitingFor ?? "");
     }
   }, [task]);
+
+  // Chip-driven opens (Zuweisen/Planen/Notizen) land the user directly on the
+  // relevant field of this same edit flow instead of just the sheet's top.
+  useEffect(() => {
+    if (!task || !focusField) return;
+    const containers: Record<TaskDetailFocusField, HTMLElement | null> = {
+      owner: ownerFieldRef.current,
+      schedule: scheduleFieldRef.current,
+      notes: notesRef.current,
+    };
+    const container = containers[focusField];
+    if (container) {
+      if (typeof container.scrollIntoView === "function") {
+        container.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+      const focusable = container.matches("input, select, textarea, button")
+        ? container
+        : container.querySelector<HTMLElement>("input, select, textarea, button");
+      focusable?.focus();
+    }
+    clearFocusField();
+  }, [task, focusField, clearFocusField]);
 
   const inheritedTags = useMemo(() => {
     if (!task) return [];
@@ -173,7 +199,7 @@ export function TaskDetailSheet() {
             </div>
           ) : null}
 
-          <div className="field">
+          <div className="field" ref={ownerFieldRef}>
             <label>{strings.owner}</label>
             <InheritanceControl
               mode={task.ownerInheritanceMode}
@@ -230,7 +256,7 @@ export function TaskDetailSheet() {
                 onChange={(e) => void patch({ dueDate: e.target.value || null })}
               />
             </div>
-            <div className="field" style={{ flex: 1 }}>
+            <div className="field" style={{ flex: 1 }} ref={scheduleFieldRef}>
               <label htmlFor="task-scheduled">{strings.scheduled}</label>
               <input
                 id="task-scheduled"
@@ -315,7 +341,13 @@ export function TaskDetailSheet() {
 
           <div className="field">
             <label htmlFor="task-notes">{strings.notes}</label>
-            <textarea id="task-notes" value={notesDraft} onChange={(e) => setNotesDraft(e.target.value)} onBlur={saveTextFields} />
+            <textarea
+              id="task-notes"
+              ref={notesRef}
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              onBlur={saveTextFields}
+            />
           </div>
 
           <button type="button" className="btn btn-block" onClick={saveTextFields}>

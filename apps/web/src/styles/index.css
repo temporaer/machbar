@@ -453,6 +453,18 @@ a {
   background: var(--color-surface-alt);
 }
 
+/*
+ * A recently completed/cancelled/transitioned row keeps rendering for a
+ * few seconds (see `useTaskActions`'s retention window) instead of
+ * disappearing the instant the compiled view refetches. This muted look
+ * signals "about to go away" independent of whether the new status is
+ * done/cancelled (crossed out via `.task-row-title.done/.cancelled` below)
+ * or a non-terminal one like waiting/someday.
+ */
+.task-row-content.retained {
+  opacity: 0.55;
+}
+
 .task-row-checkbox {
   width: 24px;
   height: 24px;
@@ -467,6 +479,18 @@ a {
   color: transparent;
 }
 
+/*
+ * Coarse pointers (touch) get the checkbox-style complete control hidden,
+ * since the primary swipe direction and the detail sheet's explicit
+ * Erledigen/Wieder-öffnen button (opened by tapping the row) cover that
+ * role there without requiring a gesture. Mouse/keyboard users keep it.
+ */
+@media (pointer: coarse) {
+  .task-row-checkbox {
+    display: none;
+  }
+}
+
 .task-row-checkbox.done {
   background: var(--color-success);
   border-color: var(--color-success);
@@ -477,6 +501,39 @@ a {
   background: var(--color-text-muted);
   border-color: var(--color-text-muted);
   color: #fff;
+}
+
+.task-row-kebab {
+  border: none;
+  background: transparent;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.task-row-kebab:hover {
+  background: var(--color-surface-alt);
+}
+
+.task-row-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 8px 8px 44px;
+}
+
+.task-row-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 8px 8px 44px;
+  font-size: 0.78rem;
+  color: var(--color-danger);
 }
 
 .task-row-main {

@@ -1,4 +1,5 @@
 import { de, taskStatusLabels, stuckReasonLabels } from "@machbar/shared";
+import type { PrimarySwipeAction } from "./swipeSettings";
 
 /**
  * Every visible string in the app must come from here (or from the shared
@@ -128,6 +129,19 @@ const extra = {
   renameMember: "Umbenennen",
   memberDeleteConfirm: "Person endgültig löschen?",
   noMembers: "Noch keine Personen angelegt.",
+  swipeSettingTitle: "Wischgeste",
+  swipeSettingHint:
+    "Bestimmt, was ein Wisch nach rechts in Aufgabenlisten auslöst. Nach links wischen zeigt immer Zuweisen, Planen, Notizen sowie Warten/Mehr. Bereits erledigte oder verworfene Aufgaben werden durch die Wischgeste immer wieder geöffnet.",
+  swipeHintChips: "Nach links wischen oder ⋯: Zuweisen, Planen, Notizen, Warten, Mehr",
+  assign: "Zuweisen",
+  schedule: "Planen",
+  moreActions: "Weitere Aktionen",
+  primarySwipeActionLabels: {
+    complete: "Erledigen / Wieder öffnen",
+    waiting: "Warten",
+    someday: "Irgendwann",
+    cancel: "Verwerfen",
+  } satisfies Record<PrimarySwipeAction, string>,
 } as const;
 
 export const strings = { ...de, ...extra };

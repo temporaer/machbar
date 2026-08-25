@@ -1,10 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import type { Task } from "@machbar/shared";
+import type { Task, TaskStatus } from "@machbar/shared";
+import type { TaskDetailFocusField } from "../lib/taskDetailContext";
 import { strings } from "../lib/strings";
 import { formatDate, isOverdue } from "../lib/format";
 import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useSwipeSettings } from "../lib/swipeSettings";
+import type { PrimarySwipeAction } from "../lib/swipeSettings";
 import { useRefresh } from "../lib/refresh";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
@@ -22,14 +25,30 @@ export interface TaskRowProps {
   siblings: Task[];
   organizeMode: boolean;
   onEnterOrganizeMode: () => void;
-  onOpenDetail: (taskId: number) => void;
+  onOpenDetail: (taskId: number, focusField?: TaskDetailFocusField) => void;
   onPickParent: (task: Task) => void;
   onPickProject: (task: Task, subtree: boolean) => void;
   taskActions: ReturnType<typeof useTaskActions>;
 }
 
+/** Short, status-like label for the primary-swipe reveal background. */
+function primaryActionBgLabel(task: Task, action: PrimarySwipeAction): string {
+  if (task.status === "done" || task.status === "cancelled") return strings.reopen;
+  switch (action) {
+    case "waiting":
+      return strings.waiting;
+    case "someday":
+      return strings.someday;
+    case "cancel":
+      return strings.cancelled;
+    case "complete":
+    default:
+      return strings.done;
+  }
+}
+
 export function TaskRow({
-  task,
+  task: taskProp,
   parentTask,
   depth,
   index,
@@ -43,6 +62,7 @@ export function TaskRow({
 }: TaskRowProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dragX, setDragX] = useState(0);
+  const [chipsOpen, setChipsOpen] = useState(false);
   const dragState = useRef<{ startX: number; dragging: boolean; pointerId: number | null }>({
     startX: 0,
     dragging: false,
@@ -51,7 +71,18 @@ export function TaskRow({
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { bump } = useRefresh();
   const { members } = useIdentity();
-  const { requestToggle, requestCancel, busyId } = taskActions;
+  const { primarySwipeAction } = useSwipeSettings();
+  const { requestToggle, requestPrimarySwipe, setStatus, busyId, retained, errors, clearError } = taskActions;
+
+  // A row that just transitioned keeps rendering with its optimistic status
+  // (crossed out / muted) for a few seconds even once the compiled view
+  // (Heute/Eingang/Suche/…) no longer contains it — see `useTaskActions`'s
+  // `retained` map. While retained, this row's own controls are disabled so
+  // a stale/mid-flight task can't be mutated a second time from here.
+  const retainedTask = retained.get(taskProp.id);
+  const task = retainedTask ?? taskProp;
+  const isRetained = Boolean(retainedTask);
+  const rowError = errors[taskProp.id];
 
   const children = sortByPosition(task.children);
   const isDone = task.status === "done";
@@ -70,7 +101,7 @@ export function TaskRow({
 
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (organizeMode) return;
+      if (organizeMode || isRetained) return;
       dragState.current = { startX: e.clientX, dragging: true, pointerId: e.pointerId };
       // Not every environment implements pointer capture (e.g. jsdom in
       // tests), so guard the call instead of assuming it always exists.
@@ -84,7 +115,7 @@ export function TaskRow({
         setDragX(0);
       }, LONG_PRESS_MS);
     },
-    [organizeMode, onEnterOrganizeMode],
+    [organizeMode, isRetained, onEnterOrganizeMode],
   );
 
   const handlePointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
@@ -99,28 +130,46 @@ export function TaskRow({
     if (!dragState.current.dragging) return;
     dragState.current.dragging = false;
     if (dragX > SWIPE_THRESHOLD) {
-      requestToggle(task);
+      // One configurable direction performs the primary state transition.
+      requestPrimarySwipe(task, primarySwipeAction);
     } else if (dragX < -SWIPE_THRESHOLD) {
-      requestCancel(task);
+      // The opposite direction reveals the touch-chip row instead of acting.
+      setChipsOpen(true);
     }
     setDragX(0);
-  }, [dragX, requestToggle, requestCancel, task]);
+  }, [dragX, requestPrimarySwipe, task, primarySwipeAction]);
 
   const moveUp = () => void api.reorderTask(task.id, index - 1).then(bump);
   const moveDown = () => void api.reorderTask(task.id, index + 1).then(bump);
   const indent = () => void api.indentTask(task.id).then(bump);
   const outdent = () => void api.outdentTask(task.id).then(bump);
 
+  const openChip = (field?: TaskDetailFocusField) => {
+    onOpenDetail(task.id, field);
+    setChipsOpen(false);
+  };
+
+  const toggleWaitingChip = () => {
+    const next: TaskStatus = task.status === "waiting" ? "actionable" : "waiting";
+    setStatus(task, next);
+    setChipsOpen(false);
+  };
+
+  const reopenChip = () => {
+    requestToggle(task);
+    setChipsOpen(false);
+  };
+
   return (
     <li className="task-row" style={{ listStyle: "none" }}>
       <div className="task-row-swipe-bg complete" aria-hidden="true">
-        {strings.done}
+        {primaryActionBgLabel(task, primarySwipeAction)}
       </div>
       <div className="task-row-swipe-bg cancel" aria-hidden="true">
-        {strings.cancelled}
+        {strings.moreActions}
       </div>
       <div
-        className={`task-row-content${organizeMode ? " organizing" : ""}`}
+        className={`task-row-content${organizeMode ? " organizing" : ""}${isRetained ? " retained" : ""}`}
         style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -144,11 +193,18 @@ export function TaskRow({
         ) : (
           <span className="task-row-toggle" aria-hidden="true" />
         )}
+        {/*
+          Hidden on coarse pointers (touch) via CSS only — see
+          `.task-row-checkbox` in styles/index.css — since swiping/chips
+          cover that role there. Kept for mouse/keyboard use, and the
+          detail sheet's explicit Erledigen/Wieder-öffnen button (opened by
+          tapping the row) remains a non-gesture path everywhere.
+        */}
         <button
           type="button"
           className={`task-row-checkbox${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}
           aria-label={isDone || isCancelled ? strings.reopen : strings.done}
-          disabled={busyId === task.id}
+          disabled={busyId === task.id || isRetained}
           onClick={() => requestToggle(task)}
         >
           {isDone ? "✓" : isCancelled ? "×" : ""}
@@ -178,7 +234,57 @@ export function TaskRow({
             ) : null}
           </div>
         </button>
+        <button
+          type="button"
+          className="task-row-kebab"
+          aria-label={strings.moreActions}
+          aria-expanded={chipsOpen}
+          disabled={isRetained}
+          onClick={() => setChipsOpen((o) => !o)}
+        >
+          ⋯
+        </button>
       </div>
+
+      {chipsOpen ? (
+        <div className="task-row-chips" role="group" aria-label={strings.moreActions}>
+          <button type="button" className="btn btn-sm" onClick={() => openChip("owner")}>
+            {strings.assign}
+          </button>
+          <button type="button" className="btn btn-sm" onClick={() => openChip("schedule")}>
+            {strings.schedule}
+          </button>
+          <button type="button" className="btn btn-sm" onClick={() => openChip("notes")}>
+            {strings.notes}
+          </button>
+          {isDone || isCancelled ? (
+            // A finished/cancelled task has no "waiting" state to toggle —
+            // offer the real reopen flow instead of letting this chip fall
+            // through to a generic status update (which wouldn't clear
+            // completedAt/cancelledAt and would leave them stale).
+            <button type="button" className="btn btn-sm" onClick={reopenChip}>
+              {strings.reopen}
+            </button>
+          ) : (
+            <button type="button" className="btn btn-sm" onClick={toggleWaitingChip}>
+              {task.status === "waiting" ? strings.makeActionable : strings.waiting}
+            </button>
+          )}
+          <button type="button" className="btn btn-sm" onClick={() => openChip()}>
+            {strings.more}
+          </button>
+        </div>
+      ) : null}
+
+      {rowError ? (
+        <div className="task-row-error" role="alert">
+          <span>{strings.error}</span>
+          <span className="text-muted">{rowError}</span>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => clearError(task.id)}>
+            {strings.close}
+          </button>
+        </div>
+      ) : null}
 
       {organizeMode ? (
         <div className="organize-controls" role="group" aria-label={strings.organizeControls}>

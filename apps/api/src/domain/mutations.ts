@@ -82,32 +82,36 @@ export function renameMember(db: Db, id: number, name: string) {
   });
 }
 
+/**
+ * Deletes a household member. Any project/task references to the member
+ * (as owner, and for tasks also as creator) are cleared to `null` first, in
+ * the same transaction as the deletion itself, so projects and tasks are
+ * always preserved — deleting a member never cascades into deleting the
+ * work they were associated with. For tasks whose owner-inheritance mode is
+ * `"inherit"`, the (now-unused) `ownerMemberId` column is cleared too, but
+ * their effective owner keeps resolving from the project as before; for
+ * `"explicit"` tasks the explicit owner simply becomes unset, which is a
+ * valid, already-supported state (the column and inheritance mode are both
+ * nullable/independent of one another).
+ */
 export function deleteMember(db: Db, id: number) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    const member = getMemberOrThrow(txDb, id);
+    getMemberOrThrow(txDb, id);
 
-    const ownedProjects = tx
-      .select({ id: schema.projects.id })
-      .from(schema.projects)
+    const now = nowIso();
+    tx.update(schema.projects)
+      .set({ ownerMemberId: null, updatedAt: now })
       .where(eq(schema.projects.ownerMemberId, id))
-      .all();
-    const ownedTasks = tx
-      .select({ id: schema.tasks.id })
-      .from(schema.tasks)
+      .run();
+    tx.update(schema.tasks)
+      .set({ ownerMemberId: null, updatedAt: now })
       .where(eq(schema.tasks.ownerMemberId, id))
-      .all();
-    const createdTasks = tx
-      .select({ id: schema.tasks.id })
-      .from(schema.tasks)
+      .run();
+    tx.update(schema.tasks)
+      .set({ createdByMemberId: null, updatedAt: now })
       .where(eq(schema.tasks.createdByMemberId, id))
-      .all();
-
-    if (ownedProjects.length > 0 || ownedTasks.length > 0 || createdTasks.length > 0) {
-      throw AppError.conflict(
-        `Mitglied "${member.name}" kann nicht gelöscht werden, solange es noch Projekten oder Aufgaben (als Zuständige/r oder Ersteller/in) zugeordnet ist.`,
-      );
-    }
+      .run();
 
     tx.delete(schema.members).where(eq(schema.members.id, id)).run();
   });

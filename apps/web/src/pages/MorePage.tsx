@@ -1,12 +1,14 @@
 import { Link } from "react-router-dom";
 import { strings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
+import { useSwipeSettings, primarySwipeActions } from "../lib/swipeSettings";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { MemberManager } from "../components/MemberManager";
 import { fallbackColor, initials } from "../lib/format";
 
 export function MorePage() {
   const { currentMember } = useIdentity();
+  const { primarySwipeAction, setPrimarySwipeAction } = useSwipeSettings();
 
   return (
     <div>
@@ -26,6 +28,25 @@ export function MorePage() {
             <span aria-hidden="true">›</span>
           </span>
         </Link>
+
+        <div className="card">
+          <h3 style={{ margin: 0 }}>{strings.swipeSettingTitle}</h3>
+          <p className="text-muted">{strings.swipeSettingHint}</p>
+          <div className="field">
+            <label htmlFor="primary-swipe-action">{strings.swipeSettingTitle}</label>
+            <select
+              id="primary-swipe-action"
+              value={primarySwipeAction}
+              onChange={(e) => setPrimarySwipeAction(e.target.value as (typeof primarySwipeActions)[number])}
+            >
+              {primarySwipeActions.map((action) => (
+                <option key={action} value={action}>
+                  {strings.primarySwipeActionLabels[action]}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
 
         <div className="card">
           <div className="row-between">
