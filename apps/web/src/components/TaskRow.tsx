@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Task, TaskStatus } from "@machbar/shared";
 import type { TaskDetailFocusField } from "../lib/taskDetailContext";
-import { strings } from "../lib/strings";
+import { strings, taskStatusLabels } from "../lib/strings";
 import { formatDate, isOverdue } from "../lib/format";
 import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
@@ -69,6 +69,7 @@ export interface TaskRowProps {
 /** Short, status-like label for the primary-swipe reveal background. */
 function primaryActionBgLabel(task: Task, action: PrimarySwipeAction): string {
   if (task.status === "done" || task.status === "cancelled") return strings.reopen;
+  if (task.status === "inbox") return strings.actionable;
   switch (action) {
     case "waiting":
       return strings.waiting;
@@ -246,13 +247,10 @@ export function TaskRow({
     if (!dragState.current.dragging) return;
     dragState.current.dragging = false;
     if (dragX > SWIPE_THRESHOLD) {
-      if (waitingInteraction) {
-        // Waiting row mode overrides the globally configured primary swipe
-        // action: the one transition that ever makes sense against a
-        // waiting row is "wieder machbar", so it always applies here
-        // regardless of what `useSwipeSettings` currently holds — while
-        // still going through `setStatus`'s existing optimistic
-        // retention/error flow, same as every other status swipe.
+      if (waitingInteraction || task.status === "inbox") {
+        // Waiting rows and unclarified inbox rows always move to "Machbar"
+        // before any configurable terminal transition can apply. This still
+        // uses the standard optimistic retention/error flow.
         setStatus(task, "actionable");
       } else {
         // One configurable direction performs the primary state transition.
@@ -446,6 +444,9 @@ export function TaskRow({
               {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
             </div>
             <div className="task-row-meta">
+              <span className={`badge badge-status-${task.status}`}>
+                {taskStatusLabels[task.status]}
+              </span>
               {task.status === "waiting" && task.waitingFor ? (
                 <span>
                   {strings.waitingFor}: {task.waitingFor}

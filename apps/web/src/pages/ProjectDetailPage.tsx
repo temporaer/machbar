@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { strings, stuckReasonLabels, projectStatusLabels } from "../lib/strings";
+import { strings, projectStatusLabels } from "../lib/strings";
 import { LoadingState, ErrorState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
@@ -10,6 +10,7 @@ import { ProjectEditSheet } from "../components/ProjectEditSheet";
 import { countTasks } from "../lib/taskHelpers";
 import { useIdentity } from "../lib/identity";
 import { formatDate } from "../lib/format";
+import { ProjectStuckNotice } from "../components/ProjectStuckNotice";
 
 export function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -72,12 +73,8 @@ export function ProjectDetailPage() {
                 </div>
               </div>
             ) : null}
-            {project.stuckReason ? (
-              <div className="badge badge-stuck" style={{ marginTop: 6 }}>
-                {stuckReasonLabels[project.stuckReason]}
-              </div>
-            ) : null}
           </div>
+          {project.stuckReason ? <ProjectStuckNotice reason={project.stuckReason} /> : null}
           <TaskOutline tasks={project.tasks} emptyMessage={strings.noTasks} organizable />
         </>
       ) : null}

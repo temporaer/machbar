@@ -1,4 +1,5 @@
 import { de, taskStatusLabels, stuckReasonLabels, projectStatusLabels } from "@machbar/shared";
+import type { StuckReason } from "@machbar/shared";
 import type { PrimarySwipeAction } from "./swipeSettings";
 
 /**
@@ -39,6 +40,16 @@ const extra = {
   scheduledTo: "Geplant bis",
   stuckProjects: "Festgefahrene Projekte",
   repairAction: "Reparaturvorschlag",
+  stuckProjectHeading: "Dieses Projekt ist festgefahren",
+  stuckRepairLabels: {
+    no_next_action:
+      "Lege einen nächsten Schritt fest: Wische eine Aufgabe im Eingang nach rechts, um sie als Machbar zu markieren.",
+    only_waiting:
+      "Hake bei einer wartenden Aufgabe nach, plane eine Wiedervorlage oder markiere sie wieder als Machbar.",
+    blocked_dependencies: "Löse die blockierenden Abhängigkeiten auf, damit eine Aufgabe machbar wird.",
+    unassigned_actionable: "Weise die offene machbare Aufgabe einer Person zu.",
+    completion_review: "Prüfe das Ergebnis und schließe das Projekt ab oder ergänze die noch fehlende Arbeit.",
+  } satisfies Record<StuckReason, string>,
   openTasks: "Offen",
   doneTasks: "Erledigt",
   addProject: "Projekt anlegen",

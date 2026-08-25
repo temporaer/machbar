@@ -55,6 +55,37 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
+  it("promotes an inbox task to Machbar before it can be completed", async () => {
+    const task = makeTask({ id: 13, title: "Nächsten Schritt klären", status: "inbox" });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+    await screen.findByText("Nächsten Schritt klären");
+
+    const badge = container.querySelector(".badge-status-inbox");
+    expect(badge).toHaveTextContent("Eingang");
+    swipe(container, 100);
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(13, { status: "actionable" }),
+    );
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
+  });
+
+  it("announces Machbar while an inbox task is swiped right", async () => {
+    const task = makeTask({ id: 14, title: "Ungeklärte Aufgabe", status: "inbox" });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+    await screen.findByText("Ungeklärte Aufgabe");
+
+    const content = container.querySelector(".task-row-content") as HTMLElement;
+    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: 70, pointerId: 1 });
+
+    expect(container.querySelector(".task-row-swipe-bg.complete")).toHaveTextContent("Machbar");
+  });
+
   it("can swipe the retained crossed-out row again to reopen it", async () => {
     const task = makeTask({ id: 9, title: "Status direkt wechseln", status: "actionable" });
     const completed = makeTask({ ...task, status: "done" });
