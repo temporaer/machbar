@@ -46,6 +46,17 @@ describe("api request() Content-Type handling", () => {
     expect(headersOf(fetchMock)).not.toHaveProperty("Content-Type");
   });
 
+  it("omits Content-Type for a bodyless deleteProject request", async () => {
+    const fetchMock = mockFetchOnce();
+    await api.deleteProject(7);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/projects/7");
+    expect(init.method).toBe("DELETE");
+    expect(headersOf(fetchMock)).not.toHaveProperty("Content-Type");
+  });
+
   it("still sends Content-Type: application/json for requests with a JSON body", async () => {
     const fetchMock = mockFetchOnce({
       ok: true,

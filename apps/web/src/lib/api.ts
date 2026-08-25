@@ -269,6 +269,8 @@ export const api = {
     request<ProjectWithActions>("/projects", { method: "POST", body: JSON.stringify(input) }),
   updateProject: (id: number, patch: UpdateProjectInput) =>
     request<ProjectWithActions>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteProject: (id: number) =>
+    request<void>(`/projects/${id}`, { method: "DELETE" }),
 
   // --- explicit workflow transitions (see `ProjectWorkflowAction` above) --
   activateProject: (id: number, input?: ActivateProjectInput) =>

@@ -97,6 +97,42 @@ describe("search/filter and project CRUD/archive", () => {
     expect(res.json().error.message).toContain("wurde nicht gefunden");
   });
 
+  it("deletes a project while preserving and detaching its tasks", async () => {
+    const project = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/projects",
+        payload: { title: "Wird gelöscht" },
+      })
+    ).json();
+    const task = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        payload: { title: "Bleibt erhalten", projectId: project.id },
+      })
+    ).json();
+
+    const removed = await ctx.app.inject({
+      method: "DELETE",
+      url: `/api/projects/${project.id}`,
+    });
+    expect(removed.statusCode).toBe(204);
+
+    const missingProject = await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}`,
+    });
+    expect(missingProject.statusCode).toBe(404);
+
+    const survivingTask = await ctx.app.inject({
+      method: "GET",
+      url: `/api/tasks/${task.id}`,
+    });
+    expect(survivingTask.statusCode).toBe(200);
+    expect(survivingTask.json().projectId).toBeNull();
+  });
+
   it("drops a waiting-only project from /api/projects/stuck once a revisit is scheduled", async () => {
     const stuckTitles = async () => {
       const res = await ctx.app.inject({ method: "GET", url: "/api/projects/stuck" });

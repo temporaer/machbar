@@ -9,6 +9,7 @@ import {
   archiveProject,
   completeProject,
   createProject,
+  deleteProject,
   removeCriterion,
   reopenProject,
   reorderCriteria,
@@ -96,6 +97,16 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     const graph = Graph.load(db);
     return projectWithIssues(graph, id);
   });
+
+  app.delete<{ Params: { id: string } }>(
+    "/api/projects/:id",
+    async (request, reply) => {
+      const id = parseId(request.params.id);
+      deleteProject(db, id);
+      reply.status(204);
+      return null;
+    },
+  );
 
   // --- explicit workflow transitions --------------------------------------
   // backlog <-> active -> completed <-> active, archive/return from

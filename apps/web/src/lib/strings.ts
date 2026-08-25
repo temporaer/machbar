@@ -157,6 +157,9 @@ const extra = {
   noInheritance: "Keine Vererbung",
   addChildTitle: "Neue Teilaufgabe",
   deleteTaskConfirm: "Aufgabe endgültig löschen?",
+  deleteProject: "Projekt löschen",
+  deleteProjectConfirm:
+    "Projekt endgültig löschen? Die Aufgaben bleiben erhalten und werden keinem Projekt mehr zugeordnet.",
   waitingForPlaceholder: "z. B. Antwort von Steuerberater",
   contextPlaceholder: "z. B. Zuhause, Büro, Telefon",
   noDependencies: "Keine Abhängigkeiten.",

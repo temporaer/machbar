@@ -12,6 +12,7 @@ vi.mock("../lib/api", () => ({
     getMembers: vi.fn(),
     getTags: vi.fn(),
     updateProject: vi.fn(),
+    deleteProject: vi.fn(),
     activateProject: vi.fn(),
     returnProjectToBacklog: vi.fn(),
     completeProject: vi.fn(),
@@ -168,5 +169,29 @@ describe("ProjectEditSheet", () => {
     await userEvent.click(screen.getAllByRole("button", { name: "Kriterium nach unten" })[0]!);
 
     await waitFor(() => expect(mockedApi.reorderCriteria).toHaveBeenCalledWith(42, [2, 1]));
+  });
+
+  it("löscht ein Projekt erst nach Bestätigung", async () => {
+    const project = makeProjectDetail({ id: 42, title: "Altes Projekt" });
+    const onClose = vi.fn();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockedApi.deleteProject.mockResolvedValue(undefined);
+
+    renderWithProviders(
+      <ProjectEditSheet project={project} onClose={onClose} />,
+    );
+
+    await screen.findByDisplayValue("Altes Projekt");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Projekt löschen" }),
+    );
+
+    expect(confirm).toHaveBeenCalledWith(
+      "Projekt endgültig löschen? Die Aufgaben bleiben erhalten und werden keinem Projekt mehr zugeordnet.",
+    );
+    await waitFor(() =>
+      expect(mockedApi.deleteProject).toHaveBeenCalledWith(42),
+    );
+    expect(onClose).toHaveBeenCalled();
   });
 });

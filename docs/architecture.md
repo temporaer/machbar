@@ -217,6 +217,9 @@ backlog ──activate──► active ──complete──► completed
 
 - `PATCH /api/projects/:id` **refuses status changes** — status only moves through the dedicated workflow endpoints (`/activate`, `/complete`, `/return-to-backlog`, `/archive`, `/unarchive`).
 - Nothing auto-completes a story; completion is always an explicit human decision.
+- `DELETE /api/projects/:id` permanently removes the project, its tag links,
+  and its “Erledigt, wenn …” rows. Existing tasks are preserved and detached
+  (`tasks.project_id = NULL`) by the foreign key's `ON DELETE SET NULL`.
 
 ### Responsible-person invariant
 

@@ -332,6 +332,16 @@ export function updateProject(db: Db, id: number, input: UpdateProjectInput) {
   });
 }
 
+/**
+ * Permanently removes a project while preserving its tasks. The projects FK
+ * uses ON DELETE SET NULL for tasks, while project tags and completion
+ * criteria cascade with the deleted project.
+ */
+export function deleteProject(db: Db, id: number) {
+  getProjectOrThrow(db, id);
+  db.delete(schema.projects).where(eq(schema.projects.id, id)).run();
+}
+
 // ---------------------------------------------------------------------------
 // Explicit workflow transitions
 // ---------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import type { ProjectDetail, ProjectWorkflowAction } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -50,6 +51,7 @@ const lifecycleLabels: Record<ProjectWorkflowAction, string> = {
 export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail; onClose: () => void }) {
   const { members } = useIdentity();
   const { bump } = useRefresh();
+  const navigate = useNavigate();
   const { data: tags } = useAsync(() => api.getTags(), []);
 
   const [titleDraft, setTitleDraft] = useState(project.title);
@@ -58,6 +60,7 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot>(textFieldsSnapshot(project));
   const [savingTextFields, setSavingTextFields] = useState(false);
   const [busyAction, setBusyAction] = useState<ProjectWorkflowAction | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const lastLoadedProjectIdRef = useRef<number | null>(null);
 
@@ -155,6 +158,21 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
       setActionError(errorMessage(err));
     } finally {
       setBusyAction(null);
+    }
+  };
+
+  const removeProject = async () => {
+    if (!window.confirm(strings.deleteProjectConfirm)) return;
+    setDeleting(true);
+    setActionError(null);
+    try {
+      await api.deleteProject(project.id);
+      onClose();
+      bump();
+      navigate("/projekte");
+    } catch (err) {
+      setActionError(errorMessage(err));
+      setDeleting(false);
     }
   };
 
@@ -287,6 +305,15 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
           criteria={project.acceptanceCriteria}
           onError={setActionError}
         />
+
+        <button
+          type="button"
+          className="btn btn-danger btn-block"
+          disabled={deleting || busyAction !== null}
+          onClick={() => void removeProject()}
+        >
+          {strings.deleteProject}
+        </button>
       </div>
     </BottomSheet>
   );
