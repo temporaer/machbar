@@ -98,6 +98,24 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(3, { status: "someday" }));
   });
 
+  it("renders phone numbers and email addresses in notes as actionable links", async () => {
+    const task = makeTask({
+      id: 12,
+      title: "Sekretariat kontaktieren",
+      notes: "Tel. 072194390-387 oder schule@example.de",
+    });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+
+    expect(await screen.findByRole("link", { name: "072194390-387" })).toHaveAttribute(
+      "href",
+      "tel:072194390-387",
+    );
+    expect(screen.getByRole("link", { name: "schule@example.de" })).toHaveAttribute(
+      "href",
+      "mailto:schule@example.de",
+    );
+  });
+
   it("respects a configured 'Verwerfen' primary swipe action on an open task", async () => {
     window.localStorage.setItem(STORAGE_KEY, "cancel");
     const task = makeTask({ id: 4, title: "Altes Angebot", status: "actionable" });

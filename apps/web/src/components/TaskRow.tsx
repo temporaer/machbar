@@ -20,6 +20,7 @@ import {
 import { InlineChildComposer } from "./InlineChildComposer";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskActionIcon } from "./TaskActionIcon";
+import { ActionableText } from "./ActionableText";
 
 const SWIPE_THRESHOLD = 72;
 const LONG_PRESS_MS = 480;
@@ -438,31 +439,36 @@ export function TaskRow({
         >
           {isDone ? "✓" : isCancelled ? "×" : ""}
         </button>
-        <button type="button" className="task-row-main" onClick={() => onOpenDetail(task.id)}>
-          <div className={`task-row-title${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}>
-            {task.title}
-            {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
-          </div>
-          <div className="task-row-meta">
-            {task.status === "waiting" && task.waitingFor ? (
-              <span>
-                {strings.waitingFor}: {task.waitingFor}
-              </span>
-            ) : null}
-            {due ? (
-              <span className={overdue ? "overdue" : undefined}>
-                {strings.due}: {due}
-              </span>
-            ) : null}
-            {ownerName ? <span>{ownerName}</span> : null}
-            {task.effectiveContext ? <span>#{task.effectiveContext}</span> : null}
-            {children.length ? (
-              <span>
-                {children.filter((c) => c.status === "done" || c.status === "cancelled").length}/{children.length}
-              </span>
-            ) : null}
-          </div>
-        </button>
+        <div className="task-row-main-wrap">
+          <button type="button" className="task-row-main" onClick={() => onOpenDetail(task.id)}>
+            <div className={`task-row-title${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}>
+              {task.title}
+              {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
+            </div>
+            <div className="task-row-meta">
+              {task.status === "waiting" && task.waitingFor ? (
+                <span>
+                  {strings.waitingFor}: {task.waitingFor}
+                </span>
+              ) : null}
+              {due ? (
+                <span className={overdue ? "overdue" : undefined}>
+                  {strings.due}: {due}
+                </span>
+              ) : null}
+              {ownerName ? <span>{ownerName}</span> : null}
+              {task.effectiveContext ? <span>#{task.effectiveContext}</span> : null}
+              {children.length ? (
+                <span>
+                  {children.filter((c) => c.status === "done" || c.status === "cancelled").length}/{children.length}
+                </span>
+              ) : null}
+            </div>
+          </button>
+          {task.notes.trim() ? (
+            <ActionableText text={task.notes} className="task-row-notes" />
+          ) : null}
+        </div>
         <button
           type="button"
           className="task-row-kebab"

@@ -791,9 +791,14 @@ a {
   color: var(--color-danger);
 }
 
-.task-row-main {
+.task-row-main-wrap {
   flex: 1;
   min-width: 0;
+}
+
+.task-row-main {
+  display: block;
+  width: 100%;
   text-align: left;
   background: none;
   border: none;
@@ -824,6 +829,26 @@ a {
 .task-row-meta .overdue {
   color: var(--color-danger);
   font-weight: 600;
+}
+
+.task-row-notes {
+  display: -webkit-box;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.task-row-notes a {
+  color: var(--color-primary);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .task-row-children {
