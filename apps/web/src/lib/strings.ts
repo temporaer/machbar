@@ -254,6 +254,8 @@ const extra = {
   addTaskToProject: "Aufgabe im Projekt anlegen",
   todayExplanation:
     "Diese Übersicht wird automatisch aus Terminen, Fälligkeiten und dem Status berechnet – ohne manuelle Markierung.",
+  unscheduledHint:
+    "Zusätzliche machbare Aufgaben ohne heutigen Termin.",
   manageMembers: "Personen verwalten",
   manageMembersHint: "Lege Personen an, benenne sie um oder entferne sie.",
   memberName: "Name",

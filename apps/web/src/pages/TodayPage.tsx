@@ -43,6 +43,9 @@ export function TodayPage() {
     ...(revisitTasks.length > 0
       ? [{ label: strings.revisit, text: strings.revisitHint }]
       : []),
+    ...(additionalTasks.length > 0
+      ? [{ label: strings.unscheduled, text: strings.unscheduledHint }]
+      : []),
   ];
 
   return (
