@@ -6,6 +6,7 @@ import { TaskOutline } from "./TaskOutline";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { api } from "../lib/api";
 import { makeMember, makeTag, makeTask } from "../test/fixtures";
+import { resolveScheduleShortcut } from "./ScheduleShortcuts";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -499,12 +500,13 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     const scheduled = await screen.findByLabelText("Geplant");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
-    await userEvent.type(scheduled, "2026-09-03");
+    await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
+    expect(scheduled).toHaveValue(resolveScheduleShortcut("tomorrow"));
     await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
-        scheduledDate: "2026-09-03",
+        scheduledDate: resolveScheduleShortcut("tomorrow"),
       }),
     );
   });

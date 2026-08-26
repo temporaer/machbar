@@ -4,6 +4,7 @@ import type { UpdateTaskInput } from "../lib/api";
 import { strings } from "../lib/strings";
 import { AssignOwnerSheet } from "./AssignOwnerSheet";
 import { BottomSheet } from "./BottomSheet";
+import { ScheduleShortcuts } from "./ScheduleShortcuts";
 
 export type TaskQuickAction = "owner" | "schedule" | "notes";
 
@@ -95,16 +96,19 @@ export function TaskQuickActionSheet({
     <BottomSheet title={`${title}: ${task.title}`} onClose={onClose}>
       <div className="stack task-quick-action-sheet">
         {action === "schedule" ? (
-          <div className="field">
-            <label htmlFor={`quick-schedule-${task.id}`}>{strings.scheduled}</label>
-            <input
-              id={`quick-schedule-${task.id}`}
-              type="date"
-              value={scheduledDate}
-              onChange={(event) => setScheduledDate(event.target.value)}
-              autoFocus
-            />
-          </div>
+          <>
+            <div className="field">
+              <label htmlFor={`quick-schedule-${task.id}`}>{strings.scheduled}</label>
+              <input
+                id={`quick-schedule-${task.id}`}
+                type="date"
+                value={scheduledDate}
+                onChange={(event) => setScheduledDate(event.target.value)}
+                autoFocus
+              />
+            </div>
+            <ScheduleShortcuts value={scheduledDate} onChange={setScheduledDate} disabled={saving} />
+          </>
         ) : null}
 
         {action === "notes" ? (

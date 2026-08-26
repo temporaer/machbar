@@ -12,13 +12,15 @@ import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import type { ProjectWithActions } from "../lib/api";
-import { makeCriterion, makeMember, makeProject, makeTask } from "../test/fixtures";
+import { makeCriterion, makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
 import "../styles/index.css";
 import "./ProjectStoryRow.css";
 
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
+    getTags: vi.fn(),
+    createTag: vi.fn(),
     updateProject: vi.fn(),
     activateProject: vi.fn(),
     returnProjectToBacklog: vi.fn(),
@@ -259,7 +261,8 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     expect(within(chips).getByRole("button", { name: "Verantwortlich" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Erledigt, wenn …" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Planen" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Bearbeiten" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Tags" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Projekt öffnen" })).toBeInTheDocument();
     // Secondary workflow actions, derived from `availableActions` — the
     // primary one (Abschließen) is not repeated here.
     expect(within(chips).getByRole("button", { name: "Auf später verschieben" })).toBeInTheDocument();
@@ -375,13 +378,79 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
   });
 
-  it("navigates to the project page for the full 'Bearbeiten' editor only", async () => {
+  it("edits explicit project tags in a focused sheet without leaving the list", async () => {
+    const explicitTag = makeTag({ id: 10, name: "Zuhause", kind: "context" });
+    const inheritedTag = makeTag({ id: 11, name: "Vererbt", kind: "area" });
+    const newTag = makeTag({ id: 12, name: "Telefon", kind: "context" });
+    const story = makeProject({
+      id: 47,
+      title: "Tags bearbeiten",
+      status: "active",
+      ownerMemberId: 1,
+      tags: [explicitTag],
+      effectiveTags: [explicitTag, inheritedTag],
+    });
+    mockedApi.getTags.mockResolvedValue([explicitTag, inheritedTag, newTag]);
+    mockedApi.updateProject.mockResolvedValue({ ...story, tags: [explicitTag, newTag] });
+    renderWithProjectRoute(<Harness story={story} />);
+    await screen.findByText("Tags bearbeiten");
+
+    const chips = openChips();
+    await userEvent.click(within(chips).getByRole("button", { name: "Tags" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Zuhause" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(dialog).getByRole("button", { name: "Vererbt" })).toHaveAttribute("aria-pressed", "false");
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Telefon" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(47, { tagIds: [10, 12] }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
+  });
+
+  it("cancels local tag changes without mutating the project", async () => {
+    const tag = makeTag({ id: 13, name: "Unterwegs", kind: "context" });
+    const story = makeProject({ id: 48, title: "Tags abbrechen", tags: [] });
+    mockedApi.getTags.mockResolvedValue([tag]);
+    renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Tags abbrechen");
+
+    await userEvent.click(within(openChips()).getByRole("button", { name: "Tags" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Unterwegs" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
+
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the tag sheet open and shows a failed save", async () => {
+    const tag = makeTag({ id: 14, name: "Fehlerfall", kind: "plain" });
+    const story = makeProject({ id: 49, title: "Tags mit Fehler", tags: [] });
+    mockedApi.getTags.mockResolvedValue([tag]);
+    mockedApi.updateProject.mockRejectedValue(new Error("Netzwerkfehler"));
+    renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Tags mit Fehler");
+
+    await userEvent.click(within(openChips()).getByRole("button", { name: "Tags" }));
+    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Fehlerfall" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Speichern" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Netzwerkfehler");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("navigates to the project page through the explicit 'Projekt öffnen' action", async () => {
     const story = makeProject({ id: 47, title: "Voll bearbeiten", status: "active", ownerMemberId: 1 });
     renderWithProjectRoute(<Harness story={story} />);
     await screen.findByText("Voll bearbeiten");
 
     const chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Bearbeiten" }));
+    await userEvent.click(within(chips).getByRole("button", { name: "Projekt öffnen" }));
     expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 47");
   });
 });
@@ -688,7 +757,7 @@ describe("ProjectStoryRow – compact icon-only targeted actions", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
-  it("renders Verantwortlich/Akzeptanzkriterien/Planen/Bearbeiten as icon-only 44px buttons with a full German accessible name", async () => {
+  it("renders the five targeted actions as icon-only 44px buttons with full German accessible names", async () => {
     const story = makeProject({ id: 70, title: "Kompakte Chips", status: "active", ownerMemberId: 1 });
     renderWithProviders(<Harness story={story} />);
     await screen.findByText("Kompakte Chips");
@@ -698,7 +767,8 @@ describe("ProjectStoryRow – compact icon-only targeted actions", () => {
       { name: "Verantwortlich" },
       { name: "Erledigt, wenn …" },
       { name: "Planen" },
-      { name: "Bearbeiten" },
+      { name: "Tags" },
+      { name: "Projekt öffnen" },
     ];
     for (const { name } of targeted) {
       const button = within(chips).getByRole("button", { name });

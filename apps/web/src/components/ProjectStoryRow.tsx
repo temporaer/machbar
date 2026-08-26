@@ -1,10 +1,12 @@
 import { useCallback, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { api } from "../lib/api";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
 import { strings, projectStatusLabels, stuckReasonLabels } from "../lib/strings";
 import { formatDate } from "../lib/format";
 import { useIdentity } from "../lib/identity";
+import { useRefresh } from "../lib/refresh";
 import {
   canClearDriver,
   needsDriverBeforeAction,
@@ -18,6 +20,7 @@ import type { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions
 import { AssignDriverSheet } from "./AssignDriverSheet";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
+import { ProjectTagsSheet } from "./ProjectTagsSheet";
 import "./ProjectStoryRow.css";
 
 const SWIPE_THRESHOLD = 72;
@@ -38,8 +41,8 @@ function statusAccent(story: ProjectWithActions): StatusAccent {
 }
 
 /**
- * Minimal inline icon set for the four targeted actions (Verantwortlich,
- * Akzeptanzkriterien, Planen, Bearbeiten): no icon dependency, 18px
+ * Minimal inline icon set for the five targeted actions (Verantwortlich,
+ * Akzeptanzkriterien, Planen, Tags, Projekt öffnen): no icon dependency, 18px
  * stroke-based glyphs sized/colored entirely from CSS (`.story-row-chip-icon
  * svg`). Purely decorative — the button's `aria-label`/`title` carry the
  * accessible name, so every glyph is `aria-hidden`.
@@ -94,18 +97,33 @@ function CalendarIcon() {
   );
 }
 
-function PencilIcon() {
+function TagIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path
-        d="M4 20l0.9-4.3L15.4 5.2l3.4 3.4L8.3 19.1 4 20z"
+        d="M3.5 12.2V5.5a2 2 0 012-2h6.7l8.3 8.3a2 2 0 010 2.8l-5.9 5.9a2 2 0 01-2.8 0L3.5 12.2z"
         fill="none"
         stroke="currentColor"
         strokeWidth="2"
         strokeLinejoin="round"
         strokeLinecap="round"
       />
-      <path d="M13.4 7.2l3.4 3.4" stroke="currentColor" strokeWidth="2" />
+      <circle cx="8.1" cy="8.1" r="1.4" fill="currentColor" />
+    </svg>
+  );
+}
+
+function OpenProjectIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        d="M5 19h14V5M10 5h9v9M18.5 5.5L9 15"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
@@ -121,7 +139,7 @@ export interface ProjectStoryRowProps {
   variant?: "compact" | "card";
 }
 
-type Sheet = "assign-to-activate" | "assign-driver" | "plan-dates" | "criteria" | null;
+type Sheet = "assign-to-activate" | "assign-driver" | "plan-dates" | "criteria" | "tags" | null;
 
 /**
  * One story row with the full mobile workflow gestures, shared by the
@@ -139,8 +157,8 @@ type Sheet = "assign-to-activate" | "assign-driver" | "plan-dates" | "criteria" 
  * Only transitions the backend advertises in `availableActions` are ever
  * offered; every remaining legal one appears as a chip (e.g. "In Backlog
  * zurücklegen", "Archivieren"). Chips that edit a *single* aspect (driver,
- * dates, acceptance criteria) open their own targeted popup and return
- * straight to the list; only "Bearbeiten" navigates to the project page, and
+ * dates, acceptance criteria, tags) open their own targeted popup and return
+ * straight to the list; "Projekt öffnen" navigates to the project page, and
  * tapping the row itself still opens the story detail as before.
  */
 export function ProjectStoryRow({ story: storyProp, actions, variant = "compact" }: ProjectStoryRowProps) {
@@ -156,6 +174,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
   // browser synthesises afterwards does not navigate to the detail page.
   const swallowNextClick = useRef(false);
   const { members } = useIdentity();
+  const { bump } = useRefresh();
   const navigate = useNavigate();
   const { busyId, retained, errors, clearError, runAction, activate, assignDriver, schedule } = actions;
 
@@ -401,11 +420,20 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
           <button
             type="button"
             className="story-row-chip-icon"
-            aria-label={strings.edit}
-            title={strings.edit}
+            aria-label={strings.tags}
+            title={strings.tags}
+            onClick={() => openSheet("tags")}
+          >
+            <TagIcon />
+          </button>
+          <button
+            type="button"
+            className="story-row-chip-icon"
+            aria-label={strings.openProject}
+            title={strings.openProject}
             onClick={goToDetail}
           >
-            <PencilIcon />
+            <OpenProjectIcon />
           </button>
           {secondaryActions.map((action) => (
             <button
@@ -460,6 +488,17 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
       {sheet === "plan-dates" ? (
         <PlanDatesSheet story={story} onClose={() => setSheet(null)} onSave={(patch) => schedule(story, patch)} />
+      ) : null}
+
+      {sheet === "tags" ? (
+        <ProjectTagsSheet
+          story={story}
+          onClose={() => setSheet(null)}
+          onSave={async (tagIds) => {
+            await api.updateProject(story.id, { tagIds });
+            bump();
+          }}
+        />
       ) : null}
     </li>
   );

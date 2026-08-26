@@ -19,6 +19,7 @@ import { TagPicker } from "./TagPicker";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
+import { ScheduleShortcuts } from "./ScheduleShortcuts";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -337,6 +338,10 @@ export function TaskDetailSheet() {
               />
             </div>
           </div>
+          <ScheduleShortcuts
+            value={task.scheduledDate}
+            onChange={(scheduledDate) => void patch({ scheduledDate })}
+          />
 
           <div className="field">
             <label htmlFor="task-priority">{strings.priority}</label>

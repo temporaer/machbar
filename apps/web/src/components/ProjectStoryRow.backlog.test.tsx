@@ -192,7 +192,8 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(within(chips).getByRole("button", { name: "Verantwortlich" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Erledigt, wenn …" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Planen" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Bearbeiten" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Tags" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Projekt öffnen" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Archivieren" })).toBeInTheDocument();
 
     // Closing and reopening via the kebab (no swipe gesture at all).
@@ -302,13 +303,13 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
   });
 
-  it("still navigates to the project detail page for the full 'Bearbeiten' editor", async () => {
+  it("still navigates to the project detail page through 'Projekt öffnen'", async () => {
     const story = makeProject({ id: 19, title: "Dachboden entrümpeln", status: "backlog" });
     const { container } = renderAtRootWithProjectRoute(<Harness story={story} />);
     await screen.findByText("Dachboden entrümpeln");
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Bearbeiten" }));
+    await userEvent.click(screen.getByRole("button", { name: "Projekt öffnen" }));
     expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 19");
   });
 });

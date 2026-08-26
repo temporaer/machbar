@@ -272,6 +272,12 @@ const extra = {
     `Nach rechts wischen: „${rightAction}“. Nach links wischen öffnet weitere Aktionen wie Zuweisen, Planen und Notizen. Am Desktop geht das auch über ⋯.`,
   assign: "Zuweisen",
   schedule: "Planen",
+  scheduleShortcuts: "Schnell planen",
+  scheduleShortcutLabels: {
+    tomorrow: "Morgen",
+    nextWeek: "Nächste Woche",
+    weekend: "Wochenende",
+  },
   moreActions: "Weitere Aktionen",
   toProject: "Zum Projekt",
   noProjectChipHint: "Kein Projekt zugeordnet",
@@ -339,6 +345,7 @@ const extra = {
   finishedProjectsSection: (count: number) => `Abgeschlossen & archiviert (${count})`,
 
   // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---
+  openProject: "Projekt öffnen",
   editProject: "Projekt bearbeiten",
   returnToBacklogStory: "Auf später verschieben",
   completeStory: "Abschließen",

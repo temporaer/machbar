@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -9,6 +9,7 @@ import { TaskDetailProvider, useTaskDetail } from "../lib/taskDetailContext";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { api } from "../lib/api";
 import { makeMember, makeTag, makeTask } from "../test/fixtures";
+import { resolveScheduleShortcut } from "./ScheduleShortcuts";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -122,6 +123,24 @@ describe("TaskDetailSheet", () => {
     expect(screen.queryByText("Heute erledigen")).not.toBeInTheDocument();
     expect(screen.queryByText("Für heute markieren")).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("plant mit denselben Schnelloptionen wie das fokussierte Planen-Popup", async () => {
+    const task = makeTask({ id: 56, title: "Wochenplanung", scheduledDate: null });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(56);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Wochenplanung");
+
+    const shortcuts = screen.getByRole("group", { name: "Schnell planen" });
+    await userEvent.click(within(shortcuts).getByRole("button", { name: "Nächste Woche" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(56, {
+        scheduledDate: resolveScheduleShortcut("nextWeek"),
+      }),
+    );
   });
 
   it("schließt einen ausgeschlossenen geerbten Tag über den Umschalter aus", async () => {
