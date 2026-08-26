@@ -1,5 +1,4 @@
 import type { ProjectWithActions } from "./api";
-import type { Tag } from "@machbar/shared";
 
 /** The two visibility scopes the Projekte tab's compact chips switch between. */
 export type ProjectVisibilityScope = "mine" | "all";
@@ -10,7 +9,6 @@ export interface ProjectListFilterOptions {
   scope: ProjectVisibilityScope;
   /** The currently selected identity, or `null` when no member is selected yet. */
   currentMemberId: number | null;
-  areaTagId?: number | undefined;
 }
 
 /** Strips diacritics and lower-cases so "Cafe" matches "Café" and vice versa. */
@@ -71,15 +69,13 @@ export function isTerminalProjectStatus(project: ProjectWithActions): boolean {
  */
 export function filterAndSortProjects(
   projects: ProjectWithActions[],
-  { query, scope, currentMemberId, areaTagId }: ProjectListFilterOptions,
+  { query, scope, currentMemberId }: ProjectListFilterOptions,
 ): ProjectWithActions[] {
   const foldedQuery = foldForSearch(query.trim());
   const filtered = projects.filter(
     (p) =>
       matchesScope(p, scope, currentMemberId) &&
-      matchesQuery(p, foldedQuery) &&
-      (areaTagId === undefined ||
-        p.effectiveAreaTags.some((tag) => tag.id === areaTagId)),
+      matchesQuery(p, foldedQuery),
   );
   return filtered.sort((a, b) => {
     const bucketDiff = bucketOf(a) - bucketOf(b);
@@ -88,37 +84,5 @@ export function filterAndSortProjects(
     const titleDiff = a.title.localeCompare(b.title, "de");
     if (titleDiff !== 0) return titleDiff;
     return a.id - b.id;
-  });
-}
-
-export interface ProjectAreaGroup {
-  area: Tag | null;
-  projects: ProjectWithActions[];
-}
-
-export function groupProjectsByArea(
-  projects: ProjectWithActions[],
-): ProjectAreaGroup[] {
-  const groups = new Map<number | null, ProjectAreaGroup>();
-  for (const project of projects) {
-    const area = project.primaryAreaTag;
-    const key = area?.id ?? null;
-    const group = groups.get(key) ?? { area, projects: [] };
-    group.projects.push(project);
-    groups.set(key, group);
-  }
-  return [...groups.values()].sort((a, b) => {
-    if (a.area === null) return b.area === null ? 0 : 1;
-    if (b.area === null) return -1;
-    const pinned =
-      Number(b.area.groupingMode === "pinned") -
-      Number(a.area.groupingMode === "pinned");
-    if (pinned !== 0) return pinned;
-    const position =
-      (a.area.sortPosition ?? Number.MAX_SAFE_INTEGER) -
-      (b.area.sortPosition ?? Number.MAX_SAFE_INTEGER);
-    if (position !== 0) return position;
-    const name = a.area.name.localeCompare(b.area.name, "de");
-    return name !== 0 ? name : a.area.id - b.area.id;
   });
 }

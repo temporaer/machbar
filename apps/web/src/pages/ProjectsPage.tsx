@@ -7,13 +7,17 @@ import { useIdentity } from "../lib/identity";
 import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
 import {
   filterAndSortProjects,
-  groupProjectsByArea,
   isTerminalProjectStatus,
   type ProjectVisibilityScope,
 } from "../lib/projectListFilter";
+import {
+  groupItemsByTagKind,
+  type GroupableTagKind,
+} from "../lib/tagGrouping";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { BottomSheet } from "../components/BottomSheet";
+import { TagGroupingControl } from "../components/TagGroupingControl";
 
 /**
  * The Projekte tab: every project is a user story, and every row carries the
@@ -33,8 +37,7 @@ export function ProjectsPage() {
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<ProjectVisibilityScope>("mine");
-  const [areaTagId, setAreaTagId] = useState<number | undefined>();
-  const { data: tags } = useAsync(() => api.getTags(), []);
+  const [groupBy, setGroupBy] = useState<GroupableTagKind | null>(null);
 
   const submit = async () => {
     const trimmed = title.trim();
@@ -65,7 +68,6 @@ export function ProjectsPage() {
     query,
     scope,
     currentMemberId,
-    areaTagId,
   });
   // Active/backlog stories stay primary and always visible; completed and
   // archived ones are terminal — they no longer need day-to-day attention,
@@ -79,8 +81,16 @@ export function ProjectsPage() {
   const effectiveStatusOf = (p: (typeof filteredProjects)[number]) => actions.retained.get(p.id)?.story ?? p;
   const primaryProjects = filteredProjects.filter((p) => !isTerminalProjectStatus(effectiveStatusOf(p)));
   const terminalProjects = filteredProjects.filter((p) => isTerminalProjectStatus(effectiveStatusOf(p)));
-  const primaryGroups = groupProjectsByArea(primaryProjects);
-  const terminalGroups = groupProjectsByArea(terminalProjects);
+  const primaryGroups = groupBy
+    ? groupItemsByTagKind(primaryProjects, groupBy)
+    : primaryProjects.length > 0
+      ? [{ tag: null, items: primaryProjects }]
+      : [];
+  const terminalGroups = groupBy
+    ? groupItemsByTagKind(terminalProjects, groupBy)
+    : terminalProjects.length > 0
+      ? [{ tag: null, items: terminalProjects }]
+      : [];
   // A non-empty search that actually matches a terminal story should reveal
   // it automatically instead of hiding a real match behind a fold; with no
   // search (or no terminal matches) the section stays folded by default.
@@ -115,29 +125,7 @@ export function ProjectsPage() {
             {strings.projectScopeAll}
           </button>
         </div>
-        <div className="row" role="group" aria-label={strings.tagKindLabels.area}>
-          <button
-            type="button"
-            className="chip"
-            aria-pressed={areaTagId === undefined}
-            onClick={() => setAreaTagId(undefined)}
-          >
-            {strings.allAreas}
-          </button>
-          {(tags ?? [])
-            .filter((tag) => tag.kind === "area")
-            .map((tag) => (
-              <button
-                key={tag.id}
-                type="button"
-                className="chip"
-                aria-pressed={areaTagId === tag.id}
-                onClick={() => setAreaTagId(tag.id)}
-              >
-                {tag.name}
-              </button>
-            ))}
-        </div>
+        <TagGroupingControl value={groupBy} onChange={setGroupBy} />
       </div>
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
@@ -149,10 +137,14 @@ export function ProjectsPage() {
         ) : (
           <>
             {primaryGroups.map((group) => (
-              <section className="section" key={group.area?.id ?? "none"}>
-                <h2 className="section-title">{group.area?.name ?? strings.noArea}</h2>
+              <section className="section" key={groupBy ? group.tag?.id ?? "none" : "all"}>
+                {groupBy ? (
+                  <h2 className="section-title">
+                    {group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
+                  </h2>
+                ) : null}
                 <ul className="list story-row-list">
-                  {group.projects.map((p) => (
+                  {group.items.map((p) => (
                     <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
                   ))}
                 </ul>
@@ -164,10 +156,12 @@ export function ProjectsPage() {
                   {strings.finishedProjectsSection(terminalProjects.length)}
                 </summary>
                 {terminalGroups.map((group) => (
-                  <section key={group.area?.id ?? "none"}>
-                    <h3>{group.area?.name ?? strings.noArea}</h3>
+                  <section key={groupBy ? group.tag?.id ?? "none" : "all"}>
+                    {groupBy ? (
+                      <h3>{group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}</h3>
+                    ) : null}
                     <ul className="list story-row-list">
-                      {group.projects.map((p) => (
+                      {group.items.map((p) => (
                         <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
                       ))}
                     </ul>

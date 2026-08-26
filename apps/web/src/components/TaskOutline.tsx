@@ -36,9 +36,16 @@ export interface TaskOutlineProps {
    * completely unchanged.
    */
   waitingInteraction?: TaskRowWaitingInteraction | undefined;
+  showSwipeHint?: boolean;
 }
 
-export function TaskOutline({ tasks, emptyMessage, organizable = false, waitingInteraction }: TaskOutlineProps) {
+export function TaskOutline({
+  tasks,
+  emptyMessage,
+  organizable = false,
+  waitingInteraction,
+  showSwipeHint = true,
+}: TaskOutlineProps) {
   const [movePrompt, setMovePrompt] = useState<{ task: Task; mode: MoveMode } | null>(null);
   const taskActions = useTaskActions();
   const { open } = useTaskDetail();
@@ -77,12 +84,14 @@ export function TaskOutline({ tasks, emptyMessage, organizable = false, waitingI
 
   return (
     <div className="task-outline" ref={organize.containerRef}>
-      <div className="row-between" style={{ marginBottom: 8 }}>
-        <span className="text-muted">
-          {`${strings.primarySwipeActionLabels[primarySwipeAction]} · ${strings.swipeHintChips}`}
-        </span>
-        {organize.enabled ? <span className="text-muted">{strings.dragHint}</span> : null}
-      </div>
+      {showSwipeHint ? (
+        <div className="row-between" style={{ marginBottom: 8 }}>
+          <span className="text-muted">
+            {`${strings.primarySwipeActionLabels[primarySwipeAction]} · ${strings.swipeHintChips}`}
+          </span>
+          {organize.enabled ? <span className="text-muted">{strings.dragHint}</span> : null}
+        </div>
+      ) : null}
       <OutlineOrganizeProvider value={organize.value}>
         <ul className="list" style={{ padding: 0, margin: 0 }}>
           {roots.map((task) => (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { TaskSize } from "@machbar/shared";
+import type { Tag, TaskSize } from "@machbar/shared";
 import { api } from "./api";
 import type { RefinementTaskRow } from "./api";
 import { useRefresh } from "./refresh";
@@ -17,6 +17,7 @@ import { useRefresh } from "./refresh";
 export interface RefinementListItem extends RefinementTaskRow {
   blocked: boolean;
   waitingFor: string | null;
+  effectiveTags: Tag[];
 }
 
 /**

@@ -4,7 +4,7 @@ import { renderWithProviders } from "../test/testUtils";
 import { ProjectsPage } from "./ProjectsPage";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { api } from "../lib/api";
-import { makeCriterion, makeMember, makeProject } from "../test/fixtures";
+import { makeCriterion, makeMember, makeProject, makeTag } from "../test/fixtures";
 import "../styles/index.css";
 import "../components/ProjectStoryRow.css";
 
@@ -180,6 +180,35 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(72);
     expect(screen.getByText("Fertige Geschichte")).toBeInTheDocument();
     expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
+  });
+
+  it("offers tag types instead of tag values and groups stories by the selected type", async () => {
+    const phone = makeTag({ id: 91, name: "Telefon", kind: "context" });
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({
+        id: 90,
+        title: "Anruf erledigen",
+        status: "active",
+        effectiveTags: [phone],
+      }),
+      makeProject({ id: 92, title: "Ohne Kontext", status: "active" }),
+    ]);
+
+    renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Anruf erledigen");
+
+    const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
+    expect(within(grouping).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Keine Gruppierung",
+      "Kontext",
+      "Person/Stelle",
+      "Bereich",
+    ]);
+    expect(screen.queryByRole("button", { name: "Telefon" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(grouping).getByRole("button", { name: "Kontext" }));
+    expect(screen.getByRole("heading", { name: "Telefon" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ohne Kontext" })).toBeInTheDocument();
   });
 });
 

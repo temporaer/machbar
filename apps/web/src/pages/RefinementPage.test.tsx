@@ -1,11 +1,11 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import type { OwnerSizeCounts, RefinementTaskRow } from "../lib/api";
 import { REFINEMENT_RETENTION_MS } from "../lib/useRefinementActions";
-import { makeTask } from "../test/fixtures";
+import { makeTag, makeTask } from "../test/fixtures";
 import { RefinementPage } from "./RefinementPage";
 
 vi.mock("../lib/api", () => ({
@@ -134,6 +134,31 @@ describe("RefinementPage", () => {
 
     renderWithProviders(<RefinementPage />);
     expect(await screen.findByText("Keine offenen Aufgaben in dieser Übersicht.")).toBeInTheDocument();
+  });
+
+  it("groups the refinement list by tag type without rendering value-level filter buttons", async () => {
+    const kitchen = makeTag({ id: 501, name: "Küche", kind: "area" });
+    mockedApi.getRefinementOwners.mockResolvedValue([
+      ownerRow({ ownerId: null, ownerName: null, total: 2 }),
+    ]);
+    mockedApi.getRefinementTasks.mockResolvedValue([
+      taskRow({ id: 502, title: "Mit Bereich", effectiveOwnerId: null }),
+      taskRow({ id: 503, title: "Ohne Bereich", effectiveOwnerId: null }),
+    ]);
+    mockedApi.searchTasks.mockResolvedValue([
+      makeTask({ id: 502, effectiveTags: [kitchen] }),
+      makeTask({ id: 503 }),
+    ]);
+
+    renderWithProviders(<RefinementPage />);
+    await screen.findByText("Mit Bereich");
+
+    const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
+    expect(screen.queryByRole("button", { name: "Küche" })).not.toBeInTheDocument();
+    await userEvent.click(within(grouping).getByRole("button", { name: "Bereich" }));
+
+    expect(screen.getByRole("heading", { name: "Küche" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ohne Bereich" })).toBeInTheDocument();
   });
 
   it("defers the owner/list refetch (so the matrix regrouping is visible) until the retention window elapses after a swipe-driven size change", async () => {

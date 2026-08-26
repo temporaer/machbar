@@ -1169,6 +1169,14 @@ a {
   gap: 8px;
 }
 
+.tag-grouping-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
 .row-between {
   display: flex;
   align-items: center;

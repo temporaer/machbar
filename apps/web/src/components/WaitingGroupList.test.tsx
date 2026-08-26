@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { WaitingGroupList } from "./WaitingGroupList";
 import { api } from "../lib/api";
-import { makeMember, makeTask, makeWaitingGroup } from "../test/fixtures";
+import { makeMember, makeTag, makeTask, makeWaitingGroup } from "../test/fixtures";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -77,6 +77,28 @@ describe("WaitingGroupList", () => {
     const titles = [...container.querySelectorAll(".task-row-title")].map((el) => el.textContent);
     expect(titles).toEqual(["A - erste", "B - zweite", "C - dritte"]);
     expect(container.querySelectorAll(".task-row").length).toBe(3);
+  });
+
+  it("gruppiert nach einem Tag-Typ, ohne mehrfach getaggte Aufgaben zu duplizieren", async () => {
+    const phone = makeTag({ id: 201, name: "Telefon", kind: "context" });
+    const home = makeTag({ id: 202, name: "Zuhause", kind: "context" });
+    const tagged = makeTask({
+      id: 203,
+      title: "Mehrfach getaggt",
+      status: "waiting",
+      effectiveTags: [phone, home],
+    });
+    const untagged = makeTask({ id: 204, title: "Ohne Tag", status: "waiting" });
+    const group = makeWaitingGroup({ tasks: [tagged, untagged] });
+
+    const { container } = renderWithProviders(
+      <WaitingGroupList groups={[group]} groupBy="context" />,
+    );
+
+    await screen.findByText("Mehrfach getaggt");
+    expect(screen.getByRole("heading", { name: "Telefon" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ohne Kontext" })).toBeInTheDocument();
+    expect(container.querySelectorAll(".task-row").length).toBe(2);
   });
 
   it("zeigt einen leeren Zustand ohne Gruppen", async () => {

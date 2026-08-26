@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { tagKinds, taskSizeLabels } from "@machbar/shared";
+import { taskSizeLabels } from "@machbar/shared";
 import type { RefinementIssue } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -12,6 +12,11 @@ import { RefinementMatrix } from "../components/RefinementMatrix";
 import type { RefinementMatrixSelection } from "../components/RefinementMatrix";
 import { RefinementTaskRow } from "../components/RefinementTaskRow";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { TagGroupingControl } from "../components/TagGroupingControl";
+import {
+  groupItemsByTagKind,
+  type GroupableTagKind,
+} from "../lib/tagGrouping";
 import "./RefinementPage.css";
 
 function selectionLabel(
@@ -42,7 +47,7 @@ function selectionLabel(
  */
 export function RefinementPage() {
   const [selection, setSelection] = useState<RefinementMatrixSelection | null>(null);
-  const [tagIds, setTagIds] = useState<number[]>([]);
+  const [groupBy, setGroupBy] = useState<GroupableTagKind | null>(null);
   const actions = useRefinementActions();
   const navigate = useNavigate();
   const taskDetail = useTaskDetail();
@@ -58,22 +63,21 @@ export function RefinementPage() {
     loading: ownersLoading,
     error: ownersError,
     reload: reloadOwners,
-  } = useAsync(() => api.getRefinementOwners({ tagIds }), [JSON.stringify(tagIds)]);
+  } = useAsync(() => api.getRefinementOwners({}), []);
   const {
     data: taskRows,
     loading: tasksLoading,
     error: tasksError,
     reload: reloadTasks,
-  } = useAsync(() => api.getRefinementTasks({ tagIds }), [JSON.stringify(tagIds)]);
+  } = useAsync(() => api.getRefinementTasks({}), []);
   // `GET /api/refinement/tasks` doesn't carry blocked/waitingFor (see
   // `useRefinementActions.ts`'s `RefinementListItem` doc comment) — this
   // unfiltered `searchTasks` call (the same technique `SearchPage` already
   // uses for its initial, filter-less load) supplies them by task id.
   const { data: contextTasks } = useAsync(
-    () => api.searchTasks({ tagIds }),
-    [JSON.stringify(tagIds)],
+    () => api.searchTasks({}),
+    [],
   );
-  const { data: tags } = useAsync(() => api.getTags(), []);
 
   const ownerNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -88,7 +92,12 @@ export function RefinementPage() {
     const contextById = new Map((contextTasks ?? []).map((t) => [t.id, t]));
     return taskRows.map((row) => {
       const ctx = contextById.get(row.id);
-      return { ...row, blocked: ctx?.blocked ?? false, waitingFor: ctx?.waitingFor ?? null };
+      return {
+        ...row,
+        blocked: ctx?.blocked ?? false,
+        waitingFor: ctx?.waitingFor ?? null,
+        effectiveTags: ctx?.effectiveTags ?? [],
+      };
     });
   }, [taskRows, contextTasks]);
 
@@ -101,6 +110,9 @@ export function RefinementPage() {
       return item.size === selection.size;
     });
   }, [listItems, selection]);
+  const groupedItems = groupBy
+    ? groupItemsByTagKind(filteredItems, groupBy)
+    : [{ tag: null, items: filteredItems }];
 
   const loading = issuesLoading || ownersLoading || tasksLoading;
   const error = issuesError ?? ownersError ?? tasksError;
@@ -126,39 +138,7 @@ export function RefinementPage() {
       <div className="page-header">
         <h1>{strings.refinement}</h1>
       </div>
-      <div className="stack">
-        {tagKinds.map((kind) => {
-          const kindTags = (tags ?? []).filter((tag) => tag.kind === kind);
-          if (kindTags.length === 0) return null;
-          return (
-            <div key={kind}>
-              <p className="text-muted">{strings.tagKindLabels[kind]}</p>
-              <div className="row" role="group" aria-label={strings.tagKindLabels[kind]}>
-                {kindTags.map((tag) => {
-                  const selected = tagIds.includes(tag.id);
-                  return (
-                    <button
-                      key={tag.id}
-                      type="button"
-                      className="chip"
-                      aria-pressed={selected}
-                      onClick={() =>
-                        setTagIds((current) =>
-                          selected
-                            ? current.filter((id) => id !== tag.id)
-                            : [...current, tag.id],
-                        )
-                      }
-                    >
-                      {tag.name}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <TagGroupingControl value={groupBy} onChange={setGroupBy} />
 
       {loading ? <LoadingState /> : null}
       {error ? (
@@ -233,18 +213,27 @@ export function RefinementPage() {
           {strings.swipeHintSize} · {strings.swipeHintSizeChips}
         </p>
         {taskRows && filteredItems.length === 0 ? <EmptyState message={strings.refinementEmpty} /> : null}
-        {filteredItems.length > 0 ? (
-          <ul className="list refinement-list" style={{ padding: 0, margin: 0 }}>
-            {filteredItems.map((item) => (
-              <RefinementTaskRow
-                key={item.id}
-                task={item}
-                ownerName={item.effectiveOwnerId !== null ? ownerNameById.get(item.effectiveOwnerId) ?? null : null}
-                actions={actions}
-              />
-            ))}
-          </ul>
-        ) : null}
+        {filteredItems.length > 0
+          ? groupedItems.map((group) => (
+              <section key={groupBy ? group.tag?.id ?? "none" : "all"}>
+                {groupBy ? (
+                  <h3 className="section-title">
+                    {group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
+                  </h3>
+                ) : null}
+                <ul className="list refinement-list" style={{ padding: 0, margin: 0 }}>
+                  {group.items.map((item) => (
+                    <RefinementTaskRow
+                      key={item.id}
+                      task={item}
+                      ownerName={item.effectiveOwnerId !== null ? ownerNameById.get(item.effectiveOwnerId) ?? null : null}
+                      actions={actions}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ))
+          : null}
       </div>
     </div>
   );

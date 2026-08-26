@@ -4,45 +4,24 @@ import { useAsync } from "../lib/useAsync";
 import { strings } from "../lib/strings";
 import { LoadingState, ErrorState } from "../components/AsyncStates";
 import { WaitingGroupList } from "../components/WaitingGroupList";
+import { TagGroupingControl } from "../components/TagGroupingControl";
+import type { GroupableTagKind } from "../lib/tagGrouping";
 
 export function WaitingPage() {
-  const [actorTagId, setActorTagId] = useState<number | undefined>();
-  const { data: tags } = useAsync(() => api.getTags(), []);
+  const [groupBy, setGroupBy] = useState<GroupableTagKind | null>(null);
   const { data: groups, loading, error, reload } = useAsync(
-    () => api.getWaiting(actorTagId),
-    [actorTagId],
+    () => api.getWaiting(),
+    [],
   );
   return (
     <div>
       <div className="page-header">
         <h1>{strings.waiting}</h1>
       </div>
-      <div className="row" role="group" aria-label={strings.tagKindLabels.actor}>
-        <button
-          type="button"
-          className="chip"
-          aria-pressed={actorTagId === undefined}
-          onClick={() => setActorTagId(undefined)}
-        >
-          {strings.allActors}
-        </button>
-        {(tags ?? [])
-          .filter((tag) => tag.kind === "actor")
-          .map((tag) => (
-            <button
-              key={tag.id}
-              type="button"
-              className="chip"
-              aria-pressed={actorTagId === tag.id}
-              onClick={() => setActorTagId(tag.id)}
-            >
-              {tag.name}
-            </button>
-          ))}
-      </div>
+      <TagGroupingControl value={groupBy} onChange={setGroupBy} />
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
-      {groups ? <WaitingGroupList groups={groups} /> : null}
+      {groups ? <WaitingGroupList groups={groups} groupBy={groupBy} /> : null}
     </div>
   );
 }

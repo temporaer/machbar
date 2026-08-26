@@ -3,13 +3,16 @@ import type { Task, WaitingGroup } from "@machbar/shared";
 import { strings } from "../lib/strings";
 import { TaskOutline } from "./TaskOutline";
 import { WaitingFollowUpSheet } from "./WaitingFollowUpSheet";
+import {
+  groupItemsByTagKind,
+  type GroupableTagKind,
+} from "../lib/tagGrouping";
 
 /**
  * Flattens the backend's `WaitingGroup[]` (tasks bucketed by `waitingFor`)
- * into a single ordered `Task[]` for `TaskOutline`, preserving group order
- * and each group's task order exactly — no regrouping, no external group
- * headings, and no duplicates, since every task appears in exactly one
- * backend group.
+ * into a single ordered `Task[]`, preserving group order and each group's
+ * task order exactly. The page may then regroup that flat list by one tag
+ * type without duplicating tasks that carry multiple tags.
  *
  * Each task's `waitingFor` is displayed via `TaskRow`'s existing meta line;
  * when a task's own `waitingFor` is null/blank, `group.waitingFor` (e.g.
@@ -33,17 +36,51 @@ function toDisplayTasks(groups: WaitingGroup[]): Task[] {
   return tasks;
 }
 
-export function WaitingGroupList({ groups }: { groups: WaitingGroup[] }) {
+export function WaitingGroupList({
+  groups,
+  groupBy = null,
+}: {
+  groups: WaitingGroup[];
+  groupBy?: GroupableTagKind | null;
+}) {
   const [followUpTask, setFollowUpTask] = useState<Task | null>(null);
+  const tasks = toDisplayTasks(groups);
+  const tagGroups = groupBy ? groupItemsByTagKind(tasks, groupBy) : null;
 
   return (
     <>
-      <TaskOutline
-        tasks={toDisplayTasks(groups)}
-        emptyMessage={strings.waitingEmpty}
-        organizable={false}
-        waitingInteraction={{ onFollowUp: setFollowUpTask }}
-      />
+      {groupBy && tagGroups ? (
+        tagGroups.length > 0 ? (
+          tagGroups.map((group, index) => (
+            <section className="section" key={group.tag?.id ?? "none"}>
+              <h2 className="section-title">
+                {group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
+              </h2>
+              <TaskOutline
+                tasks={group.items}
+                emptyMessage={strings.waitingEmpty}
+                organizable={false}
+                waitingInteraction={{ onFollowUp: setFollowUpTask }}
+                showSwipeHint={index === 0}
+              />
+            </section>
+          ))
+        ) : (
+          <TaskOutline
+            tasks={[]}
+            emptyMessage={strings.waitingEmpty}
+            organizable={false}
+            waitingInteraction={{ onFollowUp: setFollowUpTask }}
+          />
+        )
+      ) : (
+        <TaskOutline
+          tasks={tasks}
+          emptyMessage={strings.waitingEmpty}
+          organizable={false}
+          waitingInteraction={{ onFollowUp: setFollowUpTask }}
+        />
+      )}
       {followUpTask ? (
         <WaitingFollowUpSheet task={followUpTask} onClose={() => setFollowUpTask(null)} />
       ) : null}
