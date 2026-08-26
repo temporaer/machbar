@@ -73,6 +73,69 @@ describe("effective owner and typed-tag inheritance", () => {
     expect(childTask.effectiveContextTags.map((t: { id: number }) => t.id)).toContain(tag.id);
   });
 
+  it("keeps every project task creation and refile path in owner inheritance by default", async () => {
+    const owner = createMember("Projektinhaber");
+    const project = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/projects",
+        payload: { title: "Lastenrad überholen", ownerMemberId: owner.id },
+      })
+    ).json();
+
+    const direct = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        payload: { projectId: project.id, title: "Direkter Schritt" },
+      })
+    ).json();
+    const child = (
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/tasks/${direct.id}/children`,
+        payload: { title: "Teilaufgabe" },
+      })
+    ).json();
+    const successor = (
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/tasks/${direct.id}/successors`,
+        payload: { title: "Nachfolger" },
+      })
+    ).json();
+    const sequence = (
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${project.id}/task-sequence`,
+        payload: { titles: ["Ablauf eins", "Ablauf zwei"] },
+      })
+    ).json();
+    const captured = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        payload: { title: "Erst im Eingang" },
+      })
+    ).json();
+    const refiled = (
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/tasks/${captured.id}/move-subtree`,
+        payload: { projectId: project.id },
+      })
+    ).json();
+
+    for (const task of [direct, child, successor, ...sequence, refiled]) {
+      expect(task).toMatchObject({
+        ownerMemberId: null,
+        ownerInheritanceMode: "inherit",
+        effectiveOwnerId: owner.id,
+        effectiveOwnerSource: "project",
+      });
+    }
+  });
+
   it("labels inheritance as 'parent' once an ancestor task sets an explicit override", async () => {
     const projectOwner = createMember("Projektinhaber");
     const parentOwner = createMember("Elternzuständiger");
