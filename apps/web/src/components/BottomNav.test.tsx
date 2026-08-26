@@ -25,5 +25,23 @@ describe("BottomNav", () => {
     );
     const inboxLink = screen.getByText("Eingang").closest("a");
     expect(inboxLink).toHaveClass("active");
+    expect(inboxLink).toHaveAttribute("aria-current", "page");
+  });
+
+  it("uses one consistent decorative SVG icon per destination", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <BottomNav />
+      </MemoryRouter>,
+    );
+
+    const track = container.querySelector(".bottom-nav-inner");
+    expect(track).toBeInTheDocument();
+    expect(track?.querySelectorAll(".nav-icon svg")).toHaveLength(5);
+    expect(track?.querySelectorAll(".nav-icon svg[aria-hidden='true']")).toHaveLength(5);
+    expect(container).not.toHaveTextContent("☀️");
+    expect(container).not.toHaveTextContent("📥");
+    expect(container).not.toHaveTextContent("📁");
+    expect(container).not.toHaveTextContent("⏳");
   });
 });

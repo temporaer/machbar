@@ -46,7 +46,7 @@ export function TodayPage() {
   ];
 
   return (
-    <div>
+    <div className="today-page">
       <PageHeader title={strings.today} hints={pageHints} />
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}

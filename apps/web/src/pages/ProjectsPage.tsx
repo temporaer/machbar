@@ -102,14 +102,9 @@ export function ProjectsPage() {
     <div>
       <PageHeader
         title={strings.projects}
-        actions={(
-          <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
-            {strings.addProject}
-          </button>
-        )}
         hints={[{ text: strings.projectsSwipeHint }]}
       />
-      <div className="stack">
+      <div className="stack projects-controls">
         <input
           aria-label={strings.search}
           placeholder={strings.projectSearchPlaceholder}
@@ -201,6 +196,14 @@ export function ProjectsPage() {
           </>
         )
       ) : null}
+      <button
+        type="button"
+        className="quick-add-fab"
+        aria-label={strings.addProject}
+        onClick={() => setCreating(true)}
+      >
+        +
+      </button>
       {creating ? (
         <BottomSheet title={strings.newProject} onClose={() => setCreating(false)} labelledBy="new-project-title">
           <form

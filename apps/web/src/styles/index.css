@@ -727,34 +727,83 @@ a {
   bottom: 0;
   left: 0;
   right: 0;
-  height: var(--nav-height);
-  display: flex;
-  background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
-  padding-bottom: env(safe-area-inset-bottom);
+  height: calc(var(--nav-height) + env(safe-area-inset-bottom));
+  padding: 5px 10px calc(5px + env(safe-area-inset-bottom));
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 76%, transparent);
+  background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+  box-shadow: 0 -5px 18px rgba(20, 30, 25, 0.06);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
   z-index: 30;
 }
 
+.bottom-nav-inner {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  width: 100%;
+  max-width: 720px;
+  height: 100%;
+  margin: 0 auto;
+}
+
 .bottom-nav a {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  min-width: 0;
+  min-height: 44px;
+  gap: 1px;
+  border-radius: 12px;
   text-decoration: none;
   color: var(--color-text-muted);
-  font-size: 0.68rem;
-  font-weight: 600;
+  font-size: 0.66rem;
+  font-weight: 500;
+  transition: color 140ms ease, background-color 140ms ease;
 }
 
 .bottom-nav a.active,
 .bottom-nav a[aria-current="page"] {
   color: var(--color-primary);
+  font-weight: 600;
 }
 
 .bottom-nav .nav-icon {
-  font-size: 1.25rem;
+  display: grid;
+  width: 38px;
+  height: 27px;
+  place-items: center;
+  border-radius: 999px;
+  transition: background-color 140ms ease, transform 140ms ease;
+}
+
+.bottom-nav .nav-icon svg {
+  width: 21px;
+  height: 21px;
+}
+
+.bottom-nav a.active .nav-icon,
+.bottom-nav a[aria-current="page"] .nav-icon {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.bottom-nav a:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-primary) 55%, transparent);
+  outline-offset: -2px;
+}
+
+@media (hover: hover) {
+  .bottom-nav a:not(.active):hover {
+    color: var(--color-text);
+    background: color-mix(in srgb, var(--color-text-muted) 5%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bottom-nav a,
+  .bottom-nav .nav-icon {
+    transition: none;
+  }
 }
 
 .quick-add-fab {
@@ -1266,7 +1315,12 @@ a {
   color: var(--color-text-muted);
 }
 
-@media (max-width: 360px) {
+@media (max-width: 520px) {
+  .today-page .task-row-checkbox,
+  .today-page .task-row-kebab {
+    display: none;
+  }
+
   .task-row-header {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
@@ -1275,6 +1329,10 @@ a {
   .task-card-tags {
     max-width: 100%;
     justify-self: end;
+  }
+
+  .task-card-tag {
+    max-width: 110px;
   }
 }
 
@@ -1525,6 +1583,18 @@ a {
   background: var(--color-primary);
   color: var(--color-primary-contrast);
   font-weight: 600;
+}
+
+.projects-controls .list-option-button {
+  border-color: color-mix(in srgb, var(--color-text-muted) 24%, transparent);
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
+.projects-controls .list-option-button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--color-primary) 30%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  color: var(--color-primary);
 }
 
 .row-between {

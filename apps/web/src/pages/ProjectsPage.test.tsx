@@ -93,6 +93,19 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(badges).toEqual(["Aktiv", "Später / noch nicht aktiv", "Abgeschlossen", "Archiviert"]);
   });
 
+  it("opens project creation from the bottom-right plus button", async () => {
+    const { container } = renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Backlog-Geschichte");
+
+    const addButton = screen.getByRole("button", { name: "Projekt anlegen" });
+    expect(addButton).toHaveClass("quick-add-fab");
+    expect(addButton).toHaveTextContent("+");
+    expect(container.querySelector(".page-header")).not.toContainElement(addButton);
+
+    await userEvent.click(addButton);
+    expect(screen.getByRole("heading", { name: "Neues Projekt" })).toBeInTheDocument();
+  });
+
   it("changes a status only through named buttons, never through a status dropdown", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Backlog-Geschichte");

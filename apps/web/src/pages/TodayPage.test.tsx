@@ -61,6 +61,7 @@ describe("TodayPage", () => {
     const { container } = renderWithProviders(<TodayPage />);
 
     await screen.findByText("Steuererklärung abgeben");
+    expect(container.querySelector(".today-page")).toBeInTheDocument();
     expect(screen.queryByText("Heute erledigen")).not.toBeInTheDocument();
     expect(screen.queryByText("Für heute markieren")).not.toBeInTheDocument();
     const explanation =
