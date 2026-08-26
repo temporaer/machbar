@@ -7,6 +7,7 @@ import {
   groupItemsByTagKind,
   type GroupableTagKind,
 } from "../lib/tagGrouping";
+import { CollapsibleGroup } from "./CollapsibleGroup";
 
 /**
  * Flattens the backend's `WaitingGroup[]` (tasks bucketed by `waitingFor`)
@@ -52,10 +53,11 @@ export function WaitingGroupList({
       {groupBy && tagGroups ? (
         tagGroups.length > 0 ? (
           tagGroups.map((group, index) => (
-            <section className="section" key={group.tag?.id ?? "none"}>
-              <h2 className="section-title">
-                {group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
-              </h2>
+            <CollapsibleGroup
+              key={group.tag?.id ?? "none"}
+              title={group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
+              headingLevel={2}
+            >
               <TaskOutline
                 tasks={group.items}
                 emptyMessage={strings.waitingEmpty}
@@ -63,7 +65,7 @@ export function WaitingGroupList({
                 waitingInteraction={{ onFollowUp: setFollowUpTask }}
                 showSwipeHint={index === 0}
               />
-            </section>
+            </CollapsibleGroup>
           ))
         ) : (
           <TaskOutline

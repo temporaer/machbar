@@ -17,6 +17,7 @@ import {
   groupItemsByTagKind,
   type GroupableTagKind,
 } from "../lib/tagGrouping";
+import { CollapsibleGroup } from "../components/CollapsibleGroup";
 import "./RefinementPage.css";
 
 function selectionLabel(
@@ -215,12 +216,25 @@ export function RefinementPage() {
         {taskRows && filteredItems.length === 0 ? <EmptyState message={strings.refinementEmpty} /> : null}
         {filteredItems.length > 0
           ? groupedItems.map((group) => (
-              <section key={groupBy ? group.tag?.id ?? "none" : "all"}>
-                {groupBy ? (
-                  <h3 className="section-title">
-                    {group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
-                  </h3>
-                ) : null}
+              groupBy ? (
+                <CollapsibleGroup
+                  key={`${groupBy}-${group.tag?.id ?? "none"}`}
+                  title={group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
+                  headingLevel={3}
+                >
+                  <ul className="list refinement-list" style={{ padding: 0, margin: 0 }}>
+                    {group.items.map((item) => (
+                      <RefinementTaskRow
+                        key={item.id}
+                        task={item}
+                        ownerName={item.effectiveOwnerId !== null ? ownerNameById.get(item.effectiveOwnerId) ?? null : null}
+                        actions={actions}
+                      />
+                    ))}
+                  </ul>
+                </CollapsibleGroup>
+              ) : (
+              <section key="all">
                 <ul className="list refinement-list" style={{ padding: 0, margin: 0 }}>
                   {group.items.map((item) => (
                     <RefinementTaskRow
@@ -232,6 +246,7 @@ export function RefinementPage() {
                   ))}
                 </ul>
               </section>
+              )
             ))
           : null}
       </div>

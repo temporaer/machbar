@@ -96,9 +96,15 @@ describe("WaitingGroupList", () => {
     );
 
     await screen.findByText("Mehrfach getaggt");
-    expect(screen.getByRole("heading", { name: "Telefon" })).toBeInTheDocument();
+    const heading = screen.getByRole("heading", { name: "Telefon" });
+    expect(heading).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ohne Kontext" })).toBeInTheDocument();
     expect(container.querySelectorAll(".task-row").length).toBe(2);
+
+    const details = heading.closest("details");
+    expect(details).toHaveAttribute("open");
+    await userEvent.click(details!.querySelector("summary")!);
+    expect(details).not.toHaveAttribute("open");
   });
 
   it("zeigt einen leeren Zustand ohne Gruppen", async () => {

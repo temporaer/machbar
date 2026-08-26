@@ -18,6 +18,7 @@ import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates"
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { BottomSheet } from "../components/BottomSheet";
 import { TagGroupingControl } from "../components/TagGroupingControl";
+import { CollapsibleGroup } from "../components/CollapsibleGroup";
 
 /**
  * The Projekte tab: every project is a user story, and every row carries the
@@ -142,18 +143,27 @@ export function ProjectsPage() {
         ) : (
           <>
             {primaryGroups.map((group) => (
-              <section className="section" key={groupBy ? group.tag?.id ?? "none" : "all"}>
-                {groupBy ? (
-                  <h2 className="section-title">
-                    {group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
-                  </h2>
-                ) : null}
+              groupBy ? (
+                <CollapsibleGroup
+                  key={`${groupBy}-${group.tag?.id ?? "none"}`}
+                  title={group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
+                  headingLevel={2}
+                >
+                  <ul className="list story-row-list">
+                    {group.items.map((p) => (
+                      <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
+                    ))}
+                  </ul>
+                </CollapsibleGroup>
+              ) : (
+              <section className="section" key="all">
                 <ul className="list story-row-list">
                   {group.items.map((p) => (
                     <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
                   ))}
                 </ul>
               </section>
+              )
             ))}
             {terminalProjects.length > 0 ? (
               <details className="section" open={revealTerminalProjects}>
@@ -161,16 +171,27 @@ export function ProjectsPage() {
                   {strings.finishedProjectsSection(terminalProjects.length)}
                 </summary>
                 {terminalGroups.map((group) => (
-                  <section key={groupBy ? group.tag?.id ?? "none" : "all"}>
-                    {groupBy ? (
-                      <h3>{group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}</h3>
-                    ) : null}
+                  groupBy ? (
+                    <CollapsibleGroup
+                      key={`${groupBy}-${group.tag?.id ?? "none"}`}
+                      title={group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
+                      headingLevel={3}
+                    >
+                      <ul className="list story-row-list">
+                        {group.items.map((p) => (
+                          <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
+                        ))}
+                      </ul>
+                    </CollapsibleGroup>
+                  ) : (
+                  <section key="all">
                     <ul className="list story-row-list">
                       {group.items.map((p) => (
                         <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
                       ))}
                     </ul>
                   </section>
+                  )
                 ))}
               </details>
             ) : null}

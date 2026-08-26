@@ -103,6 +103,29 @@ a {
   letter-spacing: 0.02em;
 }
 
+.collapsible-group > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.collapsible-group > summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-group > summary::after {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  content: "";
+  transform: rotate(45deg);
+  transition: transform 120ms ease;
+}
+
+.collapsible-group[open] > summary::after {
+  transform: rotate(225deg);
+}
+
 .card {
   background: var(--color-surface);
   border-radius: var(--radius-md);
