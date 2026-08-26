@@ -254,8 +254,6 @@ const extra = {
   addTaskToProject: "Aufgabe im Projekt anlegen",
   todayExplanation:
     "Diese Übersicht wird automatisch aus Terminen, Fälligkeiten und dem Status berechnet – ohne manuelle Markierung.",
-  unscheduledHint:
-    "Zusätzliche machbare Aufgaben ohne heutigen Termin.",
   manageMembers: "Personen verwalten",
   manageMembersHint: "Lege Personen an, benenne sie um oder entferne sie.",
   memberName: "Name",
@@ -269,6 +267,9 @@ const extra = {
   swipeSettingHint:
     "Bestimmt, was ein Wisch nach rechts in Aufgabenlisten auslöst. Nach links wischen zeigt immer Zuweisen, Planen, Notizen sowie Warten/Mehr. Bereits erledigte oder verworfene Aufgaben werden durch die Wischgeste immer wieder geöffnet.",
   swipeHintChips: "Nach links wischen oder ⋯: Zuweisen, Planen, Notizen, Zum Projekt, Warten, Mehr",
+  taskGestures: "Aufgaben bedienen",
+  taskGestureHint: (rightAction: string) =>
+    `Nach rechts wischen: „${rightAction}“. Nach links wischen öffnet weitere Aktionen wie Zuweisen, Planen und Notizen. Am Desktop geht das auch über ⋯.`,
   assign: "Zuweisen",
   schedule: "Planen",
   moreActions: "Weitere Aktionen",

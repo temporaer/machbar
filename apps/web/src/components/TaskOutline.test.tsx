@@ -79,6 +79,28 @@ describe("TaskOutline", () => {
     await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledWith(3, "leave_open"));
   });
 
+  it("explains swipe gestures in plain language and can hide the inline hint", async () => {
+    const task = makeTask({ id: 7, title: "Wischbare Aufgabe" });
+    const { rerender } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+
+    expect(
+      await screen.findByText(
+        "Nach rechts wischen: „Erledigen / Wieder öffnen“. Nach links wischen öffnet weitere Aktionen wie Zuweisen, Planen und Notizen. Am Desktop geht das auch über ⋯.",
+      ),
+    ).toBeInTheDocument();
+
+    rerender(
+      <TaskOutline
+        tasks={[task]}
+        emptyMessage="Nichts da"
+        showSwipeHint={false}
+      />,
+    );
+    expect(screen.queryByText(/Nach rechts wischen:/)).not.toBeInTheDocument();
+  });
+
   it("wiederholt keine Sortierwerkzeuge unter jeder Zeile", async () => {
     const child = makeTask({ id: 5, title: "Teilaufgabe", parentTaskId: 4, position: 0 });
     const task = makeTask({ id: 4, title: "Sortieraufgabe", position: 0, children: [child] });

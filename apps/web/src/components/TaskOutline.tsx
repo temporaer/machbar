@@ -50,6 +50,9 @@ export function TaskOutline({
   const taskActions = useTaskActions();
   const { open } = useTaskDetail();
   const { primarySwipeAction } = useSwipeSettings();
+  const rightSwipeAction = waitingInteraction
+    ? strings.makeActionable
+    : strings.primarySwipeActionLabels[primarySwipeAction];
   // Structural editing (drag gesture and the selected-task toolbar) keeps
   // its own optimistic view of the tree, so render what it hands back
   // rather than the raw prop.
@@ -87,7 +90,7 @@ export function TaskOutline({
       {showSwipeHint ? (
         <div className="row-between" style={{ marginBottom: 8 }}>
           <span className="text-muted">
-            {`${strings.primarySwipeActionLabels[primarySwipeAction]} · ${strings.swipeHintChips}`}
+            {strings.taskGestureHint(rightSwipeAction)}
           </span>
           {organize.enabled ? <span className="text-muted">{strings.dragHint}</span> : null}
         </div>

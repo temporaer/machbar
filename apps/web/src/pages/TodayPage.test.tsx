@@ -71,6 +71,11 @@ describe("TodayPage", () => {
       screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
     );
     expect(screen.getByText(explanation)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Nach rechts wischen: „Erledigen / Wieder öffnen“. Nach links wischen öffnet weitere Aktionen wie Zuweisen, Planen und Notizen. Am Desktop geht das auch über ⋯.",
+      ),
+    ).toBeInTheDocument();
     expect(container.querySelector(".task-row-surface-actionable")).toBeInTheDocument();
     expect(container.querySelector(".task-row-header")).toContainElement(
       screen.getByText("Finanzen"),
@@ -137,20 +142,11 @@ describe("TodayPage", () => {
     renderWithProviders(<TodayPage />);
 
     const heading = await screen.findByText("Weitere machbare Aufgaben");
-    expect(
-      screen.queryByText("Zusätzliche machbare Aufgaben ohne heutigen Termin."),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Nach rechts wischen:/)).not.toBeInTheDocument();
     // No longer a collapsed <details>/<summary> — it's a normal, always
     // visible section like every other one on this page.
     expect(heading.closest("details")).toBeNull();
     expect(screen.getByText("Keller aufräumen")).toBeVisible();
-
-    await userEvent.click(
-      screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
-    );
-    expect(
-      screen.getByText("Zusätzliche machbare Aufgaben ohne heutigen Termin."),
-    ).toBeInTheDocument();
   });
 
   it("zeigt fällige Wiedervorlagen wartender Aufgaben unter Nachhaken", async () => {

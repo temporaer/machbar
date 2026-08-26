@@ -7,6 +7,7 @@ import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaCard } from "../components/ProjectAgendaCard";
 import { PageHeader, type PageHint } from "../components/PageHeader";
+import { useSwipeSettings } from "../lib/swipeSettings";
 
 const sections: Array<{
   key: "planned" | "overdue" | "dueToday" | "dueSoon";
@@ -27,6 +28,7 @@ export function TodayPage() {
   // another member's tasks. Re-fetching whenever `currentMemberId` changes
   // ensures switching identities always shows that member's own agenda.
   const { currentMemberId } = useIdentity();
+  const { primarySwipeAction } = useSwipeSettings();
   const { data: agenda, loading, error, reload } = useAsync(
     () => api.getAgenda(currentMemberId),
     [currentMemberId],
@@ -37,14 +39,17 @@ export function TodayPage() {
   const projectAgenda = agenda?.projects ?? [];
   const pageHints: PageHint[] = [
     { text: strings.todayExplanation },
+    {
+      label: strings.taskGestures,
+      text: strings.taskGestureHint(
+        strings.primarySwipeActionLabels[primarySwipeAction],
+      ),
+    },
     ...(followUpTasks.length > 0
       ? [{ label: strings.followUp, text: strings.followUpHint }]
       : []),
     ...(revisitTasks.length > 0
       ? [{ label: strings.revisit, text: strings.revisitHint }]
-      : []),
-    ...(additionalTasks.length > 0
-      ? [{ label: strings.unscheduled, text: strings.unscheduledHint }]
       : []),
   ];
 
@@ -81,25 +86,41 @@ export function TodayPage() {
                 .map((s) => (
                   <div className="section" key={s.key}>
                     <div className="section-title">{s.label}</div>
-                    <TaskOutline tasks={agenda[s.key]} emptyMessage={strings.noItems} />
+                    <TaskOutline
+                      tasks={agenda[s.key]}
+                      emptyMessage={strings.noItems}
+                      showSwipeHint={false}
+                    />
                   </div>
                 ))}
               {followUpTasks.length > 0 ? (
                 <div className="section">
                   <div className="section-title">{strings.followUp}</div>
-                  <TaskOutline tasks={followUpTasks} emptyMessage={strings.noItems} />
+                  <TaskOutline
+                    tasks={followUpTasks}
+                    emptyMessage={strings.noItems}
+                    showSwipeHint={false}
+                  />
                 </div>
               ) : null}
               {revisitTasks.length > 0 ? (
                 <div className="section" key="revisit">
                   <div className="section-title">{strings.revisit}</div>
-                  <TaskOutline tasks={revisitTasks} emptyMessage={strings.noItems} />
+                  <TaskOutline
+                    tasks={revisitTasks}
+                    emptyMessage={strings.noItems}
+                    showSwipeHint={false}
+                  />
                 </div>
               ) : null}
               {additionalTasks.length > 0 ? (
                 <div className="section">
                   <div className="section-title">{strings.unscheduled}</div>
-                  <TaskOutline tasks={additionalTasks} emptyMessage={strings.noItems} />
+                  <TaskOutline
+                    tasks={additionalTasks}
+                    emptyMessage={strings.noItems}
+                    showSwipeHint={false}
+                  />
                 </div>
               ) : null}
             </>
