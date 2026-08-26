@@ -343,8 +343,14 @@ describe("TaskRow – calm shared card presentation", () => {
     await screen.findByText("Ruhige Aufgabenkarte");
 
     expect(container.querySelector(".task-row")).toHaveClass("task-row-surface-actionable");
-    expect(container.querySelector(".task-row-header")).toContainElement(
+    const header = container.querySelector(".task-row-header");
+    expect(header).toContainElement(
       screen.getByText("Ruhige Aufgabenkarte"),
+    );
+    expect(header?.firstElementChild).toHaveClass("task-card-tags");
+    expect(container.querySelector(".task-row-main")).toHaveAttribute(
+      "aria-label",
+      "Ruhige Aufgabenkarte",
     );
     expect(screen.queryByText("Machbar")).not.toBeInTheDocument();
 
@@ -401,6 +407,31 @@ describe("TaskRow – calm shared card presentation", () => {
     expect(wrap?.querySelector(".task-row-meta")).toBeInTheDocument();
     expect(wrap?.querySelector(".task-row-notes")).toHaveTextContent(
       "Ruhige Zusatzinformation",
+    );
+  });
+
+  it("keeps a long wrapping title complete while tags occupy the upper-right", async () => {
+    const title =
+      "Sehr lange Aufgabe, die über mehrere Zeilen läuft und unter den Tags wieder die volle Kartenbreite nutzt";
+    const task = makeTask({
+      id: 26,
+      title,
+      effectiveTags: [
+        makeTag({ id: 31, name: "Haushalt", kind: "area" }),
+        makeTag({ id: 32, name: "Unterwegs", kind: "context" }),
+      ],
+    });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+
+    const titleElement = await screen.findByText(title);
+    const header = container.querySelector(".task-row-header");
+    expect(titleElement).toHaveClass("task-row-title");
+    expect(header?.firstElementChild).toHaveClass("task-card-tags");
+    expect(container.querySelector(".task-row-main")).toHaveAttribute(
+      "aria-label",
+      title,
     );
   });
 });

@@ -471,13 +471,18 @@ export function TaskRow({
           {isDone ? "✓" : isCancelled ? "×" : ""}
         </button>
         <div className="task-row-main-wrap">
-          <button type="button" className="task-row-main" onClick={() => onOpenDetail(task.id)}>
+          <button
+            type="button"
+            className="task-row-main"
+            aria-label={task.title}
+            onClick={() => onOpenDetail(task.id)}
+          >
             <div className="task-row-header">
+              <TaskCardTags tags={task.effectiveTags} />
               <div className={`task-row-title${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}>
                 {task.title}
                 {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
               </div>
-              <TaskCardTags tags={task.effectiveTags} />
             </div>
             <div className="task-row-meta">
               {task.status !== "actionable" ? (
