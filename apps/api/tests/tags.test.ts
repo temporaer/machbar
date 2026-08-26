@@ -51,6 +51,56 @@ describe("tags", () => {
     expect(second.json()).toEqual(first.json());
   });
 
+  it("renames a tag without changing its color or associations", async () => {
+    const tag = ctx.handle.sqlite
+      .prepare("SELECT id, color FROM tags WHERE name = ?")
+      .get("Garten") as { id: number; color: string };
+    const project = ctx.handle.sqlite
+      .prepare("INSERT INTO projects (title) VALUES (?) RETURNING id")
+      .get("Gartenprojekt") as { id: number };
+    ctx.handle.sqlite
+      .prepare("INSERT INTO project_tags (project_id, tag_id) VALUES (?, ?)")
+      .run(project.id, tag.id);
+
+    const response = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tags/${tag.id}`,
+      payload: { name: "  Draußen  " },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id: tag.id,
+      name: "Draußen",
+      color: tag.color,
+    });
+    expect(
+      ctx.handle.sqlite
+        .prepare("SELECT project_id AS projectId FROM project_tags WHERE tag_id = ?")
+        .get(tag.id),
+    ).toEqual({ projectId: project.id });
+  });
+
+  it("rejects renaming a tag to an existing name", async () => {
+    const garden = ctx.handle.sqlite
+      .prepare("SELECT id FROM tags WHERE name = ?")
+      .get("Garten") as { id: number };
+
+    const response = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tags/${garden.id}`,
+      payload: { name: "Haus" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      error: {
+        code: "conflict",
+        message: "Der Tag „Haus“ existiert bereits.",
+      },
+    });
+  });
+
   it("deletes a tag and cascades only its project/task associations", async () => {
     const tag = ctx.handle.sqlite
       .prepare("SELECT id FROM tags WHERE name = ?")

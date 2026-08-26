@@ -4,7 +4,6 @@ import { useIdentity } from "../lib/identity";
 import { useSwipeSettings, primarySwipeActions } from "../lib/swipeSettings";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { MemberManager } from "../components/MemberManager";
-import { TagManager } from "../components/TagManager";
 import { fallbackColor, initials } from "../lib/format";
 import { useState } from "react";
 
@@ -123,11 +122,15 @@ export function MorePage() {
           <MemberManager />
         </div>
 
-        <div className="card">
-          <h3 style={{ margin: 0 }}>{strings.manageTags}</h3>
-          <p className="text-muted">{strings.manageTagsHint}</p>
-          <TagManager />
-        </div>
+        <Link to="/mehr/tags" className="card list-link">
+          <span className="row-between">
+            <span>
+              <strong>{strings.manageTags}</strong>
+              <small className="list-link-description">{strings.manageTagsHint}</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </span>
+        </Link>
 
         <div className="card">
           <h3 style={{ margin: 0 }}>{strings.about}</h3>

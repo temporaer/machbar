@@ -230,6 +230,7 @@ export function getOrCreateTag(
 }
 
 export interface UpdateTagInput {
+  name?: string;
   kind?: TagKind;
   groupingMode?: TagGroupingMode;
   sortPosition?: number | null;
@@ -241,6 +242,21 @@ export function updateTag(db: Db, id: number, input: UpdateTagInput) {
     throw AppError.notFound(`Tag mit ID ${id} wurde nicht gefunden.`);
   }
   const patch: Partial<typeof schema.tags.$inferInsert> = {};
+  if (input.name !== undefined) {
+    const trimmed = input.name.trim();
+    if (trimmed === "") {
+      throw AppError.badRequest("Der Tag-Name darf nicht leer sein.");
+    }
+    const existing = db
+      .select()
+      .from(schema.tags)
+      .where(eq(schema.tags.name, trimmed))
+      .get();
+    if (existing && existing.id !== id) {
+      throw AppError.conflict(`Der Tag „${trimmed}“ existiert bereits.`);
+    }
+    patch.name = trimmed;
+  }
   if (input.kind !== undefined) patch.kind = input.kind;
   if (input.groupingMode !== undefined) {
     patch.groupingMode = input.groupingMode;

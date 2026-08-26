@@ -23,65 +23,144 @@ describe("TagManager", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a tag inline and reloads the catalogue", async () => {
-    const sport = makeTag({ id: 20, name: "Sport" });
+  it("creates a tag with the selected type and reloads the catalogue", async () => {
+    const sport = makeTag({ id: 20, name: "Sport", kind: "area" });
     mockedApi.getTags.mockResolvedValueOnce([]).mockResolvedValueOnce([sport]);
     mockedApi.createTag.mockResolvedValue(sport);
     renderWithProviders(<TagManager />);
 
-    await screen.findByRole("textbox", { name: "Neuer Tag" });
-    await userEvent.type(screen.getByRole("textbox", { name: "Neuer Tag" }), "Sport");
+    await userEvent.type(await screen.findByLabelText("Tag-Name"), "Sport");
+    const kindGroup = screen.getByRole("group", { name: "Typ des neuen Tags" });
+    await userEvent.click(within(kindGroup).getByRole("button", { name: "Bereich" }));
     await userEvent.click(screen.getByRole("button", { name: "Anlegen" }));
 
-    await waitFor(() => expect(mockedApi.createTag).toHaveBeenCalledWith("Sport"));
+    await waitFor(() => expect(mockedApi.createTag).toHaveBeenCalledWith("Sport", "area"));
     expect(await screen.findByText("Sport")).toBeInTheDocument();
   });
 
-  it("deletes a tag after explicit confirmation", async () => {
-    const garden = makeTag({ id: 21, name: "Garten" });
-    mockedApi.getTags.mockResolvedValueOnce([garden]).mockResolvedValueOnce([]);
-    mockedApi.deleteTag.mockResolvedValue(undefined);
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("filters tags by a diacritic-insensitive name search", async () => {
+    mockedApi.getTags.mockResolvedValue([
+      makeTag({ id: 21, name: "Café", kind: "context" }),
+      makeTag({ id: 22, name: "Garten", kind: "area" }),
+    ]);
     renderWithProviders(<TagManager />);
 
-    const chip = (await screen.findByText("Garten")).closest("span")!;
-    await userEvent.click(within(chip).getByRole("button", { name: "Entfernen" }));
+    await screen.findByText("Café");
+    await userEvent.type(screen.getByLabelText("Tags durchsuchen"), "cafe");
 
-    expect(window.confirm).toHaveBeenCalledWith(
-      "Tag „Garten“ endgültig löschen? Er wird aus allen Projekten und Aufgaben entfernt.",
-    );
-    await waitFor(() => expect(mockedApi.deleteTag).toHaveBeenCalledWith(21));
-    await waitFor(() => expect(screen.queryByText("Garten")).not.toBeInTheDocument());
+    expect(screen.getByText("Café")).toBeInTheDocument();
+    expect(screen.queryByText("Garten")).not.toBeInTheDocument();
   });
 
-  it("keeps the tag when deletion is cancelled", async () => {
-    const garden = makeTag({ id: 22, name: "Garten" });
-    mockedApi.getTags.mockResolvedValue([garden]);
-    vi.spyOn(window, "confirm").mockReturnValue(false);
-    renderWithProviders(<TagManager />);
-
-    const chip = (await screen.findByText("Garten")).closest("span")!;
-    await userEvent.click(within(chip).getByRole("button", { name: "Entfernen" }));
-
-    expect(mockedApi.deleteTag).not.toHaveBeenCalled();
-    expect(screen.getByText("Garten")).toBeInTheDocument();
-  });
-
-  it("updates a tag kind through lightweight chips", async () => {
+  it("edits name, type, and grouping preference in one focused sheet", async () => {
     const installer = makeTag({
       id: 23,
       name: "Installateur",
       kind: "actor",
+      groupingMode: "hidden",
     });
     mockedApi.getTags.mockResolvedValue([installer]);
-    mockedApi.updateTag.mockResolvedValue({ ...installer, kind: "area" });
+    mockedApi.updateTag.mockResolvedValue({
+      ...installer,
+      name: "Handwerker",
+      kind: "area",
+      groupingMode: "pinned",
+      sortPosition: 0,
+    });
     renderWithProviders(<TagManager />);
 
     const article = (await screen.findByText("Installateur")).closest("article")!;
-    await userEvent.click(within(article).getByRole("button", { name: "Bereich" }));
+    await userEvent.click(within(article).getByRole("button", { name: "Bearbeiten" }));
+
+    const dialog = screen.getByRole("dialog");
+    const name = within(dialog).getByLabelText("Tag-Name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Handwerker");
+    await userEvent.click(
+      within(within(dialog).getByRole("group", { name: "Tag-Typ bearbeiten" }))
+        .getByRole("button", { name: "Bereich" }),
+    );
+    await userEvent.click(
+      within(within(dialog).getByRole("group", { name: "Gruppierung" }))
+        .getByRole("button", { name: "Beim Gruppieren bevorzugen" }),
+    );
+    await userEvent.click(within(dialog).getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
-      expect(mockedApi.updateTag).toHaveBeenCalledWith(23, { kind: "area" }),
+      expect(mockedApi.updateTag).toHaveBeenCalledWith(23, {
+        name: "Handwerker",
+        kind: "area",
+        groupingMode: "pinned",
+        sortPosition: 0,
+      }),
     );
+  });
+
+  it("keeps the editor open and surfaces save errors", async () => {
+    const garden = makeTag({ id: 24, name: "Garten", kind: "area" });
+    mockedApi.getTags.mockResolvedValue([garden]);
+    mockedApi.updateTag.mockRejectedValue(new Error("Der Tag „Haus“ existiert bereits."));
+    renderWithProviders(<TagManager />);
+
+    const article = (await screen.findByText("Garten")).closest("article")!;
+    await userEvent.click(within(article).getByRole("button", { name: "Bearbeiten" }));
+    const dialog = screen.getByRole("dialog");
+    const name = within(dialog).getByLabelText("Tag-Name");
+    await userEvent.clear(name);
+    await userEvent.type(name, "Haus");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Speichern" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Der Tag „Haus“ existiert bereits.",
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("requires an explicit in-sheet confirmation before deleting", async () => {
+    const garden = makeTag({ id: 25, name: "Garten", kind: "area" });
+    mockedApi.getTags.mockResolvedValueOnce([garden]).mockResolvedValueOnce([]);
+    mockedApi.deleteTag.mockResolvedValue(undefined);
+    renderWithProviders(<TagManager />);
+
+    const article = (await screen.findByText("Garten")).closest("article")!;
+    await userEvent.click(within(article).getByRole("button", { name: "Bearbeiten" }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Tag löschen" }));
+
+    expect(mockedApi.deleteTag).not.toHaveBeenCalled();
+    expect(within(dialog).getByText("Tag „Garten“ löschen?")).toBeInTheDocument();
+    expect(within(dialog).getByText(/aus allen Projekten und Aufgaben entfernt/)).toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Tag löschen" }));
+    await waitFor(() => expect(mockedApi.deleteTag).toHaveBeenCalledWith(25));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("moves preferred tags with clearly labelled priority controls", async () => {
+    const garden = makeTag({
+      id: 26,
+      name: "Garten",
+      kind: "area",
+      groupingMode: "pinned",
+      sortPosition: 0,
+    });
+    const house = makeTag({
+      id: 27,
+      name: "Haus",
+      kind: "area",
+      groupingMode: "pinned",
+      sortPosition: 1,
+    });
+    mockedApi.getTags.mockResolvedValue([garden, house]);
+    mockedApi.updateTag.mockResolvedValue(house);
+    renderWithProviders(<TagManager />);
+
+    await screen.findByText("Haus");
+    await userEvent.click(screen.getByRole("button", { name: "Priorität erhöhen: Haus" }));
+
+    await waitFor(() => {
+      expect(mockedApi.updateTag).toHaveBeenNthCalledWith(1, 27, { sortPosition: 0 });
+      expect(mockedApi.updateTag).toHaveBeenNthCalledWith(2, 26, { sortPosition: 1 });
+    });
   });
 });

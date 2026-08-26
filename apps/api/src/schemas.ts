@@ -144,6 +144,7 @@ export const createTagSchema = z.object({
 });
 
 export const updateTagSchema = z.object({
+  name: z.string().min(1, "Der Tag-Name darf nicht leer sein.").optional(),
   kind: z.enum(tagKinds).optional(),
   groupingMode: z.enum(tagGroupingModes).optional(),
   sortPosition: z.number().int().nullable().optional(),

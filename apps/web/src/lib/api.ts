@@ -224,6 +224,7 @@ export interface RefinementFilters {
 }
 
 export interface UpdateTagInput {
+  name?: string;
   kind?: TagKind;
   groupingMode?: TagGroupingMode;
   sortPosition?: number | null;
