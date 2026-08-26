@@ -112,16 +112,21 @@ export function ProjectsPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <div className="row" role="group" aria-label={strings.filters}>
+        <div className="list-option-group" role="group" aria-label={strings.filters}>
           <button
             type="button"
-            className="chip"
+            className="list-option-button"
             aria-pressed={scope === "mine"}
             onClick={() => setScope("mine")}
           >
             {strings.projectScopeMineOpen}
           </button>
-          <button type="button" className="chip" aria-pressed={scope === "all"} onClick={() => setScope("all")}>
+          <button
+            type="button"
+            className="list-option-button"
+            aria-pressed={scope === "all"}
+            onClick={() => setScope("all")}
+          >
             {strings.projectScopeAll}
           </button>
         </div>

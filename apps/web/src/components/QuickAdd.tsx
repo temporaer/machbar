@@ -177,7 +177,7 @@ export function QuickAdd({ projectId, parentTaskId }: { projectId?: number | nul
               />
             </div>
             {error ? <p className="capture-error" role="alert">{error}</p> : null}
-            <div className="row">
+            <div className="capture-shape-actions">
               <button type="button" className="btn" onClick={close}>
                 {strings.cancel}
               </button>

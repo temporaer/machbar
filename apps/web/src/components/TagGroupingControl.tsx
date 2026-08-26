@@ -12,30 +12,33 @@ export function TagGroupingControl({
   onChange: (value: GroupableTagKind | null) => void;
 }) {
   return (
-    <div
-      className="tag-grouping-control"
-      role="group"
-      aria-label={strings.groupByTagType}
-    >
-      <button
-        type="button"
-        className="chip"
-        aria-pressed={value === null}
-        onClick={() => onChange(null)}
+    <div className="list-option-field">
+      <span className="list-option-label">{strings.groupByTagType}</span>
+      <div
+        className="list-option-group"
+        role="group"
+        aria-label={strings.groupByTagType}
       >
-        {strings.noGrouping}
-      </button>
-      {groupableTagKinds.map((kind) => (
         <button
-          key={kind}
           type="button"
-          className="chip"
-          aria-pressed={value === kind}
-          onClick={() => onChange(kind)}
+          className="list-option-button"
+          aria-pressed={value === null}
+          onClick={() => onChange(null)}
         >
-          {strings.tagKindLabels[kind]}
+          {strings.noGrouping}
         </button>
-      ))}
+        {groupableTagKinds.map((kind) => (
+          <button
+            key={kind}
+            type="button"
+            className="list-option-button"
+            aria-pressed={value === kind}
+            onClick={() => onChange(kind)}
+          >
+            {strings.tagKindLabels[kind]}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
