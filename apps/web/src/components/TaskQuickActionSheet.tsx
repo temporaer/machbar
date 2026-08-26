@@ -107,7 +107,11 @@ export function TaskQuickActionSheet({
                 autoFocus
               />
             </div>
-            <ScheduleShortcuts value={scheduledDate} onChange={setScheduledDate} disabled={saving} />
+            <ScheduleShortcuts
+              value={scheduledDate}
+              onChange={(date) => setScheduledDate(date ?? "")}
+              disabled={saving}
+            />
           </>
         ) : null}
 

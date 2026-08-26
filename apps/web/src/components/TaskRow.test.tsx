@@ -502,11 +502,13 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
     expect(scheduled).toHaveValue(resolveScheduleShortcut("tomorrow"));
+    await userEvent.click(screen.getByRole("button", { name: "Nicht geplant" }));
+    expect(scheduled).toHaveValue("");
     await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
-        scheduledDate: resolveScheduleShortcut("tomorrow"),
+        scheduledDate: null,
       }),
     );
   });

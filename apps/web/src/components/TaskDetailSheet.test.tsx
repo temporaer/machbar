@@ -9,7 +9,6 @@ import { TaskDetailProvider, useTaskDetail } from "../lib/taskDetailContext";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { api } from "../lib/api";
 import { makeMember, makeTag, makeTask } from "../test/fixtures";
-import { resolveScheduleShortcut } from "./ScheduleShortcuts";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -125,8 +124,8 @@ describe("TaskDetailSheet", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
-  it("plant mit denselben Schnelloptionen wie das fokussierte Planen-Popup", async () => {
-    const task = makeTask({ id: 56, title: "Wochenplanung", scheduledDate: null });
+  it("bietet dieselben Schnelloptionen und kann eine Planung entfernen", async () => {
+    const task = makeTask({ id: 56, title: "Wochenplanung", scheduledDate: "2026-09-04" });
     mockedApi.getTask.mockResolvedValue(task);
 
     renderSheet(56);
@@ -134,11 +133,11 @@ describe("TaskDetailSheet", () => {
     await screen.findByDisplayValue("Wochenplanung");
 
     const shortcuts = screen.getByRole("group", { name: "Schnell planen" });
-    await userEvent.click(within(shortcuts).getByRole("button", { name: "Nächste Woche" }));
+    await userEvent.click(within(shortcuts).getByRole("button", { name: "Nicht geplant" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(56, {
-        scheduledDate: resolveScheduleShortcut("nextWeek"),
+        scheduledDate: null,
       }),
     );
   });

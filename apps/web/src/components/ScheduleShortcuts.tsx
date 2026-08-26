@@ -1,6 +1,6 @@
 import { strings } from "../lib/strings";
 
-export const scheduleShortcuts = ["today", "tomorrow", "nextWeek", "weekend"] as const;
+export const scheduleShortcuts = ["unscheduled", "today", "tomorrow", "nextWeek", "weekend"] as const;
 export type ScheduleShortcut = (typeof scheduleShortcuts)[number];
 
 function localDateString(date: Date) {
@@ -12,6 +12,10 @@ function localDateString(date: Date) {
 
 export function resolveScheduleShortcut(shortcut: ScheduleShortcut, today = new Date()) {
   const date = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  if (shortcut === "unscheduled") {
+    return null;
+  }
 
   if (shortcut === "today") {
     return localDateString(date);
@@ -36,7 +40,7 @@ export function ScheduleShortcuts({
   disabled = false,
 }: {
   value: string | null;
-  onChange: (date: string) => void;
+  onChange: (date: string | null) => void;
   disabled?: boolean;
 }) {
   return (
@@ -48,7 +52,7 @@ export function ScheduleShortcuts({
             key={shortcut}
             type="button"
             className="choice-chip"
-            aria-pressed={value === date}
+            aria-pressed={(value || null) === date}
             disabled={disabled}
             onClick={() => onChange(date)}
           >
