@@ -18,6 +18,7 @@ import {
   type GroupableTagKind,
 } from "../lib/tagGrouping";
 import { CollapsibleGroup } from "../components/CollapsibleGroup";
+import { PageHeader } from "../components/PageHeader";
 import "./RefinementPage.css";
 
 function selectionLabel(
@@ -136,9 +137,27 @@ export function RefinementPage() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1>{strings.refinement}</h1>
-      </div>
+      <PageHeader
+        title={strings.refinement}
+        hints={[
+          {
+            label: strings.clarificationNeeds,
+            text: strings.clarificationNeedsHint,
+          },
+          {
+            label: strings.effortGuide,
+            text: strings.effortGuideHint,
+          },
+          {
+            label: strings.refinementMatrixTitle,
+            text: strings.refinementMatrixHint,
+          },
+          {
+            label: strings.refinementListTitle,
+            text: [strings.swipeHintSize, strings.swipeHintSizeChips],
+          },
+        ]}
+      />
       <TagGroupingControl value={groupBy} onChange={setGroupBy} />
 
       {loading ? <LoadingState /> : null}
@@ -157,7 +176,6 @@ export function RefinementPage() {
         <h2 className="section-title" id="clarification-needs-heading">
           {strings.clarificationNeeds}
         </h2>
-        <p className="text-muted">{strings.clarificationNeedsHint}</p>
         {issueResult?.issues.length === 0 ? (
           <EmptyState message={strings.clarificationNeedsEmpty} />
         ) : null}
@@ -190,8 +208,6 @@ export function RefinementPage() {
       {ownerRows ? (
         <div className="section refinement-secondary">
           <div className="section-title">{strings.effortGuide}</div>
-          <p className="text-muted">{strings.effortGuideHint}</p>
-          <p className="text-muted">{strings.refinementMatrixHint}</p>
           <RefinementMatrix rows={ownerRows} selection={selection} onSelect={setSelection} />
         </div>
       ) : null}
@@ -210,9 +226,6 @@ export function RefinementPage() {
             {strings.filteredBy}: {selectionLabel(selection, ownerNameById)}
           </p>
         ) : null}
-        <p className="text-muted refinement-swipe-hint">
-          {strings.swipeHintSize} · {strings.swipeHintSizeChips}
-        </p>
         {taskRows && filteredItems.length === 0 ? <EmptyState message={strings.refinementEmpty} /> : null}
         {filteredItems.length > 0
           ? groupedItems.map((group) => (

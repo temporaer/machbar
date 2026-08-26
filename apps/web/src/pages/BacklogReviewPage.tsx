@@ -4,6 +4,7 @@ import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
 import { strings } from "../lib/strings";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
+import { PageHeader } from "../components/PageHeader";
 import "./BacklogReviewPage.css";
 
 /**
@@ -31,10 +32,10 @@ export function BacklogReviewPage() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1>{strings.backlogReview}</h1>
-      </div>
-      <p className="text-muted">{strings.backlogReviewHint}</p>
+      <PageHeader
+        title={strings.backlogReview}
+        hints={[{ text: strings.backlogReviewHint }]}
+      />
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {projects ? (

@@ -3,6 +3,7 @@ import { act, fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
+import { strings } from "../lib/strings";
 import type { OwnerSizeCounts, RefinementTaskRow } from "../lib/api";
 import { REFINEMENT_RETENTION_MS } from "../lib/useRefinementActions";
 import { makeTag, makeTask } from "../test/fixtures";
@@ -134,6 +135,31 @@ describe("RefinementPage", () => {
 
     renderWithProviders(<RefinementPage />);
     expect(await screen.findByText("Keine offenen Aufgaben in dieser Übersicht.")).toBeInTheDocument();
+  });
+
+  it("reveals every static page hint through one info control", async () => {
+    mockedApi.getRefinementOwners.mockResolvedValue([ownerRow()]);
+    mockedApi.getRefinementTasks.mockResolvedValue([]);
+
+    renderWithProviders(<RefinementPage />);
+    await screen.findByText("Keine offenen Aufgaben in dieser Übersicht.");
+
+    expect(screen.queryByText(strings.clarificationNeedsHint)).not.toBeInTheDocument();
+    expect(screen.queryByText(strings.effortGuideHint)).not.toBeInTheDocument();
+    expect(screen.queryByText(strings.refinementMatrixHint)).not.toBeInTheDocument();
+    expect(screen.queryByText(strings.swipeHintSize)).not.toBeInTheDocument();
+    const infoButtons = screen.getAllByRole("button", {
+      name: strings.showPageHints,
+    });
+    expect(infoButtons).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: strings.showPageHints }));
+
+    expect(screen.getByText(strings.clarificationNeedsHint)).toBeInTheDocument();
+    expect(screen.getByText(strings.effortGuideHint)).toBeInTheDocument();
+    expect(screen.getByText(strings.refinementMatrixHint)).toBeInTheDocument();
+    expect(screen.getByText(strings.swipeHintSize)).toBeInTheDocument();
+    expect(screen.getByText(strings.swipeHintSizeChips)).toBeInTheDocument();
   });
 
   it("groups the refinement list by tag type without rendering value-level filter buttons", async () => {

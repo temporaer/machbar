@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { BacklogReviewPage } from "./BacklogReviewPage";
 import { api } from "../lib/api";
@@ -66,15 +67,17 @@ describe("BacklogReviewPage", () => {
     expect(screen.getByText(/Aufgaben: Noch keine Aufgaben/)).toBeInTheDocument();
   });
 
-  it("shows the page header and a hint about the swipe/kebab interactions", async () => {
+  it("shows the page header and reveals its workflow hint on demand", async () => {
     mockedApi.getProjects.mockResolvedValue([]);
     renderWithProviders(<BacklogReviewPage />);
 
     expect(await screen.findByRole("heading", { name: "Projektklärung" })).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Noch nicht aktive Projekte prüfen, gezielt ergänzen und erst dann aktiv machen.",
-      ),
-    ).toBeInTheDocument();
+    const hint =
+      "Noch nicht aktive Projekte prüfen, gezielt ergänzen und erst dann aktiv machen.";
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
+    );
+    expect(screen.getByText(hint)).toBeInTheDocument();
   });
 });

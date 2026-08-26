@@ -5,7 +5,7 @@ import { renderWithProviders } from "../test/testUtils";
 import { TodayPage } from "./TodayPage";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { api } from "../lib/api";
-import { makeMember, makeProject, makeTask } from "../test/fixtures";
+import { makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
 import type { Agenda } from "@machbar/shared";
 
 vi.mock("../lib/api", () => ({
@@ -47,24 +47,37 @@ describe("TodayPage", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
   });
 
-  it("zeigt keinen manuellen Heute-Umschalter mehr an und erklärt die Ansicht als automatisch berechnet", async () => {
+  it("zeigt keinen manuellen Heute-Umschalter mehr an und erklärt die Ansicht im Seitenhinweis", async () => {
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
-      dueToday: [makeTask({ id: 1, title: "Steuererklärung abgeben" })],
+      dueToday: [
+        makeTask({
+          id: 1,
+          title: "Steuererklärung abgeben",
+          effectiveTags: [makeTag({ id: 11, name: "Finanzen", kind: "area" })],
+        }),
+      ],
     });
-    renderWithProviders(<TodayPage />);
+    const { container } = renderWithProviders(<TodayPage />);
 
     await screen.findByText("Steuererklärung abgeben");
     expect(screen.queryByText("Heute erledigen")).not.toBeInTheDocument();
     expect(screen.queryByText("Für heute markieren")).not.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Diese Übersicht wird automatisch aus Terminen, Fälligkeiten und dem Status berechnet – ohne manuelle Markierung.",
-      ),
-    ).toBeInTheDocument();
+    const explanation =
+      "Diese Übersicht wird automatisch aus Terminen, Fälligkeiten und dem Status berechnet – ohne manuelle Markierung.";
+    expect(screen.queryByText(explanation)).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
+    );
+    expect(screen.getByText(explanation)).toBeInTheDocument();
+    expect(container.querySelector(".task-row-surface-actionable")).toBeInTheDocument();
+    expect(container.querySelector(".task-row-header")).toContainElement(
+      screen.getByText("Finanzen"),
+    );
+    expect(screen.queryByText("Machbar")).not.toBeInTheDocument();
   });
 
-  it("zeigt blockierte, wieder fällige Aufgaben als Wiedervorlage mit Erklärung und blockiert-Hinweis", async () => {
+  it("bündelt alle sichtbaren Abschnittshinweise im einzigen Seitenhinweis", async () => {
     const revisitTask = makeTask({
       id: 2,
       title: "Leiter zurückbringen",
@@ -74,11 +87,31 @@ describe("TodayPage", () => {
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
       revisit: [revisitTask],
+      followUp: [
+        makeTask({
+          id: 6,
+          title: "Installateur anrufen",
+          status: "waiting",
+        }),
+      ],
     });
     renderWithProviders(<TodayPage />);
 
     expect(await screen.findByText("Blockiert prüfen")).toBeInTheDocument();
-    expect(screen.getByText("Blockiert, aber heute wieder zu prüfen.")).toBeInTheDocument();
+    const revisitHint = "Blockiert, aber heute wieder zu prüfen.";
+    const followUpHint =
+      "Die Wiedervorlage ist erreicht. Jetzt nachhaken oder die Aufgabe wieder machbar machen.";
+    expect(screen.queryByText(revisitHint)).not.toBeInTheDocument();
+    expect(screen.queryByText(followUpHint)).not.toBeInTheDocument();
+    const infoButtons = screen.getAllByRole("button", {
+      name: "Hinweise zu dieser Seite anzeigen",
+    });
+    expect(infoButtons).toHaveLength(1);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
+    );
+    expect(screen.getByText(revisitHint)).toBeInTheDocument();
+    expect(screen.getByText(followUpHint)).toBeInTheDocument();
     expect(screen.getByText("Leiter zurückbringen")).toBeInTheDocument();
     // The normal blocked lock indicator from TaskRow must still show up.
     expect(screen.getByLabelText("Blockiert durch")).toBeInTheDocument();

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectsPage } from "./ProjectsPage";
 import { IdentitySelector } from "../components/IdentitySelector";
@@ -75,15 +76,17 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     ]);
   });
 
-  it("shows the status of every project and its swipe hint", async () => {
+  it("shows every project status and reveals its swipe hint on demand", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Backlog-Geschichte");
 
-    expect(
-      screen.getByText(
-        "Nach rechts wischen führt den nächsten Workflow-Schritt aus, nach links wischen oder ⋯ zeigt weitere Aktionen.",
-      ),
-    ).toBeInTheDocument();
+    const hint =
+      "Nach rechts wischen führt den nächsten Workflow-Schritt aus, nach links wischen oder ⋯ zeigt weitere Aktionen.";
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
+    );
+    expect(screen.getByText(hint)).toBeInTheDocument();
     const badges = [...container.querySelectorAll(".story-row-status-badge")].map((b) => b.textContent);
     // New deterministic sort order: active healthy/stuck, then backlog,
     // completed, archived — not the fetch order.

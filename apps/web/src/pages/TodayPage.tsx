@@ -6,6 +6,7 @@ import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates"
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaCard } from "../components/ProjectAgendaCard";
+import { PageHeader, type PageHint } from "../components/PageHeader";
 
 const sections: Array<{
   key: "planned" | "overdue" | "dueToday" | "dueSoon";
@@ -34,13 +35,19 @@ export function TodayPage() {
   const followUpTasks = agenda?.followUp ?? [];
   const additionalTasks = [...(agenda?.shared ?? []), ...(agenda?.unscheduled ?? [])];
   const projectAgenda = agenda?.projects ?? [];
+  const pageHints: PageHint[] = [
+    { text: strings.todayExplanation },
+    ...(followUpTasks.length > 0
+      ? [{ label: strings.followUp, text: strings.followUpHint }]
+      : []),
+    ...(revisitTasks.length > 0
+      ? [{ label: strings.revisit, text: strings.revisitHint }]
+      : []),
+  ];
 
   return (
     <div>
-      <div className="page-header">
-        <h1>{strings.today}</h1>
-      </div>
-      <p className="text-muted">{strings.todayExplanation}</p>
+      <PageHeader title={strings.today} hints={pageHints} />
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {agenda ? (
@@ -77,14 +84,12 @@ export function TodayPage() {
               {followUpTasks.length > 0 ? (
                 <div className="section">
                   <div className="section-title">{strings.followUp}</div>
-                  <p className="text-muted">{strings.followUpHint}</p>
                   <TaskOutline tasks={followUpTasks} emptyMessage={strings.noItems} />
                 </div>
               ) : null}
               {revisitTasks.length > 0 ? (
                 <div className="section" key="revisit">
                   <div className="section-title">{strings.revisit}</div>
-                  <p className="text-muted">{strings.revisitHint}</p>
                   <TaskOutline tasks={revisitTasks} emptyMessage={strings.noItems} />
                 </div>
               ) : null}

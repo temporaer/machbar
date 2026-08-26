@@ -19,6 +19,7 @@ import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { BottomSheet } from "../components/BottomSheet";
 import { TagGroupingControl } from "../components/TagGroupingControl";
 import { CollapsibleGroup } from "../components/CollapsibleGroup";
+import { PageHeader } from "../components/PageHeader";
 
 /**
  * The Projekte tab: every project is a user story, and every row carries the
@@ -99,13 +100,15 @@ export function ProjectsPage() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1>{strings.projects}</h1>
-        <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
-          {strings.addProject}
-        </button>
-      </div>
-      <p className="text-muted">{strings.projectsSwipeHint}</p>
+      <PageHeader
+        title={strings.projects}
+        actions={(
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
+            {strings.addProject}
+          </button>
+        )}
+        hints={[{ text: strings.projectsSwipeHint }]}
+      />
       <div className="stack">
         <input
           aria-label={strings.search}

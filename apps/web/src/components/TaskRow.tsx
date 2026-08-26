@@ -23,6 +23,7 @@ import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskActionIcon } from "./TaskActionIcon";
 import { ActionableText } from "./ActionableText";
 import { formatExactLocalDate, formatRelativeDueDate } from "../lib/relativeDate";
+import { TaskCardTags } from "./TaskCardTags";
 
 const SWIPE_THRESHOLD = 72;
 const LONG_PRESS_MS = 480;
@@ -125,7 +126,7 @@ export function TaskRow({
   // which retargets the compatibility mouse events to the container.)
   const swallowNextClick = useRef(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const { members } = useIdentity();
+  const { members, currentMemberId } = useIdentity();
   const { primarySwipeAction } = useSwipeSettings();
   const navigate = useNavigate();
   // Structural editing (drag handle, keyboard moves, drop preview) is
@@ -195,7 +196,12 @@ export function TaskRow({
   const isDone = task.status === "done";
   const isCancelled = task.status === "cancelled";
   const overdue = isOverdue(task.dueDate, task.status);
-  const ownerName = task.effectiveOwnerId ? members.find((m) => m.id === task.effectiveOwnerId)?.name : null;
+  const ownerLabel =
+    task.effectiveOwnerId === null
+      ? strings.sharedOwner
+      : task.effectiveOwnerId === currentMemberId
+        ? strings.me
+        : members.find((m) => m.id === task.effectiveOwnerId)?.name ?? strings.unknownMember;
   const due = formatDate(task.dueDate);
   const projectDueRelative = task.projectDueDate
     ? formatRelativeDueDate(task.projectDueDate)
@@ -370,7 +376,10 @@ export function TaskRow({
   };
 
   return (
-    <li className="task-row" style={{ listStyle: "none" }}>
+    <li
+      className={`task-row task-row-surface-${task.status}`}
+      style={{ listStyle: "none" }}
+    >
       <div className={`task-row-swipe-bg complete${showCompleteBg ? " visible" : ""}`} aria-hidden="true">
         {waitingInteraction ? strings.makeActionable : primaryActionBgLabel(task, primarySwipeAction)}
       </div>
@@ -463,39 +472,46 @@ export function TaskRow({
         </button>
         <div className="task-row-main-wrap">
           <button type="button" className="task-row-main" onClick={() => onOpenDetail(task.id)}>
-            <div className={`task-row-title${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}>
-              {task.title}
-              {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
+            <div className="task-row-header">
+              <div className={`task-row-title${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}>
+                {task.title}
+                {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
+              </div>
+              <TaskCardTags tags={task.effectiveTags} />
             </div>
             <div className="task-row-meta">
-              <span className={`badge badge-status-${task.status}`}>
-                {taskStatusLabels[task.status]}
-              </span>
+              {task.status !== "actionable" ? (
+                <span className={`task-row-meta-item task-row-state task-row-state-${task.status}`}>
+                  {taskStatusLabels[task.status]}
+                </span>
+              ) : null}
               {task.needsClarification ? (
-                <span className="badge badge-clarification">{strings.needsClarification}</span>
+                <span className="task-row-meta-item">
+                  <span className="badge badge-clarification">{strings.needsClarification}</span>
+                </span>
               ) : null}
               {task.status === "waiting" && task.waitingFor ? (
-                <span>
+                <span className="task-row-meta-item">
                   {strings.waitingFor}: {task.waitingFor}
                 </span>
               ) : null}
               {due ? (
-                <span className={overdue ? "overdue" : undefined}>
+                <span className={`task-row-meta-item${overdue ? " overdue" : ""}`}>
                   {strings.due}: {due}
                 </span>
               ) : null}
               {projectDueRelative && projectDueExact ? (
                 <span
-                  className="task-row-project-due"
+                  className="task-row-meta-item task-row-project-due"
                   title={`${strings.projectDue}: ${projectDueExact}`}
                   aria-label={`${strings.projectDue}: ${projectDueRelative} (${projectDueExact})`}
                 >
                   {strings.projectDue}: {projectDueRelative}
                 </span>
               ) : null}
-              {ownerName ? <span>{ownerName}</span> : null}
+              <span className="task-row-meta-item">{ownerLabel}</span>
               {children.length ? (
-                <span>
+                <span className="task-row-meta-item">
                   {children.filter((c) => c.status === "done" || c.status === "cancelled").length}/{children.length}
                 </span>
               ) : null}

@@ -25,6 +25,7 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 const STORAGE_KEY = "machbar:primary-swipe-action";
+const IDENTITY_STORAGE_KEY = "machbar:identity-member-id";
 
 /** Simulates a horizontal drag past the swipe threshold and releases it. */
 function swipe(container: HTMLElement, deltaX: number) {
@@ -68,7 +69,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     );
     await screen.findByText("Nächsten Schritt klären");
 
-    expect(container.querySelector(".badge-status-actionable")).toHaveTextContent("Machbar");
+    expect(container.querySelector(".badge-status-actionable")).not.toBeInTheDocument();
     expect(container.querySelector(".badge-clarification")).toHaveTextContent("Zu klären");
     swipe(container, 100);
 
@@ -310,6 +311,97 @@ describe("TaskRow – primary swipe direction mapping", () => {
       ),
     );
     expect(moreButton).toHaveFocus();
+  });
+});
+
+describe("TaskRow – calm shared card presentation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockedApi.getMembers.mockResolvedValue([
+      makeMember({ id: 1, name: "Mira" }),
+      makeMember({ id: 2, name: "Alex" }),
+    ]);
+    mockedApi.updateTask.mockResolvedValue(makeTask());
+  });
+
+  it("uses the title/tag header and omits the routine actionable label", async () => {
+    const task = makeTask({
+      id: 20,
+      title: "Ruhige Aufgabenkarte",
+      status: "actionable",
+      effectiveTags: [
+        makeTag({ id: 1, name: "Anna", kind: "actor" }),
+        makeTag({ id: 2, name: "Telefon", kind: "context" }),
+        makeTag({ id: 3, name: "Garten", kind: "area" }),
+        makeTag({ id: 4, name: "Draußen", kind: "plain" }),
+      ],
+    });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+    await screen.findByText("Ruhige Aufgabenkarte");
+
+    expect(container.querySelector(".task-row")).toHaveClass("task-row-surface-actionable");
+    expect(container.querySelector(".task-row-header")).toContainElement(
+      screen.getByText("Ruhige Aufgabenkarte"),
+    );
+    expect(screen.queryByText("Machbar")).not.toBeInTheDocument();
+
+    const tags = screen.getByRole("list", { name: "Tags" });
+    expect(within(tags).getByText("Garten")).toBeInTheDocument();
+    expect(within(tags).getByText("Telefon")).toBeInTheDocument();
+    expect(within(tags).getByLabelText("1 weitere Tags")).toHaveTextContent("+1");
+    expect(within(tags).queryByText("Anna")).not.toBeInTheDocument();
+    expect(within(tags).queryByText("Draußen")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["waiting", "Wartet"],
+    ["someday", "Irgendwann"],
+    ["done", "Erledigt"],
+    ["cancelled", "Verworfen"],
+  ] as const)("keeps the exceptional %s status as quiet metadata", async (status, label) => {
+    const task = makeTask({ id: 21, title: `Status ${status}`, status });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+
+    expect(await screen.findByText(label)).toHaveClass("task-row-state");
+    expect(container.querySelector(".task-row")).toHaveClass(`task-row-surface-${status}`);
+  });
+
+  it("labels current, other, and shared ownership consistently", async () => {
+    window.localStorage.setItem(IDENTITY_STORAGE_KEY, "1");
+    const tasks = [
+      makeTask({ id: 22, title: "Meine Aufgabe", effectiveOwnerId: 1 }),
+      makeTask({ id: 23, title: "Andere Aufgabe", effectiveOwnerId: 2 }),
+      makeTask({ id: 24, title: "Gemeinsame Aufgabe", effectiveOwnerId: null }),
+    ];
+    renderWithProviders(<TaskOutline tasks={tasks} emptyMessage="Nichts da" />);
+
+    expect(await screen.findByText("Ich")).toBeInTheDocument();
+    expect(screen.getByText("Alex")).toBeInTheDocument();
+    expect(screen.getByText("Gemeinsam")).toBeInTheDocument();
+  });
+
+  it("keeps notes in a tertiary region below the header and metadata", async () => {
+    const task = makeTask({
+      id: 25,
+      title: "Mit Notiz",
+      notes: "Ruhige Zusatzinformation",
+    });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+    await screen.findByText("Mit Notiz");
+
+    const wrap = container.querySelector(".task-row-main-wrap");
+    expect(wrap?.querySelector(".task-row-header")).toBeInTheDocument();
+    expect(wrap?.querySelector(".task-row-meta")).toBeInTheDocument();
+    expect(wrap?.querySelector(".task-row-notes")).toHaveTextContent(
+      "Ruhige Zusatzinformation",
+    );
   });
 });
 

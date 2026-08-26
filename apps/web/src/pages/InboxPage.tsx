@@ -5,6 +5,7 @@ import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates"
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { PageHeader } from "../components/PageHeader";
 
 export function InboxPage() {
   const { data: tasks, loading, error, reload } = useAsync(() => api.getInbox(), []);
@@ -12,15 +13,20 @@ export function InboxPage() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1>{strings.inbox}</h1>
-        {tasks && tasks.length > 0 ? (
+      <PageHeader
+        title={strings.inbox}
+        actions={tasks && tasks.length > 0 ? (
           <button type="button" className="btn btn-sm btn-primary" onClick={() => openQueue(tasks.map((t) => t.id))}>
             {strings.clarifyNow}
           </button>
         ) : null}
-      </div>
-      <p className="page-subtitle">{strings.refile}: {strings.changeParent} · {strings.moveProject}</p>
+        hints={[
+          {
+            label: strings.refile,
+            text: `${strings.changeParent} · ${strings.moveProject}`,
+          },
+        ]}
+      />
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {tasks ? (
