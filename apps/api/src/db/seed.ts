@@ -21,8 +21,6 @@ interface SeedTaskInput {
   needsClarification?: boolean;
   ownerMemberId?: number | null;
   ownerInheritanceMode?: (typeof schema.tasks.$inferInsert)["ownerInheritanceMode"];
-  context?: string | null;
-  contextInheritanceMode?: (typeof schema.tasks.$inferInsert)["contextInheritanceMode"];
   dueDate?: string | null;
   scheduledDate?: string | null;
   waitingFor?: string | null;
@@ -91,11 +89,21 @@ export function seedDatabase(db: Db): void {
       "Haus",
       "Garten",
     ];
-    const tagsByName = new Map<string, { id: number; name: string; color: string }>();
+    const areaTagNames = new Set(["Finanzen", "Gesundheit", "Urlaub", "Haus", "Garten"]);
+    const actorTagNames = new Set(["Lars", "Lea", "Jonas", "Hannes", "Sarah", "Schule", "Kita"]);
+    const contextTagNames = new Set(["Zuhause", "Büro", "Telefon", "Erledigungen", "Online"]);
+    const tagsByName = new Map<string, typeof schema.tags.$inferSelect>();
     for (const name of tagNames) {
+      const kind = areaTagNames.has(name)
+        ? "area"
+        : actorTagNames.has(name)
+          ? "actor"
+          : contextTagNames.has(name)
+            ? "context"
+            : "plain";
       const tag = tx
         .insert(schema.tags)
-        .values({ name, color: colorForTag(name) })
+        .values({ name, color: colorForTag(name), kind })
         .returning()
         .get();
       tagsByName.set(name, tag);
@@ -126,8 +134,6 @@ export function seedDatabase(db: Db): void {
             dueDate: input.dueDate ?? null,
             scheduledDate: input.scheduledDate ?? null,
             waitingFor: input.waitingFor ?? null,
-            context: input.context ?? null,
-            contextInheritanceMode: input.contextInheritanceMode ?? "inherit",
             priority: input.priority ?? null,
             size: input.size ?? null,
             position: index,
@@ -171,7 +177,6 @@ export function seedDatabase(db: Db): void {
       criteria?: SeedCriterionInput[];
       status?: (typeof schema.projects.$inferInsert)["status"];
       ownerMemberId: number | null;
-      context: string | null;
       dueDate?: string | null;
       tagNames?: string[];
       position: number;
@@ -183,7 +188,6 @@ export function seedDatabase(db: Db): void {
           title: input.title,
           status: input.status ?? "active",
           ownerMemberId: input.ownerMemberId,
-          context: input.context,
           dueDate: input.dueDate ?? null,
           position: input.position,
         })
@@ -220,7 +224,6 @@ export function seedDatabase(db: Db): void {
         { text: "Ummeldung des Wohnsitzes ist erledigt", checked: false },
       ],
       ownerMemberId: anna.id,
-      context: "Zuhause",
       dueDate: todayIso(10),
       tagNames: ["Zuhause", "Finanzen"],
       position: 0,
@@ -275,7 +278,6 @@ export function seedDatabase(db: Db): void {
         { text: "Gartenmöbel sind eingelagert", checked: false },
       ],
       ownerMemberId: jonas.id,
-      context: "Garten",
       dueDate: todayIso(-1),
       tagNames: ["Garten"],
       position: 1,
@@ -309,7 +311,6 @@ export function seedDatabase(db: Db): void {
         { text: "Formular ist eingereicht", checked: false },
       ],
       ownerMemberId: anna.id,
-      context: "Büro",
       dueDate: todayIso(30),
       tagNames: ["Finanzen", "Büro"],
       position: 2,
@@ -342,7 +343,6 @@ export function seedDatabase(db: Db): void {
         { text: "Budget ist festgelegt", checked: true },
       ],
       ownerMemberId: anna.id,
-      context: "Zuhause",
       tagNames: ["Zuhause"],
       position: 3,
       tasks: [
@@ -359,7 +359,6 @@ export function seedDatabase(db: Db): void {
         { text: "Ersatzteile sind bestellt", checked: false },
       ],
       ownerMemberId: jonas.id,
-      context: "Unterwegs",
       position: 4,
       tasks: [
         {
@@ -384,7 +383,6 @@ export function seedDatabase(db: Db): void {
         { text: "Regal steht am vorgesehenen Platz", checked: false },
       ],
       ownerMemberId: mia.id,
-      context: "Zuhause",
       position: 5,
       tasks: [
         {
@@ -414,7 +412,6 @@ export function seedDatabase(db: Db): void {
         { text: "Budget ist geschätzt", checked: false },
       ],
       ownerMemberId: null,
-      context: "Zuhause",
       tagNames: ["Zuhause"],
       position: 6,
       tasks: [
@@ -434,7 +431,6 @@ export function seedDatabase(db: Db): void {
         { text: "Kette ist geölt", checked: true },
       ],
       ownerMemberId: mia.id,
-      context: "Zuhause",
       dueDate: todayIso(-14),
       tagNames: ["Zuhause"],
       position: 7,
@@ -456,7 +452,6 @@ export function seedDatabase(db: Db): void {
         { text: "Abriss wurde durchgeführt", checked: false },
       ],
       ownerMemberId: null,
-      context: "Garten",
       tagNames: ["Garten"],
       position: 8,
       tasks: [{ title: "Entsorgung organisieren", status: "cancelled" }],
@@ -474,7 +469,6 @@ export function seedDatabase(db: Db): void {
         { text: "Beleuchtung ist abgenommen", checked: false },
       ],
       ownerMemberId: jonas.id,
-      context: "Zuhause",
       tagNames: ["Zuhause"],
       position: 9,
       tasks: [
@@ -493,8 +487,6 @@ export function seedDatabase(db: Db): void {
         {
           title: "Fahrrad reparieren",
           status: "actionable",
-          context: "Zuhause",
-          contextInheritanceMode: "explicit",
           dueDate: todayIso(0),
         },
         // Blocked (depends on the still-open "Nachbarn wegen Leiter fragen"

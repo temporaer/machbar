@@ -183,7 +183,6 @@ describe("TaskDetailSheet", () => {
       expect(mockedApi.updateTask).toHaveBeenCalledWith(46, {
         title: "Einkaufen gehen",
         notes: "Milch",
-        context: null,
         waitingFor: null,
       }),
     );
@@ -264,7 +263,6 @@ describe("TaskDetailSheet", () => {
       expect(mockedApi.updateTask).toHaveBeenCalledWith(50, {
         title: "Erste Erfassung",
         notes: "",
-        context: null,
         waitingFor: null,
         needsClarification: false,
       }),
@@ -304,7 +302,6 @@ describe("TaskDetailSheet", () => {
     expect(mockedApi.updateTask).toHaveBeenLastCalledWith(54, {
       title: "Roh erfasst",
       notes: "Ergänzung",
-      context: null,
       waitingFor: null,
     });
   });

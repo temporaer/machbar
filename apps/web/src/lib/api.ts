@@ -11,6 +11,8 @@ import type {
   SearchFilters,
   StuckProject,
   Tag,
+  TagGroupingMode,
+  TagKind,
   Task,
   TaskSize,
   TaskStatus,
@@ -124,8 +126,6 @@ export interface CreateTaskInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   waitingFor?: string | null;
-  context?: string | null;
-  contextInheritanceMode?: InheritanceMode;
   priority?: number | null;
   size?: TaskSize | null;
   recurrenceRule?: string | null;
@@ -154,7 +154,6 @@ export interface CreateProjectInput {
   notes?: string;
   status?: ProjectStatus;
   ownerMemberId?: number | null;
-  context?: string | null;
   dueDate?: string | null;
   scheduledDate?: string | null;
   tagIds?: number[];
@@ -221,6 +220,13 @@ export interface RefinementFilters {
   /** A positive member id, or the literal `"none"` for the shared/unassigned bucket. */
   ownerId?: number | "none";
   projectId?: number;
+  tagIds?: number[];
+}
+
+export interface UpdateTagInput {
+  kind?: TagKind;
+  groupingMode?: TagGroupingMode;
+  sortPosition?: number | null;
 }
 
 export interface RefinementIssueResponse {
@@ -263,8 +269,10 @@ export const api = {
   deleteMember: (id: number) => request<void>(`/members/${id}`, { method: "DELETE" }),
 
   getTags: () => request<Tag[]>("/tags"),
-  createTag: (name: string) =>
-    request<Tag>("/tags", { method: "POST", body: JSON.stringify({ name }) }),
+  createTag: (name: string, kind: TagKind = "plain") =>
+    request<Tag>("/tags", { method: "POST", body: JSON.stringify({ name, kind }) }),
+  updateTag: (id: number, patch: UpdateTagInput) =>
+    request<Tag>(`/tags/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteTag: (id: number) => request<void>(`/tags/${id}`, { method: "DELETE" }),
 
   getProjects: () => request<ProjectWithActions[]>("/projects"),
@@ -321,11 +329,11 @@ export const api = {
   // --- refinement (owner×size matrix + task list; see `apps/api/src/routes/refinement.ts`) ---
   getRefinementOwners: (filters?: RefinementFilters) =>
     request<OwnerSizeCounts[]>(
-      `/refinement/owners${query({ ownerId: filters?.ownerId, projectId: filters?.projectId })}`,
+      `/refinement/owners${query({ ownerId: filters?.ownerId, projectId: filters?.projectId, tagIds: filters?.tagIds })}`,
     ),
   getRefinementTasks: (filters?: RefinementFilters) =>
     request<RefinementTaskRow[]>(
-      `/refinement/tasks${query({ ownerId: filters?.ownerId, projectId: filters?.projectId })}`,
+      `/refinement/tasks${query({ ownerId: filters?.ownerId, projectId: filters?.projectId, tagIds: filters?.tagIds })}`,
     ),
   getRefinementIssues: () =>
     request<RefinementIssueResponse>("/refinement/issues"),
@@ -348,15 +356,14 @@ export const api = {
     return request<AgendaResponse>(`/agenda/today${query({ memberId, date })}`);
   },
   getInbox: () => request<Task[]>("/inbox"),
-  getWaiting: () => request<WaitingGroup[]>("/waiting"),
+  getWaiting: (actorTagId?: number) =>
+    request<WaitingGroup[]>(`/waiting${query({ actorTagId })}`),
   searchTasks: (filters: SearchFilters) =>
     request<Task[]>(
       `/search${query({
         text: filters.text,
         ownerId: filters.ownerId,
         projectId: filters.projectId,
-        effectiveContext: filters.effectiveContext,
-        explicitContext: filters.explicitContext,
         tagIds: filters.tagIds,
         status: filters.status,
         dueFrom: filters.dueFrom,

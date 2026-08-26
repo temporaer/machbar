@@ -24,7 +24,6 @@ import type { MoveMode } from "./MoveTaskSheet";
 interface TextFieldsSnapshot {
   title: string;
   notes: string;
-  context: string;
   waitingFor: string;
 }
 
@@ -32,7 +31,6 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
   return {
     title: task.title,
     notes: task.notes ?? "",
-    context: task.context ?? "",
     waitingFor: task.waitingFor ?? "",
   };
 }
@@ -80,7 +78,6 @@ export function TaskDetailSheet() {
   const [depResults, setDepResults] = useState<Task[]>([]);
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
-  const [contextDraft, setContextDraft] = useState("");
   const [waitingForDraft, setWaitingForDraft] = useState("");
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
   const [savingTextFields, setSavingTextFields] = useState(false);
@@ -119,13 +116,11 @@ export function TaskDetailSheet() {
       textFieldsBaseline !== null &&
       (titleDraft !== textFieldsBaseline.title ||
         notesDraft !== textFieldsBaseline.notes ||
-        contextDraft !== textFieldsBaseline.context ||
         waitingForDraft !== textFieldsBaseline.waitingFor);
 
     if (!hasUnsavedEdits) {
       setTitleDraft(nextBaseline.title);
       setNotesDraft(nextBaseline.notes);
-      setContextDraft(nextBaseline.context);
       setWaitingForDraft(nextBaseline.waitingFor);
       setTextFieldsBaseline(nextBaseline);
     }
@@ -175,7 +170,6 @@ export function TaskDetailSheet() {
     textFieldsBaseline !== null &&
     (titleDraft !== textFieldsBaseline.title ||
       notesDraft !== textFieldsBaseline.notes ||
-      contextDraft !== textFieldsBaseline.context ||
       waitingForDraft !== textFieldsBaseline.waitingFor);
   const saveChangesDisabled = !textFieldsDirty || !titleIsValid || savingTextFields;
   const saveNextDisabled = !titleIsValid || savingTextFields;
@@ -186,7 +180,6 @@ export function TaskDetailSheet() {
     const snapshot: TextFieldsSnapshot = {
       title: titleDraft.trim(),
       notes: notesDraft,
-      context: contextDraft,
       waitingFor: waitingForDraft,
     };
     setSavingTextFields(true);
@@ -195,7 +188,6 @@ export function TaskDetailSheet() {
       await api.updateTask(task.id, {
         title: snapshot.title,
         notes: snapshot.notes,
-        context: snapshot.context || null,
         waitingFor: snapshot.waitingFor || null,
         ...(clarify ? { needsClarification: false } : {}),
       });
@@ -322,26 +314,6 @@ export function TaskDetailSheet() {
               <p className="text-muted">
                 {members.find((m) => m.id === task.effectiveOwnerId)?.name ?? strings.unassigned}
               </p>
-            )}
-          </div>
-
-          <div className="field">
-            <label>{strings.context}</label>
-            <InheritanceControl
-              mode={task.contextInheritanceMode}
-              explicitLabel={strings.ownContext}
-              onChange={(mode) => void patch({ contextInheritanceMode: mode })}
-            />
-            {task.contextInheritanceMode === "explicit" ? (
-              <input
-                aria-label={strings.context}
-                value={contextDraft}
-                placeholder={strings.contextPlaceholder}
-                onChange={(e) => setContextDraft(e.target.value)}
-                onBlur={(e) => saveOnBlur(e.relatedTarget)}
-              />
-            ) : (
-              <p className="text-muted">{task.effectiveContext ?? strings.noContext}</p>
             )}
           </div>
 

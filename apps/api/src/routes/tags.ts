@@ -1,8 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
-import { deleteTag, getOrCreateTag, listTags } from "../domain/mutations.js";
-import { createTagSchema } from "../schemas.js";
+import {
+  deleteTag,
+  getOrCreateTag,
+  listTags,
+  updateTag,
+} from "../domain/mutations.js";
+import { createTagSchema, updateTagSchema } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
 
 function parseId(raw: string): number {
@@ -16,9 +21,14 @@ export function registerTagRoutes(app: FastifyInstance, db: Db) {
 
   app.post("/api/tags", async (request, reply) => {
     const body = parseOrThrow(createTagSchema, request.body);
-    const tag = getOrCreateTag(db, body.name);
+    const tag = getOrCreateTag(db, body.name, body.kind);
     reply.status(201);
     return tag;
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/tags/:id", async (request) => {
+    const body = parseOrThrow(updateTagSchema, request.body);
+    return updateTag(db, parseId(request.params.id), body);
   });
 
   app.delete<{ Params: { id: string } }>("/api/tags/:id", async (request, reply) => {

@@ -24,6 +24,10 @@ const agendaQuerySchema = z.object({
     .optional(),
 });
 
+const waitingQuerySchema = z.object({
+  actorTagId: z.coerce.number().int().positive().optional(),
+});
+
 /**
  * Parses and validates the optional `memberId` query parameter for
  * `/api/agenda/today`. It must be a positive integer when present. Leaving
@@ -75,8 +79,15 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       .map(cloneCaptured);
   });
 
-  app.get("/api/waiting", async () => {
+  app.get("/api/waiting", async (request) => {
+    const parsed = waitingQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      throw AppError.badRequest(
+        "actorTagId muss eine positive ganze Zahl sein.",
+        parsed.error.flatten(),
+      );
+    }
     const graph = Graph.load(db);
-    return buildWaitingGroups(graph);
+    return buildWaitingGroups(graph, parsed.data.actorTagId);
   });
 }

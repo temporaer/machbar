@@ -19,11 +19,12 @@ import {
 } from "./mutations.js";
 import {
   getBlockedTaskIds,
-  getEffectiveOwnersAndContexts,
+  getEffectiveOwners,
   getEffectiveTagIds,
   getNextActionTaskIdsByProject,
   getStuckReasonsByProject,
 } from "../repo/index.js";
+import { selectPrimaryAreaTag } from "./projectAreas.js";
 
 export interface ProjectRecord extends SharedProject {
   /** Workflow actions currently legal for this project's status (see
@@ -76,8 +77,6 @@ interface RawTask {
   dueDate: string | null;
   scheduledDate: string | null;
   waitingFor: string | null;
-  context: string | null;
-  contextInheritanceMode: InheritanceMode;
   priority: number | null;
   size: TaskSize | null;
   position: number;
@@ -95,7 +94,6 @@ interface RawProject {
   notes: string;
   status: ProjectStatus;
   ownerMemberId: number | null;
-  context: string | null;
   dueDate: string | null;
   scheduledDate: string | null;
   position: number;
@@ -107,7 +105,7 @@ interface RawProject {
  *
  * `Graph` is deliberately a thin *service/repository-composition* layer: it
  * issues a handful of ordinary Drizzle CRUD selects for the raw rows, and
- * delegates every non-trivial derivation — effective owner/context/tags
+ * delegates every non-trivial derivation — effective owner/tags
  * inheritance, dependency-based blocking, next-action selection and
  * "Festgefahren" (stuck) classification — to the SQL/CTE-based functions in
  * `src/repo/*`. The only tree-shaped work still done here is building the
@@ -133,7 +131,7 @@ export class Graph {
 
   static load(db: Db): Graph {
     // --- SQL/CTE-computed derivations (repo layer) ---------------------
-    const effectiveOwnerContext = getEffectiveOwnersAndContexts(db);
+    const effectiveOwners = getEffectiveOwners(db);
     const effectiveTagIdsByTask = getEffectiveTagIds(db);
     const blockedTaskIds = getBlockedTaskIds(db);
     const nextActionIdByProject = getNextActionTaskIdsByProject(db);
@@ -217,11 +215,17 @@ export class Graph {
         notes: p.notes,
         status: p.status,
         ownerMemberId: p.ownerMemberId,
-        context: p.context,
         dueDate: p.dueDate,
         scheduledDate: p.scheduledDate,
         position: p.position,
         tags: dedupeTags(projectTagsByProject.get(p.id) ?? []),
+        effectiveTags: dedupeTags(projectTagsByProject.get(p.id) ?? []),
+        effectiveAreaTags: dedupeTags(
+          projectTagsByProject
+            .get(p.id)
+            ?.filter((tag) => tag.kind === "area") ?? [],
+        ),
+        primaryAreaTag: null,
         acceptanceCriteria: criteriaByProject.get(p.id) ?? [],
         availableActions: availableProjectWorkflowActions(p.status),
       });
@@ -243,11 +247,9 @@ export class Graph {
 
     const toRecord = (raw: RawTask): TaskRecord => {
       const project = raw.projectId ? graph.projectsById.get(raw.projectId) ?? null : null;
-      const eff = effectiveOwnerContext.get(raw.id);
+      const eff = effectiveOwners.get(raw.id);
       const effectiveOwnerId = eff?.ownerId ?? null;
       const effectiveOwnerSource = eff?.ownerSource ?? "none";
-      const effectiveContext = eff?.context ?? null;
-      const effectiveContextSource = eff?.contextSource ?? "none";
 
       const explicitTags = dedupeTags(explicitTagsByTask.get(raw.id) ?? []);
       const excludedTagIds = excludedByTask.get(raw.id) ?? [];
@@ -256,6 +258,15 @@ export class Graph {
         effectiveTagIds
           .map((id) => tagsById.get(id))
           .filter((t): t is Tag => t !== undefined),
+      );
+      const effectiveAreaTags = effectiveTags.filter(
+        (tag) => tag.kind === "area",
+      );
+      const effectiveActorTags = effectiveTags.filter(
+        (tag) => tag.kind === "actor",
+      );
+      const effectiveContextTags = effectiveTags.filter(
+        (tag) => tag.kind === "context",
       );
 
       const depRefs = dependenciesByTask.get(raw.id) ?? [];
@@ -287,8 +298,6 @@ export class Graph {
         dueDate: raw.dueDate,
         scheduledDate: raw.scheduledDate,
         waitingFor: raw.waitingFor,
-        context: raw.context,
-        contextInheritanceMode: raw.contextInheritanceMode,
         priority: raw.priority,
         size: raw.size,
         position: raw.position,
@@ -300,9 +309,10 @@ export class Graph {
         updatedAt: raw.updatedAt,
         effectiveOwnerId,
         effectiveOwnerSource,
-        effectiveContext,
-        effectiveContextSource,
         effectiveTags,
+        effectiveAreaTags,
+        effectiveActorTags,
+        effectiveContextTags,
         explicitTags,
         excludedTagIds,
         blocked,
@@ -370,8 +380,18 @@ export class Graph {
       (t) => t.status !== "done" && t.status !== "cancelled",
     ).length;
     const doneCount = tasks.filter((t) => t.status === "done").length;
+    const effectiveTags = dedupeTags([
+      ...project.tags,
+      ...tasks.flatMap((task) => task.effectiveTags),
+    ]);
+    const effectiveAreaTags = effectiveTags.filter(
+      (tag) => tag.kind === "area",
+    );
     return {
       ...project,
+      effectiveTags,
+      effectiveAreaTags,
+      primaryAreaTag: selectPrimaryAreaTag(project.tags, effectiveTags, tasks),
       openCount,
       doneCount,
       nextAction: this.nextActionFor(projectId),

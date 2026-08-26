@@ -2,7 +2,7 @@ import type { Member, TaskSize, TaskStatus } from "@machbar/shared";
 import { taskSizes } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
-import { getEffectiveOwnersAndContexts } from "./effectiveRepo.js";
+import { getEffectiveOwners, getEffectiveTagIds } from "./effectiveRepo.js";
 
 /**
  * "Open" work for refinement purposes: everything that isn't finished or
@@ -20,6 +20,8 @@ export interface RefinementFilters {
   ownerId?: number | null;
   /** Filter to tasks directly assigned to this project (not inherited). */
   projectId?: number;
+  /** Require every listed effective tag. */
+  tagIds?: number[];
 }
 
 export interface OwnerSizeCounts {
@@ -60,7 +62,7 @@ interface OpenTaskRow {
 /**
  * Loads every open task together with its effective owner, applying the
  * optional owner/project filters shared by both refinement queries below.
- * Owner resolution reuses `getEffectiveOwnersAndContexts`'s recursive CTE
+ * Owner resolution reuses `getEffectiveOwners`'s recursive CTE
  * rather than re-deriving inheritance here, so a task reassigned or moved
  * between projects/parents is picked up automatically the next time this
  * is called (there is no cached/denormalized owner to go stale).
@@ -76,7 +78,8 @@ function loadFilteredOpenTasks(
     "task" | "parent" | "project" | "none"
   >;
 } {
-  const effective = getEffectiveOwnersAndContexts(db);
+  const effective = getEffectiveOwners(db);
+  const effectiveTagIds = getEffectiveTagIds(db);
   const allTasks = db
     .select({
       id: schema.tasks.id,
@@ -109,6 +112,10 @@ function loadFilteredOpenTasks(
     if (filters?.ownerId !== undefined) {
       const ownerId = effectiveOwnerId.get(t.id) ?? null;
       if (ownerId !== filters.ownerId) return false;
+    }
+    if (filters?.tagIds?.length) {
+      const owned = new Set(effectiveTagIds.get(t.id) ?? []);
+      if (!filters.tagIds.every((tagId) => owned.has(tagId))) return false;
     }
     return true;
   });

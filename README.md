@@ -2,7 +2,7 @@
 
 > **Das ist machbar.** — A GTD-style task manager for families and small teams.
 
-Machbar helps you collect, clarify, and organise work as **user stories** (projects) with acceptance criteria, a single accountable **driver**, estimated tasks, per-member context, tag inheritance, and a shared agenda view. Built with React/Vite + Fastify + SQLite; runs as a single process or container with zero external service dependencies.
+Machbar helps you collect, clarify, and organise work as **user stories** (projects) with acceptance criteria, a single accountable **driver**, estimated tasks, typed tag inheritance, and a shared agenda view. Built with React/Vite + Fastify + SQLite; runs as a single process or container with zero external service dependencies.
 
 ---
 
@@ -411,8 +411,8 @@ See **[docs/architecture.md](docs/architecture.md)** for:
 
 - Monorepo package boundaries (`@machbar/api`, `@machbar/web`, `@machbar/shared`)
 - SQLite entity hierarchy: Members → Projects → Tasks → Sub-tasks
-- Ownership/context/tag **inheritance chains** and `inheritanceMode`
-- Compiled/resolved view fields (`effectiveOwnerId`, `effectiveTags`, `blocked`, `availableActions`, …)
+- Ownership and typed-tag **inheritance chains**
+- Compiled/resolved view fields (`effectiveOwnerId`, `effectiveTags`, `effectiveAreaTags`, `blocked`, `availableActions`, …)
 - The project workflow state machine, driver invariant, and stuck detection
 - Web interaction patterns (optimistic retention, focused quick sheets)
 - Transaction rules, WAL mode, and the acceptance-criteria migration
@@ -535,7 +535,7 @@ An **owner × size matrix** over all open tasks. Tap a cell to filter the list b
   such as *in 2 Wochen* or *3 Tage überfällig*. No project date is copied into
   a task's own date fields.
 - **Focused quick sheets.** Owner, dates, tags, criteria and driver each have their own small sheet. Full detail pages are reserved for deliberate deep edits.
-- **Tags are compact and reusable.** Project and task editors show the available tags as small, coloured, directly tappable chips. A new tag can be created inline and is selected immediately; its stable colour is assigned automatically. Project tags flow down the task tree unless a task excludes them. The global catalogue can be created and deleted under **Mehr › Tags verwalten**; deletion removes only the tag associations, never their projects or tasks.
+- **Tags are compact, typed, and reusable.** Project and task editors group the available coloured chips into Bereich, Person/Stelle, Kontext, and Normal. Creating a tag in a section assigns that primary kind automatically. Project tags flow down the task tree unless a task excludes them. Projects are grouped once by a deterministic primary Bereich. The global catalogue can change kind/grouping/order or delete tags under **Mehr › Tags verwalten**; deletion removes only tag associations, never their projects or tasks.
 - **Assignment is a tap, not a dropdown.** Since a household has at most a handful of members, every assignment popup shows all of them as chips — including an explicit *Gemeinsam / offen* (tasks) or *Niemand zugewiesen* (stories) chip wherever leaving it unassigned is allowed. The current choice stays highlighted while you pick.
 - **Waiting follow-ups are append-only.** Logging a follow-up on a `waiting` task appends to its notes under a generated header — `[dd.mm.yy, hh:mm · Name]` — so the history stays intact and attributable. Setting a **Wiedervorlage** in the same sheet also clears the story's `only_waiting` flag.
 - **Notes contain actionable links.** Task rows show a compact two-line note preview; phone numbers, email addresses, and web URLs become safe `tel:`, `mailto:`, and HTTPS links for direct use on mobile.
@@ -560,6 +560,7 @@ An **owner × size matrix** over all open tasks. Tap a cell to filter the list b
 | **Mobile** | Responsive but no PWA manifest | PWA / home-screen install |
 | **Offline** | Requires connectivity | Service Worker caching |
 | **i18n** | German only (`de` strings in `@machbar/shared`) | Additional locales |
+| **Capture shape conversion** | Undecided Eingang captures are tasks; task/project conversion is not yet available | **Zum Projekt machen** for structured tasks; **Als einzelne Aufgabe behandeln** for simple projects |
 
 ---
 

@@ -74,6 +74,9 @@ export const tags = sqliteTable("tags", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull().unique(),
   color: text("color").notNull().default("#64748b"),
+  kind: text("kind").notNull().default("plain"),
+  groupingMode: text("grouping_mode").notNull().default("auto"),
+  sortPosition: integer("sort_position"),
 });
 
 export const projects = sqliteTable("projects", {
@@ -84,7 +87,6 @@ export const projects = sqliteTable("projects", {
   ownerMemberId: integer("owner_member_id").references(() => members.id, {
     onDelete: "set null",
   }),
-  context: text("context"),
   dueDate: text("due_date"),
   scheduledDate: text("scheduled_date"),
   position: integer("position").notNull().default(0),
@@ -163,10 +165,6 @@ export const tasks = sqliteTable(
     dueDate: text("due_date"),
     scheduledDate: text("scheduled_date"),
     waitingFor: text("waiting_for"),
-    context: text("context"),
-    contextInheritanceMode: text("context_inheritance_mode")
-      .notNull()
-      .default("inherit"), // inherit | explicit | none
     priority: integer("priority"),
     size: text("size"), // nullable S | M | L | XL
     position: integer("position").notNull().default(0),

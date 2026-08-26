@@ -3,15 +3,13 @@ import type { Db } from "../db/client.js";
 
 export type EffectiveSource = "task" | "parent" | "project" | "none";
 
-export interface EffectiveOwnerContext {
+export interface EffectiveOwner {
   ownerId: number | null;
   ownerSource: EffectiveSource;
-  context: string | null;
-  contextSource: EffectiveSource;
 }
 
 /**
- * Computes effective owner + context inheritance for every task in the
+ * Computes effective owner inheritance for every task in the
  * database in a single pass, via a SQLite recursive CTE that walks the
  * `parentTaskId` chain top-down (root tasks resolve against their project,
  * every other task resolves against its own parent's already-computed
@@ -23,17 +21,15 @@ export interface EffectiveOwnerContext {
  * explicit override anywhere in between, the source stays `"project"` even
  * for deeply nested descendants.
  */
-export function getEffectiveOwnersAndContexts(
+export function getEffectiveOwners(
   db: Db,
-): Map<number, EffectiveOwnerContext> {
+): Map<number, EffectiveOwner> {
   const rows = db.all<{
     task_id: number;
     owner_id: number | null;
     owner_source: EffectiveSource;
-    context: string | null;
-    context_source: EffectiveSource;
   }>(sql`
-    WITH RECURSIVE eff(task_id, owner_id, owner_source, context, context_source) AS (
+    WITH RECURSIVE eff(task_id, owner_id, owner_source) AS (
       SELECT
         t.id,
         CASE
@@ -45,17 +41,6 @@ export function getEffectiveOwnersAndContexts(
           WHEN t.owner_inheritance_mode = 'explicit' THEN 'task'
           WHEN t.owner_inheritance_mode = 'none' THEN 'none'
           WHEN p.owner_member_id IS NOT NULL THEN 'project'
-          ELSE 'none'
-        END,
-        CASE
-          WHEN t.context_inheritance_mode = 'explicit' THEN t.context
-          WHEN t.context_inheritance_mode = 'none' THEN NULL
-          ELSE p.context
-        END,
-        CASE
-          WHEN t.context_inheritance_mode = 'explicit' THEN 'task'
-          WHEN t.context_inheritance_mode = 'none' THEN 'none'
-          WHEN p.context IS NOT NULL THEN 'project'
           ELSE 'none'
         END
       FROM tasks t
@@ -77,32 +62,18 @@ export function getEffectiveOwnersAndContexts(
           WHEN eff.owner_source = 'none' THEN 'none'
           WHEN eff.owner_source = 'project' THEN 'project'
           ELSE 'parent'
-        END,
-        CASE
-          WHEN t.context_inheritance_mode = 'explicit' THEN t.context
-          WHEN t.context_inheritance_mode = 'none' THEN NULL
-          ELSE eff.context
-        END,
-        CASE
-          WHEN t.context_inheritance_mode = 'explicit' THEN 'task'
-          WHEN t.context_inheritance_mode = 'none' THEN 'none'
-          WHEN eff.context_source = 'none' THEN 'none'
-          WHEN eff.context_source = 'project' THEN 'project'
-          ELSE 'parent'
         END
       FROM tasks t
       JOIN eff ON t.parent_task_id = eff.task_id
     )
-    SELECT task_id, owner_id, owner_source, context, context_source FROM eff
+    SELECT task_id, owner_id, owner_source FROM eff
   `);
 
-  const result = new Map<number, EffectiveOwnerContext>();
+  const result = new Map<number, EffectiveOwner>();
   for (const row of rows) {
     result.set(row.task_id, {
       ownerId: row.owner_id,
       ownerSource: row.owner_source,
-      context: row.context,
-      contextSource: row.context_source,
     });
   }
   return result;

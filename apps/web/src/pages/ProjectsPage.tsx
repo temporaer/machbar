@@ -7,6 +7,7 @@ import { useIdentity } from "../lib/identity";
 import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
 import {
   filterAndSortProjects,
+  groupProjectsByArea,
   isTerminalProjectStatus,
   type ProjectVisibilityScope,
 } from "../lib/projectListFilter";
@@ -32,6 +33,8 @@ export function ProjectsPage() {
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<ProjectVisibilityScope>("mine");
+  const [areaTagId, setAreaTagId] = useState<number | undefined>();
+  const { data: tags } = useAsync(() => api.getTags(), []);
 
   const submit = async () => {
     const trimmed = title.trim();
@@ -58,7 +61,12 @@ export function ProjectsPage() {
     .filter((story) => !listed.some((p) => p.id === story.id));
   const allProjects = [...listed, ...retainedOnly];
 
-  const filteredProjects = filterAndSortProjects(allProjects, { query, scope, currentMemberId });
+  const filteredProjects = filterAndSortProjects(allProjects, {
+    query,
+    scope,
+    currentMemberId,
+    areaTagId,
+  });
   // Active/backlog stories stay primary and always visible; completed and
   // archived ones are terminal — they no longer need day-to-day attention,
   // so they fold into one counted section below instead of crowding the
@@ -71,6 +79,8 @@ export function ProjectsPage() {
   const effectiveStatusOf = (p: (typeof filteredProjects)[number]) => actions.retained.get(p.id)?.story ?? p;
   const primaryProjects = filteredProjects.filter((p) => !isTerminalProjectStatus(effectiveStatusOf(p)));
   const terminalProjects = filteredProjects.filter((p) => isTerminalProjectStatus(effectiveStatusOf(p)));
+  const primaryGroups = groupProjectsByArea(primaryProjects);
+  const terminalGroups = groupProjectsByArea(terminalProjects);
   // A non-empty search that actually matches a terminal story should reveal
   // it automatically instead of hiding a real match behind a fold; with no
   // search (or no terminal matches) the section stays folded by default.
@@ -105,6 +115,29 @@ export function ProjectsPage() {
             {strings.projectScopeAll}
           </button>
         </div>
+        <div className="row" role="group" aria-label={strings.tagKindLabels.area}>
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={areaTagId === undefined}
+            onClick={() => setAreaTagId(undefined)}
+          >
+            {strings.allAreas}
+          </button>
+          {(tags ?? [])
+            .filter((tag) => tag.kind === "area")
+            .map((tag) => (
+              <button
+                key={tag.id}
+                type="button"
+                className="chip"
+                aria-pressed={areaTagId === tag.id}
+                onClick={() => setAreaTagId(tag.id)}
+              >
+                {tag.name}
+              </button>
+            ))}
+        </div>
       </div>
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
@@ -115,23 +148,31 @@ export function ProjectsPage() {
           <EmptyState message={strings.noMatchingProjects} />
         ) : (
           <>
-            {primaryProjects.length > 0 ? (
-              <ul className="list story-row-list">
-                {primaryProjects.map((p) => (
-                  <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
-                ))}
-              </ul>
-            ) : null}
+            {primaryGroups.map((group) => (
+              <section className="section" key={group.area?.id ?? "none"}>
+                <h2 className="section-title">{group.area?.name ?? strings.noArea}</h2>
+                <ul className="list story-row-list">
+                  {group.projects.map((p) => (
+                    <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
+                  ))}
+                </ul>
+              </section>
+            ))}
             {terminalProjects.length > 0 ? (
               <details className="section" open={revealTerminalProjects}>
                 <summary className="section-title">
                   {strings.finishedProjectsSection(terminalProjects.length)}
                 </summary>
-                <ul className="list story-row-list">
-                  {terminalProjects.map((p) => (
-                    <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
-                  ))}
-                </ul>
+                {terminalGroups.map((group) => (
+                  <section key={group.area?.id ?? "none"}>
+                    <h3>{group.area?.name ?? strings.noArea}</h3>
+                    <ul className="list story-row-list">
+                      {group.projects.map((p) => (
+                        <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
+                      ))}
+                    </ul>
+                  </section>
+                ))}
               </details>
             ) : null}
           </>

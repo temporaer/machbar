@@ -14,11 +14,10 @@ import { TagPicker } from "./TagPicker";
 interface TextFieldsSnapshot {
   title: string;
   notes: string;
-  context: string;
 }
 
 function textFieldsSnapshot(project: ProjectDetail): TextFieldsSnapshot {
-  return { title: project.title, notes: project.notes, context: project.context ?? "" };
+  return { title: project.title, notes: project.notes };
 }
 
 function errorMessage(err: unknown): string {
@@ -35,7 +34,7 @@ const lifecycleLabels: Record<ProjectWorkflowAction, string> = {
 
 /**
  * Mobile bottom-sheet editor for a project/story: metadata (title, driver,
- * context, tags, due/scheduled dates), the ordered acceptance-criteria list
+ * tags, due/scheduled dates), the ordered acceptance-criteria list
  * (add/edit/reorder/check/remove — replacing any free-text description),
  * and the explicit lifecycle actions legal for the story's current status
  * (`project.availableActions`, computed by the backend). Mirrors
@@ -56,7 +55,6 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
 
   const [titleDraft, setTitleDraft] = useState(project.title);
   const [notesDraft, setNotesDraft] = useState(project.notes);
-  const [contextDraft, setContextDraft] = useState(project.context ?? "");
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot>(textFieldsSnapshot(project));
   const [savingTextFields, setSavingTextFields] = useState(false);
   const [busyAction, setBusyAction] = useState<ProjectWorkflowAction | null>(null);
@@ -76,12 +74,10 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
     const hasUnsavedEdits =
       !isNewProject &&
       (titleDraft !== textFieldsBaseline.title ||
-        notesDraft !== textFieldsBaseline.notes ||
-        contextDraft !== textFieldsBaseline.context);
+        notesDraft !== textFieldsBaseline.notes);
     if (!hasUnsavedEdits) {
       setTitleDraft(nextBaseline.title);
       setNotesDraft(nextBaseline.notes);
-      setContextDraft(nextBaseline.context);
       setTextFieldsBaseline(nextBaseline);
     }
     lastLoadedProjectIdRef.current = project.id;
@@ -91,8 +87,7 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
   const titleIsValid = titleDraft.trim().length > 0;
   const textFieldsDirty =
     titleDraft !== textFieldsBaseline.title ||
-    notesDraft !== textFieldsBaseline.notes ||
-    contextDraft !== textFieldsBaseline.context;
+    notesDraft !== textFieldsBaseline.notes;
   const saveChangesDisabled = !textFieldsDirty || !titleIsValid || savingTextFields;
 
   const saveTextFields = async () => {
@@ -100,7 +95,6 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
     const snapshot: TextFieldsSnapshot = {
       title: titleDraft.trim(),
       notes: notesDraft,
-      context: contextDraft,
     };
     setSavingTextFields(true);
     setActionError(null);
@@ -108,7 +102,6 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
       await api.updateProject(project.id, {
         title: snapshot.title,
         notes: snapshot.notes,
-        context: snapshot.context || null,
       });
       // Adopt the just-saved values as the new baseline right away so the
       // save button disables immediately, without waiting for the parent's
@@ -248,17 +241,6 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
               </option>
             ))}
           </select>
-        </div>
-
-        <div className="field">
-          <label htmlFor="project-context">{strings.context}</label>
-          <input
-            id="project-context"
-            value={contextDraft}
-            placeholder={strings.contextPlaceholder}
-            onChange={(e) => setContextDraft(e.target.value)}
-            onBlur={() => void saveTextFields()}
-          />
         </div>
 
         <div className="row">

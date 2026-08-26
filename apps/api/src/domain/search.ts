@@ -18,14 +18,6 @@ export function searchTasks(graph: Graph, filters: SearchFilters): TaskRecord[] 
   if (filters.projectId !== undefined) {
     results = results.filter((t) => t.projectId === filters.projectId);
   }
-  if (filters.effectiveContext !== undefined) {
-    results = results.filter(
-      (t) => t.effectiveContext === filters.effectiveContext,
-    );
-  }
-  if (filters.explicitContext !== undefined) {
-    results = results.filter((t) => t.context === filters.explicitContext);
-  }
   if (filters.tagIds && filters.tagIds.length > 0) {
     const wanted = filters.tagIds;
     results = results.filter((t) => {

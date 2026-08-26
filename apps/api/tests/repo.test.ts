@@ -17,7 +17,7 @@ import {
   wouldCreateDependencyCycle,
 } from "../src/repo/dependencyRepo.js";
 import {
-  getEffectiveOwnersAndContexts,
+  getEffectiveOwners,
   getEffectiveTagIds,
 } from "../src/repo/effectiveRepo.js";
 import { getNextActionTaskIdsByProject } from "../src/repo/nextActionRepo.js";
@@ -104,21 +104,18 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
     });
   });
 
-  describe("effective owner/context/tags", () => {
-    it("computes owner/context inheritance for every task in one pass and labels the source correctly", () => {
+  describe("effective owner/tags", () => {
+    it("computes owner inheritance for every task in one pass and labels the source correctly", () => {
       const projectOwner = createMember("Projektinhaberin");
       const parentOwner = createMember("Elternzuständiger");
       const project = createProject(handle.db, {
         title: "Projekt",
         ownerMemberId: projectOwner.id,
-        context: "Zuhause",
       });
       const root = createTask(handle.db, { projectId: project.id, title: "Wurzel" });
       const explicitParent = updateTask(handle.db, root.id, {
         ownerMemberId: parentOwner.id,
         ownerInheritanceMode: "explicit",
-        context: "Büro",
-        contextInheritanceMode: "explicit",
       });
       const child = createTask(handle.db, {
         parentTaskId: explicitParent.id,
@@ -129,33 +126,24 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         parentTaskId: grandchild.id,
         title: "Ohne Zuständigkeit",
         ownerInheritanceMode: "none",
-        contextInheritanceMode: "none",
       });
 
-      const effective = getEffectiveOwnersAndContexts(handle.db);
+      const effective = getEffectiveOwners(handle.db);
       expect(effective.get(explicitParent.id)).toMatchObject({
         ownerId: parentOwner.id,
         ownerSource: "task",
-        context: "Büro",
-        contextSource: "task",
       });
       expect(effective.get(child.id)).toMatchObject({
         ownerId: parentOwner.id,
         ownerSource: "parent",
-        context: "Büro",
-        contextSource: "parent",
       });
       expect(effective.get(grandchild.id)).toMatchObject({
         ownerId: parentOwner.id,
         ownerSource: "parent",
-        context: "Büro",
-        contextSource: "parent",
       });
       expect(effective.get(optedOut.id)).toMatchObject({
         ownerId: null,
         ownerSource: "none",
-        context: null,
-        contextSource: "none",
       });
     });
 

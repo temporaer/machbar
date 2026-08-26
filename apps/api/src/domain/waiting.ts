@@ -3,11 +3,20 @@ import type { Graph, TaskRecord } from "./graph.js";
 
 const UNKNOWN_GROUP = "Unbekannt";
 
-/** Groups all "waiting" tasks by their `waitingFor` text (Wartet view). */
-export function buildWaitingGroups(graph: Graph): WaitingGroup[] {
+/** Groups "waiting" tasks by their free-text `waitingFor` value. */
+export function buildWaitingGroups(
+  graph: Graph,
+  actorTagId?: number,
+): WaitingGroup[] {
   const groups = new Map<string, TaskRecord[]>();
   for (const task of graph.allTasks()) {
     if (task.status !== "waiting") continue;
+    if (
+      actorTagId !== undefined &&
+      !task.effectiveActorTags.some((tag) => tag.id === actorTagId)
+    ) {
+      continue;
+    }
     const key = task.waitingFor?.trim() || UNKNOWN_GROUP;
     const list = groups.get(key) ?? [];
     list.push(task);

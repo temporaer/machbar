@@ -351,7 +351,6 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     const task = await createTask({
       title: "Wird wiedereröffnet",
       status: "actionable",
-      context: "Büro",
     });
     await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete` });
     const reopenRes = await ctx.app.inject({

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "../src/db/schema.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
-describe("effective owner/context/tags inheritance", () => {
+describe("effective owner and typed-tag inheritance", () => {
   let ctx: TestContext;
 
   beforeEach(() => {
@@ -22,10 +22,14 @@ describe("effective owner/context/tags inheritance", () => {
       .get();
   }
 
-  it("inherits owner, context and tags down a project -> task -> subtask chain", async () => {
+  it("inherits owner and typed tags down a project -> task -> subtask chain", async () => {
     const owner = createMember("Anna");
     const tag = (
-      await ctx.app.inject({ method: "POST", url: "/api/tags", payload: { name: "Zuhause" } })
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tags",
+        payload: { name: "Zuhause", kind: "context" },
+      })
     ).json();
 
     const project = (
@@ -35,7 +39,6 @@ describe("effective owner/context/tags inheritance", () => {
         payload: {
           title: "Testprojekt",
           ownerMemberId: owner.id,
-          context: "Büro",
           tagIds: [tag.id],
         },
       })
@@ -51,9 +54,8 @@ describe("effective owner/context/tags inheritance", () => {
 
     expect(parentTask.effectiveOwnerId).toBe(owner.id);
     expect(parentTask.effectiveOwnerSource).toBe("project");
-    expect(parentTask.effectiveContext).toBe("Büro");
-    expect(parentTask.effectiveContextSource).toBe("project");
     expect(parentTask.effectiveTags.map((t: { id: number }) => t.id)).toContain(tag.id);
+    expect(parentTask.effectiveContextTags.map((t: { id: number }) => t.id)).toContain(tag.id);
 
     const childTask = (
       await ctx.app.inject({
@@ -65,12 +67,10 @@ describe("effective owner/context/tags inheritance", () => {
 
     expect(childTask.projectId).toBe(project.id);
     expect(childTask.effectiveOwnerId).toBe(owner.id);
-    // Still labelled "project" (not "parent") because nothing along the
-    // parent chain overrides the owner/context explicitly.
+    // Still labelled "project" because nothing in the parent chain overrides ownership.
     expect(childTask.effectiveOwnerSource).toBe("project");
-    expect(childTask.effectiveContext).toBe("Büro");
-    expect(childTask.effectiveContextSource).toBe("project");
     expect(childTask.effectiveTags.map((t: { id: number }) => t.id)).toContain(tag.id);
+    expect(childTask.effectiveContextTags.map((t: { id: number }) => t.id)).toContain(tag.id);
   });
 
   it("labels inheritance as 'parent' once an ancestor task sets an explicit override", async () => {
@@ -80,7 +80,7 @@ describe("effective owner/context/tags inheritance", () => {
       await ctx.app.inject({
         method: "POST",
         url: "/api/projects",
-        payload: { title: "Projekt mit Override", ownerMemberId: projectOwner.id, context: "Büro" },
+        payload: { title: "Projekt mit Override", ownerMemberId: projectOwner.id },
       })
     ).json();
 
@@ -93,8 +93,6 @@ describe("effective owner/context/tags inheritance", () => {
           title: "Elternaufgabe mit eigener Zuständigkeit",
           ownerMemberId: parentOwner.id,
           ownerInheritanceMode: "explicit",
-          context: "Telefon",
-          contextInheritanceMode: "explicit",
         },
       })
     ).json();
@@ -109,8 +107,6 @@ describe("effective owner/context/tags inheritance", () => {
 
     expect(childTask.effectiveOwnerId).toBe(parentOwner.id);
     expect(childTask.effectiveOwnerSource).toBe("parent");
-    expect(childTask.effectiveContext).toBe("Telefon");
-    expect(childTask.effectiveContextSource).toBe("parent");
   });
 
   it("lets a task override inheritance explicitly or opt out with 'none'", async () => {
@@ -119,7 +115,7 @@ describe("effective owner/context/tags inheritance", () => {
       await ctx.app.inject({
         method: "POST",
         url: "/api/projects",
-        payload: { title: "Projekt", ownerMemberId: owner.id, context: "Garten" },
+        payload: { title: "Projekt", ownerMemberId: owner.id },
       })
     ).json();
 
@@ -133,15 +129,11 @@ describe("effective owner/context/tags inheritance", () => {
           title: "Eigene Zuständigkeit",
           ownerMemberId: otherOwner.id,
           ownerInheritanceMode: "explicit",
-          context: "Telefon",
-          contextInheritanceMode: "explicit",
         },
       })
     ).json();
     expect(explicitTask.effectiveOwnerId).toBe(otherOwner.id);
     expect(explicitTask.effectiveOwnerSource).toBe("task");
-    expect(explicitTask.effectiveContext).toBe("Telefon");
-    expect(explicitTask.effectiveContextSource).toBe("task");
 
     const noneTask = (
       await ctx.app.inject({
@@ -151,14 +143,11 @@ describe("effective owner/context/tags inheritance", () => {
           projectId: project.id,
           title: "Ohne Zuständigkeit",
           ownerInheritanceMode: "none",
-          contextInheritanceMode: "none",
         },
       })
     ).json();
     expect(noneTask.effectiveOwnerId).toBeNull();
     expect(noneTask.effectiveOwnerSource).toBe("none");
-    expect(noneTask.effectiveContext).toBeNull();
-    expect(noneTask.effectiveContextSource).toBe("none");
   });
 
   it("excludes a specific inherited tag while keeping the task's own explicit tags", async () => {
@@ -197,5 +186,103 @@ describe("effective owner/context/tags inheritance", () => {
     const ids = updated.effectiveTags.map((t: { id: number }) => t.id).sort();
     expect(ids).toEqual([tagB.id]);
     expect(updated.explicitTags.map((t: { id: number }) => t.id)).toEqual([tagB.id]);
+  });
+
+  it("rolls typed task tags up to the project and selects one deterministic primary area", async () => {
+    const explicitArea = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tags",
+        payload: { name: "Haus", kind: "area" },
+      })
+    ).json();
+    const derivedArea = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tags",
+        payload: { name: "Garten", kind: "area" },
+      })
+    ).json();
+    const actor = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tags",
+        payload: { name: "Installateur", kind: "actor" },
+      })
+    ).json();
+    const project = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/projects",
+        payload: { title: "Sanierung", tagIds: [explicitArea.id] },
+      })
+    ).json();
+    for (const title of ["Beet planen", "Pflanzen kaufen"]) {
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        payload: {
+          projectId: project.id,
+          title,
+          tagIds: [derivedArea.id, actor.id],
+        },
+      });
+    }
+
+    const detail = (
+      await ctx.app.inject({
+        method: "GET",
+        url: `/api/projects/${project.id}`,
+      })
+    ).json();
+    expect(detail.effectiveAreaTags.map((tag: { id: number }) => tag.id)).toEqual(
+      expect.arrayContaining([explicitArea.id, derivedArea.id]),
+    );
+    expect(detail.effectiveTags.map((tag: { id: number }) => tag.id)).toContain(
+      actor.id,
+    );
+    expect(detail.primaryAreaTag.id).toBe(explicitArea.id);
+
+    await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tags/${explicitArea.id}`,
+      payload: { groupingMode: "hidden" },
+    });
+    const regrouped = (
+      await ctx.app.inject({
+        method: "GET",
+        url: `/api/projects/${project.id}`,
+      })
+    ).json();
+    expect(regrouped.primaryAreaTag.id).toBe(derivedArea.id);
+
+    const pinnedArea = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tags",
+        payload: { name: "Verwaltung", kind: "area" },
+      })
+    ).json();
+    await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        projectId: project.id,
+        title: "Antrag stellen",
+        tagIds: [pinnedArea.id],
+      },
+    });
+    await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tags/${pinnedArea.id}`,
+      payload: { groupingMode: "pinned", sortPosition: 0 },
+    });
+    const pinned = (
+      await ctx.app.inject({
+        method: "GET",
+        url: `/api/projects/${project.id}`,
+      })
+    ).json();
+    expect(pinned.primaryAreaTag.id).toBe(pinnedArea.id);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { filterAndSortProjects } from "./projectListFilter";
-import { makeCriterion, makeProject } from "../test/fixtures";
+import { filterAndSortProjects, groupProjectsByArea } from "./projectListFilter";
+import { makeCriterion, makeProject, makeTag } from "../test/fixtures";
 
 describe("filterAndSortProjects", () => {
   it("sorts every status into its bucket: active healthy, active stuck, backlog, completed, archived", () => {
@@ -140,5 +140,40 @@ describe("filterAndSortProjects", () => {
     });
 
     expect(result.map((p) => p.id)).toEqual([1]);
+  });
+
+  it("filters by any effective area and groups each project only under its primary area", () => {
+    const house = makeTag({ id: 1, name: "Haus", kind: "area" });
+    const garden = makeTag({
+      id: 2,
+      name: "Garten",
+      kind: "area",
+      groupingMode: "pinned",
+      sortPosition: 0,
+    });
+    const project = makeProject({
+      id: 1,
+      effectiveAreaTags: [house, garden],
+      primaryAreaTag: garden,
+    });
+    const noArea = makeProject({ id: 2, primaryAreaTag: null });
+
+    const filtered = filterAndSortProjects([project, noArea], {
+      query: "",
+      scope: "all",
+      currentMemberId: null,
+      areaTagId: house.id,
+    });
+    expect(filtered.map((item) => item.id)).toEqual([1]);
+
+    const groups = groupProjectsByArea([project, noArea]);
+    expect(groups.map((group) => group.area?.name ?? null)).toEqual([
+      "Garten",
+      null,
+    ]);
+    expect(groups.flatMap((group) => group.projects).map((item) => item.id)).toEqual([
+      1,
+      2,
+    ]);
   });
 });

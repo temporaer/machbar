@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   inheritanceModes,
   projectStatuses,
+  tagGroupingModes,
+  tagKinds,
   taskSizes,
   taskStatuses,
 } from "@machbar/shared";
@@ -16,7 +18,6 @@ export const createProjectSchema = z.object({
   notes: z.string().optional(),
   status: z.enum(projectStatuses).optional(),
   ownerMemberId: z.number().int().nullable().optional(),
-  context: z.string().nullable().optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
@@ -26,7 +27,6 @@ export const updateProjectSchema = z.object({
   title: z.string().min(1).optional(),
   notes: z.string().optional(),
   ownerMemberId: z.number().int().nullable().optional(),
-  context: z.string().nullable().optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   position: z.number().int().optional(),
@@ -66,8 +66,6 @@ export const createTaskSchema = z.object({
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   waitingFor: z.string().nullable().optional(),
-  context: z.string().nullable().optional(),
-  contextInheritanceMode: z.enum(inheritanceModes).optional(),
   priority: z.number().int().nullable().optional(),
   size: z.enum(taskSizes).nullable().optional(),
   recurrenceRule: z.string().nullable().optional(),
@@ -97,8 +95,6 @@ export const updateTaskSchema = z.object({
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   waitingFor: z.string().nullable().optional(),
-  context: z.string().nullable().optional(),
-  contextInheritanceMode: z.enum(inheritanceModes).optional(),
   priority: z.number().int().nullable().optional(),
   size: z.enum(taskSizes).nullable().optional(),
   recurrenceRule: z.string().nullable().optional(),
@@ -144,6 +140,13 @@ export const tagRefSchema = z.object({
 
 export const createTagSchema = z.object({
   name: z.string().min(1, "Der Tag-Name darf nicht leer sein."),
+  kind: z.enum(tagKinds).optional(),
+});
+
+export const updateTagSchema = z.object({
+  kind: z.enum(tagKinds).optional(),
+  groupingMode: z.enum(tagGroupingModes).optional(),
+  sortPosition: z.number().int().nullable().optional(),
 });
 
 export const createMemberSchema = z.object({
@@ -158,8 +161,6 @@ export const searchQuerySchema = z.object({
   text: z.string().optional(),
   ownerId: z.coerce.number().int().optional(),
   projectId: z.coerce.number().int().optional(),
-  effectiveContext: z.string().optional(),
-  explicitContext: z.string().optional(),
   tagIds: z
     .string()
     .optional()

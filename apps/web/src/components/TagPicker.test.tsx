@@ -44,10 +44,10 @@ describe("TagPicker", () => {
     mockedApi.createTag.mockResolvedValue(makeTag({ id: 3, name: "Sport", color: "#dc2626" }));
     render(<TagPicker tags={[]} selectedIds={[]} onChange={onChange} />);
 
-    await userEvent.type(screen.getByRole("textbox", { name: "Neuer Tag" }), "Sport");
+    await userEvent.type(screen.getByRole("textbox", { name: "Neuer Tag: Normal" }), "Sport");
     await userEvent.click(screen.getByRole("button", { name: "Anlegen" }));
 
-    await waitFor(() => expect(mockedApi.createTag).toHaveBeenCalledWith("Sport"));
+    await waitFor(() => expect(mockedApi.createTag).toHaveBeenCalledWith("Sport", "plain"));
     expect(await screen.findByRole("button", { name: "Sport" })).toBeInTheDocument();
     expect(onChange).toHaveBeenCalledWith([3]);
   });
@@ -56,11 +56,30 @@ describe("TagPicker", () => {
     mockedApi.createTag.mockRejectedValue(new Error("Tag konnte nicht angelegt werden."));
     render(<TagPicker tags={[]} selectedIds={[]} onChange={vi.fn()} />);
 
-    const input = screen.getByRole("textbox", { name: "Neuer Tag" });
+    const input = screen.getByRole("textbox", { name: "Neuer Tag: Normal" });
     await userEvent.type(input, "Sport");
     await userEvent.click(screen.getByRole("button", { name: "Anlegen" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Tag konnte nicht angelegt werden.");
     expect(input).toHaveValue("Sport");
+  });
+
+  it("übernimmt den gewählten Typ ohne zusätzlichen Klassifizierungsdialog", async () => {
+    const onChange = vi.fn().mockResolvedValue(undefined);
+    mockedApi.createTag.mockResolvedValue(
+      makeTag({ id: 4, name: "Telefon", kind: "context" }),
+    );
+    render(<TagPicker tags={[]} selectedIds={[]} onChange={onChange} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Kontext" }));
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Neuer Tag: Kontext" }),
+      "Telefon",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Anlegen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTag).toHaveBeenCalledWith("Telefon", "context"),
+    );
   });
 });

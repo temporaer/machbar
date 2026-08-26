@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { taskSizeLabels } from "@machbar/shared";
+import { tagKinds, taskSizeLabels } from "@machbar/shared";
 import type { RefinementIssue } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -42,6 +42,7 @@ function selectionLabel(
  */
 export function RefinementPage() {
   const [selection, setSelection] = useState<RefinementMatrixSelection | null>(null);
+  const [tagIds, setTagIds] = useState<number[]>([]);
   const actions = useRefinementActions();
   const navigate = useNavigate();
   const taskDetail = useTaskDetail();
@@ -57,18 +58,22 @@ export function RefinementPage() {
     loading: ownersLoading,
     error: ownersError,
     reload: reloadOwners,
-  } = useAsync(() => api.getRefinementOwners(), []);
+  } = useAsync(() => api.getRefinementOwners({ tagIds }), [JSON.stringify(tagIds)]);
   const {
     data: taskRows,
     loading: tasksLoading,
     error: tasksError,
     reload: reloadTasks,
-  } = useAsync(() => api.getRefinementTasks(), []);
+  } = useAsync(() => api.getRefinementTasks({ tagIds }), [JSON.stringify(tagIds)]);
   // `GET /api/refinement/tasks` doesn't carry blocked/waitingFor (see
   // `useRefinementActions.ts`'s `RefinementListItem` doc comment) — this
   // unfiltered `searchTasks` call (the same technique `SearchPage` already
   // uses for its initial, filter-less load) supplies them by task id.
-  const { data: contextTasks } = useAsync(() => api.searchTasks({}), []);
+  const { data: contextTasks } = useAsync(
+    () => api.searchTasks({ tagIds }),
+    [JSON.stringify(tagIds)],
+  );
+  const { data: tags } = useAsync(() => api.getTags(), []);
 
   const ownerNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -120,6 +125,39 @@ export function RefinementPage() {
     <div>
       <div className="page-header">
         <h1>{strings.refinement}</h1>
+      </div>
+      <div className="stack">
+        {tagKinds.map((kind) => {
+          const kindTags = (tags ?? []).filter((tag) => tag.kind === kind);
+          if (kindTags.length === 0) return null;
+          return (
+            <div key={kind}>
+              <p className="text-muted">{strings.tagKindLabels[kind]}</p>
+              <div className="row" role="group" aria-label={strings.tagKindLabels[kind]}>
+                {kindTags.map((tag) => {
+                  const selected = tagIds.includes(tag.id);
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      className="chip"
+                      aria-pressed={selected}
+                      onClick={() =>
+                        setTagIds((current) =>
+                          selected
+                            ? current.filter((id) => id !== tag.id)
+                            : [...current, tag.id],
+                        )
+                      }
+                    >
+                      {tag.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {loading ? <LoadingState /> : null}

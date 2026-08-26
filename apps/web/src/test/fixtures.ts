@@ -13,7 +13,15 @@ export function makeMember(overrides: Partial<Member> = {}): Member {
 }
 
 export function makeTag(overrides: Partial<Tag> = {}): Tag {
-  return { id: nextId(), name: "zuhause", color: "#2563eb", ...overrides };
+  return {
+    id: nextId(),
+    name: "zuhause",
+    color: "#2563eb",
+    kind: "plain",
+    groupingMode: "auto",
+    sortPosition: null,
+    ...overrides,
+  };
 }
 
 export function makeTask(overrides: Partial<Task> = {}): Task {
@@ -32,8 +40,6 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     dueDate: null,
     scheduledDate: null,
     waitingFor: null,
-    context: null,
-    contextInheritanceMode: "inherit",
     priority: null,
     size: null,
     position: 0,
@@ -45,9 +51,10 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     updatedAt: new Date("2026-01-01T09:00:00Z").toISOString(),
     effectiveOwnerId: null,
     effectiveOwnerSource: "none",
-    effectiveContext: null,
-    effectiveContextSource: "none",
     effectiveTags: [],
+    effectiveAreaTags: [],
+    effectiveActorTags: [],
+    effectiveContextTags: [],
     explicitTags: [],
     excludedTagIds: [],
     blocked: false,
@@ -65,11 +72,13 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
     notes: "",
     status,
     ownerMemberId: null,
-    context: null,
     dueDate: null,
     scheduledDate: null,
     position: 0,
     tags: [],
+    effectiveTags: [],
+    effectiveAreaTags: [],
+    primaryAreaTag: null,
     acceptanceCriteria: [],
     availableActions: workflowActionsByStatus[status],
     ...overrides,

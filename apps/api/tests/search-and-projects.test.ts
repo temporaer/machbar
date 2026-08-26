@@ -24,16 +24,6 @@ describe("search/filter and project CRUD/archive", () => {
     expect(results[0]!.title).toBe("Nebenkostenabrechnung klären");
   });
 
-  it("filters search results by effective context", async () => {
-    const res = await ctx.app.inject({
-      method: "GET",
-      url: "/api/search?effectiveContext=Garten",
-    });
-    const results = res.json() as Array<{ effectiveContext: string }>;
-    expect(results.length).toBeGreaterThan(0);
-    for (const r of results) expect(r.effectiveContext).toBe("Garten");
-  });
-
   it("filters search results by tag", async () => {
     const tags = (await ctx.app.inject({ method: "GET", url: "/api/tags" })).json() as Array<{
       id: number;
@@ -44,11 +34,70 @@ describe("search/filter and project CRUD/archive", () => {
       method: "GET",
       url: `/api/search?tagIds=${financeTag.id}`,
     });
+
     const results = res.json() as Array<{ effectiveTags: Array<{ id: number }> }>;
     expect(results.length).toBeGreaterThan(0);
     for (const r of results) {
       expect(r.effectiveTags.map((t) => t.id)).toContain(financeTag.id);
     }
+  });
+
+  it("rejects creating a same-name tag with a different primary kind", async () => {
+    const created = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tags",
+      payload: { name: "Telefonisch", kind: "context" },
+    });
+    expect(created.statusCode).toBe(201);
+
+    const conflict = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tags",
+      payload: { name: "Telefonisch", kind: "plain" },
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json().error.message).toContain("Tag-Verwaltung");
+  });
+
+  it("filters waiting and refinement tasks by effective typed tags", async () => {
+    const actor = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tags",
+        payload: { name: "Installateur", kind: "actor" },
+      })
+    ).json();
+    const project = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/projects",
+        payload: { title: "Heizung", tagIds: [actor.id] },
+      })
+    ).json();
+    await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        projectId: project.id,
+        title: "Auf Rückmeldung warten",
+        status: "waiting",
+        waitingFor: "Installateur",
+      },
+    });
+
+    const waiting = await ctx.app.inject({
+      method: "GET",
+      url: `/api/waiting?actorTagId=${actor.id}`,
+    });
+    expect(waiting.json()[0].tasks[0].effectiveActorTags[0].id).toBe(actor.id);
+
+    const refinement = await ctx.app.inject({
+      method: "GET",
+      url: `/api/refinement/tasks?tagIds=${actor.id}`,
+    });
+    expect(
+      refinement.json().some((task: { title: string }) => task.title === "Auf Rückmeldung warten"),
+    ).toBe(true);
   });
 
   it("creates a backlog project, edits its metadata, and archives it", async () => {
@@ -77,12 +126,10 @@ describe("search/filter and project CRUD/archive", () => {
         payload: {
           title: "Umbenanntes Projekt",
           notes: "Aktualisierter Hintergrund",
-          context: "Büro",
         },
       })
     ).json();
     expect(updated.title).toBe("Umbenanntes Projekt");
-    expect(updated.context).toBe("Büro");
     expect(updated.notes).toBe("Aktualisierter Hintergrund");
 
     const archived = (

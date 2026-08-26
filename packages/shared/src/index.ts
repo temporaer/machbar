@@ -14,11 +14,15 @@ export const projectStatuses = [
 ] as const;
 export const inheritanceModes = ["inherit", "explicit", "none"] as const;
 export const taskSizes = ["S", "M", "L", "XL"] as const;
+export const tagKinds = ["area", "actor", "context", "plain"] as const;
+export const tagGroupingModes = ["auto", "pinned", "hidden"] as const;
 
 export type TaskStatus = (typeof taskStatuses)[number];
 export type ProjectStatus = (typeof projectStatuses)[number];
 export type InheritanceMode = (typeof inheritanceModes)[number];
 export type TaskSize = (typeof taskSizes)[number];
+export type TagKind = (typeof tagKinds)[number];
+export type TagGroupingMode = (typeof tagGroupingModes)[number];
 
 export interface Member {
   id: number;
@@ -37,6 +41,9 @@ export interface Tag {
   id: number;
   name: string;
   color: string;
+  kind: TagKind;
+  groupingMode: TagGroupingMode;
+  sortPosition: number | null;
 }
 
 export interface AcceptanceCriterion {
@@ -55,11 +62,13 @@ export interface Project {
   notes: string;
   status: ProjectStatus;
   ownerMemberId: number | null;
-  context: string | null;
   dueDate: string | null;
   scheduledDate: string | null;
   position: number;
   tags: Tag[];
+  effectiveTags: Tag[];
+  effectiveAreaTags: Tag[];
+  primaryAreaTag: Tag | null;
   acceptanceCriteria: AcceptanceCriterion[];
   openCount?: number;
   doneCount?: number;
@@ -90,8 +99,6 @@ export interface Task {
   dueDate: string | null;
   scheduledDate: string | null;
   waitingFor: string | null;
-  context: string | null;
-  contextInheritanceMode: InheritanceMode;
   priority: number | null;
   size: TaskSize | null;
   position: number;
@@ -103,9 +110,10 @@ export interface Task {
   updatedAt: string;
   effectiveOwnerId: number | null;
   effectiveOwnerSource: "task" | "parent" | "project" | "none";
-  effectiveContext: string | null;
-  effectiveContextSource: "task" | "parent" | "project" | "none";
   effectiveTags: Tag[];
+  effectiveAreaTags: Tag[];
+  effectiveActorTags: Tag[];
+  effectiveContextTags: Tag[];
   explicitTags: Tag[];
   excludedTagIds: number[];
   blocked: boolean;
@@ -226,8 +234,6 @@ export interface SearchFilters {
   text?: string;
   ownerId?: number;
   projectId?: number;
-  effectiveContext?: string;
-  explicitContext?: string;
   tagIds?: number[];
   status?: TaskStatus;
   dueFrom?: string;

@@ -53,12 +53,11 @@ Project ──── Task ──── SubTask (Task.parentTaskId)
 
 ### Inheritance chains
 
-Three fields cascade down the task tree:
+Two kinds of values cascade down the task tree:
 
 | Field | Resolved as `effective*` |
 |-------|--------------------------|
 | `ownerMemberId` | First non-null value walking up: task → parent task → … → project |
-| `context` | Same traversal; controlled by `contextInheritanceMode` |
 | tags | Union of ancestor tags minus any `excludedTagIds` on the task |
 
 `inheritanceMode` (values: `inherit` | `explicit` | `none`) overrides the cascade:
@@ -67,16 +66,27 @@ Three fields cascade down the task tree:
 - `explicit` — override with the task's own value and stop propagation
 - `none` — explicitly clear the value (no further upward lookup)
 
-The resolved values are exposed as `effectiveOwnerId`, `effectiveContext`, and `effectiveTags` on the `Task` type in `@machbar/shared`.
+The resolved values are exposed as `effectiveOwnerId` and `effectiveTags` on
+the `Task` type in `@machbar/shared`. Typed projections
+`effectiveAreaTags`, `effectiveActorTags`, and `effectiveContextTags` are
+filtered from the same inherited tag set; they do not implement separate
+inheritance rules.
 
 Tag selection is a reusable compact chip picker in both task and project
-editors. It loads the shared tag catalogue, creates missing tags through
-`POST /api/tags`, and selects a newly created tag immediately. Inherited task
-tags remain separately excludable rather than being converted into explicit
-task tags. `TagManager` exposes catalogue creation/deletion under **Mehr**;
+editors. Every flexible, non-exclusive tag has one primary kind: Bereich,
+Person/Stelle, Kontext, or Normal. The picker creates a missing tag with the
+kind of its active section and selects it immediately. Inherited task tags
+remain separately excludable rather than being converted into explicit task
+tags. `TagManager` exposes kind and grouping metadata under **Mehr**;
 `DELETE /api/tags/:id` relies on the three join tables' `ON DELETE CASCADE`
 constraints, so deleting a tag removes its associations without deleting
 projects or tasks.
+
+Projects compute effective tags as their explicit tags plus the effective tags
+used by descendant tasks. Bereich grouping selects one primary area per
+project: pinned effective area, explicit project area, then the area used by
+the most open descendant tasks. Hidden grouping tags never become headers,
+and projects without a qualifying area appear under **Ohne Bereich**.
 
 ---
 
@@ -87,8 +97,8 @@ The API computes several derived fields before returning tasks to the client:
 | Field | Computed as |
 |-------|-------------|
 | `effectiveOwnerId` / `effectiveOwnerSource` | Walk parent chain; source ∈ `{task, parent, project, none}` |
-| `effectiveContext` / `effectiveContextSource` | Same |
 | `effectiveTags` | Ancestor tag union minus excluded IDs |
+| `effectiveAreaTags` / `effectiveActorTags` / `effectiveContextTags` | Kind-filtered views of `effectiveTags` |
 | `explicitTags` | Tags directly on this task |
 | `blocked` | `true` if any dependency is unresolved (`Dependency.resolved = false`) |
 | `children` | Direct sub-tasks (recursive to arbitrary depth) |

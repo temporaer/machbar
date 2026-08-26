@@ -107,6 +107,15 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Machbar ohne Termin")).toEqual(["unscheduled"]);
   });
 
+  it("excludes Später-klären captures from Heute", async () => {
+    await createTask({
+      title: "Noch zu entscheiden",
+      needsClarification: true,
+    });
+
+    expect(await bucketsContaining("Noch zu entscheiden")).toEqual([]);
+  });
+
   it("does not treat future-scheduled assigned work as unscheduled", async () => {
     const ownerRes = await ctx.app.inject({
       method: "POST",

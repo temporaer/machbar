@@ -12,6 +12,7 @@ vi.mock("../lib/api", () => ({
     getTags: vi.fn(),
     createTag: vi.fn(),
     deleteTag: vi.fn(),
+    updateTag: vi.fn(),
   },
 }));
 
@@ -64,5 +65,23 @@ describe("TagManager", () => {
 
     expect(mockedApi.deleteTag).not.toHaveBeenCalled();
     expect(screen.getByText("Garten")).toBeInTheDocument();
+  });
+
+  it("updates a tag kind through lightweight chips", async () => {
+    const installer = makeTag({
+      id: 23,
+      name: "Installateur",
+      kind: "actor",
+    });
+    mockedApi.getTags.mockResolvedValue([installer]);
+    mockedApi.updateTag.mockResolvedValue({ ...installer, kind: "area" });
+    renderWithProviders(<TagManager />);
+
+    const article = (await screen.findByText("Installateur")).closest("article")!;
+    await userEvent.click(within(article).getByRole("button", { name: "Bereich" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateTag).toHaveBeenCalledWith(23, { kind: "area" }),
+    );
   });
 });

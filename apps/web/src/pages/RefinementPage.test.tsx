@@ -11,6 +11,7 @@ import { RefinementPage } from "./RefinementPage";
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
+    getTags: vi.fn().mockResolvedValue([]),
     searchTasks: vi.fn(),
     getRefinementOwners: vi.fn(),
     getRefinementTasks: vi.fn(),

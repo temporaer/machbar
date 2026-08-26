@@ -494,7 +494,6 @@ export function TaskRow({
                 </span>
               ) : null}
               {ownerName ? <span>{ownerName}</span> : null}
-              {task.effectiveContext ? <span>#{task.effectiveContext}</span> : null}
               {children.length ? (
                 <span>
                   {children.filter((c) => c.status === "done" || c.status === "cancelled").length}/{children.length}

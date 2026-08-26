@@ -42,6 +42,7 @@ export function DestinationPicker({
   value,
   onChange,
   noneLabel,
+  autoFocus = false,
 }: {
   kind: DestinationKind;
   /** Visible + accessible name of the picker, e.g. "Projekt wählen". */
@@ -51,6 +52,8 @@ export function DestinationPicker({
   onChange: (id: number | null) => void;
   /** Label of the always-available "no destination" row (top level / inbox). */
   noneLabel: string;
+  /** Focus the search field when a picker is the immediate next capture step. */
+  autoFocus?: boolean;
 }) {
   const reactId = useId();
   const [query, setQuery] = useState("");
@@ -92,6 +95,7 @@ export function DestinationPicker({
         onChange={(event) => setQuery(event.target.value)}
         placeholder={strings.searchDestinationPlaceholder}
         aria-label={strings.searchDestination}
+        autoFocus={autoFocus}
         autoComplete="off"
       />
 

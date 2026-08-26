@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from "react";
 import type { Project, SearchFilters, Tag, TaskStatus } from "@machbar/shared";
-import { taskStatuses } from "@machbar/shared";
+import { tagKinds, taskStatuses } from "@machbar/shared";
 import { strings, taskStatusLabels } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 
@@ -94,15 +94,6 @@ export function SearchFilterBar({
               ))}
             </select>
           </div>
-          <div className="field">
-            <label htmlFor="filter-context">{strings.context}</label>
-            <input
-              id="filter-context"
-              placeholder={strings.anyContext}
-              value={filters.effectiveContext ?? ""}
-              onChange={(e) => set("effectiveContext", e.target.value)}
-            />
-          </div>
           <div className="row">
             <div className="field" style={{ flex: 1 }}>
               <label htmlFor="filter-due-from">{strings.dueFrom}</label>
@@ -126,21 +117,28 @@ export function SearchFilterBar({
           {tags.length > 0 ? (
             <div className="field">
               <label>{strings.tags}</label>
-              <div className="row" style={{ flexWrap: "wrap" }}>
-                {tags.map((tag) => (
-                  <button
-                    key={tag.id}
-                    type="button"
-                    className="tag-choice"
-                    aria-pressed={(filters.tagIds ?? []).includes(tag.id)}
-                    style={{ "--tag-color": tag.color } as CSSProperties}
-                    onClick={() => toggleTag(tag.id)}
-                  >
-                    <span className="tag-color-dot" aria-hidden="true" />
-                    {tag.name}
-                  </button>
-                ))}
-              </div>
+              {tagKinds.map((kind) => (
+                <div key={kind}>
+                  <p className="text-muted">{strings.tagKindLabels[kind]}</p>
+                  <div className="row" style={{ flexWrap: "wrap" }}>
+                    {tags
+                      .filter((tag) => tag.kind === kind)
+                      .map((tag) => (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          className="tag-choice"
+                          aria-pressed={(filters.tagIds ?? []).includes(tag.id)}
+                          style={{ "--tag-color": tag.color } as CSSProperties}
+                          onClick={() => toggleTag(tag.id)}
+                        >
+                          <span className="tag-color-dot" aria-hidden="true" />
+                          {tag.name}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              ))}
             </div>
           ) : null}
         </div>

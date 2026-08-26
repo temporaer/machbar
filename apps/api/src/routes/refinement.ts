@@ -21,6 +21,17 @@ const refinementQuerySchema = z.object({
     .union([z.coerce.number().int().positive(), z.literal("none")])
     .optional(),
   projectId: z.coerce.number().int().positive().optional(),
+  tagIds: z
+    .string()
+    .optional()
+    .transform((value) =>
+      value
+        ? value
+            .split(",")
+            .map((part) => Number.parseInt(part.trim(), 10))
+            .filter((id) => Number.isInteger(id) && id > 0)
+        : undefined,
+    ),
 });
 
 function parseRefinementFilters(db: Db, query: unknown): RefinementFilters {
@@ -42,6 +53,7 @@ function parseRefinementFilters(db: Db, query: unknown): RefinementFilters {
   if (result.data.projectId !== undefined) {
     filters.projectId = result.data.projectId;
   }
+  if (result.data.tagIds?.length) filters.tagIds = result.data.tagIds;
   return filters;
 }
 

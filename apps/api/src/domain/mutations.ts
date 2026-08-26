@@ -2,6 +2,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import type {
   InheritanceMode,
   ProjectStatus,
+  TagGroupingMode,
+  TagKind,
   TaskSize,
   TaskStatus,
 } from "@machbar/shared";
@@ -150,7 +152,31 @@ export function deleteMember(db: Db, id: number) {
 }
 
 export function listTags(db: Db) {
-  return db.select().from(schema.tags).orderBy(schema.tags.name).all();
+  const kindOrder: Record<TagKind, number> = {
+    area: 0,
+    actor: 1,
+    context: 2,
+    plain: 3,
+  };
+  return db
+    .select()
+    .from(schema.tags)
+    .all()
+    .sort((a, b) => {
+      const kindDiff =
+        kindOrder[a.kind as TagKind] - kindOrder[b.kind as TagKind];
+      if (kindDiff !== 0) return kindDiff;
+      const pinnedDiff =
+        Number(b.groupingMode === "pinned") -
+        Number(a.groupingMode === "pinned");
+      if (pinnedDiff !== 0) return pinnedDiff;
+      const positionDiff =
+        (a.sortPosition ?? Number.MAX_SAFE_INTEGER) -
+        (b.sortPosition ?? Number.MAX_SAFE_INTEGER);
+      if (positionDiff !== 0) return positionDiff;
+      const nameDiff = a.name.localeCompare(b.name, "de");
+      return nameDiff !== 0 ? nameDiff : a.id - b.id;
+    });
 }
 
 const tagColors = [
@@ -174,7 +200,11 @@ export function colorForTag(name: string): string {
   return tagColors[hash % tagColors.length]!;
 }
 
-export function getOrCreateTag(db: Db, name: string) {
+export function getOrCreateTag(
+  db: Db,
+  name: string,
+  kind: TagKind = "plain",
+) {
   const trimmed = name.trim();
   if (trimmed === "") {
     throw AppError.badRequest("Der Tag-Name darf nicht leer sein.");
@@ -184,10 +214,43 @@ export function getOrCreateTag(db: Db, name: string) {
     .from(schema.tags)
     .where(eq(schema.tags.name, trimmed))
     .get();
-  if (existing) return existing;
+  if (existing) {
+    if (existing.kind !== kind) {
+      throw AppError.conflict(
+        `Der Tag „${trimmed}“ existiert bereits als anderer Typ. Ändere den Typ zuerst in der Tag-Verwaltung.`,
+      );
+    }
+    return existing;
+  }
   return db
     .insert(schema.tags)
-    .values({ name: trimmed, color: colorForTag(trimmed) })
+    .values({ name: trimmed, color: colorForTag(trimmed), kind })
+    .returning()
+    .get();
+}
+
+export interface UpdateTagInput {
+  kind?: TagKind;
+  groupingMode?: TagGroupingMode;
+  sortPosition?: number | null;
+}
+
+export function updateTag(db: Db, id: number, input: UpdateTagInput) {
+  const tag = db.select().from(schema.tags).where(eq(schema.tags.id, id)).get();
+  if (!tag) {
+    throw AppError.notFound(`Tag mit ID ${id} wurde nicht gefunden.`);
+  }
+  const patch: Partial<typeof schema.tags.$inferInsert> = {};
+  if (input.kind !== undefined) patch.kind = input.kind;
+  if (input.groupingMode !== undefined) {
+    patch.groupingMode = input.groupingMode;
+  }
+  if (input.sortPosition !== undefined) patch.sortPosition = input.sortPosition;
+  if (Object.keys(patch).length === 0) return tag;
+  return db
+    .update(schema.tags)
+    .set(patch)
+    .where(eq(schema.tags.id, id))
     .returning()
     .get();
 }
@@ -209,7 +272,6 @@ export interface CreateProjectInput {
   notes?: string;
   status?: ProjectStatus;
   ownerMemberId?: number | null;
-  context?: string | null;
   dueDate?: string | null;
   scheduledDate?: string | null;
   tagIds?: number[];
@@ -251,7 +313,6 @@ export function createProject(db: Db, input: CreateProjectInput) {
         notes: input.notes ?? "",
         status: input.status ?? "backlog",
         ownerMemberId: input.ownerMemberId ?? null,
-        context: input.context ?? null,
         dueDate: input.dueDate ?? null,
         scheduledDate: input.scheduledDate ?? null,
         position: maxPosition + 1,
@@ -274,7 +335,6 @@ export interface UpdateProjectInput {
   title?: string;
   notes?: string;
   ownerMemberId?: number | null;
-  context?: string | null;
   dueDate?: string | null;
   scheduledDate?: string | null;
   position?: number;
@@ -283,7 +343,7 @@ export interface UpdateProjectInput {
 
 /**
  * Editable project/story metadata: title, driver (`ownerMemberId`),
- * context, due/scheduled dates and tags. Status transitions are
+ * due/scheduled dates and tags. Status transitions are
  * deliberately **not** accepted here — they only ever happen through the
  * explicit {@link activateProject}/{@link returnProjectToBacklog}/
  * {@link completeProject}/{@link reopenProject}/{@link archiveProject}
@@ -313,7 +373,6 @@ export function updateProject(db: Db, id: number, input: UpdateProjectInput) {
     if (input.title !== undefined) patch.title = input.title.trim();
     if (input.notes !== undefined) patch.notes = input.notes;
     if (input.ownerMemberId !== undefined) patch.ownerMemberId = input.ownerMemberId;
-    if (input.context !== undefined) patch.context = input.context;
     if (input.dueDate !== undefined) patch.dueDate = input.dueDate;
     if (input.scheduledDate !== undefined) patch.scheduledDate = input.scheduledDate;
     if (input.position !== undefined) patch.position = input.position;
@@ -707,8 +766,6 @@ export interface CreateTaskInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   waitingFor?: string | null;
-  context?: string | null;
-  contextInheritanceMode?: InheritanceMode;
   priority?: number | null;
   size?: TaskSize | null;
   recurrenceRule?: string | null;
@@ -770,8 +827,6 @@ function insertTask(
       dueDate: input.dueDate ?? null,
       scheduledDate: input.scheduledDate ?? null,
       waitingFor: input.waitingFor ?? null,
-      context: input.context ?? null,
-      contextInheritanceMode: input.contextInheritanceMode ?? "inherit",
       priority: input.priority ?? null,
       size: input.size ?? null,
       position,
@@ -903,8 +958,6 @@ export interface UpdateTaskInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   waitingFor?: string | null;
-  context?: string | null;
-  contextInheritanceMode?: InheritanceMode;
   priority?: number | null;
   size?: TaskSize | null;
   recurrenceRule?: string | null;
@@ -936,9 +989,6 @@ export function updateTask(db: Db, id: number, input: UpdateTaskInput) {
     if (input.dueDate !== undefined) patch.dueDate = input.dueDate;
     if (input.scheduledDate !== undefined) patch.scheduledDate = input.scheduledDate;
     if (input.waitingFor !== undefined) patch.waitingFor = input.waitingFor;
-    if (input.context !== undefined) patch.context = input.context;
-    if (input.contextInheritanceMode !== undefined)
-      patch.contextInheritanceMode = input.contextInheritanceMode;
     if (input.priority !== undefined) patch.priority = input.priority;
     if (input.size !== undefined) patch.size = input.size;
     if (input.recurrenceRule !== undefined) patch.recurrenceRule = input.recurrenceRule;

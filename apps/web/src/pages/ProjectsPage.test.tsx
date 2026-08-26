@@ -12,6 +12,7 @@ vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
     getProjects: vi.fn(),
+    getTags: vi.fn().mockResolvedValue([]),
     createProject: vi.fn(),
     updateProject: vi.fn(),
     activateProject: vi.fn(),

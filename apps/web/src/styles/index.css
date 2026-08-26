@@ -586,6 +586,48 @@ a {
   z-index: 25;
 }
 
+.capture-correction-toast {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--nav-height) + env(safe-area-inset-bottom) + 84px);
+  z-index: 24;
+  width: min(360px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.capture-correction-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.capture-shape-action {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.capture-shape-action small {
+  font-size: 0.72rem;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.capture-breakdown-section {
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.capture-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 0.85rem;
+}
+
 .sheet-backdrop {
   position: fixed;
   inset: 0;
