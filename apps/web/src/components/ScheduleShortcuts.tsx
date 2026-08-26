@@ -1,6 +1,6 @@
 import { strings } from "../lib/strings";
 
-export const scheduleShortcuts = ["tomorrow", "nextWeek", "weekend"] as const;
+export const scheduleShortcuts = ["today", "tomorrow", "nextWeek", "weekend"] as const;
 export type ScheduleShortcut = (typeof scheduleShortcuts)[number];
 
 function localDateString(date: Date) {
@@ -12,6 +12,10 @@ function localDateString(date: Date) {
 
 export function resolveScheduleShortcut(shortcut: ScheduleShortcut, today = new Date()) {
   const date = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  if (shortcut === "today") {
+    return localDateString(date);
+  }
 
   if (shortcut === "tomorrow") {
     date.setDate(date.getDate() + 1);

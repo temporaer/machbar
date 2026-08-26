@@ -14,7 +14,7 @@ export function InboxPage() {
   const { primarySwipeAction } = useSwipeSettings();
 
   return (
-    <div>
+    <div className="inbox-page">
       <PageHeader
         title={strings.inbox}
         actions={tasks && tasks.length > 0 ? (

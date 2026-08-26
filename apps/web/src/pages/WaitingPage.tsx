@@ -14,7 +14,7 @@ export function WaitingPage() {
     [],
   );
   return (
-    <div>
+    <div className="waiting-page">
       <div className="page-header">
         <h1>{strings.waiting}</h1>
       </div>

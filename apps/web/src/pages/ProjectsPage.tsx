@@ -24,8 +24,9 @@ import { PageHeader } from "../components/PageHeader";
 /**
  * The Projekte tab: every project is a user story, and every row carries the
  * full Scrum-style workflow directly — right swipe (or the dedicated primary
- * button) performs the status-appropriate next step, left swipe or ⋯ reveals
- * the driver/criteria/dates/edit chips plus the remaining legal transitions.
+ * button on larger screens) performs the status-appropriate next step, while
+ * left swipe or ⋯ reveals the targeted chips plus the remaining legal
+ * transitions.
  * See `components/ProjectStoryRow.tsx` for the gesture behaviour and
  * `lib/useProjectWorkflowActions.ts` for the optimistic retention.
  */
@@ -99,7 +100,7 @@ export function ProjectsPage() {
   const revealTerminalProjects = query.trim() !== "" && terminalProjects.length > 0;
 
   return (
-    <div>
+    <div className="projects-page">
       <PageHeader
         title={strings.projects}
         hints={[{ text: strings.projectsSwipeHint }]}

@@ -1318,7 +1318,13 @@ a {
 @media (max-width: 520px) {
   .today-page .task-row-checkbox,
   .today-page .task-row-kebab,
-  .today-page .task-row-toggle[aria-hidden="true"] {
+  .today-page .task-row-toggle[aria-hidden="true"],
+  .waiting-page .task-row-checkbox,
+  .waiting-page .task-row-kebab,
+  .waiting-page .task-row-toggle[aria-hidden="true"],
+  .inbox-page .task-row-checkbox,
+  .inbox-page .task-row-kebab,
+  .inbox-page .task-row-toggle[aria-hidden="true"] {
     display: none;
   }
 

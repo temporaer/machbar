@@ -5,6 +5,7 @@ describe("resolveScheduleShortcut", () => {
   const thursday = new Date(2026, 7, 27, 12);
 
   it("uses local calendar dates for the common planning shortcuts", () => {
+    expect(resolveScheduleShortcut("today", thursday)).toBe("2026-08-27");
     expect(resolveScheduleShortcut("tomorrow", thursday)).toBe("2026-08-28");
     expect(resolveScheduleShortcut("nextWeek", thursday)).toBe("2026-08-31");
     expect(resolveScheduleShortcut("weekend", thursday)).toBe("2026-08-29");

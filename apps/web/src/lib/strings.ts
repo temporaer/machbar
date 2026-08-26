@@ -274,6 +274,7 @@ const extra = {
   schedule: "Planen",
   scheduleShortcuts: "Schnell planen",
   scheduleShortcutLabels: {
+    today: "Heute",
     tomorrow: "Morgen",
     nextWeek: "Nächste Woche",
     weekend: "Wochenende",
