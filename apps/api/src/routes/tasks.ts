@@ -37,6 +37,7 @@ import {
   moveTaskSchema,
   reorderTaskSchema,
   tagRefSchema,
+  transitionTaskStatusSchema,
   updateTaskSchema,
 } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
@@ -132,6 +133,16 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       deleteTask(db, id);
       reply.status(204);
       return null;
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/tasks/:id/status",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(transitionTaskStatusSchema, request.body);
+      updateTask(db, id, { status: body.status });
+      return taskOrThrow(db, id);
     },
   );
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { IdentityProvider } from "../lib/identity";
@@ -20,12 +20,15 @@ const mockedApi = vi.mocked(api, true);
 function Harness() {
   const [filters, setFilters] = useState<SearchFilters>({});
   return (
-    <SearchFilterBar
-      filters={filters}
-      onChange={setFilters}
-      projects={[makeProject({ id: 1, title: "Umzug" })]}
-      tags={[makeTag({ id: 2, name: "eilig" })]}
-    />
+    <>
+      <SearchFilterBar
+        filters={filters}
+        onChange={setFilters}
+        projects={[makeProject({ id: 1, title: "Umzug" })]}
+        tags={[makeTag({ id: 2, name: "eilig" })]}
+      />
+      <output aria-label="Aktive Filter">{JSON.stringify(filters)}</output>
+    </>
   );
 }
 
@@ -49,5 +52,26 @@ describe("SearchFilterBar", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Filter zurücksetzen" }));
     expect(screen.getByLabelText("Suchen")).toHaveValue("");
+  });
+
+  it("accepts natural dates in search ranges", async () => {
+    mockedApi.getMembers.mockResolvedValue([]);
+    render(
+      <MemoryRouter>
+        <IdentityProvider>
+          <Harness />
+        </IdentityProvider>
+      </MemoryRouter>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Filter" }));
+    const from = screen.getByLabelText("Fällig von");
+    fireEvent.change(from, { target: { value: "12. September 2026" } });
+    fireEvent.blur(from);
+
+    expect(screen.getByLabelText("Aktive Filter")).toHaveTextContent(
+      '"dueFrom":"2026-09-12"',
+    );
+    expect(from).toHaveValue("12.09.2026");
   });
 });

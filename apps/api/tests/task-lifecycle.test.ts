@@ -227,6 +227,52 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     },
   );
 
+  it("keeps terminal timestamps coherent for atomic status patches", async () => {
+    const task = await createTask({ title: "Statuswechsel", status: "actionable" });
+
+    const doneRes = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: { status: "done" },
+    });
+
+    expect(doneRes.json().completedAt).not.toBeNull();
+    expect(doneRes.json().cancelledAt).toBeNull();
+
+    const cancelledRes = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: { status: "cancelled" },
+    });
+    expect(cancelledRes.json().completedAt).toBeNull();
+    expect(cancelledRes.json().cancelledAt).not.toBeNull();
+
+    const waitingRes = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: { status: "waiting" },
+    });
+    expect(waitingRes.json().completedAt).toBeNull();
+    expect(waitingRes.json().cancelledAt).toBeNull();
+  });
+
+  it("provides an explicit atomic endpoint for direct status transitions", async () => {
+    const task = await createTask({ title: "Direkter Status", status: "done" });
+    const transitionRes = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/status`,
+      payload: { status: "waiting" },
+    });
+
+    expect(transitionRes.statusCode).toBe(200);
+    expect(transitionRes.json()).toMatchObject({
+      status: "waiting",
+      completedAt: null,
+      cancelledAt: null,
+      needsClarification: false,
+    });
+  });
+
   it("does not clear capture for metadata updates or refiling", async () => {
     const task = await createTask({ title: "Ungeklärte Aufgabe" });
     const metadataRes = await ctx.app.inject({

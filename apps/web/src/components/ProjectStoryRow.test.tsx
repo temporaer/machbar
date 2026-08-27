@@ -360,16 +360,19 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     await userEvent.click(within(chips).getByRole("button", { name: "Erledigt, wenn …" }));
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
     expect(await screen.findByDisplayValue("Angebot eingeholt")).toBeInTheDocument();
-    // The sheet header's ✕ and the criteria sheet's own footer button share
-    // the "Schließen" label — the header one is the `icon-btn`.
+    // The sheet header and the criteria sheet's own footer button share the
+    // "Schließen" label — the header one is the shared icon action.
     await userEvent.click(
-      screen.getAllByRole("button", { name: "Schließen" }).find((b) => b.classList.contains("icon-btn"))!,
+      screen
+        .getAllByRole("button", { name: "Schließen" })
+        .find((b) => b.classList.contains("icon-action-button"))!,
     );
 
     chips = openChips();
     await userEvent.click(within(chips).getByRole("button", { name: "Planen" }));
     expect(await screen.findByRole("heading", { name: "Termine planen" })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Fällig"), { target: { value: "2026-05-01" } });
+    const dueDate = screen.getByLabelText("Fällig");
+    await userEvent.type(dueDate, "1. Mai 2026");
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>

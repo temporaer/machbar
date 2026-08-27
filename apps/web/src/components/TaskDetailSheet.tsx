@@ -27,6 +27,7 @@ import { NativeShareButton } from "./NativeShareButton";
 import { IconActionButton } from "./IconActionButton";
 import { serializeTaskForShare } from "../lib/shareText";
 import { buildTaskShareUrl } from "../lib/shareUrls";
+import { HumanDateInput } from "./HumanDateInput";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -97,6 +98,11 @@ export function TaskDetailSheet() {
   const [savingTextFields, setSavingTextFields] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [notesEditing, setNotesEditing] = useState(false);
+  const [shareStatus, setShareStatus] = useState<string | null>(null);
+  const [dueDateValid, setDueDateValid] = useState(true);
+  const [scheduledDateValid, setScheduledDateValid] = useState(true);
+  const [statusDraft, setStatusDraft] = useState<Task["status"]>("actionable");
+  const [changingStatus, setChangingStatus] = useState(false);
   const titleFieldRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const ownerFieldRef = useRef<HTMLDivElement>(null);
@@ -136,6 +142,10 @@ export function TaskDetailSheet() {
     if (isNewTask) {
       setSaveError(null);
       setNotesEditing(false);
+      setShareStatus(null);
+      setDueDateValid(true);
+      setScheduledDateValid(true);
+      setStatusDraft(task.status);
     }
     const hasUnsavedEdits =
       !isNewTask &&
@@ -153,6 +163,15 @@ export function TaskDetailSheet() {
     lastLoadedTaskIdRef.current = task.id;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task]);
+
+  useEffect(() => {
+    if (task) setStatusDraft(task.status);
+  }, [task?.id, task?.status]);
+
+  useEffect(() => {
+    if (!task || taskActions.errors[task.id] === undefined) return;
+    setStatusDraft(task.status);
+  }, [task, taskActions.errors]);
 
   // Chip-driven opens (Zuweisen/Planen/Notizen) land the user directly on the
   // relevant field of this same edit flow instead of just the sheet's top.
@@ -256,11 +275,52 @@ export function TaskDetailSheet() {
   };
 
   const closeWithSave = async () => {
+    if (!dueDateValid || !scheduledDateValid) return;
     if (textFieldsDirty) {
       const saved = await saveTextFields();
       if (!saved) return;
     }
     close();
+  };
+
+  const changeStatus = async (nextStatus: Task["status"]) => {
+    if (!task || nextStatus === statusDraft || changingStatus) return;
+    const previousStatus = statusDraft;
+    setSaveError(null);
+    setStatusDraft(nextStatus);
+    if (previousStatus === "done" || previousStatus === "cancelled") {
+      setChangingStatus(true);
+      try {
+        await api.transitionTaskStatus(task.id, nextStatus);
+        bump();
+        reload();
+      } catch (err) {
+        setStatusDraft(previousStatus);
+        setSaveError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setChangingStatus(false);
+      }
+      return;
+    }
+    if (nextStatus === "done") {
+      taskActions.requestToggle(task);
+      return;
+    }
+    if (nextStatus === "cancelled") {
+      taskActions.requestCancel(task);
+      return;
+    }
+    setChangingStatus(true);
+    try {
+      await api.transitionTaskStatus(task.id, nextStatus);
+      bump();
+      reload();
+    } catch (err) {
+      setStatusDraft(previousStatus);
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setChangingStatus(false);
+    }
   };
 
   const runDependencySearch = async (value: string) => {
@@ -278,6 +338,24 @@ export function TaskDetailSheet() {
       title={strings.taskDetails}
       onClose={() => void closeWithSave()}
       labelledBy="task-detail-title"
+      headerActions={
+        task ? (
+          <NativeShareButton
+            title={task.title}
+            text={serializeTaskForShare(task)}
+            url={buildTaskShareUrl(task.id)}
+            showStatus={false}
+            onStatusChange={setShareStatus}
+          />
+        ) : null
+      }
+      headerStatus={
+        shareStatus ? (
+          <span className="text-muted native-share-status" role="status">
+            {shareStatus}
+          </span>
+        ) : null
+      }
     >
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
@@ -296,40 +374,23 @@ export function TaskDetailSheet() {
             />
           </div>
 
-          <div className="row-between">
-            <div className="row">
-              <StatusBadge status={task.status} />
-              {task.needsClarification ? (
-                <span className="badge badge-clarification">{strings.needsClarification}</span>
-              ) : null}
+          {task.needsClarification ? (
+            <div>
+              <span className="badge badge-clarification">{strings.needsClarification}</span>
             </div>
-            {task.status === "done" || task.status === "cancelled" ? (
-              <button type="button" className="btn btn-sm" onClick={() => void taskActions.reopen(task).then(reload)}>
-                {strings.reopen}
-              </button>
-            ) : (
-              <button type="button" className="btn btn-sm btn-primary" onClick={() => taskActions.requestToggle(task)}>
-                {strings.done}
-              </button>
-            )}
-          </div>
-          <NativeShareButton
-            title={task.title}
-            text={serializeTaskForShare(task)}
-            url={buildTaskShareUrl(task.id)}
-          />
+          ) : null}
 
           <div className="field">
             <label htmlFor="task-status">{strings.status}</label>
             <select
               id="task-status"
-              value={task.status}
-              onChange={(e) =>
-                void patch({
-                  status: e.target.value as Task["status"],
-                  needsClarification: false,
-                })
+              value={statusDraft}
+              disabled={
+                changingStatus ||
+                taskActions.busyId === task.id ||
+                taskActions.pendingTask?.id === task.id
               }
+              onChange={(e) => void changeStatus(e.target.value as Task["status"])}
             >
               {taskStatuses.map((s) => (
                 <option key={s} value={s}>
@@ -378,21 +439,21 @@ export function TaskDetailSheet() {
           <div className="row">
             <div className="field" style={{ flex: 1 }}>
               <label htmlFor="task-due">{strings.due}</label>
-              <input
+              <HumanDateInput
                 id="task-due"
-                type="date"
                 value={task.dueDate ?? ""}
-                onChange={(e) => void patch({ dueDate: e.target.value || null })}
+                onChange={(dueDate) => void patch({ dueDate })}
+                onValidityChange={setDueDateValid}
               />
             </div>
             <div className="field" style={{ flex: 1 }} ref={scheduleFieldRef}>
               <label htmlFor="task-scheduled">{strings.scheduled}</label>
-              <input
-                ref={scheduleInputRef}
+              <HumanDateInput
+                inputRef={scheduleInputRef}
                 id="task-scheduled"
-                type="date"
                 value={task.scheduledDate ?? ""}
-                onChange={(e) => void patch({ scheduledDate: e.target.value || null })}
+                onChange={(scheduledDate) => void patch({ scheduledDate })}
+                onValidityChange={setScheduledDateValid}
               />
             </div>
           </div>
@@ -526,10 +587,10 @@ export function TaskDetailSheet() {
             </button>
           ) : null}
 
-          {saveError ? (
+          {saveError ?? taskActions.errors[task.id] ? (
             <div className="task-row-error" role="alert">
               <span>{strings.error}</span>
-              <span className="text-muted">{saveError}</span>
+              <span className="text-muted">{saveError ?? taskActions.errors[task.id]}</span>
             </div>
           ) : null}
 
@@ -659,7 +720,10 @@ export function TaskDetailSheet() {
             taskActions.resolvePolicy(policy);
             reload();
           }}
-          onClose={taskActions.cancelPrompt}
+          onClose={() => {
+            setStatusDraft(task?.status ?? "actionable");
+            taskActions.cancelPrompt();
+          }}
         />
       ) : null}
 

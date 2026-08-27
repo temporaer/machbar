@@ -1017,7 +1017,11 @@ export function updateTask(db: Db, id: number, input: UpdateTaskInput) {
     };
     if (input.title !== undefined) patch.title = input.title.trim();
     if (input.notes !== undefined) patch.notes = input.notes;
-    if (input.status !== undefined) patch.status = input.status;
+    if (input.status !== undefined) {
+      patch.status = input.status;
+      patch.completedAt = input.status === "done" ? nowIso() : null;
+      patch.cancelledAt = input.status === "cancelled" ? nowIso() : null;
+    }
     if (input.needsClarification !== undefined) {
       patch.needsClarification = input.needsClarification;
     } else if (input.status !== undefined) {

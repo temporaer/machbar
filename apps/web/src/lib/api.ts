@@ -400,6 +400,11 @@ export const api = {
     }),
   updateTask: (id: number, patch: UpdateTaskInput) =>
     request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  transitionTaskStatus: (id: number, status: TaskStatus) =>
+    request<Task>(`/tasks/${id}/status`, {
+      method: "POST",
+      body: JSON.stringify({ status }),
+    }),
   appendTaskNotes: (id: number, content: string) =>
     request<Task>(`/tasks/${id}/notes`, {
       method: "POST",

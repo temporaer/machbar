@@ -5,6 +5,7 @@ import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { strings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
+import { HumanDateInput } from "./HumanDateInput";
 
 export function followUpEntryHeader(memberName: string, now = new Date()): string {
   const timestamp = new Intl.DateTimeFormat("de-DE", {
@@ -38,6 +39,10 @@ export function WaitingFollowUpSheet({
   const [makeActionable, setMakeActionable] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scheduledDateValid, setScheduledDateValid] = useState(true);
+  const closeIfValid = () => {
+    if (scheduledDateValid) onClose();
+  };
 
   const save = async () => {
     setSaving(true);
@@ -60,7 +65,7 @@ export function WaitingFollowUpSheet({
   return (
     <BottomSheet
       title={`${strings.followUp}: ${task.title}`}
-      onClose={onClose}
+      onClose={closeIfValid}
     >
       <div className="stack">
         <div className="field">
@@ -78,11 +83,11 @@ export function WaitingFollowUpSheet({
           <label htmlFor={`follow-up-date-${task.id}`}>
             {strings.newRevisitDate}
           </label>
-          <input
+          <HumanDateInput
             id={`follow-up-date-${task.id}`}
-            type="date"
             value={scheduledDate}
-            onChange={(event) => setScheduledDate(event.target.value)}
+            onChange={(date) => setScheduledDate(date ?? "")}
+            onValidityChange={setScheduledDateValid}
           />
         </div>
 
@@ -102,14 +107,14 @@ export function WaitingFollowUpSheet({
         ) : null}
 
         <div className="row">
-          <button type="button" className="btn" onClick={onClose} disabled={saving}>
+          <button type="button" className="btn" onClick={closeIfValid} disabled={saving}>
             {strings.close}
           </button>
           <button
             type="button"
             className="btn btn-primary"
             onClick={() => void save()}
-            disabled={saving || notes.trim().length === 0}
+            disabled={saving || notes.trim().length === 0 || !scheduledDateValid}
           >
             {strings.saveChanges}
           </button>

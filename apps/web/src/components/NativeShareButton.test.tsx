@@ -48,4 +48,28 @@ describe("NativeShareButton", () => {
     );
     expect(screen.getByRole("status")).toHaveTextContent("In die Zwischenablage kopiert");
   });
+
+  it("can lift transient feedback into a sheet header status area", async () => {
+    Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    const onStatusChange = vi.fn();
+
+    render(
+      <NativeShareButton
+        title="Einkaufen"
+        text="Einkaufen"
+        showStatus={false}
+        onStatusChange={onStatusChange}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Teilen" }));
+
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenLastCalledWith("In die Zwischenablage kopiert"),
+    );
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
 });

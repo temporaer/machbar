@@ -501,7 +501,13 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     const scheduled = await screen.findByLabelText("Geplant");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
-    expect(scheduled).toHaveValue(resolveScheduleShortcut("tomorrow"));
+    expect(scheduled).toHaveValue(
+      new Intl.DateTimeFormat("de-DE", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      }).format(new Date(`${resolveScheduleShortcut("tomorrow")}T12:00:00`)),
+    );
     await userEvent.click(screen.getByRole("button", { name: "Nicht geplant" }));
     expect(scheduled).toHaveValue("");
     await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));

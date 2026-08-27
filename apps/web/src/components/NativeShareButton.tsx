@@ -6,33 +6,42 @@ export function NativeShareButton({
   title,
   text,
   url,
+  showStatus = true,
+  onStatusChange,
 }: {
   title: string;
   text: string;
   url?: string;
+  showStatus?: boolean;
+  onStatusChange?: (status: string | null) => void;
 }) {
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const updateStatus = (nextStatus: string | null) => {
+    setStatus(nextStatus);
+    onStatusChange?.(nextStatus);
+  };
+
   const share = async () => {
     if (busy) return;
     setBusy(true);
-    setStatus(null);
+    updateStatus(null);
     try {
       if (typeof navigator.share === "function") {
         await navigator.share({ title, text, ...(url ? { url } : {}) });
-        setStatus(strings.shareCompleted);
+        updateStatus(strings.shareCompleted);
       } else {
         const clipboardText = [text, url].filter(Boolean).join("\n\n");
         if (!navigator.clipboard?.writeText) {
           throw new Error(strings.clipboardUnavailable);
         }
         await navigator.clipboard.writeText(clipboardText);
-        setStatus(strings.copiedToClipboard);
+        updateStatus(strings.copiedToClipboard);
       }
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
-      setStatus(cause instanceof Error ? cause.message : String(cause));
+      updateStatus(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setBusy(false);
     }
@@ -46,7 +55,9 @@ export function NativeShareButton({
         disabled={busy}
         onClick={() => void share()}
       />
-      {status ? <span className="text-muted native-share-status" role="status">{status}</span> : null}
+      {showStatus && status ? (
+        <span className="text-muted native-share-status" role="status">{status}</span>
+      ) : null}
     </span>
   );
 }

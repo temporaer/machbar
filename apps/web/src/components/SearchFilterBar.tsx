@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from "react";
 import type { Project, SearchFilters, Tag, TaskStatus } from "@machbar/shared";
 import { tagKinds, taskStatuses } from "@machbar/shared";
 import { strings, taskStatusLabels } from "../lib/strings";
+import { HumanDateInput } from "./HumanDateInput";
 import { useIdentity } from "../lib/identity";
 
 export function SearchFilterBar({
@@ -97,20 +98,18 @@ export function SearchFilterBar({
           <div className="row">
             <div className="field" style={{ flex: 1 }}>
               <label htmlFor="filter-due-from">{strings.dueFrom}</label>
-              <input
+              <HumanDateInput
                 id="filter-due-from"
-                type="date"
                 value={filters.dueFrom ?? ""}
-                onChange={(e) => set("dueFrom", e.target.value)}
+                onChange={(date) => set("dueFrom", date ?? undefined)}
               />
             </div>
             <div className="field" style={{ flex: 1 }}>
               <label htmlFor="filter-due-to">{strings.dueTo}</label>
-              <input
+              <HumanDateInput
                 id="filter-due-to"
-                type="date"
                 value={filters.dueTo ?? ""}
-                onChange={(e) => set("dueTo", e.target.value)}
+                onChange={(date) => set("dueTo", date ?? undefined)}
               />
             </div>
           </div>

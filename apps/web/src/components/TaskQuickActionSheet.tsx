@@ -6,6 +6,7 @@ import { AssignOwnerSheet } from "./AssignOwnerSheet";
 import { BottomSheet } from "./BottomSheet";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { MarkdownEditor } from "./MarkdownEditor";
+import { HumanDateInput } from "./HumanDateInput";
 
 export type TaskQuickAction = "owner" | "schedule" | "notes";
 
@@ -46,12 +47,16 @@ export function TaskQuickActionSheet({
   const [notes, setNotes] = useState(task.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [scheduledDateValid, setScheduledDateValid] = useState(true);
 
   const title = {
     owner: strings.assign,
     schedule: strings.schedule,
     notes: strings.notes,
   }[action];
+  const closeIfValid = () => {
+    if (action !== "schedule" || scheduledDateValid) onClose();
+  };
 
   const submit = async () => {
     setSaving(true);
@@ -94,17 +99,17 @@ export function TaskQuickActionSheet({
   }
 
   return (
-    <BottomSheet title={`${title}: ${task.title}`} onClose={onClose}>
+    <BottomSheet title={`${title}: ${task.title}`} onClose={closeIfValid}>
       <div className="stack task-quick-action-sheet">
         {action === "schedule" ? (
           <>
             <div className="field">
               <label htmlFor={`quick-schedule-${task.id}`}>{strings.scheduled}</label>
-              <input
+              <HumanDateInput
                 id={`quick-schedule-${task.id}`}
-                type="date"
                 value={scheduledDate}
-                onChange={(event) => setScheduledDate(event.target.value)}
+                onChange={(date) => setScheduledDate(date ?? "")}
+                onValidityChange={setScheduledDateValid}
                 autoFocus
               />
             </div>
@@ -133,10 +138,15 @@ export function TaskQuickActionSheet({
         {error ? <div className="task-row-error" role="alert">{error}</div> : null}
 
         <div className="row">
-          <button type="button" className="btn" onClick={onClose} disabled={saving}>
+          <button type="button" className="btn" onClick={closeIfValid} disabled={saving}>
             {strings.close}
           </button>
-          <button type="button" className="btn btn-primary" onClick={() => void submit()} disabled={saving}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void submit()}
+            disabled={saving || (action === "schedule" && !scheduledDateValid)}
+          >
             {strings.saveChanges}
           </button>
         </div>

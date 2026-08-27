@@ -107,6 +107,10 @@ export const updateTaskSchema = z.object({
   excludedTagIds: z.array(z.number().int()).optional(),
 });
 
+export const transitionTaskStatusSchema = z.object({
+  status: z.enum(taskStatuses),
+});
+
 export const completeTaskSchema = z.object({
   descendantsPolicy: z.enum(["leave_open", "complete_children"]).optional(),
 });

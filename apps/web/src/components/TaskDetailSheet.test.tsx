@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -20,7 +20,9 @@ vi.mock("../lib/api", () => ({
     getTags: vi.fn(),
     getTask: vi.fn(),
     updateTask: vi.fn(),
+    transitionTaskStatus: vi.fn(),
     completeTask: vi.fn(),
+    cancelTask: vi.fn(),
     reopenTask: vi.fn(),
     deleteTask: vi.fn(),
     searchTasks: vi.fn(),
@@ -108,6 +110,7 @@ describe("TaskDetailSheet", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getTags.mockResolvedValue([makeTag({ id: 10, name: "büro" })]);
     mockedApi.updateTask.mockResolvedValue(makeTask());
+    mockedApi.transitionTaskStatus.mockResolvedValue(makeTask());
   });
 
   it("focuses the requested title repair field", async () => {
@@ -233,6 +236,112 @@ describe("TaskDetailSheet", () => {
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
+  it("places sharing in the header and uses only the status select for general status changes", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 45, title: "Unaufdringliche Details", status: "actionable" }),
+    );
+    renderSheet(45);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Unaufdringliche Details");
+
+    const heading = screen.getByRole("heading", { name: "Details" });
+    const header = heading.closest<HTMLElement>(".sheet-header");
+    expect(header).not.toBeNull();
+    expect(within(header!).getByRole("button", { name: "Teilen" })).toBeInTheDocument();
+    expect(within(header!).getByRole("button", { name: "Schließen" })).toHaveClass(
+      "icon-action-button",
+    );
+    expect(screen.getByLabelText("Status")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Erledigt" })).not.toBeInTheDocument();
+  });
+
+  it("routes terminal status selections through lifecycle mutations", async () => {
+    const task = makeTask({
+      id: 46,
+      title: "Status korrekt ändern",
+      status: "actionable",
+      children: [],
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.completeTask.mockResolvedValue({ ...task, status: "done" });
+    renderSheet(46);
+    await userEvent.click(screen.getByText("open"));
+    const status = await screen.findByLabelText("Status");
+
+    await userEvent.selectOptions(status, "done");
+    await waitFor(() =>
+      expect(mockedApi.completeTask).toHaveBeenCalledWith(46, "leave_open"),
+    );
+    expect(mockedApi.updateTask).not.toHaveBeenCalledWith(
+      46,
+      expect.objectContaining({ status: "done" }),
+    );
+  });
+
+  it("applies a terminal-to-non-terminal status atomically", async () => {
+    const task = makeTask({
+      id: 47,
+      title: "Wieder warten",
+      status: "done",
+      completedAt: "2026-08-27T10:00:00.000Z",
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderSheet(47);
+    await userEvent.click(screen.getByText("open"));
+
+    await userEvent.selectOptions(await screen.findByLabelText("Status"), "waiting");
+
+    await waitFor(() =>
+      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(47, "waiting"),
+    );
+    expect(mockedApi.reopenTask).not.toHaveBeenCalled();
+  });
+
+  it("applies a terminal-to-terminal status atomically", async () => {
+    const task = makeTask({
+      id: 48,
+      title: "Doch erledigt",
+      status: "cancelled",
+      cancelledAt: "2026-08-27T10:00:00.000Z",
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderSheet(48);
+    await userEvent.click(screen.getByText("open"));
+
+    await userEvent.selectOptions(await screen.findByLabelText("Status"), "done");
+
+    await waitFor(() =>
+      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(48, "done"),
+    );
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
+    expect(mockedApi.reopenTask).not.toHaveBeenCalled();
+  });
+
+  it("shows and locks an in-flight direct status transition", async () => {
+    let resolveTransition!: (task: ReturnType<typeof makeTask>) => void;
+    const transition = new Promise<ReturnType<typeof makeTask>>((resolve) => {
+      resolveTransition = resolve;
+    });
+    const task = makeTask({
+      id: 49,
+      title: "Status bleibt stabil",
+      status: "done",
+      completedAt: "2026-08-27T10:00:00.000Z",
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.transitionTaskStatus.mockReturnValue(transition);
+    renderSheet(49);
+    await userEvent.click(screen.getByText("open"));
+    const status = await screen.findByLabelText("Status");
+
+    await userEvent.selectOptions(status, "waiting");
+
+    expect(status).toHaveValue("waiting");
+    expect(status).toBeDisabled();
+    resolveTransition({ ...task, status: "waiting", completedAt: null });
+    await waitFor(() => expect(status).not.toBeDisabled());
+  });
+
   it("bietet dieselben Schnelloptionen und kann eine Planung entfernen", async () => {
     const task = makeTask({ id: 56, title: "Wochenplanung", scheduledDate: "2026-09-04" });
     mockedApi.getTask.mockResolvedValue(task);
@@ -249,6 +358,26 @@ describe("TaskDetailSheet", () => {
         scheduledDate: null,
       }),
     );
+  });
+
+  it("accepts human-readable scheduling dates and patches ISO values", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 58, title: "Termin planen", scheduledDate: null }),
+    );
+    renderSheet(58);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Termin planen");
+
+    const scheduledDate = screen.getByLabelText("Geplant");
+    fireEvent.change(scheduledDate, { target: { value: "12. September 2026" } });
+    fireEvent.blur(scheduledDate);
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(58, {
+        scheduledDate: "2026-09-12",
+      }),
+    );
+    expect(scheduledDate).toHaveValue("12.09.2026");
   });
 
   it("schließt einen ausgeschlossenen geerbten Tag über den Umschalter aus", async () => {
@@ -470,10 +599,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.selectOptions(screen.getByLabelText("Status"), "waiting");
 
     await waitFor(() =>
-      expect(mockedApi.updateTask).toHaveBeenCalledWith(55, {
-        status: "waiting",
-        needsClarification: false,
-      }),
+      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(55, "waiting"),
     );
   });
 });

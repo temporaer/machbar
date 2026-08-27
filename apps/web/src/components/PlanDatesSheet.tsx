@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Project } from "@machbar/shared";
 import { strings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
+import { HumanDateInput } from "./HumanDateInput";
 
 /** Bottom sheet for the "Planen" chip: due/scheduled dates, same fields/shape as `TaskDetailSheet`. */
 export function PlanDatesSheet({
@@ -16,6 +17,11 @@ export function PlanDatesSheet({
   const [dueDate, setDueDate] = useState(story.dueDate ?? "");
   const [scheduledDate, setScheduledDate] = useState(story.scheduledDate ?? "");
   const [saving, setSaving] = useState(false);
+  const [dueDateValid, setDueDateValid] = useState(true);
+  const [scheduledDateValid, setScheduledDateValid] = useState(true);
+  const closeIfValid = () => {
+    if (dueDateValid && scheduledDateValid) onClose();
+  };
 
   const submit = async () => {
     setSaving(true);
@@ -28,29 +34,39 @@ export function PlanDatesSheet({
   };
 
   return (
-    <BottomSheet title={strings.planDatesTitle} onClose={onClose} labelledBy="plan-dates-title">
+    <BottomSheet title={strings.planDatesTitle} onClose={closeIfValid} labelledBy="plan-dates-title">
       <div className="stack">
         <p className="text-muted">{story.title}</p>
         <div className="row">
           <div className="field" style={{ flex: 1 }}>
             <label htmlFor="story-due">{strings.due}</label>
-            <input id="story-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            <HumanDateInput
+              id="story-due"
+              value={dueDate}
+              onChange={(date) => setDueDate(date ?? "")}
+              onValidityChange={setDueDateValid}
+            />
           </div>
           <div className="field" style={{ flex: 1 }}>
             <label htmlFor="story-scheduled">{strings.scheduled}</label>
-            <input
+            <HumanDateInput
               id="story-scheduled"
-              type="date"
               value={scheduledDate}
-              onChange={(e) => setScheduledDate(e.target.value)}
+              onChange={(date) => setScheduledDate(date ?? "")}
+              onValidityChange={setScheduledDateValid}
             />
           </div>
         </div>
         <div className="row">
-          <button type="button" className="btn" onClick={onClose}>
+          <button type="button" className="btn" onClick={closeIfValid}>
             {strings.cancel}
           </button>
-          <button type="button" className="btn btn-primary btn-block" disabled={saving} onClick={() => void submit()}>
+          <button
+            type="button"
+            className="btn btn-primary btn-block"
+            disabled={saving || !dueDateValid || !scheduledDateValid}
+            onClick={() => void submit()}
+          >
             {strings.save}
           </button>
         </div>

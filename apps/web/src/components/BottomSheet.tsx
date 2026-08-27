@@ -1,17 +1,22 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { strings } from "../lib/strings";
+import { IconActionButton } from "./IconActionButton";
 
 export function BottomSheet({
   title,
   onClose,
   children,
   labelledBy,
+  headerActions,
+  headerStatus,
 }: {
   title?: string;
   onClose: () => void;
   children: ReactNode;
   labelledBy?: string;
+  headerActions?: ReactNode;
+  headerStatus?: ReactNode;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -31,12 +36,16 @@ export function BottomSheet({
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby={labelledBy}>
         <div className="sheet-grabber" aria-hidden="true" />
         {title ? (
-          <div className="sheet-header">
-            <h2 id={labelledBy}>{title}</h2>
-            <button type="button" className="icon-btn" onClick={onClose} aria-label={strings.close}>
-              ×
-            </button>
-          </div>
+          <>
+            <div className="sheet-header">
+              <h2 id={labelledBy}>{title}</h2>
+              <div className="sheet-header-actions">
+                {headerActions}
+                <IconActionButton kind="close" label={strings.close} onClick={onClose} />
+              </div>
+            </div>
+            {headerStatus ? <div className="sheet-header-status">{headerStatus}</div> : null}
+          </>
         ) : null}
         {children}
       </div>

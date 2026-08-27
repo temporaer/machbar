@@ -979,12 +979,54 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 10px;
 }
 
 .sheet-header h2 {
   font-size: 1.15rem;
   margin: 0;
+}
+
+.sheet-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sheet-header-status {
+  min-height: 0;
+  margin: -4px 0 10px;
+  text-align: right;
+}
+
+.human-date-field {
+  min-width: 0;
+}
+
+.human-date-control {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+}
+
+.human-date-control > input[type="text"] {
+  min-width: 0;
+  flex: 1;
+}
+
+.human-date-control-invalid > input[type="text"] {
+  border-color: var(--color-danger);
+}
+
+.human-date-error {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-danger);
+  font-size: 0.78rem;
 }
 
 /*

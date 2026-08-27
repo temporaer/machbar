@@ -10,6 +10,7 @@ import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { BottomSheet } from "./BottomSheet";
 import { TagPicker } from "./TagPicker";
 import { MarkdownEditor } from "./MarkdownEditor";
+import { HumanDateInput } from "./HumanDateInput";
 
 /** The subset of story fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -71,6 +72,8 @@ export function ProjectEditSheet({
   const [busyAction, setBusyAction] = useState<ProjectWorkflowAction | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [dueDateValid, setDueDateValid] = useState(true);
+  const [scheduledDateValid, setScheduledDateValid] = useState(true);
   const lastLoadedProjectIdRef = useRef<number | null>(null);
   const driverFieldRef = useRef<HTMLDivElement>(null);
   const lifecycleFieldRef = useRef<HTMLDivElement>(null);
@@ -201,7 +204,13 @@ export function ProjectEditSheet({
   };
 
   return (
-    <BottomSheet title={strings.editProject} onClose={onClose} labelledBy="project-edit-title">
+    <BottomSheet
+      title={strings.editProject}
+      onClose={() => {
+        if (dueDateValid && scheduledDateValid) onClose();
+      }}
+      labelledBy="project-edit-title"
+    >
       <div className="stack">
         {actionError ? (
           <p role="alert" style={{ color: "var(--color-danger)" }}>
@@ -284,20 +293,20 @@ export function ProjectEditSheet({
         <div className="row">
           <div className="field" style={{ flex: 1 }}>
             <label htmlFor="project-due">{strings.due}</label>
-            <input
+            <HumanDateInput
               id="project-due"
-              type="date"
               value={project.dueDate ?? ""}
-              onChange={(e) => void patch({ dueDate: e.target.value || null })}
+              onChange={(dueDate) => void patch({ dueDate })}
+              onValidityChange={setDueDateValid}
             />
           </div>
           <div className="field" style={{ flex: 1 }}>
             <label htmlFor="project-scheduled">{strings.scheduled}</label>
-            <input
+            <HumanDateInput
               id="project-scheduled"
-              type="date"
               value={project.scheduledDate ?? ""}
-              onChange={(e) => void patch({ scheduledDate: e.target.value || null })}
+              onChange={(scheduledDate) => void patch({ scheduledDate })}
+              onValidityChange={setScheduledDateValid}
             />
           </div>
         </div>

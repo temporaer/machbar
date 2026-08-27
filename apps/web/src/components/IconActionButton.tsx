@@ -16,6 +16,7 @@ export type IconActionKind =
   | "followUp"
   | "share"
   | "edit"
+  | "close"
   | "more";
 
 export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
@@ -87,6 +88,8 @@ export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
           <path d="M4 20l4.5-1 10.8-10.8a2.5 2.5 0 00-3.5-3.5L5 15.5 4 20z" {...common} />
           <path d="M14.5 6l3.5 3.5M5 15.5L8.5 19" {...common} />
         </>
+      ) : kind === "close" ? (
+        <path d="M6 6l12 12M18 6L6 18" {...common} />
       ) : (
         <>
           <path d="M4 6h16M4 12h16M4 18h16" {...common} />
