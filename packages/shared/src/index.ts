@@ -1,4 +1,5 @@
 export const taskStatuses = [
+  "captured",
   "actionable",
   "waiting",
   "someday",
@@ -211,6 +212,7 @@ export type RefinementActionCode =
 export interface RefinementAction {
   code: RefinementActionCode;
   label: string;
+  targetTaskId?: number;
 }
 
 export interface RefinementIssue {
@@ -224,6 +226,7 @@ export interface RefinementIssue {
   entityTitle: string;
   projectId: number | null;
   projectTitle: string | null;
+  dependencyPath?: Array<{ taskId: number; title: string }>;
 }
 
 export interface ProjectReadiness {
@@ -318,6 +321,7 @@ export const de = {
 } as const;
 
 export const taskStatusLabels: Record<TaskStatus, string> = {
+  captured: "Erfasst",
   actionable: "Machbar",
   waiting: "Wartet",
   someday: "Irgendwann",

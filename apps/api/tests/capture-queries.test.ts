@@ -14,15 +14,14 @@ describe("capture query views", () => {
     await closeTestContext(ctx);
   });
 
-  it("/api/inbox selects needsClarification regardless of project and status", async () => {
+  it("/api/inbox selects captured tasks regardless of project placement", async () => {
     const project = createProject(ctx.handle.db, {
       title: "Capture-Projekt",
     });
     const inProject = createTask(ctx.handle.db, {
       projectId: project.id,
-      title: "Wartend, aber noch zu klären",
-      status: "waiting",
-      needsClarification: true,
+      title: "Im Projekt erfasst",
+      status: "captured",
     });
     const topLevel = createTask(ctx.handle.db, {
       title: "Geklärter Eingangskandidat",

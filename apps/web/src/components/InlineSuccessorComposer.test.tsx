@@ -45,7 +45,6 @@ describe("InlineSuccessorComposer", () => {
         title: "Rechnung bezahlen",
         createdByMemberId: null,
         status: "actionable",
-        needsClarification: false,
       }),
     );
     expect(onCreated).toHaveBeenCalled();

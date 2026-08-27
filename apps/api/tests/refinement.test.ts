@@ -228,6 +228,69 @@ describe("refinementRepo", () => {
       ).toBeDefined();
     });
 
+    it("names and targets the captured prerequisite blocking a downstream task", () => {
+      const prerequisite = createTask(handle.db, {
+        title: "Schrank Lea konfigurieren",
+        status: "captured",
+      });
+      const downstream = createTask(handle.db, {
+        title: "Ikea: Kugellampe nachkaufen",
+        status: "actionable",
+      });
+      addDependency(handle.db, downstream.id, prerequisite.id);
+
+      const issue = buildRefinementIssues(Graph.load(handle.db), today).issues.find(
+        (entry) =>
+          entry.entityId === downstream.id &&
+          entry.code === "blocked_without_clear_path",
+      );
+
+      expect(issue).toMatchObject({
+        label: "Blockierende Aufgabe ungeklärt",
+        explanation:
+          "„Ikea: Kugellampe nachkaufen“ wartet auf „Schrank Lea konfigurieren“. Diese Aufgabe ist erst erfasst und noch nicht machbar.",
+        suggestedAction: {
+          code: "clarify_task",
+          label: "Schrank Lea konfigurieren klären",
+          targetTaskId: prerequisite.id,
+        },
+        dependencyPath: [
+          { taskId: downstream.id, title: "Ikea: Kugellampe nachkaufen" },
+          { taskId: prerequisite.id, title: "Schrank Lea konfigurieren" },
+        ],
+      });
+    });
+
+    it("targets the first problematic prerequisite through a multi-hop chain", () => {
+      const captured = createTask(handle.db, {
+        title: "Maße bestätigen",
+        status: "captured",
+      });
+      const middle = createTask(handle.db, {
+        title: "Schrank konfigurieren",
+        status: "actionable",
+      });
+      const downstream = createTask(handle.db, {
+        title: "Bestellung abschicken",
+        status: "actionable",
+      });
+      addDependency(handle.db, middle.id, captured.id);
+      addDependency(handle.db, downstream.id, middle.id);
+
+      const issue = buildRefinementIssues(Graph.load(handle.db), today).issues.find(
+        (entry) =>
+          entry.entityId === downstream.id &&
+          entry.code === "blocked_without_clear_path",
+      );
+
+      expect(issue?.suggestedAction.targetTaskId).toBe(captured.id);
+      expect(issue?.dependencyPath?.map((entry) => entry.taskId)).toEqual([
+        downstream.id,
+        middle.id,
+        captured.id,
+      ]);
+    });
+
     it("accepts a future waiting endpoint but flags a reached follow-up endpoint", () => {
       const future = createTask(handle.db, {
         title: "Geparkte Rückmeldung",

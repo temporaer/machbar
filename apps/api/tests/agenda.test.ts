@@ -281,7 +281,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     });
     await addDependency(revisit.id, blocker.id);
     ctx.handle.sqlite
-      .prepare("UPDATE tasks SET needs_clarification = 1 WHERE id IN (?, ?)")
+      .prepare("UPDATE tasks SET status = 'captured', needs_clarification = 1 WHERE id IN (?, ?)")
       .run(planned.id, revisit.id);
 
     expect(await bucketsContaining("Erfasst und geplant")).toEqual([]);

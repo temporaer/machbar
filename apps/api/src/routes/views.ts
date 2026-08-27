@@ -61,7 +61,7 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
     const graph = Graph.load(db);
     const captured = graph
       .allTasks()
-      .filter((task) => task.needsClarification);
+      .filter((task) => task.status === "captured");
     const capturedIds = new Set(captured.map((task) => task.id));
     const cloneCaptured = (task: (typeof captured)[number]): (typeof captured)[number] => ({
       ...task,

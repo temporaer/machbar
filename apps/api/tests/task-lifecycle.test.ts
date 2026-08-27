@@ -17,9 +17,9 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     return res.json();
   }
 
-  it("creates global captures as actionable and needing clarification", async () => {
+  it("creates global captures with the explicit captured status", async () => {
     const created = await createTask({ title: "Neue Aufgabe", notes: "Notiz" });
-    expect(created.status).toBe("actionable");
+    expect(created.status).toBe("captured");
     expect(created.needsClarification).toBe(true);
 
     const updateRes = await ctx.app.inject({
@@ -193,6 +193,24 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(unlockedRes.json().blocked).toBe(false);
   });
 
+  it("defaults projectless successors to actionable", async () => {
+    const predecessor = await createTask({
+      title: "Globaler Vorgänger",
+      status: "actionable",
+    });
+    const successorRes = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${predecessor.id}/successors`,
+      payload: { title: "Globaler Nachfolger" },
+    });
+
+    expect(successorRes.statusCode).toBe(201);
+    expect(successorRes.json()).toMatchObject({
+      status: "actionable",
+      needsClarification: false,
+    });
+  });
+
   it("honors explicit clarification input over creation defaults", async () => {
     const clarifiedCapture = await createTask({
       title: "Schon geklärt",
@@ -211,6 +229,37 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
       needsClarification: true,
     });
     expect(projectCapture.needsClarification).toBe(true);
+  });
+
+  it("normalizes legacy clarification patches without changing unrelated statuses", async () => {
+    const waiting = await createTask({ title: "Wartet", status: "waiting" });
+    const waitingRes = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${waiting.id}`,
+      payload: { needsClarification: false },
+    });
+    expect(waitingRes.json().status).toBe("waiting");
+
+    const captured = await createTask({ title: "Erfasst" });
+    const clarifiedRes = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${captured.id}`,
+      payload: { needsClarification: false },
+    });
+    expect(clarifiedRes.json()).toMatchObject({
+      status: "actionable",
+      needsClarification: false,
+    });
+
+    const recapturedRes = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${waiting.id}`,
+      payload: { needsClarification: true },
+    });
+    expect(recapturedRes.json()).toMatchObject({
+      status: "captured",
+      needsClarification: true,
+    });
   });
 
   it.each(["actionable", "waiting", "someday", "done", "cancelled"])(

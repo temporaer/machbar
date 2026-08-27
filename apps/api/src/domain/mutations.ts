@@ -813,6 +813,17 @@ export interface CreateTaskInput {
   tagIds?: number[];
 }
 
+function normalizeTaskStatus(
+  status: TaskStatus | undefined,
+  needsClarification: boolean | undefined,
+  fallback: TaskStatus,
+): TaskStatus {
+  if (status !== undefined && status !== "actionable") return status;
+  if (needsClarification === true) return "captured";
+  if (status !== undefined || needsClarification === false) return "actionable";
+  return fallback;
+}
+
 function nextPositionForGroup(
   db: Db,
   parentTaskId: number | null,
@@ -847,6 +858,11 @@ function insertTask(
 
   const position =
     positionOverride ?? nextPositionForGroup(db, parentTaskId, projectId);
+  const status = normalizeTaskStatus(
+    input.status,
+    input.needsClarification,
+    projectId === null && parentTaskId === null ? "captured" : "actionable",
+  );
 
   const task = db
     .insert(schema.tasks)
@@ -855,12 +871,8 @@ function insertTask(
       parentTaskId,
       title: input.title.trim(),
       notes: input.notes ?? "",
-      status: input.status ?? "actionable",
-      needsClarification:
-        input.needsClarification ??
-        (input.status === undefined &&
-          projectId === null &&
-          parentTaskId === null),
+      status,
+      needsClarification: status === "captured",
       ownerMemberId: input.ownerMemberId ?? null,
       ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
       createdByMemberId: input.createdByMemberId ?? null,
@@ -929,7 +941,6 @@ export function createProjectTaskSequence(
         projectId,
         title,
         status: "actionable",
-        needsClarification: false,
         createdByMemberId: input.createdByMemberId ?? null,
       });
       const predecessor = created.at(-1);
@@ -975,10 +986,9 @@ export function createTaskSuccessor(
     }
     const successor = insertTask(txDb, {
       ...input,
+      status: input.status ?? "actionable",
       projectId: predecessor.projectId,
       parentTaskId: predecessor.parentTaskId,
-      status: input.status ?? "actionable",
-      needsClarification: input.needsClarification ?? false,
     }, successorPosition);
     tx
       .insert(schema.taskDependencies)
@@ -1008,7 +1018,7 @@ export interface UpdateTaskInput {
 
 export function updateTask(db: Db, id: number, input: UpdateTaskInput) {
   return db.transaction((tx) => {
-    getTaskOrThrow(tx as unknown as Db, id);
+    const currentTask = getTaskOrThrow(tx as unknown as Db, id);
     if (input.title !== undefined && input.title.trim() === "") {
       throw AppError.badRequest("Der Aufgabentitel darf nicht leer sein.");
     }
@@ -1017,15 +1027,23 @@ export function updateTask(db: Db, id: number, input: UpdateTaskInput) {
     };
     if (input.title !== undefined) patch.title = input.title.trim();
     if (input.notes !== undefined) patch.notes = input.notes;
-    if (input.status !== undefined) {
-      patch.status = input.status;
-      patch.completedAt = input.status === "done" ? nowIso() : null;
-      patch.cancelledAt = input.status === "cancelled" ? nowIso() : null;
-    }
-    if (input.needsClarification !== undefined) {
-      patch.needsClarification = input.needsClarification;
-    } else if (input.status !== undefined) {
-      patch.needsClarification = false;
+    const nextStatus =
+      input.status !== undefined
+        ? normalizeTaskStatus(
+            input.status,
+            input.needsClarification,
+            "actionable",
+          )
+        : input.needsClarification === true
+          ? "captured"
+          : input.needsClarification === false && currentTask.status === "captured"
+            ? "actionable"
+            : undefined;
+    if (nextStatus !== undefined) {
+      patch.status = nextStatus;
+      patch.needsClarification = nextStatus === "captured";
+      patch.completedAt = nextStatus === "done" ? nowIso() : null;
+      patch.cancelledAt = nextStatus === "cancelled" ? nowIso() : null;
     }
     if (input.ownerMemberId !== undefined) patch.ownerMemberId = input.ownerMemberId;
     if (input.ownerInheritanceMode !== undefined)

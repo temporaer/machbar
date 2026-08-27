@@ -276,7 +276,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         status: "actionable",
       });
       handle.sqlite
-        .prepare("UPDATE tasks SET needs_clarification = 1 WHERE id IN (?, ?)")
+        .prepare("UPDATE tasks SET status = 'captured', needs_clarification = 1 WHERE id IN (?, ?)")
         .run(capturedRoot.id, capturedBlocker.id);
 
       expect(getNextActionTaskIdsByProject(handle.db).get(project.id)).toBe(
@@ -392,7 +392,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         status: "waiting",
       });
       handle.sqlite
-        .prepare("UPDATE tasks SET needs_clarification = 1 WHERE id IN (?, ?)")
+        .prepare("UPDATE tasks SET status = 'captured', needs_clarification = 1 WHERE id IN (?, ?)")
         .run(capturedRoot.id, capturedWaiting.id);
 
       const mixed = createProject(handle.db, {
@@ -414,7 +414,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         ownerMemberId: owner.id,
       });
       handle.sqlite
-        .prepare("UPDATE tasks SET needs_clarification = 1 WHERE id = ?")
+        .prepare("UPDATE tasks SET status = 'captured', needs_clarification = 1 WHERE id = ?")
         .run(mixedRoot.id);
 
       const reasons = getStuckReasonsByProject(handle.db);
@@ -629,7 +629,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       });
       handle.db
         .update(schema.tasks)
-        .set({ needsClarification: true })
+        .set({ status: "captured", needsClarification: true })
         .where(eq(schema.tasks.id, captured.id))
         .run();
       const capturedAction = makeAction(capturedProject.id, "Blockiert");

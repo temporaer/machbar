@@ -26,7 +26,6 @@ export function getNextActionTaskIdsByProject(db: Db): Map<number, number> {
       JOIN tasks t ON t.id = sk.task_id
       WHERE sk.project_id IS NOT NULL
         AND t.status = 'actionable'
-        AND t.needs_clarification = 0
         AND NOT EXISTS (
           SELECT 1 FROM task_dependencies td
           JOIN tasks dep ON dep.id = td.depends_on_task_id

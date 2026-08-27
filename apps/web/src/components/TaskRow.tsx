@@ -78,7 +78,7 @@ export interface TaskRowProps {
 /** Short, status-like label for the primary-swipe reveal background. */
 function primaryActionBgLabel(task: Task, action: PrimarySwipeAction): string {
   if (task.status === "done" || task.status === "cancelled") return strings.reopen;
-  if (task.needsClarification) return strings.actionable;
+  if (task.status === "captured") return strings.actionable;
   switch (action) {
     case "waiting":
       return strings.waiting;
@@ -503,11 +503,6 @@ export function TaskRow({
               {task.status !== "actionable" ? (
                 <span className={`task-row-meta-item task-row-state task-row-state-${task.status}`}>
                   {taskStatusLabels[task.status]}
-                </span>
-              ) : null}
-              {task.needsClarification ? (
-                <span className="task-row-meta-item">
-                  <span className="badge badge-clarification">{strings.needsClarification}</span>
                 </span>
               ) : null}
               {task.status === "waiting" && task.waitingFor ? (

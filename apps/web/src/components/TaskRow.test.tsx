@@ -16,6 +16,7 @@ vi.mock("../lib/api", () => ({
     completeTask: vi.fn(),
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
+    transitionTaskStatus: vi.fn(),
     updateTask: vi.fn(),
     createTaskSuccessor: vi.fn(),
     reorderTask: vi.fn(),
@@ -70,12 +71,11 @@ describe("TaskRow – primary swipe direction mapping", () => {
     );
     await screen.findByText("Nächsten Schritt klären");
 
-    expect(container.querySelector(".badge-status-actionable")).not.toBeInTheDocument();
-    expect(container.querySelector(".badge-clarification")).toHaveTextContent("Zu klären");
+    expect(container.querySelector(".task-row-state-captured")).toHaveTextContent("Erfasst");
     swipe(container, 100);
 
     await waitFor(() =>
-      expect(mockedApi.updateTask).toHaveBeenCalledWith(13, { needsClarification: false }),
+      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(13, "actionable"),
     );
     expect(mockedApi.completeTask).not.toHaveBeenCalled();
   });
@@ -115,7 +115,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     swipe(container, 100);
 
     await waitFor(() =>
-      expect(mockedApi.updateTask).toHaveBeenCalledWith(15, { needsClarification: false }),
+      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(15, "actionable"),
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalledWith(
       15,

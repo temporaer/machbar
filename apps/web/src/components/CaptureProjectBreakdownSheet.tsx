@@ -50,7 +50,6 @@ export function CaptureProjectBreakdownSheet({
         parentTaskId: null,
         createdByMemberId: currentMemberId,
         status: extra.status ?? "actionable",
-        needsClarification: false,
         ...(extra.waitingFor === undefined ? {} : { waitingFor: extra.waitingFor }),
       });
       if (kind === "next-action") setNextAction("");

@@ -149,6 +149,8 @@ export const tasks = sqliteTable(
     title: text("title").notNull(),
     notes: text("notes").notNull().default(""),
     status: text("status").notNull().default("actionable"),
+    // Legacy storage retained to avoid rebuilding the referenced tasks table.
+    // Domain responses derive clarification exclusively from status="captured".
     needsClarification: integer("needs_clarification", { mode: "boolean" })
       .notNull()
       .default(false),

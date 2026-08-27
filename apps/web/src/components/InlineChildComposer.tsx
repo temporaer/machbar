@@ -45,7 +45,6 @@ export function InlineChildComposer({ parentId, onCancel, onCreated }: InlineChi
         title: trimmed,
         createdByMemberId: currentMemberId,
         status: "actionable",
-        needsClarification: false,
       });
       bump();
       onCreated();

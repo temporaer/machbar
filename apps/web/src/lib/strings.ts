@@ -62,7 +62,7 @@ const extra = {
     followup_due:
       "Hake jetzt nach oder markiere eine wartende Aufgabe wieder als machbar.",
     blocked_dependencies:
-      "Kläre das Ende der Abhängigkeitskette, damit eine Aufgabe machbar wird.",
+      "Prüfe die konkret blockierenden Voraussetzungen, damit eine Aufgabe machbar wird.",
     unassigned_actionable: "Weise die offene machbare Aufgabe einer Person zu.",
     completion_review: "Prüfe das Ergebnis und schließe das Projekt ab oder ergänze die noch fehlende Arbeit.",
   } satisfies Record<StuckReason, string>,
@@ -108,6 +108,7 @@ const extra = {
     context: "Ohne Kontext",
   },
   groupByTagType: "Gruppieren nach",
+  grouping: "Gruppierung",
   noGrouping: "Keine",
   groupingPreference: "Gruppierung",
   groupingPreferenceHint:

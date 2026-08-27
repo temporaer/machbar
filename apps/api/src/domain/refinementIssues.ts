@@ -59,11 +59,11 @@ const issueCopy: Record<
     actionLabel: "Nachhaken",
   },
   blocked_without_clear_path: {
-    label: "Blockiert ohne klaren Weg",
+    label: "Blockierende Voraussetzung unklar",
     explanation:
-      "Mindestens eine Abhängigkeit endet ohne machbaren Schritt oder zukünftige Wiedervorlage.",
+      "Eine vorausgesetzte Aufgabe ist noch nicht machbar oder sinnvoll terminiert.",
     actionCode: "resolve_blocker",
-    actionLabel: "Ende der Kette klären",
+    actionLabel: "Blockierende Aufgabe prüfen",
   },
   due_without_plan: {
     label: "Fällig, aber nicht machbar",
@@ -115,19 +115,24 @@ function taskIssue(
   task: TaskRecord,
   code: RefinementIssueCode,
   severity: RefinementIssueSeverity,
+  overrides: Partial<
+    Pick<RefinementIssue, "label" | "explanation" | "suggestedAction" | "dependencyPath">
+  > = {},
 ): RefinementIssue {
   const copy = issueCopy[code];
   return {
     code,
     severity,
-    label: copy.label,
-    explanation: copy.explanation,
-    suggestedAction: { code: copy.actionCode, label: copy.actionLabel },
+    label: overrides.label ?? copy.label,
+    explanation: overrides.explanation ?? copy.explanation,
+    suggestedAction:
+      overrides.suggestedAction ?? { code: copy.actionCode, label: copy.actionLabel },
     entityType: "task",
     entityId: task.id,
     entityTitle: task.title,
     projectId: task.projectId,
     projectTitle: task.projectTitle ?? null,
+    dependencyPath: overrides.dependencyPath,
   };
 }
 
@@ -139,57 +144,103 @@ function unresolvedDependencies(graph: Graph, task: TaskRecord): TaskRecord[] {
   return task.dependencies
     .filter((dependency) => !dependency.resolved)
     .map((dependency) => graph.tasksById.get(dependency.dependsOnTaskId))
-    .filter((dependency): dependency is TaskRecord => dependency !== undefined);
+    .filter((dependency): dependency is TaskRecord => dependency !== undefined)
+    .sort(
+      (a, b) =>
+        a.position - b.position ||
+        a.title.localeCompare(b.title, "de") ||
+        a.id - b.id,
+    );
 }
 
-/**
- * An intentional dependency branch is clear when it ends at work that can be
- * done now, or at waiting work deliberately parked until a future revisit.
- * Every unresolved branch must be clear because one dead end still blocks the
- * downstream task.
- */
-function dependencyBranchHasClearPath(
+type BlockingPrerequisiteReason =
+  | "captured"
+  | "waiting"
+  | "someday"
+  | "terminal_project"
+  | "cycle";
+
+interface BlockingPrerequisite {
+  task: TaskRecord;
+  reason: BlockingPrerequisiteReason;
+  path: TaskRecord[];
+}
+
+function blockingPrerequisiteInBranch(
   graph: Graph,
   task: TaskRecord,
   today: string,
   visiting: Set<number>,
-): boolean {
-  if (!isOpen(task)) return true;
-  if (task.needsClarification || visiting.has(task.id)) return false;
+  path: TaskRecord[],
+): BlockingPrerequisite | null {
+  if (!isOpen(task)) return null;
+  const nextPath = [...path, task];
+  if (visiting.has(task.id)) {
+    return { task, reason: "cycle", path: nextPath };
+  }
+  if (task.status === "captured") {
+    return { task, reason: "captured", path: nextPath };
+  }
   const project =
     task.projectId === null ? null : graph.projectsById.get(task.projectId);
   if (project?.status === "completed" || project?.status === "archived") {
-    return false;
+    return { task, reason: "terminal_project", path: nextPath };
   }
 
-  const nextVisiting = new Set(visiting).add(task.id);
   const dependencies = unresolvedDependencies(graph, task);
-
+  const nextVisiting = new Set(visiting).add(task.id);
   if (task.status === "actionable") {
-    return (
-      dependencies.length === 0 ||
-      dependencies.every((dependency) =>
-        dependencyBranchHasClearPath(
-          graph,
-          dependency,
-          today,
-          nextVisiting,
-        ),
-      )
-    );
+    for (const dependency of dependencies) {
+      const diagnosis = blockingPrerequisiteInBranch(
+        graph,
+        dependency,
+        today,
+        nextVisiting,
+        nextPath,
+      );
+      if (diagnosis) return diagnosis;
+    }
+    return null;
   }
-
   if (
     task.status === "waiting" &&
     task.scheduledDate !== null &&
     task.scheduledDate > today
   ) {
-    return dependencies.every((dependency) =>
-      dependencyBranchHasClearPath(graph, dependency, today, nextVisiting),
-    );
+    for (const dependency of dependencies) {
+      const diagnosis = blockingPrerequisiteInBranch(
+        graph,
+        dependency,
+        today,
+        nextVisiting,
+        nextPath,
+      );
+      if (diagnosis) return diagnosis;
+    }
+    return null;
   }
+  if (task.status === "waiting") {
+    return { task, reason: "waiting", path: nextPath };
+  }
+  return { task, reason: "someday", path: nextPath };
+}
 
-  return false;
+export function findBlockingPrerequisite(
+  graph: Graph,
+  task: TaskRecord,
+  today: string,
+): BlockingPrerequisite | null {
+  for (const dependency of unresolvedDependencies(graph, task)) {
+    const diagnosis = blockingPrerequisiteInBranch(
+      graph,
+      dependency,
+      today,
+      new Set([task.id]),
+      [task],
+    );
+    if (diagnosis) return diagnosis;
+  }
+  return null;
 }
 
 export function blockedTaskHasClearPath(
@@ -198,12 +249,73 @@ export function blockedTaskHasClearPath(
   today: string,
 ): boolean {
   const dependencies = unresolvedDependencies(graph, task);
-  return (
-    dependencies.length > 0 &&
-    dependencies.every((dependency) =>
-      dependencyBranchHasClearPath(graph, dependency, today, new Set([task.id])),
-    )
-  );
+  return dependencies.length > 0 && findBlockingPrerequisite(graph, task, today) === null;
+}
+
+function blockingPrerequisiteIssue(
+  task: TaskRecord,
+  diagnosis: BlockingPrerequisite,
+): RefinementIssue {
+  const target = diagnosis.task;
+  const relation =
+    diagnosis.path.length === 2
+      ? `„${task.title}“ wartet auf „${target.title}“.`
+      : `Die Voraussetzungskette von „${task.title}“ führt zu „${target.title}“.`;
+  const dependencyPath = diagnosis.path.map((pathTask) => ({
+    taskId: pathTask.id,
+    title: pathTask.title,
+  }));
+
+  if (diagnosis.reason === "captured") {
+    return taskIssue(task, "blocked_without_clear_path", "warning", {
+      label: "Blockierende Aufgabe ungeklärt",
+      explanation: `${relation} Diese Aufgabe ist erst erfasst und noch nicht machbar.`,
+      suggestedAction: {
+        code: "clarify_task",
+        label: `${target.title} klären`,
+        targetTaskId: target.id,
+      },
+      dependencyPath,
+    });
+  }
+  if (diagnosis.reason === "waiting") {
+    return taskIssue(task, "blocked_without_clear_path", "warning", {
+      label: "Blockierende Aufgabe nicht terminiert",
+      explanation: `${relation} Sie braucht eine zukünftige Wiedervorlage.`,
+      suggestedAction: {
+        code: "set_followup",
+        label: `Wiedervorlage für ${target.title} setzen`,
+        targetTaskId: target.id,
+      },
+      dependencyPath,
+    });
+  }
+  if (diagnosis.reason === "cycle") {
+    return taskIssue(task, "blocked_without_clear_path", "warning", {
+      label: "Abhängigkeiten bilden einen Kreis",
+      explanation: `${relation} Die Abhängigkeiten müssen dort geprüft werden.`,
+      suggestedAction: {
+        code: "resolve_blocker",
+        label: `Abhängigkeiten von ${target.title} prüfen`,
+        targetTaskId: target.id,
+      },
+      dependencyPath,
+    });
+  }
+  const explanation =
+    diagnosis.reason === "terminal_project"
+      ? `${relation} Sie gehört zu einem abgeschlossenen oder archivierten Projekt.`
+      : `${relation} Sie ist derzeit nicht machbar.`;
+  return taskIssue(task, "blocked_without_clear_path", "warning", {
+    label: "Blockierende Aufgabe nicht machbar",
+    explanation,
+    suggestedAction: {
+      code: "resolve_blocker",
+      label: `${target.title} prüfen`,
+      targetTaskId: target.id,
+    },
+    dependencyPath,
+  });
 }
 
 export interface RefinementIssueResult {
@@ -245,7 +357,6 @@ export function buildRefinementIssues(
       !openTasks.some(
         (task) =>
           task.status === "actionable" &&
-          !task.needsClarification &&
           (!task.blocked || blockedTaskHasClearPath(graph, task, today)),
       ) &&
       !(
@@ -271,7 +382,7 @@ export function buildRefinementIssues(
 
   for (const task of graph.allTasks()) {
     if (!isOpen(task)) continue;
-    if (task.needsClarification) {
+    if (task.status === "captured") {
       issues.push(taskIssue(task, "needs_clarification", "warning"));
       continue;
     }
@@ -287,8 +398,11 @@ export function buildRefinementIssues(
     if (task.effectiveOwnerId === null) {
       issues.push(taskIssue(task, "unassigned_actionable", "warning"));
     }
-    if (task.blocked && !blockedTaskHasClearPath(graph, task, today)) {
-      issues.push(taskIssue(task, "blocked_without_clear_path", "warning"));
+    if (task.blocked) {
+      const diagnosis = findBlockingPrerequisite(graph, task, today);
+      if (diagnosis) {
+        issues.push(blockingPrerequisiteIssue(task, diagnosis));
+      }
     }
     if (task.size === "XL" && !task.children.some(isOpen)) {
       issues.push(taskIssue(task, "too_large_without_children", "warning"));

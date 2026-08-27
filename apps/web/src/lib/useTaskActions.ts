@@ -260,25 +260,23 @@ export function useTaskActions() {
         cancelledAt: null,
       };
       return runTransition(task, optimistic, () =>
-        api.updateTask(task.id, {
-          status,
-          ...(task.needsClarification ? { needsClarification: false } : {}),
-        }),
+        api.updateTask(task.id, { status }),
       );
     },
     [runTransition],
   );
 
-  /** Clears only the capture flag; the workflow status remains unchanged. */
+  /** Clarifying a captured task makes it actionable. */
   const clarify = useCallback(
     (task: Task) => {
       const optimistic: Task = {
         ...task,
+        status: "actionable",
         needsClarification: false,
         updatedAt: new Date().toISOString(),
       };
       return runTransition(task, optimistic, () =>
-        api.updateTask(task.id, { needsClarification: false }),
+        api.transitionTaskStatus(task.id, "actionable"),
       );
     },
     [runTransition],
@@ -347,7 +345,7 @@ export function useTaskActions() {
         void reopen(task);
         return;
       }
-      if (task.needsClarification) {
+      if (task.status === "captured") {
         void clarify(task);
         return;
       }

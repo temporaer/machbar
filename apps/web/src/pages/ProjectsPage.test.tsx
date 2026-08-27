@@ -261,7 +261,24 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     renderWithProviders(<ProjectsPage />);
     await screen.findByText("Anruf erledigen");
 
+    const filterTrigger = screen.getByRole("button", { name: /Filter.*Meine & offen/ });
+    const groupingTrigger = screen.getByRole("button", { name: /Gruppierung.*Keine/ });
+    expect(filterTrigger.closest(".project-list-options")).toBe(
+      groupingTrigger.closest(".project-list-options"),
+    );
+    expect(filterTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(groupingTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("group", { name: "Gruppieren nach" })).not.toBeInTheDocument();
+
+    fireEvent.click(filterTrigger);
+    expect(filterTrigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("group", { name: "Filter" })).toBeInTheDocument();
+
+    fireEvent.click(groupingTrigger);
     const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
+    expect(filterTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("group", { name: "Filter" })).not.toBeInTheDocument();
+    expect(groupingTrigger).toHaveAttribute("aria-expanded", "true");
     expect(within(grouping).getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Keine",
       "Kontext",
@@ -271,6 +288,8 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(screen.queryByRole("button", { name: "Telefon" })).not.toBeInTheDocument();
 
     fireEvent.click(within(grouping).getByRole("button", { name: "Kontext" }));
+    expect(groupingTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("group", { name: "Gruppieren nach" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Telefon" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ohne Kontext" })).toBeInTheDocument();
   });
@@ -354,6 +373,7 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     renderWithProviders(<ProjectsPage />);
     await screen.findByText("Küche renovieren");
 
+    fireEvent.click(screen.getByRole("button", { name: /Filter.*Meine & offen/ }));
     fireEvent.click(screen.getByRole("button", { name: "Alle" }));
 
     await waitFor(() => expect(screen.getByText("Theos Geschichte")).toBeInTheDocument());
@@ -364,6 +384,7 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
   it("searches title, criteria, and waiting reasons case-insensitively and diacritic-tolerantly", async () => {
     renderWithProviders(<ProjectsPage />);
     await screen.findByText("Küche renovieren");
+    fireEvent.click(screen.getByRole("button", { name: /Filter.*Meine & offen/ }));
     fireEvent.click(screen.getByRole("button", { name: "Alle" }));
     await screen.findByText("Theos Geschichte");
 
@@ -562,6 +583,7 @@ describe("ProjectsPage – workflow sections", () => {
 
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Aktiver Anruf");
+    fireEvent.click(screen.getByRole("button", { name: /Gruppierung.*Keine/ }));
     fireEvent.click(within(screen.getByRole("group", { name: "Gruppieren nach" }))
       .getByRole("button", { name: "Kontext" }));
 

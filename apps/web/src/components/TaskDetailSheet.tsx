@@ -247,7 +247,7 @@ export function TaskDetailSheet() {
         title: snapshot.title,
         notes: snapshot.notes,
         waitingFor: snapshot.waitingFor || null,
-        ...(clarify ? { needsClarification: false } : {}),
+        ...(clarify ? { status: "actionable" as const } : {}),
       });
       // Adopt the just-saved values as the new baseline right away so the
       // save button disables immediately, without waiting for the follow-up
@@ -373,12 +373,6 @@ export function TaskDetailSheet() {
               onBlur={(e) => saveOnBlur(e.relatedTarget)}
             />
           </div>
-
-          {task.needsClarification ? (
-            <div>
-              <span className="badge badge-clarification">{strings.needsClarification}</span>
-            </div>
-          ) : null}
 
           <div className="field">
             <label htmlFor="task-status">{strings.status}</label>

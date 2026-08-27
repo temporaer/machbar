@@ -18,7 +18,6 @@ interface SeedTaskInput {
   title: string;
   notes?: string;
   status?: (typeof schema.tasks.$inferInsert)["status"];
-  needsClarification?: boolean;
   ownerMemberId?: number | null;
   ownerInheritanceMode?: (typeof schema.tasks.$inferInsert)["ownerInheritanceMode"];
   dueDate?: string | null;
@@ -119,6 +118,7 @@ export function seedDatabase(db: Db): void {
       const idsByTitle = new Map<string, number>();
       inputs.forEach((input, index) => {
         const now = nowIso();
+        const status = input.status ?? "actionable";
         const row = tx
           .insert(schema.tasks)
           .values({
@@ -126,8 +126,8 @@ export function seedDatabase(db: Db): void {
             parentTaskId,
             title: input.title,
             notes: input.notes ?? "",
-            status: input.status ?? "actionable",
-            needsClarification: input.needsClarification ?? false,
+            status,
+            needsClarification: status === "captured",
             ownerMemberId: input.ownerMemberId ?? null,
             ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
             createdByMemberId: anna.id,
@@ -251,7 +251,7 @@ export function seedDatabase(db: Db): void {
         },
         {
           title: "Ummeldung Wohnsitz",
-          needsClarification: true,
+          status: "captured",
         },
         {
           title: "Kartons besorgen",
@@ -481,9 +481,9 @@ export function seedDatabase(db: Db): void {
     // Free-standing capture tasks (Eingang) with no project yet.
     insertTaskTree(
       [
-        { title: "Zahnarzttermin ausmachen", needsClarification: true },
-        { title: "Geschenk für Oma kaufen", needsClarification: true },
-        { title: "Nachbarn wegen Leiter fragen", needsClarification: true },
+        { title: "Zahnarzttermin ausmachen", status: "captured" },
+        { title: "Geschenk für Oma kaufen", status: "captured" },
+        { title: "Nachbarn wegen Leiter fragen", status: "captured" },
         {
           title: "Fahrrad reparieren",
           status: "actionable",

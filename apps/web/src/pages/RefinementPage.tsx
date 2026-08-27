@@ -153,8 +153,9 @@ export function RefinementPage() {
       navigate(`/projekte/${issue.entityId}`);
       return;
     }
+    const repairTaskId = issue.suggestedAction.targetTaskId ?? issue.entityId;
     if (issue.suggestedAction.code === "clarify_task") {
-      taskDetail.openQueue([issue.entityId], "title");
+      taskDetail.openQueue([repairTaskId], "title");
       return;
     }
     const focus =
@@ -169,7 +170,7 @@ export function RefinementPage() {
             : issue.suggestedAction.code === "add_child"
               ? "subtasks"
               : undefined;
-    taskDetail.open(issue.entityId, focus);
+    taskDetail.open(repairTaskId, focus);
   };
 
   return (

@@ -47,8 +47,7 @@ describe("QuickAdd", () => {
         projectId: null,
         parentTaskId: null,
         createdByMemberId: 1,
-        status: "actionable",
-        needsClarification: true,
+        status: "captured",
         dueDate: null,
         scheduledDate: null,
         ownerMemberId: 1,
@@ -82,7 +81,6 @@ describe("QuickAdd", () => {
         expect.objectContaining({
           title: "Angebot senden",
           status: "actionable",
-          needsClarification: false,
           projectId: null,
           dueDate: null,
           scheduledDate: null,
@@ -125,7 +123,6 @@ describe("QuickAdd", () => {
         expect.objectContaining({
           projectId: 7,
           status: "actionable",
-          needsClarification: false,
         }),
       ),
     );
@@ -159,7 +156,6 @@ describe("QuickAdd", () => {
           projectId: 55,
           parentTaskId: null,
           status: "actionable",
-          needsClarification: false,
         }),
       ),
     );

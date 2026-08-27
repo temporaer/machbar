@@ -57,6 +57,13 @@
       "when": 1787730323744,
       "tag": "0007_typed_tags_remove_context",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787837335819,
+      "tag": "0008_captured_task_status",
+      "breakpoints": true
     }
   ]
 }

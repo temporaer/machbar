@@ -93,7 +93,7 @@ export function buildAgenda(
       .filter(
         (t) =>
           isOpen(t) &&
-          !t.needsClarification &&
+          t.status !== "captured" &&
           !t.blocked &&
           !seen.has(t.id) &&
           matchesSelectedOwner(t, memberId) &&
@@ -109,7 +109,7 @@ export function buildAgenda(
     .filter(
       (t) =>
         isOpen(t) &&
-        !t.needsClarification &&
+        t.status !== "captured" &&
         t.status === "waiting" &&
         !!t.scheduledDate &&
         t.scheduledDate <= today &&
@@ -148,7 +148,7 @@ export function buildAgenda(
     .filter(
       (t) =>
         isOpen(t) &&
-        !t.needsClarification &&
+        t.status !== "captured" &&
         t.status === "actionable" &&
         t.blocked &&
         !seen.has(t.id) &&

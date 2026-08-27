@@ -570,7 +570,7 @@ describe("TaskDetailSheet", () => {
         title: "Erste Erfassung",
         notes: "",
         waitingFor: null,
-        needsClarification: false,
+        status: "actionable",
       }),
     );
     expect(await screen.findByDisplayValue("Zweite Erfassung")).toBeInTheDocument();

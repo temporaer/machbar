@@ -48,7 +48,7 @@ export const repairActionByReason: Record<StuckReason, string> = {
   followup_due:
     "Hake jetzt nach oder markiere eine wartende Aufgabe wieder als machbar.",
   blocked_dependencies:
-    "Kläre das Ende der Abhängigkeitskette, damit ein machbarer Schritt entsteht.",
+    "Prüfe die konkret blockierenden Voraussetzungen, damit ein machbarer Schritt entsteht.",
   unassigned_actionable:
     "Weise die offene Aufgabe einer zuständigen Person zu.",
   completion_review:
@@ -291,7 +291,7 @@ export class Graph {
         title: raw.title,
         notes: raw.notes,
         status: raw.status,
-        needsClarification: raw.needsClarification,
+        needsClarification: raw.status === "captured",
         ownerMemberId: raw.ownerMemberId,
         ownerInheritanceMode: raw.ownerInheritanceMode,
         createdByMemberId: raw.createdByMemberId,
@@ -437,10 +437,7 @@ export class Graph {
         repairAction:
           reason === "no_next_action" &&
           this.tasksForProject(project.id).some(
-            (task) =>
-              task.needsClarification &&
-              task.status !== "done" &&
-              task.status !== "cancelled",
+            (task) => task.status === "captured",
           )
             ? "Kläre die erfassten Aufgaben und lege danach einen machbaren nächsten Schritt fest."
             : repairActionByReason[reason],

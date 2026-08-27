@@ -26,14 +26,17 @@ export function makeTag(overrides: Partial<Tag> = {}): Tag {
 
 export function makeTask(overrides: Partial<Task> = {}): Task {
   const id = overrides.id ?? nextId();
+  const status =
+    overrides.needsClarification === true &&
+    (overrides.status === undefined || overrides.status === "actionable")
+      ? "captured"
+      : overrides.status ?? "actionable";
   return {
     id,
     projectId: null,
     parentTaskId: null,
     title: "Beispielaufgabe",
     notes: "",
-    status: "actionable",
-    needsClarification: false,
     ownerMemberId: null,
     ownerInheritanceMode: "inherit",
     createdByMemberId: null,
@@ -61,6 +64,8 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     dependencies: [],
     children: [],
     ...overrides,
+    status,
+    needsClarification: status === "captured",
   };
 }
 

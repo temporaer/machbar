@@ -42,7 +42,6 @@ describe("CaptureProjectBreakdownSheet", () => {
           projectId: 42,
           parentTaskId: null,
           status: "actionable",
-          needsClarification: false,
         }),
       ),
     );
@@ -56,7 +55,6 @@ describe("CaptureProjectBreakdownSheet", () => {
           projectId: 42,
           parentTaskId: null,
           status: "actionable",
-          needsClarification: false,
         }),
       ),
     );

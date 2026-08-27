@@ -90,7 +90,6 @@ describe("TaskRow – inline child (subtask) composer", () => {
         title: "Redner einladen",
         createdByMemberId: null,
         status: "actionable",
-        needsClarification: false,
       }),
     );
 
@@ -142,7 +141,6 @@ describe("TaskRow – inline child (subtask) composer", () => {
         title: "Enkel-Aufgabe",
         createdByMemberId: null,
         status: "actionable",
-        needsClarification: false,
       }),
     );
   });

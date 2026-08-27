@@ -217,6 +217,7 @@ describe("RefinementPage", () => {
     renderWithProviders(<RefinementPage />);
     await screen.findByText("Mit Bereich");
 
+    await userEvent.click(screen.getByRole("button", { name: /Gruppierung.*Keine/ }));
     const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
     expect(screen.queryByRole("button", { name: "Küche" })).not.toBeInTheDocument();
     await userEvent.click(within(grouping).getByRole("button", { name: "Bereich" }));
@@ -254,6 +255,37 @@ describe("RefinementPage", () => {
       );
     },
   );
+
+  it("opens the named blocking prerequisite instead of the downstream task", async () => {
+    const blockerIssue = issue("clarify_task");
+    blockerIssue.entityId = 34;
+    blockerIssue.entityTitle = "Ikea: Kugellampe nachkaufen";
+    blockerIssue.suggestedAction = {
+      code: "clarify_task",
+      label: "Schrank Lea konfigurieren klären",
+      targetTaskId: 31,
+    };
+    mockedApi.getRefinementIssues.mockResolvedValue({
+      issues: [blockerIssue],
+      projects: [],
+    });
+
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/mehr/refinement"] },
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Schrank Lea konfigurieren klären" }),
+    );
+
+    expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+      "/mehr/refinement|31|title|true",
+    );
+  });
 
   it.each([
     ["assign_task", "owner", false],

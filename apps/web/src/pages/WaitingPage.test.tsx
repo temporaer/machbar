@@ -38,8 +38,14 @@ describe("WaitingPage grouping controls", () => {
     const { container } = renderWithProviders(<WaitingPage />);
     await screen.findByText("Nichts wartet gerade.");
 
+    const trigger = screen.getByRole("button", { name: /Gruppierung.*Keine/ });
+    expect(trigger.closest(".projects-controls")).not.toBeNull();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("group", { name: "Gruppieren nach" })).not.toBeInTheDocument();
+
+    await userEvent.click(trigger);
     const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
-    expect(grouping.closest(".projects-controls")).not.toBeNull();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
 
     const buttons = within(grouping).getAllByRole("button");
     expect(buttons.map((button) => button.textContent)).toEqual([
@@ -73,19 +79,27 @@ describe("WaitingPage grouping controls", () => {
     await screen.findByText("Rückruf abwarten");
     expect(screen.getByText("Wiedervorlage: heute")).toBeInTheDocument();
 
+    const trigger = screen.getByRole("button", { name: /Gruppierung.*Keine/ });
+    await userEvent.click(trigger);
     const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
     const none = within(grouping).getByRole("button", { name: "Keine" });
     const context = within(grouping).getByRole("button", { name: "Kontext" });
 
     await userEvent.click(context);
-    expect(context).toHaveAttribute("aria-pressed", "true");
-    expect(none).toHaveAttribute("aria-pressed", "false");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveAccessibleName(/Gruppierung.*Kontext/);
     expect(screen.getByRole("heading", { name: "Telefon" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ohne Kontext" })).toBeInTheDocument();
 
-    await userEvent.click(none);
-    expect(none).toHaveAttribute("aria-pressed", "true");
-    expect(context).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(trigger);
+    const reopenedGrouping = screen.getByRole("group", { name: "Gruppieren nach" });
+    expect(within(reopenedGrouping).getByRole("button", { name: "Kontext" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const reopenedNone = within(reopenedGrouping).getByRole("button", { name: "Keine" });
+    await userEvent.click(reopenedNone);
+    expect(trigger).toHaveAccessibleName(/Gruppierung.*Keine/);
     expect(screen.queryByRole("heading", { name: "Telefon" })).not.toBeInTheDocument();
   });
 });

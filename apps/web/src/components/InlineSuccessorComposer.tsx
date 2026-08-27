@@ -33,7 +33,6 @@ export function InlineSuccessorComposer({
         title: trimmed,
         createdByMemberId: currentMemberId,
         status: "actionable",
-        needsClarification: false,
       });
       bump();
       onCreated();
