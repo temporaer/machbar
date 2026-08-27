@@ -6,6 +6,10 @@ import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
 import { strings, projectStatusLabels, stuckReasonLabels } from "../lib/strings";
 import { formatDate } from "../lib/format";
 import { useIdentity } from "../lib/identity";
+import {
+  classifyProjectListItem,
+  type ProjectListClassification,
+} from "../lib/projectListFilter";
 import { useRefresh } from "../lib/refresh";
 import {
   canClearDriver,
@@ -21,7 +25,7 @@ import { AssignDriverSheet } from "./AssignDriverSheet";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
-import { IconActionButton } from "./IconActionButton";
+import { IconActionButton, IconActionGlyph } from "./IconActionButton";
 import "./ProjectStoryRow.css";
 
 const SWIPE_THRESHOLD = 72;
@@ -30,16 +34,20 @@ const DRAG_SLOP = 8;
 
 /**
  * Semantic accent driving the row's status badge, left-edge stripe, primary
- * swipe background and dedicated primary button: five distinguishable looks
+ * swipe background and dedicated primary button: six distinguishable looks
  * instead of one blanket "green means go" treatment, so an active story that
- * is actually stuck reads as a warning rather than as healthy progress.
+ * is waiting or stuck does not read as actionable progress.
  */
-type StatusAccent = "backlog" | "active" | "stuck" | "completed" | "archived";
+type StatusAccent = "backlog" | "active" | "waiting" | "stuck" | "completed" | "archived";
 
-function statusAccent(story: ProjectWithActions): StatusAccent {
-  if (story.status === "active" && story.stuckReason) return "stuck";
-  return story.status;
-}
+const statusAccentByClassification: Record<ProjectListClassification, StatusAccent> = {
+  "active-actionable": "active",
+  "active-stuck": "stuck",
+  "healthy-waiting": "waiting",
+  backlog: "backlog",
+  completed: "completed",
+  archived: "archived",
+};
 
 export interface ProjectStoryRowProps {
   story: ProjectWithActions;
@@ -118,7 +126,9 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
   const statusLabel = retainedEntry
     ? projectTransitionLabels[retainedEntry.action]
     : projectStatusLabels[story.status];
-  const accent = statusAccent(story);
+  const classification = classifyProjectListItem(story);
+  const accent = statusAccentByClassification[classification];
+  const isHealthyWaiting = classification === "healthy-waiting";
 
   const showPrimaryBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
@@ -289,6 +299,11 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
             </>
           ) : null}
         </Link>
+        {isHealthyWaiting ? (
+          <span className="story-row-waiting-qualifier" role="img" aria-label={strings.waiting}>
+            <IconActionGlyph kind="waiting" />
+          </span>
+        ) : null}
         <button
           type="button"
           className="story-row-kebab"

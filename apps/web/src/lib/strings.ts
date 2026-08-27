@@ -349,6 +349,9 @@ const extra = {
   projectScopeMineOpen: "Meine & offen",
   projectScopeAll: "Alle",
   noMatchingProjects: "Keine Projekte für Suche/Filter.",
+  activeProjectsSection: "Aktiv & festgefahren",
+  waitingProjectsSection: (count: number) => `Wartet (${count})`,
+  backlogProjectsSection: "Später / noch nicht aktiv",
   finishedProjectsSection: (count: number) => `Abgeschlossen & archiviert (${count})`,
 
   // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---

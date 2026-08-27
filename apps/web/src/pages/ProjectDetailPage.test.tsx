@@ -134,20 +134,41 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.queryByText(dragHint)).not.toBeInTheDocument();
   });
 
-  it("uses the shared icon action to enter project note editing", async () => {
+  it("uses distinct icon-only actions for the project header and notes editors", async () => {
     renderWithProviders(<ProjectDetailPage />);
 
     expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();
+    const projectHeader = screen.getByRole("heading", { level: 1, name: "Sommerfest planen" })
+      .closest<HTMLElement>(".page-header")!;
     const notesSection = screen.getByRole("heading", { name: "Notizen" }).closest("section")!;
+    const headerEdit = within(projectHeader).getByRole("button", { name: "Bearbeiten" });
     const notesEdit = within(notesSection).getByRole("button", { name: "Bearbeiten" });
 
-    expect(notesEdit).toHaveClass("icon-action-button");
-    expect(notesEdit).toHaveAttribute("title", "Bearbeiten");
-    expect(notesEdit).not.toHaveTextContent("Bearbeiten");
+    expect(screen.getAllByRole("button", { name: "Bearbeiten" })).toEqual([
+      headerEdit,
+      notesEdit,
+    ]);
+    for (const editButton of [headerEdit, notesEdit]) {
+      expect(editButton).toHaveClass("icon-action-button");
+      expect(editButton).toHaveAttribute("title", "Bearbeiten");
+      expect(editButton).not.toHaveTextContent("Bearbeiten");
+      editButton.focus();
+      expect(editButton).toHaveFocus();
+    }
+
+    await userEvent.click(headerEdit);
+
+    const projectEditor = screen.getByRole("dialog", { name: strings.editProject });
+    expect(within(projectEditor).getByDisplayValue("Sommerfest planen")).toBeInTheDocument();
+    expect(within(notesSection).queryByRole("textbox")).not.toBeInTheDocument();
+
+    await userEvent.click(within(projectEditor).getByRole("button", { name: strings.close }));
 
     await userEvent.click(notesEdit);
 
+    expect(screen.queryByRole("dialog", { name: strings.editProject })).not.toBeInTheDocument();
     expect(within(notesSection).getByRole("textbox")).toBeInTheDocument();
+    expect(within(notesSection).getByRole("textbox")).toHaveFocus();
     expect(within(notesSection).getByRole("button", { name: "Abbrechen" })).toBeInTheDocument();
     expect(within(notesSection).getByRole("button", { name: "Notizen speichern" })).toBeInTheDocument();
   });

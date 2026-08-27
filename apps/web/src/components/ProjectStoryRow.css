@@ -26,7 +26,7 @@
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
   /*
-   * Palette for the five distinguishable "row moods" below — neutral slate
+   * Palette for the six distinguishable "row moods" below — neutral slate
    * for the backlog (deliberately *not* green: nothing has been achieved
    * yet), a muted/desaturated green for completed (calmer than an active
    * story's healthy green) and a plain gray for archived. Scoped locally so
@@ -40,16 +40,20 @@
 
 /*
  * Left-edge accent + status-badge/primary-swipe colors below all key off
- * this single class, computed once in the component (`statusAccent`): the
- * backlog stays neutral, a healthy active story is green, an active-but-
- * stuck one turns to warning amber, completed is a muted/desaturated
- * success tone, and archived is plain gray.
+ * this single class, derived once from the list classification: the
+ * backlog stays neutral, an actionable active story is green, a healthy
+ * waiting story is calm info blue, an active-but-stuck one turns to warning
+ * amber, completed is a muted/desaturated success tone, and archived is
+ * plain gray.
  */
 .story-row-accent-backlog {
   border-left-color: var(--story-row-slate);
 }
 .story-row-accent-active {
   border-left-color: var(--color-success);
+}
+.story-row-accent-waiting {
+  border-left-color: var(--color-info);
 }
 .story-row-accent-stuck {
   border-left-color: var(--color-warning);
@@ -90,6 +94,9 @@
 }
 .story-row-accent-active .story-row-swipe-bg.primary {
   background: var(--color-success);
+}
+.story-row-accent-waiting .story-row-swipe-bg.primary {
+  background: var(--color-info);
 }
 .story-row-accent-stuck .story-row-swipe-bg.primary {
   background: var(--color-warning);
@@ -156,6 +163,10 @@
 .story-row-primary--active {
   border-color: var(--color-success);
   color: var(--color-success);
+}
+.story-row-primary--waiting {
+  border-color: var(--color-info);
+  color: var(--color-info);
 }
 .story-row-primary--stuck {
   border-color: var(--color-warning);
@@ -237,6 +248,10 @@
   background: #dcf3e6;
   color: var(--color-success);
 }
+.story-row-status-badge--waiting {
+  background: color-mix(in srgb, var(--color-info) 12%, var(--color-surface));
+  color: var(--color-info);
+}
 .story-row-status-badge--stuck {
   background: #fdecc8;
   color: var(--color-warning);
@@ -248,6 +263,24 @@
 .story-row-status-badge--archived {
   background: #ececeb;
   color: var(--story-row-gray);
+}
+
+.story-row-waiting-qualifier {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  border-radius: 50%;
+  color: var(--color-info);
+  background: color-mix(in srgb, var(--color-info) 10%, var(--color-surface));
+}
+
+.story-row-waiting-qualifier svg {
+  width: 14px;
+  height: 14px;
 }
 
 .story-row-meta {

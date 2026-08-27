@@ -6,8 +6,8 @@ import { strings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
 import {
+  classifyProjectListItem,
   filterAndSortProjects,
-  isTerminalProjectStatus,
   type ProjectVisibilityScope,
 } from "../lib/projectListFilter";
 import {
@@ -61,39 +61,74 @@ export function ProjectsPage() {
   // A story that just transitioned optimistically must keep rendering during
   // its retention window even if a refetch drops it from this list — but,
   // just like every other row, it still obeys the current search/scope and
-  // must never appear twice alongside its refetched counterpart.
+  // must never appear twice alongside its refetched counterpart. When both
+  // copies exist, the retained story is the effective one for filtering and
+  // section placement as well as for the row itself.
   const retainedOnly = [...actions.retained.values()]
     .map((entry) => entry.story)
     .filter((story) => !listed.some((p) => p.id === story.id));
-  const allProjects = [...listed, ...retainedOnly];
+  const allProjects = [
+    ...listed.map((project) => actions.retained.get(project.id)?.story ?? project),
+    ...retainedOnly,
+  ];
 
   const filteredProjects = filterAndSortProjects(allProjects, {
     query,
     scope,
     currentMemberId,
   });
-  // Active/backlog stories stay primary and always visible; completed and
-  // archived ones are terminal — they no longer need day-to-day attention,
-  // so they fold into one counted section below instead of crowding the
-  // primary list. `filteredProjects` is already sorted, so both slices keep
-  // that same relative order. A story mid-transition is judged by its
-  // optimistic (retained) status rather than the last-fetched one, so e.g.
-  // reopening a completed story moves it back to the primary list right
-  // away instead of leaving it stranded in the terminal fold until the next
-  // reload — matching what `ProjectStoryRow` already renders for it.
-  const effectiveStatusOf = (p: (typeof filteredProjects)[number]) => actions.retained.get(p.id)?.story ?? p;
-  const primaryProjects = filteredProjects.filter((p) => !isTerminalProjectStatus(effectiveStatusOf(p)));
-  const terminalProjects = filteredProjects.filter((p) => isTerminalProjectStatus(effectiveStatusOf(p)));
-  const primaryGroups = groupBy
-    ? groupItemsByTagKind(primaryProjects, groupBy)
-    : primaryProjects.length > 0
-      ? [{ tag: null, items: primaryProjects }]
-      : [];
-  const terminalGroups = groupBy
-    ? groupItemsByTagKind(terminalProjects, groupBy)
-    : terminalProjects.length > 0
-      ? [{ tag: null, items: terminalProjects }]
-      : [];
+  // Keep workflow meaning ahead of tag grouping: actionable and stuck work
+  // stays first, healthy waiting gets its own visible section, backlog comes
+  // after it, and terminal work remains folded at the bottom.
+  const classifications = new Map(
+    filteredProjects.map((project) => [project.id, classifyProjectListItem(project)]),
+  );
+  const activeProjects = filteredProjects.filter((project) => {
+    const classification = classifications.get(project.id);
+    return classification === "active-actionable" || classification === "active-stuck";
+  });
+  const waitingProjects = filteredProjects.filter(
+    (project) => classifications.get(project.id) === "healthy-waiting",
+  );
+  const backlogProjects = filteredProjects.filter(
+    (project) => classifications.get(project.id) === "backlog",
+  );
+  const terminalProjects = filteredProjects.filter((project) => {
+    const classification = classifications.get(project.id);
+    return classification === "completed" || classification === "archived";
+  });
+  const groupsFor = (items: typeof filteredProjects) =>
+    groupBy
+      ? groupItemsByTagKind(items, groupBy)
+      : items.length > 0
+        ? [{ tag: null, items }]
+        : [];
+  const renderGroups = (
+    sectionKey: string,
+    items: typeof filteredProjects,
+    headingLevel: 2 | 3,
+  ) =>
+    groupsFor(items).map((group) =>
+      groupBy ? (
+        <CollapsibleGroup
+          key={`${sectionKey}-${groupBy}-${group.tag?.id ?? "none"}`}
+          title={group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
+          headingLevel={headingLevel}
+        >
+          <ul className="list story-row-list">
+            {group.items.map((project) => (
+              <ProjectStoryRow key={project.id} story={project} actions={actions} variant="card" />
+            ))}
+          </ul>
+        </CollapsibleGroup>
+      ) : (
+        <ul className="list story-row-list" key={`${sectionKey}-all`}>
+          {group.items.map((project) => (
+            <ProjectStoryRow key={project.id} story={project} actions={actions} variant="card" />
+          ))}
+        </ul>
+      ),
+    );
   // A non-empty search that actually matches a terminal story should reveal
   // it automatically instead of hiding a real match behind a fold; with no
   // search (or no terminal matches) the section stays folded by default.
@@ -141,57 +176,46 @@ export function ProjectsPage() {
           <EmptyState message={strings.noMatchingProjects} />
         ) : (
           <>
-            {primaryGroups.map((group) => (
-              groupBy ? (
-                <CollapsibleGroup
-                  key={`${groupBy}-${group.tag?.id ?? "none"}`}
-                  title={group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
-                  headingLevel={2}
-                >
-                  <ul className="list story-row-list">
-                    {group.items.map((p) => (
-                      <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
-                    ))}
-                  </ul>
-                </CollapsibleGroup>
-              ) : (
-              <section className="section" key="all">
-                <ul className="list story-row-list">
-                  {group.items.map((p) => (
-                    <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
-                  ))}
-                </ul>
+            {activeProjects.length > 0 ? (
+              <section
+                className="section"
+                data-project-section="active"
+                aria-label={strings.activeProjectsSection}
+              >
+                {renderGroups("active", activeProjects, 2)}
               </section>
-              )
-            ))}
+            ) : null}
+            {waitingProjects.length > 0 ? (
+              <section
+                className="section"
+                data-project-section="waiting"
+                aria-labelledby="waiting-projects-heading"
+              >
+                <h2 className="section-title" id="waiting-projects-heading">
+                  {strings.waitingProjectsSection(waitingProjects.length)}
+                </h2>
+                {renderGroups("waiting", waitingProjects, 3)}
+              </section>
+            ) : null}
+            {backlogProjects.length > 0 ? (
+              <section
+                className="section"
+                data-project-section="backlog"
+                aria-label={strings.backlogProjectsSection}
+              >
+                {renderGroups("backlog", backlogProjects, 2)}
+              </section>
+            ) : null}
             {terminalProjects.length > 0 ? (
-              <details className="section" open={revealTerminalProjects}>
+              <details
+                className="section"
+                data-project-section="terminal"
+                open={revealTerminalProjects}
+              >
                 <summary className="section-title">
                   {strings.finishedProjectsSection(terminalProjects.length)}
                 </summary>
-                {terminalGroups.map((group) => (
-                  groupBy ? (
-                    <CollapsibleGroup
-                      key={`${groupBy}-${group.tag?.id ?? "none"}`}
-                      title={group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
-                      headingLevel={3}
-                    >
-                      <ul className="list story-row-list">
-                        {group.items.map((p) => (
-                          <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
-                        ))}
-                      </ul>
-                    </CollapsibleGroup>
-                  ) : (
-                  <section key="all">
-                    <ul className="list story-row-list">
-                      {group.items.map((p) => (
-                        <ProjectStoryRow key={p.id} story={p} actions={actions} variant="card" />
-                      ))}
-                    </ul>
-                  </section>
-                  )
-                ))}
+                {renderGroups("terminal", terminalProjects, 3)}
               </details>
             ) : null}
           </>

@@ -1,29 +1,98 @@
 import { describe, expect, it } from "vitest";
-import { filterAndSortProjects } from "./projectListFilter";
-import { makeCriterion, makeProject } from "../test/fixtures";
+import { classifyProjectListItem, filterAndSortProjects } from "./projectListFilter";
+import { makeCriterion, makeProject, makeTask } from "../test/fixtures";
+
+describe("classifyProjectListItem", () => {
+  it("classifies all project-list states", () => {
+    expect(
+      classifyProjectListItem(
+        makeProject({
+          status: "active",
+          nextAction: makeTask(),
+          stuckReason: null,
+        }),
+      ),
+    ).toBe("active-actionable");
+    expect(
+      classifyProjectListItem(
+        makeProject({
+          status: "active",
+          nextAction: null,
+          stuckReason: null,
+        }),
+      ),
+    ).toBe("healthy-waiting");
+    expect(classifyProjectListItem(makeProject({ status: "backlog" }))).toBe("backlog");
+    expect(classifyProjectListItem(makeProject({ status: "completed" }))).toBe("completed");
+    expect(classifyProjectListItem(makeProject({ status: "archived" }))).toBe("archived");
+  });
+
+  it.each([
+    ["blocked active project", "blocked_dependencies", makeTask()],
+    ["active project with no task", "no_next_action", null],
+    ["active project awaiting completion review", "completion_review", null],
+  ] as const)("classifies a %s as stuck rather than waiting", (_label, stuckReason, nextAction) => {
+    const project = makeProject({
+      status: "active",
+      nextAction,
+      stuckReason,
+    });
+
+    expect(classifyProjectListItem(project)).toBe("active-stuck");
+  });
+
+  it("only classifies an active project with no next action and no stuck reason as healthy waiting", () => {
+    const waiting = makeProject({ status: "active", nextAction: null, stuckReason: null });
+    const actionable = makeProject({ status: "active", nextAction: makeTask(), stuckReason: null });
+    const backlogWithoutAction = makeProject({ status: "backlog", nextAction: null, stuckReason: null });
+
+    expect(classifyProjectListItem(waiting)).toBe("healthy-waiting");
+    expect(classifyProjectListItem(actionable)).toBe("active-actionable");
+    expect(classifyProjectListItem(backlogWithoutAction)).toBe("backlog");
+  });
+});
 
 describe("filterAndSortProjects", () => {
-  it("sorts every status into its bucket: active healthy, active stuck, backlog, completed, archived", () => {
+  it("sorts every classification into its deterministic bucket order", () => {
     const archived = makeProject({ id: 1, title: "Archiviert", status: "archived", position: 0 });
     const completed = makeProject({ id: 2, title: "Fertig", status: "completed", position: 0 });
     const backlog = makeProject({ id: 3, title: "Rückstand", status: "backlog", position: 0 });
-    const activeStuck = makeProject({
+    const healthyWaiting = makeProject({
       id: 4,
+      title: "Wartet gesund",
+      status: "active",
+      position: 0,
+      nextAction: null,
+      stuckReason: null,
+    });
+    const activeStuck = makeProject({
+      id: 5,
       title: "Festgefahren",
       status: "active",
       position: 0,
+      nextAction: null,
       stuckReason: "no_next_action",
     });
-    const activeHealthy = makeProject({ id: 5, title: "Läuft", status: "active", position: 0 });
-
-    // Shuffled input — the sort must not depend on input order.
-    const result = filterAndSortProjects([archived, completed, backlog, activeStuck, activeHealthy], {
-      query: "",
-      scope: "all",
-      currentMemberId: null,
+    const activeActionable = makeProject({
+      id: 6,
+      title: "Läuft",
+      status: "active",
+      position: 0,
+      nextAction: makeTask(),
+      stuckReason: null,
     });
 
-    expect(result.map((p) => p.id)).toEqual([5, 4, 3, 2, 1]);
+    // Shuffled input — the sort must not depend on input order.
+    const result = filterAndSortProjects(
+      [healthyWaiting, archived, activeStuck, completed, activeActionable, backlog],
+      {
+        query: "",
+        scope: "all",
+        currentMemberId: null,
+      },
+    );
+
+    expect(result.map((p) => p.id)).toEqual([6, 5, 4, 3, 2, 1]);
   });
 
   it("breaks ties within a bucket by position, then locale title, then id", () => {

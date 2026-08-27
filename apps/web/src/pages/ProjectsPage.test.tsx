@@ -5,7 +5,7 @@ import { renderWithProviders } from "../test/testUtils";
 import { ProjectsPage } from "./ProjectsPage";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { api } from "../lib/api";
-import { makeCriterion, makeMember, makeProject, makeTag } from "../test/fixtures";
+import { makeCriterion, makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
 import "../styles/index.css";
 import "../components/ProjectStoryRow.css";
 
@@ -70,7 +70,15 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
         ownerMemberId: null,
         acceptanceCriteria: [makeCriterion({ id: 1, projectId: 70, checked: true })],
       }),
-      makeProject({ id: 71, title: "Aktive Geschichte", status: "active", ownerMemberId: 1, openCount: 1, doneCount: 1 }),
+      makeProject({
+        id: 71,
+        title: "Aktive Geschichte",
+        status: "active",
+        ownerMemberId: 1,
+        openCount: 1,
+        doneCount: 1,
+        nextAction: makeTask({ id: 710, title: "Nächster Schritt" }),
+      }),
       makeProject({ id: 72, title: "Fertige Geschichte", status: "completed", ownerMemberId: 1 }),
       makeProject({ id: 73, title: "Archivierte Geschichte", status: "archived", ownerMemberId: 1 }),
     ]);
@@ -167,6 +175,40 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     await waitFor(() => expect(mockedApi.activateProject).toHaveBeenCalledWith(70, { ownerMemberId: 1 }));
   });
 
+  it("uses the confirmed stuck classification after activating a backlog project", async () => {
+    const backlog = makeProject({
+      id: 74,
+      title: "Noch ohne nächsten Schritt",
+      status: "backlog",
+      ownerMemberId: 1,
+      nextAction: null,
+      stuckReason: null,
+    });
+    mockedApi.getProjects.mockResolvedValue([backlog]);
+    mockedApi.activateProject.mockResolvedValue(
+      makeProject({
+        ...backlog,
+        status: "active",
+        nextAction: null,
+        stuckReason: "no_next_action",
+      }),
+    );
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Noch ohne nächsten Schritt");
+
+    swipeRow(rowFor(container, "Noch ohne nächsten Schritt"), 100);
+
+    await waitFor(() =>
+      expect(rowFor(container, "Noch ohne nächsten Schritt")).toHaveClass(
+        "story-row-accent-stuck",
+      ),
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Wartet (1)" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("reveals per-row chips with the remaining legal transitions on a left swipe", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Archivierte Geschichte");
@@ -206,8 +248,14 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
         title: "Anruf erledigen",
         status: "active",
         effectiveTags: [phone],
+        nextAction: makeTask({ id: 900, title: "Nummer wählen" }),
       }),
-      makeProject({ id: 92, title: "Ohne Kontext", status: "active" }),
+      makeProject({
+        id: 92,
+        title: "Ohne Kontext",
+        status: "active",
+        nextAction: makeTask({ id: 920, title: "Nächster Schritt" }),
+      }),
     ]);
 
     renderWithProviders(<ProjectsPage />);
@@ -234,7 +282,13 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     window.localStorage.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Theo" })]);
     mockedApi.getProjects.mockResolvedValue([
-      makeProject({ id: 1, title: "Miras aktive Geschichte", status: "active", ownerMemberId: 1 }),
+      makeProject({
+        id: 1,
+        title: "Miras aktive Geschichte",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: makeTask({ id: 10, title: "Nächster Schritt" }),
+      }),
       makeProject({
         id: 2,
         title: "Festgefahrene Geschichte",
@@ -249,7 +303,13 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
         ownerMemberId: null,
         acceptanceCriteria: [makeCriterion({ id: 30, projectId: 3, text: "Fliesen sind café-farben lackiert" })],
       }),
-      makeProject({ id: 4, title: "Theos Geschichte", status: "active", ownerMemberId: 2 }),
+      makeProject({
+        id: 4,
+        title: "Theos Geschichte",
+        status: "active",
+        ownerMemberId: 2,
+        nextAction: makeTask({ id: 40, title: "Nächster Schritt" }),
+      }),
     ]);
   });
 
@@ -373,6 +433,179 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
   });
 });
 
+describe("ProjectsPage – workflow sections", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+  });
+
+  it("renders active/stuck, counted waiting, backlog, and terminal sections in workflow order", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 1, title: "Backlog", status: "backlog", ownerMemberId: null }),
+      makeProject({
+        id: 2,
+        title: "Wartet gesund B",
+        status: "active",
+        ownerMemberId: 1,
+        position: 2,
+        nextAction: null,
+        stuckReason: null,
+      }),
+      makeProject({ id: 3, title: "Archiv", status: "archived", ownerMemberId: 1 }),
+      makeProject({
+        id: 4,
+        title: "Machbar",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: makeTask({ id: 40, title: "Jetzt tun" }),
+        stuckReason: null,
+      }),
+      makeProject({
+        id: 5,
+        title: "Festgefahren",
+        status: "active",
+        ownerMemberId: 1,
+        stuckReason: "no_next_action",
+        nextAction: null,
+      }),
+      makeProject({
+        id: 6,
+        title: "Wartet gesund A",
+        status: "active",
+        ownerMemberId: 1,
+        position: 1,
+        nextAction: null,
+        stuckReason: null,
+      }),
+    ]);
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Machbar");
+
+    expect(
+      [...container.querySelectorAll<HTMLElement>("[data-project-section]")]
+        .map((section) => section.dataset.projectSection),
+    ).toEqual(["active", "waiting", "backlog", "terminal"]);
+    expect(screen.getByRole("region", { name: "Aktiv & festgefahren" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Wartet (2)" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Später / noch nicht aktiv" })).toBeInTheDocument();
+    expect(rowFor(container, "Machbar").closest("[data-project-section]")).toHaveAttribute(
+      "data-project-section",
+      "active",
+    );
+    expect(rowFor(container, "Festgefahren").closest("[data-project-section]")).toHaveAttribute(
+      "data-project-section",
+      "active",
+    );
+    expect(rowFor(container, "Wartet gesund A").closest("[data-project-section]")).toHaveAttribute(
+      "data-project-section",
+      "waiting",
+    );
+    expect(rowFor(container, "Backlog").closest("[data-project-section]")).toHaveAttribute(
+      "data-project-section",
+      "backlog",
+    );
+  });
+
+  it("groups by tag separately inside active, waiting, and backlog sections", async () => {
+    const phone = makeTag({ id: 91, name: "Telefon", kind: "context" });
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({
+        id: 1,
+        title: "Aktiver Anruf",
+        status: "active",
+        ownerMemberId: 1,
+        effectiveTags: [phone],
+        nextAction: makeTask({ id: 10, title: "Anrufen" }),
+      }),
+      makeProject({
+        id: 2,
+        title: "Wartet auf Rückruf",
+        status: "active",
+        ownerMemberId: 1,
+        effectiveTags: [phone],
+        nextAction: null,
+        stuckReason: null,
+      }),
+      makeProject({
+        id: 3,
+        title: "Später anrufen",
+        status: "backlog",
+        ownerMemberId: null,
+        effectiveTags: [phone],
+      }),
+      makeProject({
+        id: 4,
+        title: "Anruf abgeschlossen",
+        status: "completed",
+        ownerMemberId: 1,
+        effectiveTags: [phone],
+      }),
+    ]);
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Aktiver Anruf");
+    fireEvent.click(within(screen.getByRole("group", { name: "Gruppieren nach" }))
+      .getByRole("button", { name: "Kontext" }));
+
+    expect(screen.getAllByRole("heading", { name: "Telefon" })).toHaveLength(4);
+    for (const sectionName of ["active", "waiting", "backlog", "terminal"]) {
+      const section = container.querySelector<HTMLElement>(
+        `[data-project-section="${sectionName}"]`,
+      );
+      expect(section).not.toBeNull();
+      expect(within(section!).getByRole("heading", { name: "Telefon" })).toBeInTheDocument();
+    }
+  });
+
+  it("filters before partitioning and updates the waiting count from search results", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({
+        id: 1,
+        title: "Aktives Dach",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: makeTask({ id: 10, title: "Dach prüfen" }),
+      }),
+      makeProject({
+        id: 2,
+        title: "Wartet auf Angebot",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: null,
+        stuckReason: null,
+      }),
+      makeProject({
+        id: 3,
+        title: "Wartet auf Freigabe",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: null,
+        stuckReason: null,
+      }),
+    ]);
+
+    const { container } = renderWithProviders(<ProjectsPage />);
+    await screen.findByRole("heading", { name: "Wartet (2)" });
+
+    fireEvent.change(screen.getByLabelText("Suchen"), { target: { value: "Freigabe" } });
+
+    expect(await screen.findByRole("heading", { name: "Wartet (1)" })).toBeInTheDocument();
+    expect(screen.getByText("Wartet auf Freigabe")).toBeInTheDocument();
+    expect(screen.queryByText("Wartet auf Angebot")).not.toBeInTheDocument();
+    expect(container.querySelector('[data-project-section="active"]')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Suchen"), { target: { value: "Dach" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Aktives Dach")).toBeInTheDocument();
+      expect(container.querySelector('[data-project-section="waiting"]')).toBeNull();
+    });
+  });
+});
+
 describe("ProjectsPage – completed/archived stories fold into one counted section", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -383,7 +616,13 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
 
   it("keeps active/backlog stories primary and folds completed+archived into one closed, counted section", async () => {
     mockedApi.getProjects.mockResolvedValue([
-      makeProject({ id: 1, title: "Aktive Geschichte", status: "active", ownerMemberId: 1 }),
+      makeProject({
+        id: 1,
+        title: "Aktive Geschichte",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: makeTask({ id: 10, title: "Nächster Schritt" }),
+      }),
       makeProject({ id: 2, title: "Backlog-Geschichte", status: "backlog", ownerMemberId: null }),
       makeProject({ id: 3, title: "Fertige Geschichte", status: "completed", ownerMemberId: 1 }),
       makeProject({ id: 4, title: "Archivierte Geschichte", status: "archived", ownerMemberId: 1 }),
@@ -419,7 +658,13 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
 
   it("auto-opens the folded section when a non-empty search matches a terminal story", async () => {
     mockedApi.getProjects.mockResolvedValue([
-      makeProject({ id: 1, title: "Aktive Geschichte", status: "active", ownerMemberId: 1 }),
+      makeProject({
+        id: 1,
+        title: "Aktive Geschichte",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: makeTask({ id: 10, title: "Nächster Schritt" }),
+      }),
       makeProject({ id: 3, title: "Küche gestrichen", status: "completed", ownerMemberId: 1 }),
     ]);
     renderWithProviders(<ProjectsPage />);
@@ -433,7 +678,13 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
 
   it("folds the section shut again once a revealing search is cleared", async () => {
     mockedApi.getProjects.mockResolvedValue([
-      makeProject({ id: 1, title: "Aktive Geschichte", status: "active", ownerMemberId: 1 }),
+      makeProject({
+        id: 1,
+        title: "Aktive Geschichte",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: makeTask({ id: 10, title: "Nächster Schritt" }),
+      }),
       makeProject({ id: 3, title: "Küche gestrichen", status: "completed", ownerMemberId: 1 }),
     ]);
     renderWithProviders(<ProjectsPage />);
@@ -454,7 +705,13 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
 
   it("moves a story into the folded terminal section once it optimistically completes", async () => {
     mockedApi.getProjects.mockResolvedValue([
-      makeProject({ id: 1, title: "Aktive Geschichte", status: "active", ownerMemberId: 1 }),
+      makeProject({
+        id: 1,
+        title: "Aktive Geschichte",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: makeTask({ id: 10, title: "Nächster Schritt" }),
+      }),
     ]);
     mockedApi.completeProject.mockResolvedValue(
       makeProject({ id: 1, title: "Aktive Geschichte", status: "completed", ownerMemberId: 1 }),
@@ -471,5 +728,42 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     expect(mockedApi.completeProject).toHaveBeenCalledWith(1);
     expect(screen.getByText("Abgeschlossen & archiviert (1)")).toBeInTheDocument();
     expect(rowFor(container, "Aktive Geschichte").closest("details")).not.toBeNull();
+  });
+
+  it("moves a retained reopened story from terminal into the waiting section immediately", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({
+        id: 1,
+        title: "Wieder zu prüfende Geschichte",
+        status: "completed",
+        ownerMemberId: 1,
+        nextAction: null,
+        stuckReason: null,
+      }),
+    ]);
+    mockedApi.reopenProject.mockResolvedValue(
+      makeProject({
+        id: 1,
+        title: "Wieder zu prüfende Geschichte",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: null,
+        stuckReason: null,
+      }),
+    );
+    const { container } = renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Abgeschlossen & archiviert (1)");
+
+    swipeRow(rowFor(container, "Wieder zu prüfende Geschichte"), 100);
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(mockedApi.reopenProject).toHaveBeenCalledWith(1);
+    expect(screen.getByRole("heading", { name: "Wartet (1)" })).toBeInTheDocument();
+    expect(screen.queryByText("Abgeschlossen & archiviert (1)")).not.toBeInTheDocument();
+    expect(
+      rowFor(container, "Wieder zu prüfende Geschichte").closest("[data-project-section]"),
+    ).toHaveAttribute("data-project-section", "waiting");
   });
 });

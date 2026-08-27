@@ -812,7 +812,13 @@ describe("ProjectStoryRow – semantic status accents", () => {
     ["completed", "completed"],
     ["archived", "archived"],
   ])("gives a %s story its own distinct accent classes (not the same as any other status)", async (status, accent) => {
-    const story = makeProject({ id: 80, title: `Akzent ${status}`, status, ownerMemberId: 1 });
+    const story = makeProject({
+      id: 80,
+      title: `Akzent ${status}`,
+      status,
+      ownerMemberId: 1,
+      ...(status === "active" ? { nextAction: makeTask() } : {}),
+    });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText(`Akzent ${status}`);
 
@@ -821,19 +827,65 @@ describe("ProjectStoryRow – semantic status accents", () => {
     expect(container.querySelector(".story-row-primary")).toHaveClass(`story-row-primary--${accent}`);
   });
 
-  it("gives an active story a healthy green accent, distinct from an active-but-stuck one", async () => {
-    const healthy = makeProject({ id: 81, title: "Gesund aktiv", status: "active", ownerMemberId: 1 });
-    const { container: healthyContainer, unmount } = renderWithProviders(<Harness story={healthy} />);
-    await screen.findByText("Gesund aktiv");
-    expect(healthyContainer.querySelector(".story-row")).toHaveClass("story-row-accent-active");
-    expect(healthyContainer.querySelector(".story-row")).not.toHaveClass("story-row-accent-stuck");
+  it("marks healthy waiting as non-interactive info while keeping the active workflow actions unchanged", async () => {
+    const waiting = makeProject({
+      id: 81,
+      title: "Wartet gesund",
+      status: "active",
+      ownerMemberId: 1,
+      nextAction: null,
+      stuckReason: null,
+    });
+    mockedApi.completeProject.mockResolvedValue({ ...waiting, status: "completed" });
+    const { container } = renderWithProviders(<Harness story={waiting} />);
+    await screen.findByText("Wartet gesund");
+
+    const qualifier = screen.getByRole("img", { name: "Wartet" });
+    expect(qualifier.tagName).toBe("SPAN");
+    expect(qualifier.closest("button, a")).toBeNull();
+    expect(qualifier).not.toHaveAttribute("tabindex");
+    expect(container.querySelector(".story-row")).toHaveClass("story-row-accent-waiting");
+    expect(container.querySelector(".story-row-status-badge")).toHaveClass("story-row-status-badge--waiting");
+    expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
+
+    const primary = screen.getByRole("button", { name: "Abschließen" });
+    expect(primary).toHaveClass("story-row-primary--waiting");
+    fireEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
+    expect(within(chips).getByRole("button", { name: "Auf später verschieben" })).toBeEnabled();
+    expect(within(chips).getByRole("button", { name: "Archivieren" })).toBeEnabled();
+    expect(within(chips).queryByRole("button", { name: "Abschließen" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    swipe(container, 100);
+    await act(async () => {
+      await flushMicrotasks();
+    });
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(81);
+  });
+
+  it("keeps actionable active green and active stuck warning-colored, without the waiting marker", async () => {
+    const actionable = makeProject({
+      id: 82,
+      title: "Direkt aktiv",
+      status: "active",
+      ownerMemberId: 1,
+      nextAction: makeTask(),
+      stuckReason: null,
+    });
+    const { container: actionableContainer, unmount } = renderWithProviders(<Harness story={actionable} />);
+    await screen.findByText("Direkt aktiv");
+    expect(actionableContainer.querySelector(".story-row")).toHaveClass("story-row-accent-active");
+    expect(actionableContainer.querySelector(".story-row")).not.toHaveClass("story-row-accent-waiting");
+    expect(screen.queryByRole("img", { name: "Wartet" })).not.toBeInTheDocument();
     unmount();
 
     const stuck = makeProject({
-      id: 82,
+      id: 83,
       title: "Festgefahren aktiv",
       status: "active",
       ownerMemberId: 1,
+      nextAction: null,
       stuckReason: "no_next_action",
     });
     const { container: stuckContainer } = renderWithProviders(<Harness story={stuck} />);
@@ -845,10 +897,11 @@ describe("ProjectStoryRow – semantic status accents", () => {
     expect(stuckContainer.querySelector(".story-row")).not.toHaveClass("story-row-accent-active");
     expect(stuckContainer.querySelector(".story-row-status-badge")).toHaveClass("story-row-status-badge--stuck");
     expect(stuckContainer.querySelector(".story-row-primary")).toHaveClass("story-row-primary--stuck");
+    expect(screen.queryByRole("img", { name: "Wartet" })).not.toBeInTheDocument();
   });
 
   it("never gives the backlog accent the same green used for a healthy active story", async () => {
-    const backlog = makeProject({ id: 83, title: "Neu im Backlog", status: "backlog" });
+    const backlog = makeProject({ id: 84, title: "Neu im Backlog", status: "backlog" });
     const { container } = renderWithProviders(<Harness story={backlog} />);
     await screen.findByText("Neu im Backlog");
 
@@ -857,7 +910,13 @@ describe("ProjectStoryRow – semantic status accents", () => {
     expect(getComputedStyle(badge).color).not.toBe(getComputedStyle(document.createElement("div")).color);
     // The backlog badge must not reuse the exact green tone reserved for an
     // active/healthy story.
-    const activeProbe = makeProject({ id: 84, title: "Aktiv-Probe", status: "active", ownerMemberId: 1 });
+    const activeProbe = makeProject({
+      id: 85,
+      title: "Aktiv-Probe",
+      status: "active",
+      ownerMemberId: 1,
+      nextAction: makeTask(),
+    });
     const { container: activeContainer } = renderWithProviders(<Harness story={activeProbe} />);
     await screen.findByText("Aktiv-Probe");
     const activeBadge = activeContainer.querySelector(".story-row-status-badge") as HTMLElement;

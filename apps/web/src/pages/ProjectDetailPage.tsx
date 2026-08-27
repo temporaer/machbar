@@ -160,9 +160,11 @@ export function ProjectDetailPage() {
                   text={serializeProjectForShare(project)}
                   url={buildProjectShareUrl(project.id)}
                 />
-                <button type="button" className="btn btn-sm" onClick={() => setEditing(true)}>
-                  {strings.edit}
-                </button>
+                <IconActionButton
+                  kind="edit"
+                  label={strings.edit}
+                  onClick={() => setEditing(true)}
+                />
               </div>
             </div>
             <div className="row text-muted" style={{ fontSize: "0.8rem" }}>

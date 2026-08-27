@@ -143,7 +143,11 @@ export function useProjectWorkflowActions() {
       clearError(story.id);
       retain({ story: optimistic, action });
       try {
-        await call(story.id, action, ownerMemberId);
+        const confirmed = await call(story.id, action, ownerMemberId);
+        // The response includes freshly computed next-action and stuck state.
+        // Replace the status-only optimistic shape before list classification
+        // can mistake a newly stuck project for a healthy parked one.
+        retain({ story: confirmed, action });
         // No immediate `bump()` — see the hook comment and
         // `useTaskActions.runTransition`: `retain`'s own timer bumps exactly
         // once, when the retention window has fully elapsed.

@@ -11,6 +11,14 @@ export interface ProjectListFilterOptions {
   currentMemberId: number | null;
 }
 
+export type ProjectListClassification =
+  | "active-actionable"
+  | "active-stuck"
+  | "healthy-waiting"
+  | "backlog"
+  | "completed"
+  | "archived";
+
 /** Strips diacritics and lower-cases so "Cafe" matches "Café" and vice versa. */
 function foldForSearch(value: string): string {
   return value
@@ -39,13 +47,34 @@ function matchesScope(project: ProjectWithActions, scope: ProjectVisibilityScope
   return project.ownerMemberId === null || project.ownerMemberId === currentMemberId;
 }
 
-/** Sort bucket a story falls into, in display order. */
-function bucketOf(project: ProjectWithActions): number {
-  if (project.status === "active") return project.stuckReason ? 1 : 0;
-  if (project.status === "backlog") return 2;
-  if (project.status === "completed") return 3;
-  return 4; // archived
+/**
+ * Classifies a project for the list without changing its persisted workflow
+ * status. Healthy waiting is the narrow active state with neither a next
+ * action nor a stuck reason; any active stuck reason takes precedence.
+ */
+export function classifyProjectListItem(project: ProjectWithActions): ProjectListClassification {
+  if (
+    project.status === "active" &&
+    project.nextAction == null &&
+    project.stuckReason == null
+  ) {
+    return "healthy-waiting";
+  }
+  if (project.status === "active") {
+    if (project.stuckReason != null) return "active-stuck";
+    return "active-actionable";
+  }
+  return project.status;
 }
+
+const projectListClassificationOrder: Record<ProjectListClassification, number> = {
+  "active-actionable": 0,
+  "active-stuck": 1,
+  "healthy-waiting": 2,
+  backlog: 3,
+  completed: 4,
+  archived: 5,
+};
 
 /**
  * A story is "terminal" once it has left the active workflow for good:
@@ -62,10 +91,10 @@ export function isTerminalProjectStatus(project: ProjectWithActions): boolean {
  * Projekte tab's story list. Filtering always runs before sorting so a
  * bucket never contains a story the current search/scope would hide.
  *
- * Sort buckets, in order: active & healthy, active & stuck (`stuckReason`
- * set), backlog, completed, archived. Within a bucket, ties break on the
- * backend-assigned `position`, then the locale-aware title, then the id —
- * so the order stays stable and reproducible across reloads/retentions.
+ * Sort buckets, in order: active & actionable, active & stuck, healthy
+ * waiting, backlog, completed, archived. Within a bucket, ties break on the
+ * backend-assigned `position`, then the locale-aware title, then the id, so
+ * the order stays stable and reproducible across reloads/retentions.
  */
 export function filterAndSortProjects(
   projects: ProjectWithActions[],
@@ -78,7 +107,9 @@ export function filterAndSortProjects(
       matchesQuery(p, foldedQuery),
   );
   return filtered.sort((a, b) => {
-    const bucketDiff = bucketOf(a) - bucketOf(b);
+    const bucketDiff =
+      projectListClassificationOrder[classifyProjectListItem(a)] -
+      projectListClassificationOrder[classifyProjectListItem(b)];
     if (bucketDiff !== 0) return bucketDiff;
     if (a.position !== b.position) return a.position - b.position;
     const titleDiff = a.title.localeCompare(b.title, "de");
