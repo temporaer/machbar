@@ -52,7 +52,7 @@ export function WaitingGroupList({
     <>
       {groupBy && tagGroups ? (
         tagGroups.length > 0 ? (
-          tagGroups.map((group, index) => (
+          tagGroups.map((group) => (
             <CollapsibleGroup
               key={group.tag?.id ?? "none"}
               title={group.tag?.name ?? strings.withoutTagKindLabels[groupBy]}
@@ -64,7 +64,7 @@ export function WaitingGroupList({
                 organizable={false}
                 waitingInteraction={{ onFollowUp: setFollowUpTask }}
                 showRevisitDate
-                showSwipeHint={index === 0}
+                showSwipeHint={false}
               />
             </CollapsibleGroup>
           ))
@@ -75,6 +75,7 @@ export function WaitingGroupList({
             organizable={false}
             waitingInteraction={{ onFollowUp: setFollowUpTask }}
             showRevisitDate
+            showSwipeHint={false}
           />
         )
       ) : (
@@ -84,6 +85,7 @@ export function WaitingGroupList({
           organizable={false}
           waitingInteraction={{ onFollowUp: setFollowUpTask }}
           showRevisitDate
+          showSwipeHint={false}
         />
       )}
       {followUpTask ? (

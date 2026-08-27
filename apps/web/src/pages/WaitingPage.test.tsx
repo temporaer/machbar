@@ -3,6 +3,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { WaitingPage } from "./WaitingPage";
 import { api } from "../lib/api";
+import { strings } from "../lib/strings";
 import { renderWithProviders } from "../test/testUtils";
 import { makeMember, makeTag, makeTask, makeWaitingGroup } from "../test/fixtures";
 import "../styles/index.css";
@@ -39,7 +40,9 @@ describe("WaitingPage grouping controls", () => {
     await screen.findByText("Nichts wartet gerade.");
 
     const trigger = screen.getByRole("button", { name: /Gruppierung.*Keine/ });
-    expect(trigger.closest(".projects-controls")).not.toBeNull();
+    const controls = trigger.closest(".projects-controls") as HTMLElement;
+    expect(controls).not.toBeNull();
+    expect(getComputedStyle(controls).marginBottom).toBe("12px");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("group", { name: "Gruppieren nach" })).not.toBeInTheDocument();
 
@@ -56,6 +59,36 @@ describe("WaitingPage grouping controls", () => {
     ]);
     expect(buttons.every((button) => button.classList.contains("list-option-button"))).toBe(true);
     expect(buttons[0]).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("hides the waiting interaction instructions behind the established page info control", async () => {
+    mockedApi.getWaiting.mockResolvedValue([
+      makeWaitingGroup({
+        tasks: [
+          makeTask({
+            id: 93,
+            title: "Freigabe abwarten",
+            status: "waiting",
+          }),
+        ],
+      }),
+    ]);
+
+    renderWithProviders(<WaitingPage />);
+    await screen.findByText("Freigabe abwarten");
+
+    const hint = strings.taskGestureHint(strings.makeActionable);
+    const infoButton = screen.getByRole("button", {
+      name: "Hinweise zu dieser Seite anzeigen",
+    });
+    expect(infoButton).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText(hint)).not.toBeInTheDocument();
+
+    await userEvent.click(infoButton);
+
+    expect(infoButton).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("complementary", { name: "Hinweise" })).toBeInTheDocument();
+    expect(screen.getByText(hint)).toBeInTheDocument();
   });
 
   it("changes the waiting list grouping and keeps selection state accessible", async () => {

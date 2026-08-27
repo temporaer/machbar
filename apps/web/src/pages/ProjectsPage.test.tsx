@@ -263,6 +263,8 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
 
     const filterTrigger = screen.getByRole("button", { name: /Filter.*Meine & offen/ });
     const groupingTrigger = screen.getByRole("button", { name: /Gruppierung.*Keine/ });
+    const controls = filterTrigger.closest(".projects-controls") as HTMLElement;
+    expect(getComputedStyle(controls).marginBottom).toBe("12px");
     expect(filterTrigger.closest(".project-list-options")).toBe(
       groupingTrigger.closest(".project-list-options"),
     );

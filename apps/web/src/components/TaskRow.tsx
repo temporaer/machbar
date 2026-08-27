@@ -117,6 +117,7 @@ export function TaskRow({
   // stable element in this task's own row ("vicinity" of the task/new
   // child), which also re-opens the chip strip if pressed again.
   const kebabButtonRef = useRef<HTMLButtonElement>(null);
+  const mainButtonRef = useRef<HTMLButtonElement>(null);
   const dragState = useRef<{ startX: number; dragging: boolean; pointerId: number | null; captured: boolean }>({
     startX: 0,
     dragging: false,
@@ -331,6 +332,16 @@ export function TaskRow({
     }
   };
 
+  const closeChips = () => {
+    setChipsOpen(false);
+    const kebab = kebabButtonRef.current;
+    if (kebab && getComputedStyle(kebab).display !== "none") {
+      kebab.focus();
+    } else {
+      mainButtonRef.current?.focus();
+    }
+  };
+
   const openChildComposer = () => {
     setChipsOpen(false);
     setChildComposerOpen(true);
@@ -489,6 +500,7 @@ export function TaskRow({
           <button
             type="button"
             className="task-row-main"
+            ref={mainButtonRef}
             aria-label={task.title}
             onClick={() => onOpenDetail(task.id)}
           >
@@ -600,6 +612,7 @@ export function TaskRow({
             <IconActionButton kind="followUp" label={strings.followUp} onClick={followUpChip} />
           ) : null}
           <IconActionButton kind="more" label={strings.more} onClick={() => onOpenDetail(task.id)} />
+          <IconActionButton kind="close" label={strings.close} onClick={closeChips} />
         </div>
       ) : null}
 

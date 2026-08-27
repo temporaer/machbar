@@ -11,6 +11,7 @@ import { REFINEMENT_RETENTION_MS } from "../lib/useRefinementActions";
 import { makeTag, makeTask } from "../test/fixtures";
 import { RefinementPage } from "./RefinementPage";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import "../styles/index.css";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -217,7 +218,11 @@ describe("RefinementPage", () => {
     renderWithProviders(<RefinementPage />);
     await screen.findByText("Mit Bereich");
 
-    await userEvent.click(screen.getByRole("button", { name: /Gruppierung.*Keine/ }));
+    const groupingTrigger = screen.getByRole("button", { name: /Gruppierung.*Keine/ });
+    expect(
+      getComputedStyle(groupingTrigger.closest(".projects-controls") as HTMLElement).marginBottom,
+    ).toBe("12px");
+    await userEvent.click(groupingTrigger);
     const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
     expect(screen.queryByRole("button", { name: "Küche" })).not.toBeInTheDocument();
     await userEvent.click(within(grouping).getByRole("button", { name: "Bereich" }));

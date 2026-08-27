@@ -198,6 +198,43 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     expect(getComputedStyle(cancelBg).opacity).toBe("0");
   });
 
+  it("offers an explicit keyboard-accessible close action that resets the reveal without acting", async () => {
+    const task = makeTask({ id: 10, title: "Aktionen verwerfen", status: "actionable" });
+    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Aktionen verwerfen");
+
+    swipe(container, -100);
+    const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
+    const close = screen.getByRole("button", { name: "Schließen" });
+    close.focus();
+
+    await userEvent.keyboard("{Enter}");
+
+    expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
+    expect(kebab).toHaveFocus();
+    expect(kebab).toHaveAttribute("aria-expanded", "false");
+    expect(getComputedStyle(container.querySelector(".task-row-swipe-bg.cancel") as HTMLElement).opacity).toBe("0");
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
+    expect(mockedApi.cancelTask).not.toHaveBeenCalled();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("returns focus to the visible task control when the mobile layout hides the kebab", async () => {
+    const task = makeTask({ id: 11, title: "Mobile Aktionen schließen", status: "actionable" });
+    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Mobile Aktionen schließen");
+
+    swipe(container, -100);
+    const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
+    kebab.style.display = "none";
+    const close = screen.getByRole("button", { name: "Schließen" });
+    close.focus();
+
+    await userEvent.keyboard("{Enter}");
+
+    expect(screen.getByRole("button", { name: "Mobile Aktionen schließen" })).toHaveFocus();
+  });
+
   it("does not leak a visible red background onto sibling rows that were not swiped", async () => {
     const taskA = makeTask({ id: 8, title: "Aufgabe A", status: "actionable" });
     const taskB = makeTask({ id: 9, title: "Aufgabe B", status: "actionable" });

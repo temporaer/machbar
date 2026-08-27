@@ -5,6 +5,7 @@ import { strings } from "../lib/strings";
 import { LoadingState, ErrorState } from "../components/AsyncStates";
 import { WaitingGroupList } from "../components/WaitingGroupList";
 import { TagGroupingControl } from "../components/TagGroupingControl";
+import { PageHeader } from "../components/PageHeader";
 import type { GroupableTagKind } from "../lib/tagGrouping";
 
 export function WaitingPage() {
@@ -15,9 +16,15 @@ export function WaitingPage() {
   );
   return (
     <div className="waiting-page">
-      <div className="page-header">
-        <h1>{strings.waiting}</h1>
-      </div>
+      <PageHeader
+        title={strings.waiting}
+        hints={[
+          {
+            label: strings.taskGestures,
+            text: strings.taskGestureHint(strings.makeActionable),
+          },
+        ]}
+      />
       <div className="projects-controls">
         <TagGroupingControl value={groupBy} onChange={setGroupBy} />
       </div>

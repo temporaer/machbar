@@ -1687,6 +1687,10 @@ a {
   width: 100%;
 }
 
+.projects-controls {
+  margin-bottom: 12px;
+}
+
 .project-list-options-panel {
   grid-column: 1 / -1;
 }

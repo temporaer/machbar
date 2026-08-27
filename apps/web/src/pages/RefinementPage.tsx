@@ -196,7 +196,9 @@ export function RefinementPage() {
           },
         ]}
       />
-      <TagGroupingControl value={groupBy} onChange={setGroupBy} />
+      <div className="projects-controls">
+        <TagGroupingControl value={groupBy} onChange={setGroupBy} />
+      </div>
 
       {loading ? <LoadingState /> : null}
       {error ? (
