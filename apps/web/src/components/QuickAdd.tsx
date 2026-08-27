@@ -1,12 +1,12 @@
 import { useState } from "react";
-import type { ProjectWithActions, CreateTaskInput } from "../lib/api";
-import { useIdentity } from "../lib/identity";
+import type { ProjectWithActions } from "../lib/api";
 import { useRefresh } from "../lib/refresh";
 import { api } from "../lib/api";
 import { strings } from "../lib/strings";
 import { ownerAssignmentPatch } from "./TaskQuickActionSheet";
 import { AssignOwnerSheet } from "./AssignOwnerSheet";
 import { BottomSheet } from "./BottomSheet";
+import { CaptureForm } from "./CaptureForm";
 import { CaptureProjectBreakdownSheet } from "./CaptureProjectBreakdownSheet";
 import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
 
@@ -18,8 +18,6 @@ import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
  */
 export function QuickAdd({ projectId, parentTaskId }: { projectId?: number | null; parentTaskId?: number | null }) {
   const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createdTask, setCreatedTask] = useState<Awaited<ReturnType<typeof api.createTask>> | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -30,68 +28,11 @@ export function QuickAdd({ projectId, parentTaskId }: { projectId?: number | nul
   const [assigning, setAssigning] = useState(false);
   const [createdProject, setCreatedProject] = useState<ProjectWithActions | null>(null);
   const [captureNotice, setCaptureNotice] = useState<string | null>(null);
-  const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
 
   const close = () => {
     setOpen(false);
-    setTitle("");
     setError(null);
-  };
-
-  const taskInput = (needsClarification: boolean): CreateTaskInput => ({
-    title: title.trim(),
-    projectId: projectId ?? null,
-    parentTaskId: parentTaskId ?? null,
-    createdByMemberId: currentMemberId,
-    status: "actionable",
-    needsClarification,
-    dueDate: null,
-    scheduledDate: null,
-    ...(currentMemberId === null ? {} : ownerAssignmentPatch(currentMemberId)),
-  });
-
-  const createTask = async (needsClarification: boolean) => {
-    const trimmed = title.trim();
-    if (!trimmed || saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const task = await api.createTask(taskInput(needsClarification));
-      bump();
-      close();
-      if (needsClarification) {
-        setCaptureNotice(strings.filedInInbox);
-        return;
-      }
-      setCaptureNotice(null);
-      setCreatedTask(task);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const createProject = async () => {
-    const trimmed = title.trim();
-    if (!trimmed || saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const project = await api.createProject({
-        title: trimmed,
-        status: currentMemberId === null ? "backlog" : "active",
-        ownerMemberId: currentMemberId,
-      });
-      bump();
-      close();
-      setCreatedProject(project);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSaving(false);
-    }
   };
 
   const loadProjects = () => {
@@ -159,41 +100,23 @@ export function QuickAdd({ projectId, parentTaskId }: { projectId?: number | nul
       </button>
       {open ? (
         <BottomSheet title={strings.quickAdd} onClose={close} labelledBy="quick-add-title">
-          <form
-            className="stack"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void createTask(true);
+          <CaptureForm
+            projectId={projectId ?? null}
+            parentTaskId={parentTaskId ?? null}
+            onCancel={close}
+            onCaptured={(result) => {
+              bump();
+              close();
+              if (result.kind === "project") {
+                setCreatedProject(result.project);
+              } else if (result.needsClarification) {
+                setCaptureNotice(strings.filedInInbox);
+              } else {
+                setCaptureNotice(null);
+                setCreatedTask(result.task);
+              }
             }}
-          >
-            <div className="field">
-              <label htmlFor="quick-add-input">{strings.titleEnough}</label>
-              <input
-                id="quick-add-input"
-                autoFocus
-                value={title}
-                placeholder={strings.quickAddPlaceholder}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </div>
-            {error ? <p className="capture-error" role="alert">{error}</p> : null}
-            <div className="capture-shape-actions">
-              <button type="button" className="btn" onClick={close}>
-                {strings.cancel}
-              </button>
-              <button type="submit" className="btn" disabled={saving || !title.trim()}>
-                {strings.clarifyLater}
-              </button>
-              <button type="button" className="btn btn-primary capture-shape-action" aria-label={strings.captureMachbar} disabled={saving || !title.trim()} onClick={() => void createTask(false)}>
-                <span>{strings.captureMachbar}</span>
-                <small>{strings.captureMachbarHint}</small>
-              </button>
-              <button type="button" className="btn btn-primary capture-shape-action" aria-label={strings.captureProject} disabled={saving || !title.trim()} onClick={() => void createProject()}>
-                <span>{strings.captureProject}</span>
-                <small>{strings.captureProjectHint}</small>
-              </button>
-            </div>
-          </form>
+          />
         </BottomSheet>
       ) : null}
       {createdTask ? (

@@ -41,20 +41,21 @@ function isUnsafeMethod(method: string): boolean {
   return !["GET", "HEAD", "OPTIONS"].includes(method);
 }
 
-export function validateReturnTo(input: string | undefined): string {
-  if (!input) return "/#/heute";
-  if (!input.startsWith("/#/") || /[\r\n]/.test(input)) {
+export function validateReturnTo(input: string | undefined, basePath: string): string {
+  const appPath = basePath === "/" ? "/" : `${basePath}/`;
+  if (!input) return `${appPath}#/heute`;
+  if (!input.startsWith("/") || input.startsWith("//") || /[\r\n]/.test(input)) {
     throw AppError.badRequest("Das Anmeldeziel ist ungültig.");
   }
   const parsed = new URL(input, "https://machbar.invalid");
   if (
     parsed.origin !== "https://machbar.invalid" ||
-    parsed.pathname !== "/" ||
+    (parsed.pathname !== basePath && parsed.pathname !== appPath) ||
     !parsed.hash.startsWith("#/")
   ) {
     throw AppError.badRequest("Das Anmeldeziel ist ungültig.");
   }
-  return `${parsed.pathname}${parsed.hash}`;
+  return `${parsed.pathname}${parsed.search}${parsed.hash}`;
 }
 
 function cookieOptions(expires?: Date) {
@@ -144,7 +145,7 @@ export function registerAuthentication(
       throw AppError.notFound("Pocket-ID-Anmeldung ist nicht konfiguriert.");
     }
     const query = parseOrThrow(loginQuerySchema, request.query);
-    const returnTo = validateReturnTo(query.returnTo);
+    const returnTo = validateReturnTo(query.returnTo, env.basePath);
     const login = await service.beginLogin(returnTo);
     reply.setCookie(
       OIDC_STATE_COOKIE,

@@ -1,0 +1,45 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { NativeShareButton } from "./NativeShareButton";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("NativeShareButton", () => {
+  it("uses the native share sheet with readable text and URL", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+
+    render(<NativeShareButton title="Einkaufen" text={"Einkaufen\n\nMilch"} url="https://machbar.test/#/aufgaben/1" />);
+    await userEvent.click(screen.getByRole("button", { name: "Teilen" }));
+
+    await waitFor(() =>
+      expect(share).toHaveBeenCalledWith({
+        title: "Einkaufen",
+        text: "Einkaufen\n\nMilch",
+        url: "https://machbar.test/#/aufgaben/1",
+      }),
+    );
+  });
+
+  it("copies text and URL when native sharing is unavailable", async () => {
+    Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(<NativeShareButton title="Einkaufen" text="Einkaufen" url="https://machbar.test/#/aufgaben/1" />);
+    await userEvent.click(screen.getByRole("button", { name: "Teilen" }));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        "Einkaufen\n\nhttps://machbar.test/#/aufgaben/1",
+      ),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("In die Zwischenablage kopiert");
+  });
+});

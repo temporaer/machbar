@@ -7,9 +7,8 @@ import type { Member } from "@machbar/shared";
  * A household tops out at ~5 members, so the whole choice set fits on screen
  * as chips. That beats a `<select>` on mobile: no native picker overlay on
  * top of the bottom sheet, one tap instead of open-scroll-confirm, and the
- * current assignment stays visible while choosing. The full editors
- * (`TaskDetailSheet`, `ProjectEditSheet`) keep their selects — they are dense
- * multi-field forms, not one-decision popups.
+ * current assignment stays visible while choosing. It is equally useful in
+ * full editors, where changing the owner is still one clear decision.
  *
  * Accessibility: the chips form a labelled `role="group"` and each chip
  * reports its selection through `aria-pressed`, so the state is announced

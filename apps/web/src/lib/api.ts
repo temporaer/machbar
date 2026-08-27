@@ -283,6 +283,11 @@ export const api = {
     request<ProjectWithActions>("/projects", { method: "POST", body: JSON.stringify(input) }),
   updateProject: (id: number, patch: UpdateProjectInput) =>
     request<ProjectWithActions>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  appendProjectNotes: (id: number, content: string) =>
+    request<ProjectWithActions>(`/projects/${id}/notes`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
   deleteProject: (id: number) =>
     request<void>(`/projects/${id}`, { method: "DELETE" }),
 
@@ -395,6 +400,11 @@ export const api = {
     }),
   updateTask: (id: number, patch: UpdateTaskInput) =>
     request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  appendTaskNotes: (id: number, content: string) =>
+    request<Task>(`/tasks/${id}/notes`, {
+      method: "POST",
+      body: JSON.stringify({ content }),
+    }),
   deleteTask: (id: number) => request<void>(`/tasks/${id}`, { method: "DELETE" }),
 
   completeTask: (id: number, descendantsPolicy?: CompleteDescendantsPolicy) =>

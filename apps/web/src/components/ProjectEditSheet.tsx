@@ -9,6 +9,7 @@ import { strings, projectStatusLabels } from "../lib/strings";
 import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { BottomSheet } from "./BottomSheet";
 import { TagPicker } from "./TagPicker";
+import { MarkdownEditor } from "./MarkdownEditor";
 
 /** The subset of story fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -180,12 +181,13 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
 
         <div className="field">
           <label htmlFor="project-notes">{strings.notes}</label>
-          <textarea
+          <MarkdownEditor
             id="project-notes"
             value={notesDraft}
-            onChange={(e) => setNotesDraft(e.target.value)}
+            onChange={setNotesDraft}
             onBlur={() => void saveTextFields()}
             rows={4}
+            toolbarLabel={strings.markdownToolbar}
           />
         </div>
 

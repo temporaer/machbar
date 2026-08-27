@@ -20,8 +20,8 @@ import {
 import { InlineChildComposer } from "./InlineChildComposer";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import { MoveTaskSheet } from "./MoveTaskSheet";
-import { TaskActionIcon } from "./TaskActionIcon";
-import { ActionableText } from "./ActionableText";
+import { IconActionButton } from "./IconActionButton";
+import { MarkdownNotes } from "./MarkdownNotes";
 import { formatExactLocalDate, formatRelativeDueDate } from "../lib/relativeDate";
 import { TaskCardTags } from "./TaskCardTags";
 
@@ -523,7 +523,7 @@ export function TaskRow({
             </div>
           </button>
           {task.notes.trim() ? (
-            <ActionableText text={task.notes} className="task-row-notes" />
+            <MarkdownNotes value={task.notes} className="task-row-notes" />
           ) : null}
         </div>
         <button
@@ -541,22 +541,22 @@ export function TaskRow({
 
       {chipsOpen ? (
         <div className="task-row-chips" role="group" aria-label={strings.moreActions}>
-          <TaskActionIcon kind="owner" label={strings.assign} onClick={() => openQuickAction("owner")} />
-          <TaskActionIcon kind="schedule" label={strings.schedule} onClick={() => openQuickAction("schedule")} />
-          <TaskActionIcon kind="notes" label={strings.notes} onClick={() => openQuickAction("notes")} />
-          <TaskActionIcon
+          <IconActionButton kind="owner" label={strings.assign} onClick={() => openQuickAction("owner")} />
+          <IconActionButton kind="schedule" label={strings.schedule} onClick={() => openQuickAction("schedule")} />
+          <IconActionButton kind="notes" label={strings.notes} onClick={() => openQuickAction("notes")} />
+          <IconActionButton
             kind="child"
             label={strings.addChild}
             disabled={busyId === task.id}
             onClick={openChildComposer}
           />
-          <TaskActionIcon
+          <IconActionButton
             kind="successor"
             label={strings.addSuccessor}
             disabled={busyId === task.id}
             onClick={openSuccessorComposer}
           />
-          <TaskActionIcon
+          <IconActionButton
             kind="project"
             label={task.projectId ? strings.toProject : strings.assignProject}
             onClick={goToProjectChip}
@@ -566,9 +566,9 @@ export function TaskRow({
             // offer the real reopen flow instead of letting this chip fall
             // through to a generic status update (which wouldn't clear
             // completedAt/cancelledAt and would leave them stale).
-            <TaskActionIcon kind="reopen" label={strings.reopen} onClick={reopenChip} />
+            <IconActionButton kind="reopen" label={strings.reopen} onClick={reopenChip} />
           ) : (
-            <TaskActionIcon
+            <IconActionButton
               kind={task.status === "waiting" ? "actionable" : "waiting"}
               label={task.status === "waiting" ? strings.makeActionable : strings.waiting}
               onClick={toggleWaitingChip}
@@ -578,9 +578,9 @@ export function TaskRow({
             // Only offered by the host of "waiting row mode" (the Warten
             // page) and only against a still-waiting task — see
             // `TaskRowWaitingInteraction`.
-            <TaskActionIcon kind="followUp" label={strings.followUp} onClick={followUpChip} />
+            <IconActionButton kind="followUp" label={strings.followUp} onClick={followUpChip} />
           ) : null}
-          <TaskActionIcon kind="more" label={strings.more} onClick={() => onOpenDetail(task.id)} />
+          <IconActionButton kind="more" label={strings.more} onClick={() => onOpenDetail(task.id)} />
         </div>
       ) : null}
 

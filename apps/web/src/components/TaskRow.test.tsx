@@ -267,7 +267,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
       "Mehr",
     ]) {
       const button = screen.getByRole("button", { name });
-      expect(button).toHaveClass("task-row-chip-icon");
+      expect(button).toHaveClass("icon-action-button");
       expect(button.textContent).toBe("");
       const glyph = button.querySelector("svg");
       expect(glyph).toHaveAttribute("aria-hidden", "true");

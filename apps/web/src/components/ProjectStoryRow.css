@@ -298,37 +298,6 @@
   padding: 8px 14px;
 }
 
-/*
- * The five targeted actions (Verantwortlich, Akzeptanzkriterien, Planen,
- * Tags, Projekt öffnen) are compact icon-only buttons rather than the wordy
- * `.btn` chips: same 44px touch target the rest of the app uses for coarse
- * pointers, but a fraction of the horizontal space of a labelled button.
- * Every one of them still carries a full German `aria-label`/`title` (see
- * `ProjectStoryRow.tsx`), so screen readers announce the same word a
- * sighted user would have read on the old text chip.
- */
-.story-row-chip-icon {
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  padding: 0;
-}
-
-.story-row-chip-icon:hover {
-  background: var(--color-surface-alt);
-}
-
-.story-row-chip-icon svg {
-  width: 18px;
-  height: 18px;
-}
 
 .story-row-error {
   display: flex;

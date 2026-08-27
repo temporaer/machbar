@@ -1,0 +1,143 @@
+.markdown-notes {
+  color: var(--color-text);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.markdown-notes > :first-child {
+  margin-top: 0;
+}
+
+.markdown-notes > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-notes p,
+.markdown-notes ul,
+.markdown-notes ol,
+.markdown-notes blockquote,
+.markdown-notes pre,
+.markdown-notes table {
+  margin: 0 0 0.75rem;
+}
+
+.markdown-notes ul,
+.markdown-notes ol {
+  padding-left: 1.4rem;
+}
+
+.markdown-notes li + li {
+  margin-top: 0.2rem;
+}
+
+.markdown-notes .contains-task-list {
+  padding-left: 0;
+  list-style: none;
+}
+
+.markdown-notes .task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.markdown-notes .task-list-item input {
+  width: 1rem;
+  height: 1rem;
+  margin: 0.25rem 0 0;
+  accent-color: var(--color-primary);
+}
+
+.markdown-notes a {
+  color: var(--color-primary);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.markdown-notes code {
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  background: var(--color-surface-alt);
+  font-size: 0.9em;
+}
+
+.markdown-notes pre {
+  overflow-x: auto;
+  padding: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.markdown-notes pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.markdown-notes blockquote {
+  padding-left: 0.8rem;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.markdown-notes table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+
+.markdown-notes th,
+.markdown-notes td {
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--color-border);
+  text-align: left;
+}
+
+.markdown-editor {
+  display: grid;
+  gap: 6px;
+}
+
+.markdown-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.markdown-editor-action {
+  display: inline-grid;
+  width: 44px;
+  min-height: 44px;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 1rem;
+}
+
+.markdown-editor-action:hover:not(:disabled) {
+  background: var(--color-surface-alt);
+  border-color: var(--color-primary);
+}
+
+.markdown-editor-action:focus-visible,
+.markdown-editor-textarea:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+  outline-offset: 2px;
+}
+
+.markdown-editor-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.markdown-editor-textarea {
+  width: 100%;
+  min-height: 8rem;
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  resize: vertical;
+}

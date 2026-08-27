@@ -33,6 +33,10 @@ export const updateProjectSchema = z.object({
   tagIds: z.array(z.number().int()).optional(),
 });
 
+export const appendNotesSchema = z.object({
+  content: z.string(),
+});
+
 export const activateProjectSchema = z.object({
   ownerMemberId: z.number().int().nullable().optional(),
 });

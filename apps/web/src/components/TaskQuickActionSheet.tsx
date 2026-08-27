@@ -5,6 +5,7 @@ import { strings } from "../lib/strings";
 import { AssignOwnerSheet } from "./AssignOwnerSheet";
 import { BottomSheet } from "./BottomSheet";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
+import { MarkdownEditor } from "./MarkdownEditor";
 
 export type TaskQuickAction = "owner" | "schedule" | "notes";
 
@@ -118,11 +119,12 @@ export function TaskQuickActionSheet({
         {action === "notes" ? (
           <div className="field">
             <label htmlFor={`quick-notes-${task.id}`}>{strings.notes}</label>
-            <textarea
+            <MarkdownEditor
               id={`quick-notes-${task.id}`}
               rows={5}
               value={notes}
-              onChange={(event) => setNotes(event.target.value)}
+              onChange={setNotes}
+              toolbarLabel={strings.markdownToolbar}
               autoFocus
             />
           </div>

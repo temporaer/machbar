@@ -20,6 +20,12 @@ import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
+import { MemberChoiceGroup } from "./MemberChoiceGroup";
+import { MarkdownEditor } from "./MarkdownEditor";
+import { MarkdownNotes } from "./MarkdownNotes";
+import { NativeShareButton } from "./NativeShareButton";
+import { serializeTaskForShare } from "../lib/shareText";
+import { buildTaskShareUrl } from "../lib/shareUrls";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -39,16 +45,14 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
 function InheritanceControl({
   mode,
   onChange,
-  explicitLabel,
 }: {
   mode: InheritanceMode;
   onChange: (mode: InheritanceMode) => void;
-  explicitLabel: string;
 }) {
   const labels: Record<InheritanceMode, string> = {
-    inherit: strings.inherited,
-    explicit: explicitLabel,
-    none: strings.noInheritance,
+    inherit: strings.ownerInheritanceParent,
+    explicit: strings.ownerInheritanceTaskSpecific,
+    none: strings.ownerInheritanceNone,
   };
   return (
     <div className="segmented" role="group">
@@ -83,6 +87,7 @@ export function TaskDetailSheet() {
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
   const [savingTextFields, setSavingTextFields] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [notesEditing, setNotesEditing] = useState(false);
   const ownerFieldRef = useRef<HTMLDivElement>(null);
   const scheduleFieldRef = useRef<HTMLDivElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
@@ -111,7 +116,10 @@ export function TaskDetailSheet() {
     }
     const nextBaseline = textFieldsSnapshot(task);
     const isNewTask = lastLoadedTaskIdRef.current !== task.id;
-    if (isNewTask) setSaveError(null);
+    if (isNewTask) {
+      setSaveError(null);
+      setNotesEditing(false);
+    }
     const hasUnsavedEdits =
       !isNewTask &&
       textFieldsBaseline !== null &&
@@ -133,6 +141,10 @@ export function TaskDetailSheet() {
   // relevant field of this same edit flow instead of just the sheet's top.
   useEffect(() => {
     if (!task || !focusField) return;
+    if (focusField === "notes" && !notesEditing) {
+      setNotesEditing(true);
+      return;
+    }
     const containers: Record<TaskDetailFocusField, HTMLElement | null> = {
       owner: ownerFieldRef.current,
       schedule: scheduleFieldRef.current,
@@ -149,7 +161,7 @@ export function TaskDetailSheet() {
       focusable?.focus();
     }
     clearFocusField();
-  }, [task, focusField, clearFocusField]);
+  }, [task, focusField, clearFocusField, notesEditing]);
 
   const inheritedTags = useMemo(() => {
     if (!task) return [];
@@ -212,6 +224,19 @@ export function TaskDetailSheet() {
     void saveTextFields();
   };
 
+  const cancelNotesEdit = () => {
+    setNotesDraft(textFieldsBaseline?.notes ?? task?.notes ?? "");
+    setNotesEditing(false);
+  };
+
+  const closeWithSave = async () => {
+    if (textFieldsDirty) {
+      const saved = await saveTextFields();
+      if (!saved) return;
+    }
+    close();
+  };
+
   const runDependencySearch = async (value: string) => {
     setDepQuery(value);
     if (!value.trim()) {
@@ -223,7 +248,11 @@ export function TaskDetailSheet() {
   };
 
   return (
-    <BottomSheet title={strings.taskDetails} onClose={close} labelledBy="task-detail-title">
+    <BottomSheet
+      title={strings.taskDetails}
+      onClose={() => void closeWithSave()}
+      labelledBy="task-detail-title"
+    >
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {task ? (
@@ -257,6 +286,11 @@ export function TaskDetailSheet() {
               </button>
             )}
           </div>
+          <NativeShareButton
+            title={task.title}
+            text={serializeTaskForShare(task)}
+            url={buildTaskShareUrl(task.id)}
+          />
 
           <div className="field">
             <label htmlFor="task-status">{strings.status}</label>
@@ -292,25 +326,20 @@ export function TaskDetailSheet() {
           ) : null}
 
           <div className="field" ref={ownerFieldRef}>
-            <label>{strings.owner}</label>
+            {task.ownerInheritanceMode !== "explicit" ? <label>{strings.owner}</label> : null}
             <InheritanceControl
               mode={task.ownerInheritanceMode}
-              explicitLabel={strings.ownOwner}
               onChange={(mode) => void patch({ ownerInheritanceMode: mode })}
             />
             {task.ownerInheritanceMode === "explicit" ? (
-              <select
-                aria-label={strings.owner}
-                value={task.ownerMemberId ?? ""}
-                onChange={(e) => void patch({ ownerMemberId: e.target.value ? Number(e.target.value) : null })}
-              >
-                <option value="">{strings.unassigned}</option>
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
+              <MemberChoiceGroup
+                label={strings.owner}
+                idPrefix={`task-owner-${task.id}`}
+                members={members}
+                value={task.ownerMemberId}
+                onChange={(ownerMemberId) => void patch({ ownerMemberId })}
+                unassignedLabel={strings.unassigned}
+              />
             ) : (
               <p className="text-muted">
                 {members.find((m) => m.id === task.effectiveOwnerId)?.name ?? strings.unassigned}
@@ -391,15 +420,53 @@ export function TaskDetailSheet() {
             />
           </div>
 
-          <div className="field">
-            <label htmlFor="task-notes">{strings.notes}</label>
-            <textarea
-              id="task-notes"
-              ref={notesRef}
-              value={notesDraft}
-              onChange={(e) => setNotesDraft(e.target.value)}
-              onBlur={(e) => saveOnBlur(e.relatedTarget)}
-            />
+          <div className="field task-notes-field">
+            <div className="row-between">
+              <label className="field-label" htmlFor="task-notes">{strings.notes}</label>
+              {!notesEditing ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setNotesEditing(true)}
+                >
+                  {strings.edit}
+                </button>
+              ) : null}
+            </div>
+            {notesEditing ? (
+              <>
+                <MarkdownEditor
+                  id="task-notes"
+                  ref={notesRef}
+                  value={notesDraft}
+                  onChange={setNotesDraft}
+                  toolbarLabel={strings.markdownToolbar}
+                  rows={6}
+                />
+                <div className="row">
+                  <button type="button" className="btn btn-sm" data-text-save onClick={cancelNotesEdit}>
+                    {strings.cancel}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    data-text-save
+                    disabled={!titleIsValid || savingTextFields}
+                    onClick={() =>
+                      void saveTextFields().then((saved) => {
+                        if (saved) setNotesEditing(false);
+                      })
+                    }
+                  >
+                    {strings.saveNotes}
+                  </button>
+                </div>
+              </>
+            ) : notesDraft.trim() ? (
+              <MarkdownNotes value={notesDraft} />
+            ) : (
+              <p className="text-muted">{strings.noNotes}</p>
+            )}
           </div>
 
           <button
@@ -407,7 +474,11 @@ export function TaskDetailSheet() {
             className={`btn btn-block${saveChangesDisabled ? "" : " btn-primary"}`}
             disabled={saveChangesDisabled}
             data-text-save
-            onClick={() => void saveTextFields()}
+            onClick={() =>
+              void saveTextFields().then((saved) => {
+                if (saved) setNotesEditing(false);
+              })
+            }
           >
             {strings.saveChanges}
           </button>

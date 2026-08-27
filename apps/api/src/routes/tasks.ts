@@ -6,6 +6,7 @@ import {
   addDependency,
   addExcludedTag,
   addTaskTag,
+  appendTaskNotes,
   cancelTask,
   changeTaskParent,
   completeTask,
@@ -25,6 +26,7 @@ import {
   updateTask,
 } from "../domain/mutations.js";
 import {
+  appendNotesSchema,
   cancelTaskSchema,
   changeParentSchema,
   completeTaskSchema,
@@ -112,6 +114,16 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     updateTask(db, id, body);
     return taskOrThrow(db, id);
   });
+
+  app.post<{ Params: { id: string } }>(
+    "/api/tasks/:id/notes",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(appendNotesSchema, request.body);
+      appendTaskNotes(db, id, body.content);
+      return taskOrThrow(db, id);
+    },
+  );
 
   app.delete<{ Params: { id: string } }>(
     "/api/tasks/:id",

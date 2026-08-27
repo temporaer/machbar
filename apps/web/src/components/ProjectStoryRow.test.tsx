@@ -773,7 +773,7 @@ describe("ProjectStoryRow – compact icon-only targeted actions", () => {
     for (const { name } of targeted) {
       const button = within(chips).getByRole("button", { name });
       // Icon-only: no visible text label, only the accessible name/tooltip.
-      expect(button).toHaveClass("story-row-chip-icon");
+      expect(button).toHaveClass("icon-action-button");
       expect(button.textContent).toBe("");
       expect(button).toHaveAttribute("aria-label", name);
       expect(button).toHaveAttribute("title", name);
@@ -794,7 +794,7 @@ describe("ProjectStoryRow – compact icon-only targeted actions", () => {
 
     // The workflow-transition chips stay plain, labelled text buttons.
     const workflowChip = within(chips).getByRole("button", { name: "Archivieren" });
-    expect(workflowChip).not.toHaveClass("story-row-chip-icon");
+    expect(workflowChip).not.toHaveClass("icon-action-button");
     expect(workflowChip.textContent).toBe("Archivieren");
   });
 });

@@ -20,6 +20,15 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function appendNoteContent(existing: string, incoming: string): string {
+  const appended = incoming.trim();
+  if (appended === "") return existing;
+  if (existing.trim() === "") return appended;
+  if (existing.endsWith("\n\n")) return `${existing}${appended}`;
+  if (existing.endsWith("\n")) return `${existing}\n${appended}`;
+  return `${existing}\n\n${appended}`;
+}
+
 // ---------------------------------------------------------------------------
 // Tags & members
 // ---------------------------------------------------------------------------
@@ -404,6 +413,21 @@ export function updateProject(db: Db, id: number, input: UpdateProjectInput) {
       }
     }
     return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+  });
+}
+
+export function appendProjectNotes(db: Db, id: number, content: string) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const project = getProjectOrThrow(txDb, id);
+    const notes = appendNoteContent(project.notes, content);
+    if (notes === project.notes) return project;
+    return tx
+      .update(schema.projects)
+      .set({ notes, updatedAt: nowIso() })
+      .where(eq(schema.projects.id, id))
+      .returning()
+      .get();
   });
 }
 
@@ -1027,6 +1051,21 @@ export function updateTask(db: Db, id: number, input: UpdateTaskInput) {
       }
     }
     return tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+  });
+}
+
+export function appendTaskNotes(db: Db, id: number, content: string) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, id);
+    const notes = appendNoteContent(task.notes, content);
+    if (notes === task.notes) return task;
+    return tx
+      .update(schema.tasks)
+      .set({ notes, updatedAt: nowIso() })
+      .where(eq(schema.tasks.id, id))
+      .returning()
+      .get();
   });
 }
 

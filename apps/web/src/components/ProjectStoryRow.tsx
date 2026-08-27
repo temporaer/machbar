@@ -21,6 +21,7 @@ import { AssignDriverSheet } from "./AssignDriverSheet";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
+import { IconActionButton } from "./IconActionButton";
 import "./ProjectStoryRow.css";
 
 const SWIPE_THRESHOLD = 72;
@@ -38,94 +39,6 @@ type StatusAccent = "backlog" | "active" | "stuck" | "completed" | "archived";
 function statusAccent(story: ProjectWithActions): StatusAccent {
   if (story.status === "active" && story.stuckReason) return "stuck";
   return story.status;
-}
-
-/**
- * Minimal inline icon set for the five targeted actions (Verantwortlich,
- * Akzeptanzkriterien, Planen, Tags, Projekt öffnen): no icon dependency, 18px
- * stroke-based glyphs sized/colored entirely from CSS (`.story-row-chip-icon
- * svg`). Purely decorative — the button's `aria-label`/`title` carry the
- * accessible name, so every glyph is `aria-hidden`.
- */
-function PersonIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="8" r="3.6" fill="none" stroke="currentColor" strokeWidth="2" />
-      <path
-        d="M4.5 19.5c0-4.1 3.4-6.5 7.5-6.5s7.5 2.4 7.5 6.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function ChecklistIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path
-        d="M3.5 6.5l1.7 1.7L8 5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M11 6.2h9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      <path
-        d="M3.5 14.5l1.7 1.7L8 13"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M11 14.2h9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function CalendarIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <rect x="3.5" y="5" width="17" height="15" rx="2.2" fill="none" stroke="currentColor" strokeWidth="2" />
-      <path d="M3.5 9.7h17" stroke="currentColor" strokeWidth="2" />
-      <path d="M8 3v4M16 3v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function TagIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path
-        d="M3.5 12.2V5.5a2 2 0 012-2h6.7l8.3 8.3a2 2 0 010 2.8l-5.9 5.9a2 2 0 01-2.8 0L3.5 12.2z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-      <circle cx="8.1" cy="8.1" r="1.4" fill="currentColor" />
-    </svg>
-  );
-}
-
-function OpenProjectIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path
-        d="M5 19h14V5M10 5h9v9M18.5 5.5L9 15"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 export interface ProjectStoryRowProps {
@@ -390,51 +303,11 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
       {chipsOpen ? (
         <div className="story-row-chips" role="group" aria-label={strings.moreActions}>
-          <button
-            type="button"
-            className="story-row-chip-icon"
-            aria-label={strings.driver}
-            title={strings.driver}
-            onClick={() => openSheet("assign-driver")}
-          >
-            <PersonIcon />
-          </button>
-          <button
-            type="button"
-            className="story-row-chip-icon"
-            aria-label={strings.criteria}
-            title={strings.criteria}
-            onClick={() => openSheet("criteria")}
-          >
-            <ChecklistIcon />
-          </button>
-          <button
-            type="button"
-            className="story-row-chip-icon"
-            aria-label={strings.planDates}
-            title={strings.planDates}
-            onClick={() => openSheet("plan-dates")}
-          >
-            <CalendarIcon />
-          </button>
-          <button
-            type="button"
-            className="story-row-chip-icon"
-            aria-label={strings.tags}
-            title={strings.tags}
-            onClick={() => openSheet("tags")}
-          >
-            <TagIcon />
-          </button>
-          <button
-            type="button"
-            className="story-row-chip-icon"
-            aria-label={strings.openProject}
-            title={strings.openProject}
-            onClick={goToDetail}
-          >
-            <OpenProjectIcon />
-          </button>
+          <IconActionButton kind="owner" label={strings.driver} onClick={() => openSheet("assign-driver")} />
+          <IconActionButton kind="criteria" label={strings.criteria} onClick={() => openSheet("criteria")} />
+          <IconActionButton kind="schedule" label={strings.planDates} onClick={() => openSheet("plan-dates")} />
+          <IconActionButton kind="tags" label={strings.tags} onClick={() => openSheet("tags")} />
+          <IconActionButton kind="openProject" label={strings.openProject} onClick={goToDetail} />
           {secondaryActions.map((action) => (
             <button
               key={action}

@@ -147,7 +147,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   }, [authStatus, members, currentMemberId]);
 
   const login = useCallback(() => {
-    const returnTo = `${window.location.pathname}${window.location.hash || "#/heute"}`;
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash || "#/heute"}`;
     window.location.assign(
       `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
     );

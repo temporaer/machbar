@@ -1,4 +1,4 @@
-import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { IdentityProvider, useIdentity } from "./lib/identity";
 import { RefreshProvider } from "./lib/refresh";
 import { TaskDetailProvider, useTaskDetail } from "./lib/taskDetailContext";
@@ -17,6 +17,8 @@ import { StuckPage } from "./pages/StuckPage";
 import { BacklogReviewPage } from "./pages/BacklogReviewPage";
 import { RefinementPage } from "./pages/RefinementPage";
 import { TagsPage } from "./pages/TagsPage";
+import { SharePage } from "./pages/SharePage";
+import { TaskDeepLinkPage } from "./pages/TaskDeepLinkPage";
 
 function TaskDetailHost() {
   const { openTaskId } = useTaskDetail();
@@ -26,6 +28,7 @@ function TaskDetailHost() {
 
 function Shell() {
   const { currentMemberId } = useIdentity();
+  const location = useLocation();
   return (
     <div className="app-shell">
       <main className="app-main">
@@ -43,12 +46,14 @@ function Shell() {
             <Route path="/mehr/backlog" element={<BacklogReviewPage />} />
             <Route path="/mehr/refinement" element={<RefinementPage />} />
             <Route path="/mehr/tags" element={<TagsPage />} />
+            <Route path="/share" element={<SharePage />} />
+            <Route path="/aufgaben/:id" element={<TaskDeepLinkPage />} />
             <Route path="*" element={<Navigate to="/heute" replace />} />
           </Routes>
           <TaskDetailHost />
         </IdentityGate>
       </main>
-      {currentMemberId !== null ? <BottomNav /> : null}
+      {currentMemberId !== null && location.pathname !== "/share" ? <BottomNav /> : null}
     </div>
   );
 }

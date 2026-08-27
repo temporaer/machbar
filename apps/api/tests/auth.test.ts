@@ -5,6 +5,7 @@ import type {
   OidcProvider,
 } from "../src/auth/oidcClient.js";
 import type { OidcIdentityClaims } from "../src/auth/repository.js";
+import { validateReturnTo } from "../src/auth/routes.js";
 import type { OidcConfig } from "../src/env.js";
 import {
   closeTestContext,
@@ -277,6 +278,29 @@ describe("Pocket ID authentication", () => {
       url: `/api/auth/login?returnTo=${encodeURIComponent("https://evil.example/")}`,
     });
     expect(external.statusCode).toBe(400);
+  });
+
+  it("preserves Web Share Target parameters through login", async () => {
+    const returnTo =
+      "/?title=Farmladen&url=https%3A%2F%2Fmaps.example%2Ffarm#/share";
+    const callback = await login(returnTo);
+
+    expect(callback.statusCode).toBe(302);
+    expect(callback.headers.location).toBe(
+      `https://machbar.example${returnTo}`,
+    );
+  });
+
+  it("accepts only local hash routes beneath the configured base path", () => {
+    expect(
+      validateReturnTo(
+        "/tasks/?title=Farmladen&url=https%3A%2F%2Fmaps.example%2Ffarm#/share",
+        "/tasks",
+      ),
+    ).toBe(
+      "/tasks/?title=Farmladen&url=https%3A%2F%2Fmaps.example%2Ffarm#/share",
+    );
+    expect(() => validateReturnTo("/other/#/share", "/tasks")).toThrow();
   });
 
   it("rejects a valid provider callback in a browser that did not start the login", async () => {

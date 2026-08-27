@@ -7,6 +7,7 @@ import {
   activateProject,
   addCriterion,
   archiveProject,
+  appendProjectNotes,
   completeProject,
   createProjectTaskSequence,
   createProject,
@@ -22,6 +23,7 @@ import {
 import {
   activateProjectSchema,
   addCriterionSchema,
+  appendNotesSchema,
   checkCriterionSchema,
   createProjectSchema,
   createTaskSequenceSchema,
@@ -99,6 +101,17 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     const graph = Graph.load(db);
     return projectWithIssues(graph, id);
   });
+
+  app.post<{ Params: { id: string } }>(
+    "/api/projects/:id/notes",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(appendNotesSchema, request.body);
+      appendProjectNotes(db, id, body.content);
+      const graph = Graph.load(db);
+      return projectWithIssues(graph, id);
+    },
+  );
 
   app.post<{ Params: { id: string } }>(
     "/api/projects/:id/task-sequence",

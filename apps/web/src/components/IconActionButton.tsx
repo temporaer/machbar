@@ -1,8 +1,11 @@
 import type { MouseEventHandler } from "react";
 
-export type TaskActionIconKind =
+export type IconActionKind =
   | "owner"
+  | "criteria"
   | "schedule"
+  | "tags"
+  | "openProject"
   | "notes"
   | "child"
   | "successor"
@@ -13,7 +16,7 @@ export type TaskActionIconKind =
   | "followUp"
   | "more";
 
-function Glyph({ kind }: { kind: TaskActionIconKind }) {
+export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
   const common = {
     fill: "none",
     stroke: "currentColor",
@@ -26,18 +29,27 @@ function Glyph({ kind }: { kind: TaskActionIconKind }) {
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       {kind === "owner" ? (
         <>
-          <circle cx="12" cy="8" r="3.5" {...common} />
-          <path d="M4.5 20c0-4.2 3.3-6.8 7.5-6.8s7.5 2.6 7.5 6.8" {...common} />
+          <circle cx="12" cy="8" r="3.6" {...common} />
+          <path d="M4.5 19.5c0-4.1 3.4-6.5 7.5-6.5s7.5 2.4 7.5 6.5" {...common} />
+        </>
+      ) : kind === "criteria" ? (
+        <>
+          <path d="M3.5 6.5l1.7 1.7L8 5M11 6.2h9.5M3.5 14.5l1.7 1.7L8 13M11 14.2h9.5" {...common} />
         </>
       ) : kind === "schedule" ? (
         <>
-          <rect x="3.5" y="5" width="17" height="15" rx="2" {...common} />
-          <path d="M3.5 9.5h17M8 3v4M16 3v4" {...common} />
+          <rect x="3.5" y="5" width="17" height="15" rx="2.2" {...common} />
+          <path d="M3.5 9.7h17M8 3v4M16 3v4" {...common} />
         </>
-      ) : kind === "notes" ? (
+      ) : kind === "tags" ? (
         <>
-          <path d="M5 3.5h10l4 4V20H5zM15 3.5V8h4M8 12h8M8 16h6" {...common} />
+          <path d="M3.5 12.2V5.5a2 2 0 012-2h6.7l8.3 8.3a2 2 0 010 2.8l-5.9 5.9a2 2 0 01-2.8 0L3.5 12.2z" {...common} />
+          <circle cx="8.1" cy="8.1" r="1.4" fill="currentColor" />
         </>
+      ) : kind === "openProject" ? (
+        <path d="M5 19h14V5M10 5h9v9M18.5 5.5L9 15" {...common} />
+      ) : kind === "notes" ? (
+        <path d="M5 3.5h10l4 4V20H5zM15 3.5V8h4M8 12h8M8 16h6" {...common} />
       ) : kind === "child" ? (
         <>
           <path d="M5 5v8h7M9 10l3 3-3 3" {...common} />
@@ -51,9 +63,7 @@ function Glyph({ kind }: { kind: TaskActionIconKind }) {
       ) : kind === "project" ? (
         <path d="M3.5 6.5h6l2 2h9v10.5h-17z" {...common} />
       ) : kind === "waiting" ? (
-        <>
-          <path d="M7 3.5h10M7 20.5h10M8 3.5c0 4 1.4 6 4 8-2.6 2-4 4-4 9M16 3.5c0 4-1.4 6-4 8 2.6 2 4 4 4 9" {...common} />
-        </>
+        <path d="M7 3.5h10M7 20.5h10M8 3.5c0 4 1.4 6 4 8-2.6 2-4 4-4 9M16 3.5c0 4-1.4 6-4 8 2.6 2 4 4 4 9" {...common} />
       ) : kind === "actionable" ? (
         <path d="M7 4.5l11 7.5L7 19.5z" {...common} />
       ) : kind === "reopen" ? (
@@ -75,14 +85,15 @@ function Glyph({ kind }: { kind: TaskActionIconKind }) {
   );
 }
 
-export function TaskActionIcon({
+/** Shared 44px icon-only action control used by task and project swipe strips. */
+export function IconActionButton({
   kind,
   label,
   title = label,
   disabled,
   onClick,
 }: {
-  kind: TaskActionIconKind;
+  kind: IconActionKind;
   label: string;
   title?: string | undefined;
   disabled?: boolean;
@@ -91,14 +102,14 @@ export function TaskActionIcon({
   return (
     <button
       type="button"
-      className="task-row-chip-icon"
+      className="icon-action-button"
       aria-label={label}
       aria-disabled={disabled || undefined}
       title={title}
       disabled={disabled}
       onClick={onClick}
     >
-      <Glyph kind={kind} />
+      <IconActionGlyph kind={kind} />
     </button>
   );
 }
