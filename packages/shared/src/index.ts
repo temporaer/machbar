@@ -74,6 +74,7 @@ export interface Project {
   doneCount?: number;
   nextAction?: Task | null;
   stuckReason?: StuckReason | null;
+  waitingOn?: string[];
   refinementIssues?: RefinementIssue[];
 }
 

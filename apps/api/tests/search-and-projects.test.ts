@@ -207,6 +207,7 @@ describe("search/filter and project CRUD/archive", () => {
         url: `/api/tasks/${waitingTask.id}`,
         payload: { scheduledDate: "2099-10-01" },
       });
+
       expect(scheduled.statusCode).toBe(200);
     }
 
@@ -225,6 +226,59 @@ describe("search/filter and project CRUD/archive", () => {
     expect(await stuckTitles()).toContain(
       "Wartungsplan Auto:only_waiting_without_followup",
     );
+  });
+
+  it("summarizes ordered, deduplicated waiting reasons in project responses", async () => {
+    const project = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/projects",
+        payload: { title: "Küchenrenovierung", status: "active" },
+      })
+    ).json();
+    for (const payload of [
+      {
+        title: "Fenster bestellen",
+        waitingFor: "Angebot der Schreinerei",
+      },
+      {
+        title: "Arbeitsplatte bestellen",
+        waitingFor: "Angebot der Schreinerei",
+      },
+      {
+        title: "Lieferung verfolgen",
+        waitingFor: null,
+      },
+      {
+        title: "Nicht mehr relevant",
+        waitingFor: "Diese Rückmeldung ist erledigt",
+        status: "done",
+      },
+    ]) {
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        payload: {
+          projectId: project.id,
+          status: "waiting",
+          scheduledDate: "2099-10-01",
+          ...payload,
+        },
+      });
+    }
+
+    const projects = (
+      await ctx.app.inject({ method: "GET", url: "/api/projects" })
+    ).json();
+    const listedProject = projects.find(
+      (item: { id: number }) => item.id === project.id,
+    );
+
+    expect(listedProject).toMatchObject({
+      nextAction: null,
+      stuckReason: null,
+      waitingOn: ["Angebot der Schreinerei", "Lieferung verfolgen"],
+    });
   });
 
   it("omits only exclusively scheduled dependency chains from /api/projects/stuck", async () => {

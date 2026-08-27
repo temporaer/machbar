@@ -254,6 +254,10 @@ const extra = {
   deleteProjectConfirm:
     "Projekt endgültig löschen? Die Aufgaben bleiben erhalten und werden keinem Projekt mehr zugeordnet.",
   waitingForPlaceholder: "z. B. Antwort von Steuerberater",
+  waitingOn: "Wartet auf",
+  waitingOnMore: (count: number) => `+${count} weitere`,
+  waitingReasonMissing: "Wartet – Grund nicht angegeben",
+  resultComplete: "Ergebnis vollständig",
   contextPlaceholder: "z. B. Zuhause, Büro, Telefon",
   noDependencies: "Keine Abhängigkeiten.",
   noTags: "Keine Tags.",

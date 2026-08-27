@@ -31,6 +31,9 @@ function matchesQuery(project: ProjectWithActions, foldedQuery: string): boolean
   if (!foldedQuery) return true;
   if (foldForSearch(project.title).includes(foldedQuery)) return true;
   if (foldForSearch(project.notes).includes(foldedQuery)) return true;
+  if ((project.waitingOn ?? []).some((value) => foldForSearch(value).includes(foldedQuery))) {
+    return true;
+  }
   return (project.acceptanceCriteria ?? []).some((c) => foldForSearch(c.text).includes(foldedQuery));
 }
 

@@ -380,6 +380,19 @@ export class Graph {
       (t) => t.status !== "done" && t.status !== "cancelled",
     ).length;
     const doneCount = tasks.filter((t) => t.status === "done").length;
+    const waitingOn = [
+      ...new Set(
+        tasks
+          .filter((task) => task.status === "waiting")
+          .sort(
+            (a, b) =>
+              a.position - b.position ||
+              a.title.localeCompare(b.title, "de") ||
+              a.id - b.id,
+          )
+          .map((task) => task.waitingFor?.trim() || task.title),
+      ),
+    ];
     const effectiveTags = dedupeTags([
       ...project.tags,
       ...tasks.flatMap((task) => task.effectiveTags),
@@ -396,6 +409,7 @@ export class Graph {
       doneCount,
       nextAction: this.nextActionFor(projectId),
       stuckReason: this.stuckReasonFor(projectId),
+      waitingOn,
     };
   }
 

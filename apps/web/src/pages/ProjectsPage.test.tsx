@@ -288,6 +288,7 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
         status: "active",
         ownerMemberId: 1,
         nextAction: makeTask({ id: 10, title: "Nächster Schritt" }),
+        waitingOn: ["Antwort vom Bauamt"],
       }),
       makeProject({
         id: 2,
@@ -360,7 +361,7 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     expect(screen.getByText("Festgefahrene Geschichte")).toBeInTheDocument();
   });
 
-  it("searches both the title and acceptance-criteria text, case-insensitively and diacritic-tolerantly", async () => {
+  it("searches title, criteria, and waiting reasons case-insensitively and diacritic-tolerantly", async () => {
     renderWithProviders(<ProjectsPage />);
     await screen.findByText("Küche renovieren");
     fireEvent.click(screen.getByRole("button", { name: "Alle" }));
@@ -373,6 +374,13 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
       expect(screen.getByText("Küche renovieren")).toBeInTheDocument();
       expect(screen.queryByText("Theos Geschichte")).not.toBeInTheDocument();
       expect(screen.queryByText("Miras aktive Geschichte")).not.toBeInTheDocument();
+    });
+
+    fireEvent.change(searchInput, { target: { value: "bauamt" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Miras aktive Geschichte")).toBeInTheDocument();
+      expect(screen.queryByText("Küche renovieren")).not.toBeInTheDocument();
     });
   });
 
@@ -452,6 +460,7 @@ describe("ProjectsPage – workflow sections", () => {
         position: 2,
         nextAction: null,
         stuckReason: null,
+        waitingOn: ["Rückruf vom Vermieter"],
       }),
       makeProject({ id: 3, title: "Archiv", status: "archived", ownerMemberId: 1 }),
       makeProject({
@@ -478,6 +487,7 @@ describe("ProjectsPage – workflow sections", () => {
         position: 1,
         nextAction: null,
         stuckReason: null,
+        waitingOn: ["Angebot der Schreinerei"],
       }),
     ]);
 
@@ -503,6 +513,11 @@ describe("ProjectsPage – workflow sections", () => {
       "data-project-section",
       "waiting",
     );
+    expect(
+      within(rowFor(container, "Wartet gesund A")).getByText(
+        "Wartet auf: Angebot der Schreinerei",
+      ),
+    ).toBeInTheDocument();
     expect(rowFor(container, "Backlog").closest("[data-project-section]")).toHaveAttribute(
       "data-project-section",
       "backlog",

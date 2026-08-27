@@ -118,7 +118,6 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
   const openCount = story.openCount ?? 0;
   const doneCount = story.doneCount ?? 0;
   const totalTasks = openCount + doneCount;
-  const taskPct = totalTasks > 0 ? Math.round((doneCount / totalTasks) * 100) : 0;
 
   const primaryAction = primaryWorkflowAction(story);
   const primaryLabel = primaryAction ? projectWorkflowLabels[primaryAction] : strings.workflowStep;
@@ -129,6 +128,20 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
   const classification = classifyProjectListItem(story);
   const accent = statusAccentByClassification[classification];
   const isHealthyWaiting = classification === "healthy-waiting";
+  const waitingOn = story.waitingOn ?? [];
+  const waitingOnSummary =
+    waitingOn.length > 0
+      ? `${strings.waitingOn}: ${waitingOn.slice(0, 2).join(" · ")}${
+          waitingOn.length > 2 ? ` · ${strings.waitingOnMore(waitingOn.length - 2)}` : ""
+        }`
+      : strings.waitingReasonMissing;
+  const nextOpenCriterion = criteria.find((criterion) => !criterion.checked);
+  const criterionSummary =
+    criteria.length === 0
+      ? null
+      : nextOpenCriterion
+        ? `${strings.criteria}: ${nextOpenCriterion.text}`
+        : strings.resultComplete;
 
   const showPrimaryBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
@@ -252,9 +265,11 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
             ) : null}
           </div>
           <div className="story-row-meta">
-            <span>
-              {strings.criteria}: {criteriaChecked}/{criteria.length}
-            </span>
+            {variant !== "card" ? (
+              <span>
+                {strings.criteria}: {criteriaChecked}/{criteria.length}
+              </span>
+            ) : null}
             <span>{driver ? driver.name : strings.noDriver}</span>
             {dueLabel ? (
               <span>
@@ -266,9 +281,11 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
                 {strings.scheduled}: {scheduledLabel}
               </span>
             ) : null}
-            <span>
-              {strings.taskSummary}: {totalTasks > 0 ? `${doneCount}/${totalTasks}` : strings.taskSummaryNone}
-            </span>
+            {variant !== "card" ? (
+              <span>
+                {strings.taskSummary}: {totalTasks > 0 ? `${doneCount}/${totalTasks}` : strings.taskSummaryNone}
+              </span>
+            ) : null}
           </div>
           {story.refinementIssues?.slice(0, 2).map((issue) => (
             <span
@@ -280,12 +297,22 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
           ))}
           {variant === "card" ? (
             <>
+              {criterionSummary ? (
+                <p className="story-row-criterion">{criterionSummary}</p>
+              ) : null}
               <p className="story-row-next-action">
-                {story.nextAction ? `${strings.nextAction}: ${story.nextAction.title}` : strings.noNextAction}
+                {isHealthyWaiting
+                  ? waitingOnSummary
+                  : story.nextAction
+                    ? `${strings.nextAction}: ${story.nextAction.title}`
+                    : strings.noNextAction}
               </p>
               {totalTasks > 0 ? (
                 <div
                   className="project-card-progress"
+                  style={{
+                    gridTemplateColumns: `repeat(${totalTasks}, minmax(0, 1fr))`,
+                  }}
                   role="progressbar"
                   aria-label={strings.taskProgress}
                   aria-valuenow={doneCount}
@@ -293,7 +320,12 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
                   aria-valuemax={totalTasks}
                   aria-valuetext={`${doneCount}/${totalTasks}`}
                 >
-                  <span style={{ width: `${taskPct}%` }} />
+                  {Array.from({ length: totalTasks }, (_, index) => (
+                    <span
+                      className={index < doneCount ? "completed" : "open"}
+                      key={index}
+                    />
+                  ))}
                 </div>
               ) : null}
             </>

@@ -613,23 +613,23 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
       doneCount: 2,
       nextAction: makeTask({ id: 500, title: "Kartons kaufen" }),
       acceptanceCriteria: [
-        makeCriterion({ checked: true }),
-        makeCriterion({ checked: false }),
-        makeCriterion({ checked: false }),
+        makeCriterion({ text: "Wohnung gekündigt", checked: true }),
+        makeCriterion({ text: "Übergabe abgeschlossen", checked: false }),
+        makeCriterion({ text: "Kaution zurück", checked: false }),
       ],
     });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Umzug organisieren");
 
-    expect(screen.getByText("Erledigt, wenn …: 1/3")).toBeInTheDocument();
-    expect(screen.getByText("Aufgaben: 2/4")).toBeInTheDocument();
+    expect(screen.getByText("Erledigt, wenn …: Übergabe abgeschlossen")).toBeInTheDocument();
+    expect(screen.queryByText(/Aufgaben:/)).not.toBeInTheDocument();
     expect(screen.getByText("Nächster Schritt: Kartons kaufen")).toBeInTheDocument();
     expect(screen.getByText("Mira")).toBeInTheDocument();
-    // Only the task-completion bar remains — the second, unlabelled
-    // acceptance-criteria bar was removed from list/card rows (the criteria
-    // *count* above is retained; the bar itself still lives in the
-    // detail/editor screens, unaffected by this component).
-    expect(container.querySelector(".project-card-progress")).toBeInTheDocument();
+    const progress = container.querySelector(".project-card-progress");
+    expect(progress).toBeInTheDocument();
+    expect(progress?.querySelectorAll(":scope > span")).toHaveLength(4);
+    expect(progress?.querySelectorAll(":scope > .completed")).toHaveLength(2);
+    expect(progress).toHaveAttribute("aria-valuetext", "2/4");
     expect(container.querySelector(".criteria-progress")).not.toBeInTheDocument();
     expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(1);
   });
@@ -642,7 +642,24 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(container.querySelector(".criteria-progress")).not.toBeInTheDocument();
     expect(container.querySelector(".project-card-progress")).not.toBeInTheDocument();
     expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
+    expect(screen.queryByText(/^Erledigt, wenn/)).not.toBeInTheDocument();
     expect(screen.getByText("Kein nächster Schritt")).toBeInTheDocument();
+  });
+
+  it("shows a completed result without a numerical criteria fraction", async () => {
+    const story = makeProject({
+      id: 55,
+      title: "Ergebnis erreicht",
+      acceptanceCriteria: [
+        makeCriterion({ text: "Abgenommen", checked: true }),
+        makeCriterion({ text: "Dokumentiert", checked: true }),
+      ],
+    });
+    renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Ergebnis erreicht");
+
+    expect(screen.getByText("Ergebnis vollständig")).toBeInTheDocument();
+    expect(screen.queryByText(/2\/2/)).not.toBeInTheDocument();
   });
 });
 
@@ -838,6 +855,7 @@ describe("ProjectStoryRow – semantic status accents", () => {
       ownerMemberId: 1,
       nextAction: null,
       stuckReason: null,
+      waitingOn: ["Antwort vom Bauamt", "Liefertermin der Fenster"],
     });
     mockedApi.completeProject.mockResolvedValue({ ...waiting, status: "completed" });
     const { container } = renderWithProviders(<Harness story={waiting} />);
@@ -849,6 +867,9 @@ describe("ProjectStoryRow – semantic status accents", () => {
     expect(qualifier).not.toHaveAttribute("tabindex");
     expect(container.querySelector(".story-row")).toHaveClass("story-row-accent-waiting");
     expect(container.querySelector(".story-row-status-badge")).toHaveClass("story-row-status-badge--waiting");
+    expect(
+      screen.getByText("Wartet auf: Antwort vom Bauamt · Liefertermin der Fenster"),
+    ).toBeInTheDocument();
     expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
 
     const primary = screen.getByRole("button", { name: "Abschließen" });
@@ -865,6 +886,44 @@ describe("ProjectStoryRow – semantic status accents", () => {
       await flushMicrotasks();
     });
     expect(mockedApi.completeProject).toHaveBeenCalledWith(81);
+  });
+
+  it("limits a waiting summary to two reasons plus the remaining count", async () => {
+    renderWithProviders(
+      <Harness
+        story={makeProject({
+          id: 82,
+          title: "Mehrere Rückmeldungen",
+          status: "active",
+          nextAction: null,
+          stuckReason: null,
+          waitingOn: ["Bauamt", "Vermieter", "Handwerker", "Versicherung"],
+        })}
+      />,
+    );
+
+    expect(
+      await screen.findByText("Wartet auf: Bauamt · Vermieter · +2 weitere"),
+    ).toBeInTheDocument();
+  });
+
+  it("explains when a waiting project has no usable reason", async () => {
+    renderWithProviders(
+      <Harness
+        story={makeProject({
+          id: 83,
+          title: "Unklarer Wartegrund",
+          status: "active",
+          nextAction: null,
+          stuckReason: null,
+          waitingOn: [],
+        })}
+      />,
+    );
+
+    expect(
+      await screen.findByText("Wartet – Grund nicht angegeben"),
+    ).toBeInTheDocument();
   });
 
   it("keeps actionable active green and active stuck warning-colored, without the waiting marker", async () => {

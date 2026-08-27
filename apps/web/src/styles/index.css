@@ -1740,16 +1740,34 @@ a {
 
 .project-card-progress {
   height: 6px;
-  background: var(--color-surface-alt);
-  border-radius: 999px;
+  display: grid;
+  gap: 1px;
   overflow: hidden;
   margin-top: 8px;
 }
 
 .project-card-progress > span {
-  display: block;
-  height: 100%;
+  min-width: 0;
+  border-radius: 2px;
+}
+
+.project-card-progress > .completed {
   background: var(--color-primary);
+}
+
+.project-card-progress > .open {
+  background: var(--color-surface-alt);
+}
+
+.story-row-criterion {
+  margin: 7px 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 
 .list-link {

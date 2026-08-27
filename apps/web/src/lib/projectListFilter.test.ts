@@ -157,6 +157,23 @@ describe("filterAndSortProjects", () => {
     expect(result.map((project) => project.id)).toEqual([1]);
   });
 
+  it("matches computed waiting reasons", () => {
+    const waiting = makeProject({
+      id: 1,
+      title: "Küche",
+      waitingOn: ["Angebot der Schreinerei"],
+    });
+    const other = makeProject({ id: 2, title: "Garten" });
+
+    const result = filterAndSortProjects([waiting, other], {
+      query: "schreinerei",
+      scope: "all",
+      currentMemberId: null,
+    });
+
+    expect(result.map((project) => project.id)).toEqual([1]);
+  });
+
   it("with a selected identity, default (mine) scope shows that member's stories plus unassigned ones", () => {
     const mine = makeProject({ id: 1, title: "Meins", ownerMemberId: 7 });
     const unassigned = makeProject({ id: 2, title: "Niemand", ownerMemberId: null });
