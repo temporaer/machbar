@@ -10,17 +10,25 @@ type PageHeaderProps = {
   title: string;
   actions?: ReactNode;
   hints?: readonly PageHint[];
+  headingLevel?: 1 | 2;
 };
 
-export function PageHeader({ title, actions, hints = [] }: PageHeaderProps) {
+export function PageHeader({
+  title,
+  actions,
+  hints = [],
+  headingLevel = 1,
+}: PageHeaderProps) {
   const [helpOpen, setHelpOpen] = useState(false);
   const helpId = useId();
   const hasHints = hints.length > 0;
+  const heading =
+    headingLevel === 1 ? <h1>{title}</h1> : <h2 className="section-title">{title}</h2>;
 
   return (
     <>
       <div className="page-header">
-        <h1>{title}</h1>
+        {heading}
         {actions || hasHints ? (
           <div className="page-header-actions">
             {actions}

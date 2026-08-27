@@ -227,6 +227,7 @@ const extra = {
   installApp: "Als App installieren",
   version: "Version",
   followUpFor: "Wartet auf",
+  revisitDate: "Wiedervorlage",
   newRevisitDate: "Neue Wiedervorlage",
   unknownMember: "Unbekannte Person",
   ownContext: "Eigenen Kontext setzen",

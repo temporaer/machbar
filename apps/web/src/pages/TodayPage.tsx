@@ -109,6 +109,7 @@ export function TodayPage() {
                   <TaskOutline
                     tasks={revisitTasks}
                     emptyMessage={strings.noItems}
+                    showRevisitDate
                     showSwipeHint={false}
                   />
                 </div>

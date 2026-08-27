@@ -22,7 +22,11 @@ import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { IconActionButton } from "./IconActionButton";
 import { MarkdownNotes } from "./MarkdownNotes";
-import { formatExactLocalDate, formatRelativeDueDate } from "../lib/relativeDate";
+import {
+  formatExactLocalDate,
+  formatRelativeDueDate,
+  formatRelativeScheduleDate,
+} from "../lib/relativeDate";
 import { TaskCardTags } from "./TaskCardTags";
 
 const SWIPE_THRESHOLD = 72;
@@ -67,6 +71,8 @@ export interface TaskRowProps {
   taskActions: ReturnType<typeof useTaskActions>;
   /** See `TaskRowWaitingInteraction`. Absent everywhere but the Warten page's outline. */
   waitingInteraction?: TaskRowWaitingInteraction | undefined;
+  /** Show this row's scheduled date as a Wiedervorlage prompt. */
+  showRevisitDate?: boolean;
 }
 
 /** Short, status-like label for the primary-swipe reveal background. */
@@ -93,6 +99,7 @@ export function TaskRow({
   onOpenDetail,
   taskActions,
   waitingInteraction,
+  showRevisitDate = false,
 }: TaskRowProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [dragX, setDragX] = useState(0);
@@ -209,6 +216,14 @@ export function TaskRow({
   const projectDueExact = task.projectDueDate
     ? formatExactLocalDate(task.projectDueDate)
     : null;
+  const revisitRelative =
+    showRevisitDate && task.scheduledDate
+      ? formatRelativeScheduleDate(task.scheduledDate)
+      : null;
+  const revisitExact =
+    showRevisitDate && task.scheduledDate
+      ? formatExactLocalDate(task.scheduledDate)
+      : null;
 
   const clearLongPress = () => {
     if (longPressTimer.current) {
@@ -503,6 +518,15 @@ export function TaskRow({
               {due ? (
                 <span className={`task-row-meta-item${overdue ? " overdue" : ""}`}>
                   {strings.due}: {due}
+                </span>
+              ) : null}
+              {revisitRelative && revisitExact ? (
+                <span
+                  className="task-row-meta-item"
+                  title={`${strings.revisitDate}: ${revisitExact}`}
+                  aria-label={`${strings.revisitDate}: ${revisitRelative} (${revisitExact})`}
+                >
+                  {strings.revisitDate}: {revisitRelative}
                 </span>
               ) : null}
               {projectDueRelative && projectDueExact ? (

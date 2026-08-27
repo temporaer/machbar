@@ -84,11 +84,17 @@ describe("TodayPage", () => {
   });
 
   it("bündelt alle sichtbaren Abschnittshinweise im einzigen Seitenhinweis", async () => {
+    const now = new Date();
+    const today = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, "0"),
+      String(now.getDate()).padStart(2, "0"),
+    ].join("-");
     const revisitTask = makeTask({
       id: 2,
       title: "Leiter zurückbringen",
       blocked: true,
-      scheduledDate: "2026-01-01",
+      scheduledDate: today,
     });
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
@@ -119,6 +125,7 @@ describe("TodayPage", () => {
     expect(screen.getByText(revisitHint)).toBeInTheDocument();
     expect(screen.getByText(followUpHint)).toBeInTheDocument();
     expect(screen.getByText("Leiter zurückbringen")).toBeInTheDocument();
+    expect(screen.getByText("Wiedervorlage: heute")).toBeInTheDocument();
     // The normal blocked lock indicator from TaskRow must still show up.
     expect(screen.getByLabelText("Blockiert durch")).toBeInTheDocument();
   });

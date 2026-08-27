@@ -18,6 +18,8 @@ import { NativeShareButton } from "../components/NativeShareButton";
 import { serializeProjectForShare } from "../lib/shareText";
 import { buildProjectShareUrl } from "../lib/shareUrls";
 import { useRefresh } from "../lib/refresh";
+import { PageHeader } from "../components/PageHeader";
+import { useSwipeSettings } from "../lib/swipeSettings";
 
 export function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -30,6 +32,7 @@ export function ProjectDetailPage() {
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesError, setNotesError] = useState<string | null>(null);
   const { bump } = useRefresh();
+  const { primarySwipeAction } = useSwipeSettings();
   const {
     data: project,
     loading: projectLoading,
@@ -164,20 +167,35 @@ export function ProjectDetailPage() {
             )}
           </section>
           <section className="section">
-            <div className="row-between">
-              <h2 className="section-title">{strings.taskSummary}</h2>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => setAddingSequence(true)}
-              >
-                {strings.addSequence}
-              </button>
-            </div>
+            <PageHeader
+              title={strings.taskSummary}
+              headingLevel={2}
+              actions={
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setAddingSequence(true)}
+                >
+                  {strings.addSequence}
+                </button>
+              }
+              hints={[
+                {
+                  label: strings.taskGestures,
+                  text: [
+                    strings.taskGestureHint(
+                      strings.primarySwipeActionLabels[primarySwipeAction],
+                    ),
+                    strings.dragHint,
+                  ],
+                },
+              ]}
+            />
             <TaskOutline
               tasks={project.tasks}
               emptyMessage={strings.noTasks}
               organizable
+              showSwipeHint={false}
             />
           </section>
         </>

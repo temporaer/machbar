@@ -36,6 +36,8 @@ export interface TaskOutlineProps {
    * completely unchanged.
    */
   waitingInteraction?: TaskRowWaitingInteraction | undefined;
+  /** Show the root tasks' scheduled date as their Wiedervorlage prompt. */
+  showRevisitDate?: boolean;
   showSwipeHint?: boolean;
 }
 
@@ -44,6 +46,7 @@ export function TaskOutline({
   emptyMessage,
   organizable = false,
   waitingInteraction,
+  showRevisitDate = false,
   showSwipeHint = true,
 }: TaskOutlineProps) {
   const [movePrompt, setMovePrompt] = useState<{ task: Task; mode: MoveMode } | null>(null);
@@ -106,6 +109,7 @@ export function TaskOutline({
               onOpenDetail={open}
               taskActions={taskActions}
               waitingInteraction={waitingInteraction}
+              showRevisitDate={showRevisitDate}
             />
           ))}
         </ul>
@@ -122,6 +126,7 @@ export function TaskOutline({
               onOpenDetail={open}
               taskActions={taskActions}
               waitingInteraction={waitingInteraction}
+              showRevisitDate={showRevisitDate}
             />
           ))}
         </ul>
