@@ -390,7 +390,10 @@ describe("TaskDetailSheet", () => {
 
     const dueDate = screen.getByLabelText("Fällig");
     expect(dueDate).toHaveAttribute("type", "text");
-    expect(dueDate).toHaveAttribute("placeholder", "z. B. morgen, Freitag, 2w");
+    expect(dueDate).toHaveAttribute(
+      "placeholder",
+      "z. B. morgen, Freitag, KW 36, 2w",
+    );
     fireEvent.change(dueDate, { target: { value: "13. September 2026" } });
     fireEvent.blur(dueDate);
 

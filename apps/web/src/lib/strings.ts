@@ -49,7 +49,7 @@ const extra = {
   scheduledFrom: "Geplant von",
   scheduledTo: "Geplant bis",
   chooseDate: "Datum im Kalender wählen",
-  dateInputPlaceholder: "z. B. morgen, Freitag, 2w",
+  dateInputPlaceholder: "z. B. morgen, Freitag, KW 36, 2w",
   invalidDate: "Datum nicht erkannt",
   stuckProjects: "Festgefahrene Projekte",
   repairAction: "Reparaturvorschlag",

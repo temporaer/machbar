@@ -4,6 +4,8 @@ import "sugar-date/locales/de";
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const GERMAN_DATE_PATTERN = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
 const COMPACT_RELATIVE_PATTERN = /^(\d+)\s*([dwmy])$/i;
+const CALENDAR_WEEK_PATTERN =
+  /^(?:kw|kalenderwoche)\s*(\d{1,2})(?:\s*(?:\/|,)?\s*(\d{4}))?$/i;
 
 function isValidDateParts(year: number, month: number, day: number): boolean {
   const date = new Date(year, month - 1, day);
@@ -53,6 +55,25 @@ function parseCompactRelative(input: string, referenceDate: Date): Date | null {
   return date;
 }
 
+function isoWeekMonday(year: number, week: number): Date | null {
+  if (week < 1 || week > 53) return null;
+  const januaryFourth = new Date(year, 0, 4);
+  const mondayOffset = (januaryFourth.getDay() + 6) % 7;
+  const monday = new Date(year, 0, 4 - mondayOffset + (week - 1) * 7);
+
+  const thursday = new Date(monday);
+  thursday.setDate(monday.getDate() + 3);
+  return thursday.getFullYear() === year ? monday : null;
+}
+
+function parseCalendarWeek(input: string, referenceDate: Date): Date | null {
+  const match = CALENDAR_WEEK_PATTERN.exec(input);
+  if (!match) return null;
+  const week = Number(match[1]);
+  const year = match[2] ? Number(match[2]) : referenceDate.getFullYear();
+  return isoWeekMonday(year, week);
+}
+
 function parseWithSugar(input: string, locale: "de" | "en", referenceDate: Date): Date | null {
   const previousClock = Sugar.Date.getOption<() => Date>("newDateInternal");
   Sugar.Date.setOption("newDateInternal", () => new Date(referenceDate));
@@ -80,6 +101,9 @@ export function parseNaturalDate(
 
   const compactDate = parseCompactRelative(input, referenceDate);
   if (compactDate) return toIsoCalendarDate(compactDate);
+  const calendarWeek = parseCalendarWeek(input, referenceDate);
+  if (calendarWeek) return toIsoCalendarDate(calendarWeek);
+  if (CALENDAR_WEEK_PATTERN.test(input)) return null;
 
   const parsed =
     parseWithSugar(input, "de", referenceDate) ??

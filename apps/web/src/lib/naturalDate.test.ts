@@ -38,6 +38,15 @@ describe("parseNaturalDate", () => {
     expect(parseNaturalDate(input, reference)).toBe(expected);
   });
 
+  it.each([
+    ["KW 35", "2026-08-24"],
+    ["Kalenderwoche 36", "2026-08-31"],
+    ["KW 1/2027", "2027-01-04"],
+    ["Kalenderwoche 53, 2026", "2026-12-28"],
+  ])("parses ISO calendar week input %s as its Monday", (input, expected) => {
+    expect(parseNaturalDate(input, reference)).toBe(expected);
+  });
+
   it("keeps date arithmetic on the local calendar across daylight-saving changes", () => {
     const beforeDstChange = new Date(2026, 2, 28, 12);
     expect(parseNaturalDate("1d", beforeDstChange)).toBe("2026-03-29");
@@ -49,6 +58,8 @@ describe("parseNaturalDate", () => {
     expect(parseNaturalDate("29.02.2028", reference)).toBe("2028-02-29");
     expect(parseNaturalDate("29.02.2026", reference)).toBeNull();
     expect(parseNaturalDate("31.02.2026", reference)).toBeNull();
+    expect(parseNaturalDate("KW 54", reference)).toBeNull();
+    expect(parseNaturalDate("KW 53/2027", reference)).toBeNull();
     expect(parseNaturalDate("Kartoffeln", reference)).toBeNull();
     expect(parseNaturalDate("", reference)).toBeNull();
   });
