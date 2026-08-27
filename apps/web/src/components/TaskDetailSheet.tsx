@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { InheritanceMode, Task } from "@machbar/shared";
 import { inheritanceModes, taskStatuses } from "@machbar/shared";
 import { api } from "../lib/api";
@@ -24,6 +24,7 @@ import { MemberChoiceGroup } from "./MemberChoiceGroup";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MarkdownNotes } from "./MarkdownNotes";
 import { NativeShareButton } from "./NativeShareButton";
+import { IconActionButton } from "./IconActionButton";
 import { serializeTaskForShare } from "../lib/shareText";
 import { buildTaskShareUrl } from "../lib/shareUrls";
 
@@ -45,9 +46,11 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
 function InheritanceControl({
   mode,
   onChange,
+  focusRef,
 }: {
   mode: InheritanceMode;
   onChange: (mode: InheritanceMode) => void;
+  focusRef?: RefObject<HTMLButtonElement>;
 }) {
   const labels: Record<InheritanceMode, string> = {
     inherit: strings.ownerInheritanceParent,
@@ -57,7 +60,13 @@ function InheritanceControl({
   return (
     <div className="segmented" role="group">
       {inheritanceModes.map((m) => (
-        <button key={m} type="button" aria-pressed={mode === m} onClick={() => onChange(m)}>
+        <button
+          key={m}
+          ref={m === inheritanceModes[0] ? focusRef : undefined}
+          type="button"
+          aria-pressed={mode === m}
+          onClick={() => onChange(m)}
+        >
           {labels[m]}
         </button>
       ))}
@@ -88,9 +97,17 @@ export function TaskDetailSheet() {
   const [savingTextFields, setSavingTextFields] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [notesEditing, setNotesEditing] = useState(false);
+  const titleFieldRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const ownerFieldRef = useRef<HTMLDivElement>(null);
+  const ownerInputRef = useRef<HTMLButtonElement>(null);
   const scheduleFieldRef = useRef<HTMLDivElement>(null);
+  const scheduleInputRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
+  const dependenciesFieldRef = useRef<HTMLDivElement>(null);
+  const dependencyInputRef = useRef<HTMLInputElement>(null);
+  const subtasksFieldRef = useRef<HTMLDivElement>(null);
+  const subtaskInputRef = useRef<HTMLInputElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
 
   const {
@@ -145,20 +162,29 @@ export function TaskDetailSheet() {
       setNotesEditing(true);
       return;
     }
-    const containers: Record<TaskDetailFocusField, HTMLElement | null> = {
+    const scrollTargets: Record<TaskDetailFocusField, HTMLElement | null> = {
+      title: titleFieldRef.current,
       owner: ownerFieldRef.current,
       schedule: scheduleFieldRef.current,
       notes: notesRef.current,
+      dependencies: dependenciesFieldRef.current,
+      subtasks: subtasksFieldRef.current,
     };
-    const container = containers[focusField];
-    if (container) {
-      if (typeof container.scrollIntoView === "function") {
-        container.scrollIntoView({ block: "center", behavior: "smooth" });
+    const focusTargets: Record<TaskDetailFocusField, HTMLElement | null> = {
+      title: titleInputRef.current,
+      owner: ownerInputRef.current,
+      schedule: scheduleInputRef.current,
+      notes: notesRef.current,
+      dependencies: dependencyInputRef.current,
+      subtasks: subtaskInputRef.current,
+    };
+    const scrollTarget = scrollTargets[focusField];
+    const focusTarget = focusTargets[focusField];
+    if (scrollTarget) {
+      if (typeof scrollTarget.scrollIntoView === "function") {
+        scrollTarget.scrollIntoView({ block: "center", behavior: "smooth" });
       }
-      const focusable = container.matches("input, select, textarea, button")
-        ? container
-        : container.querySelector<HTMLElement>("input, select, textarea, button");
-      focusable?.focus();
+      focusTarget?.focus();
     }
     clearFocusField();
   }, [task, focusField, clearFocusField, notesEditing]);
@@ -259,9 +285,10 @@ export function TaskDetailSheet() {
         <div className="stack">
           {task.blocked ? <div className="badge badge-status-waiting">{strings.blockedHint}</div> : null}
 
-          <div className="field">
+          <div className="field" ref={titleFieldRef}>
             <label htmlFor="task-title">{strings.title}</label>
             <input
+              ref={titleInputRef}
               id="task-title"
               value={titleDraft}
               onChange={(e) => setTitleDraft(e.target.value)}
@@ -328,6 +355,7 @@ export function TaskDetailSheet() {
           <div className="field" ref={ownerFieldRef}>
             {task.ownerInheritanceMode !== "explicit" ? <label>{strings.owner}</label> : null}
             <InheritanceControl
+              focusRef={ownerInputRef}
               mode={task.ownerInheritanceMode}
               onChange={(mode) => void patch({ ownerInheritanceMode: mode })}
             />
@@ -360,6 +388,7 @@ export function TaskDetailSheet() {
             <div className="field" style={{ flex: 1 }} ref={scheduleFieldRef}>
               <label htmlFor="task-scheduled">{strings.scheduled}</label>
               <input
+                ref={scheduleInputRef}
                 id="task-scheduled"
                 type="date"
                 value={task.scheduledDate ?? ""}
@@ -424,13 +453,11 @@ export function TaskDetailSheet() {
             <div className="row-between">
               <label className="field-label" htmlFor="task-notes">{strings.notes}</label>
               {!notesEditing ? (
-                <button
-                  type="button"
-                  className="btn btn-sm"
+                <IconActionButton
+                  kind="edit"
+                  label={strings.edit}
                   onClick={() => setNotesEditing(true)}
-                >
-                  {strings.edit}
-                </button>
+                />
               ) : null}
             </div>
             {notesEditing ? (
@@ -506,7 +533,7 @@ export function TaskDetailSheet() {
             </div>
           ) : null}
 
-          <div className="field">
+          <div className="field" ref={dependenciesFieldRef}>
             <label>{strings.dependencies}</label>
             {task.dependencies.length === 0 ? <p className="text-muted">{strings.noDependencies}</p> : null}
             <ul className="list" style={{ padding: 0, margin: 0 }}>
@@ -527,6 +554,7 @@ export function TaskDetailSheet() {
               ))}
             </ul>
             <input
+              ref={dependencyInputRef}
               aria-label={strings.searchDependency}
               placeholder={strings.searchDependency}
               value={depQuery}
@@ -556,7 +584,7 @@ export function TaskDetailSheet() {
             ) : null}
           </div>
 
-          <div className="field">
+          <div className="field" ref={subtasksFieldRef}>
             <div className="row-between">
               <label>{strings.subtasks}</label>
             </div>
@@ -584,7 +612,7 @@ export function TaskDetailSheet() {
                 </li>
               ))}
             </ul>
-            <AddChildForm parentTaskId={task.id} onAdded={reload} />
+            <AddChildForm parentTaskId={task.id} inputRef={subtaskInputRef} onAdded={reload} />
           </div>
 
           <div className="field">
@@ -651,9 +679,11 @@ export function TaskDetailSheet() {
 
 function AddChildForm({
   parentTaskId,
+  inputRef,
   onAdded,
 }: {
   parentTaskId: number;
+  inputRef: RefObject<HTMLInputElement>;
   onAdded: () => void;
 }) {
   const [title, setTitle] = useState("");
@@ -684,6 +714,7 @@ function AddChildForm({
       }}
     >
       <input
+        ref={inputRef}
         aria-label={strings.addSubtask}
         placeholder={strings.addSubtask}
         value={title}

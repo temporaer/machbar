@@ -14,6 +14,8 @@ export type IconActionKind =
   | "actionable"
   | "reopen"
   | "followUp"
+  | "share"
+  | "edit"
   | "more";
 
 export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
@@ -72,6 +74,18 @@ export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
         <>
           <path d="M4 5h16v10.5H10L5 20v-4.5H4z" {...common} />
           <path d="M12 8v3.2M12 13.7v.01" {...common} />
+        </>
+      ) : kind === "share" ? (
+        <>
+          <circle cx="18" cy="5" r="2.5" {...common} />
+          <circle cx="6" cy="12" r="2.5" {...common} />
+          <circle cx="18" cy="19" r="2.5" {...common} />
+          <path d="M8.2 10.8l7.6-4.5M8.2 13.2l7.6 4.5" {...common} />
+        </>
+      ) : kind === "edit" ? (
+        <>
+          <path d="M4 20l4.5-1 10.8-10.8a2.5 2.5 0 00-3.5-3.5L5 15.5 4 20z" {...common} />
+          <path d="M14.5 6l3.5 3.5M5 15.5L8.5 19" {...common} />
         </>
       ) : (
         <>

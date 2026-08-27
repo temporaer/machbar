@@ -217,7 +217,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(within(grouping).getAllByRole("button").map((button) => button.textContent)).toEqual([
       "Keine Gruppierung",
       "Kontext",
-      "Person/Stelle",
+      "Person",
       "Bereich",
     ]);
     expect(screen.queryByRole("button", { name: "Telefon" })).not.toBeInTheDocument();

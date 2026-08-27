@@ -74,7 +74,7 @@ inheritance rules.
 
 Tag selection is a reusable compact chip picker in both task and project
 editors. Every flexible, non-exclusive tag has one primary kind: Bereich,
-Person/Stelle, Kontext, or Normal. The picker creates a missing tag with the
+Person, Kontext, or Normal. The picker creates a missing tag with the
 kind of its active section and selects it immediately. Inherited task tags
 remain separately excludable rather than being converted into explicit task
 tags. `TagManager` exposes kind and grouping metadata under **Mehr**;

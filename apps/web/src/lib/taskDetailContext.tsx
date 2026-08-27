@@ -7,7 +7,13 @@ import type { ReactNode } from "react";
  * lands the user directly in the relevant field of the existing edit flow
  * instead of just opening the sheet at the top.
  */
-export type TaskDetailFocusField = "owner" | "schedule" | "notes";
+export type TaskDetailFocusField =
+  | "title"
+  | "owner"
+  | "schedule"
+  | "notes"
+  | "dependencies"
+  | "subtasks";
 
 interface TaskDetailContextValue {
   openTaskId: number | null;
@@ -16,7 +22,7 @@ interface TaskDetailContextValue {
   focusField: TaskDetailFocusField | null;
   open: (taskId: number, focusField?: TaskDetailFocusField) => void;
   /** Opens the first id and remembers the rest so `advanceQueue` can step through them. */
-  openQueue: (taskIds: number[]) => void;
+  openQueue: (taskIds: number[], focusField?: TaskDetailFocusField) => void;
   advanceQueue: () => void;
   close: () => void;
   /** Consumed by the sheet once it has applied the requested focus. */
@@ -38,13 +44,13 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
     setFocusField(field ?? null);
   };
 
-  const openQueue = (taskIds: number[]) => {
+  const openQueue = (taskIds: number[], field?: TaskDetailFocusField) => {
     if (taskIds.length === 0) return;
     const [first, ...rest] = taskIds;
     setQueueActive(true);
     setQueue(rest);
     setOpenTaskId(first ?? null);
-    setFocusField(null);
+    setFocusField(field ?? null);
   };
 
   const advanceQueue = () => {

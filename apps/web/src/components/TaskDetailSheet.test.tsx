@@ -5,7 +5,11 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
-import { TaskDetailProvider, useTaskDetail } from "../lib/taskDetailContext";
+import {
+  TaskDetailProvider,
+  useTaskDetail,
+  type TaskDetailFocusField,
+} from "../lib/taskDetailContext";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { api } from "../lib/api";
 import { makeMember, makeTag, makeTask } from "../test/fixtures";
@@ -25,11 +29,19 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
-function OpenerHarness({ taskId, children }: { taskId: number; children: ReactNode }) {
+function OpenerHarness({
+  taskId,
+  focusField,
+  children,
+}: {
+  taskId: number;
+  focusField?: TaskDetailFocusField | undefined;
+  children: ReactNode;
+}) {
   const { open } = useTaskDetail();
   return (
     <div>
-      <button type="button" onClick={() => open(taskId)}>
+      <button type="button" onClick={() => open(taskId, focusField)}>
         open
       </button>
       {children}
@@ -49,13 +61,13 @@ function QueueOpenerHarness({ taskIds, children }: { taskIds: number[]; children
   );
 }
 
-function renderSheet(taskId: number) {
+function renderSheet(taskId: number, focusField?: TaskDetailFocusField) {
   return render(
     <MemoryRouter>
       <IdentityProvider>
         <RefreshProvider>
           <TaskDetailProvider>
-            <OpenerHarness taskId={taskId}>
+            <OpenerHarness taskId={taskId} focusField={focusField}>
               <TaskDetailSheet />
             </OpenerHarness>
           </TaskDetailProvider>
@@ -82,7 +94,11 @@ function renderQueueSheet(taskIds: number[]) {
 }
 
 async function openNotesEditor(): Promise<HTMLTextAreaElement> {
-  await userEvent.click(screen.getByRole("button", { name: "Bearbeiten" }));
+  const editButton = screen.getByRole("button", { name: "Bearbeiten" });
+  expect(editButton).toHaveClass("icon-action-button");
+  expect(editButton).toHaveAttribute("title", "Bearbeiten");
+  expect(editButton).not.toHaveTextContent("Bearbeiten");
+  await userEvent.click(editButton);
   return screen.getByLabelText("Notizen") as HTMLTextAreaElement;
 }
 
@@ -92,6 +108,66 @@ describe("TaskDetailSheet", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getTags.mockResolvedValue([makeTag({ id: 10, name: "büro" })]);
     mockedApi.updateTask.mockResolvedValue(makeTask());
+  });
+
+  it("focuses the requested title repair field", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 42, title: "Reparaturziel", dependencies: [], children: [] }),
+    );
+    renderSheet(42, "title");
+
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Titel")).toHaveFocus());
+  });
+
+  it("focuses dependency search after unresolved dependency removal controls", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({
+        id: 42,
+        title: "Reparaturziel",
+        dependencies: [
+          {
+            id: 71,
+            taskId: 42,
+            dependsOnTaskId: 19,
+            title: "Freigabe einholen",
+            resolved: false,
+          },
+        ],
+      }),
+    );
+    renderSheet(42, "dependencies");
+
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const searchInput = await screen.findByLabelText("Aufgabe suchen …");
+    const removeButton = screen.getByRole("button", { name: "Entfernen" });
+    await waitFor(() => expect(searchInput).toHaveFocus());
+    expect(removeButton).not.toHaveFocus();
+  });
+
+  it("focuses the add-child input after closed child reopen controls", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({
+        id: 42,
+        title: "Reparaturziel",
+        children: [
+          makeTask({ id: 43, parentTaskId: 42, title: "Erledigte Teilaufgabe", status: "done" }),
+          makeTask({ id: 44, parentTaskId: 42, title: "Verworfene Teilaufgabe", status: "cancelled" }),
+        ],
+      }),
+    );
+    renderSheet(42, "subtasks");
+
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const addChildInput = await screen.findByLabelText("Teilaufgabe hinzufügen");
+    const reopenButtons = screen.getAllByRole("button", { name: "Wieder öffnen" });
+    await waitFor(() => expect(addChildInput).toHaveFocus());
+    for (const reopenButton of reopenButtons) {
+      expect(reopenButton).not.toHaveFocus();
+    }
   });
 
   it("zeigt geerbte Tags mit Ausschluss-Option und erlaubt das Umschalten des Zuständigkeits-Vererbungsmodus", async () => {

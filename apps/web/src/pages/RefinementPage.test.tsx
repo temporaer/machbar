@@ -1,6 +1,8 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useLocation } from "react-router-dom";
+import type { RefinementIssue } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { strings } from "../lib/strings";
@@ -8,6 +10,7 @@ import type { OwnerSizeCounts, RefinementTaskRow } from "../lib/api";
 import { REFINEMENT_RETENTION_MS } from "../lib/useRefinementActions";
 import { makeTag, makeTask } from "../test/fixtures";
 import { RefinementPage } from "./RefinementPage";
+import { useTaskDetail } from "../lib/taskDetailContext";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -43,6 +46,39 @@ function taskRow(overrides: Partial<RefinementTaskRow> = {}): RefinementTaskRow 
   };
 }
 
+function issue(
+  actionCode: RefinementIssue["suggestedAction"]["code"],
+  entityType: RefinementIssue["entityType"] = "task",
+): RefinementIssue {
+  return {
+    code: entityType === "project" ? "missing_outcome" : "needs_clarification",
+    severity: "warning",
+    label: `Problem ${actionCode}`,
+    explanation: "Bitte reparieren.",
+    suggestedAction: {
+      code: actionCode,
+      label: `Repariere ${actionCode}`,
+    },
+    entityType,
+    entityId: 41,
+    entityTitle: "Testobjekt",
+    projectId: entityType === "project" ? 41 : null,
+    projectTitle: entityType === "project" ? "Testprojekt" : null,
+  };
+}
+
+function RepairState() {
+  const location = useLocation();
+  const taskDetail = useTaskDetail();
+  return (
+    <output aria-label="repair-state">
+      {location.pathname}
+      {location.search}|{taskDetail.openTaskId ?? "none"}|
+      {taskDetail.focusField ?? "none"}|{String(taskDetail.queueActive)}
+    </output>
+  );
+}
+
 async function flushMicrotasks(times = 3) {
   for (let i = 0; i < times; i += 1) {
     // eslint-disable-next-line no-await-in-loop
@@ -55,6 +91,8 @@ describe("RefinementPage", () => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([]);
     mockedApi.searchTasks.mockResolvedValue([]);
+    mockedApi.getRefinementOwners.mockResolvedValue([]);
+    mockedApi.getRefinementTasks.mockResolvedValue([]);
     mockedApi.getRefinementIssues.mockResolvedValue({ issues: [], projects: [] });
   });
 
@@ -185,6 +223,116 @@ describe("RefinementPage", () => {
 
     expect(screen.getByRole("heading", { name: "Küche" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ohne Bereich" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["assign_driver", "driver"],
+    ["add_outcome", "outcome"],
+    ["add_next_action", "next-action"],
+    ["review_completion", "completion"],
+  ] as const)(
+    "deep-links project repair %s to its focused existing editor",
+    async (actionCode, focus) => {
+      mockedApi.getRefinementIssues.mockResolvedValue({
+        issues: [issue(actionCode, "project")],
+        projects: [],
+      });
+
+      renderWithProviders(
+        <>
+          <RefinementPage />
+          <RepairState />
+        </>,
+        { initialEntries: ["/mehr/refinement"] },
+      );
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: `Repariere ${actionCode}` }),
+      );
+      expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+        `/projekte/41?focus=${focus}|none|none|false`,
+      );
+    },
+  );
+
+  it.each([
+    ["assign_task", "owner", false],
+    ["set_followup", "schedule", false],
+    ["follow_up", "schedule", false],
+    ["plan_task", "schedule", false],
+    ["resolve_blocker", "dependencies", false],
+    ["add_child", "subtasks", false],
+    ["clarify_task", "title", true],
+  ] as const)(
+    "opens task repair %s at the narrowest existing task field",
+    async (actionCode, focus, queueActive) => {
+      mockedApi.getRefinementIssues.mockResolvedValue({
+        issues: [issue(actionCode)],
+        projects: [],
+      });
+
+      renderWithProviders(
+        <>
+          <RefinementPage />
+          <RepairState />
+        </>,
+        { initialEntries: ["/mehr/refinement"] },
+      );
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: `Repariere ${actionCode}` }),
+      );
+      expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+        `/mehr/refinement|41|${focus}|${String(queueActive)}`,
+      );
+    },
+  );
+
+  it("opens a concrete unplanned project task at its schedule field", async () => {
+    mockedApi.getRefinementIssues.mockResolvedValue({
+      issues: [issue("plan_task", "project")],
+      projects: [],
+    });
+    mockedApi.searchTasks.mockResolvedValue([
+      makeTask({ id: 73, projectId: 41, status: "actionable" }),
+    ]);
+
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/mehr/refinement"] },
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Repariere plan_task" }),
+    );
+    expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+      "/mehr/refinement|73|schedule|false",
+    );
+  });
+
+  it("keeps project planning repair focused through route state while task context is still loading", async () => {
+    mockedApi.getRefinementIssues.mockResolvedValue({
+      issues: [issue("plan_task", "project")],
+      projects: [],
+    });
+
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/mehr/refinement"] },
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Repariere plan_task" }),
+    );
+    expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+      "/projekte/41?focus=planning|none|none|false",
+    );
   });
 
   it("defers the owner/list refetch (so the matrix regrouping is visible) until the retention window elapses after a swipe-driven size change", async () => {

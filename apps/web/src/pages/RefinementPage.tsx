@@ -121,7 +121,40 @@ export function RefinementPage() {
 
   const repair = (issue: RefinementIssue) => {
     if (issue.entityType === "project") {
+      const projectFocusByAction: Partial<
+        Record<RefinementIssue["suggestedAction"]["code"], string>
+      > = {
+        assign_driver: "driver",
+        add_outcome: "outcome",
+        add_next_action: "next-action",
+        review_completion: "completion",
+      };
+      const projectFocus = projectFocusByAction[issue.suggestedAction.code];
+      if (projectFocus) {
+        navigate(`/projekte/${issue.entityId}?focus=${projectFocus}`);
+        return;
+      }
+      if (issue.suggestedAction.code === "plan_task") {
+        const taskToPlan =
+          contextTasks?.find(
+            (task) =>
+              task.projectId === issue.entityId &&
+              task.status !== "done" &&
+              task.status !== "cancelled",
+          ) ??
+          taskRows?.find((task) => task.projectId === issue.entityId);
+        if (taskToPlan) {
+          taskDetail.open(taskToPlan.id, "schedule");
+          return;
+        }
+        navigate(`/projekte/${issue.entityId}?focus=planning`);
+        return;
+      }
       navigate(`/projekte/${issue.entityId}`);
+      return;
+    }
+    if (issue.suggestedAction.code === "clarify_task") {
+      taskDetail.openQueue([issue.entityId], "title");
       return;
     }
     const focus =
@@ -131,7 +164,11 @@ export function RefinementPage() {
             issue.suggestedAction.code === "follow_up" ||
             issue.suggestedAction.code === "plan_task"
           ? "schedule"
-          : undefined;
+          : issue.suggestedAction.code === "resolve_blocker"
+            ? "dependencies"
+            : issue.suggestedAction.code === "add_child"
+              ? "subtasks"
+              : undefined;
     taskDetail.open(issue.entityId, focus);
   };
 

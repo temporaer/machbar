@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { strings } from "../lib/strings";
+import { IconActionButton } from "./IconActionButton";
 
 export function NativeShareButton({
   title,
@@ -39,9 +40,12 @@ export function NativeShareButton({
 
   return (
     <span className="native-share-control">
-      <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void share()}>
-        {strings.share}
-      </button>
+      <IconActionButton
+        kind="share"
+        label={strings.share}
+        disabled={busy}
+        onClick={() => void share()}
+      />
       {status ? <span className="text-muted native-share-status" role="status">{status}</span> : null}
     </span>
   );

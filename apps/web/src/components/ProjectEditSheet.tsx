@@ -33,6 +33,8 @@ const lifecycleLabels: Record<ProjectWorkflowAction, string> = {
   archive: strings.archiveStory,
 };
 
+export type ProjectEditFocusField = "driver" | "completion";
+
 /**
  * Mobile bottom-sheet editor for a project/story: metadata (title, driver,
  * tags, due/scheduled dates), the ordered acceptance-criteria list
@@ -48,7 +50,15 @@ const lifecycleLabels: Record<ProjectWorkflowAction, string> = {
  * thumb-sized transition buttons next to it — the same set of legal steps a
  * `ProjectStoryRow` offers via swipe/chips.
  */
-export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail; onClose: () => void }) {
+export function ProjectEditSheet({
+  project,
+  onClose,
+  focusField,
+}: {
+  project: ProjectDetail;
+  onClose: () => void;
+  focusField?: ProjectEditFocusField | undefined;
+}) {
   const { members } = useIdentity();
   const { bump } = useRefresh();
   const navigate = useNavigate();
@@ -62,6 +72,9 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const lastLoadedProjectIdRef = useRef<number | null>(null);
+  const driverFieldRef = useRef<HTMLDivElement>(null);
+  const lifecycleFieldRef = useRef<HTMLDivElement>(null);
+  const appliedFocusRef = useRef<string | null>(null);
 
   // Resets drafts (and the dirty-check baseline) whenever a *different*
   // project is opened, or whenever fresh data arrives and the user has no
@@ -84,6 +97,23 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
     lastLoadedProjectIdRef.current = project.id;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
+
+  useEffect(() => {
+    const focusKey = focusField ? `${project.id}:${focusField}` : null;
+    if (!focusField || appliedFocusRef.current === focusKey) return;
+    const container =
+      focusField === "driver"
+        ? driverFieldRef.current
+        : lifecycleFieldRef.current;
+    if (!container) return;
+    container.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    const focusable =
+      focusField === "completion"
+        ? container.querySelector<HTMLElement>('[data-workflow-action="complete"]')
+        : container.querySelector<HTMLElement>("select");
+    focusable?.focus();
+    appliedFocusRef.current = focusKey;
+  }, [focusField, project.id]);
 
   const titleIsValid = titleDraft.trim().length > 0;
   const textFieldsDirty =
@@ -210,7 +240,12 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
           </div>
         </div>
 
-        <div className="lifecycle-actions" role="group" aria-labelledby="project-status-label">
+        <div
+          className="lifecycle-actions"
+          role="group"
+          aria-labelledby="project-status-label"
+          ref={lifecycleFieldRef}
+        >
           {project.availableActions.map((action) => (
             <button
               key={action}
@@ -218,6 +253,7 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
               className={`btn btn-sm${action === "activate" ? " btn-primary" : ""}${
                 action === "archive" ? " btn-ghost" : ""
               }`}
+              data-workflow-action={action}
               disabled={busyAction !== null}
               onClick={() => void runAction(action)}
             >
@@ -229,7 +265,7 @@ export function ProjectEditSheet({ project, onClose }: { project: ProjectDetail;
           <p className="text-muted">{strings.assignDriverToActivateHint}</p>
         ) : null}
 
-        <div className="field">
+        <div className="field" ref={driverFieldRef}>
           <label htmlFor="project-driver">{strings.driver}</label>
           <select
             id="project-driver"

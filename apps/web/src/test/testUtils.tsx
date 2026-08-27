@@ -6,9 +6,15 @@ import { RefreshProvider } from "../lib/refresh";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
 
-function AllProviders({ children }: { children: ReactNode }) {
+function AllProviders({
+  children,
+  initialEntries,
+}: {
+  children: ReactNode;
+  initialEntries?: string[] | undefined;
+}) {
   return (
-    <MemoryRouter>
+    <MemoryRouter {...(initialEntries ? { initialEntries } : {})}>
       <IdentityProvider>
         <RefreshProvider>
           <SwipeSettingsProvider>
@@ -20,6 +26,15 @@ function AllProviders({ children }: { children: ReactNode }) {
   );
 }
 
-export function renderWithProviders(ui: ReactElement) {
-  return render(ui, { wrapper: AllProviders });
+export function renderWithProviders(
+  ui: ReactElement,
+  options: { initialEntries?: string[] | undefined } = {},
+) {
+  return render(ui, {
+    wrapper: ({ children }) => (
+      <AllProviders initialEntries={options.initialEntries}>
+        {children}
+      </AllProviders>
+    ),
+  });
 }

@@ -23,11 +23,13 @@ export function AcceptanceCriteriaEditor({
   projectId,
   criteria: criteriaProp,
   onError,
+  autoFocusNewCriterion = false,
 }: {
   projectId: number;
   criteria: AcceptanceCriterion[];
   /** Reports a failed mutation to the surrounding sheet (`null` clears it). */
   onError: (message: string | null) => void;
+  autoFocusNewCriterion?: boolean;
 }) {
   const { bump } = useRefresh();
   const [newCriterionText, setNewCriterionText] = useState("");
@@ -144,6 +146,7 @@ export function AcceptanceCriteriaEditor({
         <input
           type="text"
           style={{ flex: 1 }}
+          autoFocus={autoFocusNewCriterion}
           placeholder={strings.addCriterionPlaceholder}
           aria-label={strings.addCriterionPlaceholder}
           value={newCriterionText}

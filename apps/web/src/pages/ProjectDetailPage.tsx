@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { strings, projectStatusLabels } from "../lib/strings";
@@ -7,7 +7,7 @@ import { LoadingState, ErrorState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { ProjectEditSheet } from "../components/ProjectEditSheet";
-import { countTasks } from "../lib/taskHelpers";
+import { countTasks, flattenTasks } from "../lib/taskHelpers";
 import { useIdentity } from "../lib/identity";
 import { formatDate } from "../lib/format";
 import { ProjectStuckNotice } from "../components/ProjectStuckNotice";
@@ -20,10 +20,15 @@ import { buildProjectShareUrl } from "../lib/shareUrls";
 import { useRefresh } from "../lib/refresh";
 import { PageHeader } from "../components/PageHeader";
 import { useSwipeSettings } from "../lib/swipeSettings";
+import { IconActionButton } from "../components/IconActionButton";
+import { StoryCriteriaSheet } from "../components/StoryCriteriaSheet";
+import { useTaskDetail } from "../lib/taskDetailContext";
 
 export function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const projectId = Number(params.id);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focus = searchParams.get("focus");
   const { members } = useIdentity();
   const [editing, setEditing] = useState(false);
   const [addingSequence, setAddingSequence] = useState(false);
@@ -31,7 +36,15 @@ export function ProjectDetailPage() {
   const [notesDraft, setNotesDraft] = useState("");
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesError, setNotesError] = useState<string | null>(null);
+  const planningTaskRef = useRef<number | null>(null);
+  const planningOwnsSheetRef = useRef(false);
+  const planningSheetOpenedRef = useRef(false);
   const { bump } = useRefresh();
+  const { openTaskId, open: openTaskDetail, close: closeTaskDetail } = useTaskDetail();
+  const openTaskIdRef = useRef(openTaskId);
+  const closeTaskDetailRef = useRef(closeTaskDetail);
+  openTaskIdRef.current = openTaskId;
+  closeTaskDetailRef.current = closeTaskDetail;
   const { primarySwipeAction } = useSwipeSettings();
   const {
     data: project,
@@ -45,6 +58,69 @@ export function ProjectDetailPage() {
   const criteriaTotal = project?.acceptanceCriteria.length ?? 0;
   const criteriaDone = project?.acceptanceCriteria.filter((c) => c.checked).length ?? 0;
   const criteriaPct = criteriaTotal > 0 ? Math.round((criteriaDone / criteriaTotal) * 100) : 0;
+
+  const clearRouteFocus = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("focus");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const planningFocusActive = focus === "planning";
+
+  useEffect(() => {
+    if (!planningFocusActive) return;
+    return () => {
+      const ownedTaskId = planningTaskRef.current;
+      const ownsPendingOpen =
+        planningOwnsSheetRef.current &&
+        !planningSheetOpenedRef.current &&
+        openTaskIdRef.current === null;
+      const ownsOpenSheet =
+        planningOwnsSheetRef.current && openTaskIdRef.current === ownedTaskId;
+
+      planningTaskRef.current = null;
+      planningOwnsSheetRef.current = false;
+      planningSheetOpenedRef.current = false;
+
+      if (ownsPendingOpen || ownsOpenSheet) closeTaskDetailRef.current();
+    };
+  }, [planningFocusActive, projectId]);
+
+  useEffect(() => {
+    if (
+      !planningFocusActive ||
+      !project ||
+      project.id !== projectId ||
+      planningTaskRef.current !== null ||
+      openTaskId !== null
+    ) {
+      return;
+    }
+    const taskToPlan = flattenTasks(project.tasks).find(
+      (task) =>
+        task.status !== "done" &&
+        task.status !== "cancelled" &&
+        !task.dueDate &&
+        !task.scheduledDate,
+    );
+    if (!taskToPlan) return;
+    planningTaskRef.current = taskToPlan.id;
+    planningOwnsSheetRef.current = true;
+    planningSheetOpenedRef.current = false;
+    openTaskDetail(taskToPlan.id, "schedule");
+  }, [planningFocusActive, project, projectId, openTaskId, openTaskDetail]);
+
+  useEffect(() => {
+    const ownedTaskId = planningTaskRef.current;
+    if (!planningFocusActive || !planningOwnsSheetRef.current || ownedTaskId === null) return;
+
+    if (openTaskId === ownedTaskId) {
+      planningSheetOpenedRef.current = true;
+    } else if (planningSheetOpenedRef.current || openTaskId !== null) {
+      planningOwnsSheetRef.current = false;
+      clearRouteFocus();
+    }
+  }, [planningFocusActive, openTaskId, clearRouteFocus]);
 
   useEffect(() => {
     if (project && !notesEditing) setNotesDraft(project.notes);
@@ -122,9 +198,11 @@ export function ProjectDetailPage() {
             <div className="row-between">
               <h2 className="section-title">{strings.notes}</h2>
               {!notesEditing ? (
-                <button type="button" className="btn btn-sm" onClick={() => setNotesEditing(true)}>
-                  {strings.edit}
-                </button>
+                <IconActionButton
+                  kind="edit"
+                  label={strings.edit}
+                  onClick={() => setNotesEditing(true)}
+                />
               ) : null}
             </div>
             {notesEditing ? (
@@ -200,8 +278,30 @@ export function ProjectDetailPage() {
           </section>
         </>
       ) : null}
-      <QuickAdd projectId={projectId} />
-      {editing && project ? <ProjectEditSheet project={project} onClose={() => setEditing(false)} /> : null}
+      <QuickAdd
+        projectId={projectId}
+        autoOpen={focus === "next-action"}
+        onAutoOpenClose={clearRouteFocus}
+      />
+      {(editing || focus === "driver" || focus === "completion") && project ? (
+        <ProjectEditSheet
+          project={project}
+          focusField={
+            focus === "driver"
+              ? "driver"
+              : focus === "completion"
+                ? "completion"
+                : undefined
+          }
+          onClose={() => {
+            setEditing(false);
+            if (focus === "driver" || focus === "completion") clearRouteFocus();
+          }}
+        />
+      ) : null}
+      {focus === "outcome" && project ? (
+        <StoryCriteriaSheet story={project} onClose={clearRouteFocus} />
+      ) : null}
       {addingSequence ? (
         <TaskSequenceSheet
           projectId={projectId}

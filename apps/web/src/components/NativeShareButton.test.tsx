@@ -13,7 +13,13 @@ describe("NativeShareButton", () => {
     Object.defineProperty(navigator, "share", { configurable: true, value: share });
 
     render(<NativeShareButton title="Einkaufen" text={"Einkaufen\n\nMilch"} url="https://machbar.test/#/aufgaben/1" />);
-    await userEvent.click(screen.getByRole("button", { name: "Teilen" }));
+    const button = screen.getByRole("button", { name: "Teilen" });
+    expect(button).toHaveClass("icon-action-button");
+    expect(button).toHaveAttribute("title", "Teilen");
+    expect(button).not.toHaveTextContent("Teilen");
+    expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+
+    await userEvent.click(button);
 
     await waitFor(() =>
       expect(share).toHaveBeenCalledWith({

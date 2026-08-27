@@ -18,7 +18,9 @@ export function WaitingPage() {
       <div className="page-header">
         <h1>{strings.waiting}</h1>
       </div>
-      <TagGroupingControl value={groupBy} onChange={setGroupBy} />
+      <div className="projects-controls">
+        <TagGroupingControl value={groupBy} onChange={setGroupBy} />
+      </div>
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {groups ? <WaitingGroupList groups={groups} groupBy={groupBy} /> : null}

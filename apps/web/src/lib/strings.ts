@@ -86,7 +86,7 @@ const extra = {
   tagKind: "Tag-Typ",
   tagKindLabels: {
     area: "Bereich",
-    actor: "Person/Stelle",
+    actor: "Person",
     context: "Kontext",
     plain: "Normal",
   },
@@ -98,10 +98,10 @@ const extra = {
   },
   noArea: "Ohne Bereich",
   noContext: "Ohne Kontext",
-  noActor: "Ohne Person/Stelle",
+  noActor: "Ohne Person",
   withoutTagKindLabels: {
     area: "Ohne Bereich",
-    actor: "Ohne Person/Stelle",
+    actor: "Ohne Person",
     context: "Ohne Kontext",
   },
   groupByTagType: "Gruppieren nach",

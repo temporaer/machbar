@@ -15,7 +15,11 @@ export function StoryCriteriaSheet({ story, onClose }: { story: Project; onClose
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <BottomSheet title={`${strings.criteria}: ${story.title}`} onClose={onClose}>
+    <BottomSheet
+      title={`${strings.criteria}: ${story.title}`}
+      onClose={onClose}
+      labelledBy="story-criteria-title"
+    >
       <div className="stack">
         {error ? (
           <p role="alert" style={{ color: "var(--color-danger)" }}>
@@ -26,6 +30,7 @@ export function StoryCriteriaSheet({ story, onClose }: { story: Project; onClose
           projectId={story.id}
           criteria={story.acceptanceCriteria}
           onError={setError}
+          autoFocusNewCriterion
         />
         <button type="button" className="btn btn-block" onClick={onClose}>
           {strings.close}

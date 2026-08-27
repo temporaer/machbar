@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ProjectWithActions } from "../lib/api";
 import { useRefresh } from "../lib/refresh";
 import { api } from "../lib/api";
@@ -16,8 +16,18 @@ import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
  * project or list first — a bare title is enough and the task lands in
  * Eingang (inbox) for later clarification/refile.
  */
-export function QuickAdd({ projectId, parentTaskId }: { projectId?: number | null; parentTaskId?: number | null }) {
-  const [open, setOpen] = useState(false);
+export function QuickAdd({
+  projectId,
+  parentTaskId,
+  autoOpen = false,
+  onAutoOpenClose,
+}: {
+  projectId?: number | null;
+  parentTaskId?: number | null;
+  autoOpen?: boolean;
+  onAutoOpenClose?: () => void;
+}) {
+  const [open, setOpen] = useState(autoOpen);
   const [error, setError] = useState<string | null>(null);
   const [createdTask, setCreatedTask] = useState<Awaited<ReturnType<typeof api.createTask>> | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -30,9 +40,14 @@ export function QuickAdd({ projectId, parentTaskId }: { projectId?: number | nul
   const [captureNotice, setCaptureNotice] = useState<string | null>(null);
   const { bump } = useRefresh();
 
+  useEffect(() => {
+    if (autoOpen) setOpen(true);
+  }, [autoOpen]);
+
   const close = () => {
     setOpen(false);
     setError(null);
+    if (autoOpen) onAutoOpenClose?.();
   };
 
   const loadProjects = () => {
