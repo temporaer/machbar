@@ -380,6 +380,28 @@ describe("TaskDetailSheet", () => {
     expect(scheduledDate).toHaveValue("12.09.2026");
   });
 
+  it("uses the same natural-language editor for the due date", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 59, title: "Fälligkeit planen", dueDate: null }),
+    );
+    renderSheet(59);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Fälligkeit planen");
+
+    const dueDate = screen.getByLabelText("Fällig");
+    expect(dueDate).toHaveAttribute("type", "text");
+    expect(dueDate).toHaveAttribute("placeholder", "z. B. morgen, Freitag, 2w");
+    fireEvent.change(dueDate, { target: { value: "13. September 2026" } });
+    fireEvent.blur(dueDate);
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(59, {
+        dueDate: "2026-09-13",
+      }),
+    );
+    expect(dueDate).toHaveValue("13.09.2026");
+  });
+
   it("schließt einen ausgeschlossenen geerbten Tag über den Umschalter aus", async () => {
     const inheritedTag = makeTag({ id: 11, name: "eilig" });
     const task = makeTask({
