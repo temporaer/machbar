@@ -5,6 +5,10 @@ import { api } from "../lib/api";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
 import { strings, projectStatusLabels, stuckReasonLabels } from "../lib/strings";
 import { formatDate } from "../lib/format";
+import {
+  formatCompactWaitDuration,
+  formatExactLocalDate,
+} from "../lib/relativeDate";
 import { useIdentity } from "../lib/identity";
 import {
   classifyProjectListItem,
@@ -129,12 +133,19 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
   const accent = statusAccentByClassification[classification];
   const isHealthyWaiting = classification === "healthy-waiting";
   const waitingOn = story.waitingOn ?? [];
+  const waitingDuration = story.waitingUntil
+    ? formatCompactWaitDuration(story.waitingUntil)
+    : null;
+  const waitingUntilExact = story.waitingUntil
+    ? formatExactLocalDate(story.waitingUntil)
+    : null;
+  const waitingDurationSuffix = waitingDuration ? ` · noch ${waitingDuration}` : "";
   const waitingOnSummary =
     waitingOn.length > 0
       ? `${strings.waitingOn}: ${waitingOn.slice(0, 2).join(" · ")}${
           waitingOn.length > 2 ? ` · ${strings.waitingOnMore(waitingOn.length - 2)}` : ""
-        }`
-      : strings.waitingReasonMissing;
+        }${waitingDurationSuffix}`
+      : `${strings.waitingReasonMissing}${waitingDurationSuffix}`;
   const nextOpenCriterion = criteria.find((criterion) => !criterion.checked);
   const criterionSummary =
     criteria.length === 0
@@ -300,7 +311,14 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
               {criterionSummary ? (
                 <p className="story-row-criterion">{criterionSummary}</p>
               ) : null}
-              <p className="story-row-next-action">
+              <p
+                className="story-row-next-action"
+                title={
+                  isHealthyWaiting && waitingUntilExact
+                    ? `Wiedervorlage am ${waitingUntilExact}`
+                    : undefined
+                }
+              >
                 {isHealthyWaiting
                   ? waitingOnSummary
                   : story.nextAction

@@ -16,6 +16,15 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
+function localToday(): string {
+  const date = new Date();
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 describe("WaitingPage grouping controls", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -34,7 +43,7 @@ describe("WaitingPage grouping controls", () => {
 
     const buttons = within(grouping).getAllByRole("button");
     expect(buttons.map((button) => button.textContent)).toEqual([
-      "Keine Gruppierung",
+      "Keine",
       "Kontext",
       "Person",
       "Bereich",
@@ -53,6 +62,7 @@ describe("WaitingPage grouping controls", () => {
             title: "Rückruf abwarten",
             status: "waiting",
             effectiveTags: [phone],
+            scheduledDate: localToday(),
           }),
           makeTask({ id: 92, title: "Antwort abwarten", status: "waiting" }),
         ],
@@ -61,9 +71,10 @@ describe("WaitingPage grouping controls", () => {
 
     renderWithProviders(<WaitingPage />);
     await screen.findByText("Rückruf abwarten");
+    expect(screen.getByText("Wiedervorlage: heute")).toBeInTheDocument();
 
     const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
-    const none = within(grouping).getByRole("button", { name: "Keine Gruppierung" });
+    const none = within(grouping).getByRole("button", { name: "Keine" });
     const context = within(grouping).getByRole("button", { name: "Kontext" });
 
     await userEvent.click(context);

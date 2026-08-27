@@ -240,19 +240,23 @@ describe("search/filter and project CRUD/archive", () => {
       {
         title: "Fenster bestellen",
         waitingFor: "Angebot der Schreinerei",
+        scheduledDate: "2099-10-03",
       },
       {
         title: "Arbeitsplatte bestellen",
         waitingFor: "Angebot der Schreinerei",
+        scheduledDate: "2099-10-01",
       },
       {
         title: "Lieferung verfolgen",
         waitingFor: null,
+        scheduledDate: "2099-10-02",
       },
       {
         title: "Nicht mehr relevant",
         waitingFor: "Diese Rückmeldung ist erledigt",
         status: "done",
+        scheduledDate: "2099-09-01",
       },
     ]) {
       await ctx.app.inject({
@@ -261,7 +265,6 @@ describe("search/filter and project CRUD/archive", () => {
         payload: {
           projectId: project.id,
           status: "waiting",
-          scheduledDate: "2099-10-01",
           ...payload,
         },
       });
@@ -278,6 +281,7 @@ describe("search/filter and project CRUD/archive", () => {
       nextAction: null,
       stuckReason: null,
       waitingOn: ["Angebot der Schreinerei", "Lieferung verfolgen"],
+      waitingUntil: "2099-10-01",
     });
   });
 

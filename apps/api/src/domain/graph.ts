@@ -393,6 +393,11 @@ export class Graph {
           .map((task) => task.waitingFor?.trim() || task.title),
       ),
     ];
+    const waitingUntil =
+      tasks
+          .filter((task) => task.status === "waiting" && task.scheduledDate)
+          .map((task) => task.scheduledDate!)
+          .sort()[0] ?? null;
     const effectiveTags = dedupeTags([
       ...project.tags,
       ...tasks.flatMap((task) => task.effectiveTags),
@@ -410,6 +415,7 @@ export class Graph {
       nextAction: this.nextActionFor(projectId),
       stuckReason: this.stuckReasonFor(projectId),
       waitingOn,
+      waitingUntil,
     };
   }
 

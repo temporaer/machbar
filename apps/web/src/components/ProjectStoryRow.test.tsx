@@ -45,6 +45,16 @@ async function flushMicrotasks(times = 3) {
   }
 }
 
+function localDateAfter(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function Harness({
   story,
   variant = "card",
@@ -856,6 +866,7 @@ describe("ProjectStoryRow – semantic status accents", () => {
       nextAction: null,
       stuckReason: null,
       waitingOn: ["Antwort vom Bauamt", "Liefertermin der Fenster"],
+      waitingUntil: localDateAfter(14),
     });
     mockedApi.completeProject.mockResolvedValue({ ...waiting, status: "completed" });
     const { container } = renderWithProviders(<Harness story={waiting} />);
@@ -868,7 +879,7 @@ describe("ProjectStoryRow – semantic status accents", () => {
     expect(container.querySelector(".story-row")).toHaveClass("story-row-accent-waiting");
     expect(container.querySelector(".story-row-status-badge")).toHaveClass("story-row-status-badge--waiting");
     expect(
-      screen.getByText("Wartet auf: Antwort vom Bauamt · Liefertermin der Fenster"),
+      screen.getByText("Wartet auf: Antwort vom Bauamt · Liefertermin der Fenster · noch 2w"),
     ).toBeInTheDocument();
     expect(container.querySelector(".story-row-status-badge")).toHaveTextContent("Aktiv");
 

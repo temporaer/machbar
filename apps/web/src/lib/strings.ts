@@ -108,7 +108,7 @@ const extra = {
     context: "Ohne Kontext",
   },
   groupByTagType: "Gruppieren nach",
-  noGrouping: "Keine Gruppierung",
+  noGrouping: "Keine",
   groupingPreference: "Gruppierung",
   groupingPreferenceHint:
     "Bevorzugte Tags werden zuerst als Gruppen verwendet und können priorisiert werden.",

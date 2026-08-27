@@ -63,6 +63,7 @@ export function WaitingGroupList({
                 emptyMessage={strings.waitingEmpty}
                 organizable={false}
                 waitingInteraction={{ onFollowUp: setFollowUpTask }}
+                showRevisitDate
                 showSwipeHint={index === 0}
               />
             </CollapsibleGroup>
@@ -73,6 +74,7 @@ export function WaitingGroupList({
             emptyMessage={strings.waitingEmpty}
             organizable={false}
             waitingInteraction={{ onFollowUp: setFollowUpTask }}
+            showRevisitDate
           />
         )
       ) : (
@@ -81,6 +83,7 @@ export function WaitingGroupList({
           emptyMessage={strings.waitingEmpty}
           organizable={false}
           waitingInteraction={{ onFollowUp: setFollowUpTask }}
+          showRevisitDate
         />
       )}
       {followUpTask ? (

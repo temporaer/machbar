@@ -263,7 +263,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
 
     const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
     expect(within(grouping).getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Keine Gruppierung",
+      "Keine",
       "Kontext",
       "Person",
       "Bereich",

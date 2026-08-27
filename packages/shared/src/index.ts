@@ -75,6 +75,7 @@ export interface Project {
   nextAction?: Task | null;
   stuckReason?: StuckReason | null;
   waitingOn?: string[];
+  waitingUntil?: string | null;
   refinementIssues?: RefinementIssue[];
 }
 

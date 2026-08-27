@@ -60,3 +60,11 @@ export function formatRelativeScheduleDate(value: string, now = new Date()): str
   const elapsedDays = Math.abs(days);
   return `seit ${elapsedDays} ${elapsedDays === 1 ? "Tag" : "Tagen"}`;
 }
+
+export function formatCompactWaitDuration(value: string, now = new Date()): string | null {
+  const days = calendarDayDifference(value, now);
+  if (days === null || days < 0) return null;
+  if (days < 7) return `${days}d`;
+  if (days < 60) return `${Math.round(days / 7)}w`;
+  return `${Math.round(days / 30)}m`;
+}

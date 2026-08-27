@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatRelativeDueDate, formatRelativeScheduleDate } from "./relativeDate";
+import {
+  formatCompactWaitDuration,
+  formatRelativeDueDate,
+  formatRelativeScheduleDate,
+} from "./relativeDate";
 
 const TODAY = new Date(2026, 7, 25, 23, 30);
 
@@ -24,5 +28,17 @@ describe("relative calendar dates", () => {
 
   it("rejects invalid calendar dates", () => {
     expect(formatRelativeDueDate("2026-02-30", TODAY)).toBeNull();
+  });
+
+  it.each([
+    ["2026-08-30", "5d"],
+    ["2026-09-08", "2w"],
+    ["2026-11-23", "3m"],
+  ])("formats compact approximate waiting time for %s as %s", (date, expected) => {
+    expect(formatCompactWaitDuration(date, TODAY)).toBe(expected);
+  });
+
+  it("does not describe elapsed waiting dates as remaining time", () => {
+    expect(formatCompactWaitDuration("2026-08-24", TODAY)).toBeNull();
   });
 });
