@@ -224,9 +224,20 @@ describe("RefinementPage", () => {
     ).toBe("12px");
     await userEvent.click(groupingTrigger);
     const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
+    expect(screen.getAllByRole("group", { name: "Gruppieren nach" })).toHaveLength(1);
+    expect(grouping).toHaveAttribute("id", groupingTrigger.getAttribute("aria-controls"));
+    expect(within(grouping).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Keine",
+      "Kontext",
+      "Person",
+      "Bereich",
+    ]);
     expect(screen.queryByRole("button", { name: "Küche" })).not.toBeInTheDocument();
     await userEvent.click(within(grouping).getByRole("button", { name: "Bereich" }));
 
+    expect(groupingTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(groupingTrigger).toHaveFocus();
+    expect(screen.queryByRole("group", { name: "Gruppieren nach" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Küche" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ohne Bereich" })).toBeInTheDocument();
   });

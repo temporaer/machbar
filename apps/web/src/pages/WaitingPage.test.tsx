@@ -49,6 +49,8 @@ describe("WaitingPage grouping controls", () => {
     await userEvent.click(trigger);
     const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
     expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getAllByRole("group", { name: "Gruppieren nach" })).toHaveLength(1);
+    expect(grouping).toHaveAttribute("id", trigger.getAttribute("aria-controls"));
 
     const buttons = within(grouping).getAllByRole("button");
     expect(buttons.map((button) => button.textContent)).toEqual([
@@ -120,6 +122,8 @@ describe("WaitingPage grouping controls", () => {
 
     await userEvent.click(context);
     expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole("group", { name: "Gruppieren nach" })).not.toBeInTheDocument();
     expect(trigger).toHaveAccessibleName(/Gruppierung.*Kontext/);
     expect(screen.getByRole("heading", { name: "Telefon" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ohne Kontext" })).toBeInTheDocument();

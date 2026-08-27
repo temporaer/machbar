@@ -52,6 +52,19 @@ function rowFor(container: HTMLElement, title: string): HTMLElement {
   return row;
 }
 
+function visibleListOptionLabels(container: HTMLElement): string[] {
+  return [...container.querySelectorAll<HTMLButtonElement>(".list-option-button")]
+    .filter((button) => {
+      let element: HTMLElement | null = button;
+      while (element && element !== container) {
+        if (getComputedStyle(element).display === "none") return false;
+        element = element.parentElement;
+      }
+      return true;
+    })
+    .map((button) => button.textContent ?? "");
+}
+
 describe("ProjectsPage – Scrum workflow on every row", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -270,18 +283,26 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     );
     expect(filterTrigger).toHaveAttribute("aria-expanded", "false");
     expect(groupingTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById(filterTrigger.getAttribute("aria-controls")!)).toBeInTheDocument();
+    expect(document.getElementById(groupingTrigger.getAttribute("aria-controls")!)).toBeInTheDocument();
     expect(screen.queryByRole("group", { name: "Gruppieren nach" })).not.toBeInTheDocument();
 
     fireEvent.click(filterTrigger);
     expect(filterTrigger).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByRole("group", { name: "Filter" })).toBeInTheDocument();
+    const filter = screen.getByRole("group", { name: "Filter" });
+    expect(visibleListOptionLabels(controls)).toEqual(["Meine & offen", "Alle"]);
 
+    fireEvent.click(within(filter).getByRole("button", { name: "Alle" }));
+    expect(filterTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(filterTrigger).toHaveFocus();
+
+    fireEvent.click(filterTrigger);
     fireEvent.click(groupingTrigger);
     const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
     expect(filterTrigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("group", { name: "Filter" })).not.toBeInTheDocument();
     expect(groupingTrigger).toHaveAttribute("aria-expanded", "true");
-    expect(within(grouping).getAllByRole("button").map((button) => button.textContent)).toEqual([
+    expect(visibleListOptionLabels(controls)).toEqual([
       "Keine",
       "Kontext",
       "Person",
@@ -292,6 +313,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     fireEvent.click(within(grouping).getByRole("button", { name: "Kontext" }));
     expect(groupingTrigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("group", { name: "Gruppieren nach" })).not.toBeInTheDocument();
+    expect(groupingTrigger).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Telefon" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Ohne Kontext" })).toBeInTheDocument();
   });
