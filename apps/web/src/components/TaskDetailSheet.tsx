@@ -28,6 +28,7 @@ import { IconActionButton } from "./IconActionButton";
 import { serializeTaskForShare } from "../lib/shareText";
 import { buildTaskShareUrl } from "../lib/shareUrls";
 import { HumanDateInput } from "./HumanDateInput";
+import { RecentActivity } from "./RecentActivity";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -688,6 +689,12 @@ export function TaskDetailSheet() {
           <p className="text-muted">
             {strings.created}: {formatDateTime(task.createdAt)} · {strings.updated}: {formatDateTime(task.updatedAt)}
           </p>
+
+          <RecentActivity
+            key={`task-activity-${task.id}`}
+            filters={{ taskId: task.id }}
+            idPrefix={`task-${task.id}-activity`}
+          />
 
           <button
             type="button"

@@ -19,6 +19,7 @@ import { RefinementPage } from "./pages/RefinementPage";
 import { TagsPage } from "./pages/TagsPage";
 import { SharePage } from "./pages/SharePage";
 import { TaskDeepLinkPage } from "./pages/TaskDeepLinkPage";
+import { ActivityPage } from "./pages/ActivityPage";
 
 function TaskDetailHost() {
   const { openTaskId } = useTaskDetail();
@@ -46,6 +47,7 @@ function Shell() {
             <Route path="/mehr/backlog" element={<BacklogReviewPage />} />
             <Route path="/mehr/refinement" element={<RefinementPage />} />
             <Route path="/mehr/tags" element={<TagsPage />} />
+            <Route path="/mehr/aktivitaeten" element={<ActivityPage />} />
             <Route path="/share" element={<SharePage />} />
             <Route path="/aufgaben/:id" element={<TaskDeepLinkPage />} />
             <Route path="*" element={<Navigate to="/heute" replace />} />

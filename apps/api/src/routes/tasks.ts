@@ -67,12 +67,16 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
 
   app.post("/api/tasks", async (request, reply) => {
     const body = parseOrThrow(createTaskSchema, request.body);
-    const task = createTask(db, {
-      ...body,
-      ...(request.authMember
-        ? { createdByMemberId: request.authMember.id }
-        : {}),
-    });
+    const task = createTask(
+      db,
+      {
+        ...body,
+        ...(request.authMember
+          ? { createdByMemberId: request.authMember.id }
+          : {}),
+      },
+      { actorMemberId: request.activityActor?.id ?? null },
+    );
     reply.status(201);
     return taskOrThrow(db, task.id);
   });
@@ -82,12 +86,17 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request, reply) => {
       const parentId = parseId(request.params.id);
       const body = parseOrThrow(createChildTaskSchema, request.body);
-      const task = createChildTask(db, parentId, {
-        ...body,
-        ...(request.authMember
-          ? { createdByMemberId: request.authMember.id }
-          : {}),
-      });
+      const task = createChildTask(
+        db,
+        parentId,
+        {
+          ...body,
+          ...(request.authMember
+            ? { createdByMemberId: request.authMember.id }
+            : {}),
+        },
+        { actorMemberId: request.activityActor?.id ?? null },
+      );
       reply.status(201);
       return taskOrThrow(db, task.id);
     },
@@ -98,12 +107,17 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request, reply) => {
       const predecessorId = parseId(request.params.id);
       const body = parseOrThrow(createChildTaskSchema, request.body);
-      const task = createTaskSuccessor(db, predecessorId, {
-        ...body,
-        ...(request.authMember
-          ? { createdByMemberId: request.authMember.id }
-          : {}),
-      });
+      const task = createTaskSuccessor(
+        db,
+        predecessorId,
+        {
+          ...body,
+          ...(request.authMember
+            ? { createdByMemberId: request.authMember.id }
+            : {}),
+        },
+        { actorMemberId: request.activityActor?.id ?? null },
+      );
       reply.status(201);
       return taskOrThrow(db, task.id);
     },
@@ -112,7 +126,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
   app.patch<{ Params: { id: string } }>("/api/tasks/:id", async (request) => {
     const id = parseId(request.params.id);
     const body = parseOrThrow(updateTaskSchema, request.body);
-    updateTask(db, id, body);
+    updateTask(db, id, body, {
+      actorMemberId: request.activityActor?.id ?? null,
+    });
     return taskOrThrow(db, id);
   });
 
@@ -121,7 +137,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(appendNotesSchema, request.body);
-      appendTaskNotes(db, id, body.content);
+      appendTaskNotes(db, id, body.content, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       return taskOrThrow(db, id);
     },
   );
@@ -130,7 +148,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     "/api/tasks/:id",
     async (request, reply) => {
       const id = parseId(request.params.id);
-      deleteTask(db, id);
+      deleteTask(db, id, { actorMemberId: request.activityActor?.id ?? null });
       reply.status(204);
       return null;
     },
@@ -141,7 +159,12 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(transitionTaskStatusSchema, request.body);
-      updateTask(db, id, { status: body.status });
+      updateTask(
+        db,
+        id,
+        { status: body.status },
+        { actorMemberId: request.activityActor?.id ?? null },
+      );
       return taskOrThrow(db, id);
     },
   );
@@ -151,7 +174,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(completeTaskSchema, request.body ?? {});
-      completeTask(db, id, body.descendantsPolicy);
+      completeTask(db, id, body.descendantsPolicy, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       return taskOrThrow(db, id);
     },
   );
@@ -161,7 +186,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(cancelTaskSchema, request.body ?? {});
-      cancelTask(db, id, body.descendantsPolicy);
+      cancelTask(db, id, body.descendantsPolicy, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       return taskOrThrow(db, id);
     },
   );
@@ -170,7 +197,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     "/api/tasks/:id/reopen",
     async (request) => {
       const id = parseId(request.params.id);
-      reopenTask(db, id);
+      reopenTask(db, id, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       return taskOrThrow(db, id);
     },
   );
@@ -178,7 +207,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
   app.post<{ Params: { id: string } }>("/api/tasks/:id/move", async (request) => {
     const id = parseId(request.params.id);
     const body = parseOrThrow(moveTaskSchema, request.body);
-    moveTask(db, id, body);
+    moveTask(db, id, body, {
+      actorMemberId: request.activityActor?.id ?? null,
+    });
     return taskOrThrow(db, id);
   });
 
@@ -187,14 +218,18 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(reorderTaskSchema, request.body);
-      reorderTask(db, id, body.position);
+      reorderTask(db, id, body.position, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       return taskOrThrow(db, id);
     },
   );
 
   app.post<{ Params: { id: string } }>("/api/tasks/:id/indent", async (request) => {
     const id = parseId(request.params.id);
-    indentTask(db, id);
+    indentTask(db, id, {
+      actorMemberId: request.activityActor?.id ?? null,
+    });
     return taskOrThrow(db, id);
   });
 
@@ -202,7 +237,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     "/api/tasks/:id/outdent",
     async (request) => {
       const id = parseId(request.params.id);
-      outdentTask(db, id);
+      outdentTask(db, id, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       return taskOrThrow(db, id);
     },
   );
@@ -210,7 +247,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
   app.post<{ Params: { id: string } }>("/api/tasks/:id/parent", async (request) => {
     const id = parseId(request.params.id);
     const body = parseOrThrow(changeParentSchema, request.body);
-    changeTaskParent(db, id, body.parentTaskId, body.projectId);
+    changeTaskParent(db, id, body.parentTaskId, body.projectId, {
+      actorMemberId: request.activityActor?.id ?? null,
+    });
     return taskOrThrow(db, id);
   });
 
@@ -219,7 +258,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(moveSubtreeSchema, request.body);
-      moveSubtreeToProject(db, id, body.projectId);
+      moveSubtreeToProject(db, id, body.projectId, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       return taskOrThrow(db, id);
     },
   );
@@ -229,7 +270,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request, reply) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(dependencySchema, request.body);
-      addDependency(db, id, body.dependsOnTaskId);
+      addDependency(db, id, body.dependsOnTaskId, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       reply.status(201);
       return taskOrThrow(db, id);
     },
@@ -240,7 +283,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const dependsOnTaskId = parseId(request.params.dependsOnTaskId);
-      removeDependency(db, id, dependsOnTaskId);
+      removeDependency(db, id, dependsOnTaskId, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       return taskOrThrow(db, id);
     },
   );
@@ -250,7 +295,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request, reply) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(tagRefSchema, request.body);
-      addTaskTag(db, id, body.tagId);
+      addTaskTag(db, id, body.tagId, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       reply.status(201);
       return taskOrThrow(db, id);
     },
@@ -261,7 +308,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const tagId = parseId(request.params.tagId);
-      removeTaskTag(db, id, tagId);
+      removeTaskTag(db, id, tagId, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       return taskOrThrow(db, id);
     },
   );
@@ -271,7 +320,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request, reply) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(tagRefSchema, request.body);
-      addExcludedTag(db, id, body.tagId);
+      addExcludedTag(db, id, body.tagId, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       reply.status(201);
       return taskOrThrow(db, id);
     },
@@ -282,7 +333,9 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const tagId = parseId(request.params.tagId);
-      removeExcludedTag(db, id, tagId);
+      removeExcludedTag(db, id, tagId, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       return taskOrThrow(db, id);
     },
   );

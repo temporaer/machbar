@@ -4,3 +4,4 @@ export * from "./effectiveRepo.js";
 export * from "./nextActionRepo.js";
 export * from "./stuckRepo.js";
 export * from "./refinementRepo.js";
+export * from "./activityRepo.js";

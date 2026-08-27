@@ -1,9 +1,22 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 import type { AuthStatus, Member } from "@machbar/shared";
 import { api } from "./api";
+import {
+  parseSelectedMemberStorageValue,
+  SELECTED_MEMBER_STORAGE_KEY,
+  setRequestActorMemberId,
+} from "./identityStorage";
 
-const STORAGE_KEY = "machbar:identity-member-id";
+const STORAGE_KEY = SELECTED_MEMBER_STORAGE_KEY;
 
 interface IdentityContextValue {
   members: Member[];
@@ -41,8 +54,9 @@ const IdentityContext = createContext<IdentityContextValue | null>(null);
 
 function readStoredMemberId(): number | null {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? Number(raw) : null;
+    return parseSelectedMemberStorageValue(
+      window.localStorage.getItem(STORAGE_KEY),
+    );
   } catch {
     return null;
   }
@@ -113,6 +127,28 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
       );
   }, []);
 
+  useEffect(() => {
+    const synchronizeSelectedMember = (event: StorageEvent) => {
+      if (
+        (event.key !== STORAGE_KEY && event.key !== null) ||
+        (event.storageArea !== null && event.storageArea !== window.localStorage) ||
+        authStatus?.enabled
+      ) {
+        return;
+      }
+      const nextMemberId = parseSelectedMemberStorageValue(event.newValue);
+      setCurrentMemberIdState(nextMemberId);
+      if (
+        nextMemberId !== null &&
+        !members.some((member) => member.id === nextMemberId)
+      ) {
+        load();
+      }
+    };
+    window.addEventListener("storage", synchronizeSelectedMember);
+    return () => window.removeEventListener("storage", synchronizeSelectedMember);
+  }, [authStatus?.enabled, load, members]);
+
   const setCurrentMemberId = useCallback((id: number | null) => {
     if (authStatus?.enabled) return;
     setCurrentMemberIdState(id);
@@ -145,6 +181,13 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     }
     return members.find((member) => member.id === currentMemberId) ?? null;
   }, [authStatus, members, currentMemberId]);
+
+  useLayoutEffect(() => {
+    setRequestActorMemberId(
+      authStatus?.enabled ? null : (currentMember?.id ?? null),
+    );
+    return () => setRequestActorMemberId(null);
+  }, [authStatus?.enabled, currentMember?.id]);
 
   const login = useCallback(() => {
     const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash || "#/heute"}`;

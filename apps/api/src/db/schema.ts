@@ -1,4 +1,9 @@
 import { sql } from "drizzle-orm";
+import type {
+  ActivityEntityType,
+  ActivityEventKind,
+  ActivityEventMetadata,
+} from "@machbar/shared";
 import {
   index,
   integer,
@@ -7,6 +12,31 @@ import {
   text,
   unique,
 } from "drizzle-orm/sqlite-core";
+
+const activityEventKinds = [
+  "task_created",
+  "task_updated",
+  "task_deleted",
+  "task_status_changed",
+  "task_descendants_status_changed",
+  "task_moved",
+  "task_dependencies_changed",
+  "task_tags_changed",
+  "project_created",
+  "project_updated",
+  "project_deleted",
+  "project_status_changed",
+  "project_tags_changed",
+  "project_acceptance_criterion_added",
+  "project_acceptance_criterion_updated",
+  "project_acceptance_criterion_checked",
+  "project_acceptance_criterion_removed",
+] as const satisfies readonly ActivityEventKind[];
+
+const activityEntityTypes = [
+  "task",
+  "project",
+] as const satisfies readonly ActivityEntityType[];
 
 /**
  * Members of the household / team. Tasks and projects can be
@@ -186,6 +216,50 @@ export const tasks = sqliteTable(
     index("tasks_parent_idx").on(t.parentTaskId),
     index("tasks_status_idx").on(t.status),
     index("tasks_size_idx").on(t.size),
+  ],
+);
+
+export const activityEvents = sqliteTable(
+  "activity_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    actorMemberId: integer("actor_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind", { enum: activityEventKinds }).notNull(),
+    taskId: integer("task_id").references(() => tasks.id, {
+      onDelete: "set null",
+    }),
+    projectId: integer("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
+    entityType: text("entity_type", { enum: activityEntityTypes }).notNull(),
+    entityTitle: text("entity_title").notNull(),
+    metadata: text("metadata", { mode: "json" })
+      .$type<ActivityEventMetadata>()
+      .notNull()
+      .default({}),
+  },
+  (t) => [
+    index("activity_events_created_at_idx").on(t.createdAt, t.id),
+    index("activity_events_actor_idx").on(
+      t.actorMemberId,
+      t.createdAt,
+      t.id,
+    ),
+    index("activity_events_task_idx").on(
+      t.taskId,
+      t.createdAt,
+      t.id,
+    ),
+    index("activity_events_project_idx").on(
+      t.projectId,
+      t.createdAt,
+      t.id,
+    ),
   ],
 );
 

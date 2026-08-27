@@ -1,4 +1,6 @@
+import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import type {
+  ActivityPage,
   Agenda,
   AuthStatus,
   InheritanceMode,
@@ -18,6 +20,7 @@ import type {
   TaskStatus,
   WaitingGroup,
 } from "@machbar/shared";
+import { readRequestActorMemberId } from "./identityStorage";
 
 /**
  * The real `apps/api` backend (see `apps/api/src/app.ts` / `static.ts`)
@@ -30,6 +33,16 @@ import type {
  * path to reach the backend under any Ingress prefix.
  */
 const API_ROOT = "/api";
+
+function selectedActorHeader(method = "GET"): Record<string, string> {
+  if (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD") {
+    return {};
+  }
+  const memberId = readRequestActorMemberId();
+  return memberId === null
+    ? {}
+    : { [ACTIVITY_ACTOR_HEADER]: String(memberId) };
+}
 
 export class ApiError extends Error {
   status: number;
@@ -59,6 +72,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: {
       ...(init?.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...selectedActorHeader(init?.method),
       ...(init?.headers ?? {}),
     },
   });
@@ -223,6 +237,16 @@ export interface RefinementFilters {
   tagIds?: number[];
 }
 
+export interface ActivityFilters {
+  cursor?: string;
+  limit?: number;
+  actorId?: number;
+  taskId?: number;
+  projectId?: number;
+}
+
+export type { ActivityEvent, ActivityPage } from "@machbar/shared";
+
 export interface UpdateTagInput {
   name?: string;
   kind?: TagKind;
@@ -343,6 +367,17 @@ export const api = {
     ),
   getRefinementIssues: () =>
     request<RefinementIssueResponse>("/refinement/issues"),
+
+  getActivity: (filters?: ActivityFilters) =>
+    request<ActivityPage>(
+      `/activity${query({
+        cursor: filters?.cursor,
+        limit: filters?.limit,
+        actorId: filters?.actorId,
+        taskId: filters?.taskId,
+        projectId: filters?.projectId,
+      })}`,
+    ),
 
   /**
    * `memberId` scopes the agenda to a single member (the currently

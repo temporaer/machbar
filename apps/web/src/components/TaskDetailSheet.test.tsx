@@ -26,6 +26,7 @@ vi.mock("../lib/api", () => ({
     reopenTask: vi.fn(),
     deleteTask: vi.fn(),
     searchTasks: vi.fn(),
+    getActivity: vi.fn(),
   },
 }));
 
@@ -111,6 +112,20 @@ describe("TaskDetailSheet", () => {
     mockedApi.getTags.mockResolvedValue([makeTag({ id: 10, name: "büro" })]);
     mockedApi.updateTask.mockResolvedValue(makeTask());
     mockedApi.transitionTaskStatus.mockResolvedValue(makeTask());
+    mockedApi.getActivity.mockResolvedValue({ items: [], nextCursor: null });
+  });
+
+  it("loads task activity only after its collapsed disclosure is opened", async () => {
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 42, title: "Reparaturziel" }));
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await screen.findByDisplayValue("Reparaturziel");
+
+    expect(mockedApi.getActivity).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByText("Letzte Aktivitäten"));
+    await waitFor(() =>
+      expect(mockedApi.getActivity).toHaveBeenCalledWith({ taskId: 42, limit: 5 }),
+    );
   });
 
   it("focuses the requested title repair field", async () => {

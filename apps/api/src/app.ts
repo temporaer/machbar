@@ -6,6 +6,7 @@ import { registerRoutes } from "./routes/index.js";
 import { registerStatic } from "./static.js";
 import { registerAuthentication } from "./auth/routes.js";
 import type { OidcProvider } from "./auth/oidcClient.js";
+import { registerActivityActorResolution } from "./activity/actor.js";
 
 export interface BuildAppOptions {
   db: Db;
@@ -66,6 +67,7 @@ export function buildApp({
   app.get("/api/health", async () => ({ status: "ok" }));
 
   registerAuthentication(app, db, env, { provider: oidcProvider });
+  registerActivityActorResolution(app, db, env);
   registerRoutes(app, db);
   registerStatic(app, env);
 

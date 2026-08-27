@@ -23,6 +23,7 @@ import { useSwipeSettings } from "../lib/swipeSettings";
 import { IconActionButton } from "../components/IconActionButton";
 import { StoryCriteriaSheet } from "../components/StoryCriteriaSheet";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { RecentActivity } from "../components/RecentActivity";
 
 export function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
@@ -278,6 +279,11 @@ export function ProjectDetailPage() {
               showSwipeHint={false}
             />
           </section>
+          <RecentActivity
+            key={`project-activity-${project.id}`}
+            filters={{ projectId: project.id }}
+            idPrefix={`project-${project.id}-activity`}
+          />
         </>
       ) : null}
       <QuickAdd

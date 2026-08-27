@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import { api, request } from "./api";
+import { setRequestActorMemberId } from "./identityStorage";
 
 function mockFetchOnce(response: Partial<Response> & { body?: unknown } = {}) {
   const fetchMock = vi.fn().mockResolvedValue({
@@ -21,6 +23,8 @@ function headersOf(fetchMock: ReturnType<typeof vi.fn>): Record<string, string> 
 
 describe("api request() Content-Type handling", () => {
   afterEach(() => {
+    window.localStorage.clear();
+    setRequestActorMemberId(null);
     vi.unstubAllGlobals();
   });
 
@@ -44,6 +48,54 @@ describe("api request() Content-Type handling", () => {
     expect(url).toBe("/api/tasks/1");
     expect(init.method).toBe("DELETE");
     expect(headersOf(fetchMock)).not.toHaveProperty("Content-Type");
+  });
+
+  describe("api request() activity actor header", () => {
+    afterEach(() => {
+      window.localStorage.clear();
+      setRequestActorMemberId(null);
+      vi.unstubAllGlobals();
+    });
+
+    it("sends the locally selected member through the dedicated header", async () => {
+      setRequestActorMemberId(7);
+      const fetchMock = mockFetchOnce();
+
+      await request("/tasks/1", { method: "DELETE" });
+
+      expect(headersOf(fetchMock)).toMatchObject({
+        [ACTIVITY_ACTOR_HEADER]: "7",
+      });
+    });
+
+    it("uses the identity committed by the provider rather than raw cross-tab storage", async () => {
+      setRequestActorMemberId(1);
+      window.localStorage.setItem("machbar:identity-member-id", "2");
+      const fetchMock = mockFetchOnce();
+
+      await request("/tasks/1", { method: "PATCH", body: "{}" });
+
+      expect(headersOf(fetchMock)).toMatchObject({
+        [ACTIVITY_ACTOR_HEADER]: "1",
+      });
+    });
+
+    it("omits the actor header when no local identity is selected", async () => {
+      const fetchMock = mockFetchOnce();
+
+      await request("/health");
+
+      expect(headersOf(fetchMock)).not.toHaveProperty(ACTIVITY_ACTOR_HEADER);
+    });
+
+    it("omits the actor header on reads so a deleted local identity can be refreshed", async () => {
+      setRequestActorMemberId(7);
+      const fetchMock = mockFetchOnce();
+
+      await request("/members");
+
+      expect(headersOf(fetchMock)).not.toHaveProperty(ACTIVITY_ACTOR_HEADER);
+    });
   });
 
   it("omits Content-Type for a bodyless deleteProject request", async () => {
@@ -89,6 +141,30 @@ describe("api.getAgenda memberId scoping", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
+  });
+
+  describe("api.getActivity pagination and filters", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("serializes cursor, limit, and entity filters", async () => {
+      const fetchMock = mockFetchOnce({
+        text: async () => JSON.stringify({ items: [], nextCursor: null }),
+      });
+
+      await api.getActivity({
+        cursor: "opaque_cursor",
+        limit: 25,
+        actorId: 2,
+        taskId: 3,
+        projectId: 4,
+      });
+
+      expect((fetchMock.mock.calls[0] as [string])[0]).toBe(
+        "/api/activity?cursor=opaque_cursor&limit=25&actorId=2&taskId=3&projectId=4",
+      );
+    });
   });
 
   it("serializes the given memberId and browser-local date as query params", async () => {

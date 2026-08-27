@@ -64,6 +64,13 @@
       "when": 1787837335819,
       "tag": "0008_captured_task_status",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787855000719,
+      "tag": "0009_activity_events",
+      "breakpoints": true
     }
   ]
 }

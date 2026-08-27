@@ -17,6 +17,7 @@ vi.mock("../lib/api", () => ({
     getTags: vi.fn(),
     getTask: vi.fn(),
     updateTask: vi.fn(),
+    getActivity: vi.fn(),
   },
 }));
 
@@ -102,6 +103,18 @@ describe("ProjectDetailPage task explanations", () => {
     );
     mockedApi.updateTask.mockImplementation(async (id, input) =>
       makeTask({ id, projectId: 42, ...input }),
+    );
+    mockedApi.getActivity.mockResolvedValue({ items: [], nextCursor: null });
+  });
+
+  it("loads project and recorded task activity only after opening the disclosure", async () => {
+    renderWithProviders(<ProjectDetailPage />);
+    expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();
+
+    expect(mockedApi.getActivity).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByText("Letzte Aktivitäten"));
+    await waitFor(() =>
+      expect(mockedApi.getActivity).toHaveBeenCalledWith({ projectId: 42, limit: 5 }),
     );
   });
 

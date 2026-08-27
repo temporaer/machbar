@@ -17,6 +17,27 @@ export const inheritanceModes = ["inherit", "explicit", "none"] as const;
 export const taskSizes = ["S", "M", "L", "XL"] as const;
 export const tagKinds = ["area", "actor", "context", "plain"] as const;
 export const tagGroupingModes = ["auto", "pinned", "hidden"] as const;
+export const activityEventKinds = [
+  "task_created",
+  "task_updated",
+  "task_deleted",
+  "task_status_changed",
+  "task_descendants_status_changed",
+  "task_moved",
+  "task_dependencies_changed",
+  "task_tags_changed",
+  "project_created",
+  "project_updated",
+  "project_deleted",
+  "project_status_changed",
+  "project_tags_changed",
+  "project_acceptance_criterion_added",
+  "project_acceptance_criterion_updated",
+  "project_acceptance_criterion_checked",
+  "project_acceptance_criterion_removed",
+] as const;
+export const activityEntityTypes = ["task", "project"] as const;
+export const ACTIVITY_ACTOR_HEADER = "x-machbar-actor-member-id";
 
 export type TaskStatus = (typeof taskStatuses)[number];
 export type ProjectStatus = (typeof projectStatuses)[number];
@@ -24,6 +45,47 @@ export type InheritanceMode = (typeof inheritanceModes)[number];
 export type TaskSize = (typeof taskSizes)[number];
 export type TagKind = (typeof tagKinds)[number];
 export type TagGroupingMode = (typeof tagGroupingModes)[number];
+export type ActivityEventKind = (typeof activityEventKinds)[number];
+export type ActivityEntityType = (typeof activityEntityTypes)[number];
+
+export interface ActivityEventMetadata {
+  changedFields?: string[];
+  previousStatus?: TaskStatus | ProjectStatus;
+  nextStatus?: TaskStatus | ProjectStatus;
+  checked?: boolean;
+  affectedCount?: number;
+  relatedTaskIds?: number[];
+  relatedTaskTitles?: string[];
+  relatedProjectIds?: number[];
+  relatedProjectTitles?: string[];
+}
+
+export interface ActivityActor {
+  id: number;
+  name: string;
+  color: string;
+}
+
+export interface ActivityEntity {
+  type: ActivityEntityType;
+  title: string;
+  taskId: number | null;
+  projectId: number | null;
+}
+
+export interface ActivityEvent {
+  id: number;
+  createdAt: string;
+  kind: ActivityEventKind;
+  actor: ActivityActor | null;
+  entity: ActivityEntity;
+  metadata: ActivityEventMetadata;
+}
+
+export interface ActivityPage {
+  items: ActivityEvent[];
+  nextCursor: string | null;
+}
 
 export interface Member {
   id: number;

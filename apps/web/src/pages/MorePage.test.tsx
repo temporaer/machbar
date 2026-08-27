@@ -22,4 +22,13 @@ describe("MorePage", () => {
     expect(link).toHaveAttribute("href", "/mehr/tags");
     expect(container.querySelector(".tag-manager")).toBeNull();
   });
+
+  it("links to the global activity feed", async () => {
+    renderWithProviders(<MorePage />);
+
+    expect(await screen.findByRole("link", { name: /Aktivitäten/ })).toHaveAttribute(
+      "href",
+      "/mehr/aktivitaeten",
+    );
+  });
 });

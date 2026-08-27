@@ -12,9 +12,26 @@ import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import {
   getDescendantIds as repoGetDescendantIds,
+  recordActivity,
   wouldCreateDependencyCycle,
   wouldCreateHierarchyCycle,
 } from "../repo/index.js";
+
+export interface MutationContext {
+  actorMemberId?: number | null;
+}
+
+function actor(context?: MutationContext): number | null {
+  return context?.actorMemberId ?? null;
+}
+
+function sameIds(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+
+function sortedIds(ids: number[]): number[] {
+  return [...new Set(ids)].sort((a, b) => a - b);
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -320,7 +337,11 @@ export function getProjectOrThrow(db: Db, id: number) {
  * driver requirement at creation time itself, only when a story is
  * explicitly *activated* via {@link activateProject} (see below).
  */
-export function createProject(db: Db, input: CreateProjectInput) {
+export function createProject(
+  db: Db,
+  input: CreateProjectInput,
+  context?: MutationContext,
+) {
   if (!input.title || input.title.trim() === "") {
     throw AppError.badRequest("Der Projekttitel darf nicht leer sein.");
   }
@@ -352,6 +373,14 @@ export function createProject(db: Db, input: CreateProjectInput) {
           .run();
       }
     }
+    recordActivity(tx as unknown as Db, {
+      actorMemberId: actor(context),
+      kind: "project_created",
+      entityType: "project",
+      entityTitle: project.title,
+      projectId: project.id,
+      metadata: {},
+    });
     return project;
   });
 }
@@ -380,7 +409,12 @@ export interface UpdateProjectInput {
  * always retain its driver, and clearing it requires first sending the
  * story back to `backlog`.
  */
-export function updateProject(db: Db, id: number, input: UpdateProjectInput) {
+export function updateProject(
+  db: Db,
+  id: number,
+  input: UpdateProjectInput,
+  context?: MutationContext,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
@@ -392,42 +426,116 @@ export function updateProject(db: Db, id: number, input: UpdateProjectInput) {
         `Die verantwortliche Person von "${project.title}" kann erst entfernt werden, wenn das Projekt wieder auf „Später / noch nicht aktiv“ steht.`,
       );
     }
-    const patch: Partial<typeof schema.projects.$inferInsert> = {
-      updatedAt: nowIso(),
-    };
-    if (input.title !== undefined) patch.title = input.title.trim();
-    if (input.notes !== undefined) patch.notes = input.notes;
-    if (input.ownerMemberId !== undefined) patch.ownerMemberId = input.ownerMemberId;
-    if (input.dueDate !== undefined) patch.dueDate = input.dueDate;
-    if (input.scheduledDate !== undefined) patch.scheduledDate = input.scheduledDate;
-    if (input.position !== undefined) patch.position = input.position;
+    const patch: Partial<typeof schema.projects.$inferInsert> = {};
+    const changedFields: string[] = [];
+    const title = input.title?.trim();
+    if (title !== undefined && title !== project.title) {
+      patch.title = title;
+      changedFields.push("title");
+    }
+    if (input.notes !== undefined && input.notes !== project.notes) {
+      patch.notes = input.notes;
+      changedFields.push("notes");
+    }
+    if (
+      input.ownerMemberId !== undefined &&
+      input.ownerMemberId !== project.ownerMemberId
+    ) {
+      patch.ownerMemberId = input.ownerMemberId;
+      changedFields.push("ownerMemberId");
+    }
+    if (input.dueDate !== undefined && input.dueDate !== project.dueDate) {
+      patch.dueDate = input.dueDate;
+      changedFields.push("dueDate");
+    }
+    if (
+      input.scheduledDate !== undefined &&
+      input.scheduledDate !== project.scheduledDate
+    ) {
+      patch.scheduledDate = input.scheduledDate;
+      changedFields.push("scheduledDate");
+    }
+    if (input.position !== undefined && input.position !== project.position) {
+      patch.position = input.position;
+    }
 
-    tx.update(schema.projects).set(patch).where(eq(schema.projects.id, id)).run();
+    const existingTagIds = sortedIds(
+      tx
+        .select({ tagId: schema.projectTags.tagId })
+        .from(schema.projectTags)
+        .where(eq(schema.projectTags.projectId, id))
+        .all()
+        .map((row) => row.tagId),
+    );
+    const nextTagIds =
+      input.tagIds === undefined ? existingTagIds : sortedIds(input.tagIds);
+    const tagsChanged = !sameIds(existingTagIds, nextTagIds);
 
-    if (input.tagIds !== undefined) {
+    if (Object.keys(patch).length > 0) {
+      patch.updatedAt = nowIso();
+      tx.update(schema.projects).set(patch).where(eq(schema.projects.id, id)).run();
+    }
+
+    if (tagsChanged) {
       tx.delete(schema.projectTags)
         .where(eq(schema.projectTags.projectId, id))
         .run();
-      for (const tagId of input.tagIds) {
+      for (const tagId of nextTagIds) {
         tx.insert(schema.projectTags).values({ projectId: id, tagId }).run();
       }
     }
-    return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    if (changedFields.length > 0) {
+      recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "project_updated",
+        entityType: "project",
+        entityTitle: updated.title,
+        projectId: id,
+        metadata: {
+          changedFields: tagsChanged ? [...changedFields, "tags"] : changedFields,
+        },
+      });
+    } else if (tagsChanged) {
+      recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "project_tags_changed",
+        entityType: "project",
+        entityTitle: updated.title,
+        projectId: id,
+        metadata: {},
+      });
+    }
+    return updated;
   });
 }
 
-export function appendProjectNotes(db: Db, id: number, content: string) {
+export function appendProjectNotes(
+  db: Db,
+  id: number,
+  content: string,
+  context?: MutationContext,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
     const notes = appendNoteContent(project.notes, content);
     if (notes === project.notes) return project;
-    return tx
+    const updated = tx
       .update(schema.projects)
       .set({ notes, updatedAt: nowIso() })
       .where(eq(schema.projects.id, id))
       .returning()
       .get();
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_updated",
+      entityType: "project",
+      entityTitle: updated.title,
+      projectId: id,
+      metadata: { changedFields: ["notesAppended"] },
+    });
+    return updated;
   });
 }
 
@@ -436,9 +544,19 @@ export function appendProjectNotes(db: Db, id: number, content: string) {
  * uses ON DELETE SET NULL for tasks, while project tags and completion
  * criteria cascade with the deleted project.
  */
-export function deleteProject(db: Db, id: number) {
-  getProjectOrThrow(db, id);
-  db.delete(schema.projects).where(eq(schema.projects.id, id)).run();
+export function deleteProject(db: Db, id: number, context?: MutationContext) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const project = getProjectOrThrow(txDb, id);
+    tx.delete(schema.projects).where(eq(schema.projects.id, id)).run();
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_deleted",
+      entityType: "project",
+      entityTitle: project.title,
+      metadata: {},
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -497,6 +615,7 @@ export function activateProject(
   db: Db,
   id: number,
   input: ActivateProjectInput = {},
+  context?: MutationContext,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -517,7 +636,22 @@ export function activateProject(
       .set({ status: "active", ownerMemberId, updatedAt: nowIso() })
       .where(eq(schema.projects.id, id))
       .run();
-    return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_status_changed",
+      entityType: "project",
+      entityTitle: updated.title,
+      projectId: id,
+      metadata: {
+        previousStatus: project.status as ProjectStatus,
+        nextStatus: "active",
+        ...(ownerMemberId !== project.ownerMemberId
+          ? { changedFields: ["ownerMemberId"] }
+          : {}),
+      },
+    });
+    return updated;
   });
 }
 
@@ -525,7 +659,11 @@ export function activateProject(
  * `active`/`archived` -> `backlog`. The only way for a story to reach a
  * state where its driver may be cleared again.
  */
-export function returnProjectToBacklog(db: Db, id: number) {
+export function returnProjectToBacklog(
+  db: Db,
+  id: number,
+  context?: MutationContext,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
@@ -538,7 +676,19 @@ export function returnProjectToBacklog(db: Db, id: number) {
       .set({ status: "backlog", updatedAt: nowIso() })
       .where(eq(schema.projects.id, id))
       .run();
-    return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_status_changed",
+      entityType: "project",
+      entityTitle: updated.title,
+      projectId: id,
+      metadata: {
+        previousStatus: project.status as ProjectStatus,
+        nextStatus: "backlog",
+      },
+    });
+    return updated;
   });
 }
 
@@ -549,7 +699,7 @@ export function returnProjectToBacklog(db: Db, id: number) {
  * prompting a human to call this action (or {@link reopenProject}/
  * {@link archiveProject} instead).
  */
-export function completeProject(db: Db, id: number) {
+export function completeProject(db: Db, id: number, context?: MutationContext) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
@@ -562,12 +712,21 @@ export function completeProject(db: Db, id: number) {
       .set({ status: "completed", updatedAt: nowIso() })
       .where(eq(schema.projects.id, id))
       .run();
-    return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_status_changed",
+      entityType: "project",
+      entityTitle: updated.title,
+      projectId: id,
+      metadata: { previousStatus: "active", nextStatus: "completed" },
+    });
+    return updated;
   });
 }
 
 /** `completed` -> `active` again. The driver is retained unchanged. */
-export function reopenProject(db: Db, id: number) {
+export function reopenProject(db: Db, id: number, context?: MutationContext) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
@@ -580,7 +739,16 @@ export function reopenProject(db: Db, id: number) {
       .set({ status: "active", updatedAt: nowIso() })
       .where(eq(schema.projects.id, id))
       .run();
-    return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_status_changed",
+      entityType: "project",
+      entityTitle: updated.title,
+      projectId: id,
+      metadata: { previousStatus: "completed", nextStatus: "active" },
+    });
+    return updated;
   });
 }
 
@@ -588,7 +756,7 @@ export function reopenProject(db: Db, id: number) {
  * `backlog`/`active`/`completed` -> `archived`. Shelves/retires a story
  * without touching its driver.
  */
-export function archiveProject(db: Db, id: number) {
+export function archiveProject(db: Db, id: number, context?: MutationContext) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
@@ -601,7 +769,19 @@ export function archiveProject(db: Db, id: number) {
       .set({ status: "archived", updatedAt: nowIso() })
       .where(eq(schema.projects.id, id))
       .run();
-    return tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_status_changed",
+      entityType: "project",
+      entityTitle: updated.title,
+      projectId: id,
+      metadata: {
+        previousStatus: project.status as ProjectStatus,
+        nextStatus: "archived",
+      },
+    });
+    return updated;
   });
 }
 
@@ -634,22 +814,36 @@ function normalizeCriterionText(text: string): string {
 }
 
 /** Appends a new criterion at the end of the project's ordered list. */
-export function addCriterion(db: Db, projectId: number, text: string) {
+export function addCriterion(
+  db: Db,
+  projectId: number,
+  text: string,
+  context?: MutationContext,
+) {
   const trimmed = normalizeCriterionText(text);
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    getProjectOrThrow(txDb, projectId);
+    const project = getProjectOrThrow(txDb, projectId);
     const maxPosition = tx
       .select({ position: schema.projectAcceptanceCriteria.position })
       .from(schema.projectAcceptanceCriteria)
       .where(eq(schema.projectAcceptanceCriteria.projectId, projectId))
       .all()
       .reduce((max, c) => Math.max(max, c.position), -1);
-    return tx
+    const criterion = tx
       .insert(schema.projectAcceptanceCriteria)
       .values({ projectId, text: trimmed, position: maxPosition + 1 })
       .returning()
       .get();
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_acceptance_criterion_added",
+      entityType: "project",
+      entityTitle: project.title,
+      projectId,
+      metadata: {},
+    });
+    return criterion;
   });
 }
 
@@ -659,21 +853,32 @@ export function updateCriterionText(
   projectId: number,
   criterionId: number,
   text: string,
+  context?: MutationContext,
 ) {
   const trimmed = normalizeCriterionText(text);
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    getProjectOrThrow(txDb, projectId);
-    getCriterionOrThrow(txDb, projectId, criterionId);
+    const project = getProjectOrThrow(txDb, projectId);
+    const criterion = getCriterionOrThrow(txDb, projectId, criterionId);
+    if (criterion.text === trimmed) return criterion;
     tx.update(schema.projectAcceptanceCriteria)
       .set({ text: trimmed, updatedAt: nowIso() })
       .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
       .run();
-    return tx
+    const updated = tx
       .select()
       .from(schema.projectAcceptanceCriteria)
       .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
       .get()!;
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_acceptance_criterion_updated",
+      entityType: "project",
+      entityTitle: project.title,
+      projectId,
+      metadata: {},
+    });
+    return updated;
   });
 }
 
@@ -683,20 +888,31 @@ export function setCriterionChecked(
   projectId: number,
   criterionId: number,
   checked: boolean,
+  context?: MutationContext,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    getProjectOrThrow(txDb, projectId);
-    getCriterionOrThrow(txDb, projectId, criterionId);
+    const project = getProjectOrThrow(txDb, projectId);
+    const criterion = getCriterionOrThrow(txDb, projectId, criterionId);
+    if (criterion.checked === checked) return criterion;
     tx.update(schema.projectAcceptanceCriteria)
       .set({ checked, updatedAt: nowIso() })
       .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
       .run();
-    return tx
+    const updated = tx
       .select()
       .from(schema.projectAcceptanceCriteria)
       .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
       .get()!;
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_acceptance_criterion_checked",
+      entityType: "project",
+      entityTitle: project.title,
+      projectId,
+      metadata: { checked },
+    });
+    return updated;
   });
 }
 
@@ -746,10 +962,15 @@ export function reorderCriteria(
 }
 
 /** Removes a criterion and compacts the remaining positions (no gaps). */
-export function removeCriterion(db: Db, projectId: number, criterionId: number) {
+export function removeCriterion(
+  db: Db,
+  projectId: number,
+  criterionId: number,
+  context?: MutationContext,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    getProjectOrThrow(txDb, projectId);
+    const project = getProjectOrThrow(txDb, projectId);
     getCriterionOrThrow(txDb, projectId, criterionId);
     tx.delete(schema.projectAcceptanceCriteria)
       .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
@@ -767,6 +988,14 @@ export function removeCriterion(db: Db, projectId: number, criterionId: number) 
           .where(eq(schema.projectAcceptanceCriteria.id, criterion.id))
           .run();
       }
+    });
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_acceptance_criterion_removed",
+      entityType: "project",
+      entityTitle: project.title,
+      projectId,
+      metadata: {},
     });
   });
 }
@@ -894,9 +1123,24 @@ function insertTask(
   return task;
 }
 
-export function createTask(db: Db, input: CreateTaskInput) {
+export function createTask(
+  db: Db,
+  input: CreateTaskInput,
+  context?: MutationContext,
+) {
   return db.transaction((tx) => {
-    return insertTask(tx as unknown as Db, input);
+    const txDb = tx as unknown as Db;
+    const task = insertTask(txDb, input);
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_created",
+      entityType: "task",
+      entityTitle: task.title,
+      taskId: task.id,
+      projectId: task.projectId,
+      metadata: {},
+    });
+    return task;
   });
 }
 
@@ -904,9 +1148,23 @@ export function createChildTask(
   db: Db,
   parentTaskId: number,
   input: Omit<CreateTaskInput, "parentTaskId" | "projectId">,
+  context?: MutationContext,
 ) {
-  getTaskOrThrow(db, parentTaskId);
-  return createTask(db, { ...input, parentTaskId });
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    getTaskOrThrow(txDb, parentTaskId);
+    const task = insertTask(txDb, { ...input, parentTaskId });
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_created",
+      entityType: "task",
+      entityTitle: task.title,
+      taskId: task.id,
+      projectId: task.projectId,
+      metadata: {},
+    });
+    return task;
+  });
 }
 
 export interface CreateTaskSequenceInput {
@@ -929,11 +1187,12 @@ export function createProjectTaskSequence(
   db: Db,
   projectId: number,
   input: CreateTaskSequenceInput,
+  context?: MutationContext,
 ) {
   const titles = normalizedSequenceTitles(input.titles);
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    getProjectOrThrow(txDb, projectId);
+    const project = getProjectOrThrow(txDb, projectId);
     const created: ReturnType<typeof insertTask>[] = [];
 
     for (const title of titles) {
@@ -953,6 +1212,19 @@ export function createProjectTaskSequence(
       created.push(task);
     }
 
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_updated",
+      entityType: "project",
+      entityTitle: project.title,
+      projectId,
+      metadata: {
+        changedFields: ["taskSequence"],
+        affectedCount: created.length,
+        relatedTaskIds: created.map((task) => task.id),
+        relatedTaskTitles: created.map((task) => task.title),
+      },
+    });
     return created;
   });
 }
@@ -962,6 +1234,7 @@ export function createTaskSuccessor(
   db: Db,
   taskId: number,
   input: Omit<CreateTaskInput, "parentTaskId" | "projectId">,
+  context?: MutationContext,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -994,6 +1267,18 @@ export function createTaskSuccessor(
       .insert(schema.taskDependencies)
       .values({ taskId: successor.id, dependsOnTaskId: predecessor.id })
       .run();
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_created",
+      entityType: "task",
+      entityTitle: successor.title,
+      taskId: successor.id,
+      projectId: successor.projectId,
+      metadata: {
+        relatedTaskIds: [predecessor.id],
+        relatedTaskTitles: [predecessor.title],
+      },
+    });
     return successor;
   });
 }
@@ -1016,17 +1301,29 @@ export interface UpdateTaskInput {
   excludedTagIds?: number[];
 }
 
-export function updateTask(db: Db, id: number, input: UpdateTaskInput) {
+export function updateTask(
+  db: Db,
+  id: number,
+  input: UpdateTaskInput,
+  context?: MutationContext,
+) {
   return db.transaction((tx) => {
-    const currentTask = getTaskOrThrow(tx as unknown as Db, id);
+    const txDb = tx as unknown as Db;
+    const currentTask = getTaskOrThrow(txDb, id);
     if (input.title !== undefined && input.title.trim() === "") {
       throw AppError.badRequest("Der Aufgabentitel darf nicht leer sein.");
     }
-    const patch: Partial<typeof schema.tasks.$inferInsert> = {
-      updatedAt: nowIso(),
-    };
-    if (input.title !== undefined) patch.title = input.title.trim();
-    if (input.notes !== undefined) patch.notes = input.notes;
+    const patch: Partial<typeof schema.tasks.$inferInsert> = {};
+    const changedFields: string[] = [];
+    const title = input.title?.trim();
+    if (title !== undefined && title !== currentTask.title) {
+      patch.title = title;
+      changedFields.push("title");
+    }
+    if (input.notes !== undefined && input.notes !== currentTask.notes) {
+      patch.notes = input.notes;
+      changedFields.push("notes");
+    }
     const nextStatus =
       input.status !== undefined
         ? normalizeTaskStatus(
@@ -1039,63 +1336,180 @@ export function updateTask(db: Db, id: number, input: UpdateTaskInput) {
           : input.needsClarification === false && currentTask.status === "captured"
             ? "actionable"
             : undefined;
-    if (nextStatus !== undefined) {
+    const statusChanged =
+      nextStatus !== undefined && nextStatus !== currentTask.status;
+    if (statusChanged) {
       patch.status = nextStatus;
       patch.needsClarification = nextStatus === "captured";
       patch.completedAt = nextStatus === "done" ? nowIso() : null;
       patch.cancelledAt = nextStatus === "cancelled" ? nowIso() : null;
     }
-    if (input.ownerMemberId !== undefined) patch.ownerMemberId = input.ownerMemberId;
-    if (input.ownerInheritanceMode !== undefined)
+    if (
+      input.ownerMemberId !== undefined &&
+      input.ownerMemberId !== currentTask.ownerMemberId
+    ) {
+      changedFields.push("ownerMemberId");
+      patch.ownerMemberId = input.ownerMemberId;
+    }
+    if (
+      input.ownerInheritanceMode !== undefined &&
+      input.ownerInheritanceMode !== currentTask.ownerInheritanceMode
+    ) {
+      changedFields.push("ownerInheritanceMode");
       patch.ownerInheritanceMode = input.ownerInheritanceMode;
-    if (input.dueDate !== undefined) patch.dueDate = input.dueDate;
-    if (input.scheduledDate !== undefined) patch.scheduledDate = input.scheduledDate;
-    if (input.waitingFor !== undefined) patch.waitingFor = input.waitingFor;
-    if (input.priority !== undefined) patch.priority = input.priority;
-    if (input.size !== undefined) patch.size = input.size;
-    if (input.recurrenceRule !== undefined) patch.recurrenceRule = input.recurrenceRule;
-    if (input.reminderAt !== undefined) patch.reminderAt = input.reminderAt;
+    }
+    for (const field of [
+      "dueDate",
+      "scheduledDate",
+      "waitingFor",
+      "priority",
+      "size",
+      "recurrenceRule",
+      "reminderAt",
+    ] as const) {
+      if (input[field] !== undefined && input[field] !== currentTask[field]) {
+        patch[field] = input[field] as never;
+        changedFields.push(field);
+      }
+    }
 
-    tx.update(schema.tasks).set(patch).where(eq(schema.tasks.id, id)).run();
+    const existingTagIds = sortedIds(
+      tx.select({ tagId: schema.taskTags.tagId })
+        .from(schema.taskTags)
+        .where(eq(schema.taskTags.taskId, id))
+        .all()
+        .map((row) => row.tagId),
+    );
+    const nextTagIds =
+      input.tagIds === undefined ? existingTagIds : sortedIds(input.tagIds);
+    const tagsChanged = !sameIds(existingTagIds, nextTagIds);
+    const existingExcludedTagIds = sortedIds(
+      tx.select({ tagId: schema.taskExcludedTags.tagId })
+        .from(schema.taskExcludedTags)
+        .where(eq(schema.taskExcludedTags.taskId, id))
+        .all()
+        .map((row) => row.tagId),
+    );
+    const nextExcludedTagIds =
+      input.excludedTagIds === undefined
+        ? existingExcludedTagIds
+        : sortedIds(input.excludedTagIds);
+    const excludedTagsChanged = !sameIds(
+      existingExcludedTagIds,
+      nextExcludedTagIds,
+    );
 
-    if (input.tagIds !== undefined) {
+    if (Object.keys(patch).length > 0) {
+      patch.updatedAt = nowIso();
+      tx.update(schema.tasks).set(patch).where(eq(schema.tasks.id, id)).run();
+    }
+
+    if (tagsChanged) {
       tx.delete(schema.taskTags).where(eq(schema.taskTags.taskId, id)).run();
-      for (const tagId of input.tagIds) {
+      for (const tagId of nextTagIds) {
         tx.insert(schema.taskTags).values({ taskId: id, tagId }).run();
       }
     }
-    if (input.excludedTagIds !== undefined) {
+    if (excludedTagsChanged) {
       tx.delete(schema.taskExcludedTags)
         .where(eq(schema.taskExcludedTags.taskId, id))
         .run();
-      for (const tagId of input.excludedTagIds) {
+      for (const tagId of nextExcludedTagIds) {
         tx.insert(schema.taskExcludedTags).values({ taskId: id, tagId }).run();
       }
     }
-    return tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    const coalescedChangedFields = [
+      ...changedFields,
+      ...(tagsChanged ? ["tags"] : []),
+      ...(excludedTagsChanged ? ["excludedTags"] : []),
+    ];
+    if (statusChanged) {
+      recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "task_status_changed",
+        entityType: "task",
+        entityTitle: updated.title,
+        taskId: id,
+        projectId: updated.projectId,
+        metadata: {
+          previousStatus: currentTask.status as TaskStatus,
+          nextStatus: updated.status as TaskStatus,
+          ...(coalescedChangedFields.length > 0
+            ? { changedFields: coalescedChangedFields }
+            : {}),
+        },
+      });
+    } else if (changedFields.length > 0) {
+      recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "task_updated",
+        entityType: "task",
+        entityTitle: updated.title,
+        taskId: id,
+        projectId: updated.projectId,
+        metadata: { changedFields: coalescedChangedFields },
+      });
+    } else if (tagsChanged || excludedTagsChanged) {
+      recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "task_tags_changed",
+        entityType: "task",
+        entityTitle: updated.title,
+        taskId: id,
+        projectId: updated.projectId,
+        metadata: {},
+      });
+    }
+    return updated;
   });
 }
 
-export function appendTaskNotes(db: Db, id: number, content: string) {
+export function appendTaskNotes(
+  db: Db,
+  id: number,
+  content: string,
+  context?: MutationContext,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
     const notes = appendNoteContent(task.notes, content);
     if (notes === task.notes) return task;
-    return tx
+    const updated = tx
       .update(schema.tasks)
       .set({ notes, updatedAt: nowIso() })
       .where(eq(schema.tasks.id, id))
       .returning()
       .get();
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_updated",
+      entityType: "task",
+      entityTitle: updated.title,
+      taskId: id,
+      projectId: updated.projectId,
+      metadata: { changedFields: ["notesAppended"] },
+    });
+    return updated;
   });
 }
 
-export function deleteTask(db: Db, id: number) {
-  getTaskOrThrow(db, id);
-  // ON DELETE CASCADE (foreign_keys=ON) takes care of descendants and any
-  // dependency rows that reference this task in either direction.
-  db.delete(schema.tasks).where(eq(schema.tasks.id, id)).run();
+export function deleteTask(db: Db, id: number, context?: MutationContext) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, id);
+    const affectedCount = repoGetDescendantIds(txDb, id).length + 1;
+    tx.delete(schema.tasks).where(eq(schema.tasks.id, id)).run();
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_deleted",
+      entityType: "task",
+      entityTitle: task.title,
+      projectId: task.projectId,
+      metadata: affectedCount > 1 ? { affectedCount } : {},
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1115,10 +1529,22 @@ export function completeTask(
   db: Db,
   id: number,
   descendantsPolicy?: CompleteDescendantsPolicy,
+  context?: MutationContext,
 ) {
   return db.transaction((tx) => {
-    getTaskOrThrow(tx as unknown as Db, id);
-    const openChildren = openDescendants(tx as unknown as Db, id);
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, id);
+    const openChildren = openDescendants(txDb, id);
+    const descendantsOnly =
+      task.status === "done" &&
+      descendantsPolicy === "complete_children" &&
+      openChildren.length > 0;
+    if (
+      task.status === "done" &&
+      !descendantsOnly
+    ) {
+      return task;
+    }
     if (openChildren.length > 0 && descendantsPolicy === undefined) {
       throw new AppError(
         409,
@@ -1131,15 +1557,17 @@ export function completeTask(
       );
     }
     const now = nowIso();
-    tx.update(schema.tasks)
-      .set({
-        status: "done",
-        needsClarification: false,
-        completedAt: now,
-        updatedAt: now,
-      })
-      .where(eq(schema.tasks.id, id))
-      .run();
+    if (!descendantsOnly) {
+      tx.update(schema.tasks)
+        .set({
+          status: "done",
+          needsClarification: false,
+          completedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(schema.tasks.id, id))
+        .run();
+    }
 
     if (descendantsPolicy === "complete_children") {
       for (const child of openChildren) {
@@ -1154,7 +1582,27 @@ export function completeTask(
           .run();
       }
     }
-    return tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: descendantsOnly
+        ? "task_descendants_status_changed"
+        : "task_status_changed",
+      entityType: "task",
+      entityTitle: updated.title,
+      taskId: id,
+      projectId: updated.projectId,
+      metadata: descendantsOnly
+        ? { nextStatus: "done", affectedCount: openChildren.length }
+        : {
+            previousStatus: task.status as TaskStatus,
+            nextStatus: "done",
+            ...(descendantsPolicy === "complete_children"
+              ? { affectedCount: openChildren.length + 1 }
+              : {}),
+          },
+    });
+    return updated;
   });
 }
 
@@ -1162,10 +1610,22 @@ export function cancelTask(
   db: Db,
   id: number,
   descendantsPolicy?: CancelDescendantsPolicy,
+  context?: MutationContext,
 ) {
   return db.transaction((tx) => {
-    getTaskOrThrow(tx as unknown as Db, id);
-    const openChildren = openDescendants(tx as unknown as Db, id);
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, id);
+    const openChildren = openDescendants(txDb, id);
+    const descendantsOnly =
+      task.status === "cancelled" &&
+      descendantsPolicy === "cancel_children" &&
+      openChildren.length > 0;
+    if (
+      task.status === "cancelled" &&
+      !descendantsOnly
+    ) {
+      return task;
+    }
     if (openChildren.length > 0 && descendantsPolicy === undefined) {
       throw new AppError(
         409,
@@ -1178,15 +1638,17 @@ export function cancelTask(
       );
     }
     const now = nowIso();
-    tx.update(schema.tasks)
-      .set({
-        status: "cancelled",
-        needsClarification: false,
-        cancelledAt: now,
-        updatedAt: now,
-      })
-      .where(eq(schema.tasks.id, id))
-      .run();
+    if (!descendantsOnly) {
+      tx.update(schema.tasks)
+        .set({
+          status: "cancelled",
+          needsClarification: false,
+          cancelledAt: now,
+          updatedAt: now,
+        })
+        .where(eq(schema.tasks.id, id))
+        .run();
+    }
 
     if (descendantsPolicy === "cancel_children") {
       for (const child of openChildren) {
@@ -1201,13 +1663,35 @@ export function cancelTask(
           .run();
       }
     }
-    return tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: descendantsOnly
+        ? "task_descendants_status_changed"
+        : "task_status_changed",
+      entityType: "task",
+      entityTitle: updated.title,
+      taskId: id,
+      projectId: updated.projectId,
+      metadata: descendantsOnly
+        ? { nextStatus: "cancelled", affectedCount: openChildren.length }
+        : {
+            previousStatus: task.status as TaskStatus,
+            nextStatus: "cancelled",
+            ...(descendantsPolicy === "cancel_children"
+              ? { affectedCount: openChildren.length + 1 }
+              : {}),
+          },
+    });
+    return updated;
   });
 }
 
-export function reopenTask(db: Db, id: number) {
+export function reopenTask(db: Db, id: number, context?: MutationContext) {
   return db.transaction((tx) => {
-    getTaskOrThrow(tx as unknown as Db, id);
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, id);
+    if (task.status === "actionable") return task;
     const now = nowIso();
     tx.update(schema.tasks)
       .set({
@@ -1219,7 +1703,20 @@ export function reopenTask(db: Db, id: number) {
       })
       .where(eq(schema.tasks.id, id))
       .run();
-    return tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_status_changed",
+      entityType: "task",
+      entityTitle: updated.title,
+      taskId: id,
+      projectId: updated.projectId,
+      metadata: {
+        previousStatus: task.status as TaskStatus,
+        nextStatus: "actionable",
+      },
+    });
+    return updated;
   });
 }
 
@@ -1287,7 +1784,12 @@ function cascadeProjectId(tx: Db, rootId: number, newProjectId: number | null) {
  * in both the source and destination groups so there are never gaps or
  * duplicate positions.
  */
-export function moveTask(db: Db, taskId: number, input: MoveTaskInput) {
+export function moveTask(
+  db: Db,
+  taskId: number,
+  input: MoveTaskInput,
+  context?: MutationContext,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
@@ -1357,12 +1859,50 @@ export function moveTask(db: Db, taskId: number, input: MoveTaskInput) {
       );
     }
 
-    return tx.select().from(schema.tasks).where(eq(schema.tasks.id, taskId)).get()!;
+    const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, taskId)).get()!;
+    if (!movingWithinSameGroup) {
+      const destinationProject =
+        newProjectId !== task.projectId && newProjectId !== null
+          ? getProjectOrThrow(txDb, newProjectId)
+          : null;
+      const destinationParent =
+        newParentTaskId !== null
+          ? getTaskOrThrow(txDb, newParentTaskId)
+          : null;
+      recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "task_moved",
+        entityType: "task",
+        entityTitle: updated.title,
+        taskId,
+        projectId: updated.projectId,
+        metadata: {
+          ...(destinationProject
+            ? {
+                relatedProjectIds: [destinationProject.id],
+                relatedProjectTitles: [destinationProject.title],
+              }
+            : {}),
+          ...(destinationParent
+            ? {
+                relatedTaskIds: [destinationParent.id],
+                relatedTaskTitles: [destinationParent.title],
+              }
+            : {}),
+        },
+      });
+    }
+    return updated;
   });
 }
 
-export function reorderTask(db: Db, taskId: number, position: number) {
-  return moveTask(db, taskId, { position });
+export function reorderTask(
+  db: Db,
+  taskId: number,
+  position: number,
+  context?: MutationContext,
+) {
+  return moveTask(db, taskId, { position }, context);
 }
 
 export function changeTaskParent(
@@ -1370,23 +1910,30 @@ export function changeTaskParent(
   taskId: number,
   parentTaskId: number | null,
   projectId?: number | null,
+  context?: MutationContext,
 ) {
   const input: MoveTaskInput = { parentTaskId };
   if (parentTaskId === null && projectId !== undefined) {
     input.projectId = projectId;
   }
-  return moveTask(db, taskId, input);
+  return moveTask(db, taskId, input, context);
 }
 
 export function moveSubtreeToProject(
   db: Db,
   taskId: number,
   targetProjectId: number | null,
+  context?: MutationContext,
 ) {
-  return moveTask(db, taskId, { parentTaskId: null, projectId: targetProjectId });
+  return moveTask(
+    db,
+    taskId,
+    { parentTaskId: null, projectId: targetProjectId },
+    context,
+  );
 }
 
-export function indentTask(db: Db, taskId: number) {
+export function indentTask(db: Db, taskId: number, context?: MutationContext) {
   const task = getTaskOrThrow(db, taskId);
   const siblings = siblingsOf(db, task.parentTaskId, task.projectId, -1)
     .concat()
@@ -1398,10 +1945,10 @@ export function indentTask(db: Db, taskId: number) {
     );
   }
   const previousSibling = siblings[currentIndex - 1]!;
-  return moveTask(db, taskId, { parentTaskId: previousSibling.id });
+  return moveTask(db, taskId, { parentTaskId: previousSibling.id }, context);
 }
 
-export function outdentTask(db: Db, taskId: number) {
+export function outdentTask(db: Db, taskId: number, context?: MutationContext) {
   const task = getTaskOrThrow(db, taskId);
   if (task.parentTaskId === null) {
     throw AppError.badRequest(
@@ -1416,21 +1963,26 @@ export function outdentTask(db: Db, taskId: number) {
   if (parent.parentTaskId === null) {
     input.projectId = parent.projectId;
   }
-  return moveTask(db, taskId, input);
+  return moveTask(db, taskId, input, context);
 }
 
 // ---------------------------------------------------------------------------
 // Dependencies
 // ---------------------------------------------------------------------------
 
-export function addDependency(db: Db, taskId: number, dependsOnTaskId: number) {
+export function addDependency(
+  db: Db,
+  taskId: number,
+  dependsOnTaskId: number,
+  context?: MutationContext,
+) {
   if (taskId === dependsOnTaskId) {
     throw AppError.conflict("Eine Aufgabe kann nicht von sich selbst abhängen.");
   }
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    getTaskOrThrow(txDb, taskId);
-    getTaskOrThrow(txDb, dependsOnTaskId);
+    const task = getTaskOrThrow(txDb, taskId);
+    const dependency = getTaskOrThrow(txDb, dependsOnTaskId);
 
     const existing = tx
       .select()
@@ -1450,11 +2002,24 @@ export function addDependency(db: Db, taskId: number, dependsOnTaskId: number) {
       );
     }
 
-    return tx
+    const created = tx
       .insert(schema.taskDependencies)
       .values({ taskId, dependsOnTaskId })
       .returning()
       .get();
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_dependencies_changed",
+      entityType: "task",
+      entityTitle: task.title,
+      taskId,
+      projectId: task.projectId,
+      metadata: {
+        relatedTaskIds: [dependency.id],
+        relatedTaskTitles: [dependency.title],
+      },
+    });
+    return created;
   });
 }
 
@@ -1462,63 +2027,151 @@ export function removeDependency(
   db: Db,
   taskId: number,
   dependsOnTaskId: number,
+  context?: MutationContext,
 ) {
-  db.delete(schema.taskDependencies)
-    .where(
-      and(
-        eq(schema.taskDependencies.taskId, taskId),
-        eq(schema.taskDependencies.dependsOnTaskId, dependsOnTaskId),
-      ),
-    )
-    .run();
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, taskId);
+    const dependency = getTaskOrThrow(txDb, dependsOnTaskId);
+    const deleted = tx.delete(schema.taskDependencies)
+      .where(
+        and(
+          eq(schema.taskDependencies.taskId, taskId),
+          eq(schema.taskDependencies.dependsOnTaskId, dependsOnTaskId),
+        ),
+      )
+      .run();
+    if (deleted.changes > 0) {
+      recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "task_dependencies_changed",
+        entityType: "task",
+        entityTitle: task.title,
+        taskId,
+        projectId: task.projectId,
+        metadata: {
+          relatedTaskIds: [dependency.id],
+          relatedTaskTitles: [dependency.title],
+        },
+      });
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Tags on tasks
 // ---------------------------------------------------------------------------
 
-export function addTaskTag(db: Db, taskId: number, tagId: number) {
-  getTaskOrThrow(db, taskId);
-  const existing = db
-    .select()
-    .from(schema.taskTags)
-    .where(and(eq(schema.taskTags.taskId, taskId), eq(schema.taskTags.tagId, tagId)))
-    .get();
-  if (!existing) {
-    db.insert(schema.taskTags).values({ taskId, tagId }).run();
-  }
+export function addTaskTag(
+  db: Db,
+  taskId: number,
+  tagId: number,
+  context?: MutationContext,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, taskId);
+    const existing = tx.select().from(schema.taskTags)
+      .where(and(eq(schema.taskTags.taskId, taskId), eq(schema.taskTags.tagId, tagId)))
+      .get();
+    if (existing) return;
+    tx.insert(schema.taskTags).values({ taskId, tagId }).run();
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_tags_changed",
+      entityType: "task",
+      entityTitle: task.title,
+      taskId,
+      projectId: task.projectId,
+      metadata: {},
+    });
+  });
 }
 
-export function removeTaskTag(db: Db, taskId: number, tagId: number) {
-  db.delete(schema.taskTags)
-    .where(and(eq(schema.taskTags.taskId, taskId), eq(schema.taskTags.tagId, tagId)))
-    .run();
+export function removeTaskTag(
+  db: Db,
+  taskId: number,
+  tagId: number,
+  context?: MutationContext,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, taskId);
+    const deleted = tx.delete(schema.taskTags)
+      .where(and(eq(schema.taskTags.taskId, taskId), eq(schema.taskTags.tagId, tagId)))
+      .run();
+    if (deleted.changes > 0) {
+      recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "task_tags_changed",
+        entityType: "task",
+        entityTitle: task.title,
+        taskId,
+        projectId: task.projectId,
+        metadata: {},
+      });
+    }
+  });
 }
 
-export function addExcludedTag(db: Db, taskId: number, tagId: number) {
-  getTaskOrThrow(db, taskId);
-  const existing = db
-    .select()
-    .from(schema.taskExcludedTags)
-    .where(
-      and(
-        eq(schema.taskExcludedTags.taskId, taskId),
-        eq(schema.taskExcludedTags.tagId, tagId),
-      ),
-    )
-    .get();
-  if (!existing) {
-    db.insert(schema.taskExcludedTags).values({ taskId, tagId }).run();
-  }
+export function addExcludedTag(
+  db: Db,
+  taskId: number,
+  tagId: number,
+  context?: MutationContext,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, taskId);
+    const existing = tx.select().from(schema.taskExcludedTags)
+      .where(
+        and(
+          eq(schema.taskExcludedTags.taskId, taskId),
+          eq(schema.taskExcludedTags.tagId, tagId),
+        ),
+      )
+      .get();
+    if (existing) return;
+    tx.insert(schema.taskExcludedTags).values({ taskId, tagId }).run();
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_tags_changed",
+      entityType: "task",
+      entityTitle: task.title,
+      taskId,
+      projectId: task.projectId,
+      metadata: {},
+    });
+  });
 }
 
-export function removeExcludedTag(db: Db, taskId: number, tagId: number) {
-  db.delete(schema.taskExcludedTags)
-    .where(
-      and(
-        eq(schema.taskExcludedTags.taskId, taskId),
-        eq(schema.taskExcludedTags.tagId, tagId),
-      ),
-    )
-    .run();
+export function removeExcludedTag(
+  db: Db,
+  taskId: number,
+  tagId: number,
+  context?: MutationContext,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, taskId);
+    const deleted = tx.delete(schema.taskExcludedTags)
+      .where(
+        and(
+          eq(schema.taskExcludedTags.taskId, taskId),
+          eq(schema.taskExcludedTags.tagId, tagId),
+        ),
+      )
+      .run();
+    if (deleted.changes > 0) {
+      recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "task_tags_changed",
+        entityType: "task",
+        entityTitle: task.title,
+        taskId,
+        projectId: task.projectId,
+        metadata: {},
+      });
+    }
+  });
 }

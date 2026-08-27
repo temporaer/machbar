@@ -43,6 +43,15 @@ export function MorePage() {
             <span aria-hidden="true">›</span>
           </span>
         </Link>
+        <Link to="/mehr/aktivitaeten" className="card list-link">
+          <span className="row-between">
+            <span>
+              <strong>Aktivitäten</strong>
+              <small className="list-link-description">Änderungen an Aufgaben und Projekten</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </span>
+        </Link>
 
         <div className="card">
           <h3 style={{ margin: 0 }}>{strings.swipeSettingTitle}</h3>
