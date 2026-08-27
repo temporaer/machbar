@@ -5,7 +5,7 @@ import {
   formatActivityExactTime,
   formatActivityRelativeTime,
 } from "../lib/activityFormatting";
-import { fallbackColor, initials } from "../lib/format";
+import { MemberAvatar } from "./MemberAvatar";
 
 export function ActivityEventRow({
   event,
@@ -26,15 +26,17 @@ export function ActivityEventRow({
 
   return (
     <li className="activity-event-row">
-      <span
-        className="avatar activity-event-avatar"
-        style={{
-          background: event.actor?.color || fallbackColor(event.actor?.id ?? 0),
-        }}
-        aria-hidden="true"
-      >
-        {event.actor ? initials(actorName) : "?"}
-      </span>
+      {event.actor ? (
+        <MemberAvatar
+          member={event.actor}
+          size="md"
+          className="activity-event-avatar"
+        />
+      ) : (
+        <span className="avatar avatar-md activity-event-avatar" aria-hidden="true">
+          ?
+        </span>
+      )}
       <div className="activity-event-content">
         <div className="activity-event-heading">
           <strong>{actorName}</strong>{" "}

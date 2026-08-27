@@ -34,7 +34,7 @@ describe("activity actor resolution", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual(member);
+    expect(response.json()).toEqual({ ...member, pictureUrl: null });
   });
 
   it("always prefers the authenticated OIDC member over caller header input", () => {
@@ -51,11 +51,11 @@ describe("activity actor resolution", () => {
     expect(
       resolveActivityActor(
         ctx.handle.db,
-        { ...authenticated, managedByOidc: true },
+        { ...authenticated, pictureUrl: null, managedByOidc: true },
         "not-even-a-valid-id",
         true,
       ),
-    ).toEqual(authenticated);
+    ).toEqual({ ...authenticated, pictureUrl: null });
   });
 
   it("allows an omitted actor for compatible and system calls", async () => {

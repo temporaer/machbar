@@ -28,6 +28,7 @@ import {
   formatRelativeScheduleDate,
 } from "../lib/relativeDate";
 import { TaskCardTags } from "./TaskCardTags";
+import { MemberLabel } from "./MemberAvatar";
 
 const SWIPE_THRESHOLD = 72;
 const LONG_PRESS_MS = 480;
@@ -204,12 +205,16 @@ export function TaskRow({
   const isDone = task.status === "done";
   const isCancelled = task.status === "cancelled";
   const overdue = isOverdue(task.dueDate, task.status);
+  const ownerMember =
+    task.effectiveOwnerId === null
+      ? null
+      : members.find((m) => m.id === task.effectiveOwnerId) ?? null;
   const ownerLabel =
     task.effectiveOwnerId === null
       ? strings.sharedOwner
       : task.effectiveOwnerId === currentMemberId
         ? strings.me
-        : members.find((m) => m.id === task.effectiveOwnerId)?.name ?? strings.unknownMember;
+        : ownerMember?.name ?? strings.unknownMember;
   const due = formatDate(task.dueDate);
   const projectDueRelative = task.projectDueDate
     ? formatRelativeDueDate(task.projectDueDate)
@@ -545,7 +550,13 @@ export function TaskRow({
                   {strings.projectDue}: {projectDueRelative}
                 </span>
               ) : null}
-              <span className="task-row-meta-item">{ownerLabel}</span>
+              <span className="task-row-meta-item">
+                {ownerMember ? (
+                  <MemberLabel member={ownerMember} label={ownerLabel} size="xs" />
+                ) : (
+                  ownerLabel
+                )}
+              </span>
               {children.length ? (
                 <span className="task-row-meta-item">
                   {children.filter((c) => c.status === "done" || c.status === "cancelled").length}/{children.length}

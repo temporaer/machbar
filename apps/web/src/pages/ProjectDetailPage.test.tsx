@@ -201,7 +201,7 @@ describe("ProjectDetailPage task explanations", () => {
   });
 
   it.each([
-    ["driver", "combobox", strings.driver],
+    ["driver", "button", "Mira"],
     ["completion", "button", strings.completeStory],
   ] as const)(
     "opens and focuses the existing project edit surface for %s repair links",

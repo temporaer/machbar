@@ -57,6 +57,7 @@ export function listMembers(db: Db) {
       name: schema.members.name,
       color: schema.members.color,
       oidcMemberId: schema.memberOidcIdentities.memberId,
+      pictureUrl: schema.memberOidcIdentities.pictureUrl,
     })
     .from(schema.members)
     .leftJoin(
@@ -66,6 +67,7 @@ export function listMembers(db: Db) {
     .all()
     .map(({ oidcMemberId, ...member }) => ({
       ...member,
+      pictureUrl: member.pictureUrl ?? null,
       managedByOidc: oidcMemberId !== null,
     }));
 }
@@ -112,11 +114,12 @@ export function createMember(db: Db, name: string) {
         `Ein Mitglied mit dem Namen "${trimmed}" existiert bereits.`,
       );
     }
-    return tx
+    const member = tx
       .insert(schema.members)
       .values({ name: trimmed, color: "" })
       .returning()
       .get();
+    return { ...member, pictureUrl: null, managedByOidc: false };
   });
 }
 
@@ -137,7 +140,12 @@ export function renameMember(db: Db, id: number, name: string) {
       );
     }
     tx.update(schema.members).set({ name: trimmed }).where(eq(schema.members.id, id)).run();
-    return tx.select().from(schema.members).where(eq(schema.members.id, id)).get()!;
+    const member = tx
+      .select()
+      .from(schema.members)
+      .where(eq(schema.members.id, id))
+      .get()!;
+    return { ...member, pictureUrl: null, managedByOidc: false };
   });
 }
 

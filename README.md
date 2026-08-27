@@ -232,6 +232,9 @@ member with the exact same display name. If the full name differs, a unique
 case-insensitive match between Pocket ID's `preferred_username` and an existing
 member name is accepted (for example `hannes` → `Hannes`); otherwise Machbar
 creates a member. Later logins synchronize that member's name from Pocket ID.
+When Pocket ID supplies its standard `picture` claim, Machbar also retains the
+same-origin profile-picture URL and displays that image directly from Pocket
+ID, falling back to the member's initials if it is absent or unavailable.
 OIDC-linked members remain assignment targets but can no longer be renamed or
 deleted inside Machbar. Access to the client should be restricted to the
 desired trusted household users/groups in Pocket ID. Name/username adoption is

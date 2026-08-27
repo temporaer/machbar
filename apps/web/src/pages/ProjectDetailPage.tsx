@@ -19,6 +19,7 @@ import { serializeProjectForShare } from "../lib/shareText";
 import { buildProjectShareUrl } from "../lib/shareUrls";
 import { useRefresh } from "../lib/refresh";
 import { PageHeader } from "../components/PageHeader";
+import { MemberLabel } from "../components/MemberAvatar";
 import { useSwipeSettings } from "../lib/swipeSettings";
 import { IconActionButton } from "../components/IconActionButton";
 import { StoryCriteriaSheet } from "../components/StoryCriteriaSheet";
@@ -170,8 +171,13 @@ export function ProjectDetailPage() {
             </div>
             <div className="row text-muted" style={{ fontSize: "0.8rem" }}>
               <span className="badge">{projectStatusLabels[project.status]}</span>
-              <span>
-                {strings.driver}: {owner ? owner.name : strings.noDriver}
+              <span className="member-label">
+                <span>{strings.driver}:</span>
+                {owner ? (
+                  <MemberLabel member={owner} size="xs" />
+                ) : (
+                  strings.noDriver
+                )}
               </span>
               {project.dueDate ? (
                 <span>

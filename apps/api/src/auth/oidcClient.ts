@@ -28,6 +28,26 @@ export interface OidcProvider {
   ): Promise<OidcIdentityClaims>;
 }
 
+export function normalizePictureUrl(
+  value: unknown,
+  issuerUrl: string,
+): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  try {
+    const pictureUrl = new URL(value);
+    const issuer = new URL(issuerUrl);
+    if (
+      (pictureUrl.protocol !== "https:" && pictureUrl.protocol !== "http:") ||
+      pictureUrl.origin !== issuer.origin
+    ) {
+      return undefined;
+    }
+    return pictureUrl.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 export class PocketIdProvider implements OidcProvider {
   private configurationPromise: Promise<Configuration> | null = null;
 
@@ -92,6 +112,10 @@ export class PocketIdProvider implements OidcProvider {
         : typeof userInfo.preferred_username === "string"
           ? userInfo.preferred_username
           : "";
+    const pictureUrl = normalizePictureUrl(
+      userInfo.picture,
+      this.oidc.issuerUrl,
+    );
     return {
       issuer: this.oidc.issuerUrl,
       subject: idTokenClaims.sub,
@@ -100,6 +124,7 @@ export class PocketIdProvider implements OidcProvider {
       ...(typeof userInfo.preferred_username === "string"
         ? { preferredUsername: userInfo.preferred_username }
         : {}),
+      ...(pictureUrl ? { pictureUrl } : {}),
     };
   }
 }

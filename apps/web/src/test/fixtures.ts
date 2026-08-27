@@ -9,7 +9,13 @@ function nextId() {
 }
 
 export function makeMember(overrides: Partial<Member> = {}): Member {
-  return { id: nextId(), name: "Alex", color: "#146356", ...overrides };
+  return {
+    id: nextId(),
+    name: "Alex",
+    color: "#146356",
+    pictureUrl: null,
+    ...overrides,
+  };
 }
 
 export function makeTag(overrides: Partial<Tag> = {}): Tag {

@@ -147,7 +147,7 @@ export function getRefinementOwnerSizeCounts(
   db: Db,
   filters?: RefinementFilters,
 ): OwnerSizeCounts[] {
-  const members = db.select().from(schema.members).all() as Member[];
+  const members = db.select().from(schema.members).all();
   const { rows, effectiveOwnerId } = loadFilteredOpenTasks(db, filters);
 
   const countsByOwner = new Map<number | null, OwnerSizeCounts>();

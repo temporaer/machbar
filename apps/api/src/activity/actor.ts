@@ -36,22 +36,32 @@ export function resolveActivityActor(
       id: authMember.id,
       name: authMember.name,
       color: authMember.color,
+      pictureUrl: authMember.pictureUrl,
     };
   }
   if (!allowHeaderFallback || actorHeader === undefined) return null;
 
   const memberId = parseActorMemberId(actorHeader);
-  const member = db
-    .select()
+  const row = db
+    .select({
+      id: schema.members.id,
+      name: schema.members.name,
+      color: schema.members.color,
+      pictureUrl: schema.memberOidcIdentities.pictureUrl,
+    })
     .from(schema.members)
+    .leftJoin(
+      schema.memberOidcIdentities,
+      eq(schema.members.id, schema.memberOidcIdentities.memberId),
+    )
     .where(eq(schema.members.id, memberId))
     .get();
-  if (!member) {
+  if (!row) {
     throw AppError.badRequest(
       "Die ausgewählte Aktivitäts-Person existiert nicht.",
     );
   }
-  return member;
+  return { ...row, pictureUrl: row.pictureUrl ?? null };
 }
 
 export function registerActivityActorResolution(

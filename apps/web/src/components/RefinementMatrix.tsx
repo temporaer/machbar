@@ -1,7 +1,8 @@
-import type { TaskSize } from "@machbar/shared";
+import type { Member, TaskSize } from "@machbar/shared";
 import { taskSizes, taskSizeLabels } from "@machbar/shared";
 import { strings } from "../lib/strings";
 import type { OwnerSizeCounts } from "../lib/api";
+import { MemberLabel } from "./MemberAvatar";
 
 /**
  * The list-filtering selection a matrix cell/row/column represents. `owner`
@@ -31,10 +32,12 @@ export function RefinementMatrix({
   rows,
   selection,
   onSelect,
+  members = [],
 }: {
   rows: OwnerSizeCounts[];
   selection: RefinementMatrixSelection | null;
   onSelect: (selection: RefinementMatrixSelection | null) => void;
+  members?: Member[];
 }) {
   const columns: Array<TaskSize | "unestimated"> = [...taskSizes, "unestimated"];
 
@@ -67,7 +70,17 @@ export function RefinementMatrix({
                   aria-pressed={selectionsEqual(selection, { ownerId: row.ownerId })}
                   onClick={() => toggle({ ownerId: row.ownerId })}
                 >
-                  {row.ownerId === null ? strings.shared : row.ownerName ?? strings.unassigned}
+                  {(() => {
+                    if (row.ownerId === null) return strings.shared;
+                    const member = members.find(
+                      (candidate) => candidate.id === row.ownerId,
+                    );
+                    return member ? (
+                      <MemberLabel member={member} size="xs" />
+                    ) : (
+                      row.ownerName ?? strings.unassigned
+                    );
+                  })()}
                 </button>
               </th>
               {columns.map((col) => (

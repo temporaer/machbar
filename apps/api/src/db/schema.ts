@@ -58,6 +58,7 @@ export const memberOidcIdentities = sqliteTable(
       .references(() => members.id, { onDelete: "cascade" }),
     email: text("email"),
     preferredUsername: text("preferred_username"),
+    pictureUrl: text("picture_url"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),

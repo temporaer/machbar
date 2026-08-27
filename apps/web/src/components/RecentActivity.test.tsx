@@ -22,7 +22,7 @@ function event(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
     id: 1,
     createdAt: new Date(2026, 7, 27, 18, 0).toISOString(),
     kind: "task_created",
-    actor: { id: 7, name: "Mira", color: "#123456" },
+    actor: { id: 7, name: "Mira", color: "#123456", pictureUrl: null },
     entity: { type: "task", title: "Kisten packen", taskId: 42, projectId: 9 },
     metadata: {},
     ...overrides,

@@ -134,6 +134,7 @@ describe("activity repository", () => {
       id: actor.id,
       name: "Mira",
       color: "#123456",
+      pictureUrl: null,
     });
 
     ctx.handle.db.delete(schema.tasks).where(eq(schema.tasks.id, task.id)).run();

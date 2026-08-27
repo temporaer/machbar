@@ -30,6 +30,7 @@ import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
 import { IconActionButton, IconActionGlyph } from "./IconActionButton";
+import { MemberLabel } from "./MemberAvatar";
 import "./ProjectStoryRow.css";
 
 const SWIPE_THRESHOLD = 72;
@@ -281,7 +282,13 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
                 {strings.criteria}: {criteriaChecked}/{criteria.length}
               </span>
             ) : null}
-            <span>{driver ? driver.name : strings.noDriver}</span>
+            <span>
+              {driver ? (
+                <MemberLabel member={driver} size="xs" />
+              ) : (
+                strings.noDriver
+              )}
+            </span>
             {dueLabel ? (
               <span>
                 {strings.due}: {dueLabel}

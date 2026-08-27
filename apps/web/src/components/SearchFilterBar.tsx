@@ -4,6 +4,7 @@ import { tagKinds, taskStatuses } from "@machbar/shared";
 import { strings, taskStatusLabels } from "../lib/strings";
 import { HumanDateInput } from "./HumanDateInput";
 import { useIdentity } from "../lib/identity";
+import { MemberChoiceGroup } from "./MemberChoiceGroup";
 
 export function SearchFilterBar({
   filters,
@@ -50,21 +51,14 @@ export function SearchFilterBar({
       </div>
       {expanded ? (
         <div className="stack">
-          <div className="field">
-            <label htmlFor="filter-owner">{strings.owner}</label>
-            <select
-              id="filter-owner"
-              value={filters.ownerId ?? ""}
-              onChange={(e) => set("ownerId", e.target.value ? Number(e.target.value) : undefined)}
-            >
-              <option value="">{strings.allMembers}</option>
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <MemberChoiceGroup
+            label={strings.owner}
+            idPrefix="filter-owner"
+            members={members}
+            value={filters.ownerId ?? null}
+            onChange={(ownerId) => set("ownerId", ownerId ?? undefined)}
+            unassignedLabel={strings.allMembers}
+          />
           <div className="field">
             <label htmlFor="filter-project">{strings.project}</label>
             <select

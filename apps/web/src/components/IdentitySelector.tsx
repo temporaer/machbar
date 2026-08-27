@@ -3,8 +3,8 @@ import type { Member } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
 import { strings } from "../lib/strings";
-import { fallbackColor, initials } from "../lib/format";
 import { LoadingState, ErrorState } from "./AsyncStates";
+import { MemberAvatar } from "./MemberAvatar";
 
 /**
  * Identity selection normally only chooses an existing member. On a fresh,
@@ -77,9 +77,7 @@ export function IdentitySelector({ onSelected }: { onSelected?: (member: Member)
                 onSelected?.(member);
               }}
             >
-              <span className="avatar" style={{ background: member.color || fallbackColor(member.id) }}>
-                {initials(member.name)}
-              </span>
+              <MemberAvatar member={member} size="lg" />
               <span>{member.name}</span>
             </button>
           ))}

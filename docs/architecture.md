@@ -166,14 +166,18 @@ The Fastify server performs Authorization Code exchange with PKCE, state, and
 nonce. One-time auth flows are stored briefly in `oidc_auth_flows`, with the
 state stored only as a SHA-256 hash. After validating the Pocket ID token and
 UserInfo response, Machbar discards all provider tokens and maps the stable
-`(issuer, sub)` pair in `member_oidc_identities`.
+`(issuer, sub)` pair in `member_oidc_identities`. The optional standard
+`picture` claim is retained only when it is an HTTP(S) URL on the configured
+issuer origin. The browser loads that image directly from Pocket ID; Machbar
+does not proxy or cache it.
 
 An exact, unlinked member name is adopted on first login. If the display name
 does not match, a unique case-insensitive `preferred_username` → member-name
 match is accepted; otherwise a member is created. Names are synchronized from
-Pocket ID on later logins, but the subject mapping never changes. Collisions
-fail rather than rebinding a member. Assignment-only members without an OIDC
-identity remain supported.
+Pocket ID on later logins, as is the optional picture URL, but the subject
+mapping never changes. Collisions fail rather than rebinding a member.
+Assignment-only members without an OIDC identity remain supported and use the
+initials/color avatar fallback.
 
 Machbar creates its own random opaque 30-day session. Only the SHA-256 token
 hash is stored in `auth_sessions`; the raw value exists solely in the

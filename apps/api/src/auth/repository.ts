@@ -26,8 +26,9 @@ export function randomSecret(): string {
 function memberResult(
   member: typeof schema.members.$inferSelect,
   managedByOidc: boolean,
+  pictureUrl: string | null = null,
 ): Member {
-  return { ...member, managedByOidc };
+  return { ...member, pictureUrl, managedByOidc };
 }
 
 export interface StoredAuthFlow {
@@ -87,6 +88,7 @@ export interface OidcIdentityClaims {
   name: string;
   email?: string;
   preferredUsername?: string;
+  pictureUrl?: string;
 }
 
 export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
@@ -140,6 +142,7 @@ export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
         .set({
           email: claims.email ?? null,
           preferredUsername: claims.preferredUsername ?? null,
+          pictureUrl: claims.pictureUrl ?? null,
           updatedAt: nowIso(),
         })
         .where(
@@ -149,7 +152,7 @@ export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
           ),
         )
         .run();
-      return memberResult({ ...member, name }, true);
+      return memberResult({ ...member, name }, true, claims.pictureUrl ?? null);
     }
 
     let member = tx
@@ -220,10 +223,11 @@ export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
         memberId: member.id,
         email: claims.email ?? null,
         preferredUsername: claims.preferredUsername ?? null,
+        pictureUrl: claims.pictureUrl ?? null,
       })
       .run();
 
-    return memberResult(member, true);
+    return memberResult(member, true, claims.pictureUrl ?? null);
   });
 }
 
@@ -265,6 +269,7 @@ export function getSessionMember(
       session: schema.authSessions,
       member: schema.members,
       identityMemberId: schema.memberOidcIdentities.memberId,
+      pictureUrl: schema.memberOidcIdentities.pictureUrl,
     })
     .from(schema.authSessions)
     .innerJoin(
@@ -288,7 +293,11 @@ export function getSessionMember(
     .set({ lastSeenAt: nowIso(now) })
     .where(eq(schema.authSessions.tokenHash, tokenHash))
     .run();
-  return memberResult(row.member, row.identityMemberId !== null);
+  return memberResult(
+    row.member,
+    row.identityMemberId !== null,
+    row.pictureUrl ?? null,
+  );
 }
 
 export function deleteSession(db: Db, token: string): void {

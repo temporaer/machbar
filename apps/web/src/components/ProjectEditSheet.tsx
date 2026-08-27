@@ -11,6 +11,7 @@ import { BottomSheet } from "./BottomSheet";
 import { TagPicker } from "./TagPicker";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { HumanDateInput } from "./HumanDateInput";
+import { MemberChoiceGroup } from "./MemberChoiceGroup";
 
 /** The subset of story fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -113,7 +114,8 @@ export function ProjectEditSheet({
     const focusable =
       focusField === "completion"
         ? container.querySelector<HTMLElement>('[data-workflow-action="complete"]')
-        : container.querySelector<HTMLElement>("select");
+        : (container.querySelector<HTMLElement>('button[aria-pressed="true"]') ??
+          container.querySelector<HTMLElement>("button"));
     focusable?.focus();
     appliedFocusRef.current = focusKey;
   }, [focusField, project.id]);
@@ -274,20 +276,15 @@ export function ProjectEditSheet({
           <p className="text-muted">{strings.assignDriverToActivateHint}</p>
         ) : null}
 
-        <div className="field" ref={driverFieldRef}>
-          <label htmlFor="project-driver">{strings.driver}</label>
-          <select
-            id="project-driver"
-            value={project.ownerMemberId ?? ""}
-            onChange={(e) => void patch({ ownerMemberId: e.target.value ? Number(e.target.value) : null })}
-          >
-            <option value="">{strings.noDriver}</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
+        <div ref={driverFieldRef}>
+          <MemberChoiceGroup
+            label={strings.driver}
+            idPrefix={`project-driver-${project.id}`}
+            members={members}
+            value={project.ownerMemberId}
+            onChange={(ownerMemberId) => void patch({ ownerMemberId })}
+            unassignedLabel={strings.noDriver}
+          />
         </div>
 
         <div className="row">

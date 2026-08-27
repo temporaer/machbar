@@ -24,7 +24,7 @@ function event(id: number, title: string): ActivityEvent {
     id,
     createdAt: new Date(2026, 7, 27, 18, id).toISOString(),
     kind: "task_created",
-    actor: { id: 1, name: "Mira", color: "#123456" },
+    actor: { id: 1, name: "Mira", color: "#123456", pictureUrl: null },
     entity: { type: "task", title, taskId: id, projectId: null },
     metadata: {},
   };

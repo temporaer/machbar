@@ -64,6 +64,7 @@ export interface ActivityActor {
   id: number;
   name: string;
   color: string;
+  pictureUrl: string | null;
 }
 
 export interface ActivityEntity {
@@ -91,6 +92,7 @@ export interface Member {
   id: number;
   name: string;
   color: string;
+  pictureUrl: string | null;
   managedByOidc?: boolean;
 }
 

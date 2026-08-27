@@ -21,6 +21,7 @@ import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
+import { MemberLabel } from "./MemberAvatar";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MarkdownNotes } from "./MarkdownNotes";
 import { NativeShareButton } from "./NativeShareButton";
@@ -426,7 +427,16 @@ export function TaskDetailSheet() {
               />
             ) : (
               <p className="text-muted">
-                {members.find((m) => m.id === task.effectiveOwnerId)?.name ?? strings.unassigned}
+                {(() => {
+                  const owner = members.find(
+                    (member) => member.id === task.effectiveOwnerId,
+                  );
+                  return owner ? (
+                    <MemberLabel member={owner} size="sm" />
+                  ) : (
+                    strings.unassigned
+                  );
+                })()}
               </p>
             )}
           </div>

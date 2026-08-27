@@ -12,6 +12,7 @@ import { RefinementMatrix } from "../components/RefinementMatrix";
 import type { RefinementMatrixSelection } from "../components/RefinementMatrix";
 import { RefinementTaskRow } from "../components/RefinementTaskRow";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { useIdentity } from "../lib/identity";
 import { TagGroupingControl } from "../components/TagGroupingControl";
 import {
   groupItemsByTagKind,
@@ -48,6 +49,7 @@ function selectionLabel(
  * navigation used elsewhere in the app.
  */
 export function RefinementPage() {
+  const { members } = useIdentity();
   const [selection, setSelection] = useState<RefinementMatrixSelection | null>(null);
   const [groupBy, setGroupBy] = useState<GroupableTagKind | null>(null);
   const actions = useRefinementActions();
@@ -248,7 +250,12 @@ export function RefinementPage() {
       {ownerRows ? (
         <div className="section refinement-secondary">
           <div className="section-title">{strings.effortGuide}</div>
-          <RefinementMatrix rows={ownerRows} selection={selection} onSelect={setSelection} />
+          <RefinementMatrix
+            rows={ownerRows}
+            selection={selection}
+            onSelect={setSelection}
+            members={members}
+          />
         </div>
       ) : null}
 

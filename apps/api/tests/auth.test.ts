@@ -4,6 +4,7 @@ import type {
   AuthorizationRequest,
   OidcProvider,
 } from "../src/auth/oidcClient.js";
+import { normalizePictureUrl } from "../src/auth/oidcClient.js";
 import type { OidcIdentityClaims } from "../src/auth/repository.js";
 import { validateReturnTo } from "../src/auth/routes.js";
 import type { OidcConfig } from "../src/env.js";
@@ -29,6 +30,8 @@ class FakeOidcProvider implements OidcProvider {
     name: "Hannes",
     email: "hannes@example.test",
     preferredUsername: "hannes",
+    pictureUrl:
+      "https://pocket.example/api/users/subject-hannes/profile-picture.png",
   };
   exchanges: Array<{
     callbackUrl: URL;
@@ -163,6 +166,8 @@ describe("Pocket ID authentication", () => {
         id: existing.id,
         name: "Hannes",
         color: "#123456",
+        pictureUrl:
+          "https://pocket.example/api/users/subject-hannes/profile-picture.png",
         managedByOidc: true,
       },
     });
@@ -198,6 +203,46 @@ describe("Pocket ID authentication", () => {
     expect(
       ctx.handle.db.select().from(schema.members).all(),
     ).toHaveLength(1);
+  });
+
+  it("synchronizes and clears the Pocket ID picture URL", async () => {
+    const first = await login();
+    const firstCookie = sessionCookie(first.headers["set-cookie"]);
+    const firstStatus = await ctx.app.inject({
+      method: "GET",
+      url: "/api/auth/status",
+      headers: { cookie: firstCookie },
+    });
+    expect(firstStatus.json().member.pictureUrl).toBe(
+      "https://pocket.example/api/users/subject-hannes/profile-picture.png",
+    );
+
+    provider.claims = {
+      ...provider.claims,
+      pictureUrl: "https://pocket.example/api/users/subject-hannes/new.png",
+    };
+    const updated = await login();
+    const updatedStatus = await ctx.app.inject({
+      method: "GET",
+      url: "/api/auth/status",
+      headers: { cookie: sessionCookie(updated.headers["set-cookie"]) },
+    });
+    expect(updatedStatus.json().member.pictureUrl).toBe(
+      "https://pocket.example/api/users/subject-hannes/new.png",
+    );
+
+    const { pictureUrl: _pictureUrl, ...claimsWithoutPicture } = provider.claims;
+    provider.claims = claimsWithoutPicture;
+    const cleared = await login();
+    const clearedStatus = await ctx.app.inject({
+      method: "GET",
+      url: "/api/auth/status",
+      headers: { cookie: sessionCookie(cleared.headers["set-cookie"]) },
+    });
+    expect(clearedStatus.json().member.pictureUrl).toBeNull();
+    expect(
+      ctx.handle.db.select().from(schema.memberOidcIdentities).get()?.pictureUrl,
+    ).toBeNull();
   });
 
   it("links an existing member by preferred username when the display name is fuller", async () => {
@@ -405,6 +450,8 @@ describe("Pocket ID authentication", () => {
     });
     expect(members.json()[0]).toMatchObject({
       name: "Hannes",
+      pictureUrl:
+        "https://pocket.example/api/users/subject-hannes/profile-picture.png",
       managedByOidc: true,
     });
     const memberId = members.json()[0].id;
@@ -419,6 +466,7 @@ describe("Pocket ID authentication", () => {
       },
       payload: { name: "Anders" },
     });
+
     expect(rename.statusCode).toBe(409);
 
     const remove = await ctx.app.inject({
@@ -427,5 +475,27 @@ describe("Pocket ID authentication", () => {
       headers: { cookie, origin: oidc.publicUrl },
     });
     expect(remove.statusCode).toBe(409);
+  });
+});
+
+describe("Pocket ID picture URL validation", () => {
+  it("accepts same-origin HTTP(S) avatar URLs", () => {
+    expect(
+      normalizePictureUrl(
+        "https://pocket.example/api/users/1/profile-picture.png",
+        "https://pocket.example",
+      ),
+    ).toBe("https://pocket.example/api/users/1/profile-picture.png");
+  });
+
+  it.each([
+    ["https://images.example/avatar.png", "cross-origin URL"],
+    ["data:image/png;base64,abc", "data URL"],
+    ["not a URL", "malformed URL"],
+    ["", "empty URL"],
+  ])("rejects a %s (%s)", (pictureUrl) => {
+    expect(
+      normalizePictureUrl(pictureUrl, "https://pocket.example"),
+    ).toBeUndefined();
   });
 });

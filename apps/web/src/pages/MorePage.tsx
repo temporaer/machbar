@@ -4,8 +4,8 @@ import { useIdentity } from "../lib/identity";
 import { useSwipeSettings, primarySwipeActions } from "../lib/swipeSettings";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { MemberManager } from "../components/MemberManager";
-import { fallbackColor, initials } from "../lib/format";
 import { useState } from "react";
+import { MemberAvatar } from "../components/MemberAvatar";
 
 export function MorePage() {
   const { currentMember, authEnabled, logout } = useIdentity();
@@ -77,17 +77,7 @@ export function MorePage() {
             <h3 style={{ margin: 0 }}>{strings.identity}</h3>
             {currentMember ? (
               <span className="row">
-                <span
-                  className="avatar"
-                  style={{
-                    width: 28,
-                    height: 28,
-                    fontSize: "0.7rem",
-                    background: currentMember.color || fallbackColor(currentMember.id),
-                  }}
-                >
-                  {initials(currentMember.name)}
-                </span>
+                <MemberAvatar member={currentMember} size="sm" />
                 <span>{currentMember.name}</span>
               </span>
             ) : null}

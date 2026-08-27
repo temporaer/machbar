@@ -131,11 +131,16 @@ export function getActivityPage(
       actorId: schema.members.id,
       actorName: schema.members.name,
       actorColor: schema.members.color,
+      actorPictureUrl: schema.memberOidcIdentities.pictureUrl,
     })
     .from(schema.activityEvents)
     .leftJoin(
       schema.members,
       eq(schema.activityEvents.actorMemberId, schema.members.id),
+    )
+    .leftJoin(
+      schema.memberOidcIdentities,
+      eq(schema.members.id, schema.memberOidcIdentities.memberId),
     )
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(
@@ -155,7 +160,12 @@ export function getActivityPage(
       row.actorId !== null &&
       row.actorName !== null &&
       row.actorColor !== null
-        ? { id: row.actorId, name: row.actorName, color: row.actorColor }
+        ? {
+            id: row.actorId,
+            name: row.actorName,
+            color: row.actorColor,
+            pictureUrl: row.actorPictureUrl ?? null,
+          }
         : null,
     entity: {
       type: row.entityType,

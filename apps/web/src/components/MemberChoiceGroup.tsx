@@ -1,4 +1,5 @@
 import type { Member } from "@machbar/shared";
+import { MemberAvatar } from "./MemberAvatar";
 
 /**
  * Tap-target picker for "who is responsible?" used by every *focused*
@@ -72,6 +73,7 @@ export function MemberChoiceGroup({
             autoFocus={autoFocus && focusTarget === member.id}
             onClick={() => onChange(member.id)}
           >
+            <MemberAvatar member={member} size="xs" />
             {member.name}
           </button>
         ))}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Member } from "@machbar/shared";
+import { MemberAvatar } from "./MemberAvatar";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
@@ -143,6 +144,7 @@ export function MemberManager() {
               ) : (
                 <>
                   <span className="row">
+                    <MemberAvatar member={member} size="sm" />
                     <span>{member.name}</span>
                     {member.managedByOidc ? (
                       <span className="badge">{strings.pocketIdManaged}</span>
