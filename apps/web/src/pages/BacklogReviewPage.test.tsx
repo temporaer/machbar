@@ -63,7 +63,8 @@ describe("BacklogReviewPage", () => {
 
     await screen.findByText("Wohnzimmer neu einrichten");
     expect(screen.getByText(/Erledigt, wenn …: 0\/1/)).toBeInTheDocument();
-    expect(screen.getByText("Niemand zugewiesen")).toBeInTheDocument();
+    expect(screen.queryByText("Niemand zugewiesen")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Verantwortlich:/)).not.toBeInTheDocument();
     expect(screen.getByText(/Aufgaben: Noch keine Aufgaben/)).toBeInTheDocument();
   });
 

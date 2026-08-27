@@ -378,7 +378,7 @@ describe("TaskRow – calm shared card presentation", () => {
     expect(container.querySelector(".task-row")).toHaveClass(`task-row-surface-${status}`);
   });
 
-  it("labels current, other, and shared ownership consistently", async () => {
+  it("shows assigned owners as labeled lower-right avatars without owner text", async () => {
     window.localStorage.setItem(IDENTITY_STORAGE_KEY, "1");
     const tasks = [
       makeTask({ id: 22, title: "Meine Aufgabe", effectiveOwnerId: 1 }),
@@ -387,9 +387,11 @@ describe("TaskRow – calm shared card presentation", () => {
     ];
     renderWithProviders(<TaskOutline tasks={tasks} emptyMessage="Nichts da" />);
 
-    expect(await screen.findByText("Ich")).toBeInTheDocument();
-    expect(screen.getByText("Alex")).toBeInTheDocument();
-    expect(screen.getByText("Gemeinsam")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Zuständig: Ich")).toBeInTheDocument();
+    expect(screen.getByLabelText("Zuständig: Alex")).toBeInTheDocument();
+    expect(screen.queryByText("Ich")).not.toBeInTheDocument();
+    expect(screen.queryByText("Alex")).not.toBeInTheDocument();
+    expect(screen.queryByText("Gemeinsam")).not.toBeInTheDocument();
   });
 
   it("keeps notes in a tertiary region below the header and metadata", async () => {

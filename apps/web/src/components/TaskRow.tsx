@@ -28,7 +28,7 @@ import {
   formatRelativeScheduleDate,
 } from "../lib/relativeDate";
 import { TaskCardTags } from "./TaskCardTags";
-import { MemberLabel } from "./MemberAvatar";
+import { MemberAvatar } from "./MemberAvatar";
 
 const SWIPE_THRESHOLD = 72;
 const LONG_PRESS_MS = 480;
@@ -550,13 +550,6 @@ export function TaskRow({
                   {strings.projectDue}: {projectDueRelative}
                 </span>
               ) : null}
-              <span className="task-row-meta-item">
-                {ownerMember ? (
-                  <MemberLabel member={ownerMember} label={ownerLabel} size="xs" />
-                ) : (
-                  ownerLabel
-                )}
-              </span>
               {children.length ? (
                 <span className="task-row-meta-item">
                   {children.filter((c) => c.status === "done" || c.status === "cancelled").length}/{children.length}
@@ -568,6 +561,15 @@ export function TaskRow({
             <MarkdownNotes value={task.notes} className="task-row-notes" />
           ) : null}
         </div>
+        {ownerMember ? (
+          <span
+            className="task-row-owner-avatar"
+            aria-label={`${strings.owner}: ${ownerLabel}`}
+            title={ownerLabel}
+          >
+            <MemberAvatar member={ownerMember} size="sm" />
+          </span>
+        ) : null}
         <button
           type="button"
           className="task-row-kebab"

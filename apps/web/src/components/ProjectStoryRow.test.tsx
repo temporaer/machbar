@@ -634,7 +634,8 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(screen.getByText("Erledigt, wenn …: Übergabe abgeschlossen")).toBeInTheDocument();
     expect(screen.queryByText(/Aufgaben:/)).not.toBeInTheDocument();
     expect(screen.getByText("Nächster Schritt: Kartons kaufen")).toBeInTheDocument();
-    expect(screen.getByText("Mira")).toBeInTheDocument();
+    expect(screen.getByLabelText("Verantwortlich: Mira")).toBeInTheDocument();
+    expect(screen.queryByText("Mira")).not.toBeInTheDocument();
     const progress = container.querySelector(".project-card-progress");
     expect(progress).toBeInTheDocument();
     expect(progress?.querySelectorAll(":scope > span")).toHaveLength(4);

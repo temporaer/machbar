@@ -1300,6 +1300,14 @@ a {
   min-width: 0;
 }
 
+.task-row-owner-avatar {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 2;
+  pointer-events: none;
+}
+
 .task-row-main {
   display: block;
   width: 100%;

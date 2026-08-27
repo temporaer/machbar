@@ -93,7 +93,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     vi.useRealTimers();
   });
 
-  it("shows criteria progress, driver, dates and task summary", async () => {
+  it("shows criteria, dates, task summary, and a lower-right driver avatar", async () => {
     const story = makeProject({
       id: 10,
       title: "Wohnzimmer neu einrichten",
@@ -110,7 +110,8 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     });
     renderWithProviders(<Harness story={story} />);
     await screen.findByText("Wohnzimmer neu einrichten");
-    await screen.findByText("Mira");
+    expect(await screen.findByLabelText("Verantwortlich: Mira")).toBeInTheDocument();
+    expect(screen.queryByText("Mira")).not.toBeInTheDocument();
 
     expect(screen.getByText(/Erledigt, wenn …: 1\/2/)).toBeInTheDocument();
     expect(screen.getByText(/Fällig: 01.03.2026/)).toBeInTheDocument();
@@ -118,12 +119,13 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.getByText(/Aufgaben: 1\/3/)).toBeInTheDocument();
   });
 
-  it("shows 'Niemand zugewiesen' and no task-count fraction when the story has no driver/tasks yet", async () => {
+  it("omits the avatar and task-count fraction when the story has no driver/tasks yet", async () => {
     const story = makeProject({ id: 11, title: "Fahrrad-Service planen", status: "backlog", ownerMemberId: null });
     renderWithProviders(<Harness story={story} />);
     await screen.findByText("Fahrrad-Service planen");
 
-    expect(screen.getByText("Niemand zugewiesen")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Verantwortlich:/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Niemand zugewiesen")).not.toBeInTheDocument();
     expect(screen.getByText(/Aufgaben: Noch keine Aufgaben/)).toBeInTheDocument();
   });
 

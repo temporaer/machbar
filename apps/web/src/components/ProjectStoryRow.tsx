@@ -30,7 +30,7 @@ import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
 import { IconActionButton, IconActionGlyph } from "./IconActionButton";
-import { MemberLabel } from "./MemberAvatar";
+import { MemberAvatar } from "./MemberAvatar";
 import "./ProjectStoryRow.css";
 
 const SWIPE_THRESHOLD = 72;
@@ -276,35 +276,30 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
               <span className="badge badge-stuck">{stuckReasonLabels[story.stuckReason]}</span>
             ) : null}
           </div>
-          <div className="story-row-meta">
-            {variant !== "card" ? (
-              <span>
-                {strings.criteria}: {criteriaChecked}/{criteria.length}
-              </span>
-            ) : null}
-            <span>
-              {driver ? (
-                <MemberLabel member={driver} size="xs" />
-              ) : (
-                strings.noDriver
-              )}
-            </span>
-            {dueLabel ? (
-              <span>
-                {strings.due}: {dueLabel}
-              </span>
-            ) : null}
-            {scheduledLabel ? (
-              <span>
-                {strings.scheduled}: {scheduledLabel}
-              </span>
-            ) : null}
-            {variant !== "card" ? (
-              <span>
-                {strings.taskSummary}: {totalTasks > 0 ? `${doneCount}/${totalTasks}` : strings.taskSummaryNone}
-              </span>
-            ) : null}
-          </div>
+          {variant !== "card" || dueLabel || scheduledLabel ? (
+            <div className="story-row-meta">
+              {variant !== "card" ? (
+                <span>
+                  {strings.criteria}: {criteriaChecked}/{criteria.length}
+                </span>
+              ) : null}
+              {dueLabel ? (
+                <span>
+                  {strings.due}: {dueLabel}
+                </span>
+              ) : null}
+              {scheduledLabel ? (
+                <span>
+                  {strings.scheduled}: {scheduledLabel}
+                </span>
+              ) : null}
+              {variant !== "card" ? (
+                <span>
+                  {strings.taskSummary}: {totalTasks > 0 ? `${doneCount}/${totalTasks}` : strings.taskSummaryNone}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
           {story.refinementIssues?.slice(0, 2).map((issue) => (
             <span
               className={issue.severity === "urgent" ? "badge badge-stuck" : "badge"}
@@ -356,6 +351,15 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
             </>
           ) : null}
         </Link>
+        {driver ? (
+          <span
+            className="story-row-driver-avatar"
+            aria-label={`${strings.driver}: ${driver.name}`}
+            title={driver.name}
+          >
+            <MemberAvatar member={driver} size="sm" />
+          </span>
+        ) : null}
         {isHealthyWaiting ? (
           <span className="story-row-waiting-qualifier" role="img" aria-label={strings.waiting}>
             <IconActionGlyph kind="waiting" />
