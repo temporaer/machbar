@@ -4,6 +4,21 @@ import { describe, expect, it, vi } from "vitest";
 import { BottomSheet } from "./BottomSheet";
 
 describe("BottomSheet", () => {
+  it("portals the overlay outside transformed or clipped ancestors", () => {
+    const { container } = render(
+      <div className="task-row">
+        <BottomSheet title="Details" onClose={vi.fn()}>
+          Inhalt
+        </BottomSheet>
+      </div>,
+    );
+
+    expect(container.querySelector(".sheet-backdrop")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog").closest(".sheet-backdrop")?.parentElement).toBe(
+      document.body,
+    );
+  });
+
   it("renders header actions beside a thumb-sized close action and compact status", async () => {
     const onClose = vi.fn();
     render(

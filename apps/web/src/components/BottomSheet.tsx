@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useStrings } from "../lib/strings";
 import { IconActionButton } from "./IconActionButton";
 
@@ -27,7 +28,7 @@ export function BottomSheet({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
       className="sheet-backdrop"
       onClick={(e) => {
@@ -50,6 +51,7 @@ export function BottomSheet({
         ) : null}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

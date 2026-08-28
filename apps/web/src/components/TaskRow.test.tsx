@@ -547,6 +547,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await userEvent.click(screen.getByRole("button", { name: "Zuweisen" }));
 
     const group = await screen.findByRole("group", { name: "Zuständig" });
+    expect(group.closest(".sheet-backdrop")?.parentElement).toBe(document.body);
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
     // Tap chips rather than a native <select>, with the shared/unassigned
     // bucket offered explicitly and pressed while nobody is assigned.
