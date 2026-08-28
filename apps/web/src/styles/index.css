@@ -1401,10 +1401,8 @@ a {
 }
 
 .task-row-owner-avatar {
-  position: absolute;
-  right: 10px;
-  bottom: 8px;
-  z-index: 2;
+  align-self: flex-end;
+  flex: 0 0 auto;
   pointer-events: none;
 }
 
