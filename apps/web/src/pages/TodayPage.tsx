@@ -11,6 +11,7 @@ import { PageHeader, type PageHint } from "../components/PageHeader";
 import { useSwipeSettings } from "../lib/swipeSettings";
 import { ContributionPulse } from "../components/ContributionPulse";
 import { readTodayScope, writeTodayScope } from "../lib/todayScope";
+import { IconActionGlyph } from "../components/IconActionButton";
 
 export function TodayPage() {
   const strings = useStrings();
@@ -75,26 +76,16 @@ export function TodayPage() {
       <PageHeader
         title={strings.today}
         actions={
-          <div
-            className="segmented today-scope-toggle"
-            role="group"
-            aria-label={strings.todayScope}
+          <button
+            type="button"
+            className="page-header-button today-scope-toggle"
+            aria-label={strings.todayHouseholdScope}
+            aria-pressed={scope === "all"}
+            title={strings.todayHouseholdScope}
+            onClick={() => selectScope(scope === "mine" ? "all" : "mine")}
           >
-            <button
-              type="button"
-              aria-pressed={scope === "mine"}
-              onClick={() => selectScope("mine")}
-            >
-              {strings.mine}
-            </button>
-            <button
-              type="button"
-              aria-pressed={scope === "all"}
-              onClick={() => selectScope("all")}
-            >
-              {strings.all}
-            </button>
-          </div>
+            <IconActionGlyph kind="household" />
+          </button>
         }
         hints={pageHints}
       />

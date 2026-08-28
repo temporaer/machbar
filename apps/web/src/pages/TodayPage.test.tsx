@@ -108,28 +108,23 @@ describe("TodayPage", () => {
     const { container } = renderWithProviders(<TodayPage />);
 
     const header = container.querySelector<HTMLElement>(".page-header")!;
-    const toggle = within(header).getByRole("group", {
-      name: "Umfang der Heute-Ansicht",
+    const toggle = within(header).getByRole("button", {
+      name: "Aufgaben aller Personen anzeigen",
     });
-    expect(toggle).toHaveClass("today-scope-toggle");
-    expect(within(toggle).getByRole("button", { name: "Meine" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(toggle).toHaveClass("page-header-button", "today-scope-toggle");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(toggle.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     expect(await screen.findByText("Meine Aufgabe")).toBeInTheDocument();
 
-    await userEvent.click(within(toggle).getByRole("button", { name: "Alle" }));
+    await userEvent.click(toggle);
 
     await waitFor(() =>
       expect(mockedApi.getAgenda).toHaveBeenLastCalledWith(1, "all"),
     );
     expect(await screen.findByText("Jonas' Aufgabe")).toBeInTheDocument();
-    expect(within(toggle).getByRole("button", { name: "Alle" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
 
-    await userEvent.click(within(toggle).getByRole("button", { name: "Meine" }));
+    await userEvent.click(toggle);
     await waitFor(() =>
       expect(mockedApi.getAgenda).toHaveBeenLastCalledWith(1, "mine"),
     );
@@ -140,7 +135,9 @@ describe("TodayPage", () => {
     const first = renderWithProviders(<TodayPage />);
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "Alle" }),
+      await screen.findByRole("button", {
+        name: "Aufgaben aller Personen anzeigen",
+      }),
     );
     await waitFor(() =>
       expect(mockedApi.getAgenda).toHaveBeenLastCalledWith(null, "all"),
@@ -151,10 +148,11 @@ describe("TodayPage", () => {
     await waitFor(() =>
       expect(mockedApi.getAgenda).toHaveBeenLastCalledWith(null, "all"),
     );
-    expect(screen.getByRole("button", { name: "Alle" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      screen.getByRole("button", {
+        name: "Aufgaben aller Personen anzeigen",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("never labels stale personal data as the household view after a failed switch", async () => {
@@ -168,14 +166,19 @@ describe("TodayPage", () => {
     renderWithProviders(<TodayPage />);
 
     expect(await screen.findByText("Nur meine Aufgabe")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Alle" }));
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: "Aufgaben aller Personen anzeigen",
+      }),
+    );
 
     expect(screen.queryByText("Nur meine Aufgabe")).not.toBeInTheDocument();
     expect(await screen.findByText("Netzwerkfehler")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Alle" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      screen.getByRole("button", {
+        name: "Aufgaben aller Personen anzeigen",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("zeigt keinen manuellen Heute-Umschalter mehr an und erklärt die Ansicht im Seitenhinweis", async () => {

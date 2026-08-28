@@ -36,7 +36,7 @@ export function PageHeader({
             {hasHints ? (
               <button
                 type="button"
-                className="page-info-button"
+                className="page-header-button page-info-button"
                 aria-label={helpOpen ? strings.hidePageHints : strings.showPageHints}
                 aria-expanded={helpOpen}
                 aria-controls={helpId}
