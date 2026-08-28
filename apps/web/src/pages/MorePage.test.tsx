@@ -67,9 +67,9 @@ describe("MorePage", () => {
     expect(
       await screen.findByRole("heading", { name: "Gemeinsam geschafft" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("7", { selector: ".contribution-total" })).toBeInTheDocument();
+    expect(screen.getByText("+7", { selector: ".contribution-total" })).toBeInTheDocument();
     expect(screen.getByText("Mira")).toBeInTheDocument();
-    expect(screen.getByText("4 erledigt · 1 geplant")).toBeInTheDocument();
+    expect(screen.getByText("+4 erledigt · +1 geplant")).toBeInTheDocument();
     expect(
       screen.getByText("Gemeinsamer Beitrag ohne persönliche Zuordnung"),
     ).toBeInTheDocument();

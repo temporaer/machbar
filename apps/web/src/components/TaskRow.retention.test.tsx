@@ -108,6 +108,46 @@ describe("TaskRow – retention of recently mutated rows", () => {
     expect(screen.queryByText("Bericht abschicken")).not.toBeInTheDocument();
   });
 
+  it("keeps recurring completion actionable with the next browser-local schedule", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-28T10:00:00.000Z"));
+    const task = makeTask({
+      id: 150,
+      title: "Filter wechseln",
+      status: "actionable",
+      scheduledDate: "2026-08-28",
+      dueDate: "2026-08-29",
+      repeatAfterDays: 7,
+      allowedDeviationDays: 1,
+    });
+    mockedApi.completeTask.mockResolvedValue({
+      ...task,
+      revision: 2,
+      scheduledDate: "2026-09-04",
+      dueDate: "2026-09-05",
+    });
+
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Erledigt" }));
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(mockedApi.completeTask).toHaveBeenCalledWith(
+      150,
+      "leave_open",
+      "2026-08-28",
+      1,
+    );
+    expect(screen.getByText("Filter wechseln").className).not.toContain("done");
+    expect(screen.getByRole("button", { name: "Erledigt" })).toBeInTheDocument();
+    expect(
+      container.querySelector(".task-row-content.retained"),
+    ).toBeInTheDocument();
+  });
+
   it("keeps a cancelled row visible with cancelled/crossed-out styling during the retention window", async () => {
     vi.useFakeTimers();
     const task = makeTask({ id: 101, title: "Altes Angebot", status: "actionable" });

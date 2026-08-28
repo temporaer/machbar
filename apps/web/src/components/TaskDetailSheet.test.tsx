@@ -19,6 +19,7 @@ vi.mock("../lib/api", () => ({
     getMembers: vi.fn(),
     getTags: vi.fn(),
     getTask: vi.fn(),
+    getTaskRecurrenceHistory: vi.fn(),
     updateTask: vi.fn(),
     transitionTaskStatus: vi.fn(),
     completeTask: vi.fn(),
@@ -113,6 +114,10 @@ describe("TaskDetailSheet", () => {
     mockedApi.updateTask.mockResolvedValue(makeTask());
     mockedApi.transitionTaskStatus.mockResolvedValue(makeTask());
     mockedApi.getActivity.mockResolvedValue({ items: [], nextCursor: null });
+    mockedApi.getTaskRecurrenceHistory.mockResolvedValue({
+      summary: { hitCount: 0, missCount: 0, totalCount: 0, hitRate: null },
+      occurrences: [],
+    });
   });
 
   it("loads task activity only after its collapsed disclosure is opened", async () => {
@@ -254,7 +259,9 @@ describe("TaskDetailSheet", () => {
 
     expect(screen.queryByText("Heute erledigen")).not.toBeInTheDocument();
     expect(screen.queryByText("Für heute markieren")).not.toBeInTheDocument();
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "Für heute markieren" }),
+    ).not.toBeInTheDocument();
   });
 
   it("places sharing in the header and uses only the status select for general status changes", async () => {
@@ -427,6 +434,87 @@ describe("TaskDetailSheet", () => {
       }),
     );
     expect(dueDate).toHaveValue("13.09.2026");
+  });
+
+  it("edits recurrence, locks the derived deadline, and retains dates on disable", async () => {
+    const task = makeTask({
+      id: 61,
+      title: "Filter wechseln",
+      scheduledDate: "2026-09-10",
+      dueDate: "2026-09-12",
+      repeatAfterDays: 7,
+      allowedDeviationDays: 2,
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderSheet(61);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Filter wechseln");
+
+    expect(screen.getByLabelText("Fällig")).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Aktiv" }),
+    ).toBeChecked();
+    expect(screen.getByLabelText("Wiederholen nach Tagen")).toHaveValue(7);
+    expect(
+      screen.getByLabelText("Erlaubte Abweichung in Tagen"),
+    ).toHaveValue(2);
+    expect(
+      screen.getByText("Aktuelle inklusive Frist: 12.09.2026"),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("checkbox", { name: "Aktiv" }));
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(61, {
+        repeatAfterDays: null,
+        allowedDeviationDays: null,
+        expectedRevision: 1,
+      }),
+    );
+  });
+
+  it("shows empty and populated recurrence history", async () => {
+    const task = makeTask({
+      id: 62,
+      title: "Pflanzen gießen",
+      scheduledDate: "2026-09-10",
+      dueDate: "2026-09-11",
+      repeatAfterDays: 3,
+      allowedDeviationDays: 1,
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.getTaskRecurrenceHistory.mockResolvedValue({
+      summary: { hitCount: 1, missCount: 1, totalCount: 2, hitRate: 0.5 },
+      occurrences: [
+        {
+          id: 2,
+          taskId: 62,
+          scheduledDate: "2026-09-07",
+          deadlineDate: "2026-09-08",
+          completedOn: "2026-09-09",
+          completedAt: "2026-09-09T08:00:00.000Z",
+          result: "miss",
+        },
+        {
+          id: 1,
+          taskId: 62,
+          scheduledDate: "2026-09-03",
+          deadlineDate: "2026-09-04",
+          completedOn: "2026-09-03",
+          completedAt: "2026-09-03T08:00:00.000Z",
+          result: "hit",
+        },
+      ],
+    });
+    renderSheet(62);
+    await userEvent.click(screen.getByText("open"));
+
+    expect(
+      await screen.findByText(/50\s*%\s*Trefferquote/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("+1 Treffer")).toBeInTheDocument();
+    expect(screen.getByText("−1 Verpasst")).toBeInTheDocument();
+    expect(screen.getAllByText("Verpasst")).not.toHaveLength(0);
+    expect(screen.getAllByText("Treffer")).not.toHaveLength(0);
   });
 
   it("schließt einen ausgeschlossenen geerbten Tag über den Umschalter aus", async () => {

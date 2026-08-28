@@ -1,6 +1,6 @@
 import type {
-  ActivityEntityType,
   ContributionCategory,
+  ContributionEntityType,
   ContributionPulseLevel,
   ContributionReason,
   ContributionSummary,
@@ -15,6 +15,7 @@ const WINDOW_MS = 7 * DAY_MS;
 export const CONTRIBUTION_POLICY = {
   points: {
     task_completed: 2,
+    recurrence_missed: -1,
     project_completed: 4,
     task_clarified: 1,
     task_assigned: 1,
@@ -44,7 +45,7 @@ export interface RecordContributionInput {
   actorMemberId: number | null;
   category: ContributionCategory;
   reason: ContributionReason;
-  entityType: ActivityEntityType;
+  entityType: ContributionEntityType;
   entityId: number;
   personalEligible: boolean;
   now?: Date;
@@ -52,7 +53,7 @@ export interface RecordContributionInput {
 
 export interface NeutralizeContributionInput {
   activityEventId: number;
-  entityType: ActivityEntityType;
+  entityType: ContributionEntityType;
   entityId: number;
   reason: ContributionReason;
   now?: Date;
@@ -60,7 +61,7 @@ export interface NeutralizeContributionInput {
 
 export interface NeutralizeEntityContributionsInput {
   activityEventId: number;
-  entityType: ActivityEntityType;
+  entityType: ContributionEntityType;
   entityId: number;
   now?: Date;
 }
@@ -70,6 +71,7 @@ function cutoff(now: Date, durationMs: number): string {
 }
 
 function pulseLevel(points: number): ContributionPulseLevel {
+  if (points < 0) return "negative";
   if (points >= CONTRIBUTION_POLICY.pulseLevels.high) return "high";
   if (points >= CONTRIBUTION_POLICY.pulseLevels.medium) return "medium";
   if (points >= CONTRIBUTION_POLICY.pulseLevels.low) return "low";
@@ -80,8 +82,6 @@ export function recordContribution(
   db: Db,
   input: RecordContributionInput,
 ): typeof schema.contributionEvents.$inferSelect | null {
-  if (input.actorMemberId === null) return null;
-
   const now = input.now ?? new Date();
   const nowIso = now.toISOString();
   const existing = db
@@ -99,6 +99,32 @@ export function recordContribution(
     .get();
   if (existing) return null;
 
+  const policyPoints = CONTRIBUTION_POLICY.points[input.reason];
+  if (input.actorMemberId === null && policyPoints >= 0) return null;
+
+  if (policyPoints < 0) {
+    return db
+      .insert(schema.contributionEvents)
+      .values({
+        createdAt: nowIso,
+        activityEventId: input.activityEventId,
+        actorMemberId: input.actorMemberId,
+        category: input.category,
+        reason: input.reason,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        policyPoints,
+        sharedPoints: policyPoints,
+        personalPoints:
+          input.personalEligible && input.actorMemberId !== null
+            ? policyPoints
+            : 0,
+      })
+      .returning()
+      .get();
+  }
+  const actorMemberId = input.actorMemberId!;
+
   const recent = db
     .select({
       category: schema.contributionEvents.category,
@@ -107,16 +133,18 @@ export function recordContribution(
     .from(schema.contributionEvents)
     .where(
       and(
-        eq(schema.contributionEvents.actorMemberId, input.actorMemberId),
+        eq(schema.contributionEvents.actorMemberId, actorMemberId),
         gte(schema.contributionEvents.createdAt, cutoff(now, DAY_MS)),
       ),
     )
     .all();
   const categoryUsed = recent
     .filter((row) => row.category === input.category)
-    .reduce((total, row) => total + row.points, 0);
-  const totalUsed = recent.reduce((total, row) => total + row.points, 0);
-  const policyPoints = CONTRIBUTION_POLICY.points[input.reason];
+    .reduce((total, row) => total + Math.max(0, row.points), 0);
+  const totalUsed = recent.reduce(
+    (total, row) => total + Math.max(0, row.points),
+    0,
+  );
   const awardedPoints = Math.max(
     0,
     Math.min(
@@ -131,7 +159,7 @@ export function recordContribution(
     .values({
       createdAt: nowIso,
       activityEventId: input.activityEventId,
-      actorMemberId: input.actorMemberId,
+      actorMemberId,
       category: input.category,
       reason: input.reason,
       entityType: input.entityType,

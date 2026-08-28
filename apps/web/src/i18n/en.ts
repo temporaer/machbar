@@ -267,6 +267,28 @@ const en = {
   updated: "Updated",
   reminder: "Reminder",
   recurrence: "Repeats",
+  recurrenceHint:
+    "Reopens the same task with a new date after every completion.",
+  recurrenceEnabled: "Enabled",
+  repeatAfterDays: "Repeat after days",
+  allowedDeviationDays: "Allowed deviation in days",
+  recurrenceScheduleRequired: "Set a scheduled date first.",
+  recurrenceDeadlineLocked:
+    "The deadline is derived from the schedule and deviation.",
+  recurrenceDeadlinePreview: (date: string) =>
+    `Current inclusive deadline: ${date}`,
+  recurringTaskLeafHint: "Recurring tasks cannot contain subtasks.",
+  recurrenceHistory: "Recurrence history",
+  recurrenceHistoryEmpty: "No recurring occurrence has been completed yet.",
+  recurrenceHistoryLoadError: "Could not load recurrence history.",
+  recurrenceHits: "hits",
+  recurrenceMisses: "misses",
+  recurrenceHit: "Hit",
+  recurrenceMiss: "Miss",
+  recurrenceHitRate: (rate: string) => `${rate} hit rate`,
+  recurrenceCompletedOn: (date: string) => `Completed on ${date}`,
+  recurrenceOccurrenceDates: (scheduled: string, deadline: string) =>
+    `Scheduled ${scheduled} · deadline ${deadline}`,
   title: "Title",
   newTask: "New task",
   quickAddPlaceholder: "What needs doing?",
@@ -545,13 +567,14 @@ const en = {
   contributionSharedOnly: "Shared contribution without personal credit",
   contributionRulesTitle: "How do points count?",
   contributionRulesBody:
-    "Completed tasks count for 2 points, completed projects for 4, and meaningful planning improvements for 1. New items count only when they close a concrete planning gap. Repeated edits, deletion, and bulk actions earn no extra points. Undone outcomes are neutralized.",
+    "Completed tasks count for +2 points, completed projects for +4, and meaningful planning improvements for +1. A late recurring occurrence also receives −1. Negative points do not create new room under positive daily caps. Repeated edits, deletion, and bulk actions earn no extra points. Undone outcomes are neutralized.",
   contributionLoadError: "Could not load contributions.",
   contributionPulseLabel: "Together · 7 days",
   contributionPulseAria:
     "Shared contributions over the last seven days. Open the detailed view.",
   contributionPulseLevelsPrefix: "From oldest to newest",
   contributionPulseLevelNone: "none",
+  contributionPulseLevelNegative: "negative",
   contributionPulseLevelLow: "a few",
   contributionPulseLevelMedium: "some",
   contributionPulseLevelHigh: "many",
@@ -602,6 +625,8 @@ const en = {
       priority: "priority",
       size: "effort",
       recurrenceRule: "recurrence",
+      repeatAfterDays: "repeat interval",
+      allowedDeviationDays: "allowed deviation",
       reminderAt: "reminder",
       notesAppended: "notes",
       taskSequence: "task sequence",
@@ -627,6 +652,10 @@ const en = {
       `changed the status from “${previous}” to “${next}”`,
     statusTo: (next: string) => `changed the status to “${next}”`,
     statusChanged: "changed the status",
+    recurrenceCompleted: (missed: boolean, nextDate: string) =>
+      `completed a recurring occurrence ${
+        missed ? "late" : "on time"
+      }${nextDate ? `; next scheduled ${nextDate}` : ""}`,
     affectedTasks: (count: number) =>
       ` (${count} ${count === 1 ? "task" : "tasks"})`,
     descendantsStatusChanged: (count: number, status: string) =>
@@ -770,6 +799,20 @@ const en = {
     refinement_filters_invalid: "The task-review filters are invalid.",
     request_body_invalid: "The submitted data is invalid.",
     request_origin_forbidden: "This request is not allowed.",
+    recurrence_configuration_invalid:
+      "The recurrence settings are invalid.",
+    recurrence_completion_date_required:
+      "The local completion date is required for this recurrence.",
+    recurrence_completion_revision_required:
+      "This recurring task is out of date. Reload it and try again.",
+    recurring_descendant_completion_required:
+      "Complete recurring subtasks individually before completing all subtasks.",
+    recurring_parent_forbidden:
+      "A recurring task cannot contain subtasks.",
+    recurring_task_leaf_required:
+      "Remove all subtasks before enabling recurrence.",
+    recurring_task_scheduled_required:
+      "A recurring task requires a scheduled date.",
     route_not_found: "The requested address could not be found.",
     search_query_invalid: "The search filters are invalid.",
     stale_write_conflict:

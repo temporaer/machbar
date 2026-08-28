@@ -248,6 +248,31 @@ const extra = {
   updated: "Aktualisiert",
   reminder: "Erinnerung",
   recurrence: "Wiederholung",
+  recurrenceHint:
+    "Öffnet dieselbe Aufgabe nach jeder Erledigung mit einem neuen Termin.",
+  recurrenceEnabled: "Aktiv",
+  repeatAfterDays: "Wiederholen nach Tagen",
+  allowedDeviationDays: "Erlaubte Abweichung in Tagen",
+  recurrenceScheduleRequired:
+    "Lege zuerst einen geplanten Termin fest.",
+  recurrenceDeadlineLocked:
+    "Die Fälligkeit wird aus Termin und Abweichung berechnet.",
+  recurrenceDeadlinePreview: (date: string) =>
+    `Aktuelle inklusive Frist: ${date}`,
+  recurringTaskLeafHint:
+    "Wiederkehrende Aufgaben können keine Teilaufgaben enthalten.",
+  recurrenceHistory: "Wiederholungsverlauf",
+  recurrenceHistoryEmpty: "Noch keine Wiederholung erledigt.",
+  recurrenceHistoryLoadError:
+    "Der Wiederholungsverlauf konnte nicht geladen werden.",
+  recurrenceHits: "Treffer",
+  recurrenceMisses: "Verpasst",
+  recurrenceHit: "Treffer",
+  recurrenceMiss: "Verpasst",
+  recurrenceHitRate: (rate: string) => `${rate} Trefferquote`,
+  recurrenceCompletedOn: (date: string) => `Erledigt am ${date}`,
+  recurrenceOccurrenceDates: (scheduled: string, deadline: string) =>
+    `Geplant ${scheduled} · Frist ${deadline}`,
   title: "Titel",
   newTask: "Neue Aufgabe",
   quickAddPlaceholder: "Was ist zu tun?",
@@ -516,13 +541,14 @@ const extra = {
   contributionSharedOnly: "Gemeinsamer Beitrag ohne persönliche Zuordnung",
   contributionRulesTitle: "Wie zählen die Punkte?",
   contributionRulesBody:
-    "Erledigte Aufgaben zählen 2 Punkte, abgeschlossene Projekte 4 und sinnvolle Planungsverbesserungen 1. Neue Einträge zählen nur, wenn sie eine konkrete Planungslücke schließen. Wiederholte Änderungen, Löschungen und Massenaktionen bringen keine zusätzlichen Punkte. Rückgängig gemachte Ergebnisse werden neutralisiert.",
+    "Erledigte Aufgaben zählen +2 Punkte, abgeschlossene Projekte +4 und sinnvolle Planungsverbesserungen +1. Eine zu spät erledigte Wiederholung erhält zusätzlich −1. Negative Punkte erhöhen die positiven Tagesgrenzen nicht. Wiederholte Änderungen, Löschungen und Massenaktionen bringen keine zusätzlichen Punkte. Rückgängig gemachte Ergebnisse werden neutralisiert.",
   contributionLoadError: "Beiträge konnten nicht geladen werden.",
   contributionPulseLabel: "Gemeinsam · 7 Tage",
   contributionPulseAria:
     "Gemeinsame Beiträge der letzten sieben Tage. Zur ausführlichen Ansicht.",
   contributionPulseLevelsPrefix: "Von früher nach heute",
   contributionPulseLevelNone: "keine",
+  contributionPulseLevelNegative: "negativ",
   contributionPulseLevelLow: "wenige",
   contributionPulseLevelMedium: "einige",
   contributionPulseLevelHigh: "viele",
@@ -573,6 +599,8 @@ const extra = {
       priority: "Priorität",
       size: "Größe",
       recurrenceRule: "Wiederholung",
+      repeatAfterDays: "Wiederholungsabstand",
+      allowedDeviationDays: "erlaubte Abweichung",
       reminderAt: "Erinnerung",
       notesAppended: "Notizen",
       taskSequence: "Aufgabenfolge",
@@ -598,6 +626,10 @@ const extra = {
       `hat den Status von „${previous}“ auf „${next}“ geändert`,
     statusTo: (next: string) => `hat den Status auf „${next}“ geändert`,
     statusChanged: "hat den Status geändert",
+    recurrenceCompleted: (missed: boolean, nextDate: string) =>
+      `hat eine Wiederholung ${
+        missed ? "zu spät" : "rechtzeitig"
+      } erledigt${nextDate ? `; nächster Termin ${nextDate}` : ""}`,
     affectedTasks: (count: number) => ` (${count} Aufgaben)`,
     descendantsStatusChanged: (count: number, status: string) =>
       `hat ${
@@ -749,6 +781,20 @@ const extra = {
     refinement_filters_invalid: "Die Klärungsfilter sind ungültig.",
     request_body_invalid: "Die eingegebenen Daten sind ungültig.",
     request_origin_forbidden: "Diese Anfrage ist nicht erlaubt.",
+    recurrence_configuration_invalid:
+      "Die Wiederholungseinstellungen sind ungültig.",
+    recurrence_completion_date_required:
+      "Für die Wiederholung fehlt das lokale Erledigungsdatum.",
+    recurrence_completion_revision_required:
+      "Diese wiederkehrende Aufgabe ist veraltet. Lade sie neu und versuche es erneut.",
+    recurring_descendant_completion_required:
+      "Erledige wiederkehrende Teilaufgaben einzeln, bevor du alle Teilaufgaben abschließt.",
+    recurring_parent_forbidden:
+      "Eine wiederkehrende Aufgabe kann keine Teilaufgaben enthalten.",
+    recurring_task_leaf_required:
+      "Entferne zuerst alle Teilaufgaben, bevor du die Wiederholung aktivierst.",
+    recurring_task_scheduled_required:
+      "Eine wiederkehrende Aufgabe braucht einen geplanten Termin.",
     route_not_found: "Die angeforderte Adresse wurde nicht gefunden.",
     search_query_invalid: "Die Suchfilter sind ungültig.",
     stale_write_conflict:

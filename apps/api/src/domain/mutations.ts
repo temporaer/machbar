@@ -21,6 +21,7 @@ import {
   wouldCreateDependencyCycle,
   wouldCreateHierarchyCycle,
 } from "../repo/index.js";
+import { addCalendarDays, isIsoCalendarDate } from "./calendarDate.js";
 
 export interface MutationContext {
   actorMemberId?: number | null;
@@ -1300,9 +1301,77 @@ export interface CreateTaskInput {
   waitingFor?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
-  recurrenceRule?: string | null;
+  repeatAfterDays?: number | null;
+  allowedDeviationDays?: number | null;
   reminderAt?: string | null;
   tagIds?: number[];
+}
+
+function assertRecurrenceNumbers(
+  repeatAfterDays: number | null,
+  allowedDeviationDays: number | null,
+): void {
+  if (
+    (repeatAfterDays === null) !== (allowedDeviationDays === null) ||
+    (repeatAfterDays !== null &&
+      (!Number.isInteger(repeatAfterDays) || repeatAfterDays < 1)) ||
+    (allowedDeviationDays !== null &&
+      (!Number.isInteger(allowedDeviationDays) || allowedDeviationDays < 0))
+  ) {
+    throw AppError.badRequest(
+      "recurrence_configuration_invalid",
+      "Recurrence requires a positive repeat interval and a non-negative allowed deviation.",
+      { repeatAfterDays, allowedDeviationDays },
+    );
+  }
+}
+
+function recurrenceDates(
+  repeatAfterDays: number | null,
+  allowedDeviationDays: number | null,
+  scheduledDate: string | null,
+  suppliedDueDate?: string | null,
+): { enabled: boolean; dueDate: string | null } {
+  assertRecurrenceNumbers(repeatAfterDays, allowedDeviationDays);
+  if (repeatAfterDays === null || allowedDeviationDays === null) {
+    return { enabled: false, dueDate: suppliedDueDate ?? null };
+  }
+  if (scheduledDate === null) {
+    throw AppError.badRequest(
+      "recurring_task_scheduled_required",
+      "A recurring task requires a scheduled date.",
+    );
+  }
+  const dueDate = addCalendarDays(scheduledDate, allowedDeviationDays);
+  if (suppliedDueDate !== undefined && suppliedDueDate !== dueDate) {
+    throw AppError.badRequest(
+      "recurrence_configuration_invalid",
+      "A recurring task deadline is derived from its schedule and allowed deviation.",
+      { scheduledDate, allowedDeviationDays, expectedDueDate: dueDate },
+    );
+  }
+  return { enabled: true, dueDate };
+}
+
+function assertRecurringLeaf(db: Db, taskId: number): void {
+  if (repoGetDescendantIds(db, taskId).length > 0) {
+    throw AppError.conflict(
+      "recurring_task_leaf_required",
+      "Only tasks without subtasks can recur.",
+      { taskId },
+    );
+  }
+}
+
+function assertParentAcceptsChildren(db: Db, parentTaskId: number): void {
+  const parent = getTaskOrThrow(db, parentTaskId);
+  if (parent.repeatAfterDays !== null) {
+    throw AppError.conflict(
+      "recurring_parent_forbidden",
+      "A recurring task cannot contain subtasks.",
+      { parentTaskId },
+    );
+  }
 }
 
 function normalizeTaskStatus(
@@ -1346,6 +1415,7 @@ function insertTask(
 
   if (parentTaskId !== null) {
     const parent = getTaskOrThrow(db, parentTaskId);
+    assertParentAcceptsChildren(db, parentTaskId);
     projectId = parent.projectId;
   } else if (projectId !== null) {
     getProjectOrThrow(db, projectId);
@@ -1358,6 +1428,21 @@ function insertTask(
     input.needsClarification,
     projectId === null && parentTaskId === null ? "captured" : "actionable",
   );
+  const repeatAfterDays = input.repeatAfterDays ?? null;
+  const allowedDeviationDays = input.allowedDeviationDays ?? null;
+  const scheduledDate = input.scheduledDate ?? null;
+  const recurrence = recurrenceDates(
+    repeatAfterDays,
+    allowedDeviationDays,
+    scheduledDate,
+    input.dueDate,
+  );
+  if (recurrence.enabled && status === "done") {
+    throw AppError.badRequest(
+      "recurrence_completion_date_required",
+      "A recurring task must be completed through a completion transition.",
+    );
+  }
 
   const task = db
     .insert(schema.tasks)
@@ -1371,11 +1456,13 @@ function insertTask(
       ownerMemberId: input.ownerMemberId ?? null,
       ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
       createdByMemberId: input.createdByMemberId ?? null,
-      dueDate: input.dueDate ?? null,
-      scheduledDate: input.scheduledDate ?? null,
+      dueDate: recurrence.enabled ? recurrence.dueDate : input.dueDate ?? null,
+      scheduledDate,
       waitingFor: input.waitingFor ?? null,
       priority: input.priority ?? null,
       size: input.size ?? null,
+      repeatAfterDays,
+      allowedDeviationDays,
       position,
     })
     .returning()
@@ -1453,6 +1540,7 @@ export function createChildTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const parent = getTaskOrThrow(txDb, parentTaskId);
+    assertParentAcceptsChildren(txDb, parentTaskId);
     const hadNextAction =
       parent.projectId === null
         ? true
@@ -1708,7 +1796,9 @@ export interface UpdateTaskInput {
   waitingFor?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
-  recurrenceRule?: string | null;
+  repeatAfterDays?: number | null;
+  allowedDeviationDays?: number | null;
+  completedOn?: string;
   reminderAt?: string | null;
   tagIds?: number[];
   excludedTagIds?: number[];
@@ -1764,9 +1854,49 @@ export function updateTask(
           : input.needsClarification === false && currentTask.status === "captured"
             ? "actionable"
             : undefined;
+    const nextRepeatAfterDays =
+      input.repeatAfterDays !== undefined
+        ? input.repeatAfterDays
+        : currentTask.repeatAfterDays;
+    const nextAllowedDeviationDays =
+      input.allowedDeviationDays !== undefined
+        ? input.allowedDeviationDays
+        : currentTask.allowedDeviationDays;
+    const nextScheduledDate =
+      input.scheduledDate !== undefined
+        ? input.scheduledDate
+        : currentTask.scheduledDate;
+    const recurrence = recurrenceDates(
+      nextRepeatAfterDays,
+      nextAllowedDeviationDays,
+      nextScheduledDate,
+      input.dueDate,
+    );
+    const recurringCompletion =
+      nextStatus === "done" && recurrence.enabled;
+    if (recurrence.enabled && currentTask.repeatAfterDays === null) {
+      assertRecurringLeaf(txDb, id);
+    }
+    if (recurringCompletion) {
+      assertRecurringLeaf(txDb, id);
+      if (!input.completedOn || !isIsoCalendarDate(input.completedOn)) {
+        throw AppError.badRequest(
+          "recurrence_completion_date_required",
+          "Recurring completion requires the browser-local completion date.",
+          { taskId: id },
+        );
+      }
+      if (input.expectedRevision === undefined) {
+        throw AppError.badRequest(
+          "recurrence_completion_revision_required",
+          "Recurring completion requires the task revision.",
+          { taskId: id },
+        );
+      }
+    }
     const statusChanged =
       nextStatus !== undefined && nextStatus !== currentTask.status;
-    if (statusChanged) {
+    if (statusChanged && !recurringCompletion) {
       patch.status = nextStatus;
       patch.needsClarification = nextStatus === "captured";
       patch.completedAt = nextStatus === "done" ? nowIso() : null;
@@ -1786,19 +1916,83 @@ export function updateTask(
       changedFields.push("ownerInheritanceMode");
       patch.ownerInheritanceMode = input.ownerInheritanceMode;
     }
+    if (recurrence.enabled) {
+      if (recurrence.dueDate !== currentTask.dueDate) {
+        patch.dueDate = recurrence.dueDate;
+        changedFields.push("dueDate");
+      }
+    } else if (
+      input.dueDate !== undefined &&
+      input.dueDate !== currentTask.dueDate
+    ) {
+      patch.dueDate = input.dueDate;
+      changedFields.push("dueDate");
+    }
+    if (
+      input.scheduledDate !== undefined &&
+      input.scheduledDate !== currentTask.scheduledDate
+    ) {
+      patch.scheduledDate = input.scheduledDate;
+      changedFields.push("scheduledDate");
+    }
     for (const field of [
-      "dueDate",
-      "scheduledDate",
       "waitingFor",
       "priority",
       "size",
-      "recurrenceRule",
       "reminderAt",
     ] as const) {
       if (input[field] !== undefined && input[field] !== currentTask[field]) {
         patch[field] = input[field] as never;
         changedFields.push(field);
       }
+    }
+    if (
+      input.repeatAfterDays !== undefined &&
+      input.repeatAfterDays !== currentTask.repeatAfterDays
+    ) {
+      patch.repeatAfterDays = input.repeatAfterDays;
+      changedFields.push("repeatAfterDays");
+    }
+    if (
+      input.allowedDeviationDays !== undefined &&
+      input.allowedDeviationDays !== currentTask.allowedDeviationDays
+    ) {
+      patch.allowedDeviationDays = input.allowedDeviationDays;
+      changedFields.push("allowedDeviationDays");
+    }
+    let occurrence:
+      | typeof schema.taskRecurrenceOccurrences.$inferSelect
+      | null = null;
+    if (recurringCompletion) {
+      const completedOn = input.completedOn!;
+      const scheduledDate = nextScheduledDate!;
+      const deadlineDate = recurrence.dueDate!;
+      const result = completedOn <= deadlineDate ? "hit" : "miss";
+      occurrence = tx
+        .insert(schema.taskRecurrenceOccurrences)
+        .values({
+          taskId: id,
+          scheduledDate,
+          deadlineDate,
+          completedOn,
+          completedAt: nowIso(),
+          result,
+        })
+        .returning()
+        .get();
+      const followingScheduledDate = addCalendarDays(
+        completedOn,
+        nextRepeatAfterDays!,
+      );
+      patch.status = "actionable";
+      patch.needsClarification = false;
+      patch.completedAt = null;
+      patch.cancelledAt = null;
+      patch.scheduledDate = followingScheduledDate;
+      patch.dueDate = addCalendarDays(
+        followingScheduledDate,
+        nextAllowedDeviationDays!,
+      );
     }
 
     const existingTagIds = sortedIds(
@@ -1859,7 +2053,54 @@ export function updateTask(
       ...(tagsChanged ? ["tags"] : []),
       ...(excludedTagsChanged ? ["excludedTags"] : []),
     ];
-    if (statusChanged) {
+    if (recurringCompletion && occurrence) {
+      const updatedScheduledDate = updated.scheduledDate!;
+      const updatedDueDate = updated.dueDate!;
+      const activityEventId = recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "task_status_changed",
+        entityType: "task",
+        entityTitle: updated.title,
+        taskId: id,
+        projectId: updated.projectId,
+        metadata: {
+          previousStatus: currentTask.status as TaskStatus,
+          nextStatus: "actionable",
+          recurrenceOccurrenceId: occurrence.id,
+          recurrenceResult: occurrence.result,
+          occurrenceScheduledDate: occurrence.scheduledDate,
+          occurrenceDeadlineDate: occurrence.deadlineDate,
+          occurrenceCompletedOn: occurrence.completedOn,
+          nextScheduledDate: updatedScheduledDate,
+          nextDeadlineDate: updatedDueDate,
+          ...(coalescedChangedFields.length > 0
+            ? { changedFields: coalescedChangedFields }
+            : {}),
+        },
+      });
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "completion",
+        reason: "task_completed",
+        entityType: "task_occurrence",
+        entityId: occurrence.id,
+        personalEligible:
+          effectiveOwnerBefore === null ||
+          effectiveOwnerBefore === actor(context),
+      });
+      if (occurrence.result === "miss") {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: effectiveOwnerBefore,
+          category: "completion",
+          reason: "recurrence_missed",
+          entityType: "task_occurrence",
+          entityId: occurrence.id,
+          personalEligible: effectiveOwnerBefore !== null,
+        });
+      }
+    } else if (statusChanged) {
       const activityEventId = recordActivity(txDb, {
         actorMemberId: actor(context),
         kind: "task_status_changed",
@@ -2171,6 +2412,17 @@ export function deleteTask(db: Db, id: number, context?: MutationContext) {
       task.parentTaskId === null
         ? null
         : getTaskOrThrow(txDb, task.parentTaskId);
+    const recurrenceOccurrenceIds = txDb
+      .select({ id: schema.taskRecurrenceOccurrences.id })
+      .from(schema.taskRecurrenceOccurrences)
+      .where(
+        inArray(
+          schema.taskRecurrenceOccurrences.taskId,
+          [id, ...descendantIds],
+        ),
+      )
+      .all()
+      .map((row) => row.id);
     tx.delete(schema.tasks).where(eq(schema.tasks.id, id)).run();
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
@@ -2185,6 +2437,13 @@ export function deleteTask(db: Db, id: number, context?: MutationContext) {
         activityEventId,
         entityType: "task",
         entityId: taskId,
+      });
+    }
+    for (const occurrenceId of recurrenceOccurrenceIds) {
+      neutralizeEntityContributions(txDb, {
+        activityEventId,
+        entityType: "task_occurrence",
+        entityId: occurrenceId,
       });
     }
     if (
@@ -2247,7 +2506,18 @@ export function completeTask(
   id: number,
   descendantsPolicy?: CompleteDescendantsPolicy,
   context?: MutationContext,
+  completedOn?: string,
+  expectedRevision?: number,
 ) {
+  const current = getTaskOrThrow(db, id);
+  if (current.repeatAfterDays !== null) {
+    return updateTask(
+      db,
+      id,
+      { status: "done", completedOn, expectedRevision },
+      context,
+    );
+  }
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
@@ -2272,6 +2542,22 @@ export function completeTask(
           transition: "complete",
           openChildrenCount: openChildren.length,
           options: ["leave_open", "complete_children"],
+        },
+      );
+    }
+    const recurringOpenChildren = openChildren.filter(
+      (child) => child.repeatAfterDays !== null,
+    );
+    if (
+      descendantsPolicy === "complete_children" &&
+      recurringOpenChildren.length > 0
+    ) {
+      throw AppError.conflict(
+        "recurring_descendant_completion_required",
+        "Recurring subtasks must be completed individually.",
+        {
+          taskId: id,
+          recurringTaskIds: recurringOpenChildren.map((child) => child.id),
         },
       );
     }
@@ -2595,6 +2881,7 @@ export function moveTask(
         );
       }
       const newParent = getTaskOrThrow(txDb, newParentTaskId);
+      assertParentAcceptsChildren(txDb, newParentTaskId);
       if (wouldCreateHierarchyCycle(txDb, taskId, newParentTaskId)) {
         throw AppError.conflict(
           "task_hierarchy_cycle",

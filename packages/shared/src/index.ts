@@ -40,6 +40,7 @@ export const activityEntityTypes = ["task", "project"] as const;
 export const contributionCategories = ["completion", "planning"] as const;
 export const contributionReasons = [
   "task_completed",
+  "recurrence_missed",
   "project_completed",
   "task_clarified",
   "task_assigned",
@@ -62,9 +63,15 @@ export type TagKind = (typeof tagKinds)[number];
 export type TagGroupingMode = (typeof tagGroupingModes)[number];
 export type ActivityEventKind = (typeof activityEventKinds)[number];
 export type ActivityEntityType = (typeof activityEntityTypes)[number];
+export type ContributionEntityType = ActivityEntityType | "task_occurrence";
 export type ContributionCategory = (typeof contributionCategories)[number];
 export type ContributionReason = (typeof contributionReasons)[number];
-export type ContributionPulseLevel = "none" | "low" | "medium" | "high";
+export type ContributionPulseLevel =
+  | "negative"
+  | "none"
+  | "low"
+  | "medium"
+  | "high";
 
 export type ApiErrorCode =
   | "acceptance_criteria_order_invalid"
@@ -104,6 +111,13 @@ export type ApiErrorCode =
   | "refinement_filters_invalid"
   | "request_body_invalid"
   | "request_origin_forbidden"
+  | "recurrence_configuration_invalid"
+  | "recurrence_completion_date_required"
+  | "recurrence_completion_revision_required"
+  | "recurring_descendant_completion_required"
+  | "recurring_parent_forbidden"
+  | "recurring_task_leaf_required"
+  | "recurring_task_scheduled_required"
   | "route_not_found"
   | "search_query_invalid"
   | "stale_write_conflict"
@@ -144,6 +158,13 @@ export interface ActivityEventMetadata {
   relatedTaskTitles?: string[];
   relatedProjectIds?: number[];
   relatedProjectTitles?: string[];
+  recurrenceOccurrenceId?: number;
+  recurrenceResult?: RecurrenceOccurrenceResult;
+  occurrenceScheduledDate?: string;
+  occurrenceDeadlineDate?: string;
+  occurrenceCompletedOn?: string;
+  nextScheduledDate?: string;
+  nextDeadlineDate?: string;
 }
 
 export interface ActivityActor {
@@ -286,7 +307,8 @@ export interface Task {
   position: number;
   completedAt: string | null;
   cancelledAt: string | null;
-  recurrenceRule: string | null;
+  repeatAfterDays: number | null;
+  allowedDeviationDays: number | null;
   reminderAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -303,6 +325,35 @@ export interface Task {
   children: Task[];
   projectTitle?: string | null;
   projectDueDate?: string | null;
+}
+
+export type RecurrenceOccurrenceResult = "hit" | "miss";
+
+export interface TaskRecurrenceConfig {
+  repeatAfterDays: number;
+  allowedDeviationDays: number;
+}
+
+export interface TaskRecurrenceOccurrence {
+  id: number;
+  taskId: number;
+  scheduledDate: string;
+  deadlineDate: string;
+  completedOn: string;
+  completedAt: string;
+  result: RecurrenceOccurrenceResult;
+}
+
+export interface TaskRecurrenceSummary {
+  hitCount: number;
+  missCount: number;
+  totalCount: number;
+  hitRate: number | null;
+}
+
+export interface TaskRecurrenceHistory {
+  summary: TaskRecurrenceSummary;
+  occurrences: TaskRecurrenceOccurrence[];
 }
 
 export type StuckReason =

@@ -4,6 +4,7 @@ import type {
   ActivityEventKind,
   ActivityEventMetadata,
   ContributionCategory,
+  ContributionEntityType,
   ContributionReason,
 } from "@machbar/shared";
 import {
@@ -40,6 +41,12 @@ const activityEntityTypes = [
   "project",
 ] as const satisfies readonly ActivityEntityType[];
 
+const contributionEntityTypes = [
+  "task",
+  "project",
+  "task_occurrence",
+] as const satisfies readonly ContributionEntityType[];
+
 const contributionCategories = [
   "completion",
   "planning",
@@ -47,6 +54,7 @@ const contributionCategories = [
 
 const contributionReasons = [
   "task_completed",
+  "recurrence_missed",
   "project_completed",
   "task_clarified",
   "task_assigned",
@@ -227,7 +235,9 @@ export const tasks = sqliteTable(
     position: integer("position").notNull().default(0),
     completedAt: text("completed_at"),
     cancelledAt: text("cancelled_at"),
-    recurrenceRule: text("recurrence_rule"),
+    recurrenceRuleLegacy: text("recurrence_rule"),
+    repeatAfterDays: integer("repeat_after_days"),
+    allowedDeviationDays: integer("allowed_deviation_days"),
     reminderAt: text("reminder_at"),
     createdAt: text("created_at")
       .notNull()
@@ -241,6 +251,28 @@ export const tasks = sqliteTable(
     index("tasks_parent_idx").on(t.parentTaskId),
     index("tasks_status_idx").on(t.status),
     index("tasks_size_idx").on(t.size),
+  ],
+);
+
+export const taskRecurrenceOccurrences = sqliteTable(
+  "task_recurrence_occurrences",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    taskId: integer("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    scheduledDate: text("scheduled_date").notNull(),
+    deadlineDate: text("deadline_date").notNull(),
+    completedOn: text("completed_on").notNull(),
+    completedAt: text("completed_at").notNull(),
+    result: text("result", { enum: ["hit", "miss"] }).notNull(),
+  },
+  (t) => [
+    index("task_recurrence_occurrences_task_history_idx").on(
+      t.taskId,
+      t.completedAt,
+      t.id,
+    ),
   ],
 );
 
@@ -303,7 +335,7 @@ export const contributionEvents = sqliteTable(
     }),
     category: text("category", { enum: contributionCategories }).notNull(),
     reason: text("reason", { enum: contributionReasons }).notNull(),
-    entityType: text("entity_type", { enum: activityEntityTypes }).notNull(),
+    entityType: text("entity_type", { enum: contributionEntityTypes }).notNull(),
     entityId: integer("entity_id").notNull(),
     policyPoints: integer("policy_points").notNull(),
     sharedPoints: integer("shared_points").notNull(),
@@ -314,7 +346,10 @@ export const contributionEvents = sqliteTable(
     ).references(() => activityEvents.id, { onDelete: "set null" }),
   },
   (t) => [
-    unique("contribution_events_activity_unique").on(t.activityEventId),
+    unique("contribution_events_activity_reason_unique").on(
+      t.activityEventId,
+      t.reason,
+    ),
     index("contribution_events_window_idx").on(t.createdAt, t.id),
     index("contribution_events_actor_cap_idx").on(
       t.actorMemberId,

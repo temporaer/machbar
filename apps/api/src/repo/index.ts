@@ -6,3 +6,4 @@ export * from "./stuckRepo.js";
 export * from "./refinementRepo.js";
 export * from "./activityRepo.js";
 export * from "./contributionRepo.js";
+export * from "./recurrenceRepo.js";

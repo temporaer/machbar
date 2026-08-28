@@ -10,6 +10,7 @@ import { useTaskDetail } from "../lib/taskDetailContext";
 import type { TaskDetailFocusField } from "../lib/taskDetailContext";
 import { useStrings } from "../lib/strings";
 import { formatDateTime } from "../lib/format";
+import { formatExactLocalDate } from "../lib/relativeDate";
 import { sortByPosition } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
@@ -41,6 +42,14 @@ interface TextFieldsSnapshot {
   title: string;
   notes: string;
   waitingFor: string;
+}
+
+function localCalendarDate(date = new Date()): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
@@ -133,6 +142,28 @@ export function TaskDetailSheet() {
     error,
     reload,
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
+  const {
+    data: recurrenceHistory,
+    loading: recurrenceHistoryLoading,
+    error: recurrenceHistoryError,
+    reload: reloadRecurrenceHistory,
+  } = useAsync(
+    () =>
+      openTaskId
+        ? typeof api.getTaskRecurrenceHistory === "function"
+          ? api.getTaskRecurrenceHistory(openTaskId)
+          : Promise.resolve({
+              summary: {
+                hitCount: 0,
+                missCount: 0,
+                totalCount: 0,
+                hitRate: null,
+              },
+              occurrences: [],
+            })
+        : Promise.resolve(null),
+    [openTaskId, task?.revision],
+  );
   const { data: tags } = useAsync(() => api.getTags(), []);
 
   // Resets the drafts (and the dirty-check baseline) whenever a *different*
@@ -192,7 +223,7 @@ export function TaskDetailSheet() {
 
   useEffect(() => {
     if (task) setStatusDraft(task.status);
-  }, [task?.id, task?.status]);
+  }, [task?.id, task?.status, task?.revision]);
 
   useEffect(() => {
     if (!task || taskActions.errors[task.id] === undefined) return;
@@ -244,13 +275,22 @@ export function TaskDetailSheet() {
 
   const patch = async (input: Parameters<typeof api.updateTask>[1]) => {
     if (!task) return;
-    const updated = await api.updateTask(task.id, {
-      ...input,
-      expectedRevision: revisionRef.current ?? task.revision,
-    });
-    revisionRef.current = updated.revision;
-    bump();
-    reload();
+    setSaveError(null);
+    try {
+      const updated = await api.updateTask(task.id, {
+        ...input,
+        expectedRevision: revisionRef.current ?? task.revision,
+      });
+      revisionRef.current = updated.revision;
+      bump();
+      reload();
+    } catch (err) {
+      if (isStaleWriteConflict(err)) {
+        bump();
+        reload();
+      }
+      setSaveError(localizedErrorMessage(err, strings));
+    }
   };
 
   const titleIsValid = titleDraft.trim().length > 0;
@@ -327,7 +367,14 @@ export function TaskDetailSheet() {
     if (previousStatus === "done" || previousStatus === "cancelled") {
       setChangingStatus(true);
       try {
-        await api.transitionTaskStatus(task.id, nextStatus);
+        await (nextStatus === "done" && task.repeatAfterDays !== null
+          ? api.transitionTaskStatus(
+              task.id,
+              nextStatus,
+              localCalendarDate(),
+              task.revision,
+            )
+          : api.transitionTaskStatus(task.id, nextStatus));
         bump();
         reload();
       } catch (err) {
@@ -340,6 +387,7 @@ export function TaskDetailSheet() {
     }
     if (nextStatus === "done") {
       taskActions.requestToggle(task);
+      if (task.repeatAfterDays !== null) setStatusDraft("actionable");
       return;
     }
     if (nextStatus === "cancelled") {
@@ -483,7 +531,13 @@ export function TaskDetailSheet() {
                 value={task.dueDate ?? ""}
                 onChange={(dueDate) => void patch({ dueDate })}
                 onValidityChange={setDueDateValid}
+                disabled={task.repeatAfterDays !== null}
               />
+              {task.repeatAfterDays !== null ? (
+                <span className="text-muted recurrence-derived-hint">
+                  {strings.recurrenceDeadlineLocked}
+                </span>
+              ) : null}
             </div>
             <div className="field" style={{ flex: 1 }} ref={scheduleFieldRef}>
               <label htmlFor="task-scheduled">{strings.scheduled}</label>
@@ -496,10 +550,94 @@ export function TaskDetailSheet() {
               />
             </div>
           </div>
-          <ScheduleShortcuts
-            value={task.scheduledDate}
-            onChange={(scheduledDate) => void patch({ scheduledDate })}
-          />
+          {task.repeatAfterDays === null ? (
+            <ScheduleShortcuts
+              value={task.scheduledDate}
+              onChange={(scheduledDate) => void patch({ scheduledDate })}
+            />
+          ) : null}
+
+          <section className="recurrence-editor" aria-labelledby="task-recurrence-title">
+            <div className="row-between">
+              <div>
+                <h3 id="task-recurrence-title">{strings.recurrence}</h3>
+                <p className="text-muted">{strings.recurrenceHint}</p>
+              </div>
+              <label className="recurrence-toggle">
+                <input
+                  type="checkbox"
+                  checked={task.repeatAfterDays !== null}
+                  onChange={(event) => {
+                    if (!event.target.checked) {
+                      void patch({
+                        repeatAfterDays: null,
+                        allowedDeviationDays: null,
+                      });
+                      return;
+                    }
+                    if (!task.scheduledDate) {
+                      setSaveError(strings.recurrenceScheduleRequired);
+                      return;
+                    }
+                    setSaveError(null);
+                    void patch({
+                      repeatAfterDays: 7,
+                      allowedDeviationDays: 0,
+                    });
+                  }}
+                />
+                <span>{strings.recurrenceEnabled}</span>
+              </label>
+            </div>
+            {task.repeatAfterDays !== null &&
+            task.allowedDeviationDays !== null ? (
+              <>
+                <div className="recurrence-number-grid">
+                  <label className="field">
+                    <span>{strings.repeatAfterDays}</span>
+                    <input
+                      key={`repeat-${task.id}-${task.repeatAfterDays}`}
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      step={1}
+                      defaultValue={task.repeatAfterDays}
+                      onBlur={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isInteger(value) && value >= 1) {
+                          void patch({ repeatAfterDays: value });
+                        }
+                      }}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{strings.allowedDeviationDays}</span>
+                    <input
+                      key={`deviation-${task.id}-${task.allowedDeviationDays}`}
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      step={1}
+                      defaultValue={task.allowedDeviationDays}
+                      onBlur={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isInteger(value) && value >= 0) {
+                          void patch({ allowedDeviationDays: value });
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                <p className="recurrence-preview">
+                  {strings.recurrenceDeadlinePreview(
+                    formatExactLocalDate(task.dueDate ?? "", locale) ??
+                      task.dueDate ??
+                      "–",
+                  )}
+                </p>
+              </>
+            ) : null}
+          </section>
 
           <div className="field">
             <label htmlFor="task-priority">{strings.priority}</label>
@@ -712,7 +850,15 @@ export function TaskDetailSheet() {
                 </li>
               ))}
             </ul>
-            <AddChildForm parentTaskId={task.id} inputRef={subtaskInputRef} onAdded={reload} />
+            {task.repeatAfterDays === null ? (
+              <AddChildForm
+                parentTaskId={task.id}
+                inputRef={subtaskInputRef}
+                onAdded={reload}
+              />
+            ) : (
+              <p className="text-muted">{strings.recurringTaskLeafHint}</p>
+            )}
           </div>
 
           <div className="field">
@@ -734,6 +880,93 @@ export function TaskDetailSheet() {
             {strings.created}: {formatDateTime(task.createdAt, locale)} ·{" "}
             {strings.updated}: {formatDateTime(task.updatedAt, locale)}
           </p>
+
+          {task.repeatAfterDays !== null ||
+          (recurrenceHistory?.summary.totalCount ?? 0) > 0 ? (
+            <section
+              className="recurrence-history"
+              aria-labelledby="recurrence-history-title"
+            >
+              <div className="row-between">
+                <h3 id="recurrence-history-title">
+                  {strings.recurrenceHistory}
+                </h3>
+                {recurrenceHistory &&
+                recurrenceHistory.summary.totalCount > 0 ? (
+                  <strong>
+                    {strings.recurrenceHitRate(
+                      new Intl.NumberFormat(locale, {
+                        style: "percent",
+                        maximumFractionDigits: 0,
+                      }).format(recurrenceHistory.summary.hitRate ?? 0),
+                    )}
+                  </strong>
+                ) : null}
+              </div>
+              {recurrenceHistoryLoading && !recurrenceHistory ? (
+                <p className="text-muted">{strings.loading}</p>
+              ) : null}
+              {recurrenceHistoryError && !recurrenceHistory ? (
+                <p role="alert">
+                  {strings.recurrenceHistoryLoadError}{" "}
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    onClick={reloadRecurrenceHistory}
+                  >
+                    {strings.retry}
+                  </button>
+                </p>
+              ) : null}
+              {recurrenceHistory?.summary.totalCount === 0 ? (
+                <p className="text-muted">{strings.recurrenceHistoryEmpty}</p>
+              ) : null}
+              {recurrenceHistory &&
+              recurrenceHistory.summary.totalCount > 0 ? (
+                <>
+                  <p className="recurrence-history-summary">
+                    <span className="recurrence-hit">
+                      +{recurrenceHistory.summary.hitCount}{" "}
+                      {strings.recurrenceHits}
+                    </span>
+                    <span className="recurrence-miss">
+                      −{recurrenceHistory.summary.missCount}{" "}
+                      {strings.recurrenceMisses}
+                    </span>
+                  </p>
+                  <ul className="recurrence-history-list">
+                    {recurrenceHistory.occurrences.slice(0, 10).map((row) => (
+                      <li key={row.id}>
+                        <div className="row-between">
+                          <span>
+                            {strings.recurrenceCompletedOn(
+                              formatExactLocalDate(row.completedOn, locale) ??
+                                row.completedOn,
+                            )}
+                          </span>
+                          <span
+                            className={`badge recurrence-result-${row.result}`}
+                          >
+                            {row.result === "hit"
+                              ? strings.recurrenceHit
+                              : strings.recurrenceMiss}
+                          </span>
+                        </div>
+                        <small className="text-muted">
+                          {strings.recurrenceOccurrenceDates(
+                            formatExactLocalDate(row.scheduledDate, locale) ??
+                              row.scheduledDate,
+                            formatExactLocalDate(row.deadlineDate, locale) ??
+                              row.deadlineDate,
+                          )}
+                        </small>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+            </section>
+          ) : null}
 
           <RecentActivity
             key={`task-activity-${task.id}`}

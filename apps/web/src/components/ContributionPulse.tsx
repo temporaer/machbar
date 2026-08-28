@@ -17,6 +17,7 @@ export function ContributionPulse() {
   );
   const levels = data?.pulse.map((bucket) => bucket.level) ?? EMPTY_PULSE;
   const levelLabels: Record<ContributionPulseLevel, string> = {
+    negative: strings.contributionPulseLevelNegative,
     none: strings.contributionPulseLevelNone,
     low: strings.contributionPulseLevelLow,
     medium: strings.contributionPulseLevelMedium,

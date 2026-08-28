@@ -370,6 +370,10 @@ details[open] > .disclosure-summary::after {
   font-weight: 500;
 }
 
+.contribution-total.contribution-negative {
+  color: var(--color-danger);
+}
+
 .contribution-categories {
   display: flex;
   flex-wrap: wrap;
@@ -475,6 +479,12 @@ details[open] > .disclosure-summary::after {
   border: 1px solid color-mix(in srgb, var(--color-primary) 18%, var(--color-border));
   border-radius: 999px;
   background: var(--color-surface-alt);
+}
+
+.contribution-pulse-negative {
+  height: 7px;
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-danger) 72%, var(--color-surface-alt));
 }
 
 .contribution-pulse-low {
@@ -1079,6 +1089,98 @@ details[open] > .disclosure-summary::after {
 .badge-status-cancelled {
   background: var(--color-danger-surface);
   color: var(--color-danger);
+}
+
+.recurrence-editor,
+.recurrence-history {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.recurrence-editor h3,
+.recurrence-editor p,
+.recurrence-history h3,
+.recurrence-history p {
+  margin: 0;
+}
+
+.recurrence-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-weight: 650;
+}
+
+.recurrence-toggle input {
+  width: 20px;
+  height: 20px;
+}
+
+.recurrence-number-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.recurrence-derived-hint,
+.recurrence-preview {
+  font-size: 0.78rem;
+}
+
+.recurrence-history-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-weight: 650;
+}
+
+.recurrence-hit,
+.recurrence-result-hit {
+  color: var(--color-success);
+}
+
+.recurrence-miss,
+.recurrence-result-miss {
+  color: var(--color-danger);
+}
+
+.recurrence-result-hit {
+  background: var(--color-success-surface);
+}
+
+.recurrence-result-miss {
+  background: var(--color-danger-surface);
+}
+
+.recurrence-history-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recurrence-history-list li {
+  display: grid;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+@media (max-width: 520px) {
+  .recurrence-editor > .row-between,
+  .recurrence-history > .row-between {
+    align-items: flex-start;
+  }
+
+  .recurrence-number-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .badge-stuck {

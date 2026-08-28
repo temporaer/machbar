@@ -66,7 +66,8 @@ interface RawTask {
   position: number;
   completedAt: string | null;
   cancelledAt: string | null;
-  recurrenceRule: string | null;
+  repeatAfterDays: number | null;
+  allowedDeviationDays: number | null;
   reminderAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -290,7 +291,8 @@ export class Graph {
         position: raw.position,
         completedAt: raw.completedAt,
         cancelledAt: raw.cancelledAt,
-        recurrenceRule: raw.recurrenceRule,
+        repeatAfterDays: raw.repeatAfterDays,
+        allowedDeviationDays: raw.allowedDeviationDays,
         reminderAt: raw.reminderAt,
         createdAt: raw.createdAt,
         updatedAt: raw.updatedAt,

@@ -87,6 +87,15 @@ export function formatActivityDescription(
       return strings.activityText.projectDeleted;
     case "task_status_changed":
     case "project_status_changed": {
+      if (
+        event.kind === "task_status_changed" &&
+        event.metadata.recurrenceOccurrenceId
+      ) {
+        return strings.activityText.recurrenceCompleted(
+          event.metadata.recurrenceResult === "miss",
+          event.metadata.nextScheduledDate ?? "",
+        );
+      }
       const description =
         previous && next
           ? strings.activityText.statusFromTo(previous, next)

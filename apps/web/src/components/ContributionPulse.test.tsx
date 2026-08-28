@@ -64,7 +64,7 @@ describe("ContributionPulse", () => {
     mockedGetContributionSummary
       .mockResolvedValueOnce(summary(Array(7).fill("none")))
       .mockResolvedValueOnce(
-        summary(["none", "low", "medium", "high", "none", "low", "high"]),
+        summary(["negative", "low", "medium", "high", "none", "low", "high"]),
       );
     const { container } = renderPulse();
 
@@ -77,9 +77,12 @@ describe("ContributionPulse", () => {
     await waitFor(() =>
       expect(container.querySelectorAll(".contribution-pulse-high")).toHaveLength(2),
     );
+    expect(
+      container.querySelectorAll(".contribution-pulse-negative"),
+    ).toHaveLength(1);
     expect(mockedGetContributionSummary).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("link", {
-      name: /Von früher nach heute: keine, wenige, einige, viele, keine, wenige, viele/,
+      name: /Von früher nach heute: negativ, wenige, einige, viele, keine, wenige, viele/,
     })).toHaveAttribute("href", "/more");
   });
 

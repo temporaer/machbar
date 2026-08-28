@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
+import { getTaskRecurrenceHistory } from "../repo/recurrenceRepo.js";
 import {
   addDependency,
   addExcludedTag,
@@ -72,6 +73,15 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     const id = parseId(request.params.id);
     return taskOrThrow(db, id);
   });
+
+  app.get<{ Params: { id: string } }>(
+    "/api/tasks/:id/recurrence-history",
+    async (request) => {
+      const id = parseId(request.params.id);
+      taskOrThrow(db, id);
+      return getTaskRecurrenceHistory(db, id);
+    },
+  );
 
   app.post("/api/tasks", async (request, reply) => {
     const body = parseOrThrow(createTaskSchema, request.body);
@@ -170,7 +180,11 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       updateTask(
         db,
         id,
-        { status: body.status },
+        {
+          status: body.status,
+          completedOn: body.completedOn,
+          expectedRevision: body.expectedRevision,
+        },
         { actorMemberId: request.activityActor?.id ?? null },
       );
       return taskOrThrow(db, id);
@@ -182,9 +196,14 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(completeTaskSchema, request.body ?? {});
-      completeTask(db, id, body.descendantsPolicy, {
-        actorMemberId: request.activityActor?.id ?? null,
-      });
+      completeTask(
+        db,
+        id,
+        body.descendantsPolicy,
+        { actorMemberId: request.activityActor?.id ?? null },
+        body.completedOn,
+        body.expectedRevision,
+      );
       return taskOrThrow(db, id);
     },
   );

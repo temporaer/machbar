@@ -24,6 +24,24 @@ export type PendingAction = "complete" | "cancel";
  */
 export const RETENTION_MS = 4000;
 
+function localCalendarDate(date = new Date()): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function addCalendarDays(value: string, days: number): string {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day! + days));
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function errorMessage(err: unknown, strings: Strings): string {
   return localizedErrorMessage(err, strings);
 }
@@ -192,6 +210,7 @@ export function useTaskActions() {
   const complete = useCallback(
     (task: Task, policy?: ChildPolicy) => {
       const now = new Date().toISOString();
+      const completedOn = localCalendarDate();
       // Whichever policy closes the open descendants (matching or the mixed
       // "cancel children while completing the parent" case), fold that same
       // outcome into the optimistic snapshot's `children`, recursively, so
@@ -199,22 +218,65 @@ export function useTaskActions() {
       // of just the parent row.
       const descendantStatus: Extract<TaskStatus, "done" | "cancelled"> | null =
         policy === "complete_children" ? "done" : policy === "cancel_children" ? "cancelled" : null;
-      const optimistic: Task = {
-        ...task,
-        revision: task.revision + 1,
-        status: "done",
-        needsClarification: false,
-        completedAt: now,
-        cancelledAt: null,
-        children: descendantStatus ? markOpenDescendantsTerminal(task.children, descendantStatus, now) : task.children,
-      };
+      const optimistic: Task =
+        task.repeatAfterDays !== null &&
+        task.allowedDeviationDays !== null
+          ? {
+              ...task,
+              revision: task.revision + 1,
+              status: "actionable",
+              needsClarification: false,
+              completedAt: null,
+              cancelledAt: null,
+              scheduledDate: addCalendarDays(
+                completedOn,
+                task.repeatAfterDays,
+              ),
+              dueDate: addCalendarDays(
+                addCalendarDays(completedOn, task.repeatAfterDays),
+                task.allowedDeviationDays,
+              ),
+            }
+          : {
+              ...task,
+              revision: task.revision + 1,
+              status: "done",
+              needsClarification: false,
+              completedAt: now,
+              cancelledAt: null,
+              children: descendantStatus
+                ? markOpenDescendantsTerminal(
+                    task.children,
+                    descendantStatus,
+                    now,
+                  )
+                : task.children,
+            };
       return runTransition(task, optimistic, async () => {
         if (policy === "cancel_children") {
           const openRoots = openDescendantRoots(task);
           await Promise.all(openRoots.map((c) => api.cancelTask(c.id, "cancel_children")));
-          return api.completeTask(task.id, "leave_open");
+          return task.repeatAfterDays !== null
+            ? api.completeTask(
+                task.id,
+                "leave_open",
+                completedOn,
+                task.revision,
+              )
+            : api.completeTask(task.id, "leave_open");
         } else {
-          return api.completeTask(task.id, policy === "complete_children" ? "complete_children" : "leave_open");
+          const descendantsPolicy =
+            policy === "complete_children"
+              ? "complete_children"
+              : "leave_open";
+          return task.repeatAfterDays !== null
+            ? api.completeTask(
+                task.id,
+                descendantsPolicy,
+                completedOn,
+                task.revision,
+              )
+            : api.completeTask(task.id, descendantsPolicy);
         }
       });
     },
@@ -238,7 +300,19 @@ export function useTaskActions() {
       return runTransition(task, optimistic, async () => {
         if (policy === "complete_children") {
           const openRoots = openDescendantRoots(task);
-          await Promise.all(openRoots.map((c) => api.completeTask(c.id, "complete_children")));
+          const completedOn = localCalendarDate();
+          await Promise.all(
+            openRoots.map((child) =>
+              child.repeatAfterDays !== null
+                ? api.completeTask(
+                    child.id,
+                    "complete_children",
+                    completedOn,
+                    child.revision,
+                  )
+                : api.completeTask(child.id, "complete_children"),
+            ),
+          );
           return api.cancelTask(task.id, "leave_open");
         } else {
           return api.cancelTask(task.id, policy === "cancel_children" ? "cancel_children" : "leave_open");

@@ -19,6 +19,7 @@ import type {
   TagGroupingMode,
   TagKind,
   Task,
+  TaskRecurrenceHistory,
   TaskSize,
   TaskStatus,
   WaitingGroup,
@@ -158,7 +159,8 @@ export interface CreateTaskInput {
   waitingFor?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
-  recurrenceRule?: string | null;
+  repeatAfterDays?: number | null;
+  allowedDeviationDays?: number | null;
   reminderAt?: string | null;
   tagIds?: number[];
 }
@@ -174,6 +176,7 @@ export interface CreateTaskSequenceInput {
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "parentTaskId" | "projectId">> & {
   excludedTagIds?: number[];
   expectedRevision?: number;
+  completedOn?: string;
 };
 
 /**
@@ -449,6 +452,8 @@ export const api = {
     ),
 
   getTask: (id: number) => request<Task>(`/tasks/${id}`),
+  getTaskRecurrenceHistory: (id: number) =>
+    request<TaskRecurrenceHistory>(`/tasks/${id}/recurrence-history`),
   createTask: (input: CreateTaskInput) =>
     request<Task>("/tasks", { method: "POST", body: JSON.stringify(input) }),
   createChildTask: (parentId: number, input: CreateChildTaskInput) =>
@@ -468,10 +473,19 @@ export const api = {
     }),
   updateTask: (id: number, patch: UpdateTaskInput) =>
     request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
-  transitionTaskStatus: (id: number, status: TaskStatus) =>
+  transitionTaskStatus: (
+    id: number,
+    status: TaskStatus,
+    completedOn?: string,
+    expectedRevision?: number,
+  ) =>
     request<Task>(`/tasks/${id}/status`, {
       method: "POST",
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({
+        status,
+        ...(completedOn ? { completedOn } : {}),
+        ...(expectedRevision ? { expectedRevision } : {}),
+      }),
     }),
   appendTaskNotes: (id: number, content: string) =>
     request<Task>(`/tasks/${id}/notes`, {
@@ -480,10 +494,19 @@ export const api = {
     }),
   deleteTask: (id: number) => request<void>(`/tasks/${id}`, { method: "DELETE" }),
 
-  completeTask: (id: number, descendantsPolicy?: CompleteDescendantsPolicy) =>
+  completeTask: (
+    id: number,
+    descendantsPolicy?: CompleteDescendantsPolicy,
+    completedOn?: string,
+    expectedRevision?: number,
+  ) =>
     request<Task>(`/tasks/${id}/complete`, {
       method: "POST",
-      body: JSON.stringify(descendantsPolicy ? { descendantsPolicy } : {}),
+      body: JSON.stringify({
+        ...(descendantsPolicy ? { descendantsPolicy } : {}),
+        ...(completedOn ? { completedOn } : {}),
+        ...(expectedRevision ? { expectedRevision } : {}),
+      }),
     }),
   cancelTask: (id: number, descendantsPolicy?: CancelDescendantsPolicy) =>
     request<Task>(`/tasks/${id}/cancel`, {

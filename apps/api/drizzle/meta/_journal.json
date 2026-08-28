@@ -92,6 +92,13 @@
       "when": 1787922040842,
       "tag": "0012_add_entity_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1787951397557,
+      "tag": "0013_task_recurrence",
+      "breakpoints": true
     }
   ]
 }

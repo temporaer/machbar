@@ -73,7 +73,8 @@ export const createTaskSchema = z.object({
   waitingFor: z.string().nullable().optional(),
   priority: z.number().int().nullable().optional(),
   size: z.enum(taskSizes).nullable().optional(),
-  recurrenceRule: z.string().nullable().optional(),
+  repeatAfterDays: z.number().int().min(1).nullable().optional(),
+  allowedDeviationDays: z.number().int().min(0).nullable().optional(),
   reminderAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
 });
@@ -102,19 +103,25 @@ export const updateTaskSchema = z.object({
   waitingFor: z.string().nullable().optional(),
   priority: z.number().int().nullable().optional(),
   size: z.enum(taskSizes).nullable().optional(),
-  recurrenceRule: z.string().nullable().optional(),
+  repeatAfterDays: z.number().int().min(1).nullable().optional(),
+  allowedDeviationDays: z.number().int().min(0).nullable().optional(),
   reminderAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
   excludedTagIds: z.array(z.number().int()).optional(),
   expectedRevision: z.number().int().positive().optional(),
+  completedOn: isoDate.optional(),
 });
 
 export const transitionTaskStatusSchema = z.object({
   status: z.enum(taskStatuses),
+  completedOn: isoDate.optional(),
+  expectedRevision: z.number().int().positive().optional(),
 });
 
 export const completeTaskSchema = z.object({
   descendantsPolicy: z.enum(["leave_open", "complete_children"]).optional(),
+  completedOn: isoDate.optional(),
+  expectedRevision: z.number().int().positive().optional(),
 });
 
 export const cancelTaskSchema = z.object({

@@ -266,6 +266,88 @@ describe("contribution scoring", () => {
     ).toBe(0);
   });
 
+  it("keeps penalties uncapped without restoring positive cap capacity", () => {
+    const mira = member("Mira");
+    const now = new Date("2026-08-28T10:00:00.000Z");
+    const award = (
+      entityId: number,
+      reason: "task_completed" | "recurrence_missed",
+      actorMemberId: number | null = mira.id,
+    ) => {
+      const activity = ctx.handle.db
+        .insert(schema.activityEvents)
+        .values({
+          createdAt: now.toISOString(),
+          actorMemberId: mira.id,
+          kind: "task_status_changed",
+          entityType: "task",
+          entityTitle: `Occurrence ${entityId}`,
+          metadata: {},
+        })
+        .returning()
+        .get();
+      return recordContribution(ctx.handle.db, {
+        activityEventId: activity.id,
+        actorMemberId,
+        category: "completion",
+        reason,
+        entityType: "task",
+        entityId,
+        personalEligible: actorMemberId !== null,
+        now,
+      });
+    };
+
+    expect(award(1, "task_completed")?.sharedPoints).toBe(2);
+    expect(award(2, "task_completed")?.sharedPoints).toBe(2);
+    expect(award(3, "recurrence_missed")?.sharedPoints).toBe(-1);
+    expect(award(4, "task_completed")?.sharedPoints).toBe(0);
+    expect(award(5, "recurrence_missed", null)).toMatchObject({
+      actorMemberId: null,
+      sharedPoints: -1,
+      personalPoints: 0,
+    });
+
+    const summary = getContributionSummary(ctx.handle.db, now);
+    expect(summary.sharedTotal).toBe(2);
+    expect(summary.sharedOnlyTotal).toBe(-1);
+    expect(
+      summary.members.find((row) => row.member.id === mira.id),
+    ).toMatchObject({
+      total: 3,
+      categories: { completion: 3, planning: 0 },
+    });
+  });
+
+  it("classifies a negative pulse bucket distinctly", () => {
+    const now = new Date("2026-08-28T10:00:00.000Z");
+    const activity = ctx.handle.db
+      .insert(schema.activityEvents)
+      .values({
+        createdAt: now.toISOString(),
+        kind: "task_status_changed",
+        entityType: "task",
+        entityTitle: "Late occurrence",
+        metadata: {},
+      })
+      .returning()
+      .get();
+    recordContribution(ctx.handle.db, {
+      activityEventId: activity.id,
+      actorMemberId: null,
+      category: "completion",
+      reason: "recurrence_missed",
+      entityType: "task",
+      entityId: 1,
+      personalEligible: false,
+      now,
+    });
+
+    expect(getContributionSummary(ctx.handle.db, now).pulse.at(-1)?.level).toBe(
+      "negative",
+    );
+  });
+
   it("returns seven exact rolling pulse buckets with qualitative levels", () => {
     const mira = member("Mira");
     const now = new Date("2026-08-28T10:00:00.000Z");
