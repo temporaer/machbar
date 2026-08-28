@@ -64,6 +64,7 @@ export type ActivityEventKind = (typeof activityEventKinds)[number];
 export type ActivityEntityType = (typeof activityEntityTypes)[number];
 export type ContributionCategory = (typeof contributionCategories)[number];
 export type ContributionReason = (typeof contributionReasons)[number];
+export type ContributionPulseLevel = "none" | "low" | "medium" | "high";
 
 export type ApiErrorCode =
   | "acceptance_criteria_order_invalid"
@@ -183,6 +184,12 @@ export interface MemberContributionSummary {
   categories: ContributionCategoryTotals;
 }
 
+export interface ContributionPulseBucket {
+  startedAt: string;
+  endedAt: string;
+  level: ContributionPulseLevel;
+}
+
 export interface ContributionSummary {
   windowStartedAt: string;
   windowEndedAt: string;
@@ -190,6 +197,7 @@ export interface ContributionSummary {
   sharedOnlyTotal: number;
   sharedCategories: ContributionCategoryTotals;
   members: MemberContributionSummary[];
+  pulse: ContributionPulseBucket[];
 }
 
 export interface Member {

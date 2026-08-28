@@ -26,6 +26,7 @@ export function MorePage() {
         <h1>{strings.moreTitle}</h1>
       </div>
       <div className="stack">
+        <ContributionCard />
         <Link to="/more/search" className="card list-link">
           <span className="row-between">
             <span>{strings.search}</span>
@@ -50,7 +51,6 @@ export function MorePage() {
             <span aria-hidden="true">›</span>
           </span>
         </Link>
-        <ContributionCard />
         <Link to="/more/activity" className="card list-link">
           <span className="row-between">
             <span>

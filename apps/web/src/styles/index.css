@@ -385,6 +385,105 @@ a {
   line-height: 1.45;
 }
 
+.contribution-pulse-shell {
+  position: relative;
+  margin: -4px 4px 12px;
+}
+
+.contribution-pulse {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto minmax(96px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.contribution-pulse:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+  background: var(--color-surface);
+}
+
+.contribution-pulse:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.contribution-pulse-label {
+  font-size: 0.78rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.contribution-pulse-segments {
+  min-width: 0;
+  height: 14px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(8px, 1fr));
+  align-items: end;
+  gap: 4px;
+}
+
+.contribution-pulse-segment {
+  height: 4px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 18%, var(--color-border));
+  border-radius: 999px;
+  background: var(--color-surface-alt);
+}
+
+.contribution-pulse-low {
+  height: 7px;
+  background: color-mix(in srgb, var(--color-primary) 28%, var(--color-surface-alt));
+}
+
+.contribution-pulse-medium {
+  height: 10px;
+  background: color-mix(in srgb, var(--color-primary) 58%, var(--color-surface-alt));
+}
+
+.contribution-pulse-high {
+  height: 14px;
+  background: var(--color-primary);
+}
+
+.contribution-pulse-arrow {
+  color: var(--color-primary);
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.contribution-pulse-retry {
+  width: 100%;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+}
+
+@media (max-width: 380px) {
+  .contribution-pulse {
+    grid-template-columns: 1fr auto;
+  }
+
+  .contribution-pulse-label {
+    grid-column: 1;
+  }
+
+  .contribution-pulse-segments {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .contribution-pulse-arrow {
+    grid-column: 2;
+    grid-row: 1;
+  }
+}
+
 .project-agenda-card {
   display: grid;
   gap: 8px;

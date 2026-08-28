@@ -512,6 +512,15 @@ const extra = {
   contributionRulesBody:
     "Erledigte Aufgaben zählen 2 Punkte, abgeschlossene Projekte 4 und sinnvolle Planungsverbesserungen 1. Neue Einträge zählen nur, wenn sie eine konkrete Planungslücke schließen. Wiederholte Änderungen, Löschungen und Massenaktionen bringen keine zusätzlichen Punkte. Rückgängig gemachte Ergebnisse werden neutralisiert.",
   contributionLoadError: "Beiträge konnten nicht geladen werden.",
+  contributionPulseLabel: "Gemeinsam · 7 Tage",
+  contributionPulseAria:
+    "Gemeinsame Beiträge der letzten sieben Tage. Zur ausführlichen Ansicht.",
+  contributionPulseLevelsPrefix: "Von früher nach heute",
+  contributionPulseLevelNone: "keine",
+  contributionPulseLevelLow: "wenige",
+  contributionPulseLevelMedium: "einige",
+  contributionPulseLevelHigh: "viele",
+  contributionPulseRetry: "Beiträge neu laden",
   activityPageHint: "Die neuesten Änderungen an Aufgaben und Projekten.",
   recentActivities: "Letzte Aktivitäten",
   activityLoading: "Wird geladen …",

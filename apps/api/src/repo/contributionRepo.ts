@@ -1,10 +1,11 @@
 import type {
   ActivityEntityType,
   ContributionCategory,
+  ContributionPulseLevel,
   ContributionReason,
   ContributionSummary,
 } from "@machbar/shared";
-import { and, desc, eq, gte, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 
@@ -30,6 +31,11 @@ export const CONTRIBUTION_POLICY = {
     completion: 4,
     planning: 3,
     total: 6,
+  },
+  pulseLevels: {
+    low: 1,
+    medium: 3,
+    high: 6,
   },
 } as const;
 
@@ -61,6 +67,13 @@ export interface NeutralizeEntityContributionsInput {
 
 function cutoff(now: Date, durationMs: number): string {
   return new Date(now.getTime() - durationMs).toISOString();
+}
+
+function pulseLevel(points: number): ContributionPulseLevel {
+  if (points >= CONTRIBUTION_POLICY.pulseLevels.high) return "high";
+  if (points >= CONTRIBUTION_POLICY.pulseLevels.medium) return "medium";
+  if (points >= CONTRIBUTION_POLICY.pulseLevels.low) return "low";
+  return "none";
 }
 
 export function recordContribution(
@@ -194,6 +207,7 @@ export function getContributionSummary(
   const rows = db
     .select({
       actorMemberId: schema.contributionEvents.actorMemberId,
+      createdAt: schema.contributionEvents.createdAt,
       category: schema.contributionEvents.category,
       sharedPoints: schema.contributionEvents.sharedPoints,
       personalPoints: schema.contributionEvents.personalPoints,
@@ -202,6 +216,7 @@ export function getContributionSummary(
     .where(
       and(
         gte(schema.contributionEvents.createdAt, windowStartedAt),
+        lte(schema.contributionEvents.createdAt, now.toISOString()),
         isNull(schema.contributionEvents.neutralizedAt),
       ),
     )
@@ -222,9 +237,19 @@ export function getContributionSummary(
     .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
 
   const sharedCategories = { completion: 0, planning: 0 };
+  const pulsePoints = Array.from({ length: 7 }, () => 0);
+  const windowStartedAtMs = Date.parse(windowStartedAt);
   let personalTotal = 0;
   for (const row of rows) {
     sharedCategories[row.category] += row.sharedPoints;
+    const bucketIndex = Math.min(
+      6,
+      Math.floor((Date.parse(row.createdAt) - windowStartedAtMs) / DAY_MS),
+    );
+    if (bucketIndex >= 0) {
+      pulsePoints[bucketIndex] =
+        (pulsePoints[bucketIndex] ?? 0) + row.sharedPoints;
+    }
     if (row.actorMemberId !== null) personalTotal += row.personalPoints;
   }
 
@@ -248,5 +273,10 @@ export function getContributionSummary(
         categories,
       };
     }),
+    pulse: pulsePoints.map((points, index) => ({
+      startedAt: new Date(windowStartedAtMs + index * DAY_MS).toISOString(),
+      endedAt: new Date(windowStartedAtMs + (index + 1) * DAY_MS).toISOString(),
+      level: pulseLevel(points),
+    })),
   };
 }

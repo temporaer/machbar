@@ -8,6 +8,7 @@ import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaCard } from "../components/ProjectAgendaCard";
 import { PageHeader, type PageHint } from "../components/PageHeader";
 import { useSwipeSettings } from "../lib/swipeSettings";
+import { ContributionPulse } from "../components/ContributionPulse";
 
 export function TodayPage() {
   const strings = useStrings();
@@ -56,6 +57,7 @@ export function TodayPage() {
   return (
     <div className="today-page">
       <PageHeader title={strings.today} hints={pageHints} />
+      <ContributionPulse />
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {agenda ? (

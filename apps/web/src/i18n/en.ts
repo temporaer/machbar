@@ -541,6 +541,15 @@ const en = {
   contributionRulesBody:
     "Completed tasks count for 2 points, completed projects for 4, and meaningful planning improvements for 1. New items count only when they close a concrete planning gap. Repeated edits, deletion, and bulk actions earn no extra points. Undone outcomes are neutralized.",
   contributionLoadError: "Could not load contributions.",
+  contributionPulseLabel: "Together · 7 days",
+  contributionPulseAria:
+    "Shared contributions over the last seven days. Open the detailed view.",
+  contributionPulseLevelsPrefix: "From oldest to newest",
+  contributionPulseLevelNone: "none",
+  contributionPulseLevelLow: "a few",
+  contributionPulseLevelMedium: "some",
+  contributionPulseLevelHigh: "many",
+  contributionPulseRetry: "Reload contributions",
   activityPageHint: "The latest changes to tasks and projects.",
   recentActivities: "Recent activity",
   activityLoading: "Loading…",

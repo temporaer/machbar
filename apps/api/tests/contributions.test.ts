@@ -266,6 +266,76 @@ describe("contribution scoring", () => {
     ).toBe(0);
   });
 
+  it("returns seven exact rolling pulse buckets with qualitative levels", () => {
+    const mira = member("Mira");
+    const now = new Date("2026-08-28T10:00:00.000Z");
+    const start = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+
+    const insertPoints = (
+      createdAt: string,
+      entityId: number,
+      sharedPoints: number,
+      neutralized = false,
+    ) => {
+      const activity = ctx.handle.db
+        .insert(schema.activityEvents)
+        .values({
+          createdAt,
+          actorMemberId: mira.id,
+          kind: "task_status_changed",
+          entityType: "task",
+          entityTitle: `Pulse ${entityId}`,
+          metadata: {},
+        })
+        .returning()
+        .get();
+      ctx.handle.db
+        .insert(schema.contributionEvents)
+        .values({
+          createdAt,
+          activityEventId: activity.id,
+          actorMemberId: mira.id,
+          category: "completion",
+          reason: "task_completed",
+          entityType: "task",
+          entityId,
+          policyPoints: sharedPoints,
+          sharedPoints,
+          personalPoints: sharedPoints,
+          ...(neutralized ? { neutralizedAt: now.toISOString() } : {}),
+        })
+        .run();
+    };
+
+    insertPoints(new Date(start).toISOString(), 1, 1);
+    insertPoints(new Date(start + 24 * 60 * 60 * 1000).toISOString(), 2, 3);
+    insertPoints(new Date(start + 2 * 24 * 60 * 60 * 1000).toISOString(), 3, 6);
+    insertPoints(new Date(start + 3 * 24 * 60 * 60 * 1000).toISOString(), 4, 6, true);
+    insertPoints(new Date(start - 1).toISOString(), 5, 6);
+    insertPoints(now.toISOString(), 6, 1);
+    insertPoints(new Date(now.getTime() + 1).toISOString(), 7, 6);
+
+    const pulse = getContributionSummary(ctx.handle.db, now).pulse;
+    expect(pulse).toHaveLength(7);
+    expect(pulse.map((bucket) => bucket.level)).toEqual([
+      "low",
+      "medium",
+      "high",
+      "none",
+      "none",
+      "none",
+      "low",
+    ]);
+    expect(pulse[0]).toMatchObject({
+      startedAt: "2026-08-21T10:00:00.000Z",
+      endedAt: "2026-08-22T10:00:00.000Z",
+    });
+    for (let index = 1; index < pulse.length; index += 1) {
+      expect(pulse[index]?.startedAt).toBe(pulse[index - 1]?.endedAt);
+    }
+    expect(pulse.at(-1)?.endedAt).toBe(now.toISOString());
+  });
+
   it("moves a deleted member's former personal points into shared-only", () => {
     const mira = member("Mira");
     const task = createTask(ctx.handle.db, {

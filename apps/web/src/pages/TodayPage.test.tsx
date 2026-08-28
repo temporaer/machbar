@@ -12,6 +12,7 @@ vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
     getAgenda: vi.fn(),
+    getContributionSummary: vi.fn(),
     completeTask: vi.fn(),
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
@@ -45,6 +46,38 @@ describe("TodayPage", () => {
     window.localStorage.clear();
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
+    mockedApi.getContributionSummary.mockResolvedValue({
+      windowStartedAt: "2026-08-21T10:00:00.000Z",
+      windowEndedAt: "2026-08-28T10:00:00.000Z",
+      sharedTotal: 0,
+      sharedOnlyTotal: 0,
+      sharedCategories: { completion: 0, planning: 0 },
+      members: [],
+      pulse: Array.from({ length: 7 }, (_, index) => ({
+        startedAt: new Date(Date.UTC(2026, 7, 21 + index, 10)).toISOString(),
+        endedAt: new Date(Date.UTC(2026, 7, 22 + index, 10)).toISOString(),
+        level: "none" as const,
+      })),
+    });
+  });
+
+  it("shows a number-free seven-day shared contribution pulse below the header", async () => {
+    mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
+    const { container } = renderWithProviders(<TodayPage />);
+
+    const pulse = await screen.findByRole("link", {
+      name: "Gemeinsame Beiträge der letzten sieben Tage. Zur ausführlichen Ansicht.",
+    });
+    expect(pulse).toHaveAttribute("href", "/more");
+    expect(pulse).toHaveTextContent("Gemeinsam · 7 Tage");
+    expect(pulse.querySelectorAll(".contribution-pulse-segment")).toHaveLength(7);
+    expect(pulse.querySelectorAll(".contribution-pulse-none")).toHaveLength(7);
+    expect(pulse).not.toHaveTextContent(/\d+ Punkte/);
+
+    const header = container.querySelector(".page-header")!;
+    expect(
+      header.compareDocumentPosition(pulse) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("zeigt keinen manuellen Heute-Umschalter mehr an und erklärt die Ansicht im Seitenhinweis", async () => {

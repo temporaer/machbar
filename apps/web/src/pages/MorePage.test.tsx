@@ -30,6 +30,11 @@ vi.mock("../lib/api", () => ({
           categories: { completion: 4, planning: 1 },
         },
       ],
+      pulse: Array.from({ length: 7 }, (_, index) => ({
+        startedAt: new Date(Date.UTC(2026, 7, 21 + index, 10)).toISOString(),
+        endedAt: new Date(Date.UTC(2026, 7, 22 + index, 10)).toISOString(),
+        level: "low",
+      })),
     }),
   },
 }));
@@ -57,7 +62,7 @@ describe("MorePage", () => {
   });
 
   it("shows a shared-first unranked contribution summary", async () => {
-    renderWithProviders(<MorePage />);
+    const { container } = renderWithProviders(<MorePage />);
 
     expect(
       await screen.findByRole("heading", { name: "Gemeinsam geschafft" }),
@@ -69,6 +74,9 @@ describe("MorePage", () => {
       screen.getByText("Gemeinsamer Beitrag ohne persönliche Zuordnung"),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Platz|Rang|winner/i)).not.toBeInTheDocument();
+    expect(container.querySelector(".stack > :first-child")).toHaveClass(
+      "contribution-card",
+    );
   });
 
   it("renders English and switches locale immediately on this device", async () => {
