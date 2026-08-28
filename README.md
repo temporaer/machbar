@@ -37,9 +37,12 @@ visible without burying the things assigned to you.
 
 ### Projects with an outcome, not just a pile of tasks
 
-Give each project a visible driver, define observable “done when…” criteria,
-delegate individual tasks, and always see the next action. Machbar also calls
-out stuck projects instead of letting them quietly disappear.
+Keep possible household projects in the backlog without prematurely planning
+or assigning them. When you decide to take one on, choose a visible driver,
+define observable “done when…” criteria, and add the concrete next actions.
+Individual tasks can then be delegated while one person keeps hold of the
+overall outcome. Machbar also calls out stuck projects instead of letting them
+quietly disappear.
 
 ### Waiting that remains actionable
 
