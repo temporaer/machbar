@@ -123,6 +123,7 @@ describe("TodayPage", () => {
     );
     expect(await screen.findByText("Jonas' Aufgabe")).toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveClass("today-scope-toggle");
 
     await userEvent.click(toggle);
     await waitFor(() =>
