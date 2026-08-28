@@ -38,8 +38,8 @@ export interface RecordActivityInput {
 }
 
 /** Inserts an activity event using the caller's transaction-bound database. */
-export function recordActivity(db: Db, input: RecordActivityInput): void {
-  db.insert(schema.activityEvents)
+export function recordActivity(db: Db, input: RecordActivityInput): number {
+  return db.insert(schema.activityEvents)
     .values({
       actorMemberId: input.actorMemberId ?? null,
       kind: input.kind,
@@ -49,7 +49,8 @@ export function recordActivity(db: Db, input: RecordActivityInput): void {
       projectId: input.projectId ?? null,
       metadata: input.metadata ?? {},
     })
-    .run();
+    .returning({ id: schema.activityEvents.id })
+    .get().id;
 }
 
 function encodeCursor(cursor: ActivityCursor): string {

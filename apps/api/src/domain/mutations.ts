@@ -12,7 +12,12 @@ import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import {
   getDescendantIds as repoGetDescendantIds,
+  getEffectiveOwners,
+  getNextActionTaskIdsByProject,
+  neutralizeContribution,
+  neutralizeEntityContributions,
   recordActivity,
+  recordContribution,
   wouldCreateDependencyCycle,
   wouldCreateHierarchyCycle,
 } from "../repo/index.js";
@@ -35,6 +40,38 @@ function sortedIds(ids: number[]): number[] {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function effectiveOwnerId(db: Db, taskId: number): number | null {
+  return getEffectiveOwners(db).get(taskId)?.ownerId ?? null;
+}
+
+function projectHasNextAction(db: Db, projectId: number): boolean {
+  return getNextActionTaskIdsByProject(db).has(projectId);
+}
+
+function projectHasTaskPlan(db: Db, projectId: number): boolean {
+  const project = db
+    .select({ dueDate: schema.projects.dueDate })
+    .from(schema.projects)
+    .where(eq(schema.projects.id, projectId))
+    .get();
+  if (project?.dueDate === null || project === undefined) return true;
+
+  return db
+    .select({
+      dueDate: schema.tasks.dueDate,
+      scheduledDate: schema.tasks.scheduledDate,
+    })
+    .from(schema.tasks)
+    .where(
+      and(
+        eq(schema.tasks.projectId, projectId),
+        inArray(schema.tasks.status, ["captured", "actionable", "waiting", "someday"]),
+      ),
+    )
+    .all()
+    .some((task) => task.dueDate !== null || task.scheduledDate !== null);
 }
 
 function appendNoteContent(existing: string, incoming: string): string {
@@ -545,7 +582,7 @@ export function updateProject(
     }
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
     if (changedFields.length > 0) {
-      recordActivity(txDb, {
+      const activityEventId = recordActivity(txDb, {
         actorMemberId: actor(context),
         kind: "project_updated",
         entityType: "project",
@@ -555,6 +592,27 @@ export function updateProject(
           changedFields: tagsChanged ? [...changedFields, "tags"] : changedFields,
         },
       });
+      if (project.ownerMemberId === null && updated.ownerMemberId !== null) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "project_driver_assigned",
+          entityType: "project",
+          entityId: id,
+          personalEligible: true,
+        });
+      } else if (
+        project.ownerMemberId !== null &&
+        updated.ownerMemberId === null
+      ) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "project_driver_assigned",
+          entityType: "project",
+          entityId: id,
+        });
+      }
     } else if (tagsChanged) {
       recordActivity(txDb, {
         actorMemberId: actor(context),
@@ -608,12 +666,17 @@ export function deleteProject(db: Db, id: number, context?: MutationContext) {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
     tx.delete(schema.projects).where(eq(schema.projects.id, id)).run();
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_deleted",
       entityType: "project",
       entityTitle: project.title,
       metadata: {},
+    });
+    neutralizeEntityContributions(txDb, {
+      activityEventId,
+      entityType: "project",
+      entityId: id,
     });
   });
 }
@@ -702,7 +765,7 @@ export function activateProject(
       .where(eq(schema.projects.id, id))
       .run();
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_status_changed",
       entityType: "project",
@@ -716,6 +779,17 @@ export function activateProject(
           : {}),
       },
     });
+    if (project.ownerMemberId === null && ownerMemberId !== null) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_driver_assigned",
+        entityType: "project",
+        entityId: id,
+        personalEligible: true,
+      });
+    }
     return updated;
   });
 }
@@ -770,13 +844,24 @@ export function completeProject(db: Db, id: number, context?: MutationContext) {
       .where(eq(schema.projects.id, id))
       .run();
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_status_changed",
       entityType: "project",
       entityTitle: updated.title,
       projectId: id,
       metadata: { previousStatus: "active", nextStatus: "completed" },
+    });
+    recordContribution(txDb, {
+      activityEventId,
+      actorMemberId: actor(context),
+      category: "completion",
+      reason: "project_completed",
+      entityType: "project",
+      entityId: id,
+      personalEligible:
+        project.ownerMemberId === null ||
+        project.ownerMemberId === actor(context),
     });
     return updated;
   });
@@ -793,13 +878,19 @@ export function reopenProject(db: Db, id: number, context?: MutationContext) {
       .where(eq(schema.projects.id, id))
       .run();
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_status_changed",
       entityType: "project",
       entityTitle: updated.title,
       projectId: id,
       metadata: { previousStatus: "completed", nextStatus: "active" },
+    });
+    neutralizeContribution(txDb, {
+      activityEventId,
+      reason: "project_completed",
+      entityType: "project",
+      entityId: id,
     });
     return updated;
   });
@@ -819,7 +910,7 @@ export function archiveProject(db: Db, id: number, context?: MutationContext) {
       .where(eq(schema.projects.id, id))
       .run();
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_status_changed",
       entityType: "project",
@@ -830,6 +921,14 @@ export function archiveProject(db: Db, id: number, context?: MutationContext) {
         nextStatus: "archived",
       },
     });
+    if (project.status === "completed") {
+      neutralizeContribution(txDb, {
+        activityEventId,
+        reason: "project_completed",
+        entityType: "project",
+        entityId: id,
+      });
+    }
     return updated;
   });
 }
@@ -887,7 +986,7 @@ export function addCriterion(
       .values({ projectId, text: trimmed, position: maxPosition + 1 })
       .returning()
       .get();
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_acceptance_criterion_added",
       entityType: "project",
@@ -895,6 +994,17 @@ export function addCriterion(
       projectId,
       metadata: {},
     });
+    if (maxPosition === -1) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_outcome_added",
+        entityType: "project",
+        entityId: projectId,
+        personalEligible: true,
+      });
+    }
     return criterion;
   });
 }
@@ -1047,7 +1157,7 @@ export function removeCriterion(
           .run();
       }
     });
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_acceptance_criterion_removed",
       entityType: "project",
@@ -1055,6 +1165,14 @@ export function removeCriterion(
       projectId,
       metadata: {},
     });
+    if (remaining.length === 0) {
+      neutralizeContribution(txDb, {
+        activityEventId,
+        reason: "project_outcome_added",
+        entityType: "project",
+        entityId: projectId,
+      });
+    }
   });
 }
 
@@ -1195,8 +1313,13 @@ export function createTask(
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
+    const projectId = input.projectId ?? null;
+    const hadNextAction =
+      projectId !== null ? projectHasNextAction(txDb, projectId) : true;
+    const hadTaskPlan =
+      projectId !== null ? projectHasTaskPlan(txDb, projectId) : true;
     const task = insertTask(txDb, input);
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_created",
       entityType: "task",
@@ -1205,6 +1328,35 @@ export function createTask(
       projectId: task.projectId,
       metadata: {},
     });
+    if (
+      task.projectId !== null &&
+      !hadNextAction &&
+      projectHasNextAction(txDb, task.projectId)
+    ) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_next_action_added",
+        entityType: "project",
+        entityId: task.projectId,
+        personalEligible: true,
+      });
+    } else if (
+      task.projectId !== null &&
+      !hadTaskPlan &&
+      projectHasTaskPlan(txDb, task.projectId)
+    ) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_due_plan_added",
+        entityType: "project",
+        entityId: task.projectId,
+        personalEligible: true,
+      });
+    }
     return task;
   });
 }
@@ -1217,9 +1369,23 @@ export function createChildTask(
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    getTaskOrThrow(txDb, parentTaskId);
+    const parent = getTaskOrThrow(txDb, parentTaskId);
+    const hadNextAction =
+      parent.projectId === null
+        ? true
+        : projectHasNextAction(txDb, parent.projectId);
+    const hadTaskPlan =
+      parent.projectId === null
+        ? true
+        : projectHasTaskPlan(txDb, parent.projectId);
+    const hadOpenChild = txDb
+      .select({ status: schema.tasks.status })
+      .from(schema.tasks)
+      .where(eq(schema.tasks.parentTaskId, parentTaskId))
+      .all()
+      .some((child) => child.status !== "done" && child.status !== "cancelled");
     const task = insertTask(txDb, { ...input, parentTaskId });
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_created",
       entityType: "task",
@@ -1228,6 +1394,50 @@ export function createChildTask(
       projectId: task.projectId,
       metadata: {},
     });
+    if (
+      parent.size === "XL" &&
+      !hadOpenChild &&
+      task.status !== "done" &&
+      task.status !== "cancelled"
+    ) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "task_broken_down",
+        entityType: "task",
+        entityId: parentTaskId,
+        personalEligible: true,
+      });
+    } else if (
+      task.projectId !== null &&
+      !hadNextAction &&
+      projectHasNextAction(txDb, task.projectId)
+    ) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_next_action_added",
+        entityType: "project",
+        entityId: task.projectId,
+        personalEligible: true,
+      });
+    } else if (
+      task.projectId !== null &&
+      !hadTaskPlan &&
+      projectHasTaskPlan(txDb, task.projectId)
+    ) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_due_plan_added",
+        entityType: "project",
+        entityId: task.projectId,
+        personalEligible: true,
+      });
+    }
     return task;
   });
 }
@@ -1260,6 +1470,7 @@ export function createProjectTaskSequence(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, projectId);
+    const hadNextAction = projectHasNextAction(txDb, projectId);
     const created: ReturnType<typeof insertTask>[] = [];
 
     for (const title of titles) {
@@ -1279,7 +1490,7 @@ export function createProjectTaskSequence(
       created.push(task);
     }
 
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_updated",
       entityType: "project",
@@ -1292,6 +1503,17 @@ export function createProjectTaskSequence(
         relatedTaskTitles: created.map((task) => task.title),
       },
     });
+    if (!hadNextAction && projectHasNextAction(txDb, projectId)) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_next_action_added",
+        entityType: "project",
+        entityId: projectId,
+        personalEligible: true,
+      });
+    }
     return created;
   });
 }
@@ -1306,6 +1528,14 @@ export function createTaskSuccessor(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const predecessor = getTaskOrThrow(txDb, taskId);
+    const hadNextAction =
+      predecessor.projectId === null
+        ? true
+        : projectHasNextAction(txDb, predecessor.projectId);
+    const hadTaskPlan =
+      predecessor.projectId === null
+        ? true
+        : projectHasTaskPlan(txDb, predecessor.projectId);
     const successorPosition = predecessor.position + 1;
     const laterSiblings = tx
       .select()
@@ -1334,7 +1564,7 @@ export function createTaskSuccessor(
       .insert(schema.taskDependencies)
       .values({ taskId: successor.id, dependsOnTaskId: predecessor.id })
       .run();
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_created",
       entityType: "task",
@@ -1346,6 +1576,35 @@ export function createTaskSuccessor(
         relatedTaskTitles: [predecessor.title],
       },
     });
+    if (
+      successor.projectId !== null &&
+      !hadNextAction &&
+      projectHasNextAction(txDb, successor.projectId)
+    ) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_next_action_added",
+        entityType: "project",
+        entityId: successor.projectId,
+        personalEligible: true,
+      });
+    } else if (
+      successor.projectId !== null &&
+      !hadTaskPlan &&
+      projectHasTaskPlan(txDb, successor.projectId)
+    ) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_due_plan_added",
+        entityType: "project",
+        entityId: successor.projectId,
+        personalEligible: true,
+      });
+    }
     return successor;
   });
 }
@@ -1377,6 +1636,15 @@ export function updateTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const currentTask = getTaskOrThrow(txDb, id);
+    const effectiveOwnerBefore = effectiveOwnerId(txDb, id);
+    const projectHadNextAction =
+      currentTask.projectId !== null
+        ? projectHasNextAction(txDb, currentTask.projectId)
+        : true;
+    const projectHadTaskPlan =
+      currentTask.projectId !== null
+        ? projectHasTaskPlan(txDb, currentTask.projectId)
+        : true;
     if (input.title !== undefined && input.title.trim() === "") {
       throw AppError.badRequest(
         "task_title_required",
@@ -1496,7 +1764,7 @@ export function updateTask(
       ...(excludedTagsChanged ? ["excludedTags"] : []),
     ];
     if (statusChanged) {
-      recordActivity(txDb, {
+      const activityEventId = recordActivity(txDb, {
         actorMemberId: actor(context),
         kind: "task_status_changed",
         entityType: "task",
@@ -1511,8 +1779,76 @@ export function updateTask(
             : {}),
         },
       });
+      const effectiveOwnerAfter = effectiveOwnerId(txDb, id);
+      if (updated.status === "done") {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "completion",
+          reason: "task_completed",
+          entityType: "task",
+          entityId: id,
+          personalEligible:
+            effectiveOwnerBefore === null ||
+            effectiveOwnerBefore === actor(context),
+        });
+      } else if (currentTask.status === "done") {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "task_completed",
+          entityType: "task",
+          entityId: id,
+        });
+      } else if (
+        currentTask.status === "captured" &&
+        updated.status === "actionable"
+      ) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "task_clarified",
+          entityType: "task",
+          entityId: id,
+          personalEligible: true,
+        });
+      } else if (
+        currentTask.status === "actionable" &&
+        updated.status === "captured"
+      ) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "task_clarified",
+          entityType: "task",
+          entityId: id,
+        });
+      }
+      if (updated.projectId !== null && updated.status !== "done") {
+        if (
+          projectHadNextAction &&
+          !projectHasNextAction(txDb, updated.projectId)
+        ) {
+          neutralizeContribution(txDb, {
+            activityEventId,
+            reason: "project_next_action_added",
+            entityType: "project",
+            entityId: updated.projectId,
+          });
+        }
+        if (
+          projectHadTaskPlan &&
+          !projectHasTaskPlan(txDb, updated.projectId)
+        ) {
+          neutralizeContribution(txDb, {
+            activityEventId,
+            reason: "project_due_plan_added",
+            entityType: "project",
+            entityId: updated.projectId,
+          });
+        }
+      }
     } else if (changedFields.length > 0) {
-      recordActivity(txDb, {
+      const activityEventId = recordActivity(txDb, {
         actorMemberId: actor(context),
         kind: "task_updated",
         entityType: "task",
@@ -1521,6 +1857,161 @@ export function updateTask(
         projectId: updated.projectId,
         metadata: { changedFields: coalescedChangedFields },
       });
+      const effectiveOwnerAfter = effectiveOwnerId(txDb, id);
+      if (
+        effectiveOwnerBefore === null &&
+        effectiveOwnerAfter !== null &&
+        updated.status === "actionable"
+      ) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "task_assigned",
+          entityType: "task",
+          entityId: id,
+          personalEligible: true,
+        });
+      } else if (
+        currentTask.size === null &&
+        updated.size !== null &&
+        updated.status !== "done" &&
+        updated.status !== "cancelled"
+      ) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "task_estimated",
+          entityType: "task",
+          entityId: id,
+          personalEligible: true,
+        });
+      } else if (
+        currentTask.status === "waiting" &&
+        currentTask.scheduledDate === null &&
+        updated.status === "waiting" &&
+        updated.scheduledDate !== null
+      ) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "waiting_followup_added",
+          entityType: "task",
+          entityId: id,
+          personalEligible: true,
+        });
+      } else if (
+        currentTask.dueDate === null &&
+        currentTask.scheduledDate === null &&
+        (updated.dueDate !== null || updated.scheduledDate !== null) &&
+        updated.status !== "done" &&
+        updated.status !== "cancelled"
+      ) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "task_planned",
+          entityType: "task",
+          entityId: id,
+          personalEligible: true,
+        });
+      } else if (
+        updated.projectId !== null &&
+        !projectHadNextAction &&
+        projectHasNextAction(txDb, updated.projectId)
+      ) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "project_next_action_added",
+          entityType: "project",
+          entityId: updated.projectId,
+          personalEligible: true,
+        });
+      } else if (
+        updated.projectId !== null &&
+        !projectHadTaskPlan &&
+        projectHasTaskPlan(txDb, updated.projectId)
+      ) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "project_due_plan_added",
+          entityType: "project",
+          entityId: updated.projectId,
+          personalEligible: true,
+        });
+      }
+
+      if (effectiveOwnerBefore !== null && effectiveOwnerAfter === null) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "task_assigned",
+          entityType: "task",
+          entityId: id,
+        });
+      }
+      if (currentTask.size !== null && updated.size === null) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "task_estimated",
+          entityType: "task",
+          entityId: id,
+        });
+      }
+      if (
+        currentTask.scheduledDate !== null &&
+        updated.scheduledDate === null
+      ) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "waiting_followup_added",
+          entityType: "task",
+          entityId: id,
+        });
+      }
+      if (
+        (currentTask.dueDate !== null ||
+          currentTask.scheduledDate !== null) &&
+        updated.dueDate === null &&
+        updated.scheduledDate === null
+      ) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "task_planned",
+          entityType: "task",
+          entityId: id,
+        });
+      }
+      if (updated.projectId !== null) {
+        if (
+          projectHadNextAction &&
+          !projectHasNextAction(txDb, updated.projectId)
+        ) {
+          neutralizeContribution(txDb, {
+            activityEventId,
+            reason: "project_next_action_added",
+            entityType: "project",
+            entityId: updated.projectId,
+          });
+        }
+        if (
+          projectHadTaskPlan &&
+          !projectHasTaskPlan(txDb, updated.projectId)
+        ) {
+          neutralizeContribution(txDb, {
+            activityEventId,
+            reason: "project_due_plan_added",
+            entityType: "project",
+            entityId: updated.projectId,
+          });
+        }
+      }
     } else if (tagsChanged || excludedTagsChanged) {
       recordActivity(txDb, {
         actorMemberId: actor(context),
@@ -1570,9 +2061,18 @@ export function deleteTask(db: Db, id: number, context?: MutationContext) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
-    const affectedCount = repoGetDescendantIds(txDb, id).length + 1;
+    const descendantIds = repoGetDescendantIds(txDb, id);
+    const affectedCount = descendantIds.length + 1;
+    const projectHadNextAction =
+      task.projectId === null ? true : projectHasNextAction(txDb, task.projectId);
+    const projectHadTaskPlan =
+      task.projectId === null ? true : projectHasTaskPlan(txDb, task.projectId);
+    const parent =
+      task.parentTaskId === null
+        ? null
+        : getTaskOrThrow(txDb, task.parentTaskId);
     tx.delete(schema.tasks).where(eq(schema.tasks.id, id)).run();
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_deleted",
       entityType: "task",
@@ -1580,6 +2080,52 @@ export function deleteTask(db: Db, id: number, context?: MutationContext) {
       projectId: task.projectId,
       metadata: affectedCount > 1 ? { affectedCount } : {},
     });
+    for (const taskId of [id, ...descendantIds]) {
+      neutralizeEntityContributions(txDb, {
+        activityEventId,
+        entityType: "task",
+        entityId: taskId,
+      });
+    }
+    if (
+      parent?.size === "XL" &&
+      !txDb
+        .select({ id: schema.tasks.id })
+        .from(schema.tasks)
+        .where(eq(schema.tasks.parentTaskId, parent.id))
+        .get()
+    ) {
+      neutralizeContribution(txDb, {
+        activityEventId,
+        reason: "task_broken_down",
+        entityType: "task",
+        entityId: parent.id,
+      });
+    }
+    if (task.projectId !== null) {
+      if (
+        projectHadNextAction &&
+        !projectHasNextAction(txDb, task.projectId)
+      ) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "project_next_action_added",
+          entityType: "project",
+          entityId: task.projectId,
+        });
+      }
+      if (
+        projectHadTaskPlan &&
+        !projectHasTaskPlan(txDb, task.projectId)
+      ) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "project_due_plan_added",
+          entityType: "project",
+          entityId: task.projectId,
+        });
+      }
+    }
   });
 }
 
@@ -1656,7 +2202,7 @@ export function completeTask(
       }
     }
     const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: descendantsOnly
         ? "task_descendants_status_changed"
@@ -1675,6 +2221,18 @@ export function completeTask(
               : {}),
           },
     });
+    if (!descendantsOnly) {
+      const ownerId = effectiveOwnerId(txDb, id);
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "completion",
+        reason: "task_completed",
+        entityType: "task",
+        entityId: id,
+        personalEligible: ownerId === null || ownerId === actor(context),
+      });
+    }
     return updated;
   });
 }
@@ -1688,6 +2246,10 @@ export function cancelTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
+    const projectHadNextAction =
+      task.projectId === null ? true : projectHasNextAction(txDb, task.projectId);
+    const projectHadTaskPlan =
+      task.projectId === null ? true : projectHasTaskPlan(txDb, task.projectId);
     const openChildren = openDescendants(txDb, id);
     const descendantsOnly =
       task.status === "cancelled" &&
@@ -1739,7 +2301,7 @@ export function cancelTask(
       }
     }
     const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: descendantsOnly
         ? "task_descendants_status_changed"
@@ -1758,6 +2320,38 @@ export function cancelTask(
               : {}),
           },
     });
+    if (!descendantsOnly && task.status === "done") {
+      neutralizeContribution(txDb, {
+        activityEventId,
+        reason: "task_completed",
+        entityType: "task",
+        entityId: id,
+      });
+    }
+    if (task.projectId !== null) {
+      if (
+        projectHadNextAction &&
+        !projectHasNextAction(txDb, task.projectId)
+      ) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "project_next_action_added",
+          entityType: "project",
+          entityId: task.projectId,
+        });
+      }
+      if (
+        projectHadTaskPlan &&
+        !projectHasTaskPlan(txDb, task.projectId)
+      ) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "project_due_plan_added",
+          entityType: "project",
+          entityId: task.projectId,
+        });
+      }
+    }
     return updated;
   });
 }
@@ -1779,7 +2373,7 @@ export function reopenTask(db: Db, id: number, context?: MutationContext) {
       .where(eq(schema.tasks.id, id))
       .run();
     const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_status_changed",
       entityType: "task",
@@ -1790,6 +2384,12 @@ export function reopenTask(db: Db, id: number, context?: MutationContext) {
         previousStatus: task.status as TaskStatus,
         nextStatus: "actionable",
       },
+    });
+    neutralizeContribution(txDb, {
+      activityEventId,
+      reason: "task_completed",
+      entityType: "task",
+      entityId: id,
     });
     return updated;
   });
@@ -1894,6 +2494,27 @@ export function moveTask(
       newProjectId = "projectId" in input ? input.projectId ?? null : task.projectId;
     }
 
+    const sourceHadNextAction =
+      task.projectId === null
+        ? true
+        : projectHasNextAction(txDb, task.projectId);
+    const sourceHadTaskPlan =
+      task.projectId === null
+        ? true
+        : projectHasTaskPlan(txDb, task.projectId);
+    const destinationHadNextAction =
+      newProjectId === null
+        ? true
+        : newProjectId === task.projectId
+          ? sourceHadNextAction
+          : projectHasNextAction(txDb, newProjectId);
+    const destinationHadTaskPlan =
+      newProjectId === null
+        ? true
+        : newProjectId === task.projectId
+          ? sourceHadTaskPlan
+          : projectHasTaskPlan(txDb, newProjectId);
+
     const movingWithinSameGroup =
       newParentTaskId === task.parentTaskId && newProjectId === task.projectId;
 
@@ -1948,7 +2569,7 @@ export function moveTask(
         newParentTaskId !== null
           ? getTaskOrThrow(txDb, newParentTaskId)
           : null;
-      recordActivity(txDb, {
+      const activityEventId = recordActivity(txDb, {
         actorMemberId: actor(context),
         kind: "task_moved",
         entityType: "task",
@@ -1970,6 +2591,59 @@ export function moveTask(
             : {}),
         },
       });
+      if (
+        task.projectId !== null &&
+        sourceHadNextAction &&
+        !projectHasNextAction(txDb, task.projectId)
+      ) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "project_next_action_added",
+          entityType: "project",
+          entityId: task.projectId,
+        });
+      }
+      if (
+        task.projectId !== null &&
+        sourceHadTaskPlan &&
+        !projectHasTaskPlan(txDb, task.projectId)
+      ) {
+        neutralizeContribution(txDb, {
+          activityEventId,
+          reason: "project_due_plan_added",
+          entityType: "project",
+          entityId: task.projectId,
+        });
+      }
+      if (
+        newProjectId !== null &&
+        !destinationHadNextAction &&
+        projectHasNextAction(txDb, newProjectId)
+      ) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "project_next_action_added",
+          entityType: "project",
+          entityId: newProjectId,
+          personalEligible: true,
+        });
+      } else if (
+        newProjectId !== null &&
+        !destinationHadTaskPlan &&
+        projectHasTaskPlan(txDb, newProjectId)
+      ) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "project_due_plan_added",
+          entityType: "project",
+          entityId: newProjectId,
+          personalEligible: true,
+        });
+      }
     }
     return updated;
   });
@@ -2070,6 +2744,10 @@ export function addDependency(
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
     const dependency = getTaskOrThrow(txDb, dependsOnTaskId);
+    const hadNextAction =
+      task.projectId === null
+        ? true
+        : projectHasNextAction(txDb, task.projectId);
 
     const existing = tx
       .select()
@@ -2096,7 +2774,7 @@ export function addDependency(
       .values({ taskId, dependsOnTaskId })
       .returning()
       .get();
-    recordActivity(txDb, {
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_dependencies_changed",
       entityType: "task",
@@ -2108,6 +2786,18 @@ export function addDependency(
         relatedTaskTitles: [dependency.title],
       },
     });
+    if (
+      task.projectId !== null &&
+      hadNextAction &&
+      !projectHasNextAction(txDb, task.projectId)
+    ) {
+      neutralizeContribution(txDb, {
+        activityEventId,
+        reason: "project_next_action_added",
+        entityType: "project",
+        entityId: task.projectId,
+      });
+    }
     return created;
   });
 }
@@ -2122,6 +2812,10 @@ export function removeDependency(
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
     const dependency = getTaskOrThrow(txDb, dependsOnTaskId);
+    const hadNextAction =
+      task.projectId === null
+        ? true
+        : projectHasNextAction(txDb, task.projectId);
     const deleted = tx.delete(schema.taskDependencies)
       .where(
         and(
@@ -2131,7 +2825,7 @@ export function removeDependency(
       )
       .run();
     if (deleted.changes > 0) {
-      recordActivity(txDb, {
+      const activityEventId = recordActivity(txDb, {
         actorMemberId: actor(context),
         kind: "task_dependencies_changed",
         entityType: "task",
@@ -2143,6 +2837,21 @@ export function removeDependency(
           relatedTaskTitles: [dependency.title],
         },
       });
+      if (
+        task.projectId !== null &&
+        !hadNextAction &&
+        projectHasNextAction(txDb, task.projectId)
+      ) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "project_next_action_added",
+          entityType: "project",
+          entityId: task.projectId,
+          personalEligible: true,
+        });
+      }
     }
   });
 }

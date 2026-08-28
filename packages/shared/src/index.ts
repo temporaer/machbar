@@ -37,6 +37,21 @@ export const activityEventKinds = [
   "project_acceptance_criterion_removed",
 ] as const;
 export const activityEntityTypes = ["task", "project"] as const;
+export const contributionCategories = ["completion", "planning"] as const;
+export const contributionReasons = [
+  "task_completed",
+  "project_completed",
+  "task_clarified",
+  "task_assigned",
+  "task_estimated",
+  "task_planned",
+  "waiting_followup_added",
+  "task_broken_down",
+  "project_outcome_added",
+  "project_driver_assigned",
+  "project_next_action_added",
+  "project_due_plan_added",
+] as const;
 export const ACTIVITY_ACTOR_HEADER = "x-machbar-actor-member-id";
 
 export type TaskStatus = (typeof taskStatuses)[number];
@@ -47,6 +62,8 @@ export type TagKind = (typeof tagKinds)[number];
 export type TagGroupingMode = (typeof tagGroupingModes)[number];
 export type ActivityEventKind = (typeof activityEventKinds)[number];
 export type ActivityEntityType = (typeof activityEntityTypes)[number];
+export type ContributionCategory = (typeof contributionCategories)[number];
+export type ContributionReason = (typeof contributionReasons)[number];
 
 export type ApiErrorCode =
   | "acceptance_criteria_order_invalid"
@@ -153,6 +170,26 @@ export interface ActivityEvent {
 export interface ActivityPage {
   items: ActivityEvent[];
   nextCursor: string | null;
+}
+
+export interface ContributionCategoryTotals {
+  completion: number;
+  planning: number;
+}
+
+export interface MemberContributionSummary {
+  member: ActivityActor;
+  total: number;
+  categories: ContributionCategoryTotals;
+}
+
+export interface ContributionSummary {
+  windowStartedAt: string;
+  windowEndedAt: string;
+  sharedTotal: number;
+  sharedOnlyTotal: number;
+  sharedCategories: ContributionCategoryTotals;
+  members: MemberContributionSummary[];
 }
 
 export interface Member {

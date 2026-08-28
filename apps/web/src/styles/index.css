@@ -299,6 +299,92 @@ a {
   margin-top: 10px;
 }
 
+.contribution-card {
+  display: grid;
+  gap: 12px;
+}
+
+.contribution-heading {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.contribution-heading h3,
+.contribution-heading p,
+.contribution-state,
+.contribution-rules p {
+  margin: 0;
+}
+
+.contribution-total {
+  flex: 0 0 auto;
+  color: var(--color-primary);
+  font-size: 1.55rem;
+  line-height: 1;
+  text-align: right;
+}
+
+.contribution-total span {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.contribution-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+}
+
+.contribution-members {
+  display: grid;
+  gap: 8px;
+}
+
+.contribution-member {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.contribution-member-score {
+  display: grid;
+  justify-items: end;
+  line-height: 1.2;
+}
+
+.contribution-member-score small {
+  color: var(--color-text-muted);
+}
+
+.contribution-shared-only {
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+.contribution-rules {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+.contribution-rules summary {
+  cursor: pointer;
+  color: var(--color-primary);
+}
+
+.contribution-rules p {
+  padding-top: 8px;
+  line-height: 1.45;
+}
+
 .project-agenda-card {
   display: grid;
   gap: 8px;

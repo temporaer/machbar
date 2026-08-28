@@ -9,6 +9,7 @@ import { MemberAvatar } from "../components/MemberAvatar";
 import { supportedLocales, useLocale } from "../lib/locale";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { themePreferences, useTheme } from "../lib/theme";
+import { ContributionCard } from "../components/ContributionCard";
 
 export function MorePage() {
   const strings = useStrings();
@@ -49,6 +50,7 @@ export function MorePage() {
             <span aria-hidden="true">›</span>
           </span>
         </Link>
+        <ContributionCard />
         <Link to="/more/activity" className="card list-link">
           <span className="row-between">
             <span>

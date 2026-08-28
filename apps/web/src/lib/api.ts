@@ -5,6 +5,7 @@ import type {
   ApiErrorCode,
   ApiErrorResponse,
   AuthStatus,
+  ContributionSummary,
   InheritanceMode,
   Member,
   Project,
@@ -383,6 +384,9 @@ export const api = {
         projectId: filters?.projectId,
       })}`,
     ),
+
+  getContributionSummary: () =>
+    request<ContributionSummary>("/contributions/summary"),
 
   /**
    * `memberId` scopes the agenda to a single member (the currently

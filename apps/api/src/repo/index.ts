@@ -5,3 +5,4 @@ export * from "./nextActionRepo.js";
 export * from "./stuckRepo.js";
 export * from "./refinementRepo.js";
 export * from "./activityRepo.js";
+export * from "./contributionRepo.js";

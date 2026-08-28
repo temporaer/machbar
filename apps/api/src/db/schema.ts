@@ -3,6 +3,8 @@ import type {
   ActivityEntityType,
   ActivityEventKind,
   ActivityEventMetadata,
+  ContributionCategory,
+  ContributionReason,
 } from "@machbar/shared";
 import {
   index,
@@ -37,6 +39,26 @@ const activityEntityTypes = [
   "task",
   "project",
 ] as const satisfies readonly ActivityEntityType[];
+
+const contributionCategories = [
+  "completion",
+  "planning",
+] as const satisfies readonly ContributionCategory[];
+
+const contributionReasons = [
+  "task_completed",
+  "project_completed",
+  "task_clarified",
+  "task_assigned",
+  "task_estimated",
+  "task_planned",
+  "waiting_followup_added",
+  "task_broken_down",
+  "project_outcome_added",
+  "project_driver_assigned",
+  "project_next_action_added",
+  "project_due_plan_added",
+] as const satisfies readonly ContributionReason[];
 
 /**
  * Members of the household / team. Tasks and projects can be
@@ -260,6 +282,48 @@ export const activityEvents = sqliteTable(
       t.projectId,
       t.createdAt,
       t.id,
+    ),
+  ],
+);
+
+export const contributionEvents = sqliteTable(
+  "contribution_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    activityEventId: integer("activity_event_id")
+      .notNull()
+      .references(() => activityEvents.id, { onDelete: "cascade" }),
+    actorMemberId: integer("actor_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    category: text("category", { enum: contributionCategories }).notNull(),
+    reason: text("reason", { enum: contributionReasons }).notNull(),
+    entityType: text("entity_type", { enum: activityEntityTypes }).notNull(),
+    entityId: integer("entity_id").notNull(),
+    policyPoints: integer("policy_points").notNull(),
+    sharedPoints: integer("shared_points").notNull(),
+    personalPoints: integer("personal_points").notNull(),
+    neutralizedAt: text("neutralized_at"),
+    neutralizedByActivityEventId: integer(
+      "neutralized_by_activity_event_id",
+    ).references(() => activityEvents.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    unique("contribution_events_activity_unique").on(t.activityEventId),
+    index("contribution_events_window_idx").on(t.createdAt, t.id),
+    index("contribution_events_actor_cap_idx").on(
+      t.actorMemberId,
+      t.createdAt,
+      t.category,
+    ),
+    index("contribution_events_entity_reason_idx").on(
+      t.entityType,
+      t.entityId,
+      t.reason,
+      t.createdAt,
     ),
   ],
 );

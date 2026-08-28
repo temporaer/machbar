@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/client.js";
 import { registerActivityRoutes } from "./activity.js";
+import { registerContributionRoutes } from "./contributions.js";
 import { registerMemberRoutes } from "./members.js";
 import { registerProjectRoutes } from "./projects.js";
 import { registerRefinementRoutes } from "./refinement.js";
@@ -11,6 +12,7 @@ import { registerViewRoutes } from "./views.js";
 
 export function registerRoutes(app: FastifyInstance, db: Db) {
   registerActivityRoutes(app, db);
+  registerContributionRoutes(app, db);
   registerMemberRoutes(app, db);
   registerTagRoutes(app, db);
   registerProjectRoutes(app, db);

@@ -1,0 +1,252 @@
+import type {
+  ActivityEntityType,
+  ContributionCategory,
+  ContributionReason,
+  ContributionSummary,
+} from "@machbar/shared";
+import { and, desc, eq, gte, isNull } from "drizzle-orm";
+import type { Db } from "../db/client.js";
+import * as schema from "../db/schema.js";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WINDOW_MS = 7 * DAY_MS;
+
+export const CONTRIBUTION_POLICY = {
+  points: {
+    task_completed: 2,
+    project_completed: 4,
+    task_clarified: 1,
+    task_assigned: 1,
+    task_estimated: 1,
+    task_planned: 1,
+    waiting_followup_added: 1,
+    task_broken_down: 1,
+    project_outcome_added: 1,
+    project_driver_assigned: 1,
+    project_next_action_added: 1,
+    project_due_plan_added: 1,
+  } satisfies Record<ContributionReason, number>,
+  rollingDayCaps: {
+    completion: 4,
+    planning: 3,
+    total: 6,
+  },
+} as const;
+
+export interface RecordContributionInput {
+  activityEventId: number;
+  actorMemberId: number | null;
+  category: ContributionCategory;
+  reason: ContributionReason;
+  entityType: ActivityEntityType;
+  entityId: number;
+  personalEligible: boolean;
+  now?: Date;
+}
+
+export interface NeutralizeContributionInput {
+  activityEventId: number;
+  entityType: ActivityEntityType;
+  entityId: number;
+  reason: ContributionReason;
+  now?: Date;
+}
+
+export interface NeutralizeEntityContributionsInput {
+  activityEventId: number;
+  entityType: ActivityEntityType;
+  entityId: number;
+  now?: Date;
+}
+
+function cutoff(now: Date, durationMs: number): string {
+  return new Date(now.getTime() - durationMs).toISOString();
+}
+
+export function recordContribution(
+  db: Db,
+  input: RecordContributionInput,
+): typeof schema.contributionEvents.$inferSelect | null {
+  if (input.actorMemberId === null) return null;
+
+  const now = input.now ?? new Date();
+  const nowIso = now.toISOString();
+  const existing = db
+    .select({ id: schema.contributionEvents.id })
+    .from(schema.contributionEvents)
+    .where(
+      and(
+        eq(schema.contributionEvents.entityType, input.entityType),
+        eq(schema.contributionEvents.entityId, input.entityId),
+        eq(schema.contributionEvents.reason, input.reason),
+        gte(schema.contributionEvents.createdAt, cutoff(now, WINDOW_MS)),
+      ),
+    )
+    .limit(1)
+    .get();
+  if (existing) return null;
+
+  const recent = db
+    .select({
+      category: schema.contributionEvents.category,
+      points: schema.contributionEvents.sharedPoints,
+    })
+    .from(schema.contributionEvents)
+    .where(
+      and(
+        eq(schema.contributionEvents.actorMemberId, input.actorMemberId),
+        gte(schema.contributionEvents.createdAt, cutoff(now, DAY_MS)),
+      ),
+    )
+    .all();
+  const categoryUsed = recent
+    .filter((row) => row.category === input.category)
+    .reduce((total, row) => total + row.points, 0);
+  const totalUsed = recent.reduce((total, row) => total + row.points, 0);
+  const policyPoints = CONTRIBUTION_POLICY.points[input.reason];
+  const awardedPoints = Math.max(
+    0,
+    Math.min(
+      policyPoints,
+      CONTRIBUTION_POLICY.rollingDayCaps[input.category] - categoryUsed,
+      CONTRIBUTION_POLICY.rollingDayCaps.total - totalUsed,
+    ),
+  );
+
+  return db
+    .insert(schema.contributionEvents)
+    .values({
+      createdAt: nowIso,
+      activityEventId: input.activityEventId,
+      actorMemberId: input.actorMemberId,
+      category: input.category,
+      reason: input.reason,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      policyPoints,
+      sharedPoints: awardedPoints,
+      personalPoints: input.personalEligible ? awardedPoints : 0,
+    })
+    .returning()
+    .get();
+}
+
+export function neutralizeContribution(
+  db: Db,
+  input: NeutralizeContributionInput,
+): void {
+  const now = input.now ?? new Date();
+  const award = db
+    .select({ id: schema.contributionEvents.id })
+    .from(schema.contributionEvents)
+    .where(
+      and(
+        eq(schema.contributionEvents.entityType, input.entityType),
+        eq(schema.contributionEvents.entityId, input.entityId),
+        eq(schema.contributionEvents.reason, input.reason),
+        gte(schema.contributionEvents.createdAt, cutoff(now, WINDOW_MS)),
+        isNull(schema.contributionEvents.neutralizedAt),
+      ),
+    )
+    .orderBy(
+      desc(schema.contributionEvents.createdAt),
+      desc(schema.contributionEvents.id),
+    )
+    .limit(1)
+    .get();
+  if (!award) return;
+
+  db.update(schema.contributionEvents)
+    .set({
+      neutralizedAt: now.toISOString(),
+      neutralizedByActivityEventId: input.activityEventId,
+    })
+    .where(eq(schema.contributionEvents.id, award.id))
+    .run();
+}
+
+export function neutralizeEntityContributions(
+  db: Db,
+  input: NeutralizeEntityContributionsInput,
+): void {
+  const now = input.now ?? new Date();
+  db.update(schema.contributionEvents)
+    .set({
+      neutralizedAt: now.toISOString(),
+      neutralizedByActivityEventId: input.activityEventId,
+    })
+    .where(
+      and(
+        eq(schema.contributionEvents.entityType, input.entityType),
+        eq(schema.contributionEvents.entityId, input.entityId),
+        gte(schema.contributionEvents.createdAt, cutoff(now, WINDOW_MS)),
+        isNull(schema.contributionEvents.neutralizedAt),
+      ),
+    )
+    .run();
+}
+
+export function getContributionSummary(
+  db: Db,
+  now = new Date(),
+): ContributionSummary {
+  const windowStartedAt = cutoff(now, WINDOW_MS);
+  const rows = db
+    .select({
+      actorMemberId: schema.contributionEvents.actorMemberId,
+      category: schema.contributionEvents.category,
+      sharedPoints: schema.contributionEvents.sharedPoints,
+      personalPoints: schema.contributionEvents.personalPoints,
+    })
+    .from(schema.contributionEvents)
+    .where(
+      and(
+        gte(schema.contributionEvents.createdAt, windowStartedAt),
+        isNull(schema.contributionEvents.neutralizedAt),
+      ),
+    )
+    .all();
+  const members = db
+    .select({
+      id: schema.members.id,
+      name: schema.members.name,
+      color: schema.members.color,
+      pictureUrl: schema.memberOidcIdentities.pictureUrl,
+    })
+    .from(schema.members)
+    .leftJoin(
+      schema.memberOidcIdentities,
+      eq(schema.members.id, schema.memberOidcIdentities.memberId),
+    )
+    .all()
+    .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+
+  const sharedCategories = { completion: 0, planning: 0 };
+  let personalTotal = 0;
+  for (const row of rows) {
+    sharedCategories[row.category] += row.sharedPoints;
+    if (row.actorMemberId !== null) personalTotal += row.personalPoints;
+  }
+
+  return {
+    windowStartedAt,
+    windowEndedAt: now.toISOString(),
+    sharedTotal: sharedCategories.completion + sharedCategories.planning,
+    sharedOnlyTotal:
+      sharedCategories.completion + sharedCategories.planning - personalTotal,
+    sharedCategories,
+    members: members.map((member) => {
+      const categories = { completion: 0, planning: 0 };
+      for (const row of rows) {
+        if (row.actorMemberId === member.id) {
+          categories[row.category] += row.personalPoints;
+        }
+      }
+      return {
+        member: { ...member, pictureUrl: member.pictureUrl ?? null },
+        total: categories.completion + categories.planning,
+        categories,
+      };
+    }),
+  };
+}

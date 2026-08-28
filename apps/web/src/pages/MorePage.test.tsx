@@ -12,6 +12,25 @@ vi.mock("../lib/api", () => ({
       member: null,
     }),
     getMembers: vi.fn().mockResolvedValue([]),
+    getContributionSummary: vi.fn().mockResolvedValue({
+      windowStartedAt: "2026-08-21T10:00:00.000Z",
+      windowEndedAt: "2026-08-28T10:00:00.000Z",
+      sharedTotal: 7,
+      sharedOnlyTotal: 2,
+      sharedCategories: { completion: 4, planning: 3 },
+      members: [
+        {
+          member: {
+            id: 1,
+            name: "Mira",
+            color: "#123456",
+            pictureUrl: null,
+          },
+          total: 5,
+          categories: { completion: 4, planning: 1 },
+        },
+      ],
+    }),
   },
 }));
 
@@ -35,6 +54,21 @@ describe("MorePage", () => {
       "href",
       "/more/activity",
     );
+  });
+
+  it("shows a shared-first unranked contribution summary", async () => {
+    renderWithProviders(<MorePage />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Gemeinsam geschafft" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("7", { selector: ".contribution-total" })).toBeInTheDocument();
+    expect(screen.getByText("Mira")).toBeInTheDocument();
+    expect(screen.getByText("4 erledigt · 1 geplant")).toBeInTheDocument();
+    expect(
+      screen.getByText("Gemeinsamer Beitrag ohne persönliche Zuordnung"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Platz|Rang|winner/i)).not.toBeInTheDocument();
   });
 
   it("renders English and switches locale immediately on this device", async () => {
