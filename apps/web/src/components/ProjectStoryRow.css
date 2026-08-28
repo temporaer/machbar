@@ -22,9 +22,10 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--color-primary) 3%, var(--color-surface));
   box-shadow: var(--shadow-card);
+  transition: box-shadow 140ms ease, translate 140ms ease;
   /*
    * Palette for the six distinguishable "row moods" below — neutral slate
    * for the backlog (deliberately *not* green: nothing has been achieved
@@ -39,6 +40,17 @@
   --story-row-gray: #606864;
   --story-row-gray-strong: #666c69;
   border-left: 4px solid transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .story-row:hover {
+    translate: 0 -1px;
+    box-shadow: 0 2px 4px rgba(20, 30, 25, 0.09), 0 7px 16px rgba(20, 30, 25, 0.08);
+  }
+}
+
+.story-row:active {
+  translate: 0 1px;
 }
 
 :root[data-theme="dark"] .story-row {
@@ -145,9 +157,24 @@
   align-items: flex-start;
   gap: 10px;
   padding: 12px 10px;
-  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-primary) 3%, var(--color-surface));
   touch-action: pan-y;
   border: 1px solid transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .story-row,
+  .story-row:hover,
+  .story-row:active {
+    transition: none;
+    translate: none;
+  }
+
+  .story-row-content.swipe-coach-preview,
+  .story-row-swipe-bg.swipe-coach-primary,
+  .story-row-swipe-bg.swipe-coach-secondary {
+    animation: none;
+  }
 }
 
 .story-row-content.has-driver {

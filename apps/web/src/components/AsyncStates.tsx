@@ -25,5 +25,14 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
 }
 
 export function EmptyState({ message }: { message: string }) {
-  return <div className="empty-state">{message}</div>;
+  return (
+    <div className="empty-state">
+      <span className="empty-state-mark" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+      <span>{message}</span>
+    </div>
+  );
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
@@ -7,6 +7,7 @@ import { TaskDetailSheet } from "./TaskDetailSheet";
 import { api } from "../lib/api";
 import { makeMember, makeTag, makeTask } from "../test/fixtures";
 import { resolveScheduleShortcut } from "./ScheduleShortcuts";
+import { SWIPE_COACH_STORAGE_KEY } from "../lib/swipeCoach";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -29,6 +30,22 @@ const mockedApi = vi.mocked(api, true);
 const STORAGE_KEY = "machbar:primary-swipe-action";
 const IDENTITY_STORAGE_KEY = "machbar:identity-member-id";
 
+function mockPointer(coarse: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn((query: string) => ({
+      matches: query === "(pointer: coarse)" && coarse,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
+}
+
 /** Simulates a horizontal drag past the swipe threshold and releases it. */
 function swipe(container: HTMLElement, deltaX: number) {
   const content = container.querySelector(".task-row-content") as HTMLElement;
@@ -36,6 +53,63 @@ function swipe(container: HTMLElement, deltaX: number) {
   fireEvent.pointerMove(content, { clientX: deltaX, pointerId: 1 });
   fireEvent.pointerUp(content, { clientX: deltaX, pointerId: 1 });
 }
+
+describe("TaskRow – one-time swipe coach", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockPointer(true);
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("previews only one row and cancels without acting when the row is touched", async () => {
+    const { container } = renderWithProviders(
+      <TaskOutline
+        tasks={[
+          makeTask({ id: 201, title: "Erste Aufgabe" }),
+          makeTask({ id: 202, title: "Zweite Aufgabe" }),
+        ]}
+        emptyMessage="Nichts da"
+      />,
+    );
+
+    const hint = await screen.findByText(/Wischen: rechts „Erledigt“, links mehr/);
+    expect(screen.getAllByText(/Wischen: rechts/)).toHaveLength(1);
+    expect(container.querySelectorAll(".swipe-coach-preview")).toHaveLength(1);
+
+    const coachedRow = hint.closest(".task-row")!;
+    const content = coachedRow.querySelector(".task-row-content")!;
+    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+
+    await waitFor(() => expect(hint).not.toBeInTheDocument());
+    expect(window.localStorage.getItem(SWIPE_COACH_STORAGE_KEY)).toBe("seen");
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("does not mark the touch lesson seen when a mouse clicks on a hybrid device", async () => {
+    const { container } = renderWithProviders(
+      <TaskOutline
+        tasks={[makeTask({ id: 203, title: "Desktop-Aufgabe" })]}
+        emptyMessage="Nichts da"
+      />,
+    );
+    await screen.findByText("Desktop-Aufgabe");
+    await screen.findByText(/Wischen: rechts/);
+
+    fireEvent.pointerDown(container.querySelector(".task-row-content")!, {
+      clientX: 0,
+      pointerId: 1,
+      pointerType: "mouse",
+    });
+
+    expect(window.localStorage.getItem(SWIPE_COACH_STORAGE_KEY)).toBeNull();
+  });
+});
 
 describe("TaskRow – primary swipe direction mapping", () => {
   beforeEach(() => {

@@ -34,6 +34,8 @@ import { MemberAvatar } from "./MemberAvatar";
 import { useLocale } from "../lib/locale";
 import { formatRefinementIssue } from "../lib/refinementFormatting";
 import "./ProjectStoryRow.css";
+import { useSwipeCoach } from "../lib/swipeCoach";
+import { SwipeCoachHint } from "./SwipeCoachHint";
 
 const SWIPE_THRESHOLD = 72;
 /** Beyond this the pointer sequence counts as a drag, not a tap. */
@@ -165,6 +167,10 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
   const showPrimaryBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
+  const swipeCoach = useSwipeCoach(
+    `project:${story.id}`,
+    !busy && !isRetained && !chipsOpen && primaryAction !== null,
+  );
 
   const doPrimary = useCallback(() => {
     if (busy || !primaryAction) return;
@@ -252,16 +258,21 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
   return (
     <li className={`story-row story-row-accent-${accent}`} style={{ listStyle: "none" }}>
-      <div className={`story-row-swipe-bg primary${showPrimaryBg ? " visible" : ""}`} aria-hidden="true">
+      <div className={`story-row-swipe-bg primary${showPrimaryBg ? " visible" : ""}${swipeCoach.animate ? " swipe-coach-primary" : ""}`} aria-hidden="true">
         {primaryLabel}
       </div>
-      <div className={`story-row-swipe-bg chips${showChipsBg ? " visible" : ""}`} aria-hidden="true">
+      <div className={`story-row-swipe-bg chips${showChipsBg ? " visible" : ""}${swipeCoach.animate ? " swipe-coach-secondary" : ""}`} aria-hidden="true">
         {strings.moreActions}
       </div>
       <div
-        className={`story-row-content${driver ? " has-driver" : ""}${isRetained ? " retained" : ""}`}
+        className={`story-row-content${driver ? " has-driver" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
         style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
-        onPointerDown={handlePointerDown}
+        onPointerDown={(event) => {
+          if (swipeCoach.active && event.pointerType === "touch") {
+            swipeCoach.dismiss();
+          }
+          handlePointerDown(event);
+        }}
         onPointerMove={handlePointerMove}
         onPointerUp={finishDrag}
         onPointerCancel={cancelDrag}
@@ -384,6 +395,9 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
           ⋯
         </button>
       </div>
+      {swipeCoach.active ? (
+        <SwipeCoachHint primaryAction={primaryLabel} onDismiss={swipeCoach.dismiss} />
+      ) : null}
 
       {chipsOpen ? (
         <div className="story-row-chips" role="group" aria-label={strings.moreActions}>

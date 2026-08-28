@@ -31,6 +31,8 @@ import {
 import { TaskCardTags } from "./TaskCardTags";
 import { MemberAvatar } from "./MemberAvatar";
 import { useLocale } from "../lib/locale";
+import { useSwipeCoach } from "../lib/swipeCoach";
+import { SwipeCoachHint } from "./SwipeCoachHint";
 
 const SWIPE_THRESHOLD = 72;
 const LONG_PRESS_MS = 480;
@@ -208,6 +210,13 @@ export function TaskRow({
   // "remains open after drag reset" requirement) until the chips close.
   const showCompleteBg = dragX > 0;
   const showCancelBg = dragX < 0 || chipsOpen;
+  const primarySwipeLabel = waitingInteraction
+    ? strings.makeActionable
+    : primaryActionBgLabel(task, primarySwipeAction, strings);
+  const swipeCoach = useSwipeCoach(
+    `task:${task.id}`,
+    busyId !== task.id && !isRetained && !chipsOpen,
+  );
 
   const children = sortByPosition(task.children);
   const isDone = task.status === "done";
@@ -419,23 +428,26 @@ export function TaskRow({
       className={`task-row task-row-surface-${task.status}`}
       style={{ listStyle: "none" }}
     >
-      <div className={`task-row-swipe-bg complete${showCompleteBg ? " visible" : ""}`} aria-hidden="true">
-        {waitingInteraction
-          ? strings.makeActionable
-          : primaryActionBgLabel(task, primarySwipeAction, strings)}
+      <div className={`task-row-swipe-bg complete${showCompleteBg ? " visible" : ""}${swipeCoach.animate ? " swipe-coach-primary" : ""}`} aria-hidden="true">
+        {primarySwipeLabel}
       </div>
-      <div className={`task-row-swipe-bg cancel${showCancelBg ? " visible" : ""}`} aria-hidden="true">
+      <div className={`task-row-swipe-bg cancel${showCancelBg ? " visible" : ""}${swipeCoach.animate ? " swipe-coach-secondary" : ""}`} aria-hidden="true">
         {strings.moreActions}
       </div>
       <div
         ref={contentRef}
-        className={`task-row-content${ownerMember ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isSelectedForOrganize ? " organize-selected" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}`}
+        className={`task-row-content${ownerMember ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isSelectedForOrganize ? " organize-selected" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
         style={
           dragX || dragDepthShift
             ? { transform: `translateX(${dragX + dragDepthShift}px)` }
             : undefined
         }
-        onPointerDown={handlePointerDown}
+        onPointerDown={(event) => {
+          if (swipeCoach.active && event.pointerType === "touch") {
+            swipeCoach.dismiss();
+          }
+          handlePointerDown(event);
+        }}
         onPointerMove={handlePointerMove}
         onPointerUp={finishDrag}
         onPointerCancel={() => {
@@ -592,6 +604,9 @@ export function TaskRow({
           ⋯
         </button>
       </div>
+      {swipeCoach.active ? (
+        <SwipeCoachHint primaryAction={primarySwipeLabel} onDismiss={swipeCoach.dismiss} />
+      ) : null}
 
       {chipsOpen ? (
         <div className="task-row-chips" role="group" aria-label={strings.moreActions}>

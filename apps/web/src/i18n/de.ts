@@ -360,6 +360,9 @@ const extra = {
   swipeSettingHint:
     "Bestimmt, was ein Wisch nach rechts in Aufgabenlisten auslöst. Nach links wischen zeigt immer Zuweisen, Planen, Notizen sowie Warten/Mehr. Bereits erledigte oder verworfene Aufgaben werden durch die Wischgeste immer wieder geöffnet.",
   swipeHintChips: "Nach links wischen oder ⋯: Zuweisen, Planen, Notizen, Zum Projekt, Warten, Mehr",
+  swipeCoachHint: (rightAction: string) =>
+    `Wischen: rechts „${rightAction}“, links mehr. Oder ⋯ tippen.`,
+  swipeCoachDismiss: "Wischhinweis schließen",
   taskGestures: "Aufgaben bedienen",
   taskGestureHint: (rightAction: string) =>
     `Nach rechts wischen: „${rightAction}“. Nach links wischen öffnet weitere Aktionen wie Zuweisen, Planen und Notizen. Am Desktop geht das auch über ⋯.`,

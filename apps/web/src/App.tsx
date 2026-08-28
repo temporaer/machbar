@@ -22,6 +22,7 @@ import { TaskDeepLinkPage } from "./pages/TaskDeepLinkPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { LocaleProvider } from "./lib/locale";
 import { ThemeProvider } from "./lib/theme";
+import { SwipeCoachProvider } from "./lib/swipeCoach";
 
 function TaskDetailHost() {
   const { openTaskId } = useTaskDetail();
@@ -69,11 +70,13 @@ export function App() {
         <IdentityProvider>
           <RefreshProvider>
             <SwipeSettingsProvider>
-              <TaskDetailProvider>
-                <HashRouter>
-                  <Shell />
-                </HashRouter>
-              </TaskDetailProvider>
+              <SwipeCoachProvider>
+                <TaskDetailProvider>
+                  <HashRouter>
+                    <Shell />
+                  </HashRouter>
+                </TaskDetailProvider>
+              </SwipeCoachProvider>
             </SwipeSettingsProvider>
           </RefreshProvider>
         </IdentityProvider>

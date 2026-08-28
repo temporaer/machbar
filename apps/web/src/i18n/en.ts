@@ -384,6 +384,9 @@ const en = {
     "Choose what swiping right does in task lists. Swiping left always shows Assign, Schedule, Notes, Waiting, and More. Swiping a completed or discarded task always reopens it.",
   swipeHintChips:
     "Swipe left or tap ⋯: Assign, Schedule, Notes, Project, Waiting, More",
+  swipeCoachHint: (rightAction: string) =>
+    `Swipe: right for “${rightAction}”, left for more. Or tap ⋯.`,
+  swipeCoachDismiss: "Dismiss swipe hint",
   taskGestures: "Working with tasks",
   taskGestureHint: (rightAction: string) =>
     `Swipe right: “${rightAction}”. Swipe left for more actions such as Assign, Schedule, and Notes. On desktop, use ⋯.`,

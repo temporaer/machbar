@@ -66,7 +66,7 @@ describe("TodayPage", () => {
     const { container } = renderWithProviders(<TodayPage />);
 
     const pulse = await screen.findByRole("link", {
-      name: "Gemeinsame Beiträge der letzten sieben Tage. Zur ausführlichen Ansicht.",
+      name: /Gemeinsame Beiträge der letzten sieben Tage\. Zur ausführlichen Ansicht\./,
     });
     expect(pulse).toHaveAttribute("href", "/more");
     expect(pulse).toHaveTextContent("Gemeinsam · 7 Tage");

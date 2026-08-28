@@ -539,6 +539,42 @@ a {
   background: var(--color-surface);
 }
 
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding-block: 32px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 10%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface));
+}
+
+.empty-state-mark {
+  width: 42px;
+  height: 24px;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 4px;
+}
+
+.empty-state-mark span {
+  width: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 36%, var(--color-surface-alt));
+}
+
+.empty-state-mark span:nth-child(1) {
+  height: 10px;
+}
+
+.empty-state-mark span:nth-child(2) {
+  height: 20px;
+}
+
+.empty-state-mark span:nth-child(3) {
+  height: 14px;
+}
+
 .error-state {
   color: var(--color-danger);
 }
@@ -1115,6 +1151,12 @@ a {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .task-row-content.swipe-coach-preview,
+  .task-row-swipe-bg.swipe-coach-primary,
+  .task-row-swipe-bg.swipe-coach-secondary {
+    animation: none;
+  }
+
   .bottom-nav a,
   .bottom-nav .nav-icon {
     transition: none;
@@ -1333,25 +1375,27 @@ a {
 .task-row {
   --task-row-accent: var(--color-success);
   --task-row-border: color-mix(in srgb, var(--task-row-accent) 12%, var(--color-border));
-  --task-row-surface: color-mix(in srgb, var(--task-row-accent) 4%, var(--color-surface));
+  --task-row-surface: color-mix(in srgb, var(--task-row-accent) 6%, var(--color-surface));
   position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   overflow: hidden;
-  border-radius: var(--radius-sm);
+  border-radius: 11px;
   background: var(--task-row-surface);
+  box-shadow: var(--shadow-card);
+  transition: box-shadow 140ms ease, translate 140ms ease;
 }
 
 .task-row-surface-waiting {
   --task-row-accent: var(--color-warning);
   --task-row-border: color-mix(in srgb, var(--color-warning) 18%, var(--color-border));
-  --task-row-surface: color-mix(in srgb, var(--color-warning) 7%, var(--color-surface));
+  --task-row-surface: color-mix(in srgb, var(--color-warning) 9%, var(--color-surface));
 }
 
 .task-row-surface-someday {
   --task-row-accent: var(--color-info);
   --task-row-border: color-mix(in srgb, var(--color-info) 14%, var(--color-border));
-  --task-row-surface: color-mix(in srgb, var(--color-info) 5%, var(--color-surface));
+  --task-row-surface: color-mix(in srgb, var(--color-info) 7%, var(--color-surface));
 }
 
 .task-row-surface-done {
@@ -1363,7 +1407,18 @@ a {
 .task-row-surface-cancelled {
   --task-row-accent: var(--color-danger);
   --task-row-border: color-mix(in srgb, var(--color-danger) 14%, var(--color-border));
-  --task-row-surface: color-mix(in srgb, var(--color-danger) 5%, var(--color-surface));
+  --task-row-surface: color-mix(in srgb, var(--color-danger) 7%, var(--color-surface));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .task-row:hover {
+    translate: 0 -1px;
+    box-shadow: 0 2px 4px rgba(20, 30, 25, 0.09), 0 7px 16px rgba(20, 30, 25, 0.08);
+  }
+}
+
+.task-row:active {
+  translate: 0 1px;
 }
 
 .task-row-swipe-bg {
@@ -1400,6 +1455,78 @@ a {
 .task-row-swipe-bg.cancel {
   background: var(--color-danger-strong);
   justify-content: flex-end;
+}
+
+.swipe-coach-hint {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-top: 1px solid color-mix(in srgb, var(--color-primary) 14%, var(--color-border));
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface));
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.swipe-coach-cue {
+  color: var(--color-primary);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.swipe-coach-dismiss {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 1rem;
+}
+
+.swipe-coach-dismiss:hover {
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.swipe-coach-preview {
+  animation: swipe-coach-preview 1.55s ease-in-out 180ms both;
+}
+
+.swipe-coach-primary {
+  animation: swipe-coach-primary 1.55s ease-in-out 180ms both;
+}
+
+.swipe-coach-secondary {
+  animation: swipe-coach-secondary 1.55s ease-in-out 180ms both;
+}
+
+@keyframes swipe-coach-preview {
+  0%, 18%, 45%, 55%, 82%, 100% { transform: translateX(0); }
+  30% { transform: translateX(24px); }
+  70% { transform: translateX(-24px); }
+}
+
+@keyframes swipe-coach-primary {
+  0%, 18%, 45%, 100% { opacity: 0; }
+  22%, 40% { opacity: 1; }
+}
+
+@keyframes swipe-coach-secondary {
+  0%, 55%, 82%, 100% { opacity: 0; }
+  60%, 78% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-row,
+  .task-row:hover,
+  .task-row:active {
+    transition: none;
+    translate: none;
+  }
 }
 
 .task-row-content {
