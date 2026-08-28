@@ -2,9 +2,10 @@ services:
   machbar:
     build: .
     restart: unless-stopped
-    # MACHBAR_PORT on the host (default 3000); container always listens on 3000
+    # Bind to host loopback by default; containerized reverse proxies can opt
+    # into a LAN-facing host address with MACHBAR_BIND_ADDRESS.
     ports:
-      - "127.0.0.1:${MACHBAR_PORT:-3000}:3000"
+      - "${MACHBAR_BIND_ADDRESS:-127.0.0.1}:${MACHBAR_PORT:-3000}:3000"
     environment:
       PORT: "3000"
       HOST: "0.0.0.0"

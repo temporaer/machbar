@@ -19,6 +19,13 @@ host port in a root `.env` file:
 MACHBAR_PORT=8080
 ```
 
+If the reverse proxy itself runs in a container and reaches Machbar through
+the host address, expose the port on the host interfaces explicitly:
+
+```dotenv
+MACHBAR_BIND_ADDRESS=0.0.0.0
+```
+
 The named `machbar-data` volume is mounted at `/data`.
 
 ```bash
@@ -91,6 +98,8 @@ With Compose, obtain the generated container name with `docker compose ps`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `MACHBAR_BIND_ADDRESS` | `127.0.0.1` | Host address used by the Compose port mapping |
+| `MACHBAR_PORT` | `3000` | Host port used by the Compose port mapping |
 | `PORT` | `3000` | Port inside the process/container |
 | `HOST` | `0.0.0.0` | Bind address |
 | `DATA_DIR` | `./data` outside Docker, `/data` in the image | Database directory |
