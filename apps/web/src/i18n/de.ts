@@ -748,6 +748,8 @@ const extra = {
     request_origin_forbidden: "Diese Anfrage ist nicht erlaubt.",
     route_not_found: "Die angeforderte Adresse wurde nicht gefunden.",
     search_query_invalid: "Die Suchfilter sind ungültig.",
+    stale_write_conflict:
+      "Dieser Eintrag wurde auf einem anderen Gerät geändert. Die neueste Version wurde geladen und dein Entwurf beibehalten.",
     tag_kind_conflict:
       "Der Tag-Typ kann wegen vorhandener Zuordnungen nicht geändert werden.",
     tag_name_conflict: "Dieser Tag-Name ist bereits vergeben.",

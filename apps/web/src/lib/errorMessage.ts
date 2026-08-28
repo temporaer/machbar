@@ -14,6 +14,10 @@ function isApiError(
   return error instanceof Error && error.name === "ApiError";
 }
 
+export function isStaleWriteConflict(error: unknown): boolean {
+  return isApiError(error) && error.code === "stale_write_conflict";
+}
+
 function stringDetail(
   details: Record<string, unknown> | undefined,
   key: string,

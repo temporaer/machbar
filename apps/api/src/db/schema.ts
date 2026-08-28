@@ -134,6 +134,7 @@ export const tags = sqliteTable("tags", {
 
 export const projects = sqliteTable("projects", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  revision: integer("revision").notNull().default(1),
   title: text("title").notNull(),
   notes: text("notes").notNull().default(""),
   status: text("status").notNull().default("backlog"), // backlog | active | completed | archived
@@ -193,6 +194,7 @@ export const tasks = sqliteTable(
   "tasks",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    revision: integer("revision").notNull().default(1),
     projectId: integer("project_id").references(() => projects.id, {
       onDelete: "set null",
     }),

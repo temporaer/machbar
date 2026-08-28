@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type {
   InheritanceMode,
   ProjectStatus,
@@ -40,6 +40,42 @@ function sortedIds(ids: number[]): number[] {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function touchTask(db: Db, taskId: number): void {
+  db.update(schema.tasks)
+    .set({
+      revision: sql`${schema.tasks.revision} + 1`,
+      updatedAt: nowIso(),
+    })
+    .where(eq(schema.tasks.id, taskId))
+    .run();
+}
+
+function touchProject(db: Db, projectId: number): void {
+  db.update(schema.projects)
+    .set({
+      revision: sql`${schema.projects.revision} + 1`,
+      updatedAt: nowIso(),
+    })
+    .where(eq(schema.projects.id, projectId))
+    .run();
+}
+
+function assertExpectedRevision(
+  entityType: "task" | "project",
+  entityId: number,
+  currentRevision: number,
+  expectedRevision: number | undefined,
+): void {
+  if (expectedRevision === undefined || expectedRevision === currentRevision) {
+    return;
+  }
+  throw AppError.conflict(
+    "stale_write_conflict",
+    "This item was changed by another client. Reload it before saving again.",
+    { entityType, entityId, expectedRevision, currentRevision },
+  );
 }
 
 function effectiveOwnerId(db: Db, taskId: number): number | null {
@@ -219,15 +255,27 @@ export function deleteMember(db: Db, id: number) {
 
     const now = nowIso();
     tx.update(schema.projects)
-      .set({ ownerMemberId: null, updatedAt: now })
+      .set({
+        ownerMemberId: null,
+        revision: sql`${schema.projects.revision} + 1`,
+        updatedAt: now,
+      })
       .where(eq(schema.projects.ownerMemberId, id))
       .run();
     tx.update(schema.tasks)
-      .set({ ownerMemberId: null, updatedAt: now })
+      .set({
+        ownerMemberId: null,
+        revision: sql`${schema.tasks.revision} + 1`,
+        updatedAt: now,
+      })
       .where(eq(schema.tasks.ownerMemberId, id))
       .run();
     tx.update(schema.tasks)
-      .set({ createdByMemberId: null, updatedAt: now })
+      .set({
+        createdByMemberId: null,
+        revision: sql`${schema.tasks.revision} + 1`,
+        updatedAt: now,
+      })
       .where(eq(schema.tasks.createdByMemberId, id))
       .run();
 
@@ -483,6 +531,7 @@ export interface UpdateProjectInput {
   scheduledDate?: string | null;
   position?: number;
   tagIds?: number[];
+  expectedRevision?: number;
 }
 
 /**
@@ -508,6 +557,7 @@ export function updateProject(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
+    assertExpectedRevision("project", id, project.revision, input.expectedRevision);
     if (input.title !== undefined && input.title.trim() === "") {
       throw AppError.badRequest(
         "project_title_required",
@@ -580,6 +630,9 @@ export function updateProject(
         tx.insert(schema.projectTags).values({ projectId: id, tagId }).run();
       }
     }
+    if (Object.keys(patch).length > 0 || tagsChanged) {
+      touchProject(txDb, id);
+    }
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
     if (changedFields.length > 0) {
       const activityEventId = recordActivity(txDb, {
@@ -640,7 +693,11 @@ export function appendProjectNotes(
     if (notes === project.notes) return project;
     const updated = tx
       .update(schema.projects)
-      .set({ notes, updatedAt: nowIso() })
+      .set({
+        notes,
+        revision: sql`${schema.projects.revision} + 1`,
+        updatedAt: nowIso(),
+      })
       .where(eq(schema.projects.id, id))
       .returning()
       .get();
@@ -761,7 +818,12 @@ export function activateProject(
       );
     }
     tx.update(schema.projects)
-      .set({ status: "active", ownerMemberId, updatedAt: nowIso() })
+      .set({
+        status: "active",
+        ownerMemberId,
+        revision: sql`${schema.projects.revision} + 1`,
+        updatedAt: nowIso(),
+      })
       .where(eq(schema.projects.id, id))
       .run();
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
@@ -808,7 +870,11 @@ export function returnProjectToBacklog(
     const project = getProjectOrThrow(txDb, id);
     assertWorkflowAction(project, "return_to_backlog");
     tx.update(schema.projects)
-      .set({ status: "backlog", updatedAt: nowIso() })
+      .set({
+        status: "backlog",
+        revision: sql`${schema.projects.revision} + 1`,
+        updatedAt: nowIso(),
+      })
       .where(eq(schema.projects.id, id))
       .run();
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
@@ -840,7 +906,11 @@ export function completeProject(db: Db, id: number, context?: MutationContext) {
     const project = getProjectOrThrow(txDb, id);
     assertWorkflowAction(project, "complete");
     tx.update(schema.projects)
-      .set({ status: "completed", updatedAt: nowIso() })
+      .set({
+        status: "completed",
+        revision: sql`${schema.projects.revision} + 1`,
+        updatedAt: nowIso(),
+      })
       .where(eq(schema.projects.id, id))
       .run();
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
@@ -874,7 +944,11 @@ export function reopenProject(db: Db, id: number, context?: MutationContext) {
     const project = getProjectOrThrow(txDb, id);
     assertWorkflowAction(project, "reopen");
     tx.update(schema.projects)
-      .set({ status: "active", updatedAt: nowIso() })
+      .set({
+        status: "active",
+        revision: sql`${schema.projects.revision} + 1`,
+        updatedAt: nowIso(),
+      })
       .where(eq(schema.projects.id, id))
       .run();
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
@@ -906,7 +980,11 @@ export function archiveProject(db: Db, id: number, context?: MutationContext) {
     const project = getProjectOrThrow(txDb, id);
     assertWorkflowAction(project, "archive");
     tx.update(schema.projects)
-      .set({ status: "archived", updatedAt: nowIso() })
+      .set({
+        status: "archived",
+        revision: sql`${schema.projects.revision} + 1`,
+        updatedAt: nowIso(),
+      })
       .where(eq(schema.projects.id, id))
       .run();
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
@@ -986,6 +1064,7 @@ export function addCriterion(
       .values({ projectId, text: trimmed, position: maxPosition + 1 })
       .returning()
       .get();
+    touchProject(txDb, projectId);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_acceptance_criterion_added",
@@ -1032,6 +1111,7 @@ export function updateCriterionText(
       .from(schema.projectAcceptanceCriteria)
       .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
       .get()!;
+    touchProject(txDb, projectId);
     recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_acceptance_criterion_updated",
@@ -1066,6 +1146,7 @@ export function setCriterionChecked(
       .from(schema.projectAcceptanceCriteria)
       .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
       .get()!;
+    touchProject(txDb, projectId);
     recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_acceptance_criterion_checked",
@@ -1120,6 +1201,7 @@ export function reorderCriteria(
         .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
         .run();
     });
+    touchProject(txDb, projectId);
     return tx
       .select()
       .from(schema.projectAcceptanceCriteria)
@@ -1157,6 +1239,7 @@ export function removeCriterion(
           .run();
       }
     });
+    touchProject(txDb, projectId);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_acceptance_criterion_removed",
@@ -1550,7 +1633,11 @@ export function createTaskSuccessor(
     for (const sibling of laterSiblings) {
       tx
         .update(schema.tasks)
-        .set({ position: sibling.position + 1, updatedAt: nowIso() })
+        .set({
+          position: sibling.position + 1,
+          revision: sql`${schema.tasks.revision} + 1`,
+          updatedAt: nowIso(),
+        })
         .where(eq(schema.tasks.id, sibling.id))
         .run();
     }
@@ -1625,6 +1712,7 @@ export interface UpdateTaskInput {
   reminderAt?: string | null;
   tagIds?: number[];
   excludedTagIds?: number[];
+  expectedRevision?: number;
 }
 
 export function updateTask(
@@ -1636,6 +1724,7 @@ export function updateTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const currentTask = getTaskOrThrow(txDb, id);
+    assertExpectedRevision("task", id, currentTask.revision, input.expectedRevision);
     const effectiveOwnerBefore = effectiveOwnerId(txDb, id);
     const projectHadNextAction =
       currentTask.projectId !== null
@@ -1756,6 +1845,13 @@ export function updateTask(
       for (const tagId of nextExcludedTagIds) {
         tx.insert(schema.taskExcludedTags).values({ taskId: id, tagId }).run();
       }
+    }
+    if (
+      Object.keys(patch).length > 0 ||
+      tagsChanged ||
+      excludedTagsChanged
+    ) {
+      touchTask(txDb, id);
     }
     const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
     const coalescedChangedFields = [
@@ -2040,7 +2136,11 @@ export function appendTaskNotes(
     if (notes === task.notes) return task;
     const updated = tx
       .update(schema.tasks)
-      .set({ notes, updatedAt: nowIso() })
+      .set({
+        notes,
+        revision: sql`${schema.tasks.revision} + 1`,
+        updatedAt: nowIso(),
+      })
       .where(eq(schema.tasks.id, id))
       .returning()
       .get();
@@ -2182,6 +2282,7 @@ export function completeTask(
           status: "done",
           needsClarification: false,
           completedAt: now,
+          revision: sql`${schema.tasks.revision} + 1`,
           updatedAt: now,
         })
         .where(eq(schema.tasks.id, id))
@@ -2195,6 +2296,7 @@ export function completeTask(
             status: "done",
             needsClarification: false,
             completedAt: now,
+            revision: sql`${schema.tasks.revision} + 1`,
             updatedAt: now,
           })
           .where(eq(schema.tasks.id, child.id))
@@ -2281,6 +2383,7 @@ export function cancelTask(
           status: "cancelled",
           needsClarification: false,
           cancelledAt: now,
+          revision: sql`${schema.tasks.revision} + 1`,
           updatedAt: now,
         })
         .where(eq(schema.tasks.id, id))
@@ -2294,6 +2397,7 @@ export function cancelTask(
             status: "cancelled",
             needsClarification: false,
             cancelledAt: now,
+            revision: sql`${schema.tasks.revision} + 1`,
             updatedAt: now,
           })
           .where(eq(schema.tasks.id, child.id))
@@ -2368,6 +2472,7 @@ export function reopenTask(db: Db, id: number, context?: MutationContext) {
         needsClarification: false,
         completedAt: null,
         cancelledAt: null,
+        revision: sql`${schema.tasks.revision} + 1`,
         updatedAt: now,
       })
       .where(eq(schema.tasks.id, id))
@@ -2413,7 +2518,11 @@ function reindexGroup(
 ) {
   orderedIds.forEach((taskId, index) => {
     tx.update(schema.tasks)
-      .set({ position: index, updatedAt: nowIso() })
+      .set({
+        position: index,
+        revision: sql`${schema.tasks.revision} + 1`,
+        updatedAt: nowIso(),
+      })
       .where(eq(schema.tasks.id, taskId))
       .run();
   });
@@ -2447,7 +2556,11 @@ function cascadeProjectId(tx: Db, rootId: number, newProjectId: number | null) {
   const descendantIds = repoGetDescendantIds(tx, rootId);
   if (descendantIds.length === 0) return;
   tx.update(schema.tasks)
-    .set({ projectId: newProjectId, updatedAt: nowIso() })
+    .set({
+      projectId: newProjectId,
+      revision: sql`${schema.tasks.revision} + 1`,
+      updatedAt: nowIso(),
+    })
     .where(inArray(schema.tasks.id, descendantIds))
     .run();
 }
@@ -2533,6 +2646,7 @@ export function moveTask(
       .set({
         parentTaskId: newParentTaskId,
         projectId: newProjectId,
+        revision: sql`${schema.tasks.revision} + 1`,
         updatedAt: nowIso(),
       })
       .where(eq(schema.tasks.id, taskId))
@@ -2774,6 +2888,7 @@ export function addDependency(
       .values({ taskId, dependsOnTaskId })
       .returning()
       .get();
+    touchTask(txDb, taskId);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_dependencies_changed",
@@ -2825,6 +2940,7 @@ export function removeDependency(
       )
       .run();
     if (deleted.changes > 0) {
+      touchTask(txDb, taskId);
       const activityEventId = recordActivity(txDb, {
         actorMemberId: actor(context),
         kind: "task_dependencies_changed",
@@ -2874,6 +2990,7 @@ export function addTaskTag(
       .get();
     if (existing) return;
     tx.insert(schema.taskTags).values({ taskId, tagId }).run();
+    touchTask(txDb, taskId);
     recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_tags_changed",
@@ -2899,6 +3016,7 @@ export function removeTaskTag(
       .where(and(eq(schema.taskTags.taskId, taskId), eq(schema.taskTags.tagId, tagId)))
       .run();
     if (deleted.changes > 0) {
+      touchTask(txDb, taskId);
       recordActivity(txDb, {
         actorMemberId: actor(context),
         kind: "task_tags_changed",
@@ -2931,6 +3049,7 @@ export function addExcludedTag(
       .get();
     if (existing) return;
     tx.insert(schema.taskExcludedTags).values({ taskId, tagId }).run();
+    touchTask(txDb, taskId);
     recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_tags_changed",
@@ -2961,6 +3080,7 @@ export function removeExcludedTag(
       )
       .run();
     if (deleted.changes > 0) {
+      touchTask(txDb, taskId);
       recordActivity(txDb, {
         actorMemberId: actor(context),
         kind: "task_tags_changed",

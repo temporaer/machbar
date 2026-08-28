@@ -48,6 +48,7 @@ function dedupeTags(tags: Tag[]): Tag[] {
 
 interface RawTask {
   id: number;
+  revision: number;
   projectId: number | null;
   parentTaskId: number | null;
   title: string;
@@ -73,6 +74,7 @@ interface RawTask {
 
 interface RawProject {
   id: number;
+  revision: number;
   title: string;
   notes: string;
   status: ProjectStatus;
@@ -194,6 +196,7 @@ export class Graph {
     for (const p of rawProjects) {
       graph.projectsById.set(p.id, {
         id: p.id,
+        revision: p.revision,
         title: p.title,
         notes: p.notes,
         status: p.status,
@@ -269,6 +272,7 @@ export class Graph {
 
       return {
         id: raw.id,
+        revision: raw.revision,
         projectId: raw.projectId,
         parentTaskId: raw.parentTaskId,
         title: raw.title,

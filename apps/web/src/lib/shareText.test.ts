@@ -39,6 +39,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     dependencies: [],
     children: [],
     ...overrides,
+    revision: overrides.revision ?? 1,
   };
 }
 
@@ -60,6 +61,7 @@ function makeProject(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
     availableActions: [],
     tasks: [],
     ...overrides,
+    revision: overrides.revision ?? 1,
   };
 }
 

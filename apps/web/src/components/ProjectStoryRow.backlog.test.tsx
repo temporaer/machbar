@@ -225,7 +225,10 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await userEvent.click(within(group).getByRole("button", { name: "Noah" }));
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
-    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(15, { ownerMemberId: 2 }));
+    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(15, {
+      ownerMemberId: 2,
+      expectedRevision: 1,
+    }));
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 

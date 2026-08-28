@@ -37,6 +37,7 @@ function makeItem(overrides: Partial<RefinementListItem> = {}): RefinementListIt
     effectiveTags: [],
     waitingFor: null,
     ...overrides,
+    revision: overrides.revision ?? 1,
   };
 }
 
@@ -142,7 +143,10 @@ describe("RefinementTaskRow", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(20, { size: "S" });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(20, {
+      size: "S",
+      expectedRevision: 1,
+    });
   });
 
   it("cycles XL back to unestimated (null) rather than remaining stuck at XL", async () => {
@@ -155,7 +159,10 @@ describe("RefinementTaskRow", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(21, { size: null });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(21, {
+      size: null,
+      expectedRevision: 1,
+    });
   });
 
   it("also cycles the size via a plain click on the size badge (non-gesture alternative)", async () => {
@@ -168,7 +175,10 @@ describe("RefinementTaskRow", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(22, { size: "M" });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(22, {
+      size: "M",
+      expectedRevision: 1,
+    });
   });
 
   it("a left swipe past the threshold reveals direct S/M/L/XL/clear/assign/project chips", async () => {
@@ -207,7 +217,10 @@ describe("RefinementTaskRow", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(25, { size: "XL" });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(25, {
+      size: "XL",
+      expectedRevision: 1,
+    });
     // Chip strip closes after choosing.
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
   });
@@ -223,7 +236,10 @@ describe("RefinementTaskRow", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(26, { size: null });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(26, {
+      size: null,
+      expectedRevision: 1,
+    });
   });
 
   it("'Zuweisen' opens the focused assignment popup — never the full task detail sheet", async () => {
@@ -268,6 +284,7 @@ describe("RefinementTaskRow", () => {
       expect(mockedApi.updateTask).toHaveBeenCalledWith(27, {
         ownerMemberId: 2,
         ownerInheritanceMode: "explicit",
+        expectedRevision: 1,
       }),
     );
     // The popup closes again and the row keeps the new owner optimistically.
@@ -296,6 +313,7 @@ describe("RefinementTaskRow", () => {
       expect(mockedApi.updateTask).toHaveBeenCalledWith(32, {
         ownerMemberId: null,
         ownerInheritanceMode: "none",
+        expectedRevision: 1,
       }),
     );
   });

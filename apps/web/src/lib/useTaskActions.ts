@@ -7,7 +7,10 @@ import { hasOpenDescendants, openDescendantRoots } from "./taskHelpers";
 import type { PrimarySwipeAction } from "./swipeSettings";
 import { useStrings } from "./strings";
 import type { Strings } from "./strings";
-import { localizedErrorMessage } from "./errorMessage";
+import {
+  isStaleWriteConflict,
+  localizedErrorMessage,
+} from "./errorMessage";
 
 /** The three choices offered by the mandatory open-descendant policy prompt. */
 export type ChildPolicy = "leave_open" | "complete_children" | "cancel_children";
@@ -173,6 +176,7 @@ export function useTaskActions() {
         // and bumps exactly once, once the window has fully elapsed.
       } catch (err) {
         release(task.id);
+        if (isStaleWriteConflict(err)) bump();
         setErrors((prev) => ({
           ...prev,
           [task.id]: errorMessage(err, strings),
@@ -197,6 +201,7 @@ export function useTaskActions() {
         policy === "complete_children" ? "done" : policy === "cancel_children" ? "cancelled" : null;
       const optimistic: Task = {
         ...task,
+        revision: task.revision + 1,
         status: "done",
         needsClarification: false,
         completedAt: now,
@@ -207,9 +212,9 @@ export function useTaskActions() {
         if (policy === "cancel_children") {
           const openRoots = openDescendantRoots(task);
           await Promise.all(openRoots.map((c) => api.cancelTask(c.id, "cancel_children")));
-          await api.completeTask(task.id, "leave_open");
+          return api.completeTask(task.id, "leave_open");
         } else {
-          await api.completeTask(task.id, policy === "complete_children" ? "complete_children" : "leave_open");
+          return api.completeTask(task.id, policy === "complete_children" ? "complete_children" : "leave_open");
         }
       });
     },
@@ -223,6 +228,7 @@ export function useTaskActions() {
         policy === "cancel_children" ? "cancelled" : policy === "complete_children" ? "done" : null;
       const optimistic: Task = {
         ...task,
+        revision: task.revision + 1,
         status: "cancelled",
         needsClarification: false,
         cancelledAt: now,
@@ -233,9 +239,9 @@ export function useTaskActions() {
         if (policy === "complete_children") {
           const openRoots = openDescendantRoots(task);
           await Promise.all(openRoots.map((c) => api.completeTask(c.id, "complete_children")));
-          await api.cancelTask(task.id, "leave_open");
+          return api.cancelTask(task.id, "leave_open");
         } else {
-          await api.cancelTask(task.id, policy === "cancel_children" ? "cancel_children" : "leave_open");
+          return api.cancelTask(task.id, policy === "cancel_children" ? "cancel_children" : "leave_open");
         }
       });
     },
@@ -246,6 +252,7 @@ export function useTaskActions() {
     (task: Task) => {
       const optimistic: Task = {
         ...task,
+        revision: task.revision + 1,
         status: "actionable",
         needsClarification: false,
         completedAt: null,
@@ -261,13 +268,14 @@ export function useTaskActions() {
     (task: Task, status: Extract<TaskStatus, "waiting" | "someday" | "actionable">) => {
       const optimistic: Task = {
         ...task,
+        revision: task.revision + 1,
         status,
         needsClarification: false,
         completedAt: null,
         cancelledAt: null,
       };
       return runTransition(task, optimistic, () =>
-        api.updateTask(task.id, { status }),
+        api.updateTask(task.id, { status, expectedRevision: task.revision }),
       );
     },
     [runTransition],
@@ -278,6 +286,7 @@ export function useTaskActions() {
     (task: Task) => {
       const optimistic: Task = {
         ...task,
+        revision: task.revision + 1,
         status: "actionable",
         needsClarification: false,
         updatedAt: new Date().toISOString(),
@@ -303,9 +312,15 @@ export function useTaskActions() {
       const optimistic: Task = {
         ...task,
         ...optimisticPatch,
+        revision: task.revision + 1,
         updatedAt: new Date().toISOString(),
       };
-      return runTransition(task, optimistic, () => api.updateTask(task.id, patch));
+      return runTransition(task, optimistic, () =>
+        api.updateTask(task.id, {
+          ...patch,
+          expectedRevision: task.revision,
+        }),
+      );
     },
     [runTransition],
   );

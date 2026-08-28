@@ -39,6 +39,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
       : overrides.status ?? "actionable";
   return {
     id,
+    revision: 1,
     projectId: null,
     parentTaskId: null,
     title: "Beispielaufgabe",
@@ -79,6 +80,7 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
   const status = overrides.status ?? "active";
   return {
     id: nextId(),
+    revision: 1,
     title: "Beispielprojekt",
     notes: "",
     status,

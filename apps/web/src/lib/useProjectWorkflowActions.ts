@@ -10,6 +10,7 @@ import { RETENTION_MS } from "./useTaskActions";
 import { useStrings } from "./strings";
 import type { Strings } from "./strings";
 import { localizedErrorMessage } from "./errorMessage";
+import { isStaleWriteConflict } from "./errorMessage";
 
 function errorMessage(err: unknown, strings: Strings): string {
   return localizedErrorMessage(err, strings);
@@ -186,9 +187,13 @@ export function useProjectWorkflowActions() {
       setBusyId(story.id);
       clearError(story.id);
       try {
-        await api.updateProject(story.id, { ownerMemberId });
+        await api.updateProject(story.id, {
+          ownerMemberId,
+          expectedRevision: story.revision,
+        });
         bump();
       } catch (err) {
+        if (isStaleWriteConflict(err)) bump();
         setErrors((prev) => ({
           ...prev,
           [story.id]: errorMessage(err, strings),
@@ -210,9 +215,13 @@ export function useProjectWorkflowActions() {
       setBusyId(story.id);
       clearError(story.id);
       try {
-        await api.updateProject(story.id, patch);
+        await api.updateProject(story.id, {
+          ...patch,
+          expectedRevision: story.revision,
+        });
         bump();
       } catch (err) {
+        if (isStaleWriteConflict(err)) bump();
         setErrors((prev) => ({
           ...prev,
           [story.id]: errorMessage(err, strings),

@@ -87,7 +87,8 @@ configuration, and Pocket ID.
 
 Machbar is usable software, but it is still a young, opinionated project:
 
-- clients do not receive live updates from other browsers;
+- connected clients receive live invalidation updates through server-sent
+  events, with focus/reconnect refresh and a disconnected polling fallback;
 - the app requires network access to the Machbar server;
 - recurrence and reminder fields exist, but there is no automatic recurrence
   or notification delivery yet;

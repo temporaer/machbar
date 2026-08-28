@@ -80,7 +80,10 @@ describe("CaptureProjectBreakdownSheet", () => {
 
     await userEvent.type(screen.getByLabelText("Notizen"), "Budget prüfen");
     await userEvent.click(screen.getByRole("button", { name: "Notizen speichern" }));
-    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(42, { notes: "Budget prüfen" }));
+    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(42, {
+      notes: "Budget prüfen",
+      expectedRevision: 1,
+    }));
 
     await userEvent.click(screen.getByRole("button", { name: "Später fertig machen" }));
     expect(onClose).toHaveBeenCalledOnce();

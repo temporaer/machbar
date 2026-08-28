@@ -332,7 +332,10 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     await userEvent.click(within(group).getByRole("button", { name: "Noah" }));
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
-    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(44, { ownerMemberId: 2 }));
+    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(44, {
+      ownerMemberId: 2,
+      expectedRevision: 1,
+    }));
     // A driver change must never move the story through the workflow.
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     expect(mockedApi.completeProject).not.toHaveBeenCalled();
@@ -386,7 +389,11 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
-      expect(mockedApi.updateProject).toHaveBeenCalledWith(46, { dueDate: "2026-05-01", scheduledDate: null }),
+      expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
+        dueDate: "2026-05-01",
+        scheduledDate: null,
+        expectedRevision: 1,
+      }),
     );
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
   });
@@ -419,7 +426,10 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Telefon" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Speichern" }));
 
-    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(47, { tagIds: [10, 12] }));
+    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(47, {
+      tagIds: [10, 12],
+      expectedRevision: 1,
+    }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
   });

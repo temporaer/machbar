@@ -33,9 +33,15 @@ bookmarks and shared deep links may need to be recreated.
 Machbar requires connectivity to its server. The service worker enables PWA
 installation but does not cache application data for offline use.
 
-Changes made in one browser are not pushed live to other clients through
-WebSockets or server-sent events. Another browser may need a reload to see
-them.
+Connected browsers receive coarse change notifications through server-sent
+events and refetch their current views. Returning to the app or reconnecting
+also refreshes immediately; while the event stream is unavailable, a visible
+client polls every two minutes as a recovery fallback.
+
+Task and project metadata saves include a monotonic entity revision. If another
+client changed the entity first, Machbar rejects the stale save, reloads the
+latest version, and keeps the local draft for review and an explicit retry.
+This is conflict detection rather than collaborative field-level merging.
 
 ### Deployment model
 

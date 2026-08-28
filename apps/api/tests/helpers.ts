@@ -8,6 +8,7 @@ import { seedDatabase } from "../src/db/seed.js";
 import type { Env } from "../src/env.js";
 import type { OidcConfig } from "../src/env.js";
 import type { OidcProvider } from "../src/auth/oidcClient.js";
+import type { ChangeNotifier } from "../src/changeNotifier.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -22,6 +23,7 @@ export function createTestContext(options?: {
   oidc?: OidcConfig;
   oidcProvider?: OidcProvider;
   basePath?: string;
+  changeNotifier?: ChangeNotifier;
 }): TestContext {
   const handle = openDb(":memory:");
   runMigrations(handle.db);
@@ -44,6 +46,7 @@ export function createTestContext(options?: {
     env,
     logger: false,
     oidcProvider: options?.oidcProvider,
+    changeNotifier: options?.changeNotifier,
   });
   return { app, handle };
 }

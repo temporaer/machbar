@@ -5,7 +5,10 @@ import type { RefinementTaskRow } from "./api";
 import { useRefresh } from "./refresh";
 import { useStrings } from "./strings";
 import type { Strings } from "./strings";
-import { localizedErrorMessage } from "./errorMessage";
+import {
+  isStaleWriteConflict,
+  localizedErrorMessage,
+} from "./errorMessage";
 
 /**
  * `GET /api/refinement/tasks` (see `api.ts::getRefinementTasks` /
@@ -127,9 +130,10 @@ export function useRefinementActions() {
       const optimistic: RefinementListItem = { ...task, size };
       retain(optimistic);
       return api
-        .updateTask(task.id, { size })
+        .updateTask(task.id, { size, expectedRevision: task.revision })
         .catch((err: unknown) => {
           release(task.id);
+          if (isStaleWriteConflict(err)) bump();
           setErrors((prev) => ({
             ...prev,
             [task.id]: errorMessage(err, strings),
@@ -169,17 +173,19 @@ export function useRefinementActions() {
         .updateTask(task.id, {
           ownerMemberId,
           ownerInheritanceMode: ownerMemberId === null ? "none" : "explicit",
+          expectedRevision: task.revision,
         })
         .catch((err: unknown) => {
           // Rolled back, then rethrown so the still-open `AssignOwnerSheet`
           // reports the failure where the user acted, instead of closing and
           // duplicating it as a row-level error banner.
           release(task.id);
+          if (isStaleWriteConflict(err)) bump();
           throw err;
         })
         .finally(() => setBusyId(null));
     },
-    [clearError, retain, release],
+    [bump, clearError, retain, release],
   );
 
   return { busyId, retained, errors, clearError, setSize, cycleSize, clearSize, assignOwner };

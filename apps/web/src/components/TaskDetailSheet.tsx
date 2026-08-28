@@ -31,7 +31,10 @@ import { buildTaskShareUrl } from "../lib/shareUrls";
 import { HumanDateInput } from "./HumanDateInput";
 import { RecentActivity } from "./RecentActivity";
 import { useLocale } from "../lib/locale";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import {
+  isStaleWriteConflict,
+  localizedErrorMessage,
+} from "../lib/errorMessage";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -122,6 +125,7 @@ export function TaskDetailSheet() {
   const subtasksFieldRef = useRef<HTMLDivElement>(null);
   const subtaskInputRef = useRef<HTMLInputElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
+  const revisionRef = useRef<number | null>(null);
 
   const {
     data: task,
@@ -144,6 +148,7 @@ export function TaskDetailSheet() {
       setTextFieldsBaseline(null);
       return;
     }
+    revisionRef.current = task.revision;
     const nextBaseline = textFieldsSnapshot(task);
     const isNewTask = lastLoadedTaskIdRef.current !== task.id;
     if (isNewTask) {
@@ -161,7 +166,21 @@ export function TaskDetailSheet() {
         notesDraft !== textFieldsBaseline.notes ||
         waitingForDraft !== textFieldsBaseline.waitingFor);
 
-    if (!hasUnsavedEdits) {
+    if (hasUnsavedEdits && textFieldsBaseline !== null) {
+      const previousBaseline = textFieldsBaseline;
+      setTitleDraft((current) =>
+        current === previousBaseline.title ? nextBaseline.title : current,
+      );
+      setNotesDraft((current) =>
+        current === previousBaseline.notes ? nextBaseline.notes : current,
+      );
+      setWaitingForDraft((current) =>
+        current === previousBaseline.waitingFor
+          ? nextBaseline.waitingFor
+          : current,
+      );
+      setTextFieldsBaseline(nextBaseline);
+    } else {
       setTitleDraft(nextBaseline.title);
       setNotesDraft(nextBaseline.notes);
       setWaitingForDraft(nextBaseline.waitingFor);
@@ -225,7 +244,11 @@ export function TaskDetailSheet() {
 
   const patch = async (input: Parameters<typeof api.updateTask>[1]) => {
     if (!task) return;
-    await api.updateTask(task.id, input);
+    const updated = await api.updateTask(task.id, {
+      ...input,
+      expectedRevision: revisionRef.current ?? task.revision,
+    });
+    revisionRef.current = updated.revision;
     bump();
     reload();
   };
@@ -250,12 +273,14 @@ export function TaskDetailSheet() {
     setSavingTextFields(true);
     setSaveError(null);
     try {
-      await api.updateTask(task.id, {
+      const updated = await api.updateTask(task.id, {
         title: snapshot.title,
         notes: snapshot.notes,
         waitingFor: snapshot.waitingFor || null,
         ...(clarify ? { status: "actionable" as const } : {}),
+        expectedRevision: revisionRef.current ?? task.revision,
       });
+      revisionRef.current = updated.revision;
       // Adopt the just-saved values as the new baseline right away so the
       // save button disables immediately, without waiting for the follow-up
       // reload's round trip (which may race with further typing).
@@ -264,6 +289,10 @@ export function TaskDetailSheet() {
       reload();
       return true;
     } catch (err) {
+      if (isStaleWriteConflict(err)) {
+        bump();
+        reload();
+      }
       setSaveError(localizedErrorMessage(err, strings));
       return false;
     } finally {

@@ -5,7 +5,10 @@ import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import {
+  isStaleWriteConflict,
+  localizedErrorMessage,
+} from "../lib/errorMessage";
 import { BottomSheet } from "./BottomSheet";
 
 function errorMessage(error: unknown, strings: Strings): string {
@@ -63,6 +66,7 @@ export function CaptureProjectBreakdownSheet({
       }
       bump();
     } catch (err) {
+      if (isStaleWriteConflict(err)) bump();
       setError(errorMessage(err, strings));
     } finally {
       setSaving(null);
@@ -90,7 +94,10 @@ export function CaptureProjectBreakdownSheet({
     setSaving("notes");
     setError(null);
     try {
-      await api.updateProject(project.id, { notes });
+      await api.updateProject(project.id, {
+        notes,
+        expectedRevision: project.revision,
+      });
       setSavedNotes(notes);
       bump();
     } catch (err) {

@@ -147,7 +147,15 @@ become task dates.
 - Every write that touches more than one table (e.g. creating a task + adding tags) uses an explicit SQLite transaction.
 - Hierarchy moves, dependency changes, and multi-table metadata writes are performed inside the same transaction as the originating write.
 - SQLite's WAL mode is enabled (`PRAGMA journal_mode=WAL`) so reads do not block concurrent writes.
+- Tasks and projects carry monotonic revisions. Metadata PATCHes compare the client's rendered revision inside the write transaction and reject stale saves with HTTP 409.
 - The database file lives in `DATA_DIR` (default `/data`). The path is `${DATA_DIR}/${DATABASE_FILE}`.
+
+After a successful mutating API response commits, the single application
+process publishes a coarse invalidation through an authenticated SSE stream.
+Each browser tab identifies its own writes so their echo does not interrupt
+local optimistic-retention UI. Other tabs/devices refetch through the existing
+frontend refresh bus. No external pub/sub is required under the supported
+single-process deployment model.
 
 ---
 

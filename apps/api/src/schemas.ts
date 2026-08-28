@@ -31,6 +31,7 @@ export const updateProjectSchema = z.object({
   scheduledDate: isoDate.nullable().optional(),
   position: z.number().int().optional(),
   tagIds: z.array(z.number().int()).optional(),
+  expectedRevision: z.number().int().positive().optional(),
 });
 
 export const appendNotesSchema = z.object({
@@ -105,6 +106,7 @@ export const updateTaskSchema = z.object({
   reminderAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
   excludedTagIds: z.array(z.number().int()).optional(),
+  expectedRevision: z.number().int().positive().optional(),
 });
 
 export const transitionTaskStatusSchema = z.object({

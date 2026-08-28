@@ -147,7 +147,10 @@ describe("WaitingGroupList", () => {
     fireEvent.pointerMove(content, { clientX: 100, pointerId: 1 });
     fireEvent.pointerUp(content, { clientX: 100, pointerId: 1 });
 
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(121, { status: "actionable" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(121, {
+      status: "actionable",
+      expectedRevision: 1,
+    }));
   });
 
   it("öffnet über den Nachhaken-Chip das Follow-up-Popup und schließt es nach dem Speichern", async () => {
@@ -179,6 +182,7 @@ describe("WaitingGroupList", () => {
         notes: expect.stringContaining("Erneut angerufen."),
         scheduledDate: "2026-09-05",
         status: "actionable",
+        expectedRevision: 1,
       }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

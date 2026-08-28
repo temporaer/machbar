@@ -59,6 +59,7 @@ describe("ProjectEditSheet", () => {
       expect(mockedApi.updateProject).toHaveBeenCalledWith(42, {
         title: "Umzug nach Berlin",
         notes: "",
+        expectedRevision: 1,
       }),
     );
     await waitFor(() => expect(saveButton).toBeDisabled());

@@ -50,6 +50,18 @@ describe("api request() Content-Type handling", () => {
     expect(headersOf(fetchMock)).not.toHaveProperty("Content-Type");
   });
 
+  it("sends a stable tab client ID on mutations but not reads", async () => {
+    window.sessionStorage.clear();
+    const mutationFetch = mockFetchOnce();
+    await request("/tasks/1", { method: "PATCH", body: "{}" });
+    const clientId = headersOf(mutationFetch)["X-Machbar-Client-Id"];
+    expect(clientId).toBeTruthy();
+
+    const readFetch = mockFetchOnce();
+    await request("/tasks/1");
+    expect(headersOf(readFetch)).not.toHaveProperty("X-Machbar-Client-Id");
+  });
+
   describe("api request() activity actor header", () => {
     afterEach(() => {
       window.localStorage.clear();

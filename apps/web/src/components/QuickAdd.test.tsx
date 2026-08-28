@@ -106,6 +106,7 @@ describe("QuickAdd", () => {
       expect(mockedApi.updateTask).toHaveBeenCalledWith(12, {
         ownerMemberId: 1,
         ownerInheritanceMode: "explicit",
+        expectedRevision: 1,
       }),
     );
   });

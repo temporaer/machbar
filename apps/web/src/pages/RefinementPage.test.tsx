@@ -44,6 +44,7 @@ function taskRow(overrides: Partial<RefinementTaskRow> = {}): RefinementTaskRow 
     position: 0,
     updatedAt: "2026-01-01T09:00:00.000Z",
     ...overrides,
+    revision: overrides.revision ?? 1,
   };
 }
 
@@ -421,7 +422,10 @@ describe("RefinementPage", () => {
     await act(async () => {
       await flushMicrotasks();
     });
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(401, { size: "S" });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(401, {
+      size: "S",
+      expectedRevision: 1,
+    });
 
     // Row still rendered (retained) and the matrix/list have not refetched yet.
     expect(screen.getByText("Neue Story schätzen")).toBeInTheDocument();

@@ -210,7 +210,10 @@ describe("TaskDetailSheet", () => {
     expect(screen.getByRole("button", { name: "Keine" })).toHaveAttribute("aria-pressed", "false");
 
     await userEvent.click(screen.getByRole("button", { name: "Aufgabenspezifisch" }));
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(42, { ownerInheritanceMode: "explicit" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
+      ownerInheritanceMode: "explicit",
+      expectedRevision: 1,
+    }));
   });
 
   it("wählt eine aufgabenspezifische Zuständigkeit direkt per Chip und behält die API-Patches bei", async () => {
@@ -235,7 +238,10 @@ describe("TaskDetailSheet", () => {
     expect(within(ownerChoices).getByRole("button", { name: "Niemand zugewiesen" })).toBeInTheDocument();
 
     await userEvent.click(within(ownerChoices).getByRole("button", { name: "Niemand zugewiesen" }));
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(57, { ownerMemberId: null }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(57, {
+      ownerMemberId: null,
+      expectedRevision: 1,
+    }));
   });
 
   it("zeigt keinen manuellen Heute-Umschalter/-Haken mehr an", async () => {
@@ -371,6 +377,7 @@ describe("TaskDetailSheet", () => {
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(56, {
         scheduledDate: null,
+        expectedRevision: 1,
       }),
     );
   });
@@ -390,6 +397,7 @@ describe("TaskDetailSheet", () => {
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(58, {
         scheduledDate: "2026-09-12",
+        expectedRevision: 1,
       }),
     );
     expect(scheduledDate).toHaveValue("12.09.2026");
@@ -415,6 +423,7 @@ describe("TaskDetailSheet", () => {
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(59, {
         dueDate: "2026-09-13",
+        expectedRevision: 1,
       }),
     );
     expect(dueDate).toHaveValue("13.09.2026");
@@ -436,7 +445,10 @@ describe("TaskDetailSheet", () => {
     await screen.findByDisplayValue("Angebot prüfen");
 
     await userEvent.click(screen.getByRole("button", { name: "Ausschließen" }));
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(43, { excludedTagIds: [11] }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(43, {
+      excludedTagIds: [11],
+      expectedRevision: 1,
+    }));
   });
 
   it("aktiviert Änderungen speichern erst, nachdem die Notizen bearbeitet wurden", async () => {
@@ -474,6 +486,7 @@ describe("TaskDetailSheet", () => {
         title: "Ausflug planen",
         notes: "Neue Notiz",
         waitingFor: null,
+        expectedRevision: 1,
       }),
     );
     await waitFor(() =>
@@ -505,6 +518,66 @@ describe("TaskDetailSheet", () => {
         title: "Einkaufen gehen",
         notes: "Milch",
         waitingFor: null,
+        expectedRevision: 1,
+      }),
+    );
+  });
+
+  it("lädt bei einem Versionskonflikt neu und behält den lokalen Entwurf", async () => {
+    const original = makeTask({
+      id: 60,
+      revision: 1,
+      title: "Gemeinsame Aufgabe",
+      notes: "Alt",
+    });
+    const remote = makeTask({
+      ...original,
+      revision: 2,
+      title: "Remote umbenannt",
+      notes: "Auf anderem Gerät geändert",
+    });
+    mockedApi.getTask.mockResolvedValueOnce(original).mockResolvedValue(remote);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(
+        Object.assign(new Error("stale"), {
+          name: "ApiError",
+          code: "stale_write_conflict",
+        }),
+      )
+      .mockResolvedValue(
+        makeTask({
+          ...remote,
+          revision: 3,
+          notes: "Mein lokaler Entwurf",
+        }),
+      );
+
+    renderSheet(60);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Gemeinsame Aufgabe");
+    const notesField = await openNotesEditor();
+    await userEvent.clear(notesField);
+    await userEvent.type(notesField, "Mein lokaler Entwurf");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Änderungen speichern" }),
+    );
+
+    await screen.findByText(
+      "Dieser Eintrag wurde auf einem anderen Gerät geändert. Die neueste Version wurde geladen und dein Entwurf beibehalten.",
+    );
+    await waitFor(() => expect(mockedApi.getTask.mock.calls.length).toBeGreaterThan(1));
+    expect(screen.getByLabelText("Titel")).toHaveValue("Remote umbenannt");
+    expect(screen.getByLabelText("Notizen")).toHaveValue("Mein lokaler Entwurf");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Änderungen speichern" }),
+    );
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenLastCalledWith(60, {
+        title: "Remote umbenannt",
+        notes: "Mein lokaler Entwurf",
+        waitingFor: null,
+        expectedRevision: 2,
       }),
     );
   });
@@ -563,7 +636,10 @@ describe("TaskDetailSheet", () => {
 
     // Trigger an unrelated patch (priority change) which reloads this same task.
     await userEvent.selectOptions(screen.getByLabelText("Priorität"), "2");
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(49, { priority: 2 }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(49, {
+      priority: 2,
+      expectedRevision: 1,
+    }));
 
     // The in-progress notes edit must survive the reload triggered above.
     expect(screen.getByLabelText("Notizen")).toHaveValue("alt neu");
@@ -586,6 +662,7 @@ describe("TaskDetailSheet", () => {
         notes: "",
         waitingFor: null,
         status: "actionable",
+        expectedRevision: 1,
       }),
     );
     expect(await screen.findByDisplayValue("Zweite Erfassung")).toBeInTheDocument();
@@ -625,6 +702,7 @@ describe("TaskDetailSheet", () => {
       title: "Roh erfasst",
       notes: "Ergänzung",
       waitingFor: null,
+      expectedRevision: 1,
     });
   });
 

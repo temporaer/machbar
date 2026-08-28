@@ -26,7 +26,10 @@ import { StoryCriteriaSheet } from "../components/StoryCriteriaSheet";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { RecentActivity } from "../components/RecentActivity";
 import { useLocale } from "../lib/locale";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import {
+  isStaleWriteConflict,
+  localizedErrorMessage,
+} from "../lib/errorMessage";
 
 export function ProjectDetailPage() {
   const strings = useStrings();
@@ -137,11 +140,18 @@ export function ProjectDetailPage() {
     setNotesSaving(true);
     setNotesError(null);
     try {
-      await api.updateProject(project.id, { notes: notesDraft });
+      await api.updateProject(project.id, {
+        notes: notesDraft,
+        expectedRevision: project.revision,
+      });
       setNotesEditing(false);
       bump();
       reloadProject();
     } catch (cause) {
+      if (isStaleWriteConflict(cause)) {
+        bump();
+        reloadProject();
+      }
       setNotesError(localizedErrorMessage(cause, strings));
     } finally {
       setNotesSaving(false);

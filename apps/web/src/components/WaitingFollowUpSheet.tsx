@@ -8,7 +8,10 @@ import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 import { useLocale, type Locale } from "../lib/locale";
 import { localeTag } from "../lib/format";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import {
+  isStaleWriteConflict,
+  localizedErrorMessage,
+} from "../lib/errorMessage";
 
 export function followUpEntryHeader(
   memberName: string,
@@ -65,10 +68,12 @@ export function WaitingFollowUpSheet({
         notes,
         scheduledDate: scheduledDate || null,
         ...(makeActionable ? { status: "actionable" as const } : {}),
+        expectedRevision: task.revision,
       });
       bump();
       onClose();
     } catch (err) {
+      if (isStaleWriteConflict(err)) bump();
       setError(localizedErrorMessage(err, strings));
     } finally {
       setSaving(false);

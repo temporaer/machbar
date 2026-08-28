@@ -7,12 +7,17 @@ import { registerStatic } from "./static.js";
 import { registerAuthentication } from "./auth/routes.js";
 import type { OidcProvider } from "./auth/oidcClient.js";
 import { registerActivityActorResolution } from "./activity/actor.js";
+import {
+  ChangeNotifier,
+  registerChangeNotifications,
+} from "./changeNotifier.js";
 
 export interface BuildAppOptions {
   db: Db;
   env: Env;
   logger?: boolean;
   oidcProvider?: OidcProvider;
+  changeNotifier?: ChangeNotifier;
 }
 
 /** Builds a fully configured Fastify instance. Used by both the production
@@ -22,6 +27,7 @@ export function buildApp({
   env,
   logger = false,
   oidcProvider,
+  changeNotifier,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger });
 
@@ -69,6 +75,7 @@ export function buildApp({
 
   registerAuthentication(app, db, env, { provider: oidcProvider });
   registerActivityActorResolution(app, db, env);
+  registerChangeNotifications(app, changeNotifier ?? new ChangeNotifier());
   registerRoutes(app, db);
   registerStatic(app, env);
 

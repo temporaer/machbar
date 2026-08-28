@@ -106,6 +106,7 @@ export type ApiErrorCode =
   | "request_origin_forbidden"
   | "route_not_found"
   | "search_query_invalid"
+  | "stale_write_conflict"
   | "tag_kind_conflict"
   | "tag_name_conflict"
   | "tag_name_required"
@@ -235,6 +236,7 @@ export interface AcceptanceCriterion {
 
 export interface Project {
   id: number;
+  revision: number;
   title: string;
   notes: string;
   status: ProjectStatus;
@@ -266,6 +268,7 @@ export interface Dependency {
 
 export interface Task {
   id: number;
+  revision: number;
   projectId: number | null;
   parentTaskId: number | null;
   title: string;

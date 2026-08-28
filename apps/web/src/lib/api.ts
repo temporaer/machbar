@@ -24,6 +24,7 @@ import type {
   WaitingGroup,
 } from "@machbar/shared";
 import { readRequestActorMemberId } from "./identityStorage";
+import { getClientId } from "./clientId";
 
 /**
  * The real `apps/api` backend (see `apps/api/src/app.ts` / `static.ts`)
@@ -36,6 +37,8 @@ import { readRequestActorMemberId } from "./identityStorage";
  * path to reach the backend under any Ingress prefix.
  */
 const API_ROOT = "/api";
+export const changeStreamUrl = () =>
+  `${API_ROOT}/changes?clientId=${encodeURIComponent(getClientId())}`;
 
 function selectedActorHeader(method = "GET"): Record<string, string> {
   if (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD") {
@@ -45,6 +48,12 @@ function selectedActorHeader(method = "GET"): Record<string, string> {
   return memberId === null
     ? {}
     : { [ACTIVITY_ACTOR_HEADER]: String(memberId) };
+}
+
+function clientHeader(method = "GET"): Record<string, string> {
+  return method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD"
+    ? {}
+    : { "X-Machbar-Client-Id": getClientId() };
 }
 
 export class ApiError extends Error {
@@ -81,6 +90,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       ...(init?.body !== undefined ? { "Content-Type": "application/json" } : {}),
       ...selectedActorHeader(init?.method),
+      ...clientHeader(init?.method),
       ...(init?.headers ?? {}),
     },
   });
@@ -163,6 +173,7 @@ export interface CreateTaskSequenceInput {
 
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "parentTaskId" | "projectId">> & {
   excludedTagIds?: number[];
+  expectedRevision?: number;
 };
 
 /**
@@ -179,7 +190,10 @@ export interface CreateProjectInput {
   tagIds?: number[];
 }
 
-export type UpdateProjectInput = Partial<CreateProjectInput> & { position?: number };
+export type UpdateProjectInput = Partial<CreateProjectInput> & {
+  position?: number;
+  expectedRevision?: number;
+};
 
 /** Matches `apps/api/src/domain/mutations.ts::ProjectWorkflowAction`. */
 export type ProjectWorkflowAction =
@@ -224,6 +238,7 @@ export interface OwnerSizeCounts {
 /** Matches `apps/api/src/repo/refinementRepo.ts::RefinementTaskRow`. */
 export interface RefinementTaskRow {
   id: number;
+  revision: number;
   title: string;
   status: TaskStatus;
   size: TaskSize | null;

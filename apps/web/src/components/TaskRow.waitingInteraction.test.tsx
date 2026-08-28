@@ -67,7 +67,10 @@ describe("TaskOutline/TaskRow – waiting row mode (host interaction config)", (
       await flushMicrotasks();
     });
 
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(1, { status: "actionable" });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(1, {
+      status: "actionable",
+      expectedRevision: 1,
+    });
     expect(mockedApi.cancelTask).not.toHaveBeenCalled();
   });
 
@@ -204,7 +207,10 @@ describe("TaskOutline/TaskRow – waiting row mode (host interaction config)", (
     await act(async () => {
       await flushMicrotasks();
     });
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(7, { status: "waiting" });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(7, {
+      status: "waiting",
+      expectedRevision: 1,
+    });
 
     const bg = container.querySelector(".task-row-swipe-bg.complete");
     expect(bg).toHaveTextContent("Wartet");

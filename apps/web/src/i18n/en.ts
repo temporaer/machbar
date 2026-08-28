@@ -769,6 +769,8 @@ const en = {
     request_origin_forbidden: "This request is not allowed.",
     route_not_found: "The requested address could not be found.",
     search_query_invalid: "The search filters are invalid.",
+    stale_write_conflict:
+      "This item changed on another device. The latest version was loaded and your draft was kept.",
     tag_kind_conflict:
       "The tag type cannot be changed because of existing assignments.",
     tag_name_conflict: "That tag name is already in use.",

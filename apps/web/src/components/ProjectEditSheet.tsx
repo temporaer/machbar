@@ -7,7 +7,10 @@ import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import {
+  isStaleWriteConflict,
+  localizedErrorMessage,
+} from "../lib/errorMessage";
 import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { BottomSheet } from "./BottomSheet";
 import { TagPicker } from "./TagPicker";
@@ -81,6 +84,7 @@ export function ProjectEditSheet({
   const driverFieldRef = useRef<HTMLDivElement>(null);
   const lifecycleFieldRef = useRef<HTMLDivElement>(null);
   const appliedFocusRef = useRef<string | null>(null);
+  const revisionRef = useRef(project.revision);
 
   // Resets drafts (and the dirty-check baseline) whenever a *different*
   // project is opened, or whenever fresh data arrives and the user has no
@@ -90,12 +94,22 @@ export function ProjectEditSheet({
   // known-saved baseline.
   useEffect(() => {
     const nextBaseline = textFieldsSnapshot(project);
+    revisionRef.current = project.revision;
     const isNewProject = lastLoadedProjectIdRef.current !== project.id;
     const hasUnsavedEdits =
       !isNewProject &&
       (titleDraft !== textFieldsBaseline.title ||
         notesDraft !== textFieldsBaseline.notes);
-    if (!hasUnsavedEdits) {
+    if (hasUnsavedEdits) {
+      const previousBaseline = textFieldsBaseline;
+      setTitleDraft((current) =>
+        current === previousBaseline.title ? nextBaseline.title : current,
+      );
+      setNotesDraft((current) =>
+        current === previousBaseline.notes ? nextBaseline.notes : current,
+      );
+      setTextFieldsBaseline(nextBaseline);
+    } else {
       setTitleDraft(nextBaseline.title);
       setNotesDraft(nextBaseline.notes);
       setTextFieldsBaseline(nextBaseline);
@@ -137,16 +151,19 @@ export function ProjectEditSheet({
     setSavingTextFields(true);
     setActionError(null);
     try {
-      await api.updateProject(project.id, {
+      const updated = await api.updateProject(project.id, {
         title: snapshot.title,
         notes: snapshot.notes,
+        expectedRevision: revisionRef.current,
       });
+      revisionRef.current = updated.revision;
       // Adopt the just-saved values as the new baseline right away so the
       // save button disables immediately, without waiting for the parent's
       // reload round trip (which may race with further typing).
       setTextFieldsBaseline(snapshot);
       bump();
     } catch (err) {
+      if (isStaleWriteConflict(err)) bump();
       setActionError(errorMessage(err, strings));
     } finally {
       setSavingTextFields(false);
@@ -156,9 +173,14 @@ export function ProjectEditSheet({
   const patch = async (input: Parameters<typeof api.updateProject>[1]) => {
     setActionError(null);
     try {
-      await api.updateProject(project.id, input);
+      const updated = await api.updateProject(project.id, {
+        ...input,
+        expectedRevision: revisionRef.current,
+      });
+      revisionRef.current = updated.revision;
       bump();
     } catch (err) {
+      if (isStaleWriteConflict(err)) bump();
       setActionError(errorMessage(err, strings));
     }
   };

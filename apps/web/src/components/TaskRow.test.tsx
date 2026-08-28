@@ -225,7 +225,10 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     swipe(container, 100);
 
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(2, { status: "waiting" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(2, {
+      status: "waiting",
+      expectedRevision: 1,
+    }));
     expect(mockedApi.completeTask).not.toHaveBeenCalled();
   });
 
@@ -237,7 +240,10 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     swipe(container, 100);
 
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(3, { status: "someday" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(3, {
+      status: "someday",
+      expectedRevision: 1,
+    }));
   });
 
   it("renders phone numbers and email addresses in notes as actionable links", async () => {
@@ -561,6 +567,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
       expect(mockedApi.updateTask).toHaveBeenCalledWith(30, {
         ownerMemberId: 1,
         ownerInheritanceMode: "explicit",
+        expectedRevision: 1,
       }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -591,6 +598,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
         scheduledDate: null,
+        expectedRevision: 1,
       }),
     );
   });
@@ -611,6 +619,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(32, {
         notes: "Rückfrage vorbereiten",
+        expectedRevision: 1,
       }),
     );
   });
@@ -634,7 +643,10 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Wartet" }));
 
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(34, { status: "waiting" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(34, {
+      status: "waiting",
+      expectedRevision: 1,
+    }));
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
   });
 });

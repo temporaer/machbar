@@ -51,6 +51,7 @@ export interface RefinementTaskRow {
 
 interface OpenTaskRow {
   id: number;
+  revision: number;
   title: string;
   status: TaskStatus;
   size: TaskSize | null;
@@ -83,6 +84,7 @@ function loadFilteredOpenTasks(
   const allTasks = db
     .select({
       id: schema.tasks.id,
+      revision: schema.tasks.revision,
       title: schema.tasks.title,
       status: schema.tasks.status,
       size: schema.tasks.size,

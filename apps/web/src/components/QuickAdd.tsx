@@ -173,7 +173,10 @@ export function QuickAdd({
           currentOwnerId={createdTask.ownerMemberId}
           onClose={() => setAssigning(false)}
           onAssign={async (ownerMemberId) => {
-            const task = await api.updateTask(createdTask.id, ownerAssignmentPatch(ownerMemberId));
+            const task = await api.updateTask(createdTask.id, {
+              ...ownerAssignmentPatch(ownerMemberId),
+              expectedRevision: createdTask.revision,
+            });
             setCreatedTask(task);
             bump();
           }}

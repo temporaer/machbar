@@ -17,6 +17,7 @@ const mockedApi = vi.mocked(api, true);
 function makeItem(overrides: Partial<RefinementListItem> = {}): RefinementListItem {
   return {
     id: 1,
+    revision: 1,
     title: "Beispielaufgabe",
     status: "actionable",
     size: null,
@@ -75,7 +76,10 @@ describe("useRefinementActions", () => {
       await result.current.actions.cycleSize(task);
     });
 
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(10, { size: "L" });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(10, {
+      size: "L",
+      expectedRevision: 1,
+    });
     expect(result.current.actions.retained.get(10)?.size).toBe("L");
     const versionAfterMutation = result.current.refresh.version;
 
@@ -121,7 +125,10 @@ describe("useRefinementActions", () => {
       await result.current.clearSize(task);
     });
 
-    expect(mockedApi.updateTask).toHaveBeenCalledWith(12, { size: null });
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(12, {
+      size: null,
+      expectedRevision: 1,
+    });
     expect(result.current.retained.get(12)?.size).toBe(null);
   });
 });

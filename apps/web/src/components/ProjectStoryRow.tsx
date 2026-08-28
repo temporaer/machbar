@@ -15,6 +15,7 @@ import {
   type ProjectListClassification,
 } from "../lib/projectListFilter";
 import { useRefresh } from "../lib/refresh";
+import { isStaleWriteConflict } from "../lib/errorMessage";
 import {
   canClearDriver,
   needsDriverBeforeAction,
@@ -466,8 +467,16 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
           story={story}
           onClose={() => setSheet(null)}
           onSave={async (tagIds) => {
-            await api.updateProject(story.id, { tagIds });
-            bump();
+            try {
+              await api.updateProject(story.id, {
+                tagIds,
+                expectedRevision: story.revision,
+              });
+              bump();
+            } catch (error) {
+              if (isStaleWriteConflict(error)) bump();
+              throw error;
+            }
           }}
         />
       ) : null}

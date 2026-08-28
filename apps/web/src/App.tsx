@@ -1,4 +1,5 @@
 import { HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import type { ReactNode } from "react";
 import { IdentityProvider, useIdentity } from "./lib/identity";
 import { RefreshProvider } from "./lib/refresh";
 import { TaskDetailProvider, useTaskDetail } from "./lib/taskDetailContext";
@@ -28,6 +29,17 @@ function TaskDetailHost() {
   const { openTaskId } = useTaskDetail();
   if (openTaskId === null) return null;
   return <TaskDetailSheet />;
+}
+
+function IdentityAwareRefreshProvider({ children }: { children: ReactNode }) {
+  const { authEnabled, authenticated, authLoading } = useIdentity();
+  return (
+    <RefreshProvider
+      remoteSyncEnabled={!authLoading && (!authEnabled || authenticated)}
+    >
+      {children}
+    </RefreshProvider>
+  );
 }
 
 function Shell() {
@@ -68,7 +80,7 @@ export function App() {
     <ThemeProvider>
       <LocaleProvider>
         <IdentityProvider>
-          <RefreshProvider>
+          <IdentityAwareRefreshProvider>
             <SwipeSettingsProvider>
               <SwipeCoachProvider>
                 <TaskDetailProvider>
@@ -78,7 +90,7 @@ export function App() {
                 </TaskDetailProvider>
               </SwipeCoachProvider>
             </SwipeSettingsProvider>
-          </RefreshProvider>
+          </IdentityAwareRefreshProvider>
         </IdentityProvider>
       </LocaleProvider>
     </ThemeProvider>

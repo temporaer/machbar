@@ -178,7 +178,10 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
 
     await userEvent.click(screen.getByRole("button", { name: "Wartet" }));
 
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(6, { status: "waiting" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(6, {
+      status: "waiting",
+      expectedRevision: 1,
+    }));
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
     expect(getComputedStyle(cancelBg).opacity).toBe("0");
   });
