@@ -11,6 +11,16 @@ Build and start the included service:
 docker compose up --build -d
 ```
 
+For evaluation on a trusted machine without an OIDC provider, create a root
+`.env` file first:
+
+```dotenv
+ALLOW_UNAUTHENTICATED=true
+```
+
+This mode gives every client full access. Do not expose an unauthenticated
+instance to the internet.
+
 The default host-local URL is `http://localhost:3000`. The Compose port is
 bound to `127.0.0.1`, so remote clients must use a reverse proxy. Set another
 host port in a root `.env` file:
@@ -43,6 +53,7 @@ docker build -t machbar .
 docker run -d \
   --name machbar \
   -p 127.0.0.1:3000:3000 \
+  -e ALLOW_UNAUTHENTICATED=true \
   -v machbar-data:/data \
   machbar
 ```
@@ -107,6 +118,7 @@ With Compose, obtain the generated container name with `docker compose ps`.
 | `BASE_PATH` | `/` | Preserved URL prefix for sub-path deployments |
 | `SEED_DATABASE` | `true` outside the image, `false` in the image | Seed sample data during startup when the database has no members |
 | `NODE_ENV` | `development` outside the image | Runtime mode |
+| `ALLOW_UNAUTHENTICATED` | `false` | Set to `true` to explicitly run production without authentication |
 | `OIDC_ISSUER_URL` | unset | Pocket ID issuer |
 | `OIDC_CLIENT_ID` | unset | Pocket ID client ID |
 | `OIDC_CLIENT_SECRET` | unset | Pocket ID client secret |
@@ -114,8 +126,8 @@ With Compose, obtain the generated container name with `docker compose ps`.
 | `OIDC_SESSION_TTL_DAYS` | `30` | Local session lifetime, 1–365 days |
 
 The application treats a partial OIDC configuration as a startup error.
-Production also refuses to start when OIDC is completely unset; unauthenticated
-mode is limited to development and tests.
+Production refuses to start when OIDC is completely unset unless
+`ALLOW_UNAUTHENTICATED=true` explicitly enables unauthenticated mode.
 
 ## Reverse proxy
 

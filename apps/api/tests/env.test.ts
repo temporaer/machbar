@@ -12,9 +12,27 @@ describe("OIDC environment configuration", () => {
     );
   });
 
+  it("allows an explicit unauthenticated production deployment", () => {
+    expect(
+      loadEnv({
+        NODE_ENV: "production",
+        ALLOW_UNAUTHENTICATED: "true",
+      }).oidc,
+    ).toBeNull();
+    expect(() =>
+      loadEnv({
+        NODE_ENV: "production",
+        ALLOW_UNAUTHENTICATED: "TRUE",
+      }),
+    ).toThrow(/required in production/i);
+  });
+
   it("rejects partial OIDC configuration instead of silently disabling auth", () => {
     expect(() =>
-      loadEnv({ OIDC_ISSUER_URL: "https://pocket.example" }),
+      loadEnv({
+        ALLOW_UNAUTHENTICATED: "true",
+        OIDC_ISSUER_URL: "https://pocket.example",
+      }),
     ).toThrow(/incomplete/i);
   });
 
