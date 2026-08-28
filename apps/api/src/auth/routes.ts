@@ -25,10 +25,6 @@ const loginQuerySchema = z.object({
   returnTo: z.string().optional(),
 });
 
-function requestPath(url: string): string {
-  return url.split("?", 1)[0]!;
-}
-
 function isPublicApiPath(path: string): boolean {
   return (
     path === "/api/health" ||
@@ -137,17 +133,24 @@ export function registerAuthentication(
     request.authMember = service?.memberForSession(
       request.cookies[SESSION_COOKIE],
     ) ?? null;
+  });
+
+  app.addHook("preHandler", async (request) => {
     if (!service) return;
 
-    const path = requestPath(request.url);
-    if (path.startsWith("/api/") && !isPublicApiPath(path) && !request.authMember) {
+    const routePath = request.routeOptions.url;
+    if (!routePath?.startsWith("/api/")) return;
+
+    if (
+      !isPublicApiPath(routePath) &&
+      !request.authMember
+    ) {
       throw AppError.unauthorized(
         "authentication_required",
         "Sign in with Pocket ID before accessing this resource.",
       );
     }
     if (
-      path.startsWith("/api/") &&
       isUnsafeMethod(request.method) &&
       request.headers.origin !== env.oidc!.publicUrl
     ) {

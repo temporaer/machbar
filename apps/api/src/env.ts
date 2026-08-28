@@ -89,6 +89,9 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     source.WEB_DIST_DIR ?? "../web/dist",
   );
   const oidc = loadOidcConfig(source);
+  if ((source.NODE_ENV ?? "development") === "production" && oidc === null) {
+    throw new Error("OIDC configuration is required in production.");
+  }
 
   return {
     port: Number.isNaN(port) ? 3000 : port,

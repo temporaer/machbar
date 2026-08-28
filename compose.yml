@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     # MACHBAR_PORT on the host (default 3000); container always listens on 3000
     ports:
-      - "${MACHBAR_PORT:-3000}:3000"
+      - "127.0.0.1:${MACHBAR_PORT:-3000}:3000"
     environment:
       PORT: "3000"
       HOST: "0.0.0.0"
@@ -13,10 +13,10 @@ services:
       BASE_PATH: /
       SEED_DATABASE: "false"
       NODE_ENV: production
-      OIDC_ISSUER_URL: "${OIDC_ISSUER_URL:-}"
-      OIDC_CLIENT_ID: "${OIDC_CLIENT_ID:-}"
-      OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET:-}"
-      OIDC_PUBLIC_URL: "${OIDC_PUBLIC_URL:-}"
+      OIDC_ISSUER_URL: "${OIDC_ISSUER_URL:?OIDC_ISSUER_URL is required}"
+      OIDC_CLIENT_ID: "${OIDC_CLIENT_ID:?OIDC_CLIENT_ID is required}"
+      OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET:?OIDC_CLIENT_SECRET is required}"
+      OIDC_PUBLIC_URL: "${OIDC_PUBLIC_URL:?OIDC_PUBLIC_URL is required}"
       OIDC_SESSION_TTL_DAYS: "${OIDC_SESSION_TTL_DAYS:-30}"
     volumes:
       - machbar-data:/data

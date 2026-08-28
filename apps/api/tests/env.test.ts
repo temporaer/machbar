@@ -2,8 +2,14 @@ import { describe, expect, it } from "vitest";
 import { loadEnv } from "../src/env.js";
 
 describe("OIDC environment configuration", () => {
-  it("keeps authentication disabled when no OIDC variables are present", () => {
+  it("keeps authentication disabled outside production when no OIDC variables are present", () => {
     expect(loadEnv({}).oidc).toBeNull();
+  });
+
+  it("requires OIDC configuration in production", () => {
+    expect(() => loadEnv({ NODE_ENV: "production" })).toThrow(
+      /required in production/i,
+    );
   });
 
   it("rejects partial OIDC configuration instead of silently disabling auth", () => {
@@ -41,7 +47,7 @@ describe("OIDC environment configuration", () => {
     ).toThrow(/HTTPS/);
     expect(() =>
       loadEnv({ ...valid, OIDC_PUBLIC_URL: "https://machbar.example/tasks" }),
-    ).toThrow(/Pfad/);
+    ).toThrow(/path/i);
     expect(() =>
       loadEnv({ ...valid, OIDC_SESSION_TTL_DAYS: "0" }),
     ).toThrow(/between 1 and 365/);

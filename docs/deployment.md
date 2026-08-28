@@ -11,8 +11,9 @@ Build and start the included service:
 docker compose up --build -d
 ```
 
-The default host URL is `http://localhost:3000`. Set another host port in a
-root `.env` file:
+The default host-local URL is `http://localhost:3000`. The Compose port is
+bound to `127.0.0.1`, so remote clients must use a reverse proxy. Set another
+host port in a root `.env` file:
 
 ```dotenv
 MACHBAR_PORT=8080
@@ -34,7 +35,7 @@ it and therefore deletes the database.
 docker build -t machbar .
 docker run -d \
   --name machbar \
-  -p 3000:3000 \
+  -p 127.0.0.1:3000:3000 \
   -v machbar-data:/data \
   machbar
 ```
@@ -103,8 +104,9 @@ With Compose, obtain the generated container name with `docker compose ps`.
 | `OIDC_PUBLIC_URL` | unset | Exact public HTTPS origin |
 | `OIDC_SESSION_TTL_DAYS` | `30` | Local session lifetime, 1–365 days |
 
-The application treats a partial OIDC configuration as a startup error rather
-than silently running without authentication.
+The application treats a partial OIDC configuration as a startup error.
+Production also refuses to start when OIDC is completely unset; unauthenticated
+mode is limited to development and tests.
 
 ## Reverse proxy
 

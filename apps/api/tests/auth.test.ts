@@ -130,6 +130,29 @@ describe("Pocket ID authentication", () => {
     expect(members.json().error.code).toBe("authentication_required");
   });
 
+  it("protects percent-encoded API paths using the matched route", async () => {
+    const unauthenticated = await ctx.app.inject({
+      method: "GET",
+      url: "/%61pi/members",
+    });
+    expect(unauthenticated.statusCode).toBe(401);
+    expect(unauthenticated.json().error.code).toBe("authentication_required");
+
+    const callback = await login();
+    const wrongOrigin = await ctx.app.inject({
+      method: "POST",
+      url: "/%61pi/members",
+      headers: {
+        cookie: sessionCookie(callback.headers["set-cookie"]),
+        origin: "https://evil.example",
+        "content-type": "application/json",
+      },
+      payload: { name: "Encoded bypass" },
+    });
+    expect(wrongOrigin.statusCode).toBe(403);
+    expect(wrongOrigin.json().error.code).toBe("request_origin_forbidden");
+  });
+
   it("links an exact existing member, sets a hardened cookie, and restores the hash route", async () => {
     const existing = ctx.handle.db
       .insert(schema.members)
