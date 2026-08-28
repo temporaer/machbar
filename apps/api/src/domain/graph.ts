@@ -24,6 +24,8 @@ import {
   getStuckReasonsByProject,
 } from "../repo/index.js";
 import { selectPrimaryAreaTag } from "./projectAreas.js";
+import { performance } from "node:perf_hooks";
+import { recordGraphLoad } from "../diagnostics/graphMetrics.js";
 
 export interface ProjectRecord extends SharedProject {
   /** Workflow actions currently legal for this project's status (see
@@ -102,6 +104,7 @@ interface RawProject {
 export class Graph {
   readonly projectsById = new Map<number, ProjectRecord>();
   readonly tasksById = new Map<number, TaskRecord>();
+  readonly tasksByProject = new Map<number | null, TaskRecord[]>();
   readonly childrenByParent = new Map<number | null, TaskRecord[]>();
   readonly rootsByProject = new Map<number | null, TaskRecord[]>();
   private readonly stuckReasonByProject: Map<number, StuckReason>;
@@ -116,6 +119,7 @@ export class Graph {
   }
 
   static load(db: Db): Graph {
+    const startedAt = performance.now();
     // --- SQL/CTE-computed derivations (repo layer) ---------------------
     const effectiveOwners = getEffectiveOwners(db);
     const effectiveTagIdsByTask = getEffectiveTagIds(db);
@@ -313,7 +317,11 @@ export class Graph {
     };
 
     for (const raw of rawTasks) {
-      graph.tasksById.set(raw.id, toRecord(raw));
+      const task = toRecord(raw);
+      graph.tasksById.set(raw.id, task);
+      const projectTasks = graph.tasksByProject.get(task.projectId) ?? [];
+      projectTasks.push(task);
+      graph.tasksByProject.set(task.projectId, projectTasks);
     }
 
     // Wire up `children` arrays and project-root lists from the already
@@ -338,12 +346,17 @@ export class Graph {
       graph.rootsByProject.set(projectId, list);
     }
 
+    recordGraphLoad(
+      performance.now() - startedAt,
+      graph.tasksById.size,
+      graph.projectsById.size,
+    );
     return graph;
   }
 
   /** All tasks belonging to a project, flattened regardless of depth. */
   tasksForProject(projectId: number): TaskRecord[] {
-    return [...this.tasksById.values()].filter((t) => t.projectId === projectId);
+    return this.tasksByProject.get(projectId) ?? [];
   }
 
   /** Every task in the graph, flattened. */

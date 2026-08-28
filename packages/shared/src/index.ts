@@ -403,6 +403,47 @@ export interface Agenda {
   revisit: Task[];
 }
 
+export interface GraphLoadMetrics {
+  totalLoads: number;
+  recentSamples: number;
+  averageMs: number | null;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  maxMs: number | null;
+  lastMs: number | null;
+  lastTaskCount: number | null;
+  lastProjectCount: number | null;
+}
+
+export interface DebugMetrics {
+  generatedAt: string;
+  processStartedAt: string;
+  processUptimeSeconds: number;
+  database: {
+    allocatedBytes: number;
+    usedBytes: number;
+    pageSizeBytes: number;
+    pageCount: number;
+    freelistPages: number;
+    counts: {
+      members: number;
+      projects: number;
+      tasks: number;
+      tags: number;
+      dependencies: number;
+      activityEvents: number;
+      contributionEvents: number;
+    };
+    taskStatusCounts: Record<TaskStatus, number>;
+    projectStatusCounts: Record<ProjectStatus, number>;
+    maxTaskDepth: number;
+    tasksCreatedToday: number;
+    tasksCreatedLast7Days: number;
+    activityEventsCreatedLast7Days: number;
+  };
+  graphLoads: GraphLoadMetrics;
+}
+
 export interface WaitingGroup {
   /** Null when the task has no explicit waiting-for description. */
   waitingFor: string | null;

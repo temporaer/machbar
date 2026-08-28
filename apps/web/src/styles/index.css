@@ -333,6 +333,41 @@ details[open] > .disclosure-summary::after {
   padding: 14px;
 }
 
+.debug-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0 0;
+}
+
+.debug-metric {
+  min-width: 0;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.debug-metric dt {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.debug-metric dd {
+  margin: 4px 0 0;
+  font-size: 1rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.debug-generated-at {
+  margin: 4px;
+  font-size: 0.8rem;
+}
+
+.debug-settings-link {
+  opacity: 0.82;
+}
+
 .card + .card {
   margin-top: 10px;
 }

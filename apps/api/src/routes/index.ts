@@ -9,6 +9,7 @@ import { registerSearchRoutes } from "./search.js";
 import { registerTagRoutes } from "./tags.js";
 import { registerTaskRoutes } from "./tasks.js";
 import { registerViewRoutes } from "./views.js";
+import { registerDebugRoutes } from "./debug.js";
 
 export function registerRoutes(app: FastifyInstance, db: Db) {
   registerActivityRoutes(app, db);
@@ -20,4 +21,5 @@ export function registerRoutes(app: FastifyInstance, db: Db) {
   registerViewRoutes(app, db);
   registerSearchRoutes(app, db);
   registerRefinementRoutes(app, db);
+  registerDebugRoutes(app, db);
 }

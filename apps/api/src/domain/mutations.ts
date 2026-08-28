@@ -2116,7 +2116,6 @@ export function updateTask(
             : {}),
         },
       });
-      const effectiveOwnerAfter = effectiveOwnerId(txDb, id);
       if (updated.status === "done") {
         recordContribution(txDb, {
           activityEventId,

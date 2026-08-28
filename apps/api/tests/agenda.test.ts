@@ -612,10 +612,11 @@ describe("Heute agenda: compiled project prompts", () => {
   }
 
   async function projectPrompts(memberId?: number) {
-    const suffix = memberId === undefined ? "" : `?memberId=${memberId}`;
+    const query = new URLSearchParams({ date: localTodayIso() });
+    if (memberId !== undefined) query.set("memberId", String(memberId));
     const response = await ctx.app.inject({
       method: "GET",
-      url: `/api/agenda/today${suffix}`,
+      url: `/api/agenda/today?${query}`,
     });
     expect(response.statusCode).toBe(200);
     return response.json().projects as Array<{

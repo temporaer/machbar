@@ -190,6 +190,16 @@ export function MorePage() {
             {strings.version} 0.1.0
           </p>
         </div>
+
+        <Link to="/more/debug" className="card list-link debug-settings-link">
+          <span className="row-between">
+            <span>
+              <strong>{strings.debugTitle}</strong>
+              <small className="list-link-description">{strings.debugLinkHint}</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </span>
+        </Link>
       </div>
     </div>
   );

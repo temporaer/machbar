@@ -61,6 +61,14 @@ describe("MorePage", () => {
     );
   });
 
+  it("keeps diagnostics at the bottom of settings", async () => {
+    const { container } = renderWithProviders(<MorePage />);
+
+    const link = await screen.findByRole("link", { name: /Debug/ });
+    expect(link).toHaveAttribute("href", "/more/debug");
+    expect(link.parentElement?.lastElementChild).toBe(link);
+  });
+
   it("shows a shared-first unranked contribution summary", async () => {
     const { container } = renderWithProviders(<MorePage />);
 

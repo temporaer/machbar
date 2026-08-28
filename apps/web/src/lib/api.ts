@@ -6,6 +6,7 @@ import type {
   ApiErrorResponse,
   AuthStatus,
   ContributionSummary,
+  DebugMetrics,
   InheritanceMode,
   Member,
   Project,
@@ -407,6 +408,8 @@ export const api = {
 
   getContributionSummary: () =>
     request<ContributionSummary>("/contributions/summary"),
+
+  getDebugMetrics: () => request<DebugMetrics>("/debug/metrics"),
 
   /**
    * `mine` scopes the agenda to the current member plus shared work.

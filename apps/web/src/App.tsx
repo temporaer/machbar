@@ -21,6 +21,7 @@ import { TagsPage } from "./pages/TagsPage";
 import { SharePage } from "./pages/SharePage";
 import { TaskDeepLinkPage } from "./pages/TaskDeepLinkPage";
 import { ActivityPage } from "./pages/ActivityPage";
+import { DebugPage } from "./pages/DebugPage";
 import { LocaleProvider } from "./lib/locale";
 import { ThemeProvider } from "./lib/theme";
 import { SwipeCoachProvider } from "./lib/swipeCoach";
@@ -63,6 +64,7 @@ function Shell() {
             <Route path="/more/refinement" element={<RefinementPage />} />
             <Route path="/more/tags" element={<TagsPage />} />
             <Route path="/more/activity" element={<ActivityPage />} />
+            <Route path="/more/debug" element={<DebugPage />} />
             <Route path="/share" element={<SharePage />} />
             <Route path="/tasks/:id" element={<TaskDeepLinkPage />} />
             <Route path="*" element={<Navigate to="/today" replace />} />
