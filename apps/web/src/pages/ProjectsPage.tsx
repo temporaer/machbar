@@ -267,7 +267,7 @@ export function ProjectsPage() {
                 data-project-section="terminal"
                 open={revealTerminalProjects}
               >
-                <summary className="section-title">
+                <summary className="section-title disclosure-summary">
                   {strings.finishedProjectsSection(terminalProjects.length)}
                 </summary>
                 {renderGroups("terminal", terminalProjects, 3)}

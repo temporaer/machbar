@@ -17,7 +17,7 @@ export function CollapsibleGroup({
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary className="section-title">
+      <summary className="section-title disclosure-summary">
         <span role="heading" aria-level={headingLevel}>
           {title}
         </span>

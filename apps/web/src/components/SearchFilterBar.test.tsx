@@ -46,7 +46,11 @@ describe("SearchFilterBar", () => {
     await userEvent.type(screen.getByLabelText("Suchen"), "Kisten");
     expect(screen.getByLabelText("Suchen")).toHaveValue("Kisten");
 
-    await userEvent.click(screen.getByRole("button", { name: "Filter" }));
+    const filterButton = screen.getByRole("button", { name: "Filter" });
+    expect(filterButton).toHaveClass("disclosure-button");
+    expect(filterButton.querySelector(".disclosure-button-chevron")).toHaveTextContent("▾");
+    await userEvent.click(filterButton);
+    expect(filterButton).toHaveAttribute("aria-expanded", "true");
     expect(await screen.findByText("Umzug")).toBeInTheDocument();
     expect(screen.getByText("eilig")).toBeInTheDocument();
 

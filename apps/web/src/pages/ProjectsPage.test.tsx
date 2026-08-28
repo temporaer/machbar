@@ -698,6 +698,7 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     const summary = screen.getByText("Abgeschlossen & archiviert (2)");
     const details = summary.closest("details");
     expect(details).not.toBeNull();
+    expect(summary.closest("summary")).toHaveClass("disclosure-summary");
     // Folded by default — no search is active.
     expect(details).not.toHaveAttribute("open");
     expect(rowFor(container, "Fertige Geschichte").closest("details")).toBe(details);

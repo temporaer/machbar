@@ -56,7 +56,9 @@ describe("RecentActivity", () => {
     mockedGetActivity.mockResolvedValue({ items: [event()], nextCursor: null });
     renderActivity({ taskId: 42 });
 
-    const disclosure = screen.getByText("Letzte Aktivitäten").closest("details")!;
+    const summary = screen.getByText("Letzte Aktivitäten").closest("summary")!;
+    expect(summary).toHaveClass("disclosure-summary");
+    const disclosure = summary.closest("details")!;
     expect(disclosure).not.toHaveAttribute("open");
     expect(mockedGetActivity).not.toHaveBeenCalled();
 

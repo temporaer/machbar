@@ -43,8 +43,14 @@ export function SearchFilterBar({
         onChange={(e) => set("text", e.target.value)}
       />
       <div className="row-between">
-        <button type="button" className="btn btn-sm" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
-          {strings.filters}
+        <button
+          type="button"
+          className="btn btn-sm disclosure-button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+        >
+          <span>{strings.filters}</span>
+          <span className="disclosure-button-chevron" aria-hidden="true">▾</span>
         </button>
         <button type="button" className="btn btn-sm btn-ghost" onClick={() => onChange({})}>
           {strings.resetFilters}

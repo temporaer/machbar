@@ -65,7 +65,9 @@ export function ContributionCard() {
             ) : null}
           </div>
           <details className="contribution-rules">
-            <summary>{strings.contributionRulesTitle}</summary>
+            <summary className="disclosure-summary">
+              {strings.contributionRulesTitle}
+            </summary>
             <p>{strings.contributionRulesBody}</p>
           </details>
         </>

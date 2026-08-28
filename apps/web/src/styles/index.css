@@ -283,18 +283,20 @@ a {
   letter-spacing: 0.02em;
 }
 
-.collapsible-group > summary {
+.disclosure-summary {
   cursor: pointer;
   list-style: none;
 }
 
-.collapsible-group > summary::-webkit-details-marker {
+.disclosure-summary::-webkit-details-marker {
   display: none;
 }
 
-.collapsible-group > summary::after {
+.disclosure-summary::after {
   width: 8px;
   height: 8px;
+  flex: 0 0 8px;
+  margin-left: 10px;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   content: "";
@@ -302,8 +304,26 @@ a {
   transition: transform 120ms ease;
 }
 
-.collapsible-group[open] > summary::after {
+details[open] > .disclosure-summary::after {
   transform: rotate(225deg);
+}
+
+.disclosure-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.disclosure-button-chevron {
+  display: inline-block;
+  font-size: 0.72rem;
+  line-height: 1;
+  transform: rotate(0);
+  transition: transform 120ms ease;
+}
+
+.disclosure-button[aria-expanded="true"] .disclosure-button-chevron {
+  transform: rotate(180deg);
 }
 
 .card {
@@ -394,6 +414,9 @@ a {
 }
 
 .contribution-rules summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   cursor: pointer;
   color: var(--color-primary);
 }

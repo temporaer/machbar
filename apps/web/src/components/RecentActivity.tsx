@@ -86,7 +86,7 @@ export function RecentActivity({
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary className="section-title">
+      <summary className="section-title disclosure-summary">
         <span role="heading" aria-level={2}>{strings.recentActivities}</span>
       </summary>
       <div className="contextual-activity-content">
