@@ -510,6 +510,15 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     }
   });
 
+  it("rejects an unknown agenda scope with a structured 400", async () => {
+    const res = await ctx.app.inject({
+      method: "GET",
+      url: "/api/agenda/today?scope=other",
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe("agenda_query_invalid");
+  });
+
   it("rejects an unknown memberId with a structured 404", async () => {
     const res = await getAgenda(999999);
     expect(res.statusCode).toBe(404);

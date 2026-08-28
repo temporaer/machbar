@@ -125,6 +125,10 @@ These views are **read-only projections** — they are not stored in SQLite; the
 The **Heute** agenda is also query-derived. Its primary sections contain work
 explicitly scheduled for today or earlier, overdue work, work due today,
 soon-due work, and waiting tasks whose Wiedervorlage is due (**Nachhaken**).
+It is member-scoped by default (including shared/unassigned work), while the
+explicit `scope=all` query returns the same compiled buckets for the complete
+household. The frontend exposes that distinction as a session-scoped
+**Meine | Alle** header toggle.
 Undated actionable work is returned only as the secondary `shared` /
 `unscheduled` buckets and rendered in the visibly separate **Weitere machbare
 Aufgaben** section. It stays immediately available without being mixed into
@@ -197,9 +201,10 @@ hash is stored in `auth_sessions`; the raw value exists solely in the
 `__Host-machbar-session` Secure/HttpOnly/SameSite=Lax cookie. Ordinary API
 routes require that session, and unsafe methods additionally require an exact
 same-origin `Origin` header. Health and login bootstrap routes remain public.
-The authenticated member overrides caller-supplied creator/Heute identity
-fields, while normal household owner assignment remains collaborative rather
-than becoming a per-record ACL.
+The authenticated member overrides caller-supplied creator and default Heute
+identity fields. An explicit `scope=all` may broaden the Today read projection,
+but never changes mutation attribution. Normal household owner assignment
+remains collaborative rather than becoming a per-record ACL.
 
 ### Home Assistant Ingress
 

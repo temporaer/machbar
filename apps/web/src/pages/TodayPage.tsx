@@ -1,4 +1,5 @@
-import { api } from "../lib/api";
+import { useState } from "react";
+import { api, type AgendaScope } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
@@ -9,9 +10,11 @@ import { ProjectAgendaCard } from "../components/ProjectAgendaCard";
 import { PageHeader, type PageHint } from "../components/PageHeader";
 import { useSwipeSettings } from "../lib/swipeSettings";
 import { ContributionPulse } from "../components/ContributionPulse";
+import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 
 export function TodayPage() {
   const strings = useStrings();
+  const [scope, setScope] = useState<AgendaScope>(readTodayScope);
   const sections: Array<{
     key: "planned" | "overdue" | "dueToday" | "dueSoon";
     label: string;
@@ -28,18 +31,31 @@ export function TodayPage() {
   // page never throws and never ends up requesting -- or rendering --
   // another member's tasks. Re-fetching whenever `currentMemberId` changes
   // ensures switching identities always shows that member's own agenda.
-  const { currentMemberId } = useIdentity();
+  const { currentMemberId, members } = useIdentity();
   const { primarySwipeAction } = useSwipeSettings();
-  const { data: agenda, loading, error, reload } = useAsync(
-    () => api.getAgenda(currentMemberId),
-    [currentMemberId],
+  const agendaSelectionKey = `${scope}:${currentMemberId ?? "none"}`;
+  const { data: loadedAgenda, loading, error, reload } = useAsync(
+    async () => ({
+      selectionKey: agendaSelectionKey,
+      agenda: await api.getAgenda(currentMemberId, scope),
+    }),
+    [currentMemberId, scope],
   );
+  const agenda =
+    loadedAgenda?.selectionKey === agendaSelectionKey
+      ? loadedAgenda.agenda
+      : null;
+  const selectScope = (nextScope: AgendaScope) => {
+    setScope(nextScope);
+    writeTodayScope(nextScope);
+  };
   const revisitTasks = agenda?.revisit ?? [];
   const followUpTasks = agenda?.followUp ?? [];
   const additionalTasks = [...(agenda?.shared ?? []), ...(agenda?.unscheduled ?? [])];
   const projectAgenda = agenda?.projects ?? [];
   const pageHints: PageHint[] = [
     { text: strings.todayExplanation },
+    { text: strings.todayScopeHint },
     {
       label: strings.taskGestures,
       text: strings.taskGestureHint(
@@ -56,7 +72,32 @@ export function TodayPage() {
 
   return (
     <div className="today-page">
-      <PageHeader title={strings.today} hints={pageHints} />
+      <PageHeader
+        title={strings.today}
+        actions={
+          <div
+            className="segmented today-scope-toggle"
+            role="group"
+            aria-label={strings.todayScope}
+          >
+            <button
+              type="button"
+              aria-pressed={scope === "mine"}
+              onClick={() => selectScope("mine")}
+            >
+              {strings.mine}
+            </button>
+            <button
+              type="button"
+              aria-pressed={scope === "all"}
+              onClick={() => selectScope("all")}
+            >
+              {strings.all}
+            </button>
+          </div>
+        }
+        hints={pageHints}
+      />
       <ContributionPulse />
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
@@ -78,7 +119,18 @@ export function TodayPage() {
                   </h2>
                   <div className="list">
                     {projectAgenda.map((entry) => (
-                      <ProjectAgendaCard key={entry.project.id} entry={entry} />
+                      <ProjectAgendaCard
+                        key={entry.project.id}
+                        entry={entry}
+                        owner={
+                          scope === "all" && entry.project.ownerMemberId !== null
+                            ? members.find(
+                                (member) =>
+                                  member.id === entry.project.ownerMemberId,
+                              ) ?? null
+                            : null
+                        }
+                      />
                     ))}
                   </div>
                 </section>

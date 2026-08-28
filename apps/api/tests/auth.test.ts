@@ -422,7 +422,7 @@ describe("Pocket ID authentication", () => {
     }
   });
 
-  it("binds creator and Heute identity to the session instead of caller input", async () => {
+  it("keeps the default Heute scope session-bound and allows an explicit household view", async () => {
     const other = ctx.handle.db
       .insert(schema.members)
       .values({ name: "Other", color: "" })
@@ -456,14 +456,49 @@ describe("Pocket ID authentication", () => {
     expect(task.statusCode).toBe(201);
     expect(task.json().createdByMemberId).toBe(currentId);
 
-    const agenda = await ctx.app.inject({
+    const otherTask = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      headers: {
+        cookie,
+        origin: oidc.publicUrl,
+        "content-type": "application/json",
+      },
+      payload: {
+        title: "Aufgabe der anderen Person",
+        status: "actionable",
+        ownerMemberId: other.id,
+        ownerInheritanceMode: "explicit",
+      },
+    });
+    expect(otherTask.statusCode).toBe(201);
+    expect(otherTask.json().createdByMemberId).toBe(currentId);
+
+    const mine = await ctx.app.inject({
       method: "GET",
       url: `/api/agenda/today?memberId=${other.id}`,
       headers: { cookie },
     });
     expect(
-      agenda.json().unscheduled.map((item: { title: string }) => item.title),
+      mine.json().unscheduled.map((item: { title: string }) => item.title),
     ).toContain("Sessiongebundene Aufgabe");
+    expect(
+      mine.json().unscheduled.map((item: { title: string }) => item.title),
+    ).not.toContain("Aufgabe der anderen Person");
+
+    const all = await ctx.app.inject({
+      method: "GET",
+      url: "/api/agenda/today?scope=all",
+      headers: { cookie },
+    });
+    expect(
+      all.json().unscheduled.map((item: { title: string }) => item.title),
+    ).toEqual(
+      expect.arrayContaining([
+        "Sessiongebundene Aufgabe",
+        "Aufgabe der anderen Person",
+      ]),
+    );
   });
 
   it("rejects cross-origin writes and invalidates the local session on logout", async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TodayPage } from "./TodayPage";
@@ -44,6 +44,7 @@ function makeEmptyAgenda(): Agenda {
 describe("TodayPage", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    window.sessionStorage.clear();
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
     mockedApi.getContributionSummary.mockResolvedValue({
@@ -78,6 +79,103 @@ describe("TodayPage", () => {
     expect(
       header.compareDocumentPosition(pulse) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("switches between my and the household agenda from the compact header toggle", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    mockedApi.getMembers.mockResolvedValue([
+      makeMember({ id: 1, name: "Mira" }),
+      makeMember({ id: 2, name: "Jonas" }),
+    ]);
+    mockedApi.getAgenda.mockImplementation(async (_memberId, scope) =>
+      scope === "all"
+        ? {
+            ...makeEmptyAgenda(),
+            dueToday: [
+              makeTask({
+                id: 20,
+                title: "Jonas' Aufgabe",
+                effectiveOwnerId: 2,
+                effectiveOwnerSource: "task",
+              }),
+            ],
+          }
+        : {
+            ...makeEmptyAgenda(),
+            dueToday: [makeTask({ id: 10, title: "Meine Aufgabe" })],
+          },
+    );
+    const { container } = renderWithProviders(<TodayPage />);
+
+    const header = container.querySelector<HTMLElement>(".page-header")!;
+    const toggle = within(header).getByRole("group", {
+      name: "Umfang der Heute-Ansicht",
+    });
+    expect(toggle).toHaveClass("today-scope-toggle");
+    expect(within(toggle).getByRole("button", { name: "Meine" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(await screen.findByText("Meine Aufgabe")).toBeInTheDocument();
+
+    await userEvent.click(within(toggle).getByRole("button", { name: "Alle" }));
+
+    await waitFor(() =>
+      expect(mockedApi.getAgenda).toHaveBeenLastCalledWith(1, "all"),
+    );
+    expect(await screen.findByText("Jonas' Aufgabe")).toBeInTheDocument();
+    expect(within(toggle).getByRole("button", { name: "Alle" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await userEvent.click(within(toggle).getByRole("button", { name: "Meine" }));
+    await waitFor(() =>
+      expect(mockedApi.getAgenda).toHaveBeenLastCalledWith(1, "mine"),
+    );
+  });
+
+  it("remembers the household scope while this browser tab remains open", async () => {
+    mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
+    const first = renderWithProviders(<TodayPage />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Alle" }),
+    );
+    await waitFor(() =>
+      expect(mockedApi.getAgenda).toHaveBeenLastCalledWith(null, "all"),
+    );
+    first.unmount();
+
+    renderWithProviders(<TodayPage />);
+    await waitFor(() =>
+      expect(mockedApi.getAgenda).toHaveBeenLastCalledWith(null, "all"),
+    );
+    expect(screen.getByRole("button", { name: "Alle" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("never labels stale personal data as the household view after a failed switch", async () => {
+    mockedApi.getMembers.mockResolvedValue([]);
+    mockedApi.getAgenda
+      .mockResolvedValueOnce({
+        ...makeEmptyAgenda(),
+        dueToday: [makeTask({ title: "Nur meine Aufgabe" })],
+      })
+      .mockRejectedValueOnce(new Error("Netzwerkfehler"));
+    renderWithProviders(<TodayPage />);
+
+    expect(await screen.findByText("Nur meine Aufgabe")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Alle" }));
+
+    expect(screen.queryByText("Nur meine Aufgabe")).not.toBeInTheDocument();
+    expect(await screen.findByText("Netzwerkfehler")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Alle" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("zeigt keinen manuellen Heute-Umschalter mehr an und erklärt die Ansicht im Seitenhinweis", async () => {
@@ -242,9 +340,10 @@ describe("TodayPage", () => {
     // agenda must be requested for exactly that member — never a
     // different/other member's id (only a transient `null` may precede it,
     // while identity is still resolving on first mount).
-    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledWith(1));
-    for (const [memberId] of mockedApi.getAgenda.mock.calls) {
+    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledWith(1, "mine"));
+    for (const [memberId, scope] of mockedApi.getAgenda.mock.calls) {
       expect(memberId === null || memberId === 1).toBe(true);
+      expect(scope).toBe("mine");
     }
   });
 
@@ -257,7 +356,9 @@ describe("TodayPage", () => {
     mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
     renderWithProviders(<TodayPage />);
 
-    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledWith(null));
+    await waitFor(() =>
+      expect(mockedApi.getAgenda).toHaveBeenCalledWith(null, "mine"),
+    );
   });
 
   it("lädt die Agenda automatisch neu, wenn die ausgewählte Identität wechselt", async () => {
@@ -273,16 +374,20 @@ describe("TodayPage", () => {
       </>,
     );
 
-    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledWith(null));
+    await waitFor(() =>
+      expect(mockedApi.getAgenda).toHaveBeenCalledWith(null, "mine"),
+    );
     const initialCalls = mockedApi.getAgenda.mock.calls.length;
 
     const option = await screen.findByRole("option", { name: /Jonas/ });
     await userEvent.click(option);
 
-    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledWith(2));
+    await waitFor(() =>
+      expect(mockedApi.getAgenda).toHaveBeenCalledWith(2, "mine"),
+    );
     expect(mockedApi.getAgenda.mock.calls.length).toBeGreaterThan(initialCalls);
     // The last call must reflect only the newly selected member — the
     // previous member's id must never be requested again after switching.
-    expect(mockedApi.getAgenda.mock.calls.at(-1)).toEqual([2]);
+    expect(mockedApi.getAgenda.mock.calls.at(-1)).toEqual([2, "mine"]);
   });
 });

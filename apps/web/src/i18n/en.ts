@@ -291,6 +291,11 @@ const en = {
   clarifyEmpty: "The inbox is empty. Nice work!",
   waitingEmpty: "Nothing is waiting right now.",
   todayEmpty: "Nothing is planned for today.",
+  todayScope: "Today view scope",
+  todayScopeHint:
+    "“Everyone” shows the whole household's tasks without changing your identity for edits.",
+  mine: "Mine",
+  all: "Everyone",
   searchEmpty: "No results for this search.",
   moreTitle: "More",
   about: "About Machbar",

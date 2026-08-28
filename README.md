@@ -17,7 +17,7 @@ adapted to household life:
 - give a project one visible driver while delegating individual tasks;
 - define what “done” means with acceptance criteria;
 - keep waiting items, follow-ups, dependencies, and stuck projects visible;
-- derive each person’s Today view from dates, state, and responsibility.
+- derive personal or household-wide Today views from dates, state, and responsibility.
 
 The methodology is optional. Machbar presents practical views such as
 **Today**, **Inbox**, **Projects**, and **Waiting** rather than asking a

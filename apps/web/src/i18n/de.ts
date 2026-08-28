@@ -272,6 +272,11 @@ const extra = {
   clarifyEmpty: "Der Eingang ist leer. Gute Arbeit!",
   waitingEmpty: "Nichts wartet gerade.",
   todayEmpty: "Für heute ist nichts geplant.",
+  todayScope: "Umfang der Heute-Ansicht",
+  todayScopeHint:
+    "„Alle“ zeigt die Aufgaben des ganzen Haushalts, ohne deine Identität für Änderungen zu wechseln.",
+  mine: "Meine",
+  all: "Alle",
   searchEmpty: "Keine Treffer für diese Suche.",
   moreTitle: "Mehr",
   about: "Über Machbar",

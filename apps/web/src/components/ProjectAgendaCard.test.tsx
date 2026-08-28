@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { makeProject, makeTask } from "../test/fixtures";
+import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { ProjectAgendaCard } from "./ProjectAgendaCard";
 
 describe("ProjectAgendaCard", () => {
@@ -65,5 +65,31 @@ describe("ProjectAgendaCard", () => {
     expect(screen.getByText("Projekt prüfen")).toBeInTheDocument();
     expect(screen.getByText("Prüfen: seit 3 Tagen")).toBeInTheDocument();
     expect(screen.queryByText(/^Fällig:/)).not.toBeInTheDocument();
+  });
+
+  it("shows a compact owner cue only when the household view supplies one", () => {
+    const owner = makeMember({ id: 7, name: "Mira" });
+    const entry = {
+      project: makeProject({ ownerMemberId: owner.id }),
+      qualification: "due" as const,
+      nextAction: null,
+      stuck: null,
+    };
+    const { rerender } = render(
+      <MemoryRouter>
+        <ProjectAgendaCard entry={entry} />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByLabelText("Zuständig: Mira")).not.toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <ProjectAgendaCard entry={entry} owner={owner} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByLabelText("Zuständig: Mira")).toContainElement(
+      document.querySelector(".project-agenda-owner .avatar"),
+    );
   });
 });

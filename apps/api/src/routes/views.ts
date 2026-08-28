@@ -10,6 +10,7 @@ import { validationDetails } from "../validation.js";
 
 const agendaQuerySchema = z.object({
   memberId: z.coerce.number().int().positive().optional(),
+  scope: z.enum(["mine", "all"]).optional(),
   date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -30,10 +31,11 @@ const waitingQuerySchema = z.object({
 });
 
 /**
- * Parses and validates the optional `memberId` query parameter for
- * `/api/agenda/today`. It must be a positive integer when present. Leaving
- * it out entirely preserves the endpoint's original, unfiltered
- * all-household response for API clients that don't yet select a member.
+ * Parses and validates the Today agenda query. `memberId` remains available
+ * to local/development clients, while authenticated browsers use the session
+ * member unless they explicitly request the read-only household scope.
+ * Leaving both fields out preserves the endpoint's original unfiltered
+ * response outside authenticated mode.
  */
 function parseAgendaQuery(query: unknown): z.infer<typeof agendaQuerySchema> {
   const result = agendaQuerySchema.safeParse(query);
@@ -49,8 +51,15 @@ function parseAgendaQuery(query: unknown): z.infer<typeof agendaQuerySchema> {
 
 export function registerViewRoutes(app: FastifyInstance, db: Db) {
   app.get("/api/agenda/today", async (request) => {
-    const { memberId: requestedMemberId, date } = parseAgendaQuery(request.query);
-    const memberId = request.authMember?.id ?? requestedMemberId;
+    const {
+      memberId: requestedMemberId,
+      scope,
+      date,
+    } = parseAgendaQuery(request.query);
+    const memberId =
+      scope === "all"
+        ? undefined
+        : request.authMember?.id ?? requestedMemberId;
     if (memberId !== undefined) {
       getMemberOrThrow(db, memberId);
     }

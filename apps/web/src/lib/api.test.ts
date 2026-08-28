@@ -212,10 +212,12 @@ describe("api.getAgenda memberId scoping", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/api/agenda/today?memberId=7&date=2030-01-02");
+    expect(url).toBe(
+      "/api/agenda/today?memberId=7&scope=mine&date=2030-01-02",
+    );
   });
 
-  it("omits only memberId when called with null or no argument", async () => {
+  it("omits only memberId for a mine request with null or no member", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2030, 0, 2, 0, 30));
     const fetchMock = mockFetchOnce({
@@ -225,8 +227,26 @@ describe("api.getAgenda memberId scoping", () => {
     await api.getAgenda();
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect((fetchMock.mock.calls[0] as [string])[0]).toBe("/api/agenda/today?date=2030-01-02");
-    expect((fetchMock.mock.calls[1] as [string])[0]).toBe("/api/agenda/today?date=2030-01-02");
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe(
+      "/api/agenda/today?scope=mine&date=2030-01-02",
+    );
+    expect((fetchMock.mock.calls[1] as [string])[0]).toBe(
+      "/api/agenda/today?scope=mine&date=2030-01-02",
+    );
+  });
+
+  it("requests the household scope without sending a memberId", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2030, 0, 2, 0, 30));
+    const fetchMock = mockFetchOnce({
+      text: async () => JSON.stringify({ planned: [] }),
+    });
+
+    await api.getAgenda(7, "all");
+
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe(
+      "/api/agenda/today?scope=all&date=2030-01-02",
+    );
   });
 });
 

@@ -44,6 +44,25 @@
   font-family: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
 }
 
+.project-agenda-owner {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+@media (max-width: 360px) {
+  .today-page .page-header {
+    gap: 4px;
+  }
+
+  .today-page .page-header-actions {
+    gap: 4px;
+  }
+
+  .today-scope-toggle button {
+    padding-inline: 7px;
+  }
+}
+
 :root[data-theme="dark"] {
   color-scheme: dark;
   --color-bg: #0c1311;
@@ -695,6 +714,15 @@ a {
   background: var(--color-primary);
   color: var(--color-primary-contrast);
   font-weight: 600;
+}
+
+.today-scope-toggle {
+  flex: 0 0 auto;
+}
+
+.today-scope-toggle button {
+  min-height: 44px;
+  padding-inline: 10px;
 }
 
 .chip {

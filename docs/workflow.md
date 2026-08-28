@@ -39,6 +39,9 @@ premature planning.
 person’s planned work, deadlines, due-soon tasks, reached follow-ups, and
 projects that need attention.
 
+The compact **Meine | Alle** toggle can broaden this to the whole household
+without changing who is signed in or who is recorded as making changes.
+
 The goal is not to display every open task. It is to show work that is
 currently relevant while keeping the underlying project structure available.
 

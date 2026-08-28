@@ -301,6 +301,8 @@ export type AgendaResponse = Agenda & {
   revisit?: Task[];
 };
 
+export type AgendaScope = "mine" | "all";
+
 export type { ProjectAgendaEntry };
 
 export const api = {
@@ -404,21 +406,28 @@ export const api = {
     request<ContributionSummary>("/contributions/summary"),
 
   /**
-   * `memberId` scopes the agenda to a single member (the currently
-   * selected identity from `useIdentity`) so the frontend never fetches
-   * -- and thus never accidentally renders -- another member's tasks.
-   * Shared/unassigned tasks still come back regardless, since the
-   * backend includes those for every member. Passing `null`/`undefined`
-   * (e.g. while no identity is selected yet) omits the param entirely.
+   * `mine` scopes the agenda to the current member plus shared work.
+   * `all` deliberately omits `memberId` and asks for the whole household
+   * agenda. This only changes the read projection; mutation actor identity
+   * remains session/header-bound elsewhere in the client and API.
    */
-  getAgenda: (memberId?: number | null) => {
+  getAgenda: (
+    memberId?: number | null,
+    scope: AgendaScope = "mine",
+  ) => {
     const now = new Date();
     const date = [
       now.getFullYear(),
       String(now.getMonth() + 1).padStart(2, "0"),
       String(now.getDate()).padStart(2, "0"),
     ].join("-");
-    return request<AgendaResponse>(`/agenda/today${query({ memberId, date })}`);
+    return request<AgendaResponse>(
+      `/agenda/today${query({
+        memberId: scope === "mine" ? memberId : undefined,
+        scope,
+        date,
+      })}`,
+    );
   },
   getInbox: () => request<Task[]>("/inbox"),
   getWaiting: (actorTagId?: number) =>

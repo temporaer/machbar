@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import type { ProjectAgendaEntry } from "@machbar/shared";
+import type { Member, ProjectAgendaEntry } from "@machbar/shared";
 import {
   formatExactLocalDate,
   formatRelativeDueDate,
@@ -7,6 +7,7 @@ import {
 } from "../lib/relativeDate";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
+import { MemberAvatar } from "./MemberAvatar";
 
 function DatePrompt({
   label,
@@ -32,7 +33,13 @@ function DatePrompt({
   );
 }
 
-export function ProjectAgendaCard({ entry }: { entry: ProjectAgendaEntry }) {
+export function ProjectAgendaCard({
+  entry,
+  owner = null,
+}: {
+  entry: ProjectAgendaEntry;
+  owner?: Member | null;
+}) {
   const strings = useStrings();
   const { project, qualification, nextAction, stuck } = entry;
   const heading =
@@ -47,6 +54,15 @@ export function ProjectAgendaCard({ entry }: { entry: ProjectAgendaEntry }) {
       <div className="project-agenda-heading">
         <span className="badge">{heading}</span>
         {stuck ? <span className="badge badge-stuck">{strings.stuckReasonLabels[stuck.reason]}</span> : null}
+        {owner ? (
+          <span
+            className="project-agenda-owner"
+            aria-label={`${strings.owner}: ${owner.name}`}
+            title={owner.name}
+          >
+            <MemberAvatar member={owner} size="sm" />
+          </span>
+        ) : null}
       </div>
       <Link className="project-agenda-link" to={`/projects/${project.id}`}>
         {project.title}

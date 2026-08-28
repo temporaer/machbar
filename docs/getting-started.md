@@ -36,10 +36,12 @@ Without OpenID Connect, Machbar uses a lightweight local identity model:
 2. Add the other household members under **Mehr** → **Personen verwalten**.
 3. Select the person currently using the browser.
 
-The selected person controls the personal Today view and records who made a
-change. It is not authentication: everyone who can reach the instance can
-select a local member. Configure [Pocket ID](deployment.md#pocket-id-openid-connect)
-when access to the direct deployment must require a login.
+The selected person controls the default personal Today view and records who
+made a change. Today can be broadened temporarily with **Meine | Alle**; that
+view toggle does not change the acting person. Local identity selection is not
+authentication: everyone who can reach the instance can select a local member.
+Configure [Pocket ID](deployment.md#pocket-id-openid-connect) when access to the
+direct deployment must require a login.
 
 ## Learn the main views
 
@@ -50,7 +52,7 @@ choices apply to this browser.
 
 | View | German label | Purpose |
 |------|--------------|---------|
-| **Today** | **Heute** | Work surfaced for the selected person from planning dates, due dates, responsibility, follow-ups, and project attention |
+| **Today** | **Heute** | Work surfaced for the selected person—or the whole household—from planning dates, due dates, responsibility, follow-ups, and project attention |
 | **Inbox** | **Eingang** | Captured items that still need clarification |
 | **Projects** | **Projekte** | Household outcomes, their tasks, driver, progress, and workflow state |
 | **Waiting** | **Wartet** | Tasks paused for another person, organization, event, or delivery |
