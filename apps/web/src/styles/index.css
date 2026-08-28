@@ -1232,6 +1232,10 @@ a {
   border-radius: inherit;
 }
 
+.task-row-content.has-owner {
+  min-height: 76px;
+}
+
 /*
  * The row currently being dragged. It stays in place (the insertion line
  * below shows where it would land) but is dimmed and outlined so it is
@@ -1401,8 +1405,10 @@ a {
 }
 
 .task-row-owner-avatar {
-  align-self: flex-end;
-  flex: 0 0 auto;
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 2;
   pointer-events: none;
 }
 

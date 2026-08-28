@@ -259,7 +259,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
         {strings.moreActions}
       </div>
       <div
-        className={`story-row-content${isRetained ? " retained" : ""}`}
+        className={`story-row-content${driver ? " has-driver" : ""}${isRetained ? " retained" : ""}`}
         style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}

@@ -150,6 +150,10 @@
   border: 1px solid transparent;
 }
 
+.story-row-content.has-driver {
+  min-height: 80px;
+}
+
 /* See `.task-row-content.retained` in `styles/index.css` for the rationale. */
 .story-row-content.retained {
   opacity: 0.55;
@@ -236,8 +240,10 @@
 }
 
 .story-row-driver-avatar {
-  align-self: flex-end;
-  flex: 0 0 auto;
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  z-index: 2;
   pointer-events: none;
 }
 
