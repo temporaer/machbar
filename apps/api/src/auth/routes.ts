@@ -1,4 +1,5 @@
 import cookie from "@fastify/cookie";
+import type { ApiErrorCode } from "@machbar/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.js";
@@ -17,7 +18,7 @@ const callbackQuerySchema = z.object({
   error: z.string().min(1).optional(),
   error_description: z.string().optional(),
 }).refine((value) => value.code || value.error, {
-  message: "Code oder Fehler fehlt.",
+  message: "Code or error is required.",
 });
 
 const loginQuerySchema = z.object({
@@ -45,7 +46,11 @@ export function validateReturnTo(input: string | undefined, basePath: string): s
   const appPath = basePath === "/" ? "/" : `${basePath}/`;
   if (!input) return `${appPath}#/heute`;
   if (!input.startsWith("/") || input.startsWith("//") || /[\r\n]/.test(input)) {
-    throw AppError.badRequest("Das Anmeldeziel ist ungültig.");
+    throw AppError.badRequest(
+      "auth_return_target_invalid",
+      "The sign-in return target is invalid.",
+      { returnTo: input },
+    );
   }
   const parsed = new URL(input, "https://machbar.invalid");
   if (
@@ -53,7 +58,11 @@ export function validateReturnTo(input: string | undefined, basePath: string): s
     (parsed.pathname !== basePath && parsed.pathname !== appPath) ||
     !parsed.hash.startsWith("#/")
   ) {
-    throw AppError.badRequest("Das Anmeldeziel ist ungültig.");
+    throw AppError.badRequest(
+      "auth_return_target_invalid",
+      "The sign-in return target is invalid.",
+      { returnTo: input },
+    );
   }
   return `${parsed.pathname}${parsed.search}${parsed.hash}`;
 }
@@ -86,10 +95,19 @@ function oidcStateCookieOptions() {
   };
 }
 
-function authErrorRedirect(publicUrl: string, message: string): string {
-  const url = new URL(publicUrl);
-  url.searchParams.set("authError", message);
-  url.hash = "/heute";
+function authErrorRedirect(
+  publicUrl: string,
+  basePath: string,
+  code: ApiErrorCode,
+  details?: Record<string, unknown>,
+): string {
+  const appPath = basePath === "/" ? "/" : `${basePath}/`;
+  const url = new URL(appPath, publicUrl);
+  url.searchParams.set("authErrorCode", code);
+  if (details !== undefined) {
+    url.searchParams.set("authErrorDetails", JSON.stringify(details));
+  }
+  url.hash = "/today";
   return url.toString();
 }
 
@@ -123,14 +141,21 @@ export function registerAuthentication(
 
     const path = requestPath(request.url);
     if (path.startsWith("/api/") && !isPublicApiPath(path) && !request.authMember) {
-      throw AppError.unauthorized("Bitte zuerst mit Pocket ID anmelden.");
+      throw AppError.unauthorized(
+        "authentication_required",
+        "Sign in with Pocket ID before accessing this resource.",
+      );
     }
     if (
       path.startsWith("/api/") &&
       isUnsafeMethod(request.method) &&
       request.headers.origin !== env.oidc!.publicUrl
     ) {
-      throw AppError.forbidden("Die Anfrage stammt nicht von der Machbar-App.");
+      throw AppError.forbidden(
+        "request_origin_forbidden",
+        "The request origin is not allowed.",
+        { origin: request.headers.origin ?? null },
+      );
     }
   });
 
@@ -142,9 +167,15 @@ export function registerAuthentication(
 
   app.get("/api/auth/login", async (request, reply) => {
     if (!service || !env.oidc) {
-      throw AppError.notFound("Pocket-ID-Anmeldung ist nicht konfiguriert.");
+      throw AppError.notFound(
+        "oidc_not_configured",
+        "Pocket ID sign-in is not configured.",
+      );
     }
-    const query = parseOrThrow(loginQuerySchema, request.query);
+    const query = parseOrThrow(loginQuerySchema, request.query, {
+      code: "auth_query_invalid",
+      message: "The authentication query parameters are invalid.",
+    });
     const returnTo = validateReturnTo(query.returnTo, env.basePath);
     const login = await service.beginLogin(returnTo);
     reply.setCookie(
@@ -157,16 +188,23 @@ export function registerAuthentication(
 
   app.get("/api/auth/callback", async (request, reply) => {
     if (!service || !env.oidc) {
-      throw AppError.notFound("Pocket-ID-Anmeldung ist nicht konfiguriert.");
+      throw AppError.notFound(
+        "oidc_not_configured",
+        "Pocket ID sign-in is not configured.",
+      );
     }
-    const query = parseOrThrow(callbackQuerySchema, request.query);
+    const query = parseOrThrow(callbackQuerySchema, request.query, {
+      code: "auth_query_invalid",
+      message: "The authentication query parameters are invalid.",
+    });
     const correlationState = request.cookies[OIDC_STATE_COOKIE];
     reply.clearCookie(OIDC_STATE_COOKIE, oidcStateCookieOptions());
     if (!correlationState || correlationState !== query.state) {
       return reply.redirect(
         authErrorRedirect(
           env.oidc.publicUrl,
-          "Die Anmeldung gehört nicht zu diesem Browser. Bitte erneut anmelden.",
+          env.basePath,
+          "oidc_browser_mismatch",
         ),
       );
     }
@@ -175,8 +213,11 @@ export function registerAuthentication(
       return reply.redirect(
         authErrorRedirect(
           env.oidc.publicUrl,
-          query.error_description?.trim() ||
-            "Die Anmeldung bei Pocket ID wurde abgebrochen.",
+          env.basePath,
+          "oidc_provider_error",
+          {
+            providerCode: query.error,
+          },
         ),
       );
     }
@@ -187,7 +228,11 @@ export function registerAuthentication(
     } catch (cause) {
       if (cause instanceof AppError) {
         return reply.redirect(
-          authErrorRedirect(env.oidc.publicUrl, cause.message),
+          authErrorRedirect(
+            env.oidc.publicUrl,
+            env.basePath,
+            cause.code,
+          ),
         );
       }
       throw cause;
@@ -202,7 +247,10 @@ export function registerAuthentication(
 
   app.post("/api/auth/logout", async (request, reply) => {
     if (!service) {
-      throw AppError.notFound("Pocket-ID-Anmeldung ist nicht konfiguriert.");
+      throw AppError.notFound(
+        "oidc_not_configured",
+        "Pocket ID sign-in is not configured.",
+      );
     }
     service.logout(request.cookies[SESSION_COOKIE]);
     reply.clearCookie(SESSION_COOKIE, cookieOptions());

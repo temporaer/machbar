@@ -1,4 +1,5 @@
 import type { ProjectWithActions } from "./api";
+import type { Locale } from "../i18n/catalog";
 
 /** The two visibility scopes the Projekte tab's compact chips switch between. */
 export type ProjectVisibilityScope = "mine" | "all";
@@ -9,6 +10,7 @@ export interface ProjectListFilterOptions {
   scope: ProjectVisibilityScope;
   /** The currently selected identity, or `null` when no member is selected yet. */
   currentMemberId: number | null;
+  locale?: Locale;
 }
 
 export type ProjectListClassification =
@@ -101,7 +103,12 @@ export function isTerminalProjectStatus(project: ProjectWithActions): boolean {
  */
 export function filterAndSortProjects(
   projects: ProjectWithActions[],
-  { query, scope, currentMemberId }: ProjectListFilterOptions,
+  {
+    query,
+    scope,
+    currentMemberId,
+    locale = "de",
+  }: ProjectListFilterOptions,
 ): ProjectWithActions[] {
   const foldedQuery = foldForSearch(query.trim());
   const filtered = projects.filter(
@@ -115,7 +122,7 @@ export function filterAndSortProjects(
       projectListClassificationOrder[classifyProjectListItem(b)];
     if (bucketDiff !== 0) return bucketDiff;
     if (a.position !== b.position) return a.position - b.position;
-    const titleDiff = a.title.localeCompare(b.title, "de");
+    const titleDiff = a.title.localeCompare(b.title, locale);
     if (titleDiff !== 0) return titleDiff;
     return a.id - b.id;
   });

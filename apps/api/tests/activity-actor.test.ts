@@ -80,9 +80,9 @@ describe("activity actor resolution", () => {
       expect(response.statusCode).toBe(400);
       expect(response.json()).toEqual({
         error: {
-          code: "bad_request",
-          message:
-            "Die ausgewählte Aktivitäts-Person muss eine gültige Mitglieds-ID sein.",
+          code: "activity_actor_invalid",
+          message: "The activity actor must be a valid member ID.",
+          details: { value },
         },
       });
     },
@@ -91,9 +91,7 @@ describe("activity actor resolution", () => {
   it("rejects repeated local actor headers", () => {
     expect(() =>
       resolveActivityActor(ctx.handle.db, null, ["1", "2"], true),
-    ).toThrow(
-      "Die ausgewählte Aktivitäts-Person muss eine gültige Mitglieds-ID sein.",
-    );
+    ).toThrow("The activity actor must be a valid member ID.");
   });
 
   it("rejects an unknown local actor with a clear client error", async () => {
@@ -106,8 +104,9 @@ describe("activity actor resolution", () => {
     expect(response.statusCode).toBe(400);
     expect(response.json()).toEqual({
       error: {
-        code: "bad_request",
-        message: "Die ausgewählte Aktivitäts-Person existiert nicht.",
+        code: "activity_actor_not_found",
+        message: "The selected activity actor does not exist.",
+        details: { memberId: 999 },
       },
     });
   });

@@ -8,7 +8,7 @@ import { useRefresh } from "../lib/refresh";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import type { TaskDetailFocusField } from "../lib/taskDetailContext";
-import { strings, taskStatusLabels } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { formatDateTime } from "../lib/format";
 import { sortByPosition } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
@@ -30,6 +30,8 @@ import { serializeTaskForShare } from "../lib/shareText";
 import { buildTaskShareUrl } from "../lib/shareUrls";
 import { HumanDateInput } from "./HumanDateInput";
 import { RecentActivity } from "./RecentActivity";
+import { useLocale } from "../lib/locale";
+import { localizedErrorMessage } from "../lib/errorMessage";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -55,6 +57,7 @@ function InheritanceControl({
   onChange: (mode: InheritanceMode) => void;
   focusRef?: RefObject<HTMLButtonElement>;
 }) {
+  const strings = useStrings();
   const labels: Record<InheritanceMode, string> = {
     inherit: strings.ownerInheritanceParent,
     explicit: strings.ownerInheritanceTaskSpecific,
@@ -86,6 +89,8 @@ function InheritanceControl({
  * drag editing is deliberately unavailable — still reach them.
  */
 export function TaskDetailSheet() {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
@@ -259,7 +264,7 @@ export function TaskDetailSheet() {
       reload();
       return true;
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : String(err));
+      setSaveError(localizedErrorMessage(err, strings));
       return false;
     } finally {
       setSavingTextFields(false);
@@ -298,7 +303,7 @@ export function TaskDetailSheet() {
         reload();
       } catch (err) {
         setStatusDraft(previousStatus);
-        setSaveError(err instanceof Error ? err.message : String(err));
+        setSaveError(localizedErrorMessage(err, strings));
       } finally {
         setChangingStatus(false);
       }
@@ -319,7 +324,7 @@ export function TaskDetailSheet() {
       reload();
     } catch (err) {
       setStatusDraft(previousStatus);
-      setSaveError(err instanceof Error ? err.message : String(err));
+      setSaveError(localizedErrorMessage(err, strings));
     } finally {
       setChangingStatus(false);
     }
@@ -344,7 +349,7 @@ export function TaskDetailSheet() {
         task ? (
           <NativeShareButton
             title={task.title}
-            text={serializeTaskForShare(task)}
+            text={serializeTaskForShare(task, locale)}
             url={buildTaskShareUrl(task.id)}
             showStatus={false}
             onStatusChange={setShareStatus}
@@ -390,7 +395,7 @@ export function TaskDetailSheet() {
             >
               {taskStatuses.map((s) => (
                 <option key={s} value={s}>
-                  {taskStatusLabels[s]}
+                  {strings.taskStatusLabels[s]}
                 </option>
               ))}
             </select>
@@ -475,11 +480,11 @@ export function TaskDetailSheet() {
               onChange={(e) => void patch({ priority: e.target.value ? Number(e.target.value) : null })}
             >
               <option value="">{strings.none}</option>
-              <option value="1">1 – höchste</option>
+              <option value="1">1 – {strings.priorityHighest}</option>
               <option value="2">2</option>
               <option value="3">3</option>
               <option value="4">4</option>
-              <option value="5">5 – niedrigste</option>
+              <option value="5">5 – {strings.priorityLowest}</option>
             </select>
           </div>
 
@@ -697,7 +702,8 @@ export function TaskDetailSheet() {
           </div>
 
           <p className="text-muted">
-            {strings.created}: {formatDateTime(task.createdAt)} · {strings.updated}: {formatDateTime(task.updatedAt)}
+            {strings.created}: {formatDateTime(task.createdAt, locale)} ·{" "}
+            {strings.updated}: {formatDateTime(task.updatedAt, locale)}
           </p>
 
           <RecentActivity
@@ -761,6 +767,7 @@ function AddChildForm({
   inputRef: RefObject<HTMLInputElement>;
   onAdded: () => void;
 }) {
+  const strings = useStrings();
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const { currentMemberId } = useIdentity();

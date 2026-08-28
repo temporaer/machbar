@@ -3,7 +3,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { WaitingPage } from "./WaitingPage";
 import { api } from "../lib/api";
-import { strings } from "../lib/strings";
+import { de as strings } from "../i18n/de";
 import { renderWithProviders } from "../test/testUtils";
 import { makeMember, makeTag, makeTask, makeWaitingGroup } from "../test/fixtures";
 import "../styles/index.css";

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { LoadingState, ErrorState } from "../components/AsyncStates";
 import { WaitingGroupList } from "../components/WaitingGroupList";
 import { TagGroupingControl } from "../components/TagGroupingControl";
@@ -9,6 +9,7 @@ import { PageHeader } from "../components/PageHeader";
 import type { GroupableTagKind } from "../lib/tagGrouping";
 
 export function WaitingPage() {
+  const strings = useStrings();
   const [groupBy, setGroupBy] = useState<GroupableTagKind | null>(null);
   const { data: groups, loading, error, reload } = useAsync(
     () => api.getWaiting(),

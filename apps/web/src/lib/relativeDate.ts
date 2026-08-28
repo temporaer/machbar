@@ -1,3 +1,6 @@
+import { getCatalog, type Locale } from "../i18n/catalog";
+import { localeTag } from "./format";
+
 const DAY_MS = 86_400_000;
 
 function parseCalendarDate(value: string): { year: number; month: number; day: number } | null {
@@ -25,46 +28,62 @@ function calendarDayDifference(value: string, now: Date): number | null {
   return Math.round((targetDay - localToday) / DAY_MS);
 }
 
-export function formatExactLocalDate(value: string): string | null {
+export function formatExactLocalDate(
+  value: string,
+  locale: Locale = "de",
+): string | null {
   const date = parseCalendarDate(value);
   if (!date) return null;
-  return new Intl.DateTimeFormat("de-DE", {
+  return new Intl.DateTimeFormat(localeTag(locale), {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
   }).format(new Date(date.year, date.month - 1, date.day));
 }
 
-function futureRelative(days: number): string {
+function futureRelative(days: number, locale: Locale): string {
+  const strings = getCatalog(locale);
   if (days >= 7 && days % 7 === 0) {
-    const weeks = days / 7;
-    return `in ${weeks} ${weeks === 1 ? "Woche" : "Wochen"}`;
+    return strings.inWeeks(days / 7);
   }
-  return `in ${days} ${days === 1 ? "Tag" : "Tagen"}`;
+  return strings.inDays(days);
 }
 
-export function formatRelativeDueDate(value: string, now = new Date()): string | null {
+export function formatRelativeDueDate(
+  value: string,
+  now = new Date(),
+  locale: Locale = "de",
+): string | null {
   const days = calendarDayDifference(value, now);
   if (days === null) return null;
-  if (days === 0) return "heute";
-  if (days > 0) return futureRelative(days);
-  const overdueDays = Math.abs(days);
-  return `${overdueDays} ${overdueDays === 1 ? "Tag" : "Tage"} überfällig`;
+  const strings = getCatalog(locale);
+  if (days === 0) return strings.todayRelative;
+  if (days > 0) return futureRelative(days, locale);
+  return strings.overdueDays(Math.abs(days));
 }
 
-export function formatRelativeScheduleDate(value: string, now = new Date()): string | null {
+export function formatRelativeScheduleDate(
+  value: string,
+  now = new Date(),
+  locale: Locale = "de",
+): string | null {
   const days = calendarDayDifference(value, now);
   if (days === null) return null;
-  if (days === 0) return "heute";
-  if (days > 0) return futureRelative(days);
-  const elapsedDays = Math.abs(days);
-  return `seit ${elapsedDays} ${elapsedDays === 1 ? "Tag" : "Tagen"}`;
+  const strings = getCatalog(locale);
+  if (days === 0) return strings.todayRelative;
+  if (days > 0) return futureRelative(days, locale);
+  return strings.sinceDays(Math.abs(days));
 }
 
-export function formatCompactWaitDuration(value: string, now = new Date()): string | null {
+export function formatCompactWaitDuration(
+  value: string,
+  now = new Date(),
+  locale: Locale = "de",
+): string | null {
   const days = calendarDayDifference(value, now);
   if (days === null || days < 0) return null;
-  if (days < 7) return `${days}d`;
-  if (days < 60) return `${Math.round(days / 7)}w`;
-  return `${Math.round(days / 30)}m`;
+  const strings = getCatalog(locale);
+  if (days < 7) return strings.compactDays(days);
+  if (days < 60) return strings.compactWeeks(Math.round(days / 7));
+  return strings.compactMonths(Math.round(days / 30));
 }

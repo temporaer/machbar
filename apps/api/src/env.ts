@@ -33,13 +33,13 @@ function parseHttpsUrl(name: string, input: string): string {
   try {
     url = new URL(input);
   } catch {
-    throw new Error(`${name} muss eine gültige URL sein.`);
+    throw new Error(`${name} must be a valid URL.`);
   }
   if (url.protocol !== "https:") {
-    throw new Error(`${name} muss eine HTTPS-URL sein.`);
+    throw new Error(`${name} must be an HTTPS URL.`);
   }
   if (url.username || url.password || url.search || url.hash) {
-    throw new Error(`${name} darf keine Zugangsdaten, Query oder Fragment enthalten.`);
+    throw new Error(`${name} must not contain credentials, a query, or a fragment.`);
   }
   return url.href.replace(/\/$/, "");
 }
@@ -55,17 +55,17 @@ function loadOidcConfig(source: NodeJS.ProcessEnv): OidcConfig | null {
   if (configured.length === 0) return null;
   if (configured.length !== required.length) {
     const missing = required.filter((key) => !source[key]?.trim()).join(", ");
-    throw new Error(`OIDC ist unvollständig konfiguriert. Es fehlt: ${missing}.`);
+    throw new Error(`OIDC configuration is incomplete. Missing: ${missing}.`);
   }
 
   const sessionTtlDays = Number.parseInt(source.OIDC_SESSION_TTL_DAYS ?? "30", 10);
   if (!Number.isInteger(sessionTtlDays) || sessionTtlDays < 1 || sessionTtlDays > 365) {
-    throw new Error("OIDC_SESSION_TTL_DAYS muss zwischen 1 und 365 liegen.");
+    throw new Error("OIDC_SESSION_TTL_DAYS must be between 1 and 365.");
   }
 
   const publicUrl = new URL(parseHttpsUrl("OIDC_PUBLIC_URL", source.OIDC_PUBLIC_URL!));
   if (publicUrl.pathname !== "/") {
-    throw new Error("OIDC_PUBLIC_URL darf keinen Pfad enthalten.");
+    throw new Error("OIDC_PUBLIC_URL must not contain a path.");
   }
 
   return {

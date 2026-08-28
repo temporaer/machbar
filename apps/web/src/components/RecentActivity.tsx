@@ -4,6 +4,8 @@ import { Link } from "react-router-dom";
 import { api, type ActivityFilters } from "../lib/api";
 import { useRefresh } from "../lib/refresh";
 import { ActivityFeed } from "./ActivityFeed";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 
 const RECENT_ACTIVITY_LIMIT = 5;
 
@@ -11,7 +13,7 @@ function activityHref(filters: ActivityFilters): string {
   const params = new URLSearchParams();
   if (filters.taskId !== undefined) params.set("taskId", String(filters.taskId));
   if (filters.projectId !== undefined) params.set("projectId", String(filters.projectId));
-  return `/mehr/aktivitaeten?${params.toString()}`;
+  return `/more/activity?${params.toString()}`;
 }
 
 export function RecentActivity({
@@ -21,6 +23,7 @@ export function RecentActivity({
   filters: Pick<ActivityFilters, "taskId" | "projectId">;
   idPrefix: string;
 }) {
+  const strings = useStrings();
   const { version } = useRefresh();
   const [open, setOpen] = useState(false);
   const [events, setEvents] = useState<ActivityEvent[]>([]);
@@ -44,7 +47,7 @@ export function RecentActivity({
       setLoaded(true);
     } catch (cause) {
       if (id !== requestId.current) return;
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(localizedErrorMessage(cause, strings));
     } finally {
       if (id === requestId.current) setLoading(false);
     }
@@ -84,26 +87,26 @@ export function RecentActivity({
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary className="section-title">
-        <span role="heading" aria-level={2}>Letzte Aktivitäten</span>
+        <span role="heading" aria-level={2}>{strings.recentActivities}</span>
       </summary>
       <div className="contextual-activity-content">
-        {loading ? <p className="text-muted contextual-activity-state" role="status">Wird geladen …</p> : null}
+        {loading ? <p className="text-muted contextual-activity-state" role="status">{strings.activityLoading}</p> : null}
         {!loading && error ? (
           <div className="contextual-activity-state" role="alert">
-            <span>Aktivitäten konnten nicht geladen werden.</span>{" "}
+            <span>{strings.activityLoadError}</span>{" "}
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => void load()}>
-              Erneut versuchen
+              {strings.retry}
             </button>
           </div>
         ) : null}
         {!loading && loaded && events.length === 0 ? (
-          <p className="text-muted contextual-activity-state">Noch keine Aktivitäten.</p>
+          <p className="text-muted contextual-activity-state">{strings.recentActivityEmpty}</p>
         ) : null}
         {events.length > 0 ? (
           <ActivityFeed events={events} headingLevel={3} idPrefix={idPrefix} />
         ) : null}
         <Link className="contextual-activity-more" to={activityHref(filters)}>
-          Alle Aktivitäten anzeigen
+          {strings.viewAllActivities}
         </Link>
       </div>
     </details>

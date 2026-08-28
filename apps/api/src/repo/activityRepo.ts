@@ -81,7 +81,11 @@ function decodeCursor(value: string): ActivityCursor {
     }
     return { createdAt: parsed.createdAt, id: parsed.id };
   } catch {
-    throw AppError.badRequest("Der Aktivitäts-Cursor ist ungültig.");
+    throw AppError.badRequest(
+      "activity_cursor_invalid",
+      "The activity cursor is invalid.",
+      { cursor: value },
+    );
   }
 }
 

@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
 import { useIdentity } from "../lib/identity";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { IdentitySelector } from "./IdentitySelector";
 import { ErrorState, LoadingState } from "./AsyncStates";
 
 export function IdentityGate({ children }: { children: ReactNode }) {
+  const strings = useStrings();
   const {
     currentMemberId,
     membersLoading,

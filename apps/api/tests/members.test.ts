@@ -47,7 +47,10 @@ describe("household member create / rename / delete", () => {
 
     const duplicate = await createMember("Nina Bauer");
     expect(duplicate.statusCode).toBe(409);
-    expect(duplicate.json().error.message).toContain("existiert bereits");
+    expect(duplicate.json().error).toMatchObject({
+      code: "member_name_conflict",
+      details: { name: "Nina Bauer" },
+    });
 
     const duplicateWithWhitespace = await createMember("  Nina Bauer  ");
     expect(duplicateWithWhitespace.statusCode).toBe(409);

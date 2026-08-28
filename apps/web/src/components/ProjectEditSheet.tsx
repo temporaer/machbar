@@ -5,7 +5,9 @@ import type { ProjectDetail, ProjectWorkflowAction } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
-import { strings, projectStatusLabels } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import type { Strings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { BottomSheet } from "./BottomSheet";
 import { TagPicker } from "./TagPicker";
@@ -23,17 +25,9 @@ function textFieldsSnapshot(project: ProjectDetail): TextFieldsSnapshot {
   return { title: project.title, notes: project.notes };
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+function errorMessage(err: unknown, strings: Strings): string {
+  return localizedErrorMessage(err, strings);
 }
-
-const lifecycleLabels: Record<ProjectWorkflowAction, string> = {
-  activate: strings.activateStory,
-  return_to_backlog: strings.returnToBacklogStory,
-  complete: strings.completeStory,
-  reopen: strings.reopen,
-  archive: strings.archiveStory,
-};
 
 export type ProjectEditFocusField = "driver" | "completion";
 
@@ -61,6 +55,14 @@ export function ProjectEditSheet({
   onClose: () => void;
   focusField?: ProjectEditFocusField | undefined;
 }) {
+  const strings = useStrings();
+  const lifecycleLabels: Record<ProjectWorkflowAction, string> = {
+    activate: strings.activateStory,
+    return_to_backlog: strings.returnToBacklogStory,
+    complete: strings.completeStory,
+    reopen: strings.reopen,
+    archive: strings.archiveStory,
+  };
   const { members } = useIdentity();
   const { bump } = useRefresh();
   const navigate = useNavigate();
@@ -145,7 +147,7 @@ export function ProjectEditSheet({
       setTextFieldsBaseline(snapshot);
       bump();
     } catch (err) {
-      setActionError(errorMessage(err));
+      setActionError(errorMessage(err, strings));
     } finally {
       setSavingTextFields(false);
     }
@@ -157,7 +159,7 @@ export function ProjectEditSheet({
       await api.updateProject(project.id, input);
       bump();
     } catch (err) {
-      setActionError(errorMessage(err));
+      setActionError(errorMessage(err, strings));
     }
   };
 
@@ -184,7 +186,7 @@ export function ProjectEditSheet({
       }
       bump();
     } catch (err) {
-      setActionError(errorMessage(err));
+      setActionError(errorMessage(err, strings));
     } finally {
       setBusyAction(null);
     }
@@ -198,9 +200,9 @@ export function ProjectEditSheet({
       await api.deleteProject(project.id);
       onClose();
       bump();
-      navigate("/projekte");
+      navigate("/projects");
     } catch (err) {
-      setActionError(errorMessage(err));
+      setActionError(errorMessage(err, strings));
       setDeleting(false);
     }
   };
@@ -247,7 +249,7 @@ export function ProjectEditSheet({
             {strings.projectStatus}
           </span>
           <div>
-            <span className="badge">{projectStatusLabels[project.status]}</span>
+            <span className="badge">{strings.projectStatusLabels[project.status]}</span>
           </div>
         </div>
 

@@ -4,6 +4,8 @@ import { useSearchParams } from "react-router-dom";
 import { ActivityFeed } from "../components/ActivityFeed";
 import { EmptyState, ErrorState, LoadingState } from "../components/AsyncStates";
 import { api, type ActivityFilters } from "../lib/api";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 
 const PAGE_SIZE = 25;
 
@@ -25,6 +27,7 @@ export function activityFiltersFromSearchParams(params: URLSearchParams): Activi
 }
 
 export function ActivityPage() {
+  const strings = useStrings();
   const [searchParams] = useSearchParams();
   const filters = activityFiltersFromSearchParams(searchParams);
   const filterKey = `${filters.actorId ?? ""}:${filters.taskId ?? ""}:${filters.projectId ?? ""}`;
@@ -50,7 +53,7 @@ export function ActivityPage() {
       setNextCursor(page.nextCursor);
     } catch (cause) {
       if (id !== requestId.current) return;
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(localizedErrorMessage(cause, strings));
     } finally {
       if (id !== requestId.current) return;
       cursor ? setLoadingMore(false) : setLoading(false);
@@ -70,16 +73,16 @@ export function ActivityPage() {
   return (
     <div>
       <div className="page-header">
-        <h1>Aktivitäten</h1>
+        <h1>{strings.activities}</h1>
       </div>
-      <p className="page-subtitle">Die neuesten Änderungen an Aufgaben und Projekten.</p>
+      <p className="page-subtitle">{strings.activityPageHint}</p>
 
       {loading ? <LoadingState /> : null}
       {!loading && error && events.length === 0 ? (
         <ErrorState message={error} onRetry={() => void load()} />
       ) : null}
       {!loading && !error && events.length === 0 ? (
-        <EmptyState message="Noch keine Aktivitäten vorhanden." />
+        <EmptyState message={strings.activityEmpty} />
       ) : null}
       {events.length > 0 ? <ActivityFeed events={events} /> : null}
       {error && events.length > 0 ? (
@@ -92,7 +95,7 @@ export function ActivityPage() {
           disabled={loadingMore}
           onClick={() => void load(nextCursor)}
         >
-          {loadingMore ? "Wird geladen …" : "Mehr laden"}
+          {loadingMore ? strings.activityLoading : strings.loadMore}
         </button>
       ) : null}
     </div>

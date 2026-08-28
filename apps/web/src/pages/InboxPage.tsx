@@ -1,6 +1,6 @@
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
@@ -9,6 +9,7 @@ import { PageHeader } from "../components/PageHeader";
 import { useSwipeSettings } from "../lib/swipeSettings";
 
 export function InboxPage() {
+  const strings = useStrings();
   const { data: tasks, loading, error, reload } = useAsync(() => api.getInbox(), []);
   const { openQueue } = useTaskDetail();
   const { primarySwipeAction } = useSwipeSettings();

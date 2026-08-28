@@ -12,7 +12,7 @@ describe("Fastify-level error handling", () => {
     await closeTestContext(ctx);
   });
 
-  it("returns a calm German 400 (not a generic 500) for a request with Content-Type: application/json but no body", async () => {
+  it("returns a stable 400 (not a generic 500) for an empty JSON body", async () => {
     // Mirrors the real bug: the browser's fetch() call used to always send
     // `Content-Type: application/json` on DELETE, even without a body.
     // Fastify's json body parser rejects that combination itself, before any
@@ -34,8 +34,9 @@ describe("Fastify-level error handling", () => {
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({
       error: {
-        code: "bad_request",
-        message: "Die Anfrage konnte nicht verarbeitet werden.",
+        code: "malformed_request",
+        message: "The request could not be processed.",
+        details: { fastifyCode: "FST_ERR_CTP_EMPTY_JSON_BODY" },
       },
     });
   });
@@ -55,5 +56,29 @@ describe("Fastify-level error handling", () => {
 
     const listRes = await ctx.app.inject({ method: "GET", url: "/api/members" });
     expect(listRes.json().map((m: { id: number }) => m.id)).not.toContain(member.id);
+  });
+
+  it("returns structured validation issues without localized Zod messages", async () => {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toEqual({
+      code: "request_body_invalid",
+      message: "The request contains invalid data.",
+      details: {
+        issues: [
+          {
+            code: "invalid_type",
+            expected: "string",
+            received: "undefined",
+            path: ["name"],
+          },
+        ],
+      },
+    });
   });
 });

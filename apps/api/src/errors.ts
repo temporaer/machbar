@@ -1,18 +1,16 @@
-/**
- * Application error carrying a user-facing German message and an HTTP
- * status code. Route handlers catch this and translate it into a JSON
- * error response; anything else is treated as an unexpected 500 error.
- */
+import type { ApiErrorCode } from "@machbar/shared";
+
+/** Application error with a stable client-facing code and English fallback. */
 export class AppError extends Error {
   readonly statusCode: number;
-  readonly code: string;
-  readonly details?: unknown;
+  readonly code: ApiErrorCode;
+  readonly details?: Record<string, unknown>;
 
   constructor(
     statusCode: number,
-    code: string,
+    code: ApiErrorCode,
     message: string,
-    details?: unknown,
+    details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "AppError";
@@ -21,23 +19,43 @@ export class AppError extends Error {
     this.details = details;
   }
 
-  static notFound(message: string): AppError {
-    return new AppError(404, "not_found", message);
+  static notFound(
+    code: ApiErrorCode,
+    message: string,
+    details?: Record<string, unknown>,
+  ): AppError {
+    return new AppError(404, code, message, details);
   }
 
-  static badRequest(message: string, details?: unknown): AppError {
-    return new AppError(400, "bad_request", message, details);
+  static badRequest(
+    code: ApiErrorCode,
+    message: string,
+    details?: Record<string, unknown>,
+  ): AppError {
+    return new AppError(400, code, message, details);
   }
 
-  static conflict(message: string): AppError {
-    return new AppError(409, "conflict", message);
+  static conflict(
+    code: ApiErrorCode,
+    message: string,
+    details?: Record<string, unknown>,
+  ): AppError {
+    return new AppError(409, code, message, details);
   }
 
-  static unauthorized(message: string): AppError {
-    return new AppError(401, "unauthorized", message);
+  static unauthorized(
+    code: ApiErrorCode,
+    message: string,
+    details?: Record<string, unknown>,
+  ): AppError {
+    return new AppError(401, code, message, details);
   }
 
-  static forbidden(message: string): AppError {
-    return new AppError(403, "forbidden", message);
+  static forbidden(
+    code: ApiErrorCode,
+    message: string,
+    details?: Record<string, unknown>,
+  ): AppError {
+    return new AppError(403, code, message, details);
   }
 }

@@ -43,15 +43,18 @@ when access to the direct deployment must require a login.
 
 ## Learn the main views
 
-The interface is currently German:
+Machbar supports German and English. On first use it follows a supported
+browser language and otherwise starts in German. Change the language and
+System/Light/Dark appearance in the **Settings** section under **More**; both
+choices apply to this browser.
 
-| View | Purpose |
-|------|---------|
-| **Heute** | Work surfaced for the selected person from planning dates, due dates, responsibility, follow-ups, and project attention |
-| **Eingang** | Captured items that still need clarification |
-| **Projekte** | Household outcomes, their tasks, driver, progress, and workflow state |
-| **Wartet** | Tasks paused for another person, organization, event, or delivery |
-| **Mehr** | Search, stuck projects, project clarification, task refinement, activity, tags, people, and settings |
+| View | German label | Purpose |
+|------|--------------|---------|
+| **Today** | **Heute** | Work surfaced for the selected person from planning dates, due dates, responsibility, follow-ups, and project attention |
+| **Inbox** | **Eingang** | Captured items that still need clarification |
+| **Projects** | **Projekte** | Household outcomes, their tasks, driver, progress, and workflow state |
+| **Waiting** | **Wartet** | Tasks paused for another person, organization, event, or delivery |
+| **More** | **Mehr** | Search, stuck projects, project clarification, task refinement, activity, tags, people, and settings |
 
 ## Add the first work
 
@@ -92,4 +95,3 @@ docker compose down
 
 Do not add `-v` to `docker compose down` unless you intentionally want to
 remove the named data volume.
-

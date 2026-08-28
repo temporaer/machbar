@@ -17,9 +17,12 @@ import {
   rememberShareTarget,
   type RecentShareTarget,
 } from "../lib/recentShareTargets";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import type { Strings } from "../lib/strings";
 import { CaptureForm, type CaptureResult } from "../components/CaptureForm";
 import { ErrorState, LoadingState } from "../components/AsyncStates";
+import { useLocale } from "../lib/locale";
+import { localizedErrorMessage } from "../lib/errorMessage";
 
 interface ShareOption {
   key: string;
@@ -35,7 +38,7 @@ interface CompletedShare {
   title: string;
 }
 
-function optionForTask(task: Task): ShareOption {
+function optionForTask(task: Task, strings: Strings): ShareOption {
   return {
     key: `task:${task.id}`,
     kind: "task",
@@ -47,7 +50,10 @@ function optionForTask(task: Task): ShareOption {
   };
 }
 
-function optionForProject(project: Project | ProjectWithActions): ShareOption {
+function optionForProject(
+  project: Project | ProjectWithActions,
+  strings: Strings,
+): ShareOption {
   return {
     key: `project:${project.id}`,
     kind: "project",
@@ -57,11 +63,11 @@ function optionForProject(project: Project | ProjectWithActions): ShareOption {
   };
 }
 
-function fold(value: string): string {
+function fold(value: string, locale: string): string {
   return value
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
-    .toLocaleLowerCase();
+    .toLocaleLowerCase(locale);
 }
 
 function uniqueOptions(options: ShareOption[]): ShareOption[] {
@@ -77,6 +83,7 @@ function TargetRows({
   busyKey: string | null;
   onChoose: (option: ShareOption) => void;
 }) {
+  const strings = useStrings();
   return (
     <div className="share-target-list">
       {options.map((option) => (
@@ -98,6 +105,7 @@ function TargetRows({
 }
 
 export function SharePage() {
+  const strings = useStrings();
   const navigate = useNavigate();
   const [incoming] = useState(() => parseWebShareTarget(window.location.search));
   const appendBlock = useMemo(() => shareTargetToTextBlock(incoming), [incoming]);
@@ -120,7 +128,7 @@ export function SharePage() {
           <button
             type="button"
             className="btn btn-primary btn-block"
-            onClick={() => navigate("/heute")}
+            onClick={() => navigate("/today")}
           >
             {strings.toMachbar}
           </button>
@@ -133,10 +141,15 @@ export function SharePage() {
 }
 
 function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const navigate = useNavigate();
   const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
-  const captureDraft = useMemo(() => shareTargetToCaptureDraft(incoming), [incoming]);
+  const captureDraft = useMemo(
+    () => shareTargetToCaptureDraft(incoming, locale),
+    [incoming, locale],
+  );
   const appendBlock = useMemo(() => shareTargetToTextBlock(incoming), [incoming]);
   const [captureOpen, setCaptureOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -151,10 +164,12 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
   const allOptions = useMemo(
     () =>
       uniqueOptions([
-        ...(projectsState.data ?? []).map(optionForProject),
-        ...(tasksState.data ?? []).map(optionForTask),
+        ...(projectsState.data ?? []).map((project) =>
+          optionForProject(project, strings),
+        ),
+        ...(tasksState.data ?? []).map((task) => optionForTask(task, strings)),
       ]),
-    [projectsState.data, tasksState.data],
+    [projectsState.data, strings, tasksState.data],
   );
   const optionByKey = useMemo(
     () => new Map(allOptions.map((option) => [option.key, option])),
@@ -180,21 +195,25 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
         ...(agenda.revisit ?? []),
         ...agenda.shared,
         ...agenda.unscheduled,
-      ].flatMap((task) => flattenTasks([task]).map(optionForTask)),
+      ].flatMap((task) =>
+        flattenTasks([task]).map((entry) => optionForTask(entry, strings)),
+      ),
     );
-    const projects = agenda.projects.map((entry) => optionForProject(entry.project));
+    const projects = agenda.projects.map((entry) =>
+      optionForProject(entry.project, strings),
+    );
     const recentKeys = new Set(recentOptions.map((option) => option.key));
     return uniqueOptions([...projects, ...tasks]).filter(
       (option) => !recentKeys.has(option.key),
     );
-  }, [agendaState.data, recentOptions]);
+  }, [agendaState.data, recentOptions, strings]);
   const searchOptions = useMemo(() => {
-    const needle = fold(query.trim());
+    const needle = fold(query.trim(), locale);
     if (!needle) return [];
     return allOptions.filter((option) =>
-      fold(`${option.title} ${option.subtitle}`).includes(needle),
+      fold(`${option.title} ${option.subtitle}`, locale).includes(needle),
     );
-  }, [allOptions, query]);
+  }, [allOptions, locale, query]);
 
   const appendTo = async (option: ShareOption) => {
     if (!appendBlock || busyKey) return;
@@ -210,7 +229,7 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
       bump();
       setCompleted({ kind: option.kind, id: option.id, title: option.title });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(localizedErrorMessage(cause, strings));
     } finally {
       setBusyKey(null);
     }
@@ -238,14 +257,14 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
             onClick={() =>
               navigate(
                 completed.kind === "task"
-                  ? `/aufgaben/${completed.id}`
-                  : `/projekte/${completed.id}`,
+                  ? `/tasks/${completed.id}`
+                  : `/projects/${completed.id}`,
               )
             }
           >
             {strings.openSharedTarget}
           </button>
-          <button type="button" className="btn btn-block" onClick={() => navigate("/heute")}>
+          <button type="button" className="btn btn-block" onClick={() => navigate("/today")}>
             {strings.done}
           </button>
         </div>

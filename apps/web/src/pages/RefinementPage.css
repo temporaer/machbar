@@ -28,7 +28,6 @@
   font-weight: 600;
   font-size: 0.85rem;
   padding: 0 16px;
-  color: #fff;
   opacity: 0;
   transition: opacity 120ms ease;
 }
@@ -40,12 +39,14 @@
 /* Right swipe: cycles the size (null -> S -> M -> L -> XL -> null). */
 .refinement-row-swipe-bg.cycle {
   background: var(--color-primary);
+  color: var(--color-primary-contrast);
   justify-content: flex-start;
 }
 
 /* Left swipe: reveals the direct-size/assign/project chip strip. */
 .refinement-row-swipe-bg.chips {
-  background: var(--color-warning);
+  background: var(--color-warning-strong);
+  color: var(--color-warning-contrast);
   justify-content: flex-end;
 }
 

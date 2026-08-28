@@ -10,6 +10,7 @@ import {
 } from "../repo/refinementRepo.js";
 import { Graph } from "../domain/graph.js";
 import { buildRefinementIssues } from "../domain/refinementIssues.js";
+import { validationDetails } from "../validation.js";
 
 /**
  * `ownerId` accepts either a positive member id or the literal `"none"` to
@@ -38,15 +39,15 @@ function parseRefinementFilters(db: Db, query: unknown): RefinementFilters {
   const result = refinementQuerySchema.safeParse(query);
   if (!result.success) {
     throw AppError.badRequest(
-      "Die Filterparameter sind ungültig.",
-      result.error.flatten(),
+      "refinement_filters_invalid",
+      "The refinement filters are invalid.",
+      validationDetails(result.error),
     );
   }
   const filters: RefinementFilters = {};
   if (result.data.ownerId === "none") {
     filters.ownerId = null;
   } else if (result.data.ownerId !== undefined) {
-    // Throws a German 404 (AppError.notFound) if the member doesn't exist.
     getMemberOrThrow(db, result.data.ownerId);
     filters.ownerId = result.data.ownerId;
   }

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Project, Task } from "@machbar/shared";
 import { api } from "../lib/api";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { useRefresh } from "../lib/refresh";
 import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
 import { rememberDestination } from "../lib/recentDestinations";
@@ -25,6 +26,7 @@ export type MoveMode = "parent" | "project" | "subtree";
  * hierarchy/cycle validity.
  */
 export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveMode; onClose: () => void }) {
+  const strings = useStrings();
   const { bump } = useRefresh();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [projectTasks, setProjectTasks] = useState<Task[] | null>(null);
@@ -62,7 +64,9 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
       setParentProjectTitle(null);
     }
     Promise.all(jobs)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) =>
+        setError(localizedErrorMessage(err, strings)),
+      )
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [needsProjectStep, needsParentStep, selectedProjectId]);
@@ -122,7 +126,7 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
       bump();
       onClose();
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : String(err));
+      setSubmitError(localizedErrorMessage(err, strings));
     } finally {
       setSaving(false);
     }

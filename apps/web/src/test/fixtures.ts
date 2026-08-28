@@ -113,7 +113,6 @@ export function makeStuckProject(overrides: Partial<StuckProjectWithActions> = {
   return {
     ...makeProject(),
     stuckReason: "no_next_action",
-    repairAction: "Lege einen nächsten Schritt fest.",
     ...overrides,
   };
 }

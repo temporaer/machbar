@@ -106,6 +106,10 @@ describe("append-only task and project notes", () => {
     });
 
     expect(response.statusCode).toBe(404);
-    expect(response.json().error).toMatchObject({ code: "not_found" });
+    const taskRequest = url.startsWith("/api/tasks/");
+    expect(response.json().error).toMatchObject({
+      code: taskRequest ? "task_not_found" : "project_not_found",
+      details: taskRequest ? { taskId: 999999 } : { projectId: 999999 },
+    });
   });
 });

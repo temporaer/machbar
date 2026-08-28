@@ -3,11 +3,13 @@ import type { ProjectWithActions } from "../lib/api";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import type { Strings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { BottomSheet } from "./BottomSheet";
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: unknown, strings: Strings): string {
+  return localizedErrorMessage(error, strings);
 }
 
 /**
@@ -22,6 +24,7 @@ export function CaptureProjectBreakdownSheet({
   project: ProjectWithActions;
   onClose: () => void;
 }) {
+  const strings = useStrings();
   const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
   const [nextAction, setNextAction] = useState("");
@@ -60,7 +63,7 @@ export function CaptureProjectBreakdownSheet({
       }
       bump();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(errorMessage(err, strings));
     } finally {
       setSaving(null);
     }
@@ -76,7 +79,7 @@ export function CaptureProjectBreakdownSheet({
       setCriterion("");
       bump();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(errorMessage(err, strings));
     } finally {
       setSaving(null);
     }
@@ -91,7 +94,7 @@ export function CaptureProjectBreakdownSheet({
       setSavedNotes(notes);
       bump();
     } catch (err) {
-      setError(errorMessage(err));
+      setError(errorMessage(err, strings));
     } finally {
       setSaving(null);
     }

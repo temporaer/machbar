@@ -59,7 +59,7 @@ function swipe(container: HTMLElement, deltaX: number) {
 /**
  * `renderWithProviders` (see `test/testUtils.tsx`) hard-codes a bare
  * `<MemoryRouter>` with no routes, so it can't observe a real navigation.
- * This mirrors the same provider stack plus a `/projekte/:id` marker route,
+ * This mirrors the same provider stack plus a `/projects/:id` marker route,
  * so navigating there via a chip can be asserted directly (see
  * `TaskRow.toProjectChip.test.tsx` for the identical pattern).
  */
@@ -74,7 +74,7 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
         <RefreshProvider>
           <Routes>
             <Route path="/" element={ui} />
-            <Route path="/projekte/:id" element={<ProjectRouteMarker />} />
+            <Route path="/projects/:id" element={<ProjectRouteMarker />} />
           </Routes>
         </RefreshProvider>
       </IdentityProvider>

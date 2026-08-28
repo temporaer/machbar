@@ -27,7 +27,6 @@ describe("ProjectAgendaCard", () => {
             nextAction: makeTask({ title: "Catering anrufen" }),
             stuck: {
               reason: "blocked_dependencies",
-              repairAction: "Abhängigkeit klären.",
             },
           }}
         />
@@ -37,10 +36,12 @@ describe("ProjectAgendaCard", () => {
     expect(screen.getByText("Projekt prüfen & fällig")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Sommerfest vorbereiten" })).toHaveAttribute(
       "href",
-      "/projekte/42",
+      "/projects/42",
     );
     expect(screen.getByText(/Catering anrufen/)).toBeInTheDocument();
-    expect(screen.getByText(/Abhängigkeit klären/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Prüfe die konkret blockierenden Voraussetzungen/),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Prüfen: heute (25.08.2026)")).toBeInTheDocument();
     expect(screen.getByLabelText("Fällig: in 3 Tagen (28.08.2026)")).toBeInTheDocument();
   });

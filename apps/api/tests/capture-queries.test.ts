@@ -100,14 +100,13 @@ describe("capture query views", () => {
         id: number;
         openCount: number;
         stuckReason: string;
-        repairAction: string;
       }>
     ).find((row) => row.id === project.id);
     expect(result).toMatchObject({
       openCount: 1,
       stuckReason: "no_next_action",
     });
-    expect(result?.repairAction).toMatch(/Kläre die erfassten Aufgaben/);
+    expect(result).not.toHaveProperty("repairAction");
   });
 
   it("does not use captured unassigned work to classify a mixed project as unassigned", async () => {

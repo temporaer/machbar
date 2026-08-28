@@ -2,8 +2,9 @@ import { useCallback, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import type { TaskSize } from "@machbar/shared";
-import { taskSizes, taskSizeLabels } from "@machbar/shared";
-import { strings, taskStatusLabels } from "../lib/strings";
+import { taskSizes } from "@machbar/shared";
+import { useStrings } from "../lib/strings";
+import type { Strings } from "../lib/strings";
 import type { RefinementListItem } from "../lib/useRefinementActions";
 import type { useRefinementActions } from "../lib/useRefinementActions";
 import { nextSizeInCycle } from "../lib/useRefinementActions";
@@ -13,8 +14,8 @@ import { AssignOwnerSheet } from "./AssignOwnerSheet";
 const SWIPE_THRESHOLD = 72;
 
 /** Short label for a task's current size, or the "unestimated" placeholder. */
-function sizeLabel(size: TaskSize | null): string {
-  return size ? taskSizeLabels[size] : "–";
+function sizeLabel(size: TaskSize | null, strings: Strings): string {
+  return size ? strings.taskSizeLabels[size] : "–";
 }
 
 export interface RefinementTaskRowProps {
@@ -36,6 +37,7 @@ export interface RefinementTaskRowProps {
  * `TaskRow.tsx`/global `index.css`.
  */
 export function RefinementTaskRow({ task: taskProp, ownerName, actions }: RefinementTaskRowProps) {
+  const strings = useStrings();
   const [dragX, setDragX] = useState(0);
   const [chipsOpen, setChipsOpen] = useState(false);
   const [assigning, setAssigning] = useState(false);
@@ -103,13 +105,13 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
   const goToProject = () => {
     if (!task.projectId) return;
     setChipsOpen(false);
-    navigate(`/projekte/${task.projectId}`);
+    navigate(`/projects/${task.projectId}`);
   };
 
   return (
     <li className="refinement-row" style={{ listStyle: "none" }}>
       <div className={`refinement-row-swipe-bg cycle${showCycleBg ? " visible" : ""}`} aria-hidden="true">
-        {sizeLabel(upcomingSize)}
+        {sizeLabel(upcomingSize, strings)}
       </div>
       <div className={`refinement-row-swipe-bg chips${showChipsBg ? " visible" : ""}`} aria-hidden="true">
         {strings.moreActions}
@@ -134,10 +136,10 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
           type="button"
           className="refinement-row-size"
           disabled={busy || isRetained}
-          aria-label={`${strings.currentSize}: ${sizeLabel(task.size)}. ${strings.swipeHintSize}`}
+          aria-label={`${strings.currentSize}: ${sizeLabel(task.size, strings)}. ${strings.swipeHintSize}`}
           onClick={() => cycleSize(task)}
         >
-          {sizeLabel(task.size)}
+          {sizeLabel(task.size, strings)}
         </button>
         <button type="button" className="refinement-row-main" onClick={() => open(task.id)}>
           <div className="refinement-row-title">
@@ -151,7 +153,7 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
               </span>
             ) : null}
             {ownerName ? <span>{ownerName}</span> : <span>{strings.shared}</span>}
-            <span>{taskStatusLabels[task.status]}</span>
+            <span>{strings.taskStatusLabels[task.status]}</span>
             {task.status === "waiting" && task.waitingFor ? (
               <span>
                 {strings.waitingFor}: {task.waitingFor}
@@ -181,7 +183,7 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
               aria-pressed={task.size === size}
               onClick={() => chooseSize(size)}
             >
-              {taskSizeLabels[size]}
+              {strings.taskSizeLabels[size]}
             </button>
           ))}
           <button type="button" className="btn btn-sm" onClick={chooseClear}>

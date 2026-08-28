@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectDetailPage } from "./ProjectDetailPage";
-import { strings } from "../lib/strings";
+import { de as strings } from "../i18n/de";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { TaskDetailSheet } from "../components/TaskDetailSheet";
 
@@ -51,7 +51,7 @@ function RouteControls() {
   return (
     <>
       <button type="button" onClick={() => navigate(-1)}>Back</button>
-      <button type="button" onClick={() => navigate("/projekte/42?focus=planning")}>
+      <button type="button" onClick={() => navigate("/projects/42?focus=planning")}>
         Navigate to planning
       </button>
       <button
@@ -72,8 +72,8 @@ function renderProjectRoute(entry: string, initialEntries = [entry]) {
   return renderWithProviders(
     <>
       <Routes>
-        <Route path="/projekte/:id" element={<ProjectDetailPage />} />
-        <Route path="/projekte" element={<p>Projects destination</p>} />
+        <Route path="/projects/:id" element={<ProjectDetailPage />} />
+        <Route path="/projects" element={<p>Projects destination</p>} />
       </Routes>
       <TaskDetailHost />
       <ProjectRouteLocation />
@@ -187,7 +187,7 @@ describe("ProjectDetailPage task explanations", () => {
   });
 
   it("opens the focused outcome editor on direct navigation and clears only the focus query when closed", async () => {
-    renderProjectRoute("/projekte/42?focus=outcome");
+    renderProjectRoute("/projects/42?focus=outcome");
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(`${strings.criteria}: Sommerfest planen`)).toBeInTheDocument();
@@ -196,7 +196,7 @@ describe("ProjectDetailPage task explanations", () => {
     await userEvent.click(
       within(dialog).getAllByRole("button", { name: strings.close })[0]!,
     );
-    expect(screen.getByLabelText("project-route")).toHaveTextContent("/projekte/42");
+    expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects/42");
     expect(screen.getByLabelText("project-route")).not.toHaveTextContent("focus=");
   });
 
@@ -206,7 +206,7 @@ describe("ProjectDetailPage task explanations", () => {
   ] as const)(
     "opens and focuses the existing project edit surface for %s repair links",
     async (focus, role, name) => {
-      renderProjectRoute(`/projekte/42?focus=${focus}`);
+      renderProjectRoute(`/projects/42?focus=${focus}`);
 
       const control = await screen.findByRole(role, { name });
       expect(control).toHaveFocus();
@@ -214,16 +214,16 @@ describe("ProjectDetailPage task explanations", () => {
   );
 
   it("opens the project-scoped task capture sheet for a next-action repair link", async () => {
-    renderProjectRoute("/projekte/42?focus=next-action");
+    renderProjectRoute("/projects/42?focus=next-action");
 
     expect(await screen.findByPlaceholderText(strings.quickAddPlaceholder)).toHaveFocus();
     expect(screen.getByLabelText("project-route")).toHaveTextContent(
-      "/projekte/42?focus=next-action",
+      "/projects/42?focus=next-action",
     );
   });
 
   it("opens the globally hosted task sheet on the initial planning target", async () => {
-    renderProjectRoute("/projekte/42?focus=planning");
+    renderProjectRoute("/projects/42?focus=planning");
 
     const dialog = await screen.findByRole("dialog", { name: strings.taskDetails });
     await waitFor(() => expect(within(dialog).getByLabelText(strings.scheduled)).toHaveFocus());
@@ -258,7 +258,7 @@ describe("ProjectDetailPage task explanations", () => {
       return makeTask({ id, projectId: 42, ...input });
     });
 
-    renderProjectRoute("/projekte/42?focus=planning");
+    renderProjectRoute("/projects/42?focus=planning");
 
     const dialog = await screen.findByRole("dialog", { name: strings.taskDetails });
     expect(await within(dialog).findByDisplayValue("Ort reservieren")).toBeInTheDocument();
@@ -278,8 +278,8 @@ describe("ProjectDetailPage task explanations", () => {
   });
 
   it.each([
-    ["focus removal", ["/projekte/42?focus=planning"], "Remove planning focus"],
-    ["Back navigation", ["/projekte", "/projekte/42?focus=planning"], "Back"],
+    ["focus removal", ["/projects/42?focus=planning"], "Remove planning focus"],
+    ["Back navigation", ["/projects", "/projects/42?focus=planning"], "Back"],
   ])("closes its globally hosted planning sheet on %s", async (_name, entries, action) => {
     renderProjectRoute(entries.at(-1)!, entries);
 
@@ -293,13 +293,13 @@ describe("ProjectDetailPage task explanations", () => {
     if (action === "Back") {
       expect(screen.getByText("Projects destination")).toBeInTheDocument();
     } else {
-      expect(screen.getByLabelText("project-route")).toHaveTextContent("/projekte/42");
+      expect(screen.getByLabelText("project-route")).toHaveTextContent("/projects/42");
       expect(screen.getByLabelText("project-route")).not.toHaveTextContent("focus=");
     }
   });
 
   it("does not close a task sheet that replaces the route-owned planning sheet", async () => {
-    renderProjectRoute("/projekte/42?focus=planning");
+    renderProjectRoute("/projects/42?focus=planning");
 
     const planningDialog = await screen.findByRole("dialog", { name: strings.taskDetails });
     expect(await within(planningDialog).findByDisplayValue("Ort reservieren")).toBeInTheDocument();
@@ -316,7 +316,7 @@ describe("ProjectDetailPage task explanations", () => {
   });
 
   it("preserves a user-opened task sheet across planning navigation and Back", async () => {
-    renderProjectRoute("/projekte", ["/projekte"]);
+    renderProjectRoute("/projects", ["/projects"]);
 
     await userEvent.click(screen.getByRole("button", { name: "Open another task" }));
     const userDialog = await screen.findByRole("dialog", { name: strings.taskDetails });

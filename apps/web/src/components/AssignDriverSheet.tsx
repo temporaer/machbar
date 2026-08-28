@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Member } from "@machbar/shared";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
 
@@ -34,6 +34,7 @@ export function AssignDriverSheet({
   onClose: () => void;
   onAssign: (ownerMemberId: number | null) => Promise<void>;
 }) {
+  const strings = useStrings();
   const [selected, setSelected] = useState<number | null>(currentOwnerMemberId);
   const [saving, setSaving] = useState(false);
   const canUnassign = allowUnassigned ?? !activateHint;

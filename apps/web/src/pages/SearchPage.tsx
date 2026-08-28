@@ -2,12 +2,13 @@ import { useState } from "react";
 import type { SearchFilters } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { SearchFilterBar } from "../components/SearchFilterBar";
 
 export function SearchPage() {
+  const strings = useStrings();
   const [filters, setFilters] = useState<SearchFilters>({});
   const { data: projects } = useAsync(() => api.getProjects(), []);
   const { data: tags } = useAsync(() => api.getTags(), []);

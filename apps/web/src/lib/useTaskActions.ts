@@ -5,6 +5,9 @@ import type { UpdateTaskInput } from "./api";
 import { useRefresh } from "./refresh";
 import { hasOpenDescendants, openDescendantRoots } from "./taskHelpers";
 import type { PrimarySwipeAction } from "./swipeSettings";
+import { useStrings } from "./strings";
+import type { Strings } from "./strings";
+import { localizedErrorMessage } from "./errorMessage";
 
 /** The three choices offered by the mandatory open-descendant policy prompt. */
 export type ChildPolicy = "leave_open" | "complete_children" | "cancel_children";
@@ -18,8 +21,8 @@ export type PendingAction = "complete" | "cancel";
  */
 export const RETENTION_MS = 4000;
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+function errorMessage(err: unknown, strings: Strings): string {
+  return localizedErrorMessage(err, strings);
 }
 
 /**
@@ -83,6 +86,7 @@ function markOpenDescendantsTerminal(children: Task[], status: Extract<TaskStatu
  * consumers can surface inline — no delayed refresh is left behind.
  */
 export function useTaskActions() {
+  const strings = useStrings();
   const { bump } = useRefresh();
   const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -169,13 +173,16 @@ export function useTaskActions() {
         // and bumps exactly once, once the window has fully elapsed.
       } catch (err) {
         release(task.id);
-        setErrors((prev) => ({ ...prev, [task.id]: errorMessage(err) }));
+        setErrors((prev) => ({
+          ...prev,
+          [task.id]: errorMessage(err, strings),
+        }));
       } finally {
         setBusyId(null);
         setPending(null);
       }
     },
-    [clearError, retain, release],
+    [clearError, retain, release, strings],
   );
 
   const complete = useCallback(

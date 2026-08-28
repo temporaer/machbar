@@ -3,13 +3,16 @@ import { tagKinds, type Tag, type TagKind } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useRefresh } from "../lib/refresh";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import type { Strings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { ErrorState, LoadingState } from "./AsyncStates";
 import { BottomSheet } from "./BottomSheet";
 import { CollapsibleGroup } from "./CollapsibleGroup";
+import { useLocale, type Locale } from "../lib/locale";
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(error: unknown, strings: Strings): string {
+  return localizedErrorMessage(error, strings);
 }
 
 function foldForSearch(value: string): string {
@@ -19,19 +22,25 @@ function foldForSearch(value: string): string {
     .toLowerCase();
 }
 
-function orderedPinnedTags(tags: Tag[], kind: TagKind): Tag[] {
+function orderedPinnedTags(
+  tags: Tag[],
+  kind: TagKind,
+  locale: Locale,
+): Tag[] {
   return tags
     .filter((tag) => tag.kind === kind && tag.groupingMode === "pinned")
     .sort(
       (a, b) =>
         (a.sortPosition ?? Number.MAX_SAFE_INTEGER) -
           (b.sortPosition ?? Number.MAX_SAFE_INTEGER) ||
-        a.name.localeCompare(b.name, "de") ||
+        a.name.localeCompare(b.name, locale) ||
         a.id - b.id,
     );
 }
 
 export function TagManager() {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const { data: tags, loading, error, reload } = useAsync(() => api.getTags(), []);
   const { bump } = useRefresh();
   const [name, setName] = useState("");
@@ -62,7 +71,7 @@ export function TagManager() {
       reload();
       bump();
     } catch (cause) {
-      setCreateError(errorMessage(cause));
+      setCreateError(errorMessage(cause, strings));
     } finally {
       setCreating(false);
     }
@@ -89,7 +98,7 @@ export function TagManager() {
     if (!editing || saving || !editName.trim()) return;
     setSaving(true);
     setEditorError(null);
-    const targetPinned = orderedPinnedTags(tags ?? [], editKind);
+    const targetPinned = orderedPinnedTags(tags ?? [], editKind, locale);
     try {
       await api.updateTag(editing.id, {
         name: editName.trim(),
@@ -105,7 +114,7 @@ export function TagManager() {
       bump();
       setEditing(null);
     } catch (cause) {
-      setEditorError(errorMessage(cause));
+      setEditorError(errorMessage(cause, strings));
     } finally {
       setSaving(false);
     }
@@ -121,14 +130,14 @@ export function TagManager() {
       bump();
       setEditing(null);
     } catch (cause) {
-      setEditorError(errorMessage(cause));
+      setEditorError(errorMessage(cause, strings));
     } finally {
       setDeleting(false);
     }
   };
 
   const movePinned = async (tag: Tag, direction: -1 | 1) => {
-    const ordered = orderedPinnedTags(tags ?? [], tag.kind);
+    const ordered = orderedPinnedTags(tags ?? [], tag.kind, locale);
     const index = ordered.findIndex((candidate) => candidate.id === tag.id);
     const other = ordered[index + direction];
     if (!other) return;
@@ -144,7 +153,7 @@ export function TagManager() {
       reload();
       bump();
     } catch (cause) {
-      setActionError(errorMessage(cause));
+      setActionError(errorMessage(cause, strings));
     } finally {
       setUpdatingId(null);
     }
@@ -222,7 +231,7 @@ export function TagManager() {
         tagKinds.map((kind) => {
           const kindTags = visibleTags.filter((tag) => tag.kind === kind);
           if (foldedQuery && kindTags.length === 0) return null;
-          const pinned = orderedPinnedTags(allTags, kind);
+          const pinned = orderedPinnedTags(allTags, kind, locale);
           return (
             <CollapsibleGroup
               key={kind}

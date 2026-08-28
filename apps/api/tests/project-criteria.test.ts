@@ -67,7 +67,7 @@ describe("project acceptance criteria (HTTP routes)", () => {
     expect(second.acceptanceCriteria[1].position).toBe(1);
   });
 
-  it("rejects an empty criterion text, with a German 400", async () => {
+  it("rejects an empty criterion text with a stable code", async () => {
     const project = await createProjectRoute();
     const res = await ctx.app.inject({
       method: "POST",
@@ -75,7 +75,7 @@ describe("project acceptance criteria (HTTP routes)", () => {
       payload: { text: "   " },
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().error.message).toContain("darf nicht leer sein");
+    expect(res.json().error.code).toBe("acceptance_criterion_text_required");
   });
 
   it("edits a criterion's text without touching its checked state or position", async () => {
@@ -171,7 +171,7 @@ describe("project acceptance criteria (HTTP routes)", () => {
     ]);
   });
 
-  it("rejects reordering with a mismatched id set, with a German 400", async () => {
+  it("rejects reordering with a mismatched id set", async () => {
     const project = await createProjectRoute();
     await ctx.app.inject({
       method: "POST",
@@ -184,6 +184,13 @@ describe("project acceptance criteria (HTTP routes)", () => {
       payload: { orderedCriterionIds: [999999] },
     });
     expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatchObject({
+      code: "acceptance_criteria_order_invalid",
+      details: {
+        projectId: project.id,
+        requestedCriterionIds: [999999],
+      },
+    });
   });
 
   it("removes a criterion and compacts the remaining positions", async () => {
@@ -217,7 +224,7 @@ describe("project acceptance criteria (HTTP routes)", () => {
     expect(afterDelete.acceptanceCriteria[0].id).toBe(b.id);
   });
 
-  it("returns a German 404 for a criterion id that doesn't belong to the project", async () => {
+  it("returns a structured 404 for a criterion id outside the project", async () => {
     const projectA = await createProjectRoute();
     const projectB = await createProjectRoute();
     const added = (
@@ -235,7 +242,10 @@ describe("project acceptance criteria (HTTP routes)", () => {
       payload: { text: "Fremdzugriff" },
     });
     expect(res.statusCode).toBe(404);
-    expect(res.json().error.message).toContain("nicht gefunden");
+    expect(res.json().error).toMatchObject({
+      code: "acceptance_criterion_not_found",
+      details: { projectId: projectB.id, criterionId },
+    });
   });
 });
 
@@ -267,11 +277,11 @@ describe("project acceptance criteria (service layer)", () => {
 
   it("rejects adding/editing with blank text", () => {
     const project = createProject(handle.db, { title: "Projekt" });
-    expect(() => addCriterion(handle.db, project.id, "   ")).toThrow(/darf nicht leer sein/);
+    expect(() => addCriterion(handle.db, project.id, "   ")).toThrow(/must not be empty/);
 
     const criterion = addCriterion(handle.db, project.id, "Gültig");
     expect(() => updateCriterionText(handle.db, project.id, criterion.id, "")).toThrow(
-      /darf nicht leer sein/,
+      /must not be empty/,
     );
   });
 
@@ -281,10 +291,10 @@ describe("project acceptance criteria (service layer)", () => {
     const criterion = addCriterion(handle.db, projectA.id, "Gehört zu A");
 
     expect(() => setCriterionChecked(handle.db, projectB.id, criterion.id, true)).toThrow(
-      /nicht gefunden/,
+      /not found/,
     );
     expect(() => removeCriterion(handle.db, projectB.id, criterion.id)).toThrow(
-      /nicht gefunden/,
+      /not found/,
     );
   });
 
@@ -294,13 +304,13 @@ describe("project acceptance criteria (service layer)", () => {
     const b = addCriterion(handle.db, project.id, "B");
 
     expect(() => reorderCriteria(handle.db, project.id, [a.id])).toThrow(
-      /vorhandenen „Erledigt, wenn …“-Punkte/,
+      /every existing criterion exactly once/,
     );
     expect(() => reorderCriteria(handle.db, project.id, [a.id, a.id])).toThrow(
-      /vorhandenen „Erledigt, wenn …“-Punkte/,
+      /every existing criterion exactly once/,
     );
     expect(() => reorderCriteria(handle.db, project.id, [a.id, b.id, 999999])).toThrow(
-      /vorhandenen „Erledigt, wenn …“-Punkte/,
+      /every existing criterion exactly once/,
     );
   });
 

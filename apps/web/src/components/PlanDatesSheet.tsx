@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Project } from "@machbar/shared";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 
@@ -14,6 +14,7 @@ export function PlanDatesSheet({
   onClose: () => void;
   onSave: (patch: { dueDate: string | null; scheduledDate: string | null }) => Promise<void>;
 }) {
+  const strings = useStrings();
   const [dueDate, setDueDate] = useState(story.dueDate ?? "");
   const [scheduledDate, setScheduledDate] = useState(story.scheduledDate ?? "");
   const [saving, setSaving] = useState(false);

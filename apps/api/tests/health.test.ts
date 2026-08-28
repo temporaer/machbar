@@ -18,9 +18,13 @@ describe("health", () => {
     expect(res.json()).toEqual({ status: "ok" });
   });
 
-  it("returns a German 404 body for unknown API routes", async () => {
+  it("returns a structured 404 body for unknown API routes", async () => {
     const res = await ctx.app.inject({ method: "GET", url: "/api/does-not-exist" });
     expect(res.statusCode).toBe(404);
-    expect(res.json().error.message).toContain("nicht gefunden");
+    expect(res.json().error).toEqual({
+      code: "route_not_found",
+      message: "The requested resource was not found.",
+      details: { method: "GET", path: "/api/does-not-exist" },
+    });
   });
 });

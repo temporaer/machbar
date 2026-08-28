@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useRefresh } from "../lib/refresh";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
 import {
@@ -21,6 +21,7 @@ import { TagGroupingOptions } from "../components/TagGroupingControl";
 import { ListOptionDisclosureTrigger } from "../components/ListOptionDisclosure";
 import { CollapsibleGroup } from "../components/CollapsibleGroup";
 import { PageHeader } from "../components/PageHeader";
+import { useLocale } from "../lib/locale";
 
 /**
  * The Projekte tab: every project is a user story, and every row carries the
@@ -32,6 +33,8 @@ import { PageHeader } from "../components/PageHeader";
  * `lib/useProjectWorkflowActions.ts` for the optimistic retention.
  */
 export function ProjectsPage() {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const { data: projects, loading, error, reload } = useAsync(() => api.getProjects(), []);
   const { bump } = useRefresh();
   const { currentMemberId } = useIdentity();
@@ -80,6 +83,7 @@ export function ProjectsPage() {
     query,
     scope,
     currentMemberId,
+    locale,
   });
   // Keep workflow meaning ahead of tag grouping: actionable and stuck work
   // stays first, healthy waiting gets its own visible section, backlog comes
@@ -103,7 +107,7 @@ export function ProjectsPage() {
   });
   const groupsFor = (items: typeof filteredProjects) =>
     groupBy
-      ? groupItemsByTagKind(items, groupBy)
+      ? groupItemsByTagKind(items, groupBy, locale)
       : items.length > 0
         ? [{ tag: null, items }]
         : [];

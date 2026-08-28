@@ -49,7 +49,7 @@ describe("ActivityPage", () => {
   it("passes optional URL filters and bounded page size to the API", async () => {
     mockedGetActivity.mockResolvedValue({ items: [], nextCursor: null });
     render(
-      <MemoryRouter initialEntries={["/mehr/aktivitaeten?actorId=2&taskId=3&projectId=4"]}>
+      <MemoryRouter initialEntries={["/more/activity?actorId=2&taskId=3&projectId=4"]}>
         <ActivityPage />
       </MemoryRouter>,
     );

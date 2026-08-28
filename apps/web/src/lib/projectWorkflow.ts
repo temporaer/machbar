@@ -1,6 +1,6 @@
 import type { Project, ProjectStatus } from "@machbar/shared";
 import type { ProjectWorkflowAction } from "./api";
-import { strings } from "./strings";
+import type { Strings } from "./strings";
 
 /**
  * Frontend mirror of `apps/api/src/domain/mutations.ts::workflowActionsByStatus`.
@@ -29,26 +29,36 @@ export const statusAfterAction: Record<ProjectWorkflowAction, ProjectStatus> = {
   archive: "archived",
 };
 
-/** Imperative button/chip labels ("Aktivieren", "Abschließen", …). */
-export const projectWorkflowLabels: Record<ProjectWorkflowAction, string> = {
-  activate: strings.activateStory,
-  return_to_backlog: strings.returnToBacklogStory,
-  complete: strings.completeStory,
-  reopen: strings.reopen,
-  archive: strings.archiveStory,
-};
+/** Imperative button/chip labels for the selected locale. */
+export function projectWorkflowLabel(
+  action: ProjectWorkflowAction,
+  strings: Strings,
+): string {
+  return {
+    activate: strings.activateStory,
+    return_to_backlog: strings.returnToBacklogStory,
+    complete: strings.completeStory,
+    reopen: strings.reopen,
+    archive: strings.archiveStory,
+  }[action];
+}
 
 /**
  * Past-tense confirmations shown in a row's status badge while the row is
  * retained, i.e. right after the transition ("Aktiviert", "Abgeschlossen", …).
  */
-export const projectTransitionLabels: Record<ProjectWorkflowAction, string> = {
-  activate: strings.storyActivated,
-  return_to_backlog: strings.storyReturnedToBacklog,
-  complete: strings.storyCompleted,
-  reopen: strings.storyReopened,
-  archive: strings.storyArchived,
-};
+export function projectTransitionLabel(
+  action: ProjectWorkflowAction,
+  strings: Strings,
+): string {
+  return {
+    activate: strings.storyActivated,
+    return_to_backlog: strings.storyReturnedToBacklog,
+    complete: strings.storyCompleted,
+    reopen: strings.storyReopened,
+    archive: strings.storyArchived,
+  }[action];
+}
 
 /** Glyph for the dedicated (non-gesture) primary control of each transition. */
 export const projectWorkflowIcons: Record<ProjectWorkflowAction, string> = {

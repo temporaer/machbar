@@ -6,6 +6,7 @@ import { buildAgenda } from "../domain/agenda.js";
 import { buildWaitingGroups } from "../domain/waiting.js";
 import { getMemberOrThrow } from "../domain/mutations.js";
 import { AppError } from "../errors.js";
+import { validationDetails } from "../validation.js";
 
 const agendaQuerySchema = z.object({
   memberId: z.coerce.number().int().positive().optional(),
@@ -20,7 +21,7 @@ const agendaQuerySchema = z.object({
         parsed.getUTCMonth() === month! - 1 &&
         parsed.getUTCDate() === day
       );
-    }, "Ungültiges Kalenderdatum")
+    }, "Invalid calendar date")
     .optional(),
 });
 
@@ -38,8 +39,9 @@ function parseAgendaQuery(query: unknown): z.infer<typeof agendaQuerySchema> {
   const result = agendaQuerySchema.safeParse(query);
   if (!result.success) {
     throw AppError.badRequest(
-      "memberId muss eine positive ganze Zahl sein und date ein gültiges Kalenderdatum.",
-      result.error.flatten(),
+      "agenda_query_invalid",
+      "The agenda query parameters are invalid.",
+      validationDetails(result.error),
     );
   }
   return result.data;
@@ -50,7 +52,6 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
     const { memberId: requestedMemberId, date } = parseAgendaQuery(request.query);
     const memberId = request.authMember?.id ?? requestedMemberId;
     if (memberId !== undefined) {
-      // Throws a German 404 (AppError.notFound) if the member doesn't exist.
       getMemberOrThrow(db, memberId);
     }
     const graph = Graph.load(db);
@@ -83,8 +84,9 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
     const parsed = waitingQuerySchema.safeParse(request.query);
     if (!parsed.success) {
       throw AppError.badRequest(
-        "actorTagId muss eine positive ganze Zahl sein.",
-        parsed.error.flatten(),
+        "waiting_query_invalid",
+        "The waiting-list query parameters are invalid.",
+        validationDetails(parsed.error),
       );
     }
     const graph = Graph.load(db);

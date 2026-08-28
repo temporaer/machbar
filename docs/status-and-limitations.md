@@ -18,11 +18,15 @@ behavior from possible future work.
 
 ## Current limitations
 
-### Language
+### Language and URLs
 
-The application interface, server-generated user messages, date vocabulary,
-and much of the test suite are German. Public documentation is English, but
-the app is not yet bilingual.
+The interface supports German and English, while public documentation remains
+English. Language and appearance preferences are local to each browser rather
+than household-member account settings.
+
+Frontend hash routes use English identifiers in both display languages.
+German routes used by older versions are not retained as aliases, so old
+bookmarks and shared deep links may need to be recreated.
 
 ### Connectivity and synchronization
 
@@ -77,7 +81,7 @@ and browser-specific PWA coverage is not yet established.
 
 Potential directions include:
 
-- German/English localization;
+- additional interface languages;
 - live client updates;
 - offline caching and synchronization;
 - recurrence processing and notification delivery;
@@ -86,4 +90,3 @@ Potential directions include:
 - conversion between a captured task and a multi-step project.
 
 These are directions, not release commitments.
-

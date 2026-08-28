@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { strings, projectStatusLabels } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { LoadingState, ErrorState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
@@ -25,8 +25,12 @@ import { IconActionButton } from "../components/IconActionButton";
 import { StoryCriteriaSheet } from "../components/StoryCriteriaSheet";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { RecentActivity } from "../components/RecentActivity";
+import { useLocale } from "../lib/locale";
+import { localizedErrorMessage } from "../lib/errorMessage";
 
 export function ProjectDetailPage() {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const params = useParams<{ id: string }>();
   const projectId = Number(params.id);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -138,7 +142,7 @@ export function ProjectDetailPage() {
       bump();
       reloadProject();
     } catch (cause) {
-      setNotesError(cause instanceof Error ? cause.message : String(cause));
+      setNotesError(localizedErrorMessage(cause, strings));
     } finally {
       setNotesSaving(false);
     }
@@ -146,7 +150,7 @@ export function ProjectDetailPage() {
 
   return (
     <div>
-      <Link to="/projekte" className="link-plain">
+      <Link to="/projects" className="link-plain">
         ← {strings.projects}
       </Link>
       {projectLoading ? <LoadingState /> : null}
@@ -159,7 +163,7 @@ export function ProjectDetailPage() {
               <div className="row">
                 <NativeShareButton
                   title={project.title}
-                  text={serializeProjectForShare(project)}
+                  text={serializeProjectForShare(project, locale)}
                   url={buildProjectShareUrl(project.id)}
                 />
                 <IconActionButton
@@ -170,7 +174,7 @@ export function ProjectDetailPage() {
               </div>
             </div>
             <div className="row text-muted" style={{ fontSize: "0.8rem" }}>
-              <span className="badge">{projectStatusLabels[project.status]}</span>
+              <span className="badge">{strings.projectStatusLabels[project.status]}</span>
               <span className="member-label">
                 <span>{strings.driver}:</span>
                 {owner ? (
@@ -181,7 +185,7 @@ export function ProjectDetailPage() {
               </span>
               {project.dueDate ? (
                 <span>
-                  {strings.due}: {formatDate(project.dueDate)}
+                  {strings.due}: {formatDate(project.dueDate, locale)}
                 </span>
               ) : null}
             </div>

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { InheritanceMode, Task } from "@machbar/shared";
 import type { UpdateTaskInput } from "../lib/api";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { AssignOwnerSheet } from "./AssignOwnerSheet";
 import { BottomSheet } from "./BottomSheet";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
@@ -43,6 +44,7 @@ export function TaskQuickActionSheet({
   onClose,
   onSave,
 }: TaskQuickActionSheetProps) {
+  const strings = useStrings();
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [notes, setNotes] = useState(task.notes ?? "");
   const [saving, setSaving] = useState(false);
@@ -72,7 +74,7 @@ export function TaskQuickActionSheet({
       }
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(localizedErrorMessage(err, strings));
     } finally {
       setSaving(false);
     }

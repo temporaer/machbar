@@ -1,4 +1,4 @@
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 
 export const scheduleShortcuts = ["unscheduled", "today", "tomorrow", "nextWeek", "weekend"] as const;
 export type ScheduleShortcut = (typeof scheduleShortcuts)[number];
@@ -43,6 +43,7 @@ export function ScheduleShortcuts({
   onChange: (date: string | null) => void;
   disabled?: boolean;
 }) {
+  const strings = useStrings();
   return (
     <div className="choice-group" role="group" aria-label={strings.scheduleShortcuts}>
       {scheduleShortcuts.map((shortcut) => {

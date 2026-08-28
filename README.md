@@ -47,6 +47,12 @@ share sheet, either creating new work or appending the material to an existing
 task or project. Tasks and projects can also be shared out through the native
 share sheet, with a clipboard fallback where Web Share is unavailable.
 
+The interface is available in German and English. Appearance can follow the
+operating system or be fixed to light or dark mode; both preferences are
+stored locally in the browser.
+
+![Machbar's mobile Projects view in dark mode](docs/images/projects-mobile.png)
+
 Machbar currently requires a connection to its server. Installation as a PWA
 does not provide offline task access.
 
@@ -81,7 +87,6 @@ configuration, and Pocket ID.
 
 Machbar is usable software, but it is still a young, opinionated project:
 
-- the application UI is German-only; documentation is English;
 - clients do not receive live updates from other browsers;
 - the app requires network access to the Machbar server;
 - recurrence and reminder fields exist, but there is no automatic recurrence

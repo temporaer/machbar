@@ -1,14 +1,12 @@
 import type { WaitingGroup } from "@machbar/shared";
 import type { Graph, TaskRecord } from "./graph.js";
 
-const UNKNOWN_GROUP = "Unbekannt";
-
 /** Groups "waiting" tasks by their free-text `waitingFor` value. */
 export function buildWaitingGroups(
   graph: Graph,
   actorTagId?: number,
 ): WaitingGroup[] {
-  const groups = new Map<string, TaskRecord[]>();
+  const groups = new Map<string | null, TaskRecord[]>();
   for (const task of graph.allTasks()) {
     if (task.status !== "waiting") continue;
     if (
@@ -17,14 +15,18 @@ export function buildWaitingGroups(
     ) {
       continue;
     }
-    const key = task.waitingFor?.trim() || UNKNOWN_GROUP;
+    const key = task.waitingFor?.trim() || null;
     const list = groups.get(key) ?? [];
     list.push(task);
     groups.set(key, list);
   }
 
   return [...groups.entries()]
-    .sort(([a], [b]) => a.localeCompare(b, "de"))
+    .sort(([a], [b]) => {
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return a.localeCompare(b);
+    })
     .map(([waitingFor, tasks]) => ({
       waitingFor,
       tasks: tasks.sort((a, b) => {

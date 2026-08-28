@@ -1,7 +1,7 @@
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { PageHeader } from "../components/PageHeader";
@@ -18,6 +18,7 @@ import "./BacklogReviewPage.css";
  * transition retention.
  */
 export function BacklogReviewPage() {
+  const strings = useStrings();
   const { data: projects, loading, error, reload } = useAsync(() => api.getProjects(), []);
   const actions = useProjectWorkflowActions();
 

@@ -135,6 +135,29 @@ describe("api request() Content-Type handling", () => {
     expect(headers).not.toHaveProperty("Content-Type");
     expect(headers).toMatchObject({ "X-Test": "1" });
   });
+
+  it("preserves structured API error codes, details, and the English fallback", async () => {
+    mockFetchOnce({
+      ok: false,
+      status: 409,
+      statusText: "Conflict",
+      json: async () => ({
+        error: {
+          code: "member_name_conflict",
+          message: "A member with this name already exists.",
+          details: { name: "Mira", conflictingMemberId: 7 },
+        },
+      }),
+    });
+
+    await expect(request("/members", { method: "POST" })).rejects.toMatchObject({
+      name: "ApiError",
+      status: 409,
+      code: "member_name_conflict",
+      message: "A member with this name already exists.",
+      details: { name: "Mira", conflictingMemberId: 7 },
+    });
+  });
 });
 
 describe("api.getAgenda memberId scoping", () => {

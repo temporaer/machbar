@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { taskSizeLabels } from "@machbar/shared";
 import type { RefinementIssue } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import type { Strings } from "../lib/strings";
 import { useRefinementActions } from "../lib/useRefinementActions";
 import type { RefinementListItem } from "../lib/useRefinementActions";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
@@ -20,11 +20,14 @@ import {
 } from "../lib/tagGrouping";
 import { CollapsibleGroup } from "../components/CollapsibleGroup";
 import { PageHeader } from "../components/PageHeader";
+import { formatRefinementIssue } from "../lib/refinementFormatting";
+import { useLocale } from "../lib/locale";
 import "./RefinementPage.css";
 
 function selectionLabel(
   selection: RefinementMatrixSelection,
   ownerNameById: Map<number, string>,
+  strings: Strings,
 ): string {
   const ownerPart =
     selection.ownerId === null ? strings.shared : ownerNameById.get(selection.ownerId) ?? strings.unassigned;
@@ -33,7 +36,7 @@ function selectionLabel(
       ? strings.allSizes
       : selection.size === "unestimated"
         ? strings.unestimated
-        : taskSizeLabels[selection.size];
+        : strings.taskSizeLabels[selection.size];
   return `${ownerPart} · ${sizePart}`;
 }
 
@@ -49,6 +52,8 @@ function selectionLabel(
  * navigation used elsewhere in the app.
  */
 export function RefinementPage() {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const { members } = useIdentity();
   const [selection, setSelection] = useState<RefinementMatrixSelection | null>(null);
   const [groupBy, setGroupBy] = useState<GroupableTagKind | null>(null);
@@ -115,7 +120,7 @@ export function RefinementPage() {
     });
   }, [listItems, selection]);
   const groupedItems = groupBy
-    ? groupItemsByTagKind(filteredItems, groupBy)
+    ? groupItemsByTagKind(filteredItems, groupBy, locale)
     : [{ tag: null, items: filteredItems }];
 
   const loading = issuesLoading || ownersLoading || tasksLoading;
@@ -133,7 +138,7 @@ export function RefinementPage() {
       };
       const projectFocus = projectFocusByAction[issue.suggestedAction.code];
       if (projectFocus) {
-        navigate(`/projekte/${issue.entityId}?focus=${projectFocus}`);
+        navigate(`/projects/${issue.entityId}?focus=${projectFocus}`);
         return;
       }
       if (issue.suggestedAction.code === "plan_task") {
@@ -149,10 +154,10 @@ export function RefinementPage() {
           taskDetail.open(taskToPlan.id, "schedule");
           return;
         }
-        navigate(`/projekte/${issue.entityId}?focus=planning`);
+        navigate(`/projects/${issue.entityId}?focus=planning`);
         return;
       }
-      navigate(`/projekte/${issue.entityId}`);
+      navigate(`/projects/${issue.entityId}`);
       return;
     }
     const repairTaskId = issue.suggestedAction.targetTaskId ?? issue.entityId;
@@ -223,26 +228,31 @@ export function RefinementPage() {
         ) : null}
         <div className="clarification-issue-list">
           {issueResult?.issues.map((issue) => (
-            <article
-              className={`card clarification-issue clarification-issue--${issue.severity}`}
-              key={`${issue.entityType}-${issue.entityId}-${issue.code}`}
-            >
-              <div>
-                <strong>{issue.entityTitle}</strong>
-                {issue.projectTitle && issue.entityType === "task" ? (
-                  <span className="text-muted"> · {issue.projectTitle}</span>
-                ) : null}
-              </div>
-              <div className="clarification-issue-label">{issue.label}</div>
-              <p className="text-muted">{issue.explanation}</p>
-              <button
-                type="button"
-                className="btn btn-sm btn-primary"
-                onClick={() => repair(issue)}
-              >
-                {issue.suggestedAction.label}
-              </button>
-            </article>
+            (() => {
+              const copy = formatRefinementIssue(issue, locale);
+              return (
+                <article
+                  className={`card clarification-issue clarification-issue--${issue.severity}`}
+                  key={`${issue.entityType}-${issue.entityId}-${issue.code}`}
+                >
+                  <div>
+                    <strong>{issue.entityTitle}</strong>
+                    {issue.projectTitle && issue.entityType === "task" ? (
+                      <span className="text-muted"> · {issue.projectTitle}</span>
+                    ) : null}
+                  </div>
+                  <div className="clarification-issue-label">{copy.label}</div>
+                  <p className="text-muted">{copy.explanation}</p>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={() => repair(issue)}
+                  >
+                    {copy.actionLabel}
+                  </button>
+                </article>
+              );
+            })()
           ))}
         </div>
       </section>
@@ -270,7 +280,8 @@ export function RefinementPage() {
         </div>
         {selection ? (
           <p className="text-muted refinement-filter-label">
-            {strings.filteredBy}: {selectionLabel(selection, ownerNameById)}
+            {strings.filteredBy}:{" "}
+            {selectionLabel(selection, ownerNameById, strings)}
           </p>
         ) : null}
         {taskRows && filteredItems.length === 0 ? <EmptyState message={strings.refinementEmpty} /> : null}

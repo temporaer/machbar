@@ -1,24 +1,37 @@
-const dateFormatter = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
-const dateTimeFormatter = new Intl.DateTimeFormat("de-DE", {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-});
+import type { Locale } from "../i18n/catalog";
 
-export function formatDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return dateFormatter.format(d);
+export function localeTag(locale: Locale): string {
+  return locale === "en" ? "en-US" : "de-DE";
 }
 
-export function formatDateTime(iso: string | null | undefined): string | null {
+export function formatDate(
+  iso: string | null | undefined,
+  locale: Locale = "de",
+): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return dateTimeFormatter.format(d);
+  return new Intl.DateTimeFormat(localeTag(locale), {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(d);
+}
+
+export function formatDateTime(
+  iso: string | null | undefined,
+  locale: Locale = "de",
+): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat(localeTag(locale), {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
 }
 
 export function isOverdue(dueDate: string | null | undefined, status: string): boolean {

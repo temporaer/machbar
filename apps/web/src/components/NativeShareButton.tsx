@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { IconActionButton } from "./IconActionButton";
+import { localizedErrorMessage } from "../lib/errorMessage";
 
 export function NativeShareButton({
   title,
@@ -15,6 +16,7 @@ export function NativeShareButton({
   showStatus?: boolean;
   onStatusChange?: (status: string | null) => void;
 }) {
+  const strings = useStrings();
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -41,7 +43,7 @@ export function NativeShareButton({
       }
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === "AbortError") return;
-      updateStatus(cause instanceof Error ? cause.message : String(cause));
+      updateStatus(localizedErrorMessage(cause, strings));
     } finally {
       setBusy(false);
     }

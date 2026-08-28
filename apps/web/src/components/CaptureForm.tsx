@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { ProjectWithActions, CreateTaskInput } from "../lib/api";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { ownerAssignmentPatch } from "./TaskQuickActionSheet";
 import { MarkdownEditor } from "./MarkdownEditor";
 
@@ -39,6 +40,7 @@ export function CaptureForm({
   onCancel,
   onCaptured,
 }: CaptureFormProps) {
+  const strings = useStrings();
   const [title, setTitle] = useState(initialTitle);
   const [notes, setNotes] = useState(initialNotes);
   const [saving, setSaving] = useState(false);
@@ -65,7 +67,7 @@ export function CaptureForm({
       const task = await api.createTask(taskInput(needsClarification));
       onCaptured({ kind: "task", task, needsClarification });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
     }
@@ -84,7 +86,7 @@ export function CaptureForm({
       });
       onCaptured({ kind: "project", project });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
     }

@@ -1,13 +1,19 @@
 import { Link } from "react-router-dom";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { useSwipeSettings, primarySwipeActions } from "../lib/swipeSettings";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { MemberManager } from "../components/MemberManager";
 import { useState } from "react";
 import { MemberAvatar } from "../components/MemberAvatar";
+import { supportedLocales, useLocale } from "../lib/locale";
+import { localizedErrorMessage } from "../lib/errorMessage";
+import { themePreferences, useTheme } from "../lib/theme";
 
 export function MorePage() {
+  const strings = useStrings();
+  const { locale, setLocale } = useLocale();
+  const { theme, setTheme } = useTheme();
   const { currentMember, authEnabled, logout } = useIdentity();
   const { primarySwipeAction, setPrimarySwipeAction } = useSwipeSettings();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -19,39 +25,85 @@ export function MorePage() {
         <h1>{strings.moreTitle}</h1>
       </div>
       <div className="stack">
-        <Link to="/mehr/suche" className="card list-link">
+        <Link to="/more/search" className="card list-link">
           <span className="row-between">
             <span>{strings.search}</span>
             <span aria-hidden="true">›</span>
           </span>
         </Link>
-        <Link to="/mehr/festgefahren" className="card list-link">
+        <Link to="/more/stuck" className="card list-link">
           <span className="row-between">
             <span>{strings.stuckProjects}</span>
             <span aria-hidden="true">›</span>
           </span>
         </Link>
-        <Link to="/mehr/backlog" className="card list-link">
+        <Link to="/more/backlog" className="card list-link">
           <span className="row-between">
             <span>{strings.backlogReview}</span>
             <span aria-hidden="true">›</span>
           </span>
         </Link>
-        <Link to="/mehr/refinement" className="card list-link">
+        <Link to="/more/refinement" className="card list-link">
           <span className="row-between">
             <span>{strings.refinement}</span>
             <span aria-hidden="true">›</span>
           </span>
         </Link>
-        <Link to="/mehr/aktivitaeten" className="card list-link">
+        <Link to="/more/activity" className="card list-link">
           <span className="row-between">
             <span>
-              <strong>Aktivitäten</strong>
-              <small className="list-link-description">Änderungen an Aufgaben und Projekten</small>
+              <strong>{strings.activities}</strong>
+              <small className="list-link-description">
+                {strings.activitiesDescription}
+              </small>
             </span>
             <span aria-hidden="true">›</span>
           </span>
         </Link>
+
+        <div className="card">
+          <h3 style={{ margin: 0 }}>{strings.appearance}</h3>
+          <p className="text-muted">{strings.appearanceHint}</p>
+          <div
+            className="choice-group"
+            role="group"
+            aria-label={strings.theme}
+          >
+            {themePreferences.map((value) => (
+              <button
+                key={value}
+                type="button"
+                className="choice-chip"
+                aria-pressed={theme === value}
+                onClick={() => setTheme(value)}
+              >
+                {strings.themeLabels[value]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="card">
+          <h3 style={{ margin: 0 }}>{strings.language}</h3>
+          <p className="text-muted">{strings.languageHint}</p>
+          <div
+            className="choice-group"
+            role="group"
+            aria-label={strings.language}
+          >
+            {supportedLocales.map((value) => (
+              <button
+                key={value}
+                type="button"
+                className="choice-chip"
+                aria-pressed={locale === value}
+                onClick={() => setLocale(value)}
+              >
+                {strings.localeLabels[value]}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="card">
           <h3 style={{ margin: 0 }}>{strings.swipeSettingTitle}</h3>
@@ -94,9 +146,7 @@ export function MorePage() {
                   setLogoutError(null);
                   void logout()
                     .catch((cause: unknown) =>
-                      setLogoutError(
-                        cause instanceof Error ? cause.message : strings.error,
-                      ),
+                      setLogoutError(localizedErrorMessage(cause, strings)),
                     )
                     .finally(() => setLoggingOut(false));
                 }}
@@ -121,7 +171,7 @@ export function MorePage() {
           <MemberManager />
         </div>
 
-        <Link to="/mehr/tags" className="card list-link">
+        <Link to="/more/tags" className="card list-link">
           <span className="row-between">
             <span>
               <strong>{strings.manageTags}</strong>

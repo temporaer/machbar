@@ -2,7 +2,8 @@ import { useState, type FormEvent } from "react";
 import type { Member } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { MemberAvatar } from "./MemberAvatar";
 
@@ -13,6 +14,7 @@ import { MemberAvatar } from "./MemberAvatar";
  * member.
  */
 export function IdentitySelector({ onSelected }: { onSelected?: (member: Member) => void }) {
+  const strings = useStrings();
   const { members, membersLoading, membersError, reloadMembers, currentMemberId, setCurrentMemberId } =
     useIdentity();
   const [newName, setNewName] = useState("");
@@ -31,7 +33,7 @@ export function IdentitySelector({ onSelected }: { onSelected?: (member: Member)
       reloadMembers();
       onSelected?.(member);
     } catch (cause) {
-      setCreateError(cause instanceof Error ? cause.message : strings.error);
+      setCreateError(localizedErrorMessage(cause, strings));
     } finally {
       setCreating(false);
     }

@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { HumanDateInput } from "./HumanDateInput";
+import { LocaleProvider } from "../lib/locale";
 
 describe("HumanDateInput", () => {
   it("commits natural language and compact relative input as ISO dates", async () => {
@@ -60,5 +61,33 @@ describe("HumanDateInput", () => {
     expect(
       screen.getByRole("button", { name: "Datum im Kalender wählen" }),
     ).toHaveClass("icon-action-button");
+  });
+
+  it("uses English natural-date copy, parsing, and formatting", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 27, 12));
+    const onChange = vi.fn();
+    render(
+      <LocaleProvider initialLocale="en">
+        <HumanDateInput id="date" value="" onChange={onChange} />
+      </LocaleProvider>,
+    );
+    const input = screen.getByRole("textbox");
+
+    expect(input).toHaveAttribute(
+      "placeholder",
+      "e.g. tomorrow, Friday, week 36, 2w",
+    );
+    fireEvent.change(input, { target: { value: "tomorrow" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onChange).toHaveBeenLastCalledWith("2026-08-28");
+    expect(input).toHaveValue("08/28/2026");
+    expect(
+      screen.getByRole("button", {
+        name: "Choose a date from the calendar",
+      }),
+    ).toBeInTheDocument();
+    vi.useRealTimers();
   });
 });

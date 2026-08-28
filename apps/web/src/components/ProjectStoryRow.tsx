@@ -3,7 +3,7 @@ import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent }
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
-import { strings, projectStatusLabels, stuckReasonLabels } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { formatDate } from "../lib/format";
 import {
   formatCompactWaitDuration,
@@ -19,9 +19,9 @@ import {
   canClearDriver,
   needsDriverBeforeAction,
   primaryWorkflowAction,
-  projectTransitionLabels,
+  projectTransitionLabel,
   projectWorkflowIcons,
-  projectWorkflowLabels,
+  projectWorkflowLabel,
   secondaryWorkflowActions,
 } from "../lib/projectWorkflow";
 import type { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
@@ -31,6 +31,8 @@ import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
 import { IconActionButton, IconActionGlyph } from "./IconActionButton";
 import { MemberAvatar } from "./MemberAvatar";
+import { useLocale } from "../lib/locale";
+import { formatRefinementIssue } from "../lib/refinementFormatting";
 import "./ProjectStoryRow.css";
 
 const SWIPE_THRESHOLD = 72;
@@ -88,6 +90,8 @@ type Sheet = "assign-to-activate" | "assign-driver" | "plan-dates" | "criteria" 
  * tapping the row itself still opens the story detail as before.
  */
 export function ProjectStoryRow({ story: storyProp, actions, variant = "compact" }: ProjectStoryRowProps) {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const [dragX, setDragX] = useState(0);
   const [chipsOpen, setChipsOpen] = useState(false);
   const [sheet, setSheet] = useState<Sheet>(null);
@@ -118,29 +122,33 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
   const driver = story.ownerMemberId ? members.find((m) => m.id === story.ownerMemberId) : null;
   const criteria = story.acceptanceCriteria ?? [];
   const criteriaChecked = criteria.filter((c) => c.checked).length;
-  const dueLabel = formatDate(story.dueDate);
-  const scheduledLabel = formatDate(story.scheduledDate);
+  const dueLabel = formatDate(story.dueDate, locale);
+  const scheduledLabel = formatDate(story.scheduledDate, locale);
   const openCount = story.openCount ?? 0;
   const doneCount = story.doneCount ?? 0;
   const totalTasks = openCount + doneCount;
 
   const primaryAction = primaryWorkflowAction(story);
-  const primaryLabel = primaryAction ? projectWorkflowLabels[primaryAction] : strings.workflowStep;
+  const primaryLabel = primaryAction
+    ? projectWorkflowLabel(primaryAction, strings)
+    : strings.workflowStep;
   const secondaryActions = secondaryWorkflowActions(story);
   const statusLabel = retainedEntry
-    ? projectTransitionLabels[retainedEntry.action]
-    : projectStatusLabels[story.status];
+    ? projectTransitionLabel(retainedEntry.action, strings)
+    : strings.projectStatusLabels[story.status];
   const classification = classifyProjectListItem(story);
   const accent = statusAccentByClassification[classification];
   const isHealthyWaiting = classification === "healthy-waiting";
   const waitingOn = story.waitingOn ?? [];
   const waitingDuration = story.waitingUntil
-    ? formatCompactWaitDuration(story.waitingUntil)
+    ? formatCompactWaitDuration(story.waitingUntil, new Date(), locale)
     : null;
   const waitingUntilExact = story.waitingUntil
-    ? formatExactLocalDate(story.waitingUntil)
+    ? formatExactLocalDate(story.waitingUntil, locale)
     : null;
-  const waitingDurationSuffix = waitingDuration ? ` · noch ${waitingDuration}` : "";
+  const waitingDurationSuffix = waitingDuration
+    ? ` · ${strings.remainingDuration(waitingDuration)}`
+    : "";
   const waitingOnSummary =
     waitingOn.length > 0
       ? `${strings.waitingOn}: ${waitingOn.slice(0, 2).join(" · ")}${
@@ -239,7 +247,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
   const goToDetail = () => {
     setChipsOpen(false);
-    navigate(`/projekte/${story.id}`);
+    navigate(`/projects/${story.id}`);
   };
 
   return (
@@ -267,13 +275,13 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
         >
           {primaryAction ? projectWorkflowIcons[primaryAction] : "·"}
         </button>
-        <Link className="story-row-main" to={`/projekte/${story.id}`} onClick={handleMainClick}>
+        <Link className="story-row-main" to={`/projects/${story.id}`} onClick={handleMainClick}>
           <div className="story-row-title">
             {story.title}
             <span className="sr-only">{strings.projectStatus}: </span>
             <span className={`story-row-status-badge story-row-status-badge--${accent}`}>{statusLabel}</span>
             {story.stuckReason ? (
-              <span className="badge badge-stuck">{stuckReasonLabels[story.stuckReason]}</span>
+              <span className="badge badge-stuck">{strings.stuckReasonLabels[story.stuckReason]}</span>
             ) : null}
           </div>
           {variant !== "card" || dueLabel || scheduledLabel ? (
@@ -305,7 +313,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
               className={issue.severity === "urgent" ? "badge badge-stuck" : "badge"}
               key={`${issue.entityType}-${issue.entityId}-${issue.code}`}
             >
-              {issue.label}
+              {formatRefinementIssue(issue, locale).label}
             </span>
           ))}
           {variant === "card" ? (
@@ -317,7 +325,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
                 className="story-row-next-action"
                 title={
                   isHealthyWaiting && waitingUntilExact
-                    ? `Wiedervorlage am ${waitingUntilExact}`
+                    ? strings.projectRevisitOn(waitingUntilExact)
                     : undefined
                 }
               >
@@ -392,7 +400,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
               disabled={busy}
               onClick={() => runSecondary(action)}
             >
-              {projectWorkflowLabels[action]}
+              {projectWorkflowLabel(action, strings)}
             </button>
           ))}
         </div>

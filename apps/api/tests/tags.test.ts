@@ -95,8 +95,12 @@ describe("tags", () => {
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({
       error: {
-        code: "conflict",
-        message: "Der Tag „Haus“ existiert bereits.",
+        code: "tag_name_conflict",
+        message: "A tag with this name already exists.",
+        details: {
+          name: "Haus",
+          conflictingTagId: expect.any(Number),
+        },
       },
     });
   });

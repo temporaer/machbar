@@ -1,94 +1,26 @@
 import type {
   ProjectReadiness,
   RefinementActionCode,
+  RefinementBlockingReason,
   RefinementIssue,
   RefinementIssueCode,
   RefinementIssueSeverity,
 } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
 
-const issueCopy: Record<
-  RefinementIssueCode,
-  {
-    label: string;
-    explanation: string;
-    actionCode: RefinementActionCode;
-    actionLabel: string;
-  }
-> = {
-  missing_driver: {
-    label: "Verantwortliche Person fehlt",
-    explanation: "Das Projekt braucht eine Person, die den Überblick behält.",
-    actionCode: "assign_driver",
-    actionLabel: "Verantwortliche Person setzen",
-  },
-  missing_outcome: {
-    label: "Ergebnis noch unklar",
-    explanation: "Es fehlt mindestens ein konkreter Punkt unter „Erledigt, wenn …“.",
-    actionCode: "add_outcome",
-    actionLabel: "Ergebnis ergänzen",
-  },
-  missing_next_action: {
-    label: "Kein nächster Schritt",
-    explanation: "Es gibt keine geklärte, machbare Aufgabe, mit der es weitergehen kann.",
-    actionCode: "add_next_action",
-    actionLabel: "Nächsten Schritt hinzufügen",
-  },
-  needs_clarification: {
-    label: "Aufgabe braucht Klärung",
-    explanation: "Die Aufgabe wurde erfasst, ist aber noch nicht als nächster Schritt geklärt.",
-    actionCode: "clarify_task",
-    actionLabel: "Aufgabe klären",
-  },
-  unassigned_actionable: {
-    label: "Ohne Zuständigkeit",
-    explanation: "Die machbare Aufgabe ist noch keiner Person zugeordnet.",
-    actionCode: "assign_task",
-    actionLabel: "Person zuweisen",
-  },
-  waiting_without_followup: {
-    label: "Wartet ohne Wiedervorlage",
-    explanation: "Ohne Wiedervorlage kann diese wartende Aufgabe leicht vergessen werden.",
-    actionCode: "set_followup",
-    actionLabel: "Wiedervorlage setzen",
-  },
-  followup_due: {
-    label: "Nachhaken fällig",
-    explanation: "Die Wiedervorlage ist erreicht. Jetzt nachhaken oder die Aufgabe wieder machbar machen.",
-    actionCode: "follow_up",
-    actionLabel: "Nachhaken",
-  },
-  blocked_without_clear_path: {
-    label: "Blockierende Voraussetzung unklar",
-    explanation:
-      "Eine vorausgesetzte Aufgabe ist noch nicht machbar oder sinnvoll terminiert.",
-    actionCode: "resolve_blocker",
-    actionLabel: "Blockierende Aufgabe prüfen",
-  },
-  due_without_plan: {
-    label: "Fällig, aber nicht machbar",
-    explanation: "Der Termin rückt näher, aber es ist keine offene Aufgabe geplant.",
-    actionCode: "plan_task",
-    actionLabel: "Aufgabe planen",
-  },
-  scheduled_in_past: {
-    label: "Planung überfällig",
-    explanation: "Der geplante Termin ist vorbei und die Aufgabe noch offen.",
-    actionCode: "plan_task",
-    actionLabel: "Neu planen",
-  },
-  too_large_without_children: {
-    label: "Zu groß — bitte aufteilen",
-    explanation: "Diese XL-Aufgabe hat noch keine offenen Teilaufgaben.",
-    actionCode: "add_child",
-    actionLabel: "Teilaufgabe hinzufügen",
-  },
-  completion_review: {
-    label: "Bereit zum Abschließen",
-    explanation: "Alle vorhandenen Aufgaben sind erledigt oder verworfen.",
-    actionCode: "review_completion",
-    actionLabel: "Projekt prüfen",
-  },
+const actionCodeByIssue: Record<RefinementIssueCode, RefinementActionCode> = {
+  missing_driver: "assign_driver",
+  missing_outcome: "add_outcome",
+  missing_next_action: "add_next_action",
+  needs_clarification: "clarify_task",
+  unassigned_actionable: "assign_task",
+  waiting_without_followup: "set_followup",
+  followup_due: "follow_up",
+  blocked_without_clear_path: "resolve_blocker",
+  due_without_plan: "plan_task",
+  scheduled_in_past: "plan_task",
+  too_large_without_children: "add_child",
+  completion_review: "review_completion",
 };
 
 function projectIssue(
@@ -96,13 +28,10 @@ function projectIssue(
   code: RefinementIssueCode,
   severity: RefinementIssueSeverity,
 ): RefinementIssue {
-  const copy = issueCopy[code];
   return {
     code,
     severity,
-    label: copy.label,
-    explanation: copy.explanation,
-    suggestedAction: { code: copy.actionCode, label: copy.actionLabel },
+    suggestedAction: { code: actionCodeByIssue[code] },
     entityType: "project",
     entityId: project.id,
     entityTitle: project.title,
@@ -116,22 +45,24 @@ function taskIssue(
   code: RefinementIssueCode,
   severity: RefinementIssueSeverity,
   overrides: Partial<
-    Pick<RefinementIssue, "label" | "explanation" | "suggestedAction" | "dependencyPath">
+    Pick<
+      RefinementIssue,
+      "blockingReason" | "suggestedAction" | "dependencyPath"
+    >
   > = {},
 ): RefinementIssue {
-  const copy = issueCopy[code];
   return {
     code,
     severity,
-    label: overrides.label ?? copy.label,
-    explanation: overrides.explanation ?? copy.explanation,
-    suggestedAction:
-      overrides.suggestedAction ?? { code: copy.actionCode, label: copy.actionLabel },
+    suggestedAction: overrides.suggestedAction ?? {
+      code: actionCodeByIssue[code],
+    },
     entityType: "task",
     entityId: task.id,
     entityTitle: task.title,
     projectId: task.projectId,
     projectTitle: task.projectTitle ?? null,
+    blockingReason: overrides.blockingReason,
     dependencyPath: overrides.dependencyPath,
   };
 }
@@ -153,12 +84,7 @@ function unresolvedDependencies(graph: Graph, task: TaskRecord): TaskRecord[] {
     );
 }
 
-type BlockingPrerequisiteReason =
-  | "captured"
-  | "waiting"
-  | "someday"
-  | "terminal_project"
-  | "cycle";
+type BlockingPrerequisiteReason = RefinementBlockingReason;
 
 interface BlockingPrerequisite {
   task: TaskRecord;
@@ -257,10 +183,6 @@ function blockingPrerequisiteIssue(
   diagnosis: BlockingPrerequisite,
 ): RefinementIssue {
   const target = diagnosis.task;
-  const relation =
-    diagnosis.path.length === 2
-      ? `„${task.title}“ wartet auf „${target.title}“.`
-      : `Die Voraussetzungskette von „${task.title}“ führt zu „${target.title}“.`;
   const dependencyPath = diagnosis.path.map((pathTask) => ({
     taskId: pathTask.id,
     title: pathTask.title,
@@ -268,11 +190,9 @@ function blockingPrerequisiteIssue(
 
   if (diagnosis.reason === "captured") {
     return taskIssue(task, "blocked_without_clear_path", "warning", {
-      label: "Blockierende Aufgabe ungeklärt",
-      explanation: `${relation} Diese Aufgabe ist erst erfasst und noch nicht machbar.`,
+      blockingReason: diagnosis.reason,
       suggestedAction: {
         code: "clarify_task",
-        label: `${target.title} klären`,
         targetTaskId: target.id,
       },
       dependencyPath,
@@ -280,11 +200,9 @@ function blockingPrerequisiteIssue(
   }
   if (diagnosis.reason === "waiting") {
     return taskIssue(task, "blocked_without_clear_path", "warning", {
-      label: "Blockierende Aufgabe nicht terminiert",
-      explanation: `${relation} Sie braucht eine zukünftige Wiedervorlage.`,
+      blockingReason: diagnosis.reason,
       suggestedAction: {
         code: "set_followup",
-        label: `Wiedervorlage für ${target.title} setzen`,
         targetTaskId: target.id,
       },
       dependencyPath,
@@ -292,26 +210,18 @@ function blockingPrerequisiteIssue(
   }
   if (diagnosis.reason === "cycle") {
     return taskIssue(task, "blocked_without_clear_path", "warning", {
-      label: "Abhängigkeiten bilden einen Kreis",
-      explanation: `${relation} Die Abhängigkeiten müssen dort geprüft werden.`,
+      blockingReason: diagnosis.reason,
       suggestedAction: {
         code: "resolve_blocker",
-        label: `Abhängigkeiten von ${target.title} prüfen`,
         targetTaskId: target.id,
       },
       dependencyPath,
     });
   }
-  const explanation =
-    diagnosis.reason === "terminal_project"
-      ? `${relation} Sie gehört zu einem abgeschlossenen oder archivierten Projekt.`
-      : `${relation} Sie ist derzeit nicht machbar.`;
   return taskIssue(task, "blocked_without_clear_path", "warning", {
-    label: "Blockierende Aufgabe nicht machbar",
-    explanation,
+    blockingReason: diagnosis.reason,
     suggestedAction: {
       code: "resolve_blocker",
-      label: `${target.title} prüfen`,
       targetTaskId: target.id,
     },
     dependencyPath,
@@ -417,8 +327,8 @@ export function buildRefinementIssues(
   issues.sort(
     (a, b) =>
       severityOrder[a.severity] - severityOrder[b.severity] ||
-      a.label.localeCompare(b.label, "de") ||
-      a.entityTitle.localeCompare(b.entityTitle, "de"),
+      a.code.localeCompare(b.code) ||
+      a.entityId - b.entityId,
   );
 
   const projects = graph

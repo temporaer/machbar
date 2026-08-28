@@ -245,12 +245,13 @@ backlog ──activate──► active ──complete──► completed
 
 Every non-`backlog` project must have a responsible person (`ownerMemberId`):
 
-- `POST /api/projects/:id/activate` fails with `bad_request` unless the project
-  already has a responsible person or one is supplied inline
-  (`{"ownerMemberId": n}`).
-- `PATCH /api/projects/:id` with `ownerMemberId: null` fails with `conflict`
-  unless the project is in `backlog`. Reassigning to a different member is
-  always allowed. Individual task ownership remains independent.
+- `POST /api/projects/:id/activate` fails with `project_driver_required`
+  unless the project already has a responsible person or one is supplied
+  inline (`{"ownerMemberId": n}`).
+- `PATCH /api/projects/:id` with `ownerMemberId: null` fails with
+  `project_driver_locked` unless the project is in `backlog`. Reassigning to a
+  different member is always allowed. Individual task ownership remains
+  independent.
 
 Legacy rows migrated from before the invariant may still be `active` without a
 responsible person; the clarification service flags them urgently.
@@ -316,7 +317,7 @@ projects: responsible person, clear “Erledigt, wenn …” outcome, an executa
 next action, coherent waiting follow-ups, and no urgent issue. Readiness is
 guidance, not a wizard or a second workflow state.
 
-### Projektklärung — `/mehr/backlog`
+### Project clarification — `/more/backlog`
 
 Lists technically `backlog` projects as **Später / noch nicht aktiv**
 (`BacklogReviewPage` → `ProjectStoryRow`, compact variant). Every mutation
@@ -335,7 +336,7 @@ Row gestures/chips open **targeted popups** rather than navigating away:
 **Aktiv machen** (`api.activateProject`) surfaces the responsible-person
 requirement inline.
 
-### Projects tab — `/projekte`
+### Projects tab — `/projects`
 
 `ProjectsPage` renders the same `ProjectStoryRow` (card variant) for projects
 of every status. Compact issue badges make missing clarification visible
@@ -381,7 +382,7 @@ The outline's structural drag is a *separate* gesture and deliberately uses wind
 
 Because that drag takes no pointer capture, the click the browser synthesises on release is *not* retargeted. A long press therefore arms `TaskRow`'s `swallowNextClick` too, so finishing a move on the row it started on does not also open the detail sheet; the flag is one-shot and cleared by the next `pointerdown`. The mirror-image case lives in `useOutlineOrganize`: it swallows the handle's own post-drag click only when the session actually started on a handle (`DragSession.fromHandle`), otherwise a long-press drag would eat the user's next, unrelated tap on some handle.
 
-### Aufgabenklärung — `/mehr/refinement`
+### Task clarification — `/more/refinement`
 
 `RefinementPage` defaults to **Klärungsbedarf** cards grouped by operational
 defect: needs clarification, no responsibility, waiting without follow-up,

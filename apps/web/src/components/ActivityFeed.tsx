@@ -1,6 +1,7 @@
 import type { ActivityEvent } from "@machbar/shared";
 import { activityDateGroup } from "../lib/activityFormatting";
 import { ActivityEventRow } from "./ActivityEventRow";
+import { useLocale } from "../lib/locale";
 
 export function ActivityFeed({
   events,
@@ -13,9 +14,10 @@ export function ActivityFeed({
   headingLevel?: 2 | 3;
   idPrefix?: string;
 }) {
+  const { locale } = useLocale();
   const groups: Array<{ key: string; label: string; events: ActivityEvent[] }> = [];
   for (const event of events) {
-    const group = activityDateGroup(event.createdAt, now);
+    const group = activityDateGroup(event.createdAt, now, locale);
     const current = groups.at(-1);
     if (current?.key === group.key) {
       current.events.push(event);

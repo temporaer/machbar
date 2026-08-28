@@ -5,7 +5,8 @@ import {
   formatRelativeDueDate,
   formatRelativeScheduleDate,
 } from "../lib/relativeDate";
-import { strings, stuckReasonLabels } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { useLocale } from "../lib/locale";
 
 function DatePrompt({
   label,
@@ -16,11 +17,12 @@ function DatePrompt({
   date: string | null;
   scheduled?: boolean;
 }) {
+  const { locale } = useLocale();
   if (!date) return null;
   const relative = scheduled
-    ? formatRelativeScheduleDate(date)
-    : formatRelativeDueDate(date);
-  const exact = formatExactLocalDate(date);
+    ? formatRelativeScheduleDate(date, new Date(), locale)
+    : formatRelativeDueDate(date, new Date(), locale);
+  const exact = formatExactLocalDate(date, locale);
   if (!relative || !exact) return null;
   const accessible = `${label}: ${relative} (${exact})`;
   return (
@@ -31,6 +33,7 @@ function DatePrompt({
 }
 
 export function ProjectAgendaCard({ entry }: { entry: ProjectAgendaEntry }) {
+  const strings = useStrings();
   const { project, qualification, nextAction, stuck } = entry;
   const heading =
     qualification === "due"
@@ -43,9 +46,9 @@ export function ProjectAgendaCard({ entry }: { entry: ProjectAgendaEntry }) {
     <article className="card project-agenda-card">
       <div className="project-agenda-heading">
         <span className="badge">{heading}</span>
-        {stuck ? <span className="badge badge-stuck">{stuckReasonLabels[stuck.reason]}</span> : null}
+        {stuck ? <span className="badge badge-stuck">{strings.stuckReasonLabels[stuck.reason]}</span> : null}
       </div>
-      <Link className="project-agenda-link" to={`/projekte/${project.id}`}>
+      <Link className="project-agenda-link" to={`/projects/${project.id}`}>
         {project.title}
       </Link>
       <div className="project-agenda-dates">
@@ -63,7 +66,8 @@ export function ProjectAgendaCard({ entry }: { entry: ProjectAgendaEntry }) {
       ) : null}
       {stuck ? (
         <p className="project-agenda-context">
-          <strong>{strings.stuck}:</strong> {stuck.repairAction}
+          <strong>{strings.stuck}:</strong>{" "}
+          {strings.stuckRepairLabels[stuck.reason]}
         </p>
       ) : null}
     </article>

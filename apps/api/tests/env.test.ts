@@ -9,7 +9,7 @@ describe("OIDC environment configuration", () => {
   it("rejects partial OIDC configuration instead of silently disabling auth", () => {
     expect(() =>
       loadEnv({ OIDC_ISSUER_URL: "https://pocket.example" }),
-    ).toThrow(/unvollständig/i);
+    ).toThrow(/incomplete/i);
   });
 
   it("loads a complete HTTPS configuration with the household session default", () => {
@@ -44,6 +44,6 @@ describe("OIDC environment configuration", () => {
     ).toThrow(/Pfad/);
     expect(() =>
       loadEnv({ ...valid, OIDC_SESSION_TTL_DAYS: "0" }),
-    ).toThrow(/zwischen 1 und 365/);
+    ).toThrow(/between 1 and 365/);
   });
 });

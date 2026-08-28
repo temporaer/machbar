@@ -75,7 +75,11 @@ export function listMembers(db: Db) {
 export function getMemberOrThrow(db: Db, id: number) {
   const member = db.select().from(schema.members).where(eq(schema.members.id, id)).get();
   if (!member) {
-    throw AppError.notFound(`Mitglied mit ID ${id} wurde nicht gefunden.`);
+    throw AppError.notFound(
+      "member_not_found",
+      "The requested member was not found.",
+      { memberId: id },
+    );
   }
   return member;
 }
@@ -83,7 +87,10 @@ export function getMemberOrThrow(db: Db, id: number) {
 function normalizeMemberName(name: string): string {
   const trimmed = name.trim();
   if (trimmed === "") {
-    throw AppError.badRequest("Der Name darf nicht leer sein.");
+    throw AppError.badRequest(
+      "member_name_required",
+      "The member name must not be empty.",
+    );
   }
   return trimmed;
 }
@@ -96,7 +103,9 @@ function assertMemberNotOidcManaged(db: Db, id: number): void {
     .get();
   if (identity) {
     throw AppError.conflict(
-      "Dieses Mitglied wird von Pocket ID verwaltet und kann hier nicht umbenannt oder gelöscht werden.",
+      "member_oidc_managed",
+      "This member is managed by Pocket ID and cannot be renamed or deleted here.",
+      { memberId: id },
     );
   }
 }
@@ -111,7 +120,9 @@ export function createMember(db: Db, name: string) {
       .get();
     if (existing) {
       throw AppError.conflict(
-        `Ein Mitglied mit dem Namen "${trimmed}" existiert bereits.`,
+        "member_name_conflict",
+        "A member with this name already exists.",
+        { name: trimmed, conflictingMemberId: existing.id },
       );
     }
     const member = tx
@@ -136,7 +147,9 @@ export function renameMember(db: Db, id: number, name: string) {
       .get();
     if (existing && existing.id !== id) {
       throw AppError.conflict(
-        `Ein Mitglied mit dem Namen "${trimmed}" existiert bereits.`,
+        "member_name_conflict",
+        "A member with this name already exists.",
+        { name: trimmed, conflictingMemberId: existing.id },
       );
     }
     tx.update(schema.members).set({ name: trimmed }).where(eq(schema.members.id, id)).run();
@@ -241,7 +254,10 @@ export function getOrCreateTag(
 ) {
   const trimmed = name.trim();
   if (trimmed === "") {
-    throw AppError.badRequest("Der Tag-Name darf nicht leer sein.");
+    throw AppError.badRequest(
+      "tag_name_required",
+      "The tag name must not be empty.",
+    );
   }
   const existing = db
     .select()
@@ -251,7 +267,14 @@ export function getOrCreateTag(
   if (existing) {
     if (existing.kind !== kind) {
       throw AppError.conflict(
-        `Der Tag „${trimmed}“ existiert bereits als anderer Typ. Ändere den Typ zuerst in der Tag-Verwaltung.`,
+        "tag_kind_conflict",
+        "A tag with this name already exists with a different kind.",
+        {
+          name: trimmed,
+          existingTagId: existing.id,
+          existingKind: existing.kind,
+          requestedKind: kind,
+        },
       );
     }
     return existing;
@@ -273,13 +296,20 @@ export interface UpdateTagInput {
 export function updateTag(db: Db, id: number, input: UpdateTagInput) {
   const tag = db.select().from(schema.tags).where(eq(schema.tags.id, id)).get();
   if (!tag) {
-    throw AppError.notFound(`Tag mit ID ${id} wurde nicht gefunden.`);
+    throw AppError.notFound(
+      "tag_not_found",
+      "The requested tag was not found.",
+      { tagId: id },
+    );
   }
   const patch: Partial<typeof schema.tags.$inferInsert> = {};
   if (input.name !== undefined) {
     const trimmed = input.name.trim();
     if (trimmed === "") {
-      throw AppError.badRequest("Der Tag-Name darf nicht leer sein.");
+      throw AppError.badRequest(
+        "tag_name_required",
+        "The tag name must not be empty.",
+      );
     }
     const existing = db
       .select()
@@ -287,7 +317,11 @@ export function updateTag(db: Db, id: number, input: UpdateTagInput) {
       .where(eq(schema.tags.name, trimmed))
       .get();
     if (existing && existing.id !== id) {
-      throw AppError.conflict(`Der Tag „${trimmed}“ existiert bereits.`);
+      throw AppError.conflict(
+        "tag_name_conflict",
+        "A tag with this name already exists.",
+        { name: trimmed, conflictingTagId: existing.id },
+      );
     }
     patch.name = trimmed;
   }
@@ -308,7 +342,11 @@ export function updateTag(db: Db, id: number, input: UpdateTagInput) {
 export function deleteTag(db: Db, id: number): void {
   const tag = db.select().from(schema.tags).where(eq(schema.tags.id, id)).get();
   if (!tag) {
-    throw AppError.notFound(`Tag mit ID ${id} wurde nicht gefunden.`);
+    throw AppError.notFound(
+      "tag_not_found",
+      "The requested tag was not found.",
+      { tagId: id },
+    );
   }
   db.delete(schema.tags).where(eq(schema.tags.id, id)).run();
 }
@@ -334,7 +372,11 @@ export function getProjectOrThrow(db: Db, id: number) {
     .where(eq(schema.projects.id, id))
     .get();
   if (!project) {
-    throw AppError.notFound(`Projekt mit ID ${id} wurde nicht gefunden.`);
+    throw AppError.notFound(
+      "project_not_found",
+      "The requested project was not found.",
+      { projectId: id },
+    );
   }
   return project;
 }
@@ -351,7 +393,10 @@ export function createProject(
   context?: MutationContext,
 ) {
   if (!input.title || input.title.trim() === "") {
-    throw AppError.badRequest("Der Projekttitel darf nicht leer sein.");
+    throw AppError.badRequest(
+      "project_title_required",
+      "The project title must not be empty.",
+    );
   }
   return db.transaction((tx) => {
     const maxPosition = tx
@@ -427,11 +472,17 @@ export function updateProject(
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
     if (input.title !== undefined && input.title.trim() === "") {
-      throw AppError.badRequest("Der Projekttitel darf nicht leer sein.");
+      throw AppError.badRequest(
+        "project_title_required",
+        "The project title must not be empty.",
+        { projectId: id },
+      );
     }
     if (input.ownerMemberId === null && project.status !== "backlog") {
       throw AppError.conflict(
-        `Die verantwortliche Person von "${project.title}" kann erst entfernt werden, wenn das Projekt wieder auf „Später / noch nicht aktiv“ steht.`,
+        "project_driver_locked",
+        "The project driver can only be removed while the project is in the backlog.",
+        { projectId: id, currentStatus: project.status, requiredStatus: "backlog" },
       );
     }
     const patch: Partial<typeof schema.projects.$inferInsert> = {};
@@ -599,13 +650,21 @@ export function availableProjectWorkflowActions(
 }
 
 function assertWorkflowAction(
-  project: { title: string; status: string },
+  project: { id: number; status: string },
   action: ProjectWorkflowAction,
-  conflictMessage: string,
 ) {
   const status = project.status as ProjectStatus;
   if (!availableProjectWorkflowActions(status).includes(action)) {
-    throw AppError.conflict(conflictMessage);
+    throw AppError.conflict(
+      "project_transition_invalid",
+      "The requested project status transition is not allowed.",
+      {
+        projectId: project.id,
+        currentStatus: status,
+        action,
+        allowedActions: availableProjectWorkflowActions(status),
+      },
+    );
   }
 }
 
@@ -628,16 +687,14 @@ export function activateProject(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
-    assertWorkflowAction(
-      project,
-      "activate",
-      `Projekt "${project.title}" kann aus dem Status "${project.status}" nicht aktiviert werden.`,
-    );
+    assertWorkflowAction(project, "activate");
     const ownerMemberId =
       input.ownerMemberId !== undefined ? input.ownerMemberId : project.ownerMemberId;
     if (ownerMemberId === null) {
       throw AppError.badRequest(
-        `Bevor "${project.title}" aktiv werden kann, muss eine verantwortliche Person zugewiesen werden.`,
+        "project_driver_required",
+        "A project driver is required before the project can be activated.",
+        { projectId: id },
       );
     }
     tx.update(schema.projects)
@@ -675,11 +732,7 @@ export function returnProjectToBacklog(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
-    assertWorkflowAction(
-      project,
-      "return_to_backlog",
-      `Projekt "${project.title}" kann aus dem Status "${project.status}" nicht auf „Später / noch nicht aktiv“ verschoben werden.`,
-    );
+    assertWorkflowAction(project, "return_to_backlog");
     tx.update(schema.projects)
       .set({ status: "backlog", updatedAt: nowIso() })
       .where(eq(schema.projects.id, id))
@@ -711,11 +764,7 @@ export function completeProject(db: Db, id: number, context?: MutationContext) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
-    assertWorkflowAction(
-      project,
-      "complete",
-      `Nur aktive Projekte können abgeschlossen werden (aktueller Status von "${project.title}": "${project.status}").`,
-    );
+    assertWorkflowAction(project, "complete");
     tx.update(schema.projects)
       .set({ status: "completed", updatedAt: nowIso() })
       .where(eq(schema.projects.id, id))
@@ -738,11 +787,7 @@ export function reopenProject(db: Db, id: number, context?: MutationContext) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
-    assertWorkflowAction(
-      project,
-      "reopen",
-      `Nur abgeschlossene Projekte können wieder geöffnet werden (aktueller Status von "${project.title}": "${project.status}").`,
-    );
+    assertWorkflowAction(project, "reopen");
     tx.update(schema.projects)
       .set({ status: "active", updatedAt: nowIso() })
       .where(eq(schema.projects.id, id))
@@ -768,11 +813,7 @@ export function archiveProject(db: Db, id: number, context?: MutationContext) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
-    assertWorkflowAction(
-      project,
-      "archive",
-      `Projekt "${project.title}" ist bereits archiviert.`,
-    );
+    assertWorkflowAction(project, "archive");
     tx.update(schema.projects)
       .set({ status: "archived", updatedAt: nowIso() })
       .where(eq(schema.projects.id, id))
@@ -805,7 +846,9 @@ function getCriterionOrThrow(db: Db, projectId: number, criterionId: number) {
     .get();
   if (!criterion || criterion.projectId !== projectId) {
     throw AppError.notFound(
-      `Der „Erledigt, wenn …“-Punkt mit ID ${criterionId} wurde im Projekt ${projectId} nicht gefunden.`,
+      "acceptance_criterion_not_found",
+      "The requested acceptance criterion was not found in this project.",
+      { projectId, criterionId },
     );
   }
   return criterion;
@@ -815,7 +858,8 @@ function normalizeCriterionText(text: string): string {
   const trimmed = text.trim();
   if (trimmed === "") {
     throw AppError.badRequest(
-      "Der Text für „Erledigt, wenn …“ darf nicht leer sein.",
+      "acceptance_criterion_text_required",
+      "The acceptance criterion text must not be empty.",
     );
   }
   return trimmed;
@@ -951,7 +995,13 @@ export function reorderCriteria(
       orderedCriterionIds.every((id) => existingIds.has(id));
     if (!isValidReordering) {
       throw AppError.badRequest(
-        "Die Reihenfolge muss genau die vorhandenen „Erledigt, wenn …“-Punkte des Projekts enthalten.",
+        "acceptance_criteria_order_invalid",
+        "The criterion order must contain every existing criterion exactly once.",
+        {
+          projectId,
+          requestedCriterionIds: orderedCriterionIds,
+          existingCriterionIds: existing.map((criterion) => criterion.id),
+        },
       );
     }
     orderedCriterionIds.forEach((criterionId, index) => {
@@ -1015,7 +1065,11 @@ export function removeCriterion(
 export function getTaskOrThrow(db: Db, id: number) {
   const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
   if (!task) {
-    throw AppError.notFound(`Aufgabe mit ID ${id} wurde nicht gefunden.`);
+    throw AppError.notFound(
+      "task_not_found",
+      "The requested task was not found.",
+      { taskId: id },
+    );
   }
   return task;
 }
@@ -1081,7 +1135,10 @@ function insertTask(
   positionOverride?: number,
 ) {
   if (!input.title || input.title.trim() === "") {
-    throw AppError.badRequest("Der Aufgabentitel darf nicht leer sein.");
+    throw AppError.badRequest(
+      "task_title_required",
+      "The task title must not be empty.",
+    );
   }
   let projectId = input.projectId ?? null;
   const parentTaskId = input.parentTaskId ?? null;
@@ -1184,7 +1241,9 @@ function normalizedSequenceTitles(titles: string[]): string[] {
   const normalized = titles.map((title) => title.trim()).filter(Boolean);
   if (normalized.length < 2) {
     throw AppError.badRequest(
-      "Ein Ablauf braucht mindestens zwei benannte Schritte.",
+      "task_sequence_too_short",
+      "A task sequence requires at least two named steps.",
+      { minimum: 2, provided: normalized.length },
     );
   }
   return normalized;
@@ -1319,7 +1378,11 @@ export function updateTask(
     const txDb = tx as unknown as Db;
     const currentTask = getTaskOrThrow(txDb, id);
     if (input.title !== undefined && input.title.trim() === "") {
-      throw AppError.badRequest("Der Aufgabentitel darf nicht leer sein.");
+      throw AppError.badRequest(
+        "task_title_required",
+        "The task title must not be empty.",
+        { taskId: id },
+      );
     }
     const patch: Partial<typeof schema.tasks.$inferInsert> = {};
     const changedFields: string[] = [];
@@ -1557,8 +1620,10 @@ export function completeTask(
       throw new AppError(
         409,
         "descendants_policy_required",
-        "Diese Aufgabe hat offene Teilaufgaben. Bitte wähle, ob sie ebenfalls erledigt werden sollen.",
+        "A descendants policy is required because this task has open children.",
         {
+          taskId: id,
+          transition: "complete",
           openChildrenCount: openChildren.length,
           options: ["leave_open", "complete_children"],
         },
@@ -1638,8 +1703,10 @@ export function cancelTask(
       throw new AppError(
         409,
         "descendants_policy_required",
-        "Diese Aufgabe hat offene Teilaufgaben. Bitte wähle, ob sie ebenfalls verworfen werden sollen.",
+        "A descendants policy is required because this task has open children.",
         {
+          taskId: id,
+          transition: "cancel",
           openChildrenCount: openChildren.length,
           options: ["leave_open", "cancel_children"],
         },
@@ -1809,13 +1876,17 @@ export function moveTask(
     if (newParentTaskId !== null) {
       if (newParentTaskId === taskId) {
         throw AppError.conflict(
-          "Eine Aufgabe kann nicht ihr eigenes übergeordnetes Element sein.",
+          "task_parent_self",
+          "A task cannot be its own parent.",
+          { taskId },
         );
       }
       const newParent = getTaskOrThrow(txDb, newParentTaskId);
       if (wouldCreateHierarchyCycle(txDb, taskId, newParentTaskId)) {
         throw AppError.conflict(
-          "Diese Verschiebung würde einen Kreis in der Aufgabenhierarchie erzeugen.",
+          "task_hierarchy_cycle",
+          "This move would create a cycle in the task hierarchy.",
+          { taskId, parentTaskId: newParentTaskId },
         );
       }
       newProjectId = newParent.projectId;
@@ -1949,7 +2020,9 @@ export function indentTask(db: Db, taskId: number, context?: MutationContext) {
   const currentIndex = siblings.findIndex((t) => t.id === taskId);
   if (currentIndex <= 0) {
     throw AppError.badRequest(
-      "Es gibt keine vorherige gleichrangige Aufgabe, unter die eingerückt werden kann.",
+      "task_indent_unavailable",
+      "There is no previous sibling under which this task can be indented.",
+      { taskId },
     );
   }
   const previousSibling = siblings[currentIndex - 1]!;
@@ -1960,7 +2033,9 @@ export function outdentTask(db: Db, taskId: number, context?: MutationContext) {
   const task = getTaskOrThrow(db, taskId);
   if (task.parentTaskId === null) {
     throw AppError.badRequest(
-      "Diese Aufgabe ist bereits oberste Ebene und kann nicht weiter ausgerückt werden.",
+      "task_already_root",
+      "This task is already at the root level.",
+      { taskId },
     );
   }
   const parent = getTaskOrThrow(db, task.parentTaskId);
@@ -1985,7 +2060,11 @@ export function addDependency(
   context?: MutationContext,
 ) {
   if (taskId === dependsOnTaskId) {
-    throw AppError.conflict("Eine Aufgabe kann nicht von sich selbst abhängen.");
+    throw AppError.conflict(
+      "task_dependency_self",
+      "A task cannot depend on itself.",
+      { taskId },
+    );
   }
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -2006,7 +2085,9 @@ export function addDependency(
 
     if (wouldCreateDependencyCycle(txDb, taskId, dependsOnTaskId)) {
       throw AppError.conflict(
-        "Diese Abhängigkeit würde einen Kreis erzeugen und ist nicht erlaubt.",
+        "task_dependency_cycle",
+        "This dependency would create a cycle.",
+        { taskId, dependsOnTaskId },
       );
     }
 

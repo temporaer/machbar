@@ -10,7 +10,6 @@ import type {
   TaskSize,
   TaskStatus,
 } from "@machbar/shared";
-import { stuckReasonLabels } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import {
@@ -37,23 +36,7 @@ export interface TaskRecord extends SharedTask {}
 
 export interface StuckProjectRecord extends ProjectRecord {
   stuckReason: StuckReason;
-  repairAction: string;
 }
-
-export const repairActionByReason: Record<StuckReason, string> = {
-  no_next_action:
-    "Lege eine machbare nächste Aufgabe für dieses Projekt fest.",
-  only_waiting_without_followup:
-    "Setze für eine wartende Aufgabe eine Wiedervorlage oder plane einen eigenen nächsten Schritt.",
-  followup_due:
-    "Hake jetzt nach oder markiere eine wartende Aufgabe wieder als machbar.",
-  blocked_dependencies:
-    "Prüfe die konkret blockierenden Voraussetzungen, damit ein machbarer Schritt entsteht.",
-  unassigned_actionable:
-    "Weise die offene Aufgabe einer zuständigen Person zu.",
-  completion_review:
-    "Schließe das Projekt ab, öffne es erneut oder archiviere es.",
-};
 
 function dedupeTags(tags: Tag[]): Tag[] {
   const seen = new Map<number, Tag>();
@@ -434,13 +417,6 @@ export class Graph {
       result.push({
         ...project,
         stuckReason: reason,
-        repairAction:
-          reason === "no_next_action" &&
-          this.tasksForProject(project.id).some(
-            (task) => task.status === "captured",
-          )
-            ? "Kläre die erfassten Aufgaben und lege danach einen machbaren nächsten Schritt fest."
-            : repairActionByReason[reason],
       });
     }
     return result;
@@ -450,8 +426,4 @@ export class Graph {
   rootTasksWithoutProject(): TaskRecord[] {
     return this.rootsByProject.get(null) ?? [];
   }
-}
-
-export function labelForStuckReason(reason: StuckReason): string {
-  return stuckReasonLabels[reason];
 }

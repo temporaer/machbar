@@ -45,7 +45,11 @@ import { parseOrThrow } from "../validation.js";
 function parseId(raw: string): number {
   const id = Number.parseInt(raw, 10);
   if (Number.isNaN(id)) {
-    throw AppError.badRequest("Die ID muss eine Zahl sein.");
+    throw AppError.badRequest(
+      "identifier_invalid",
+      "The task ID must be a number.",
+      { resource: "task", value: raw },
+    );
   }
   return id;
 }
@@ -54,7 +58,11 @@ function taskOrThrow(db: Db, id: number) {
   const graph = Graph.load(db);
   const task = graph.tasksById.get(id);
   if (!task) {
-    throw AppError.notFound(`Aufgabe mit ID ${id} wurde nicht gefunden.`);
+    throw AppError.notFound(
+      "task_not_found",
+      "The requested task was not found.",
+      { taskId: id },
+    );
   }
   return task;
 }

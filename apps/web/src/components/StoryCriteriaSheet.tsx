@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Project } from "@machbar/shared";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { BottomSheet } from "./BottomSheet";
 
@@ -12,6 +12,7 @@ import { BottomSheet } from "./BottomSheet";
  * page.
  */
 export function StoryCriteriaSheet({ story, onClose }: { story: Project; onClose: () => void }) {
+  const strings = useStrings();
   const [error, setError] = useState<string | null>(null);
 
   return (

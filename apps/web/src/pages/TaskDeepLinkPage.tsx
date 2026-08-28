@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTaskDetail } from "../lib/taskDetailContext";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 
 /** Route adapter for the existing state-driven task detail sheet. */
 export function TaskDeepLinkPage() {
+  const strings = useStrings();
   const params = useParams<{ id: string }>();
   const taskId = Number(params.id);
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ export function TaskDeepLinkPage() {
 
   useEffect(() => {
     if (!Number.isInteger(taskId) || taskId <= 0) {
-      navigate("/heute", { replace: true });
+      navigate("/today", { replace: true });
       return;
     }
     open(taskId);
@@ -25,7 +26,7 @@ export function TaskDeepLinkPage() {
     if (openTaskId === taskId) {
       opened.current = true;
     } else if (opened.current && openTaskId === null) {
-      navigate("/heute", { replace: true });
+      navigate("/today", { replace: true });
     }
   }, [navigate, openTaskId, taskId]);
 

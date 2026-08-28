@@ -21,6 +21,7 @@ export function createTestContext(options?: {
   seed?: boolean;
   oidc?: OidcConfig;
   oidcProvider?: OidcProvider;
+  basePath?: string;
 }): TestContext {
   const handle = openDb(":memory:");
   runMigrations(handle.db);
@@ -33,7 +34,7 @@ export function createTestContext(options?: {
     dataDir: path.join(__dirname, "__fixtures__"),
     databaseFile: "unused.db",
     databasePath: ":memory:",
-    basePath: "/",
+    basePath: options?.basePath ?? "/",
     seedDatabase: false,
     webDistDir: path.join(__dirname, "__no_web_dist__"),
     oidc: options?.oidc ?? null,

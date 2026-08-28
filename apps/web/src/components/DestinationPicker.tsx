@@ -1,6 +1,7 @@
 import { useId, useMemo, useState } from "react";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { pickRecent, type DestinationKind } from "../lib/recentDestinations";
+import { useLocale } from "../lib/locale";
 
 export interface DestinationOption {
   id: number;
@@ -12,9 +13,15 @@ export interface DestinationOption {
   subtitle?: string | null;
 }
 
-function matches(option: DestinationOption, needle: string): boolean {
+function matches(
+  option: DestinationOption,
+  needle: string,
+  locale: string,
+): boolean {
   if (!needle) return true;
-  const haystack = `${option.title} ${option.subtitle ?? ""}`.toLocaleLowerCase();
+  const haystack = `${option.title} ${
+    option.subtitle ?? ""
+  }`.toLocaleLowerCase(locale);
   return haystack.includes(needle);
 }
 
@@ -55,21 +62,30 @@ export function DestinationPicker({
   /** Focus the search field when a picker is the immediate next capture step. */
   autoFocus?: boolean;
 }) {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const reactId = useId();
   const [query, setQuery] = useState("");
-  const needle = query.trim().toLocaleLowerCase();
+  const needle = query.trim().toLocaleLowerCase(locale);
 
   const recents = useMemo(
-    () => pickRecent(kind, options).filter((option) => matches(option, needle)),
-    [kind, options, needle],
+    () =>
+      pickRecent(kind, options).filter((option) =>
+        matches(option, needle, locale),
+      ),
+    [kind, locale, options, needle],
   );
 
   const rest = useMemo(() => {
     const recentIds = new Set(recents.map((option) => option.id));
-    return options.filter((option) => !recentIds.has(option.id) && matches(option, needle));
-  }, [options, recents, needle]);
+    return options.filter(
+      (option) =>
+        !recentIds.has(option.id) && matches(option, needle, locale),
+    );
+  }, [locale, options, recents, needle]);
 
-  const noneVisible = !needle || noneLabel.toLocaleLowerCase().includes(needle);
+  const noneVisible =
+    !needle || noneLabel.toLocaleLowerCase(locale).includes(needle);
   const nothingToShow = !noneVisible && recents.length === 0 && rest.length === 0;
 
   const row = (id: number | null, title: string, subtitle?: string | null) => (

@@ -1,16 +1,31 @@
+import type { ApiErrorCode } from "@machbar/shared";
 import type { z } from "zod";
 import { AppError } from "./errors.js";
 
-/** Parses `input` with the given zod schema, throwing a German AppError on failure. */
+export function validationDetails(error: z.ZodError): Record<string, unknown> {
+  return {
+    issues: error.issues.map(({ message: _message, ...issue }) => issue),
+  };
+}
+
+/** Parses input and exposes machine-readable Zod issue codes and paths. */
 export function parseOrThrow<S extends z.ZodTypeAny>(
   schema: S,
   input: unknown,
+  error: {
+    code: ApiErrorCode;
+    message: string;
+  } = {
+    code: "request_body_invalid",
+    message: "The request contains invalid data.",
+  },
 ): z.infer<S> {
   const result = schema.safeParse(input);
   if (!result.success) {
     throw AppError.badRequest(
-      "Die Anfrage enthält ungültige Daten.",
-      result.error.flatten(),
+      error.code,
+      error.message,
+      validationDetails(result.error),
     );
   }
   return result.data;

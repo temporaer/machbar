@@ -6,7 +6,10 @@ import { parseOrThrow } from "../validation.js";
 
 export function registerActivityRoutes(app: FastifyInstance, db: Db) {
   app.get("/api/activity", async (request) => {
-    const query = parseOrThrow(activityQuerySchema, request.query);
+    const query = parseOrThrow(activityQuerySchema, request.query, {
+      code: "activity_query_invalid",
+      message: "The activity query parameters are invalid.",
+    });
     return getActivityPage(db, query);
   });
 }

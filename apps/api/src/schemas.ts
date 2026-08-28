@@ -10,11 +10,11 @@ import {
 
 const isoDate = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Datum muss im Format JJJJ-MM-TT sein.");
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must use YYYY-MM-DD format.");
 const isoDateTime = z.string().min(1);
 
 export const createProjectSchema = z.object({
-  title: z.string().min(1, "Der Projekttitel darf nicht leer sein."),
+  title: z.string().min(1, "Project title must not be empty."),
   notes: z.string().optional(),
   status: z.enum(projectStatuses).optional(),
   ownerMemberId: z.number().int().nullable().optional(),
@@ -42,11 +42,11 @@ export const activateProjectSchema = z.object({
 });
 
 export const addCriterionSchema = z.object({
-  text: z.string().min(1, "Der Text für „Erledigt, wenn …“ darf nicht leer sein."),
+  text: z.string().min(1, "Acceptance criterion text must not be empty."),
 });
 
 export const updateCriterionSchema = z.object({
-  text: z.string().min(1, "Der Text für „Erledigt, wenn …“ darf nicht leer sein."),
+  text: z.string().min(1, "Acceptance criterion text must not be empty."),
 });
 
 export const checkCriterionSchema = z.object({
@@ -60,7 +60,7 @@ export const reorderCriteriaSchema = z.object({
 export const createTaskSchema = z.object({
   projectId: z.number().int().nullable().optional(),
   parentTaskId: z.number().int().nullable().optional(),
-  title: z.string().min(1, "Der Aufgabentitel darf nicht leer sein."),
+  title: z.string().min(1, "Task title must not be empty."),
   notes: z.string().optional(),
   status: z.enum(taskStatuses).optional(),
   needsClarification: z.boolean().optional(),
@@ -84,8 +84,8 @@ export const createChildTaskSchema = createTaskSchema.omit({
 
 export const createTaskSequenceSchema = z.object({
   titles: z
-    .array(z.string().trim().min(1, "Jeder Schritt braucht einen Titel."))
-    .min(2, "Ein Ablauf braucht mindestens zwei Schritte."),
+    .array(z.string().trim().min(1, "Every step requires a title."))
+    .min(2, "A sequence requires at least two steps."),
   createdByMemberId: z.number().int().nullable().optional(),
 });
 
@@ -147,23 +147,23 @@ export const tagRefSchema = z.object({
 });
 
 export const createTagSchema = z.object({
-  name: z.string().min(1, "Der Tag-Name darf nicht leer sein."),
+  name: z.string().min(1, "Tag name must not be empty."),
   kind: z.enum(tagKinds).optional(),
 });
 
 export const updateTagSchema = z.object({
-  name: z.string().min(1, "Der Tag-Name darf nicht leer sein.").optional(),
+  name: z.string().min(1, "Tag name must not be empty.").optional(),
   kind: z.enum(tagKinds).optional(),
   groupingMode: z.enum(tagGroupingModes).optional(),
   sortPosition: z.number().int().nullable().optional(),
 });
 
 export const createMemberSchema = z.object({
-  name: z.string().min(1, "Der Name darf nicht leer sein."),
+  name: z.string().min(1, "Member name must not be empty."),
 });
 
 export const renameMemberSchema = z.object({
-  name: z.string().min(1, "Der Name darf nicht leer sein."),
+  name: z.string().min(1, "Member name must not be empty."),
 });
 
 export const searchQuerySchema = z.object({

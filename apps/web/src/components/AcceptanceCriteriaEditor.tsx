@@ -2,7 +2,8 @@ import { useState } from "react";
 import type { AcceptanceCriterion } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useRefresh } from "../lib/refresh";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { sortByPosition } from "../lib/taskHelpers";
 
 /**
@@ -31,6 +32,7 @@ export function AcceptanceCriteriaEditor({
   onError: (message: string | null) => void;
   autoFocusNewCriterion?: boolean;
 }) {
+  const strings = useStrings();
   const { bump } = useRefresh();
   const [newCriterionText, setNewCriterionText] = useState("");
   const [drafts, setDrafts] = useState<Record<number, string>>({});
@@ -46,7 +48,7 @@ export function AcceptanceCriteriaEditor({
       await job();
       bump();
     } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
+      onError(localizedErrorMessage(err, strings));
     }
   };
 

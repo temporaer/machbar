@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from "react";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 
 export type PageHint = {
   label?: string;
@@ -19,6 +19,7 @@ export function PageHeader({
   hints = [],
   headingLevel = 1,
 }: PageHeaderProps) {
+  const strings = useStrings();
   const [helpOpen, setHelpOpen] = useState(false);
   const helpId = useId();
   const hasHints = hints.length > 0;

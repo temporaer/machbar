@@ -1,10 +1,11 @@
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { LoadingState, ErrorState } from "../components/AsyncStates";
 import { StuckProjectList } from "../components/StuckProjectList";
 
 export function StuckPage() {
+  const strings = useStrings();
   const { data: projects, loading, error, reload } = useAsync(() => api.getStuckProjects(), []);
   return (
     <div>

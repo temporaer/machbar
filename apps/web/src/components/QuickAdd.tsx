@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import type { ProjectWithActions } from "../lib/api";
 import { useRefresh } from "../lib/refresh";
 import { api } from "../lib/api";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { ownerAssignmentPatch } from "./TaskQuickActionSheet";
 import { AssignOwnerSheet } from "./AssignOwnerSheet";
 import { BottomSheet } from "./BottomSheet";
@@ -27,6 +28,7 @@ export function QuickAdd({
   autoOpen?: boolean;
   onAutoOpenClose?: () => void;
 }) {
+  const strings = useStrings();
   const [open, setOpen] = useState(autoOpen);
   const [error, setError] = useState<string | null>(null);
   const [createdTask, setCreatedTask] = useState<Awaited<ReturnType<typeof api.createTask>> | null>(null);
@@ -56,7 +58,9 @@ export function QuickAdd({
     void api
       .getProjects()
       .then(setProjects)
-      .catch((err: unknown) => setProjectPickerError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) =>
+        setProjectPickerError(localizedErrorMessage(err, strings)),
+      );
   };
 
   const openProjectPicker = () => {
@@ -74,7 +78,7 @@ export function QuickAdd({
       bump();
       setProjectPickerOpen(false);
     } catch (err) {
-      setProjectPickerError(err instanceof Error ? err.message : String(err));
+      setProjectPickerError(localizedErrorMessage(err, strings));
     } finally {
       setMoving(false);
     }
@@ -89,7 +93,7 @@ export function QuickAdd({
       bump();
       setCreatedTask(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(localizedErrorMessage(err, strings));
     } finally {
       setMoving(false);
     }

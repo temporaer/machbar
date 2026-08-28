@@ -1,6 +1,7 @@
 import type { TaskStatus } from "@machbar/shared";
-import { taskStatusLabels } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 
 export function StatusBadge({ status }: { status: TaskStatus }) {
-  return <span className={`badge badge-status-${status}`}>{taskStatusLabels[status]}</span>;
+  const strings = useStrings();
+  return <span className={`badge badge-status-${status}`}>{strings.taskStatusLabels[status]}</span>;
 }

@@ -87,4 +87,15 @@ describe("share text serializers", () => {
       "Umzug organisieren\n\n☐ Angebote einholen\n  ✓ Preise vergleichen\n\nFällig: 15.09.2026\n\nBis zum Monatsende abschließen.",
     );
   });
+
+  it("serializes labels and dates in English", () => {
+    expect(
+      serializeTaskForShare(
+        makeTask({ dueDate: "2026-09-01", notes: "Call the supplier." }),
+        "en",
+      ),
+    ).toBe(
+      "Angebot einholen\n\nDue: 09/01/2026\n\nCall the supplier.",
+    );
+  });
 });

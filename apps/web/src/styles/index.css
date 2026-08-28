@@ -9,17 +9,117 @@
   --color-primary: #146356;
   --color-primary-dark: #0d453c;
   --color-primary-contrast: #ffffff;
-  --color-danger: #b3261e;
-  --color-warning: #9a6700;
-  --color-success: #1e7d3c;
-  --color-info: #2b5a8f;
+  --color-danger: #a8241d;
+  --color-danger-strong: #a8241d;
+  --color-danger-contrast: #ffffff;
+  --color-danger-surface: #f6dede;
+  --color-warning: #875b00;
+  --color-warning-strong: #805500;
+  --color-warning-contrast: #ffffff;
+  --color-warning-surface: #fdecc8;
+  --color-success: #1d7439;
+  --color-success-strong: #176b34;
+  --color-success-contrast: #ffffff;
+  --color-success-surface: #dcf3e6;
+  --color-info: #285887;
+  --color-info-strong: #24537f;
+  --color-info-contrast: #ffffff;
+  --color-info-surface: #e3ecf6;
+  --color-clarification: #4c3b96;
+  --color-clarification-surface: #e8e2f8;
+  --color-status-neutral: #555f5a;
+  --color-status-neutral-surface: #e2e6e4;
+  --color-on-strong: #ffffff;
+  --color-tag-contrast: #ffffff;
+  --color-member-contrast: #ffffff;
+  --color-overlay: rgba(10, 20, 16, 0.45);
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 20px;
   --shadow-card: 0 1px 2px rgba(20, 30, 25, 0.08), 0 4px 10px rgba(20, 30, 25, 0.06);
   --shadow-sheet: 0 -8px 30px rgba(0, 0, 0, 0.18);
+  --shadow-nav: 0 -5px 18px rgba(20, 30, 25, 0.06);
+  --shadow-fab: 0 6px 16px rgba(20, 99, 86, 0.4);
   --nav-height: 64px;
   font-family: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-bg: #0c1311;
+  --color-surface: #151e1b;
+  --color-surface-alt: #1f2a26;
+  --color-border: #394943;
+  --color-text: #f0f5f2;
+  --color-text-muted: #acbbb4;
+  --color-primary: #74d3c0;
+  --color-primary-dark: #9ce0d3;
+  --color-primary-contrast: #071411;
+  --color-danger: #ff9d96;
+  --color-danger-strong: #ad352f;
+  --color-danger-contrast: #ffffff;
+  --color-danger-surface: #3a2321;
+  --color-warning: #f2c76f;
+  --color-warning-strong: #805a08;
+  --color-warning-contrast: #ffffff;
+  --color-warning-surface: #382f1d;
+  --color-success: #7bd898;
+  --color-success-strong: #246f40;
+  --color-success-contrast: #ffffff;
+  --color-success-surface: #203428;
+  --color-info: #91c4f5;
+  --color-info-strong: #32658f;
+  --color-info-contrast: #ffffff;
+  --color-info-surface: #202f3c;
+  --color-clarification: #c6b8ff;
+  --color-clarification-surface: #302b45;
+  --color-status-neutral: #c0cbc6;
+  --color-status-neutral-surface: #29332f;
+  --color-overlay: rgba(2, 7, 5, 0.72);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.32), 0 5px 14px rgba(0, 0, 0, 0.24);
+  --shadow-sheet: 0 -8px 30px rgba(0, 0, 0, 0.55);
+  --shadow-nav: 0 -5px 18px rgba(0, 0, 0, 0.28);
+  --shadow-fab: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --color-bg: #0c1311;
+    --color-surface: #151e1b;
+    --color-surface-alt: #1f2a26;
+    --color-border: #394943;
+    --color-text: #f0f5f2;
+    --color-text-muted: #acbbb4;
+    --color-primary: #74d3c0;
+    --color-primary-dark: #9ce0d3;
+    --color-primary-contrast: #071411;
+    --color-danger: #ff9d96;
+    --color-danger-strong: #ad352f;
+    --color-danger-contrast: #ffffff;
+    --color-danger-surface: #3a2321;
+    --color-warning: #f2c76f;
+    --color-warning-strong: #805a08;
+    --color-warning-contrast: #ffffff;
+    --color-warning-surface: #382f1d;
+    --color-success: #7bd898;
+    --color-success-strong: #246f40;
+    --color-success-contrast: #ffffff;
+    --color-success-surface: #203428;
+    --color-info: #91c4f5;
+    --color-info-strong: #32658f;
+    --color-info-contrast: #ffffff;
+    --color-info-surface: #202f3c;
+    --color-clarification: #c6b8ff;
+    --color-clarification-surface: #302b45;
+    --color-status-neutral: #c0cbc6;
+    --color-status-neutral-surface: #29332f;
+    --color-overlay: rgba(2, 7, 5, 0.72);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.32), 0 5px 14px rgba(0, 0, 0, 0.24);
+    --shadow-sheet: 0 -8px 30px rgba(0, 0, 0, 0.55);
+    --shadow-nav: 0 -5px 18px rgba(0, 0, 0, 0.28);
+    --shadow-fab: 0 6px 18px rgba(0, 0, 0, 0.5);
+  }
 }
 
 * {
@@ -287,9 +387,9 @@ a {
 }
 
 .btn-danger {
-  background: var(--color-danger);
-  border-color: var(--color-danger);
-  color: #fff;
+  background: var(--color-danger-strong);
+  border-color: var(--color-danger-strong);
+  color: var(--color-danger-contrast);
 }
 
 .btn-ghost {
@@ -540,7 +640,7 @@ a {
 .tag-choice[aria-pressed="true"] {
   background: var(--tag-color);
   border-color: var(--tag-color);
-  color: #fff;
+  color: var(--color-tag-contrast);
   font-weight: 600;
 }
 
@@ -688,34 +788,34 @@ a {
 }
 
 .badge-clarification {
-  background: #e8e2f8;
-  color: #4c3b96;
+  background: var(--color-clarification-surface);
+  color: var(--color-clarification);
   padding: 1px 6px;
   font-size: 0.66rem;
 }
 .badge-status-actionable {
-  background: #dcf3e6;
+  background: var(--color-success-surface);
   color: var(--color-success);
 }
 .badge-status-waiting {
-  background: #fdecc8;
+  background: var(--color-warning-surface);
   color: var(--color-warning);
 }
 .badge-status-someday {
-  background: #e3ecf6;
-  color: #2b5a8f;
+  background: var(--color-info-surface);
+  color: var(--color-info);
 }
 .badge-status-done {
-  background: #e2e2e2;
-  color: #555;
+  background: var(--color-status-neutral-surface);
+  color: var(--color-status-neutral);
 }
 .badge-status-cancelled {
-  background: #f6dede;
+  background: var(--color-danger-surface);
   color: var(--color-danger);
 }
 
 .badge-stuck {
-  background: #fbe3df;
+  background: var(--color-danger-surface);
   color: var(--color-danger);
 }
 
@@ -761,7 +861,7 @@ a {
   padding: 5px 10px calc(5px + env(safe-area-inset-bottom));
   border-top: 1px solid color-mix(in srgb, var(--color-border) 76%, transparent);
   background: color-mix(in srgb, var(--color-surface) 92%, transparent);
-  box-shadow: 0 -5px 18px rgba(20, 30, 25, 0.06);
+  box-shadow: var(--shadow-nav);
   backdrop-filter: blur(16px) saturate(1.1);
   -webkit-backdrop-filter: blur(16px) saturate(1.1);
   z-index: 30;
@@ -846,7 +946,7 @@ a {
   background: var(--color-primary);
   color: var(--color-primary-contrast);
   border: none;
-  box-shadow: 0 6px 16px rgba(20, 99, 86, 0.4);
+  box-shadow: var(--shadow-fab);
   font-size: 1.6rem;
   z-index: 25;
 }
@@ -951,7 +1051,7 @@ a {
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(10, 20, 16, 0.45);
+  background: var(--color-overlay);
   z-index: 40;
   display: flex;
   align-items: flex-end;
@@ -1090,7 +1190,7 @@ a {
   font-weight: 600;
   font-size: 0.85rem;
   padding: 0 16px;
-  color: #fff;
+  color: var(--color-on-strong);
   /*
    * Both backgrounds are always mounted (so their layout/size stays stable),
    * but only the one matching the live drag direction — or the persisted
@@ -1108,12 +1208,12 @@ a {
 }
 
 .task-row-swipe-bg.complete {
-  background: var(--color-success);
+  background: var(--color-success-strong);
   justify-content: flex-start;
 }
 
 .task-row-swipe-bg.cancel {
-  background: var(--color-danger);
+  background: var(--color-danger-strong);
   justify-content: flex-end;
 }
 
@@ -1193,15 +1293,15 @@ a {
 }
 
 .task-row-checkbox.done {
-  background: var(--color-success);
-  border-color: var(--color-success);
-  color: #fff;
+  background: var(--color-success-strong);
+  border-color: var(--color-success-strong);
+  color: var(--color-success-contrast);
 }
 
 .task-row-checkbox.cancelled {
   background: var(--color-text-muted);
   border-color: var(--color-text-muted);
-  color: #fff;
+  color: var(--color-on-strong);
 }
 
 .task-row-kebab {
@@ -1607,7 +1707,7 @@ a {
 .tab-strip button[aria-pressed="true"] {
   background: var(--color-primary);
   border-color: var(--color-primary);
-  color: #fff;
+  color: var(--color-primary-contrast);
 }
 
 .identity-gate {
@@ -1653,7 +1753,7 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--color-member-contrast);
   font-weight: 700;
   flex-shrink: 0;
 }

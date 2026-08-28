@@ -20,6 +20,8 @@ import { TagsPage } from "./pages/TagsPage";
 import { SharePage } from "./pages/SharePage";
 import { TaskDeepLinkPage } from "./pages/TaskDeepLinkPage";
 import { ActivityPage } from "./pages/ActivityPage";
+import { LocaleProvider } from "./lib/locale";
+import { ThemeProvider } from "./lib/theme";
 
 function TaskDetailHost() {
   const { openTaskId } = useTaskDetail();
@@ -35,22 +37,22 @@ function Shell() {
       <main className="app-main">
         <IdentityGate>
           <Routes>
-            <Route path="/" element={<Navigate to="/heute" replace />} />
-            <Route path="/heute" element={<TodayPage />} />
-            <Route path="/eingang" element={<InboxPage />} />
-            <Route path="/projekte" element={<ProjectsPage />} />
-            <Route path="/projekte/:id" element={<ProjectDetailPage />} />
-            <Route path="/wartet" element={<WaitingPage />} />
-            <Route path="/mehr" element={<MorePage />} />
-            <Route path="/mehr/suche" element={<SearchPage />} />
-            <Route path="/mehr/festgefahren" element={<StuckPage />} />
-            <Route path="/mehr/backlog" element={<BacklogReviewPage />} />
-            <Route path="/mehr/refinement" element={<RefinementPage />} />
-            <Route path="/mehr/tags" element={<TagsPage />} />
-            <Route path="/mehr/aktivitaeten" element={<ActivityPage />} />
+            <Route path="/" element={<Navigate to="/today" replace />} />
+            <Route path="/today" element={<TodayPage />} />
+            <Route path="/inbox" element={<InboxPage />} />
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/projects/:id" element={<ProjectDetailPage />} />
+            <Route path="/waiting" element={<WaitingPage />} />
+            <Route path="/more" element={<MorePage />} />
+            <Route path="/more/search" element={<SearchPage />} />
+            <Route path="/more/stuck" element={<StuckPage />} />
+            <Route path="/more/backlog" element={<BacklogReviewPage />} />
+            <Route path="/more/refinement" element={<RefinementPage />} />
+            <Route path="/more/tags" element={<TagsPage />} />
+            <Route path="/more/activity" element={<ActivityPage />} />
             <Route path="/share" element={<SharePage />} />
-            <Route path="/aufgaben/:id" element={<TaskDeepLinkPage />} />
-            <Route path="*" element={<Navigate to="/heute" replace />} />
+            <Route path="/tasks/:id" element={<TaskDeepLinkPage />} />
+            <Route path="*" element={<Navigate to="/today" replace />} />
           </Routes>
           <TaskDetailHost />
         </IdentityGate>
@@ -62,16 +64,20 @@ function Shell() {
 
 export function App() {
   return (
-    <IdentityProvider>
-      <RefreshProvider>
-        <SwipeSettingsProvider>
-          <TaskDetailProvider>
-            <HashRouter>
-              <Shell />
-            </HashRouter>
-          </TaskDetailProvider>
-        </SwipeSettingsProvider>
-      </RefreshProvider>
-    </IdentityProvider>
+    <ThemeProvider>
+      <LocaleProvider>
+        <IdentityProvider>
+          <RefreshProvider>
+            <SwipeSettingsProvider>
+              <TaskDetailProvider>
+                <HashRouter>
+                  <Shell />
+                </HashRouter>
+              </TaskDetailProvider>
+            </SwipeSettingsProvider>
+          </RefreshProvider>
+        </IdentityProvider>
+      </LocaleProvider>
+    </ThemeProvider>
   );
 }

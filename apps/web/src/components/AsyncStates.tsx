@@ -1,6 +1,7 @@
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 
 export function LoadingState() {
+  const strings = useStrings();
   return (
     <div className="loading-state" role="status">
       {strings.loading}
@@ -9,6 +10,7 @@ export function LoadingState() {
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const strings = useStrings();
   return (
     <div className="error-state" role="alert">
       <p>{strings.error}</p>

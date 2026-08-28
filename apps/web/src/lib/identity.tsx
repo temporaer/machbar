@@ -8,13 +8,19 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import type { AuthStatus, Member } from "@machbar/shared";
+import type { ApiErrorCode, AuthStatus, Member } from "@machbar/shared";
 import { api } from "./api";
 import {
   parseSelectedMemberStorageValue,
   SELECTED_MEMBER_STORAGE_KEY,
   setRequestActorMemberId,
 } from "./identityStorage";
+import { useStrings } from "./strings";
+import type { Strings } from "./strings";
+import {
+  localizedApiErrorMessage,
+  localizedErrorMessage,
+} from "./errorMessage";
 
 const STORAGE_KEY = SELECTED_MEMBER_STORAGE_KEY;
 
@@ -36,10 +42,32 @@ interface IdentityContextValue {
   logout: () => Promise<void>;
 }
 
-function consumeLoginError(): string | null {
+interface LoginErrorPayload {
+  code: string | null;
+  details: Record<string, unknown> | undefined;
+  legacyMessage: string | null;
+}
+
+function parseLoginErrorDetails(value: string | null) {
+  if (!value) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function consumeLoginError(): LoginErrorPayload | null {
   const params = new URLSearchParams(window.location.search);
-  const message = params.get("authError");
-  if (!message) return null;
+  const code = params.get("authErrorCode");
+  const details = parseLoginErrorDetails(params.get("authErrorDetails"));
+  const legacyMessage = params.get("authError");
+  if (!code && !legacyMessage) return null;
+  params.delete("authErrorCode");
+  params.delete("authErrorDetails");
   params.delete("authError");
   const query = params.toString();
   window.history.replaceState(
@@ -47,7 +75,30 @@ function consumeLoginError(): string | null {
     "",
     `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
   );
-  return message;
+  return { code, details, legacyMessage };
+}
+
+function loginErrorMessage(
+  payload: LoginErrorPayload | null,
+  strings: Strings,
+): string | null {
+  if (!payload) return null;
+  if (payload.code) {
+    if (
+      Object.prototype.hasOwnProperty.call(
+        strings.apiErrorMessages,
+        payload.code,
+      )
+    ) {
+      return localizedApiErrorMessage(
+        payload.code as ApiErrorCode,
+        payload.details,
+        strings,
+      );
+    }
+    return strings.error;
+  }
+  return payload.legacyMessage;
 }
 
 const IdentityContext = createContext<IdentityContextValue | null>(null);
@@ -63,6 +114,7 @@ function readStoredMemberId(): number | null {
 }
 
 export function IdentityProvider({ children }: { children: ReactNode }) {
+  const strings = useStrings();
   const [members, setMembers] = useState<Member[]>([]);
   const [membersLoading, setMembersLoading] = useState(true);
   const [membersError, setMembersError] = useState<string | null>(null);
@@ -70,7 +122,10 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [loginError] = useState<string | null>(() => consumeLoginError());
+  const [loginErrorPayload] = useState<LoginErrorPayload | null>(() =>
+    consumeLoginError(),
+  );
+  const loginError = loginErrorMessage(loginErrorPayload, strings);
 
   const load = useCallback(() => {
     setMembersLoading(true);
@@ -78,9 +133,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     api
       .getMembers()
       .then(setMembers)
-      .catch((err: unknown) => setMembersError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) =>
+        setMembersError(localizedErrorMessage(err, strings)),
+      )
       .finally(() => setMembersLoading(false));
-  }, []);
+  }, [strings]);
 
   const loadAuth = useCallback(() => {
     setAuthLoading(true);
@@ -103,11 +160,11 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch((err: unknown) => {
-        setAuthError(err instanceof Error ? err.message : String(err));
+        setAuthError(localizedErrorMessage(err, strings));
         setMembersLoading(false);
       })
       .finally(() => setAuthLoading(false));
-  }, [load]);
+  }, [load, strings]);
 
   useEffect(() => {
     loadAuth();
@@ -190,7 +247,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   }, [authStatus?.enabled, currentMember?.id]);
 
   const login = useCallback(() => {
-    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash || "#/heute"}`;
+    const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash || "#/today"}`;
     window.location.assign(
       `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
     );

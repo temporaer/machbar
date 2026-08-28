@@ -9,7 +9,6 @@ describe("StuckProjectList", () => {
     const project = makeStuckProject({
       title: "Umzug organisieren",
       stuckReason: "blocked_dependencies",
-      repairAction: "Löse die blockierende Abhängigkeit auf.",
     });
     render(
       <MemoryRouter>
@@ -19,7 +18,9 @@ describe("StuckProjectList", () => {
 
     expect(screen.getByText("Umzug organisieren")).toBeInTheDocument();
     expect(screen.getByText("Durch Abhängigkeiten blockiert")).toBeInTheDocument();
-    expect(screen.getByText(/Löse die blockierende Abhängigkeit auf\./)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Prüfe die konkret blockierenden Voraussetzungen/),
+    ).toBeInTheDocument();
   });
 
   it("zeigt einen leeren Zustand ohne festgefahrene Projekte", () => {

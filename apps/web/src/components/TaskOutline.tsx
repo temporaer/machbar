@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Task } from "@machbar/shared";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useSwipeSettings } from "../lib/swipeSettings";
@@ -49,6 +49,7 @@ export function TaskOutline({
   showRevisitDate = false,
   showSwipeHint = true,
 }: TaskOutlineProps) {
+  const strings = useStrings();
   const [movePrompt, setMovePrompt] = useState<{ task: Task; mode: MoveMode } | null>(null);
   const taskActions = useTaskActions();
   const { open } = useTaskDetail();

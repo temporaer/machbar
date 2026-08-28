@@ -19,7 +19,7 @@ describe("BottomNav", () => {
 
   it("markiert den aktiven Tab", () => {
     render(
-      <MemoryRouter initialEntries={["/eingang"]}>
+      <MemoryRouter initialEntries={["/inbox"]}>
         <BottomNav />
       </MemoryRouter>,
     );

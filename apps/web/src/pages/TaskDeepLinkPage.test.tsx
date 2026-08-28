@@ -17,12 +17,12 @@ function CloseHarness() {
 describe("TaskDeepLinkPage", () => {
   it("opens the existing task detail state and returns to Today when it closes", async () => {
     render(
-      <MemoryRouter initialEntries={["/aufgaben/42"]}>
+      <MemoryRouter initialEntries={["/tasks/42"]}>
         <TaskDetailProvider>
           <CloseHarness />
           <Routes>
-            <Route path="/aufgaben/:id" element={<TaskDeepLinkPage />} />
-            <Route path="/heute" element={<p>Heute route</p>} />
+            <Route path="/tasks/:id" element={<TaskDeepLinkPage />} />
+            <Route path="/today" element={<p>Today route</p>} />
           </Routes>
         </TaskDetailProvider>
       </MemoryRouter>,
@@ -32,6 +32,6 @@ describe("TaskDeepLinkPage", () => {
       expect(screen.getByRole("button", { name: "close 42" })).toBeInTheDocument(),
     );
     await userEvent.click(screen.getByRole("button", { name: "close 42" }));
-    expect(await screen.findByText("Heute route")).toBeInTheDocument();
+    expect(await screen.findByText("Today route")).toBeInTheDocument();
   });
 });

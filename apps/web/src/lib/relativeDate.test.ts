@@ -21,6 +21,18 @@ describe("relative calendar dates", () => {
     expect(formatRelativeScheduleDate("2026-08-22", TODAY)).toBe("seit 3 Tagen");
   });
 
+  it("formats due and elapsed dates in English", () => {
+    expect(formatRelativeDueDate("2026-09-08", TODAY, "en")).toBe(
+      "in 2 weeks",
+    );
+    expect(formatRelativeDueDate("2026-08-22", TODAY, "en")).toBe(
+      "3 days overdue",
+    );
+    expect(formatRelativeScheduleDate("2026-08-22", TODAY, "en")).toBe(
+      "3 days ago",
+    );
+  });
+
   it("uses local calendar days across a daylight-saving boundary", () => {
     const beforeDstChange = new Date(2026, 2, 28, 23, 45);
     expect(formatRelativeDueDate("2026-03-30", beforeDstChange)).toBe("in 2 Tagen");
@@ -40,5 +52,9 @@ describe("relative calendar dates", () => {
 
   it("does not describe elapsed waiting dates as remaining time", () => {
     expect(formatCompactWaitDuration("2026-08-24", TODAY)).toBeNull();
+  });
+
+  it("uses the English compact month abbreviation", () => {
+    expect(formatCompactWaitDuration("2026-11-23", TODAY, "en")).toBe("3mo");
   });
 });

@@ -3,21 +3,32 @@ import type { Task } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
+import { useLocale, type Locale } from "../lib/locale";
+import { localeTag } from "../lib/format";
+import { localizedErrorMessage } from "../lib/errorMessage";
 
-export function followUpEntryHeader(memberName: string, now = new Date()): string {
-  const timestamp = new Intl.DateTimeFormat("de-DE", {
+export function followUpEntryHeader(
+  memberName: string,
+  now = new Date(),
+  locale: Locale = "de",
+): string {
+  const timestamp = new Intl.DateTimeFormat(localeTag(locale), {
     dateStyle: "short",
     timeStyle: "short",
   }).format(now);
   return `[${timestamp} · ${memberName}]`;
 }
 
-function initialFollowUpNote(task: Task, memberName: string): string {
+function initialFollowUpNote(
+  task: Task,
+  memberName: string,
+  locale: Locale,
+): string {
   const prefix = task.notes.trim() ? `${task.notes.trimEnd()}\n\n` : "";
-  return `${prefix}${followUpEntryHeader(memberName)}\n`;
+  return `${prefix}${followUpEntryHeader(memberName, new Date(), locale)}\n`;
 }
 
 export function WaitingFollowUpSheet({
@@ -27,12 +38,14 @@ export function WaitingFollowUpSheet({
   task: Task;
   onClose: () => void;
 }) {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const { currentMember } = useIdentity();
   const { bump } = useRefresh();
   const memberName = currentMember?.name ?? strings.unknownMember;
   const initialNotes = useMemo(
-    () => initialFollowUpNote(task, memberName),
-    [task, memberName],
+    () => initialFollowUpNote(task, memberName, locale),
+    [locale, task, memberName],
   );
   const [notes, setNotes] = useState(initialNotes);
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
@@ -56,7 +69,7 @@ export function WaitingFollowUpSheet({
       bump();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(localizedErrorMessage(err, strings));
     } finally {
       setSaving(false);
     }

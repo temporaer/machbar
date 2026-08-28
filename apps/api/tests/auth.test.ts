@@ -87,7 +87,7 @@ describe("Pocket ID authentication", () => {
     await closeTestContext(ctx);
   });
 
-  async function login(returnTo = "/#/heute") {
+  async function login(returnTo = "/#/today") {
     const start = await ctx.app.inject({
       method: "GET",
       url: `/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`,
@@ -127,7 +127,7 @@ describe("Pocket ID authentication", () => {
       url: "/api/members",
     });
     expect(members.statusCode).toBe(401);
-    expect(members.json().error.message).toMatch(/Pocket ID/);
+    expect(members.json().error.code).toBe("authentication_required");
   });
 
   it("links an exact existing member, sets a hardened cookie, and restores the hash route", async () => {
@@ -281,7 +281,9 @@ describe("Pocket ID authentication", () => {
 
     const conflicting = await login();
     expect(conflicting.statusCode).toBe(302);
-    expect(conflicting.headers.location).toContain("authError=");
+    expect(new URL(conflicting.headers.location!).searchParams.get("authErrorCode")).toBe(
+      "oidc_member_already_linked",
+    );
     expect(
       ctx.handle.db.select().from(schema.memberOidcIdentities).all(),
     ).toHaveLength(1);
@@ -316,7 +318,9 @@ describe("Pocket ID authentication", () => {
       headers: { cookie: correlationCookie },
     });
     expect(replay.statusCode).toBe(302);
-    expect(replay.headers.location).toContain("authError=");
+    expect(new URL(replay.headers.location!).searchParams.get("authErrorCode")).toBe(
+      "oidc_flow_expired",
+    );
 
     const external = await ctx.app.inject({
       method: "GET",
@@ -360,11 +364,39 @@ describe("Pocket ID authentication", () => {
     });
 
     expect(swapped.statusCode).toBe(302);
-    expect(swapped.headers.location).toContain("authError=");
+    expect(new URL(swapped.headers.location!).searchParams.get("authErrorCode")).toBe(
+      "oidc_browser_mismatch",
+    );
     expect(swapped.headers["set-cookie"]).not.toContain(
       "__Host-machbar-session=",
     );
     expect(provider.exchanges).toHaveLength(0);
+  });
+
+  it("redirects authentication errors beneath the configured base path", async () => {
+    const subpath = createTestContext({
+      oidc,
+      oidcProvider: provider,
+      basePath: "/tasks",
+    });
+    try {
+      const start = await subpath.app.inject({
+        method: "GET",
+        url: `/api/auth/login?returnTo=${encodeURIComponent("/tasks/#/today")}`,
+      });
+      const state = new URL(start.headers.location!).searchParams.get("state")!;
+      const callback = await subpath.app.inject({
+        method: "GET",
+        url: `/api/auth/callback?code=test&state=${state}`,
+      });
+
+      expect(callback.statusCode).toBe(302);
+      expect(callback.headers.location).toBe(
+        "https://machbar.example/tasks/?authErrorCode=oidc_browser_mismatch#/today",
+      );
+    } finally {
+      await closeTestContext(subpath);
+    }
   });
 
   it("binds creator and Heute identity to the session instead of caller input", async () => {

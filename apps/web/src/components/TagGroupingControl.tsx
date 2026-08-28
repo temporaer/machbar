@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from "react";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import {
   groupableTagKinds,
   type GroupableTagKind,
@@ -17,6 +17,7 @@ export function TagGroupingOptions({
   id?: string;
   hidden?: boolean;
 }) {
+  const strings = useStrings();
   return (
     <div
       id={id}
@@ -55,6 +56,7 @@ export function TagGroupingControl({
   value: GroupableTagKind | null;
   onChange: (value: GroupableTagKind | null) => void;
 }) {
+  const strings = useStrings();
   const [expanded, setExpanded] = useState(false);
   const optionsId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);

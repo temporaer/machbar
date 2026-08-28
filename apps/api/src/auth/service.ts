@@ -49,7 +49,8 @@ export class AuthService {
     const flow = consumeAuthFlow(this.db, state);
     if (!flow) {
       throw AppError.badRequest(
-        "Die Anmeldung ist abgelaufen oder wurde bereits verwendet. Bitte erneut anmelden.",
+        "oidc_flow_expired",
+        "The sign-in attempt expired or was already used.",
       );
     }
 
@@ -62,7 +63,8 @@ export class AuthService {
       });
     } catch {
       throw AppError.badRequest(
-        "Pocket ID konnte die Anmeldung nicht bestätigen. Bitte erneut versuchen.",
+        "oidc_callback_rejected",
+        "Pocket ID could not confirm the sign-in attempt.",
       );
     }
     const member = resolveOidcMember(this.db, claims);

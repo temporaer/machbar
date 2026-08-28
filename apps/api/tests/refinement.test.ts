@@ -246,12 +246,13 @@ describe("refinementRepo", () => {
       );
 
       expect(issue).toMatchObject({
-        label: "Blockierende Aufgabe ungeklärt",
-        explanation:
-          "„Ikea: Kugellampe nachkaufen“ wartet auf „Schrank Lea konfigurieren“. Diese Aufgabe ist erst erfasst und noch nicht machbar.",
+        code: "blocked_without_clear_path",
+        blockingReason: "captured",
+        entityType: "task",
+        entityId: downstream.id,
+        entityTitle: "Ikea: Kugellampe nachkaufen",
         suggestedAction: {
           code: "clarify_task",
-          label: "Schrank Lea konfigurieren klären",
           targetTaskId: prerequisite.id,
         },
         dependencyPath: [
@@ -259,6 +260,9 @@ describe("refinementRepo", () => {
           { taskId: prerequisite.id, title: "Schrank Lea konfigurieren" },
         ],
       });
+      expect(issue).not.toHaveProperty("label");
+      expect(issue).not.toHaveProperty("explanation");
+      expect(issue?.suggestedAction).not.toHaveProperty("label");
     });
 
     it("targets the first problematic prerequisite through a multi-hop chain", () => {

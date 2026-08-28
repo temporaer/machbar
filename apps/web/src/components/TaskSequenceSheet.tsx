@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { api } from "../lib/api";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { BottomSheet } from "./BottomSheet";
@@ -19,6 +20,7 @@ export function TaskSequenceSheet({
   projectId: number;
   onClose: () => void;
 }) {
+  const strings = useStrings();
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -40,7 +42,7 @@ export function TaskSequenceSheet({
       bump();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(localizedErrorMessage(err, strings));
       savingRef.current = false;
       setSaving(false);
     }

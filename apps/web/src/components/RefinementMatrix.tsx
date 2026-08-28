@@ -1,6 +1,6 @@
 import type { Member, TaskSize } from "@machbar/shared";
-import { taskSizes, taskSizeLabels } from "@machbar/shared";
-import { strings } from "../lib/strings";
+import { taskSizes } from "@machbar/shared";
+import { useStrings } from "../lib/strings";
 import type { OwnerSizeCounts } from "../lib/api";
 import { MemberLabel } from "./MemberAvatar";
 
@@ -39,6 +39,7 @@ export function RefinementMatrix({
   onSelect: (selection: RefinementMatrixSelection | null) => void;
   members?: Member[];
 }) {
+  const strings = useStrings();
   const columns: Array<TaskSize | "unestimated"> = [...taskSizes, "unestimated"];
 
   function toggle(next: RefinementMatrixSelection) {
@@ -54,7 +55,9 @@ export function RefinementMatrix({
             <th scope="col">{strings.owner}</th>
             {columns.map((col) => (
               <th scope="col" key={col}>
-                {col === "unestimated" ? strings.unestimated : taskSizeLabels[col]}
+                {col === "unestimated"
+                  ? strings.unestimated
+                  : strings.taskSizeLabels[col]}
               </th>
             ))}
             <th scope="col">{strings.total}</th>

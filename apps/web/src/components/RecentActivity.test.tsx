@@ -69,7 +69,7 @@ describe("RecentActivity", () => {
     expect(mockedGetActivity).toHaveBeenCalledWith({ taskId: 42, limit: 5 });
     expect(screen.getByRole("link", { name: "Alle Aktivitäten anzeigen" })).toHaveAttribute(
       "href",
-      "/mehr/aktivitaeten?taskId=42",
+      "/more/activity?taskId=42",
     );
   });
 
@@ -87,7 +87,7 @@ describe("RecentActivity", () => {
     expect(mockedGetActivity).toHaveBeenLastCalledWith({ projectId: 9, limit: 5 });
     expect(screen.getByRole("link", { name: "Alle Aktivitäten anzeigen" })).toHaveAttribute(
       "href",
-      "/mehr/aktivitaeten?projectId=9",
+      "/more/activity?projectId=9",
     );
   });
 

@@ -36,7 +36,7 @@ describe("WaitingGroupList", () => {
     const taskA = makeTask({ id: 101, title: "Erste Aufgabe", status: "waiting", waitingFor: "Steuerberater" });
     const taskB = makeTask({ id: 102, title: "Zweite Aufgabe", status: "waiting", waitingFor: null });
     const groupA = makeWaitingGroup({ waitingFor: "Steuerberater", tasks: [taskA] });
-    const groupB = makeWaitingGroup({ waitingFor: "Unbekannt", tasks: [taskB] });
+    const groupB = makeWaitingGroup({ waitingFor: null, tasks: [taskB] });
 
     const { container } = renderWithProviders(<WaitingGroupList groups={[groupA, groupB]} />);
 
@@ -49,9 +49,9 @@ describe("WaitingGroupList", () => {
     expect(container.querySelectorAll(".task-row").length).toBe(2);
   });
 
-  it("zeigt group.waitingFor als Anzeige-Fallback, wenn task.waitingFor leer ist, ohne die Aufgabe zu verändern", async () => {
+  it("localizes a null catch-all waiting group without mutating the task", async () => {
     const task = makeTask({ id: 103, title: "Ohne eigenes Wartet-auf", status: "waiting", waitingFor: null });
-    const group = makeWaitingGroup({ waitingFor: "Unbekannt", tasks: [task] });
+    const group = makeWaitingGroup({ waitingFor: null, tasks: [task] });
 
     renderWithProviders(<WaitingGroupList groups={[group]} />);
 
@@ -64,12 +64,31 @@ describe("WaitingGroupList", () => {
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
+  it("uses the English fallback for a null catch-all waiting group", async () => {
+    const task = makeTask({
+      id: 104,
+      title: "No waiting reason",
+      status: "waiting",
+      waitingFor: null,
+    });
+
+    renderWithProviders(
+      <WaitingGroupList
+        groups={[makeWaitingGroup({ waitingFor: null, tasks: [task] })]}
+      />,
+      { locale: "en" },
+    );
+
+    await screen.findByText("No waiting reason");
+    expect(screen.getByText("Waiting for: Unknown")).toBeInTheDocument();
+  });
+
   it("respektiert die Reihenfolge aus dem Backend (Gruppen dann Aufgaben) ohne Duplikate", async () => {
     const first = makeTask({ id: 111, title: "A - erste", status: "waiting", waitingFor: "Steuerberater" });
     const second = makeTask({ id: 112, title: "B - zweite", status: "waiting", waitingFor: null });
     const third = makeTask({ id: 113, title: "C - dritte", status: "waiting", waitingFor: null });
     const groupA = makeWaitingGroup({ waitingFor: "Steuerberater", tasks: [first] });
-    const groupB = makeWaitingGroup({ waitingFor: "Unbekannt", tasks: [second, third] });
+    const groupB = makeWaitingGroup({ waitingFor: null, tasks: [second, third] });
 
     const { container } = renderWithProviders(<WaitingGroupList groups={[groupA, groupB]} />);
     await screen.findByText("A - erste");

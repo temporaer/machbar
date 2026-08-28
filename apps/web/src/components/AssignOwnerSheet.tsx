@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useIdentity } from "../lib/identity";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { BottomSheet } from "./BottomSheet";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
 
@@ -34,6 +35,7 @@ export function AssignOwnerSheet({
   onClose: () => void;
   onAssign: (ownerMemberId: number | null) => Promise<void>;
 }) {
+  const strings = useStrings();
   const { members } = useIdentity();
   const [ownerId, setOwnerId] = useState<number | null>(currentOwnerId);
   const [saving, setSaving] = useState(false);
@@ -46,7 +48,7 @@ export function AssignOwnerSheet({
       await onAssign(ownerId);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(localizedErrorMessage(err, strings));
     } finally {
       setSaving(false);
     }

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { Project } from "@machbar/shared";
 import { api } from "../lib/api";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { useAsync } from "../lib/useAsync";
 import { ErrorState, LoadingState } from "./AsyncStates";
 import { BottomSheet } from "./BottomSheet";
@@ -21,6 +22,7 @@ export function ProjectTagsSheet({
   onClose: () => void;
   onSave: (tagIds: number[]) => Promise<void>;
 }) {
+  const strings = useStrings();
   const initialTagIds = story.tags.map((tag) => tag.id);
   const [selectedIds, setSelectedIds] = useState(initialTagIds);
   const [saving, setSaving] = useState(false);
@@ -35,7 +37,7 @@ export function ProjectTagsSheet({
       await onSave(selectedIds);
       onClose();
     } catch (cause) {
-      setSaveError(cause instanceof Error ? cause.message : String(cause));
+      setSaveError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
     }

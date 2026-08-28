@@ -7,9 +7,12 @@ import { statusAfterAction, workflowActionsByStatus } from "./projectWorkflow";
 // constant as the task list (see `useTaskActions`), so the whole app agrees
 // on one retention window rather than two subtly different magic numbers.
 import { RETENTION_MS } from "./useTaskActions";
+import { useStrings } from "./strings";
+import type { Strings } from "./strings";
+import { localizedErrorMessage } from "./errorMessage";
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+function errorMessage(err: unknown, strings: Strings): string {
+  return localizedErrorMessage(err, strings);
 }
 
 /**
@@ -41,6 +44,7 @@ export interface RetainedStory {
  * those simply patch the project and bump right away.
  */
 export function useProjectWorkflowActions() {
+  const strings = useStrings();
   const { bump } = useRefresh();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [retained, setRetained] = useState<Map<number, RetainedStory>>(new Map());
@@ -153,12 +157,15 @@ export function useProjectWorkflowActions() {
         // once, when the retention window has fully elapsed.
       } catch (err) {
         release(story.id);
-        setErrors((prev) => ({ ...prev, [story.id]: errorMessage(err) }));
+        setErrors((prev) => ({
+          ...prev,
+          [story.id]: errorMessage(err, strings),
+        }));
       } finally {
         setBusyId(null);
       }
     },
-    [call, clearError, retain, release],
+    [call, clearError, retain, release, strings],
   );
 
   /** Right-swipe / primary-button activation, optionally assigning the driver in the same call. */
@@ -182,13 +189,16 @@ export function useProjectWorkflowActions() {
         await api.updateProject(story.id, { ownerMemberId });
         bump();
       } catch (err) {
-        setErrors((prev) => ({ ...prev, [story.id]: errorMessage(err) }));
+        setErrors((prev) => ({
+          ...prev,
+          [story.id]: errorMessage(err, strings),
+        }));
         throw err;
       } finally {
         setBusyId(null);
       }
     },
-    [bump, clearError],
+    [bump, clearError, strings],
   );
 
   /** Sets due/scheduled dates without changing the status. */
@@ -203,13 +213,16 @@ export function useProjectWorkflowActions() {
         await api.updateProject(story.id, patch);
         bump();
       } catch (err) {
-        setErrors((prev) => ({ ...prev, [story.id]: errorMessage(err) }));
+        setErrors((prev) => ({
+          ...prev,
+          [story.id]: errorMessage(err, strings),
+        }));
         throw err;
       } finally {
         setBusyId(null);
       }
     },
-    [bump, clearError],
+    [bump, clearError, strings],
   );
 
   return { busyId, retained, errors, clearError, runAction, activate, archive, assignDriver, schedule };

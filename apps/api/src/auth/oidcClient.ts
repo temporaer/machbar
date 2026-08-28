@@ -99,7 +99,7 @@ export class PocketIdProvider implements OidcProvider {
     });
     const idTokenClaims = tokens.claims();
     if (!idTokenClaims?.sub || !tokens.access_token) {
-      throw new Error("Pocket ID hat keine vollständige Identität geliefert.");
+      throw new Error("Pocket ID did not provide a complete identity.");
     }
     const userInfo = await fetchUserInfo(
       configuration,

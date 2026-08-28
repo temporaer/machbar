@@ -1,16 +1,16 @@
 import { NavLink } from "react-router-dom";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { BottomNavIcon } from "./BottomNavIcon";
 
-const items = [
-  { to: "/heute", label: strings.today, icon: "today" },
-  { to: "/eingang", label: strings.inbox, icon: "inbox" },
-  { to: "/projekte", label: strings.projects, icon: "projects" },
-  { to: "/wartet", label: strings.waiting, icon: "waiting" },
-  { to: "/mehr", label: strings.more, icon: "more" },
-] as const;
-
 export function BottomNav() {
+  const strings = useStrings();
+  const items = [
+    { to: "/today", label: strings.today, icon: "today" },
+    { to: "/inbox", label: strings.inbox, icon: "inbox" },
+    { to: "/projects", label: strings.projects, icon: "projects" },
+    { to: "/waiting", label: strings.waiting, icon: "waiting" },
+    { to: "/more", label: strings.more, icon: "more" },
+  ] as const;
   return (
     <nav className="bottom-nav" aria-label={strings.appName}>
       <div className="bottom-nav-inner">

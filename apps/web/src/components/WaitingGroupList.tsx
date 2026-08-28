@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Task, WaitingGroup } from "@machbar/shared";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { TaskOutline } from "./TaskOutline";
 import { WaitingFollowUpSheet } from "./WaitingFollowUpSheet";
 import {
@@ -8,6 +8,7 @@ import {
   type GroupableTagKind,
 } from "../lib/tagGrouping";
 import { CollapsibleGroup } from "./CollapsibleGroup";
+import { useLocale } from "../lib/locale";
 
 /**
  * Flattens the backend's `WaitingGroup[]` (tasks bucketed by `waitingFor`)
@@ -16,21 +17,26 @@ import { CollapsibleGroup } from "./CollapsibleGroup";
  * type without duplicating tasks that carry multiple tags.
  *
  * Each task's `waitingFor` is displayed via `TaskRow`'s existing meta line;
- * when a task's own `waitingFor` is null/blank, `group.waitingFor` (e.g.
- * "Unbekannt") is used as a display-only fallback. This never touches the
- * API — it's purely a shallow copy for rendering.
+ * when a task's own `waitingFor` is null/blank, `group.waitingFor` is used.
+ * The API deliberately leaves the catch-all group as `null`, so the final
+ * display fallback comes from the active frontend catalog.
  *
  * `position` is also rewritten to a sequential index matching this flat
  * order, since `TaskOutline` sorts its root tasks by `position` even when
  * `organizable` is false; the tasks here come from unrelated sibling groups
  * whose real `position` values aren't comparable across groups.
  */
-function toDisplayTasks(groups: WaitingGroup[]): Task[] {
+function toDisplayTasks(
+  groups: WaitingGroup[],
+  unknownWaitingFor: string,
+): Task[] {
   const tasks: Task[] = [];
   let position = 0;
   for (const group of groups) {
     for (const task of group.tasks) {
-      const waitingFor = task.waitingFor?.trim() ? task.waitingFor : group.waitingFor;
+      const waitingFor = task.waitingFor?.trim()
+        ? task.waitingFor
+        : group.waitingFor?.trim() || unknownWaitingFor;
       tasks.push({ ...task, waitingFor, position: position++ });
     }
   }
@@ -44,9 +50,13 @@ export function WaitingGroupList({
   groups: WaitingGroup[];
   groupBy?: GroupableTagKind | null;
 }) {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const [followUpTask, setFollowUpTask] = useState<Task | null>(null);
-  const tasks = toDisplayTasks(groups);
-  const tagGroups = groupBy ? groupItemsByTagKind(tasks, groupBy) : null;
+  const tasks = toDisplayTasks(groups, strings.unknown);
+  const tagGroups = groupBy
+    ? groupItemsByTagKind(tasks, groupBy, locale)
+    : null;
 
   return (
     <>

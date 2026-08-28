@@ -4,11 +4,13 @@ import { MemberAvatar } from "./MemberAvatar";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import type { Strings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { LoadingState, ErrorState, EmptyState } from "./AsyncStates";
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+function errorMessage(err: unknown, strings: Strings): string {
+  return localizedErrorMessage(err, strings);
 }
 
 /**
@@ -21,6 +23,7 @@ function errorMessage(err: unknown): string {
  * deleted member selected (see `identity.tsx`'s stale-id cleanup effect).
  */
 export function MemberManager() {
+  const strings = useStrings();
   const { members, membersLoading, membersError, reloadMembers } = useIdentity();
   const { bump } = useRefresh();
 
@@ -55,7 +58,7 @@ export function MemberManager() {
       reloadMembers();
       bump();
     } catch (err) {
-      setCreateError(errorMessage(err));
+      setCreateError(errorMessage(err, strings));
     } finally {
       setCreating(false);
     }
@@ -83,7 +86,7 @@ export function MemberManager() {
       reloadMembers();
       bump();
     } catch (err) {
-      setRowError(member.id, errorMessage(err));
+      setRowError(member.id, errorMessage(err, strings));
     } finally {
       setSavingId(null);
     }
@@ -98,7 +101,7 @@ export function MemberManager() {
       reloadMembers();
       bump();
     } catch (err) {
-      setRowError(member.id, errorMessage(err));
+      setRowError(member.id, errorMessage(err, strings));
     } finally {
       setDeletingId(null);
     }

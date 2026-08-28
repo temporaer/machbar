@@ -195,7 +195,7 @@ describe("TodayPage", () => {
     expect(await screen.findByRole("heading", { name: "Projekte" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Umzug organisieren" })).toHaveAttribute(
       "href",
-      "/projekte/77",
+      "/projects/77",
     );
     expect(screen.getByText(/Transporter reservieren/)).toBeInTheDocument();
   });

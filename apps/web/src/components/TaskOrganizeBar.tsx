@@ -1,5 +1,5 @@
 import type { Task } from "@machbar/shared";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import type { OrganizeDirection } from "../lib/useOutlineOrganize";
 
 export interface TaskOrganizeBarProps {
@@ -37,6 +37,7 @@ export function TaskOrganizeBar({
   onRefile,
   onClose,
 }: TaskOrganizeBarProps) {
+  const strings = useStrings();
   return (
     <div className="task-organize-bar" role="toolbar" aria-label={strings.organizeControls} aria-busy={busy}>
       <span className="task-organize-bar-title">{task.title}</span>

@@ -2,7 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Task } from "@machbar/shared";
 import { api } from "./api";
 import { useRefresh } from "./refresh";
-import { strings } from "./strings";
+import { useStrings } from "./strings";
+import type { Strings } from "./strings";
+import { localizedErrorMessage } from "./errorMessage";
 import {
   INDENT_WIDTH,
   applyMove,
@@ -78,8 +80,8 @@ function sameProjection(a: DropProjection | null, b: DropProjection | null): boo
   return a.parentId === b.parentId && a.depth === b.depth && a.index === b.index && a.beforeTaskId === b.beforeTaskId;
 }
 
-function errorMessage(err: unknown): string {
-  const detail = err instanceof Error ? err.message : String(err);
+function errorMessage(err: unknown, strings: Strings): string {
+  const detail = localizedErrorMessage(err, strings);
   return detail ? `${strings.moveFailed}: ${detail}` : strings.moveFailed;
 }
 
@@ -104,6 +106,7 @@ function errorMessage(err: unknown): string {
  * — and surfaces a localized message on the affected row instead.
  */
 export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
+  const strings = useStrings();
   const { bump } = useRefresh();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [override, setOverride] = useState<{ base: Task[]; tasks: Task[] } | null>(null);
@@ -242,13 +245,16 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
         } catch (err) {
           if (!mounted.current) return;
           setOverride(previousOverride);
-          setErrors((prev) => ({ ...prev, [taskId]: errorMessage(err) }));
+          setErrors((prev) => ({
+            ...prev,
+            [taskId]: errorMessage(err, strings),
+          }));
         } finally {
           if (mounted.current) setPendingId(null);
         }
       })();
     },
-    [bump, clearError, execute],
+    [bump, clearError, execute, strings],
   );
 
   const snapshotRows = useCallback((taskId: number) => {

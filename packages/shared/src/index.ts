@@ -48,6 +48,73 @@ export type TagGroupingMode = (typeof tagGroupingModes)[number];
 export type ActivityEventKind = (typeof activityEventKinds)[number];
 export type ActivityEntityType = (typeof activityEntityTypes)[number];
 
+export type ApiErrorCode =
+  | "acceptance_criteria_order_invalid"
+  | "acceptance_criterion_not_found"
+  | "acceptance_criterion_text_required"
+  | "activity_actor_invalid"
+  | "activity_actor_not_found"
+  | "activity_cursor_invalid"
+  | "activity_query_invalid"
+  | "agenda_query_invalid"
+  | "authentication_required"
+  | "auth_return_target_invalid"
+  | "auth_query_invalid"
+  | "descendants_policy_required"
+  | "internal_error"
+  | "identifier_invalid"
+  | "malformed_request"
+  | "member_name_conflict"
+  | "member_name_required"
+  | "member_not_found"
+  | "member_oidc_managed"
+  | "oidc_callback_rejected"
+  | "oidc_browser_mismatch"
+  | "oidc_flow_expired"
+  | "oidc_identity_orphaned"
+  | "oidc_member_already_linked"
+  | "oidc_name_conflict"
+  | "oidc_name_missing"
+  | "oidc_not_configured"
+  | "oidc_provider_error"
+  | "oidc_username_ambiguous"
+  | "project_driver_locked"
+  | "project_driver_required"
+  | "project_not_found"
+  | "project_title_required"
+  | "project_transition_invalid"
+  | "refinement_filters_invalid"
+  | "request_body_invalid"
+  | "request_origin_forbidden"
+  | "route_not_found"
+  | "search_query_invalid"
+  | "tag_kind_conflict"
+  | "tag_name_conflict"
+  | "tag_name_required"
+  | "tag_not_found"
+  | "task_already_root"
+  | "task_dependency_cycle"
+  | "task_dependency_self"
+  | "task_hierarchy_cycle"
+  | "task_indent_unavailable"
+  | "task_not_found"
+  | "task_parent_self"
+  | "task_sequence_too_short"
+  | "task_title_required"
+  | "waiting_query_invalid";
+
+export interface ApiErrorPayload {
+  code: ApiErrorCode;
+  /** English fallback for logs and clients without localized error copy. */
+  message: string;
+  /** Translation parameters and machine-readable validation context. */
+  details?: Record<string, unknown>;
+}
+
+export interface ApiErrorResponse {
+  error: ApiErrorPayload;
+}
+
 export interface ActivityEventMetadata {
   changedFields?: string[];
   previousStatus?: TaskStatus | ProjectStatus;
@@ -203,7 +270,6 @@ export type StuckReason =
 
 export interface StuckProject extends Project {
   stuckReason: StuckReason;
-  repairAction: string;
 }
 
 export type ProjectAgendaQualification = "due" | "scheduled" | "both";
@@ -214,7 +280,6 @@ export interface ProjectAgendaEntry {
   nextAction: Task | null;
   stuck: {
     reason: StuckReason;
-    repairAction: string;
   } | null;
 }
 
@@ -240,7 +305,8 @@ export interface Agenda {
 }
 
 export interface WaitingGroup {
-  waitingFor: string;
+  /** Null when the task has no explicit waiting-for description. */
+  waitingFor: string | null;
   tasks: Task[];
 }
 
@@ -275,21 +341,26 @@ export type RefinementActionCode =
 
 export interface RefinementAction {
   code: RefinementActionCode;
-  label: string;
   targetTaskId?: number;
 }
+
+export type RefinementBlockingReason =
+  | "captured"
+  | "waiting"
+  | "someday"
+  | "terminal_project"
+  | "cycle";
 
 export interface RefinementIssue {
   code: RefinementIssueCode;
   severity: RefinementIssueSeverity;
-  label: string;
-  explanation: string;
   suggestedAction: RefinementAction;
   entityType: "project" | "task";
   entityId: number;
   entityTitle: string;
   projectId: number | null;
   projectTitle: string | null;
+  blockingReason?: RefinementBlockingReason;
   dependencyPath?: Array<{ taskId: number; title: string }>;
 }
 
@@ -311,107 +382,3 @@ export interface SearchFilters {
   scheduledTo?: string;
   waitingFor?: string;
 }
-
-export const de = {
-  appName: "Machbar",
-  tagline: "Das ist machbar.",
-  identity: "Wer bist du?",
-  today: "Heute",
-  inbox: "Eingang",
-  projects: "Projekte",
-  waiting: "Wartet",
-  more: "Mehr",
-  stuck: "Festgefahren",
-  plannedToday: "Für heute geplant",
-  overdue: "Überfällig",
-  dueToday: "Heute fällig",
-  dueSoon: "Bald fällig",
-  shared: "Gemeinsam / offen",
-  unscheduled: "Weitere machbare Aufgaben",
-  followUp: "Nachhaken",
-  followUpHint: "Die Wiedervorlage ist erreicht. Jetzt nachhaken oder die Aufgabe wieder machbar machen.",
-  revisit: "Blockiert prüfen",
-  revisitHint: "Blockiert, aber heute wieder zu prüfen.",
-  nextAction: "Nächster Schritt",
-  noNextAction: "Kein nächster Schritt",
-  addTask: "Aufgabe hinzufügen",
-  addSubtask: "Teilaufgabe hinzufügen",
-  quickAdd: "Schnell hinzufügen",
-  titleEnough: "Nur Titel reicht",
-  save: "Speichern",
-  cancel: "Abbrechen",
-  discard: "Verwerfen",
-  editTask: "Aufgabe bearbeiten",
-  notes: "Notizen",
-  owner: "Zuständig",
-  status: "Status",
-  due: "Fällig",
-  scheduled: "Geplant",
-  context: "Kontext",
-  tags: "Tags",
-  priority: "Priorität",
-  dependencies: "Abhängigkeiten",
-  subtasks: "Teilaufgaben",
-  waitingFor: "Wartet auf",
-  inherited: "Geerbt",
-  inheritedProject: "Von Projekt geerbt",
-  inheritedParent: "Von übergeordneter Aufgabe geerbt",
-  ownOwner: "Eigene Zuständigkeit setzen",
-  noContext: "Kein Kontext",
-  actionable: "Machbar",
-  someday: "Irgendwann",
-  done: "Erledigt",
-  cancelled: "Verworfen",
-  clarify: "Klären",
-  organize: "Sortieren",
-  moveUp: "Nach oben",
-  moveDown: "Nach unten",
-  indent: "Einrücken",
-  outdent: "Ausrücken",
-  changeParent: "Übergeordnete Aufgabe ändern",
-  moveProject: "In Projekt verschieben",
-  moveSubtree: "Teilbaum verschieben",
-  search: "Suchen",
-  filter: "Filtern",
-  noItems: "Hier ist gerade nichts zu tun.",
-  saveNext: "Speichern & nächste klären",
-  makeActionable: "Wieder machbar",
-  blockedBy: "Blockiert durch",
-  taskHasOpenChildren: "Diese Aufgabe hat offene Teilaufgaben.",
-  onlyThisTask: "Nur diese Aufgabe erledigen",
-  leaveChildrenOpen: "Teilaufgaben offen lassen",
-  completeChildren: "Teilaufgaben ebenfalls erledigen",
-  cancelChildren: "Teilaufgaben verwerfen",
-} as const;
-
-export const taskStatusLabels: Record<TaskStatus, string> = {
-  captured: "Erfasst",
-  actionable: "Machbar",
-  waiting: "Wartet",
-  someday: "Irgendwann",
-  done: "Erledigt",
-  cancelled: "Verworfen",
-};
-
-export const stuckReasonLabels: Record<StuckReason, string> = {
-  no_next_action: "Kein nächster Schritt",
-  only_waiting_without_followup: "Wartet ohne Wiedervorlage",
-  followup_due: "Nachhaken fällig",
-  blocked_dependencies: "Durch Abhängigkeiten blockiert",
-  unassigned_actionable: "Offene Aufgabe ohne Zuständigkeit",
-  completion_review: "Bereit zum Abschließen",
-};
-
-export const projectStatusLabels: Record<ProjectStatus, string> = {
-  backlog: "Später / noch nicht aktiv",
-  active: "Aktiv",
-  completed: "Abgeschlossen",
-  archived: "Archiviert",
-};
-
-export const taskSizeLabels: Record<TaskSize, string> = {
-  S: "S",
-  M: "M",
-  L: "L",
-  XL: "XL",
-};

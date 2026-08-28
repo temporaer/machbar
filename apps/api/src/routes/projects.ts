@@ -36,7 +36,11 @@ import { parseOrThrow } from "../validation.js";
 function parseId(raw: string): number {
   const id = Number.parseInt(raw, 10);
   if (Number.isNaN(id)) {
-    throw AppError.badRequest("Die ID muss eine Zahl sein.");
+    throw AppError.badRequest(
+      "identifier_invalid",
+      "The project or criterion ID must be a number.",
+      { resource: "project_or_criterion", value: raw },
+    );
   }
   return id;
 }
@@ -45,7 +49,11 @@ function projectOrThrow(db: Db, id: number) {
   const graph = Graph.load(db);
   const project = graph.projectWithComputed(id);
   if (!project) {
-    throw AppError.notFound(`Projekt mit ID ${id} wurde nicht gefunden.`);
+    throw AppError.notFound(
+      "project_not_found",
+      "The requested project was not found.",
+      { projectId: id },
+    );
   }
   const issues = buildRefinementIssues(graph).issues.filter(
     (issue) => issue.projectId === id,

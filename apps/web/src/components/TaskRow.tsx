@@ -3,7 +3,8 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Task, TaskStatus } from "@machbar/shared";
 import type { TaskDetailFocusField } from "../lib/taskDetailContext";
-import { strings, taskStatusLabels } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import type { Strings } from "../lib/strings";
 import { formatDate, isOverdue } from "../lib/format";
 import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
@@ -29,6 +30,7 @@ import {
 } from "../lib/relativeDate";
 import { TaskCardTags } from "./TaskCardTags";
 import { MemberAvatar } from "./MemberAvatar";
+import { useLocale } from "../lib/locale";
 
 const SWIPE_THRESHOLD = 72;
 const LONG_PRESS_MS = 480;
@@ -77,7 +79,11 @@ export interface TaskRowProps {
 }
 
 /** Short, status-like label for the primary-swipe reveal background. */
-function primaryActionBgLabel(task: Task, action: PrimarySwipeAction): string {
+function primaryActionBgLabel(
+  task: Task,
+  action: PrimarySwipeAction,
+  strings: Strings,
+): string {
   if (task.status === "done" || task.status === "cancelled") return strings.reopen;
   if (task.status === "captured") return strings.actionable;
   switch (action) {
@@ -102,6 +108,8 @@ export function TaskRow({
   waitingInteraction,
   showRevisitDate = false,
 }: TaskRowProps) {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const [collapsed, setCollapsed] = useState(false);
   const [dragX, setDragX] = useState(0);
   const [chipsOpen, setChipsOpen] = useState(false);
@@ -215,20 +223,20 @@ export function TaskRow({
       : task.effectiveOwnerId === currentMemberId
         ? strings.me
         : ownerMember?.name ?? strings.unknownMember;
-  const due = formatDate(task.dueDate);
+  const due = formatDate(task.dueDate, locale);
   const projectDueRelative = task.projectDueDate
-    ? formatRelativeDueDate(task.projectDueDate)
+    ? formatRelativeDueDate(task.projectDueDate, new Date(), locale)
     : null;
   const projectDueExact = task.projectDueDate
-    ? formatExactLocalDate(task.projectDueDate)
+    ? formatExactLocalDate(task.projectDueDate, locale)
     : null;
   const revisitRelative =
     showRevisitDate && task.scheduledDate
-      ? formatRelativeScheduleDate(task.scheduledDate)
+      ? formatRelativeScheduleDate(task.scheduledDate, new Date(), locale)
       : null;
   const revisitExact =
     showRevisitDate && task.scheduledDate
-      ? formatExactLocalDate(task.scheduledDate)
+      ? formatExactLocalDate(task.scheduledDate, locale)
       : null;
 
   const clearLongPress = () => {
@@ -331,7 +339,7 @@ export function TaskRow({
   const goToProjectChip = () => {
     setChipsOpen(false);
     if (task.projectId) {
-      navigate(`/projekte/${task.projectId}`);
+      navigate(`/projects/${task.projectId}`);
     } else {
       setAssignProjectOpen(true);
     }
@@ -412,7 +420,9 @@ export function TaskRow({
       style={{ listStyle: "none" }}
     >
       <div className={`task-row-swipe-bg complete${showCompleteBg ? " visible" : ""}`} aria-hidden="true">
-        {waitingInteraction ? strings.makeActionable : primaryActionBgLabel(task, primarySwipeAction)}
+        {waitingInteraction
+          ? strings.makeActionable
+          : primaryActionBgLabel(task, primarySwipeAction, strings)}
       </div>
       <div className={`task-row-swipe-bg cancel${showCancelBg ? " visible" : ""}`} aria-hidden="true">
         {strings.moreActions}
@@ -519,7 +529,7 @@ export function TaskRow({
             <div className="task-row-meta">
               {task.status !== "actionable" ? (
                 <span className={`task-row-meta-item task-row-state task-row-state-${task.status}`}>
-                  {taskStatusLabels[task.status]}
+                  {strings.taskStatusLabels[task.status]}
                 </span>
               ) : null}
               {task.status === "waiting" && task.waitingFor ? (

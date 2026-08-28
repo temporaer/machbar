@@ -1,4 +1,4 @@
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import type { ChildPolicy, PendingAction } from "../lib/useTaskActions";
 
@@ -18,6 +18,7 @@ export function ChildPolicyPrompt({
   onChoose: (policy: ChildPolicy) => void;
   onClose: () => void;
 }) {
+  const strings = useStrings();
   const primaryLabel = action === "complete" ? strings.onlyThisTask : strings.onlyThisTaskCancel;
   return (
     <BottomSheet title={strings.taskHasOpenChildren} onClose={onClose} labelledBy="child-policy-title">

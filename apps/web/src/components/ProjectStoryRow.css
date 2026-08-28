@@ -33,9 +33,32 @@
    * they never leak into the global custom-property namespace.
    */
   --story-row-slate: #64748b;
+  --story-row-slate-strong: #526277;
   --story-row-muted-success: #4b7a5a;
-  --story-row-gray: #8a8f8c;
+  --story-row-muted-success-strong: #426d50;
+  --story-row-gray: #606864;
+  --story-row-gray-strong: #666c69;
   border-left: 4px solid transparent;
+}
+
+:root[data-theme="dark"] .story-row {
+  --story-row-slate: #b6c4d7;
+  --story-row-slate-strong: #526277;
+  --story-row-muted-success: #91c5a1;
+  --story-row-muted-success-strong: #426d50;
+  --story-row-gray: #b8bfbb;
+  --story-row-gray-strong: #666c69;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .story-row {
+    --story-row-slate: #b6c4d7;
+    --story-row-slate-strong: #526277;
+    --story-row-muted-success: #91c5a1;
+    --story-row-muted-success-strong: #426d50;
+    --story-row-gray: #b8bfbb;
+    --story-row-gray-strong: #666c69;
+  }
 }
 
 /*
@@ -74,7 +97,7 @@
   font-weight: 600;
   font-size: 0.85rem;
   padding: 0 16px;
-  color: #fff;
+  color: var(--color-on-strong);
   opacity: 0;
   transition: opacity 120ms ease;
 }
@@ -85,31 +108,31 @@
 
 .story-row-swipe-bg.primary {
   /* Neutral fallback; overridden per accent below. */
-  background: var(--story-row-slate);
+  background: var(--story-row-slate-strong);
   justify-content: flex-start;
 }
 
 .story-row-accent-backlog .story-row-swipe-bg.primary {
-  background: var(--story-row-slate);
+  background: var(--story-row-slate-strong);
 }
 .story-row-accent-active .story-row-swipe-bg.primary {
-  background: var(--color-success);
+  background: var(--color-success-strong);
 }
 .story-row-accent-waiting .story-row-swipe-bg.primary {
-  background: var(--color-info);
+  background: var(--color-info-strong);
 }
 .story-row-accent-stuck .story-row-swipe-bg.primary {
-  background: var(--color-warning);
+  background: var(--color-warning-strong);
 }
 .story-row-accent-completed .story-row-swipe-bg.primary {
-  background: var(--story-row-muted-success);
+  background: var(--story-row-muted-success-strong);
 }
 .story-row-accent-archived .story-row-swipe-bg.primary {
-  background: var(--story-row-gray);
+  background: var(--story-row-gray-strong);
 }
 
 .story-row-swipe-bg.chips {
-  background: var(--color-danger);
+  background: var(--color-danger-strong);
   justify-content: flex-end;
 }
 
@@ -249,11 +272,11 @@
  * success tone, and archived is plain gray.
  */
 .story-row-status-badge--backlog {
-  background: #e2e8f0;
-  color: #475569;
+  background: color-mix(in srgb, var(--story-row-slate) 15%, var(--color-surface));
+  color: var(--story-row-slate);
 }
 .story-row-status-badge--active {
-  background: #dcf3e6;
+  background: var(--color-success-surface);
   color: var(--color-success);
 }
 .story-row-status-badge--waiting {
@@ -261,15 +284,15 @@
   color: var(--color-info);
 }
 .story-row-status-badge--stuck {
-  background: #fdecc8;
+  background: var(--color-warning-surface);
   color: var(--color-warning);
 }
 .story-row-status-badge--completed {
-  background: #e3ece6;
+  background: color-mix(in srgb, var(--story-row-muted-success) 15%, var(--color-surface));
   color: var(--story-row-muted-success);
 }
 .story-row-status-badge--archived {
-  background: #ececeb;
+  background: color-mix(in srgb, var(--story-row-gray) 15%, var(--color-surface));
   color: var(--story-row-gray);
 }
 

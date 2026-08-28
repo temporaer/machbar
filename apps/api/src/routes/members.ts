@@ -13,7 +13,11 @@ import { parseOrThrow } from "../validation.js";
 function parseId(raw: string): number {
   const id = Number.parseInt(raw, 10);
   if (Number.isNaN(id)) {
-    throw AppError.badRequest("Die ID muss eine Zahl sein.");
+    throw AppError.badRequest(
+      "identifier_invalid",
+      "The member ID must be a number.",
+      { resource: "member", value: raw },
+    );
   }
   return id;
 }

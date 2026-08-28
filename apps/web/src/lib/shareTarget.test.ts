@@ -35,6 +35,15 @@ describe("share target helpers", () => {
     });
   });
 
+  it("uses a localized fallback title for an empty English share", () => {
+    expect(
+      shareTargetToCaptureDraft({ title: "", text: "", url: "" }, "en"),
+    ).toEqual({
+      title: "Shared content",
+      notes: "",
+    });
+  });
+
   it("keeps long shared text as notes and derives a concise title", () => {
     const text =
       "Das ist eine längere Beschreibung, die als Notiz erhalten bleiben soll, statt als überlanger Aufgabentitel zu enden.";

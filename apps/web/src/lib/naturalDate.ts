@@ -1,11 +1,15 @@
 import Sugar from "sugar-date/index.js";
 import "sugar-date/locales/de";
+import type { Locale } from "../i18n/catalog";
 
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const GERMAN_DATE_PATTERN = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
+const ENGLISH_DATE_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
 const COMPACT_RELATIVE_PATTERN = /^(\d+)\s*([dwmy])$/i;
-const CALENDAR_WEEK_PATTERN =
+const GERMAN_CALENDAR_WEEK_PATTERN =
   /^(?:kw|kalenderwoche)\s*(\d{1,2})(?:\s*(?:\/|,)?\s*(\d{4}))?$/i;
+const ENGLISH_CALENDAR_WEEK_PATTERN =
+  /^(?:w|wk|week)\s*(\d{1,2})(?:\s*(?:\/|,)?\s*(\d{4}))?$/i;
 
 function isValidDateParts(year: number, month: number, day: number): boolean {
   const date = new Date(year, month - 1, day);
@@ -42,6 +46,16 @@ function parseGermanCalendarDate(input: string): string | null {
   return toIsoCalendarDate(new Date(year, month - 1, day));
 }
 
+function parseEnglishCalendarDate(input: string): string | null {
+  const match = ENGLISH_DATE_PATTERN.exec(input);
+  if (!match) return null;
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  const year = Number(match[3]);
+  if (!isValidDateParts(year, month, day)) return null;
+  return toIsoCalendarDate(new Date(year, month - 1, day));
+}
+
 function parseCompactRelative(input: string, referenceDate: Date): Date | null {
   const match = COMPACT_RELATIVE_PATTERN.exec(input);
   if (!match) return null;
@@ -66,8 +80,16 @@ function isoWeekMonday(year: number, week: number): Date | null {
   return thursday.getFullYear() === year ? monday : null;
 }
 
-function parseCalendarWeek(input: string, referenceDate: Date): Date | null {
-  const match = CALENDAR_WEEK_PATTERN.exec(input);
+function parseCalendarWeek(
+  input: string,
+  referenceDate: Date,
+  locale: Locale,
+): Date | null {
+  const pattern =
+    locale === "en"
+      ? ENGLISH_CALENDAR_WEEK_PATTERN
+      : GERMAN_CALENDAR_WEEK_PATTERN;
+  const match = pattern.exec(input);
   if (!match) return null;
   const week = Number(match[1]);
   const year = match[2] ? Number(match[2]) : referenceDate.getFullYear();
@@ -88,6 +110,7 @@ function parseWithSugar(input: string, locale: "de" | "en", referenceDate: Date)
 export function parseNaturalDate(
   value: string,
   referenceDate = new Date(),
+  locale: Locale = "de",
 ): string | null {
   const input = value.trim();
   if (!input || Number.isNaN(referenceDate.getTime())) return null;
@@ -95,18 +118,33 @@ export function parseNaturalDate(
   const isoDate = parseIsoCalendarDate(input);
   if (isoDate) return isoDate;
   if (ISO_DATE_PATTERN.test(input)) return null;
-  const germanDate = parseGermanCalendarDate(input);
-  if (germanDate) return germanDate;
-  if (GERMAN_DATE_PATTERN.test(input)) return null;
+  const localizedDate =
+    locale === "en"
+      ? parseEnglishCalendarDate(input)
+      : parseGermanCalendarDate(input);
+  if (localizedDate) return localizedDate;
+  const localizedDatePattern =
+    locale === "en" ? ENGLISH_DATE_PATTERN : GERMAN_DATE_PATTERN;
+  if (localizedDatePattern.test(input)) return null;
+
+  const alternateDate =
+    locale === "en"
+      ? parseGermanCalendarDate(input)
+      : parseEnglishCalendarDate(input);
+  if (alternateDate) return alternateDate;
 
   const compactDate = parseCompactRelative(input, referenceDate);
   if (compactDate) return toIsoCalendarDate(compactDate);
-  const calendarWeek = parseCalendarWeek(input, referenceDate);
+  const calendarWeek = parseCalendarWeek(input, referenceDate, locale);
   if (calendarWeek) return toIsoCalendarDate(calendarWeek);
-  if (CALENDAR_WEEK_PATTERN.test(input)) return null;
+  const localizedWeekPattern =
+    locale === "en"
+      ? ENGLISH_CALENDAR_WEEK_PATTERN
+      : GERMAN_CALENDAR_WEEK_PATTERN;
+  if (localizedWeekPattern.test(input)) return null;
 
   const parsed =
-    parseWithSugar(input, "de", referenceDate) ??
-    parseWithSugar(input, "en", referenceDate);
+    parseWithSugar(input, locale, referenceDate) ??
+    parseWithSugar(input, locale === "de" ? "en" : "de", referenceDate);
   return parsed ? toIsoCalendarDate(parsed) : null;
 }

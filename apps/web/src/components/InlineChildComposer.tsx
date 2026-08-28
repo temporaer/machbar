@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { useRefresh } from "../lib/refresh";
 import { useIdentity } from "../lib/identity";
 import { api } from "../lib/api";
@@ -25,6 +26,7 @@ export interface InlineChildComposerProps {
  * in place instead of as a sheet.
  */
 export function InlineChildComposer({ parentId, onCancel, onCreated }: InlineChildComposerProps) {
+  const strings = useStrings();
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +53,7 @@ export function InlineChildComposer({ parentId, onCancel, onCreated }: InlineChi
     } catch (err) {
       // Keep the composer open with the entered title and a visible error
       // so nothing is silently lost.
-      setError(err instanceof Error ? err.message : String(err));
+      setError(localizedErrorMessage(err, strings));
       setSaving(false);
     }
   };

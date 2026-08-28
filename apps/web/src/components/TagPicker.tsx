@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { tagKinds, type Tag, type TagKind } from "@machbar/shared";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { useLocale } from "../lib/locale";
 
 export function TagPicker({
   tags,
@@ -15,10 +16,12 @@ export function TagPicker({
   onChange: (ids: number[]) => void | Promise<void>;
   kinds?: readonly TagKind[];
 }) {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const hidden = new Set(hiddenIds);
   const visibleTags = tags
     .filter((tag) => !hidden.has(tag.id) && kinds.includes(tag.kind))
-    .sort((a, b) => a.name.localeCompare(b.name, "de"));
+    .sort((a, b) => a.name.localeCompare(b.name, locale));
 
   const toggle = (tagId: number) => {
     const next = selectedIds.includes(tagId)

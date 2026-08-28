@@ -69,7 +69,7 @@ describe("IdentityGate with Pocket ID", () => {
     window.history.replaceState(
       null,
       "",
-      "/?authError=Name%20bereits%20verkn%C3%BCpft#/heute",
+      "/?authError=Name%20bereits%20verkn%C3%BCpft#/today",
     );
     mockedApi.getAuthStatus.mockResolvedValue({
       enabled: true,
@@ -87,7 +87,32 @@ describe("IdentityGate with Pocket ID", () => {
       "Name bereits verknüpft",
     );
     expect(window.location.search).toBe("");
-    expect(window.location.hash).toBe("#/heute");
+    expect(window.location.hash).toBe("#/today");
+  });
+
+  it("localizes a structured callback error code in English", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?authErrorCode=oidc_name_conflict&authErrorDetails=%7B%22name%22%3A%22Mira%22%7D#/today",
+    );
+    mockedApi.getAuthStatus.mockResolvedValue({
+      enabled: true,
+      authenticated: false,
+      member: null,
+    });
+
+    renderWithProviders(
+      <IdentityGate>
+        <div>Private content</div>
+      </IdentityGate>,
+      { locale: "en" },
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The Pocket ID name “Mira” is already in use.",
+    );
+    expect(window.location.search).toBe("");
   });
 
   it("returns to sign-in when an API call reports an expired session", async () => {

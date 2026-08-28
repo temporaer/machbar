@@ -14,7 +14,6 @@ export interface CaptureShareDraft {
   notes: string;
 }
 
-const FALLBACK_TITLE = "Geteilter Inhalt";
 const SHORT_TEXT_LENGTH = 100;
 const DERIVED_TITLE_LENGTH = 80;
 
@@ -36,13 +35,16 @@ export function parseWebShareTarget(params: URLSearchParams | string): WebShareT
  * title. URLs are always a distinct notes block rather than being run into
  * the prose around them.
  */
-export function shareTargetToCaptureDraft(target: WebShareTarget): CaptureShareDraft {
+export function shareTargetToCaptureDraft(
+  target: WebShareTarget,
+  locale: Locale = "de",
+): CaptureShareDraft {
   const shortText = isShortPlainText(target.text);
   const title =
     target.title ||
     (shortText ? normalizeInline(target.text) : deriveTitle(target.text)) ||
     target.url ||
-    FALLBACK_TITLE;
+    getCatalog(locale).sharedContent;
 
   const noteParts: string[] = [];
   if (target.text && (target.title || !shortText)) noteParts.push(target.text);
@@ -95,3 +97,4 @@ function normalizeInline(value: string): string {
 function normalizeBlock(value: string): string {
   return value.replace(/\r\n?/g, "\n").trim();
 }
+import { getCatalog, type Locale } from "../i18n/catalog";

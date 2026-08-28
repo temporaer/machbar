@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type Ref } from "react";
 import { formatExactLocalDate } from "../lib/relativeDate";
 import { parseNaturalDate } from "../lib/naturalDate";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { useLocale } from "../lib/locale";
 import { IconActionButton } from "./IconActionButton";
 
 export function HumanDateInput({
@@ -21,19 +22,27 @@ export function HumanDateInput({
   inputRef?: Ref<HTMLInputElement>;
   onValidityChange?: (valid: boolean) => void;
 }) {
+  const strings = useStrings();
+  const { locale } = useLocale();
   const normalizedValue = value ?? "";
   const [draft, setDraft] = useState(
-    normalizedValue ? (formatExactLocalDate(normalizedValue) ?? normalizedValue) : "",
+    normalizedValue
+      ? (formatExactLocalDate(normalizedValue, locale) ?? normalizedValue)
+      : "",
   );
   const [error, setError] = useState<string | null>(null);
   const pickerRef = useRef<HTMLInputElement>(null);
   const errorId = `${id}-error`;
 
   useEffect(() => {
-    setDraft(normalizedValue ? (formatExactLocalDate(normalizedValue) ?? normalizedValue) : "");
+    setDraft(
+      normalizedValue
+        ? (formatExactLocalDate(normalizedValue, locale) ?? normalizedValue)
+        : "",
+    );
     setError(null);
     onValidityChange?.(true);
-  }, [normalizedValue, onValidityChange]);
+  }, [locale, normalizedValue, onValidityChange]);
 
   const commit = () => {
     const input = draft.trim();
@@ -45,14 +54,14 @@ export function HumanDateInput({
       return;
     }
 
-    const parsed = parseNaturalDate(input);
+    const parsed = parseNaturalDate(input, new Date(), locale);
     if (!parsed) {
       setError(strings.invalidDate);
       onValidityChange?.(false);
       return;
     }
 
-    setDraft(formatExactLocalDate(parsed) ?? parsed);
+    setDraft(formatExactLocalDate(parsed, locale) ?? parsed);
     setError(null);
     onValidityChange?.(true);
     if (parsed !== normalizedValue) onChange(parsed);
@@ -91,7 +100,8 @@ export function HumanDateInput({
             setDraft(nextDraft);
             if (error) setError(null);
             onValidityChange?.(
-              nextDraft.trim().length === 0 || parseNaturalDate(nextDraft) !== null,
+              nextDraft.trim().length === 0 ||
+                parseNaturalDate(nextDraft, new Date(), locale) !== null,
             );
           }}
           onBlur={commit}
@@ -118,7 +128,11 @@ export function HumanDateInput({
           disabled={disabled}
           onChange={(event) => {
             const nextValue = event.target.value || null;
-            setDraft(nextValue ? (formatExactLocalDate(nextValue) ?? nextValue) : "");
+            setDraft(
+              nextValue
+                ? (formatExactLocalDate(nextValue, locale) ?? nextValue)
+                : "",
+            );
             setError(null);
             onValidityChange?.(true);
             onChange(nextValue);

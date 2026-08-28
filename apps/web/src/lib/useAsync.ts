@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRefresh } from "./refresh";
+import { useStrings } from "./strings";
+import { localizedErrorMessage } from "./errorMessage";
 
 export interface AsyncState<T> {
   data: T | null;
@@ -15,10 +17,11 @@ export interface AsyncState<T> {
  * request has already superseded an older, slower one.
  */
 export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unknown> = []): AsyncState<T> {
+  const strings = useStrings();
   const { version } = useRefresh();
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [errorCause, setErrorCause] = useState<unknown | null>(null);
   const requestId = useRef(0);
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -28,7 +31,7 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
     let cancelled = false;
     const id = ++requestId.current;
     setLoading(true);
-    setError(null);
+    setErrorCause(null);
     fetcher()
       .then((result) => {
         if (cancelled || id !== requestId.current) return;
@@ -36,7 +39,7 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
       })
       .catch((err: unknown) => {
         if (cancelled || id !== requestId.current) return;
-        setError(err instanceof Error ? err.message : String(err));
+        setErrorCause(err);
       })
       .finally(() => {
         if (cancelled || id !== requestId.current) return;
@@ -48,5 +51,13 @@ export function useAsync<T>(fetcher: () => Promise<T>, deps: ReadonlyArray<unkno
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version, reloadToken, ...deps]);
 
-  return { data, loading, error, reload };
+  return {
+    data,
+    loading,
+    error:
+      errorCause === null
+        ? null
+        : localizedErrorMessage(errorCause, strings),
+    reload,
+  };
 }

@@ -1,147 +1,206 @@
-import {
-  projectStatusLabels,
-  taskStatusLabels,
-  type ActivityEvent,
-  type ActivityEventMetadata,
-  type ProjectStatus,
-  type TaskStatus,
+import type {
+  ActivityEvent,
+  ActivityEventMetadata,
+  ProjectStatus,
+  TaskStatus,
 } from "@machbar/shared";
+import {
+  getCatalog,
+  type Locale,
+  type TranslationCatalog,
+} from "../i18n/catalog";
+import { localeTag } from "./format";
 
-const fieldLabels: Record<string, string> = {
-  title: "Titel",
-  notes: "Notizen",
-  ownerMemberId: "Zuständigkeit",
-  ownerInheritanceMode: "Zuständigkeit",
-  dueDate: "Fälligkeit",
-  scheduledDate: "Planung",
-  waitingFor: "Wartegrund",
-  priority: "Priorität",
-  size: "Größe",
-  recurrenceRule: "Wiederholung",
-  reminderAt: "Erinnerung",
-  notesAppended: "Notizen",
-  taskSequence: "Aufgabenfolge",
-};
-
-function entityNoun(event: ActivityEvent): "Aufgabe" | "Projekt" {
-  return event.entity.type === "task" ? "Aufgabe" : "Projekt";
-}
-
-function statusLabel(status: TaskStatus | ProjectStatus | undefined): string | null {
+function statusLabel(
+  status: TaskStatus | ProjectStatus | undefined,
+  strings: TranslationCatalog,
+): string | null {
   if (!status) return null;
-  if (status in taskStatusLabels) return taskStatusLabels[status as TaskStatus];
-  return projectStatusLabels[status as ProjectStatus];
+  if (status in strings.taskStatusLabels) {
+    return strings.taskStatusLabels[status as TaskStatus];
+  }
+  return strings.projectStatusLabels[status as ProjectStatus];
 }
 
-function changedFields(metadata: ActivityEventMetadata): string {
-  const labels = [...new Set((metadata.changedFields ?? []).map((field) => fieldLabels[field] ?? field))];
+function changedFields(
+  metadata: ActivityEventMetadata,
+  strings: TranslationCatalog,
+): string {
+  const fieldLabels = strings.activityText.fieldLabels as Readonly<
+    Record<string, string>
+  >;
+  const labels = [
+    ...new Set(
+      (metadata.changedFields ?? []).map(
+        (field) => fieldLabels[field] ?? field,
+      ),
+    ),
+  ];
   if (labels.length === 0) return "";
-  if (labels.length === 1) return `: ${labels[0]}`;
-  return `: ${labels.slice(0, -1).join(", ")} und ${labels.at(-1)}`;
+  if (labels.length === 1) {
+    return strings.activityText.changedFieldsOne(labels[0]!);
+  }
+  return strings.activityText.changedFieldsMany(
+    labels.slice(0, -1),
+    labels.at(-1)!,
+  );
 }
 
-export function formatActivityDescription(event: ActivityEvent): string {
-  const noun = entityNoun(event);
-  const previous = statusLabel(event.metadata.previousStatus);
-  const next = statusLabel(event.metadata.nextStatus);
+/**
+ * Activity payloads stay language-neutral: descriptions are assembled from
+ * event kinds and metadata here instead of displaying API-provided prose.
+ */
+export function formatActivityDescription(
+  event: ActivityEvent,
+  locale: Locale = "de",
+): string {
+  const strings = getCatalog(locale);
+  const previous = statusLabel(event.metadata.previousStatus, strings);
+  const next = statusLabel(event.metadata.nextStatus, strings);
   const count = event.metadata.affectedCount;
 
   switch (event.kind) {
     case "task_created":
       return event.metadata.relatedTaskTitles?.length
-        ? `hat eine Folgeaufgabe zu „${event.metadata.relatedTaskTitles[0]}“ erstellt`
-        : "hat die Aufgabe erstellt";
+        ? strings.activityText.successorCreated(
+            event.metadata.relatedTaskTitles[0]!,
+          )
+        : strings.activityText.taskCreated;
     case "project_created":
-      return "hat das Projekt erstellt";
+      return strings.activityText.projectCreated;
     case "task_updated":
     case "project_updated":
       if (event.metadata.changedFields?.includes("taskSequence") && count) {
-        return `hat eine Aufgabenfolge mit ${count} Schritten erstellt`;
+        return strings.activityText.sequenceCreated(count);
       }
-      return `hat ${noun === "Aufgabe" ? "die" : "das"} ${noun} aktualisiert${changedFields(event.metadata)}`;
+      return strings.activityText.entityUpdated(
+        event.entity.type,
+        changedFields(event.metadata, strings),
+      );
     case "task_deleted": {
       const children = count && count > 1 ? count - 1 : 0;
       return children
-        ? `hat die Aufgabe und ${children} ${children === 1 ? "Teilaufgabe" : "Teilaufgaben"} gelöscht`
-        : "hat die Aufgabe gelöscht";
+        ? strings.activityText.taskAndChildrenDeleted(children)
+        : strings.activityText.taskDeleted;
     }
     case "project_deleted":
-      return "hat das Projekt gelöscht";
+      return strings.activityText.projectDeleted;
     case "task_status_changed":
-    case "project_status_changed":
-      return `${previous && next
-        ? `hat den Status von „${previous}“ auf „${next}“ geändert`
-        : next
-          ? `hat den Status auf „${next}“ geändert`
-          : "hat den Status geändert"}${count && count > 1 ? ` (${count} Aufgaben)` : ""}`;
-    case "task_descendants_status_changed": {
-      const status = next ?? "einen neuen Status";
-      const affected = count ?? 0;
-      const subject = affected === 1 ? "eine Teilaufgabe" : `${affected} Teilaufgaben`;
-      return `hat ${subject} auf „${status}“ gesetzt`;
+    case "project_status_changed": {
+      const description =
+        previous && next
+          ? strings.activityText.statusFromTo(previous, next)
+          : next
+            ? strings.activityText.statusTo(next)
+            : strings.activityText.statusChanged;
+      return `${description}${
+        count && count > 1 ? strings.activityText.affectedTasks(count) : ""
+      }`;
     }
+    case "task_descendants_status_changed":
+      return strings.activityText.descendantsStatusChanged(
+        count ?? 0,
+        next ?? strings.activityText.newStatus,
+      );
     case "task_moved": {
       const task = event.metadata.relatedTaskTitles?.at(-1);
       const project = event.metadata.relatedProjectTitles?.at(-1);
       const target = task ?? project;
-      return target ? `hat die Aufgabe nach „${target}“ verschoben` : "hat die Aufgabe verschoben";
+      return target
+        ? strings.activityText.taskMovedTo(target)
+        : strings.activityText.taskMoved;
     }
     case "task_dependencies_changed":
       return event.metadata.relatedTaskTitles?.length
-        ? `hat Abhängigkeiten geändert: ${event.metadata.relatedTaskTitles.join(", ")}`
-        : "hat Abhängigkeiten geändert";
+        ? strings.activityText.dependenciesChangedWith(
+            event.metadata.relatedTaskTitles,
+          )
+        : strings.activityText.dependenciesChanged;
     case "task_tags_changed":
-      return "hat die Tags der Aufgabe geändert";
+      return strings.activityText.taskTagsChanged;
     case "project_tags_changed":
-      return "hat die Tags des Projekts geändert";
+      return strings.activityText.projectTagsChanged;
     case "project_acceptance_criterion_added":
-      return "hat ein Ergebniskriterium hinzugefügt";
+      return strings.activityText.criterionAdded;
     case "project_acceptance_criterion_updated":
-      return "hat ein Ergebniskriterium geändert";
+      return strings.activityText.criterionUpdated;
     case "project_acceptance_criterion_checked":
       return event.metadata.checked === false
-        ? "hat ein Ergebniskriterium wieder geöffnet"
-        : "hat ein Ergebniskriterium abgehakt";
+        ? strings.activityText.criterionReopened
+        : strings.activityText.criterionChecked;
     case "project_acceptance_criterion_removed":
-      return "hat ein Ergebniskriterium entfernt";
+      return strings.activityText.criterionRemoved;
   }
 }
 
-export function formatActivityExactTime(value: string): string {
+export function formatActivityExactTime(
+  value: string,
+  locale: Locale = "de",
+): string {
+  const strings = getCatalog(locale);
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Unbekannter Zeitpunkt";
-  return new Intl.DateTimeFormat("de-DE", {
+  if (Number.isNaN(date.getTime())) return strings.unknownTime;
+  return new Intl.DateTimeFormat(localeTag(locale), {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
 }
 
-export function formatActivityRelativeTime(value: string, now = new Date()): string {
+export function formatActivityRelativeTime(
+  value: string,
+  now = new Date(),
+  locale: Locale = "de",
+): string {
+  const strings = getCatalog(locale);
   const date = new Date(value);
-  if (Number.isNaN(date.getTime()) || Number.isNaN(now.getTime())) return "unbekannt";
+  if (Number.isNaN(date.getTime()) || Number.isNaN(now.getTime())) {
+    return strings.unknown.toLocaleLowerCase(localeTag(locale));
+  }
   const seconds = Math.round((date.getTime() - now.getTime()) / 1_000);
   const absoluteSeconds = Math.abs(seconds);
-  if (absoluteSeconds < 45) return "gerade eben";
+  if (absoluteSeconds < 45) return strings.justNow;
 
-  const formatter = new Intl.RelativeTimeFormat("de-DE", { numeric: "always" });
-  if (absoluteSeconds < 3_600) return formatter.format(Math.round(seconds / 60), "minute");
-  if (absoluteSeconds < 86_400) return formatter.format(Math.round(seconds / 3_600), "hour");
+  const formatter = new Intl.RelativeTimeFormat(localeTag(locale), {
+    numeric: "always",
+  });
+  if (absoluteSeconds < 3_600) {
+    return formatter.format(Math.round(seconds / 60), "minute");
+  }
+  if (absoluteSeconds < 86_400) {
+    return formatter.format(Math.round(seconds / 3_600), "hour");
+  }
   return formatter.format(Math.round(seconds / 86_400), "day");
 }
 
-export function activityDateGroup(value: string, now = new Date()): { key: string; label: string } {
+export function activityDateGroup(
+  value: string,
+  now = new Date(),
+  locale: Locale = "de",
+): { key: string; label: string } {
+  const strings = getCatalog(locale);
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return { key: "unknown", label: "Unbekannt" };
+  if (Number.isNaN(date.getTime())) {
+    return { key: "unknown", label: strings.unknown };
+  }
 
-  const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const eventDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const difference = Math.round((today.getTime() - eventDay.getTime()) / 86_400_000);
-  if (difference === 0) return { key, label: "Heute" };
-  if (difference === 1) return { key, label: "Gestern" };
+  const eventDay = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  );
+  const difference = Math.round(
+    (today.getTime() - eventDay.getTime()) / 86_400_000,
+  );
+  if (difference === 0) return { key, label: strings.today };
+  if (difference === 1) return { key, label: strings.yesterday };
   return {
     key,
-    label: new Intl.DateTimeFormat("de-DE", {
+    label: new Intl.DateTimeFormat(localeTag(locale), {
       day: "2-digit",
       month: "long",
       year: "numeric",

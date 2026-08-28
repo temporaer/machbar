@@ -25,7 +25,7 @@ export function registerStatic(app: FastifyInstance, env: Env) {
   // SPA fallback: any non-API GET request under BASE_PATH that isn't a
   // known static asset resolves to index.html so client-side routing
   // works; everything else (API routes, other methods, paths outside
-  // BASE_PATH) gets a German JSON 404.
+  // BASE_PATH) gets a stable JSON 404.
   app.setNotFoundHandler((request, reply) => {
     const isApiRequest = request.url.startsWith("/api/");
     const isUnderBasePath =
@@ -37,7 +37,11 @@ export function registerStatic(app: FastifyInstance, env: Env) {
       return;
     }
     reply.status(404).send({
-      error: { code: "not_found", message: "Ressource wurde nicht gefunden." },
+      error: {
+        code: "route_not_found",
+        message: "The requested resource was not found.",
+        details: { method: request.method, path: request.url.split("?", 1)[0] },
+      },
     });
   });
 }

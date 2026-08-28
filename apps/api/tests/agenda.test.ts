@@ -500,20 +500,24 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     ]);
   });
 
-  it("rejects a non-positive-integer memberId with a German 400", async () => {
+  it("rejects a non-positive-integer memberId with a structured 400", async () => {
     for (const bad of ["0", "-1", "abc", "1.5"]) {
       const res = await getAgenda(bad as unknown as number);
       expect(res.statusCode).toBe(400);
       const body = res.json();
-      expect(body.error.message).toMatch(/Zahl/i);
+      expect(body.error.code).toBe("agenda_query_invalid");
+      expect(body.error.details.issues).toBeInstanceOf(Array);
     }
   });
 
-  it("rejects an unknown memberId with a German 404", async () => {
+  it("rejects an unknown memberId with a structured 404", async () => {
     const res = await getAgenda(999999);
     expect(res.statusCode).toBe(404);
     const body = res.json();
-    expect(body.error.message).toMatch(/Mitglied/);
+    expect(body.error).toMatchObject({
+      code: "member_not_found",
+      details: { memberId: 999999 },
+    });
   });
 
   it("uses the caller's calendar date consistently instead of the server timezone", async () => {
@@ -550,7 +554,7 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
       url: "/api/agenda/today?date=2030-02-30",
     });
     expect(response.statusCode).toBe(400);
-    expect(response.json().error.message).toMatch(/Kalenderdatum/);
+    expect(response.json().error.code).toBe("agenda_query_invalid");
   });
 });
 
@@ -614,7 +618,7 @@ describe("Heute agenda: compiled project prompts", () => {
       };
       qualification: "due" | "scheduled" | "both";
       nextAction: { id: number; title: string } | null;
-      stuck: { reason: string; repairAction: string } | null;
+      stuck: { reason: string } | null;
     }>;
   }
 
@@ -785,8 +789,6 @@ describe("Heute agenda: compiled project prompts", () => {
     );
     expect(capturedEntry?.nextAction).toBeNull();
     expect(capturedEntry?.stuck?.reason).toBe("no_next_action");
-    expect(capturedEntry?.stuck?.repairAction).toMatch(
-      /Kläre die erfassten Aufgaben/,
-    );
+    expect(capturedEntry?.stuck).toEqual({ reason: "no_next_action" });
   });
 });

@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import type { Tag } from "@machbar/shared";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 
 export function TagChip({
   tag,
@@ -15,6 +15,7 @@ export function TagChip({
   onRemove?: () => void;
   onToggleExclude?: () => void;
 }) {
+  const strings = useStrings();
   return (
     <span
       className={`chip tag-chip${excluded ? " chip-muted" : ""}`}

@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { Tag, TagKind } from "@machbar/shared";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
+import { useLocale, type Locale } from "../lib/locale";
 
 const kindPriority: Record<Exclude<TagKind, "actor">, number> = {
   area: 0,
@@ -12,7 +13,7 @@ function displayKindPriority(kind: TagKind): number {
   return kind === "actor" ? Number.MAX_SAFE_INTEGER : kindPriority[kind];
 }
 
-function compareDisplayTags(a: Tag, b: Tag): number {
+function compareDisplayTags(a: Tag, b: Tag, locale: Locale): number {
   const kindDifference =
     displayKindPriority(a.kind) - displayKindPriority(b.kind);
   if (kindDifference !== 0) return kindDifference;
@@ -26,18 +27,25 @@ function compareDisplayTags(a: Tag, b: Tag): number {
     (b.sortPosition ?? Number.MAX_SAFE_INTEGER);
   if (positionDifference !== 0) return positionDifference;
 
-  const nameDifference = a.name.localeCompare(b.name, "de", {
+  const nameDifference = a.name.localeCompare(b.name, locale, {
     sensitivity: "base",
   });
   return nameDifference || a.id - b.id;
 }
 
-export function taskCardDisplayTags(tags: Tag[]): Tag[] {
-  return tags.filter((tag) => tag.kind !== "actor").sort(compareDisplayTags);
+export function taskCardDisplayTags(
+  tags: Tag[],
+  locale: Locale = "de",
+): Tag[] {
+  return tags
+    .filter((tag) => tag.kind !== "actor")
+    .sort((a, b) => compareDisplayTags(a, b, locale));
 }
 
 export function TaskCardTags({ tags }: { tags: Tag[] }) {
-  const displayTags = taskCardDisplayTags(tags);
+  const strings = useStrings();
+  const { locale } = useLocale();
+  const displayTags = taskCardDisplayTags(tags, locale);
   if (displayTags.length === 0) return null;
 
   const visibleTags = displayTags.slice(0, 2);

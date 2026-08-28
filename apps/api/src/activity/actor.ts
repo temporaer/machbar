@@ -13,13 +13,17 @@ import { AppError } from "../errors.js";
 function parseActorMemberId(value: string | string[]): number {
   if (Array.isArray(value) || !/^[1-9]\d*$/.test(value)) {
     throw AppError.badRequest(
-      "Die ausgewählte Aktivitäts-Person muss eine gültige Mitglieds-ID sein.",
+      "activity_actor_invalid",
+      "The activity actor must be a valid member ID.",
+      { value },
     );
   }
   const memberId = Number(value);
   if (!Number.isSafeInteger(memberId)) {
     throw AppError.badRequest(
-      "Die ausgewählte Aktivitäts-Person muss eine gültige Mitglieds-ID sein.",
+      "activity_actor_invalid",
+      "The activity actor must be a valid member ID.",
+      { value },
     );
   }
   return memberId;
@@ -58,7 +62,9 @@ export function resolveActivityActor(
     .get();
   if (!row) {
     throw AppError.badRequest(
-      "Die ausgewählte Aktivitäts-Person existiert nicht.",
+      "activity_actor_not_found",
+      "The selected activity actor does not exist.",
+      { memberId },
     );
   }
   return { ...row, pictureUrl: row.pictureUrl ?? null };

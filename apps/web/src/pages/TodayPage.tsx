@@ -1,7 +1,7 @@
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
@@ -9,17 +9,17 @@ import { ProjectAgendaCard } from "../components/ProjectAgendaCard";
 import { PageHeader, type PageHint } from "../components/PageHeader";
 import { useSwipeSettings } from "../lib/swipeSettings";
 
-const sections: Array<{
-  key: "planned" | "overdue" | "dueToday" | "dueSoon";
-  label: string;
-}> = [
-  { key: "planned", label: strings.plannedToday },
-  { key: "overdue", label: strings.overdue },
-  { key: "dueToday", label: strings.dueToday },
-  { key: "dueSoon", label: strings.dueSoon },
-];
-
 export function TodayPage() {
+  const strings = useStrings();
+  const sections: Array<{
+    key: "planned" | "overdue" | "dueToday" | "dueSoon";
+    label: string;
+  }> = [
+    { key: "planned", label: strings.plannedToday },
+    { key: "overdue", label: strings.overdue },
+    { key: "dueToday", label: strings.dueToday },
+    { key: "dueSoon", label: strings.dueSoon },
+  ];
   // `IdentityGate` (mounted above every route in `App.tsx`) normally
   // guarantees a member is selected before this page ever renders, but we
   // still guard against a transient/null `currentMemberId` here (e.g. in

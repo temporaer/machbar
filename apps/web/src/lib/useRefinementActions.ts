@@ -3,6 +3,9 @@ import type { Tag, TaskSize } from "@machbar/shared";
 import { api } from "./api";
 import type { RefinementTaskRow } from "./api";
 import { useRefresh } from "./refresh";
+import { useStrings } from "./strings";
+import type { Strings } from "./strings";
+import { localizedErrorMessage } from "./errorMessage";
 
 /**
  * `GET /api/refinement/tasks` (see `api.ts::getRefinementTasks` /
@@ -45,8 +48,8 @@ export function nextSizeInCycle(current: TaskSize | null): TaskSize | null {
   return SIZE_CYCLE[nextIndex] ?? null;
 }
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+function errorMessage(err: unknown, strings: Strings): string {
+  return localizedErrorMessage(err, strings);
 }
 
 /**
@@ -61,6 +64,7 @@ function errorMessage(err: unknown): string {
  * could reorder/remove the very row whose optimistic state we just set.
  */
 export function useRefinementActions() {
+  const strings = useStrings();
   const { bump } = useRefresh();
   const [busyId, setBusyId] = useState<number | null>(null);
   const [retained, setRetained] = useState<Map<number, RefinementListItem>>(new Map());
@@ -126,11 +130,14 @@ export function useRefinementActions() {
         .updateTask(task.id, { size })
         .catch((err: unknown) => {
           release(task.id);
-          setErrors((prev) => ({ ...prev, [task.id]: errorMessage(err) }));
+          setErrors((prev) => ({
+            ...prev,
+            [task.id]: errorMessage(err, strings),
+          }));
         })
         .finally(() => setBusyId(null));
     },
-    [clearError, retain, release],
+    [clearError, retain, release, strings],
   );
 
   const cycleSize = useCallback(

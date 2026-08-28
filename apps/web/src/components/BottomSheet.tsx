@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { IconActionButton } from "./IconActionButton";
 
 export function BottomSheet({
@@ -18,6 +18,7 @@ export function BottomSheet({
   headerActions?: ReactNode;
   headerStatus?: ReactNode;
 }) {
+  const strings = useStrings();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();

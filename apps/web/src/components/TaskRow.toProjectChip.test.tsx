@@ -35,7 +35,7 @@ const mockedApi = vi.mocked(api, true);
  * `renderWithProviders` (src/test/testUtils.tsx) hard-codes its own bare
  * `<MemoryRouter>` with no routes, so it can't observe an actual navigation.
  * This local wrapper mirrors the same provider stack but also declares a
- * `/projekte/:id` route with a distinct marker, so clicking the "Zum
+ * `/projects/:id` route with a distinct marker, so clicking the "Zum
  * Projekt" chip can be asserted to have really navigated there — not just
  * that `navigate()` was called with the right string.
  */
@@ -60,7 +60,7 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
       <Providers>
         <Routes>
           <Route path="/" element={ui} />
-          <Route path="/projekte/:id" element={<ProjectRouteMarker />} />
+          <Route path="/projects/:id" element={<ProjectRouteMarker />} />
         </Routes>
       </Providers>
     </MemoryRouter>,
@@ -87,7 +87,7 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
   });
 
   describe("task already belongs to a project", () => {
-    it("reveals an enabled 'Zum Projekt' chip via a left-swipe and navigates to /projekte/:id", async () => {
+    it("reveals an enabled 'Zum Projekt' chip via a left-swipe and navigates to /projects/:id", async () => {
       const task = makeTask({ id: 50, title: "Angebot erstellen", status: "actionable", projectId: 77 });
       const { container } = renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
       await screen.findByText("Angebot erstellen");

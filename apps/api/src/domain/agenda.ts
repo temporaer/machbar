@@ -192,7 +192,6 @@ export function buildAgenda(
           stuck: stuckProject
             ? {
                 reason: stuckProject.stuckReason,
-                repairAction: stuckProject.repairAction,
               }
             : null,
         },

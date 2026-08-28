@@ -2,6 +2,8 @@ import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import type {
   ActivityPage,
   Agenda,
+  ApiErrorCode,
+  ApiErrorResponse,
   AuthStatus,
   InheritanceMode,
   Member,
@@ -46,9 +48,14 @@ function selectedActorHeader(method = "GET"): Record<string, string> {
 
 export class ApiError extends Error {
   status: number;
-  code?: string | undefined;
-  details?: unknown;
-  constructor(status: number, message: string, code?: string, details?: unknown) {
+  code?: ApiErrorCode | undefined;
+  details?: Record<string, unknown> | undefined;
+  constructor(
+    status: number,
+    message: string,
+    code?: ApiErrorCode,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.status = status;
     this.code = code;
@@ -81,19 +88,17 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       window.dispatchEvent(new Event("machbar:authentication-required"));
     }
     let message = res.statusText;
-    let code: string | undefined;
-    let details: unknown;
+    let code: ApiErrorCode | undefined;
+    let details: Record<string, unknown> | undefined;
     try {
-      const body = (await res.json()) as {
-        error?: { code?: string; message?: string; details?: unknown };
-      };
+      const body = (await res.json()) as Partial<ApiErrorResponse>;
       if (body?.error?.message) message = body.error.message;
       code = body?.error?.code;
       details = body?.error?.details;
     } catch {
       /* ignore non-JSON error bodies */
     }
-    throw new ApiError(res.status, message || "Anfrage fehlgeschlagen", code, details);
+    throw new ApiError(res.status, message || "Request failed", code, details);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();

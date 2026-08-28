@@ -7,7 +7,10 @@ import { parseOrThrow } from "../validation.js";
 
 export function registerSearchRoutes(app: FastifyInstance, db: Db) {
   app.get("/api/search", async (request) => {
-    const query = parseOrThrow(searchQuerySchema, request.query);
+    const query = parseOrThrow(searchQuerySchema, request.query, {
+      code: "search_query_invalid",
+      message: "The search query parameters are invalid.",
+    });
     const graph = Graph.load(db);
     return searchTasks(graph, query);
   });

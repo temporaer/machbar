@@ -63,7 +63,7 @@ function Harness({
     <Routes>
       <Route path="/" element={row} />
       <Route
-        path="/projekte/:id"
+        path="/projects/:id"
         element={
           <ProjectMarker />
         }

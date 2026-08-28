@@ -52,14 +52,17 @@ describe("project workflow (HTTP routes)", () => {
     expect(project.availableActions.sort()).toEqual(["activate", "archive"]);
   });
 
-  it("rejects activation without a driver, with a German 400", async () => {
+  it("rejects activation without a driver with a structured 400", async () => {
     const project = await createProjectRoute();
     const res = await ctx.app.inject({
       method: "POST",
       url: `/api/projects/${project.id}/activate`,
     });
     expect(res.statusCode).toBe(400);
-    expect(res.json().error.message).toContain("verantwortliche Person");
+    expect(res.json().error).toMatchObject({
+      code: "project_driver_required",
+      details: { projectId: project.id },
+    });
   });
 
   it("activates a project by supplying a driver in the same call", async () => {
@@ -92,7 +95,7 @@ describe("project workflow (HTTP routes)", () => {
     expect(res.json().status).toBe("active");
   });
 
-  it("rejects activating a project that is already active, with a German 409", async () => {
+  it("rejects activating a project that is already active", async () => {
     const anna = await createMemberRoute("Anna");
     const project = await createProjectRoute({ ownerMemberId: anna.id, status: "active" });
 
@@ -101,7 +104,14 @@ describe("project workflow (HTTP routes)", () => {
       url: `/api/projects/${project.id}/activate`,
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error.message).toContain("nicht aktiviert werden");
+    expect(res.json().error).toMatchObject({
+      code: "project_transition_invalid",
+      details: {
+        projectId: project.id,
+        currentStatus: "active",
+        action: "activate",
+      },
+    });
   });
 
   it("keeps the driver when returning an active project to the backlog, and allows clearing it only then", async () => {
@@ -127,7 +137,7 @@ describe("project workflow (HTTP routes)", () => {
     expect(cleared.ownerMemberId).toBeNull();
   });
 
-  it("rejects clearing the driver of an active project, with a German 409", async () => {
+  it("rejects clearing the driver of an active project", async () => {
     const anna = await createMemberRoute("Anna");
     const project = await createProjectRoute({ ownerMemberId: anna.id, status: "active" });
 
@@ -137,7 +147,14 @@ describe("project workflow (HTTP routes)", () => {
       payload: { ownerMemberId: null },
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error.message).toContain("Später / noch nicht aktiv");
+    expect(res.json().error).toMatchObject({
+      code: "project_driver_locked",
+      details: {
+        projectId: project.id,
+        currentStatus: "active",
+        requiredStatus: "backlog",
+      },
+    });
 
     const unchanged = (
       await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })
@@ -163,24 +180,30 @@ describe("project workflow (HTTP routes)", () => {
     expect(reopened.ownerMemberId).toBe(anna.id);
   });
 
-  it("rejects completing a backlog project, with a German 409", async () => {
+  it("rejects completing a backlog project", async () => {
     const project = await createProjectRoute();
     const res = await ctx.app.inject({
       method: "POST",
       url: `/api/projects/${project.id}/complete`,
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error.message).toContain("aktive Projekte");
+    expect(res.json().error).toMatchObject({
+      code: "project_transition_invalid",
+      details: { currentStatus: "backlog", action: "complete" },
+    });
   });
 
-  it("rejects reopening a project that isn't completed, with a German 409", async () => {
+  it("rejects reopening a project that isn't completed", async () => {
     const project = await createProjectRoute();
     const res = await ctx.app.inject({
       method: "POST",
       url: `/api/projects/${project.id}/reopen`,
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error.message).toContain("abgeschlossene Projekte");
+    expect(res.json().error).toMatchObject({
+      code: "project_transition_invalid",
+      details: { currentStatus: "backlog", action: "reopen" },
+    });
   });
 
   it("archives a backlog, active or completed project, and rejects archiving twice", async () => {
@@ -196,16 +219,22 @@ describe("project workflow (HTTP routes)", () => {
       url: `/api/projects/${project.id}/archive`,
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error.message).toContain("bereits archiviert");
+    expect(res.json().error).toMatchObject({
+      code: "project_transition_invalid",
+      details: { currentStatus: "archived", action: "archive" },
+    });
   });
 
-  it("returns 404 with a German message for workflow actions on an unknown project", async () => {
+  it("returns a structured 404 for workflow actions on an unknown project", async () => {
     const res = await ctx.app.inject({
       method: "POST",
       url: "/api/projects/999999/activate",
     });
     expect(res.statusCode).toBe(404);
-    expect(res.json().error.message).toContain("wurde nicht gefunden");
+    expect(res.json().error).toMatchObject({
+      code: "project_not_found",
+      details: { projectId: 999999 },
+    });
   });
 });
 
@@ -246,11 +275,11 @@ describe("project workflow (service layer)", () => {
   });
 
   it("throws a not-found AppError for a nonexistent project on every transition", () => {
-    expect(() => activateProject(handle.db, 999999)).toThrow(/nicht gefunden/);
-    expect(() => returnProjectToBacklog(handle.db, 999999)).toThrow(/nicht gefunden/);
-    expect(() => completeProject(handle.db, 999999)).toThrow(/nicht gefunden/);
-    expect(() => reopenProject(handle.db, 999999)).toThrow(/nicht gefunden/);
-    expect(() => archiveProject(handle.db, 999999)).toThrow(/nicht gefunden/);
+    expect(() => activateProject(handle.db, 999999)).toThrow(/not found/);
+    expect(() => returnProjectToBacklog(handle.db, 999999)).toThrow(/not found/);
+    expect(() => completeProject(handle.db, 999999)).toThrow(/not found/);
+    expect(() => reopenProject(handle.db, 999999)).toThrow(/not found/);
+    expect(() => archiveProject(handle.db, 999999)).toThrow(/not found/);
   });
 
   it("keeps a project's driver update transactional: an invalid tagId rolls back the whole update", () => {

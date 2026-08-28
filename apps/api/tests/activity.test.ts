@@ -216,6 +216,10 @@ describe("GET /api/activity", () => {
   ])("rejects invalid query parameters: %s", async (url) => {
     const response = await ctx.app.inject({ method: "GET", url });
     expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe("bad_request");
+    expect(response.json().error.code).toBe(
+      url.includes("cursor=")
+        ? "activity_cursor_invalid"
+        : "activity_query_invalid",
+    );
   });
 });

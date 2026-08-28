@@ -41,15 +41,16 @@ export function buildApp({
     // when a request declares `Content-Type: application/json` but sends no
     // body) before any route handler runs, so they never become `AppError`s.
     // These already carry a genuine 4xx `statusCode` from Fastify — treat
-    // that as authoritative and reply with a calm, generic German message
+    // that as authoritative and reply with a generic fallback message
     // instead of falling through to the 500 branch below, but without
     // echoing Fastify's own (English, internals-revealing) error message.
     if (typeof error.statusCode === "number" && error.statusCode >= 400 && error.statusCode < 500) {
       request.log.warn(error);
       reply.status(error.statusCode).send({
         error: {
-          code: "bad_request",
-          message: "Die Anfrage konnte nicht verarbeitet werden.",
+          code: "malformed_request",
+          message: "The request could not be processed.",
+          details: { fastifyCode: error.code },
         },
       });
       return;
@@ -59,7 +60,7 @@ export function buildApp({
     reply.status(500).send({
       error: {
         code: "internal_error",
-        message: "Ein unerwarteter Fehler ist aufgetreten.",
+        message: "An unexpected error occurred.",
       },
     });
   });

@@ -6,6 +6,7 @@ import {
   formatActivityRelativeTime,
 } from "../lib/activityFormatting";
 import { MemberAvatar } from "./MemberAvatar";
+import { useLocale } from "../lib/locale";
 
 export function ActivityEventRow({
   event,
@@ -14,15 +15,20 @@ export function ActivityEventRow({
   event: ActivityEvent;
   now?: Date;
 }) {
-  const actorName = event.actor?.name || "Unbekannt";
+  const { locale, strings } = useLocale();
+  const actorName = event.actor?.name || strings.activityText.unknownActor;
   const entityPath =
     event.entity.type === "task" && event.entity.taskId !== null
-      ? `/aufgaben/${event.entity.taskId}`
+      ? `/tasks/${event.entity.taskId}`
       : event.entity.type === "project" && event.entity.projectId !== null
-        ? `/projekte/${event.entity.projectId}`
+        ? `/projects/${event.entity.projectId}`
         : null;
-  const exactTime = formatActivityExactTime(event.createdAt);
-  const relativeTime = formatActivityRelativeTime(event.createdAt, now);
+  const exactTime = formatActivityExactTime(event.createdAt, locale);
+  const relativeTime = formatActivityRelativeTime(
+    event.createdAt,
+    now,
+    locale,
+  );
 
   return (
     <li className="activity-event-row">
@@ -40,7 +46,7 @@ export function ActivityEventRow({
       <div className="activity-event-content">
         <div className="activity-event-heading">
           <strong>{actorName}</strong>{" "}
-          <span>{formatActivityDescription(event)}</span>
+          <span>{formatActivityDescription(event, locale)}</span>
         </div>
         <div className="activity-event-meta">
           {entityPath ? (

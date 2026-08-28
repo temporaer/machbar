@@ -77,7 +77,7 @@ function swipe(container: HTMLElement, deltaX: number) {
   fireEvent.pointerUp(content, { clientX: deltaX, pointerId: 1 });
 }
 
-/** Mirrors `renderWithProviders` but adds a `/projekte/:id` marker route. */
+/** Mirrors `renderWithProviders` but adds a `/projects/:id` marker route. */
 function renderWithProjectRoute(ui: ReactElement) {
   function ProjectRouteMarker() {
     const { id } = useParams();
@@ -89,7 +89,7 @@ function renderWithProjectRoute(ui: ReactElement) {
         <RefreshProvider>
           <Routes>
             <Route path="/" element={ui} />
-            <Route path="/projekte/:id" element={<ProjectRouteMarker />} />
+            <Route path="/projects/:id" element={<ProjectRouteMarker />} />
           </Routes>
         </RefreshProvider>
       </IdentityProvider>
@@ -551,7 +551,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     await screen.findByText("Tippen öffnet Detail");
 
     const link = container.querySelector(".story-row-main") as HTMLAnchorElement;
-    expect(link.getAttribute("href")).toContain("/projekte/52");
+    expect(link.getAttribute("href")).toContain("/projects/52");
 
     // Swiping the row must not open the detail page.
     swipe(container, 100);

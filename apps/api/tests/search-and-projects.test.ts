@@ -56,7 +56,14 @@ describe("search/filter and project CRUD/archive", () => {
       payload: { name: "Telefonisch", kind: "plain" },
     });
     expect(conflict.statusCode).toBe(409);
-    expect(conflict.json().error.message).toContain("Tag-Verwaltung");
+    expect(conflict.json().error).toMatchObject({
+      code: "tag_kind_conflict",
+      details: {
+        name: "Telefonisch",
+        existingKind: "context",
+        requestedKind: "plain",
+      },
+    });
   });
 
   it("filters waiting and refinement tasks by effective typed tags", async () => {
@@ -138,10 +145,13 @@ describe("search/filter and project CRUD/archive", () => {
     expect(archived.status).toBe("archived");
   });
 
-  it("returns 404 with a German message for an unknown project", async () => {
+  it("returns a structured 404 for an unknown project", async () => {
     const res = await ctx.app.inject({ method: "GET", url: "/api/projects/999999" });
     expect(res.statusCode).toBe(404);
-    expect(res.json().error.message).toContain("wurde nicht gefunden");
+    expect(res.json().error).toMatchObject({
+      code: "project_not_found",
+      details: { projectId: 999999 },
+    });
   });
 
   it("deletes a project while preserving and detaching its tasks", async () => {
@@ -283,6 +293,13 @@ describe("search/filter and project CRUD/archive", () => {
       waitingOn: ["Angebot der Schreinerei", "Lieferung verfolgen"],
       waitingUntil: "2099-10-01",
     });
+
+    const waitingGroups = (
+      await ctx.app.inject({ method: "GET", url: "/api/waiting" })
+    ).json() as Array<{ waitingFor: string | null }>;
+    expect(waitingGroups).toContainEqual(
+      expect.objectContaining({ waitingFor: null }),
+    );
   });
 
   it("omits only exclusively scheduled dependency chains from /api/projects/stuck", async () => {

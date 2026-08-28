@@ -1,7 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import type { Project, SearchFilters, Tag, TaskStatus } from "@machbar/shared";
 import { tagKinds, taskStatuses } from "@machbar/shared";
-import { strings, taskStatusLabels } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 import { HumanDateInput } from "./HumanDateInput";
 import { useIdentity } from "../lib/identity";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
@@ -17,6 +17,7 @@ export function SearchFilterBar({
   projects: Project[];
   tags: Tag[];
 }) {
+  const strings = useStrings();
   const { members } = useIdentity();
   const [expanded, setExpanded] = useState(false);
 
@@ -84,7 +85,7 @@ export function SearchFilterBar({
               <option value="">{strings.allStatuses}</option>
               {taskStatuses.map((s) => (
                 <option key={s} value={s}>
-                  {taskStatusLabels[s]}
+                  {strings.taskStatusLabels[s]}
                 </option>
               ))}
             </select>

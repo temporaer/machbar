@@ -12,7 +12,7 @@ describe("NativeShareButton", () => {
     const share = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "share", { configurable: true, value: share });
 
-    render(<NativeShareButton title="Einkaufen" text={"Einkaufen\n\nMilch"} url="https://machbar.test/#/aufgaben/1" />);
+    render(<NativeShareButton title="Einkaufen" text={"Einkaufen\n\nMilch"} url="https://machbar.test/#/tasks/1" />);
     const button = screen.getByRole("button", { name: "Teilen" });
     expect(button).toHaveClass("icon-action-button");
     expect(button).toHaveAttribute("title", "Teilen");
@@ -25,7 +25,7 @@ describe("NativeShareButton", () => {
       expect(share).toHaveBeenCalledWith({
         title: "Einkaufen",
         text: "Einkaufen\n\nMilch",
-        url: "https://machbar.test/#/aufgaben/1",
+        url: "https://machbar.test/#/tasks/1",
       }),
     );
   });
@@ -38,12 +38,12 @@ describe("NativeShareButton", () => {
       value: { writeText },
     });
 
-    render(<NativeShareButton title="Einkaufen" text="Einkaufen" url="https://machbar.test/#/aufgaben/1" />);
+    render(<NativeShareButton title="Einkaufen" text="Einkaufen" url="https://machbar.test/#/tasks/1" />);
     await userEvent.click(screen.getByRole("button", { name: "Teilen" }));
 
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith(
-        "Einkaufen\n\nhttps://machbar.test/#/aufgaben/1",
+        "Einkaufen\n\nhttps://machbar.test/#/tasks/1",
       ),
     );
     expect(screen.getByRole("status")).toHaveTextContent("In die Zwischenablage kopiert");

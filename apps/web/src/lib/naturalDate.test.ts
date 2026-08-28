@@ -25,7 +25,15 @@ describe("parseNaturalDate", () => {
     ["in 3 days", "2026-08-30"],
     ["two weeks from now", "2026-09-10"],
   ])("parses English %s", (input, expected) => {
-    expect(parseNaturalDate(input, reference)).toBe(expected);
+    expect(parseNaturalDate(input, reference, "en")).toBe(expected);
+  });
+
+  it.each([
+    ["08/28/2026", "2026-08-28"],
+    ["week 36", "2026-08-31"],
+    ["wk 1/2027", "2027-01-04"],
+  ])("parses English locale-specific input %s", (input, expected) => {
+    expect(parseNaturalDate(input, reference, "en")).toBe(expected);
   });
 
   it.each([

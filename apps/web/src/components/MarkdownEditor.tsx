@@ -7,7 +7,7 @@ import {
   type ForwardedRef,
 } from "react";
 import "./MarkdownNotes.css";
-import { strings } from "../lib/strings";
+import { useStrings } from "../lib/strings";
 
 export type MarkdownToolbarAction = "bullet" | "checkbox" | "bold" | "link";
 
@@ -121,13 +121,15 @@ export const MarkdownEditor = forwardRef<HTMLTextAreaElement, MarkdownEditorProp
     {
       value,
       onChange,
-      toolbarLabel = strings.markdownToolbar,
+      toolbarLabel,
       className,
       disabled,
       ...textareaProps
     },
     forwardedRef,
   ) {
+    const strings = useStrings();
+    const resolvedToolbarLabel = toolbarLabel ?? strings.markdownToolbar;
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     const setTextareaRef = useCallback(
       (element: HTMLTextAreaElement | null) => {
@@ -168,7 +170,11 @@ export const MarkdownEditor = forwardRef<HTMLTextAreaElement, MarkdownEditorProp
 
     return (
       <div className="markdown-editor">
-        <div className="markdown-editor-toolbar" role="toolbar" aria-label={toolbarLabel}>
+        <div
+          className="markdown-editor-toolbar"
+          role="toolbar"
+          aria-label={resolvedToolbarLabel}
+        >
           <button
             type="button"
             className="markdown-editor-action"

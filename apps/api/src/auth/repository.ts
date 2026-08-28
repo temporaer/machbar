@@ -95,7 +95,8 @@ export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
   const name = claims.name.trim();
   if (!name) {
     throw AppError.badRequest(
-      "Pocket ID hat keinen verwendbaren Namen für dieses Konto geliefert.",
+      "oidc_name_missing",
+      "Pocket ID did not provide a usable account name.",
     );
   }
 
@@ -119,7 +120,9 @@ export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
         .get();
       if (!member) {
         throw AppError.conflict(
-          "Die Pocket-ID-Verknüpfung verweist auf kein vorhandenes Mitglied.",
+          "oidc_identity_orphaned",
+          "The Pocket ID identity is linked to a missing member.",
+          { memberId: identity.memberId },
         );
       }
       if (member.name !== name) {
@@ -130,7 +133,9 @@ export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
           .get();
         if (collision && collision.id !== member.id) {
           throw AppError.conflict(
-            `Der Pocket-ID-Name "${name}" wird bereits von einem anderen Mitglied verwendet.`,
+            "oidc_name_conflict",
+            "The Pocket ID name is already used by another member.",
+            { name, conflictingMemberId: collision.id },
           );
         }
         tx.update(schema.members)
@@ -174,7 +179,12 @@ export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
         );
       if (usernameMatches.length > 1) {
         throw AppError.conflict(
-          `Der Pocket-ID-Benutzername "${preferredUsername}" passt zu mehreren Mitgliedern.`,
+          "oidc_username_ambiguous",
+          "The Pocket ID username matches multiple members.",
+          {
+            preferredUsername,
+            memberIds: usernameMatches.map((candidate) => candidate.id),
+          },
         );
       }
       member = usernameMatches[0];
@@ -188,7 +198,9 @@ export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
         .get();
       if (existingLink) {
         throw AppError.conflict(
-          `Das Mitglied "${name}" ist bereits mit einem anderen Pocket-ID-Konto verknüpft.`,
+          "oidc_member_already_linked",
+          "The member is already linked to another Pocket ID account.",
+          { memberId: member.id, name },
         );
       }
       if (member.name !== name) {
@@ -199,7 +211,9 @@ export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
           .get();
         if (displayNameCollision && displayNameCollision.id !== member.id) {
           throw AppError.conflict(
-            `Der Pocket-ID-Name "${name}" wird bereits von einem anderen Mitglied verwendet.`,
+            "oidc_name_conflict",
+            "The Pocket ID name is already used by another member.",
+            { name, conflictingMemberId: displayNameCollision.id },
           );
         }
         tx.update(schema.members)

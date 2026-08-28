@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 import type { ActivityEvent } from "@machbar/shared";
 import { ActivityFeed } from "./ActivityFeed";
+import { LocaleProvider } from "../lib/locale";
 
 function event(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
   return {
@@ -65,11 +66,39 @@ describe("ActivityFeed", () => {
     expect(within(row).getByText(/Status von „Machbar“ auf „Erledigt“/)).toBeInTheDocument();
     expect(within(row).getByRole("link", { name: "Kisten packen" })).toHaveAttribute(
       "href",
-      "/aufgaben/42",
+      "/tasks/42",
     );
     expect(within(row).getByText("vor 2 Stunden")).toHaveAccessibleName(
       /vor 2 Stunden; 27\.08\.2026, 18:00/,
     );
+  });
+
+  it("formats grouping, status descriptions, and relative time in English", () => {
+    const now = new Date(2026, 7, 27, 20, 0);
+    render(
+      <LocaleProvider initialLocale="en">
+        <MemoryRouter>
+          <ActivityFeed
+            now={now}
+            events={[
+              event({
+                kind: "task_status_changed",
+                metadata: {
+                  previousStatus: "actionable",
+                  nextStatus: "done",
+                },
+              }),
+            ]}
+          />
+        </MemoryRouter>
+      </LocaleProvider>,
+    );
+
+    expect(screen.getByRole("heading", { name: "Today" })).toBeInTheDocument();
+    expect(
+      screen.getByText(/changed the status from “Ready” to “Done”/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("2 hours ago")).toBeInTheDocument();
   });
 
   it("keeps deleted entities readable and uses the unknown actor fallback", () => {
@@ -121,7 +150,7 @@ describe("ActivityFeed", () => {
 
     expect(screen.getByRole("link", { name: "Umzug" })).toHaveAttribute(
       "href",
-      "/projekte/9",
+      "/projects/9",
     );
     expect(screen.getByText(/aktualisiert: Notizen/)).toBeInTheDocument();
   });

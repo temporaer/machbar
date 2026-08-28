@@ -45,7 +45,10 @@ describe("dependency blocking and cycle prevention", () => {
       payload: { dependsOnTaskId: task.id },
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error.message).toContain("nicht von sich selbst abhängen");
+    expect(res.json().error).toMatchObject({
+      code: "task_dependency_self",
+      details: { taskId: task.id },
+    });
   });
 
   it("rejects a dependency cycle across three tasks", async () => {
@@ -71,7 +74,10 @@ describe("dependency blocking and cycle prevention", () => {
       payload: { dependsOnTaskId: a.id },
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error.message).toContain("Kreis");
+    expect(res.json().error).toMatchObject({
+      code: "task_dependency_cycle",
+      details: { taskId: c.id, dependsOnTaskId: a.id },
+    });
   });
 
   it("rejects setting a task's parent to one of its own descendants", async () => {
@@ -95,7 +101,10 @@ describe("dependency blocking and cycle prevention", () => {
       payload: { parentTaskId: child.id },
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error.message).toContain("Kreis");
+    expect(res.json().error).toMatchObject({
+      code: "task_hierarchy_cycle",
+      details: { taskId: grandparent.id, parentTaskId: child.id },
+    });
   });
 
   it("rejects a task becoming its own parent", async () => {

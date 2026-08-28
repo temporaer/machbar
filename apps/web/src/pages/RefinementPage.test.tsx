@@ -5,7 +5,7 @@ import { useLocation } from "react-router-dom";
 import type { RefinementIssue } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
-import { strings } from "../lib/strings";
+import { de as strings } from "../i18n/de";
 import type { OwnerSizeCounts, RefinementTaskRow } from "../lib/api";
 import { REFINEMENT_RETENTION_MS } from "../lib/useRefinementActions";
 import { makeTag, makeTask } from "../test/fixtures";
@@ -54,11 +54,8 @@ function issue(
   return {
     code: entityType === "project" ? "missing_outcome" : "needs_clarification",
     severity: "warning",
-    label: `Problem ${actionCode}`,
-    explanation: "Bitte reparieren.",
     suggestedAction: {
       code: actionCode,
-      label: `Repariere ${actionCode}`,
     },
     entityType,
     entityId: 41,
@@ -250,8 +247,9 @@ describe("RefinementPage", () => {
   ] as const)(
     "deep-links project repair %s to its focused existing editor",
     async (actionCode, focus) => {
+      const repairIssue = issue(actionCode, "project");
       mockedApi.getRefinementIssues.mockResolvedValue({
-        issues: [issue(actionCode, "project")],
+        issues: [repairIssue],
         projects: [],
       });
 
@@ -260,14 +258,16 @@ describe("RefinementPage", () => {
           <RefinementPage />
           <RepairState />
         </>,
-        { initialEntries: ["/mehr/refinement"] },
+        { initialEntries: ["/more/refinement"] },
       );
 
       await userEvent.click(
-        await screen.findByRole("button", { name: `Repariere ${actionCode}` }),
+        await screen.findByRole("button", {
+          name: strings.refinementActionLabels[actionCode],
+        }),
       );
       expect(screen.getByLabelText("repair-state")).toHaveTextContent(
-        `/projekte/41?focus=${focus}|none|none|false`,
+        `/projects/41?focus=${focus}|none|none|false`,
       );
     },
   );
@@ -278,9 +278,13 @@ describe("RefinementPage", () => {
     blockerIssue.entityTitle = "Ikea: Kugellampe nachkaufen";
     blockerIssue.suggestedAction = {
       code: "clarify_task",
-      label: "Schrank Lea konfigurieren klären",
       targetTaskId: 31,
     };
+    blockerIssue.blockingReason = "captured";
+    blockerIssue.dependencyPath = [
+      { taskId: 34, title: "Ikea: Kugellampe nachkaufen" },
+      { taskId: 31, title: "Schrank Lea konfigurieren" },
+    ];
     mockedApi.getRefinementIssues.mockResolvedValue({
       issues: [blockerIssue],
       projects: [],
@@ -291,7 +295,7 @@ describe("RefinementPage", () => {
         <RefinementPage />
         <RepairState />
       </>,
-      { initialEntries: ["/mehr/refinement"] },
+      { initialEntries: ["/more/refinement"] },
     );
 
     await userEvent.click(
@@ -299,7 +303,7 @@ describe("RefinementPage", () => {
     );
 
     expect(screen.getByLabelText("repair-state")).toHaveTextContent(
-      "/mehr/refinement|31|title|true",
+      "/more/refinement|31|title|true",
     );
   });
 
@@ -314,8 +318,9 @@ describe("RefinementPage", () => {
   ] as const)(
     "opens task repair %s at the narrowest existing task field",
     async (actionCode, focus, queueActive) => {
+      const repairIssue = issue(actionCode);
       mockedApi.getRefinementIssues.mockResolvedValue({
-        issues: [issue(actionCode)],
+        issues: [repairIssue],
         projects: [],
       });
 
@@ -324,14 +329,16 @@ describe("RefinementPage", () => {
           <RefinementPage />
           <RepairState />
         </>,
-        { initialEntries: ["/mehr/refinement"] },
+        { initialEntries: ["/more/refinement"] },
       );
 
       await userEvent.click(
-        await screen.findByRole("button", { name: `Repariere ${actionCode}` }),
+        await screen.findByRole("button", {
+          name: strings.refinementActionLabels[actionCode],
+        }),
       );
       expect(screen.getByLabelText("repair-state")).toHaveTextContent(
-        `/mehr/refinement|41|${focus}|${String(queueActive)}`,
+        `/more/refinement|41|${focus}|${String(queueActive)}`,
       );
     },
   );
@@ -350,14 +357,16 @@ describe("RefinementPage", () => {
         <RefinementPage />
         <RepairState />
       </>,
-      { initialEntries: ["/mehr/refinement"] },
+      { initialEntries: ["/more/refinement"] },
     );
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "Repariere plan_task" }),
+      await screen.findByRole("button", {
+        name: strings.refinementActionLabels.plan_task,
+      }),
     );
     expect(screen.getByLabelText("repair-state")).toHaveTextContent(
-      "/mehr/refinement|73|schedule|false",
+      "/more/refinement|73|schedule|false",
     );
   });
 
@@ -372,14 +381,16 @@ describe("RefinementPage", () => {
         <RefinementPage />
         <RepairState />
       </>,
-      { initialEntries: ["/mehr/refinement"] },
+      { initialEntries: ["/more/refinement"] },
     );
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "Repariere plan_task" }),
+      await screen.findByRole("button", {
+        name: strings.refinementActionLabels.plan_task,
+      }),
     );
     expect(screen.getByLabelText("repair-state")).toHaveTextContent(
-      "/projekte/41?focus=planning|none|none|false",
+      "/projects/41?focus=planning|none|none|false",
     );
   });
 
