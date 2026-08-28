@@ -1,5 +1,10 @@
 # Machbar — Architecture
 
+This document is the technical deep dive for contributors. For product
+concepts, start with the [household workflow](workflow.md). For operating the
+application, see [deployment](deployment.md) and
+[status and limitations](status-and-limitations.md).
+
 ## 1. Package Boundaries
 
 ```
