@@ -433,6 +433,7 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     const ben = await createMember("Ben");
     const project = await createProject({
       title: "Annas Projekt",
+      status: "active",
       ownerMemberId: anna.id,
     });
 
@@ -456,6 +457,7 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     const ben = await createMember("Ben");
     const project = await createProject({
       title: "Projekt mit Besitzer",
+      status: "active",
       ownerMemberId: anna.id,
     });
     // Explicitly opts out of inheriting the project's owner -> shared/none.

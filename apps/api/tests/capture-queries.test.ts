@@ -14,9 +14,10 @@ describe("capture query views", () => {
     await closeTestContext(ctx);
   });
 
-  it("/api/inbox selects captured tasks regardless of project placement", async () => {
+  it("/api/inbox selects captured tasks from active projects", async () => {
     const project = createProject(ctx.handle.db, {
       title: "Capture-Projekt",
+      status: "active",
     });
     const inProject = createTask(ctx.handle.db, {
       projectId: project.id,
@@ -37,7 +38,10 @@ describe("capture query views", () => {
   });
 
   it("/api/inbox returns a clarification-only forest without leaked or duplicate descendants", async () => {
-    const project = createProject(ctx.handle.db, { title: "Baum-Projekt" });
+    const project = createProject(ctx.handle.db, {
+      title: "Baum-Projekt",
+      status: "active",
+    });
     const capturedParent = createTask(ctx.handle.db, {
       projectId: project.id,
       title: "Erfasster Elternteil",

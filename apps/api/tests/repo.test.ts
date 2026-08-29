@@ -694,7 +694,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         });
         const externalProject = createProject(handle.db, {
           title: `${title} externe Abhängigkeit`,
-          status: "backlog",
+          status: "active",
           ownerMemberId: owner.id,
         });
         const child = createTask(handle.db, {
@@ -733,7 +733,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       blockedProjects.push(branched.project.id);
       const validBranchProject = createProject(handle.db, {
         title: "Terminierter externer Zweig",
-        status: "backlog",
+        status: "active",
         ownerMemberId: owner.id,
       });
       const validBranch = createTask(handle.db, {

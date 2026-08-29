@@ -7,6 +7,7 @@ import type {
   RefinementIssueSeverity,
 } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
+import { isTaskInWorkingSystem } from "./workEligibility.js";
 
 const actionCodeByIssue: Record<RefinementIssueCode, RefinementActionCode> = {
   missing_driver: "assign_driver",
@@ -71,6 +72,27 @@ function isOpen(task: TaskRecord): boolean {
   return task.status !== "done" && task.status !== "cancelled";
 }
 
+function hasExecutableProjectPath(
+  graph: Graph,
+  openTasks: TaskRecord[],
+  today: string,
+): boolean {
+  return (
+    openTasks.some(
+      (task) =>
+        task.status === "actionable" &&
+        (!task.blocked || blockedTaskHasClearPath(graph, task, today)),
+    ) ||
+    (openTasks.length > 0 &&
+      openTasks.every(
+        (task) =>
+          task.status === "waiting" &&
+          !!task.scheduledDate &&
+          task.scheduledDate > today,
+      ))
+  );
+}
+
 function unresolvedDependencies(graph: Graph, task: TaskRecord): TaskRecord[] {
   return task.dependencies
     .filter((dependency) => !dependency.resolved)
@@ -109,6 +131,9 @@ function blockingPrerequisiteInBranch(
   }
   const project =
     task.projectId === null ? null : graph.projectsById.get(task.projectId);
+  if (project?.status === "backlog") {
+    return { task, reason: "backlog_project", path: nextPath };
+  }
   if (project?.status === "completed" || project?.status === "archived") {
     return { task, reason: "terminal_project", path: nextPath };
   }
@@ -241,18 +266,12 @@ export function buildRefinementIssues(
   const issues: RefinementIssue[] = [];
 
   for (const project of graph.listProjectsWithComputed()) {
-    if (project.status === "completed" || project.status === "archived") continue;
+    if (project.status !== "active") continue;
     const tasks = graph.tasksForProject(project.id);
     const openTasks = tasks.filter(isOpen);
 
     if (project.ownerMemberId === null) {
-      issues.push(
-        projectIssue(
-          project,
-          "missing_driver",
-          project.status === "active" ? "urgent" : "info",
-        ),
-      );
+      issues.push(projectIssue(project, "missing_driver", "urgent"));
     }
     if (project.acceptanceCriteria.length === 0) {
       issues.push(projectIssue(project, "missing_outcome", "warning"));
@@ -263,22 +282,7 @@ export function buildRefinementIssues(
       project.status === "active"
     ) {
       issues.push(projectIssue(project, "completion_review", "info"));
-    } else if (
-      !openTasks.some(
-        (task) =>
-          task.status === "actionable" &&
-          (!task.blocked || blockedTaskHasClearPath(graph, task, today)),
-      ) &&
-      !(
-        openTasks.length > 0 &&
-        openTasks.every(
-          (task) =>
-            task.status === "waiting" &&
-            !!task.scheduledDate &&
-            task.scheduledDate > today,
-        )
-      )
-    ) {
+    } else if (!hasExecutableProjectPath(graph, openTasks, today)) {
       issues.push(projectIssue(project, "missing_next_action", "warning"));
     }
     if (
@@ -290,8 +294,15 @@ export function buildRefinementIssues(
     }
   }
 
+  const projectStatusById = new Map(
+    [...graph.projectsById.values()].map((project) => [
+      project.id,
+      project.status,
+    ]),
+  );
   for (const task of graph.allTasks()) {
     if (!isOpen(task)) continue;
+    if (!isTaskInWorkingSystem(task, projectStatusById)) continue;
     if (task.status === "captured") {
       issues.push(taskIssue(task, "needs_clarification", "warning"));
       continue;
@@ -333,22 +344,24 @@ export function buildRefinementIssues(
 
   const projects = graph
     .listProjectsWithComputed()
-    .filter((project) => project.status === "backlog" || project.status === "active")
+    .filter((project) => project.status === "backlog")
     .map((project) => {
-      const projectIssues = issues.filter(
-        (issue) => issue.projectId === project.id,
-      );
+      const openTasks = graph.tasksForProject(project.id).filter(isOpen);
+      const projectIssues: RefinementIssue[] = [];
+      if (project.ownerMemberId === null) {
+        projectIssues.push(projectIssue(project, "missing_driver", "info"));
+      }
+      if (project.acceptanceCriteria.length === 0) {
+        projectIssues.push(projectIssue(project, "missing_outcome", "info"));
+      }
+      if (!hasExecutableProjectPath(graph, openTasks, today)) {
+        projectIssues.push(
+          projectIssue(project, "missing_next_action", "info"),
+        );
+      }
       return {
         projectId: project.id,
-        ready:
-          project.ownerMemberId !== null &&
-          project.acceptanceCriteria.length > 0 &&
-          !projectIssues.some(
-            (issue) =>
-              issue.severity === "urgent" ||
-              issue.code === "missing_next_action" ||
-              issue.code === "waiting_without_followup",
-          ),
+        ready: project.ownerMemberId !== null,
         issues: projectIssues,
       };
     });

@@ -72,9 +72,9 @@ describe("BacklogReviewPage", () => {
     mockedApi.getProjects.mockResolvedValue([]);
     renderWithProviders(<BacklogReviewPage />);
 
-    expect(await screen.findByRole("heading", { name: "Projektklärung" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Backlog prüfen" })).toBeInTheDocument();
     const hint =
-      "Noch nicht aktive Projekte prüfen, gezielt ergänzen und erst dann aktiv machen.";
+      "Entscheide bei noch nicht aktiven Projekten: anfangen, im Backlog lassen, vorbereiten oder archivieren.";
     expect(screen.queryByText(hint)).not.toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),

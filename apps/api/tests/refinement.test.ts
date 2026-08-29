@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { openDb, type DbHandle } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
 import * as schema from "../src/db/schema.js";
@@ -13,6 +14,7 @@ import {
   getRefinementOwnerSizeCounts,
   getRefinementTasks,
 } from "../src/repo/refinementRepo.js";
+import { getStuckReasonsByProject } from "../src/repo/stuckRepo.js";
 import { Graph } from "../src/domain/graph.js";
 import { buildRefinementIssues } from "../src/domain/refinementIssues.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
@@ -61,7 +63,7 @@ describe("refinementRepo", () => {
       expect(issue).toMatchObject({ severity: "urgent", entityType: "project" });
     });
 
-    it("keeps an inactive project without a responsible person valid but not ready", () => {
+    it("keeps backlog readiness separate from active refinement issues", () => {
       const project = createProject(handle.db, { title: "Später" });
       const result = buildRefinementIssues(Graph.load(handle.db), today);
       expect(
@@ -69,10 +71,45 @@ describe("refinementRepo", () => {
           (entry) =>
             entry.projectId === project.id && entry.code === "missing_driver",
         ),
-      ).toMatchObject({ severity: "info" });
+      ).toBeUndefined();
+      expect(result.projects.find((entry) => entry.projectId === project.id)).toMatchObject({
+        ready: false,
+        issues: expect.arrayContaining([
+          expect.objectContaining({ code: "missing_driver", severity: "info" }),
+          expect.objectContaining({ code: "missing_outcome", severity: "info" }),
+          expect.objectContaining({ code: "missing_next_action", severity: "info" }),
+        ]),
+      });
+    });
+
+    it("starts reporting missing active-work structure after backlog activation", () => {
+      const owner = handle.db
+        .insert(schema.members)
+        .values({ name: "Mira", color: "#123456" })
+        .returning()
+        .get();
+      const project = createProject(handle.db, {
+        title: "Später ohne Plan",
+        ownerMemberId: owner.id,
+      });
+
       expect(
-        result.projects.find((entry) => entry.projectId === project.id)?.ready,
+        issueCodes().some((entry) => entry.projectId === project.id),
       ).toBe(false);
+
+      handle.db
+        .update(schema.projects)
+        .set({ status: "active" })
+        .where(eq(schema.projects.id, project.id))
+        .run();
+
+      expect(
+        issueCodes().some(
+          (entry) =>
+            entry.projectId === project.id &&
+            entry.code === "missing_next_action",
+        ),
+      ).toBe(true);
     });
 
     it("flags a project with no executable next action", () => {
@@ -155,6 +192,28 @@ describe("refinementRepo", () => {
       ).toBe(true);
       expect(issues.some((entry) => entry.entityId === done.id)).toBe(false);
       expect(issues.some((entry) => entry.entityId === cancelled.id)).toBe(false);
+    });
+
+    it("does not turn tasks in backlog projects into clarification issues", () => {
+      const project = createProject(handle.db, {
+        title: "Vorbereitet für später",
+        status: "backlog",
+      });
+      const captured = createTask(handle.db, {
+        projectId: project.id,
+        title: "Noch unklar",
+        status: "captured",
+      });
+      const large = createTask(handle.db, {
+        projectId: project.id,
+        title: "Großer vorbereiteter Block",
+        status: "actionable",
+        size: "XL",
+      });
+
+      const issues = issueCodes();
+      expect(issues.some((entry) => entry.entityId === captured.id)).toBe(false);
+      expect(issues.some((entry) => entry.entityId === large.id)).toBe(false);
     });
 
     it("treats an actionable dependency sequence as an intentional clear path", () => {
@@ -396,6 +455,48 @@ describe("refinementRepo", () => {
         ),
       ).toBe(true);
     });
+
+    it("does not treat a dependency in a backlog project as an executable path", () => {
+      const owner = handle.db
+        .insert(schema.members)
+        .values({ name: "Mira", color: "#123456" })
+        .returning()
+        .get();
+      const activeProject = createProject(handle.db, {
+        title: "Aktive Arbeit",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const backlogProject = createProject(handle.db, {
+        title: "Später",
+        status: "backlog",
+      });
+      const backlogDependency = createTask(handle.db, {
+        projectId: backlogProject.id,
+        title: "Noch nicht gestartete Voraussetzung",
+      });
+      const downstream = createTask(handle.db, {
+        projectId: activeProject.id,
+        title: "Aktiver nächster Schritt",
+      });
+      addDependency(handle.db, downstream.id, backlogDependency.id);
+
+      const issue = issueCodes().find(
+        (entry) =>
+          entry.entityId === downstream.id &&
+          entry.code === "blocked_without_clear_path",
+      );
+      expect(issue).toMatchObject({
+        blockingReason: "backlog_project",
+        suggestedAction: {
+          code: "resolve_blocker",
+          targetTaskId: backlogDependency.id,
+        },
+      });
+      expect(getStuckReasonsByProject(handle.db, today).get(activeProject.id)).toBe(
+        "blocked_dependencies",
+      );
+    });
   });
 
   afterEach(() => {
@@ -416,7 +517,11 @@ describe("refinementRepo", () => {
 
   it("aggregates open tasks by effective owner (project-inherited and parent-inherited) and size", () => {
     const owner = createMember("Projektinhaberin");
-    const project = createProject(handle.db, { title: "Projekt", ownerMemberId: owner.id });
+    const project = createProject(handle.db, {
+      title: "Projekt",
+      status: "active",
+      ownerMemberId: owner.id,
+    });
     const root = createTask(handle.db, {
       projectId: project.id,
       title: "Wurzel",
@@ -448,6 +553,7 @@ describe("refinementRepo", () => {
     const owner = createMember("Jemand");
     const projectOwned = createProject(handle.db, {
       title: "Projekt",
+      status: "active",
       ownerMemberId: owner.id,
     });
     createTask(handle.db, {
@@ -504,11 +610,78 @@ describe("refinementRepo", () => {
     expect(ids).not.toContain(cancelled.id);
   });
 
+  it("includes standalone and active-project work but excludes backlog and terminal project tasks", () => {
+    const active = createProject(handle.db, {
+      title: "Aktiv",
+      status: "active",
+    });
+    const backlog = createProject(handle.db, {
+      title: "Später",
+      status: "backlog",
+    });
+    const completed = createProject(handle.db, {
+      title: "Fertig",
+      status: "completed",
+    });
+    const activeTask = createTask(handle.db, {
+      projectId: active.id,
+      title: "Aktive Projektaufgabe",
+      size: "S",
+    });
+    const standalone = createTask(handle.db, {
+      title: "Eigenständige Aufgabe",
+      status: "someday",
+      size: "M",
+    });
+    const backlogTask = createTask(handle.db, {
+      projectId: backlog.id,
+      title: "Vorbereitete Backlog-Aufgabe",
+      size: "L",
+    });
+    const completedTask = createTask(handle.db, {
+      projectId: completed.id,
+      title: "Offen in fertigem Projekt",
+      size: "XL",
+    });
+
+    const ids = getRefinementTasks(handle.db).map((row) => row.id);
+    expect(ids).toContain(activeTask.id);
+    expect(ids).toContain(standalone.id);
+    expect(ids).not.toContain(backlogTask.id);
+    expect(ids).not.toContain(completedTask.id);
+
+    const shared = countsFor(null, getRefinementOwnerSizeCounts(handle.db));
+    expect(shared).toMatchObject({ S: 1, M: 1, L: 0, XL: 0, total: 2 });
+  });
+
+  it("keeps unestimated tasks in the effort view without creating an estimate issue", () => {
+    const task = createTask(handle.db, {
+      title: "Noch ohne Aufwand",
+      status: "actionable",
+    });
+
+    expect(getRefinementTasks(handle.db).map((row) => row.id)).toContain(task.id);
+    expect(countsFor(null, getRefinementOwnerSizeCounts(handle.db)).unestimated).toBe(1);
+    expect(
+      buildRefinementIssues(Graph.load(handle.db)).issues.some(
+        (issue) => issue.entityId === task.id && issue.code.includes("estimate"),
+      ),
+    ).toBe(false);
+  });
+
   it("filters task rows and counts by ownerId (including the 'none'/shared bucket) and by projectId", () => {
     const alice = createMember("Alice");
     const bob = createMember("Bob");
-    const projectA = createProject(handle.db, { title: "A", ownerMemberId: alice.id });
-    const projectB = createProject(handle.db, { title: "B", ownerMemberId: bob.id });
+    const projectA = createProject(handle.db, {
+      title: "A",
+      status: "active",
+      ownerMemberId: alice.id,
+    });
+    const projectB = createProject(handle.db, {
+      title: "B",
+      status: "active",
+      ownerMemberId: bob.id,
+    });
     const taskA = createTask(handle.db, {
       projectId: projectA.id,
       title: "A-Aufgabe",
@@ -571,8 +744,16 @@ describe("refinementRepo", () => {
   it("reflects project moves: moving a task to a project with a different owner updates its effective owner and project filter results", () => {
     const alice = createMember("Alice");
     const bob = createMember("Bob");
-    const projectA = createProject(handle.db, { title: "A", ownerMemberId: alice.id });
-    const projectB = createProject(handle.db, { title: "B", ownerMemberId: bob.id });
+    const projectA = createProject(handle.db, {
+      title: "A",
+      status: "active",
+      ownerMemberId: alice.id,
+    });
+    const projectB = createProject(handle.db, {
+      title: "B",
+      status: "active",
+      ownerMemberId: bob.id,
+    });
     const task = createTask(handle.db, {
       projectId: projectA.id,
       title: "Wandert",
@@ -676,7 +857,7 @@ describe("refinement API routes", () => {
     const projectRes = await ctx.app.inject({
       method: "POST",
       url: "/api/projects",
-      payload: { title: "Refinement-Projekt" },
+      payload: { title: "Refinement-Projekt", status: "active" },
     });
     const project = projectRes.json();
     await post("/api/tasks", {

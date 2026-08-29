@@ -27,6 +27,7 @@ import {
 } from "../lib/projectWorkflow";
 import type { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
 import { AssignDriverSheet } from "./AssignDriverSheet";
+import { ActivationReadinessSheet } from "./ActivationReadinessSheet";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
@@ -70,7 +71,14 @@ export interface ProjectStoryRowProps {
   variant?: "compact" | "card";
 }
 
-type Sheet = "assign-to-activate" | "assign-driver" | "plan-dates" | "criteria" | "tags" | null;
+type Sheet =
+  | "activation-readiness"
+  | "assign-to-activate"
+  | "assign-driver"
+  | "plan-dates"
+  | "criteria"
+  | "tags"
+  | null;
 
 /**
  * One story row with the full mobile workflow gestures, shared by the
@@ -175,6 +183,10 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
   const doPrimary = useCallback(() => {
     if (busy || !primaryAction) return;
+    if (primaryAction === "activate" && story.status === "backlog") {
+      setSheet("activation-readiness");
+      return;
+    }
     if (needsDriverBeforeAction(story, primaryAction)) {
       setSheet("assign-to-activate");
       return;
@@ -189,6 +201,10 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
   const runSecondary = (action: ProjectWorkflowAction) => {
     setChipsOpen(false);
+    if (action === "activate" && story.status === "backlog") {
+      setSheet("activation-readiness");
+      return;
+    }
     if (needsDriverBeforeAction(story, action)) {
       setSheet("assign-to-activate");
       return;
@@ -439,6 +455,20 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
           onClose={() => setSheet(null)}
           onAssign={async (ownerMemberId) => {
             await activate(story, ownerMemberId);
+          }}
+        />
+      ) : null}
+
+      {sheet === "activation-readiness" ? (
+        <ActivationReadinessSheet
+          story={story}
+          members={members}
+          onClose={() => setSheet(null)}
+          onActivate={(ownerMemberId) => activate(story, ownerMemberId)}
+          onRepairOutcome={() => setSheet("criteria")}
+          onRepairNextAction={() => {
+            setSheet(null);
+            navigate(`/projects/${story.id}?focus=next-action`);
           }}
         />
       ) : null}

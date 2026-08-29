@@ -1,5 +1,6 @@
 import type { WaitingGroup } from "@machbar/shared";
 import type { Graph, TaskRecord } from "./graph.js";
+import { isTaskInWorkingSystem } from "./workEligibility.js";
 
 /** Groups "waiting" tasks by their free-text `waitingFor` value. */
 export function buildWaitingGroups(
@@ -7,8 +8,15 @@ export function buildWaitingGroups(
   actorTagId?: number,
 ): WaitingGroup[] {
   const groups = new Map<string | null, TaskRecord[]>();
+  const projectStatusById = new Map(
+    [...graph.projectsById.values()].map((project) => [
+      project.id,
+      project.status,
+    ]),
+  );
   for (const task of graph.allTasks()) {
     if (task.status !== "waiting") continue;
+    if (!isTaskInWorkingSystem(task, projectStatusById)) continue;
     if (
       actorTagId !== undefined &&
       !task.effectiveActorTags.some((tag) => tag.id === actorTagId)

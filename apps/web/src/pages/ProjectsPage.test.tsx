@@ -171,7 +171,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     );
   });
 
-  it("asks for a driver when a backlog row without one is swiped, then activates atomically", async () => {
+  it("opens activation preparation for a backlog row and activates atomically", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Backlog-Geschichte");
     mockedApi.activateProject.mockResolvedValue(
@@ -179,11 +179,15 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     );
 
     swipeRow(rowFor(container, "Backlog-Geschichte"), 100);
-    expect(await screen.findByRole("heading", { name: "Verantwortliche Person zuweisen" })).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", {
+      name: "Aktivierung vorbereiten",
+    });
 
-    const group = screen.getByRole("group", { name: "Verantwortlich" });
+    const group = within(dialog).getByRole("group", { name: "Verantwortlich" });
     fireEvent.click(within(group).getByRole("button", { name: "Mira" }));
-    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Aktiv machen" }),
+    );
 
     await waitFor(() => expect(mockedApi.activateProject).toHaveBeenCalledWith(70, { ownerMemberId: 1 }));
   });
@@ -211,6 +215,12 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     await screen.findByText("Noch ohne nächsten Schritt");
 
     swipeRow(rowFor(container, "Noch ohne nächsten Schritt"), 100);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Aktivierung vorbereiten",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Aktiv machen" }),
+    );
 
     await waitFor(() =>
       expect(rowFor(container, "Noch ohne nächsten Schritt")).toHaveClass(
