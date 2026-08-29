@@ -120,6 +120,40 @@ describe("TaskDetailSheet", () => {
     });
   });
 
+  it("shows Calendar export beside Share only for a dated Task", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({
+        id: 42,
+        title: "Elternabend",
+        dueDate: "2026-09-15",
+      }),
+    );
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Teilen" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "In Kalender" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show Calendar export for a Task without a deadline", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 42, title: "Ohne Termin", dueDate: null }),
+    );
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Teilen" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "In Kalender" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("loads task activity only after its collapsed disclosure is opened", async () => {
     mockedApi.getTask.mockResolvedValue(makeTask({ id: 42, title: "Reparaturziel" }));
     renderSheet(42);

@@ -555,6 +555,18 @@ const en = {
   shareCompleted: "Shared",
   copiedToClipboard: "Copied to clipboard",
   clipboardUnavailable: "Sharing and the clipboard are unavailable.",
+  addToCalendar: "Add to calendar",
+  calendarExportShared: "Shared with calendar",
+  calendarExportDownloaded: "Calendar file downloaded",
+  calendarDeadlinePreview: (date: string) => `Due: ${date}`,
+  calendarDeadlineConflict: (
+    title: string,
+    existingDate: string,
+    calendarDate: string,
+  ) =>
+    `“${title}” is already due on ${existingDate}. Calendar date: ${calendarDate}.`,
+  keepExistingDeadline: "Keep existing deadline",
+  useCalendarDeadline: (date: string) => `Use ${date}`,
   markdownToolbar: "Format Markdown",
   markdownBulletList: "Bulleted list",
   markdownTaskList: "Checkbox",

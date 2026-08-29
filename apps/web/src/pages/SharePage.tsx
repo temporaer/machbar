@@ -7,6 +7,7 @@ import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { flattenTasks } from "../lib/taskHelpers";
 import {
+  appendTextBlock,
   parseWebShareTarget,
   shareTargetToCaptureDraft,
   shareTargetToTextBlock,
@@ -22,7 +23,12 @@ import type { Strings } from "../lib/strings";
 import { CaptureForm, type CaptureResult } from "../components/CaptureForm";
 import { ErrorState, LoadingState } from "../components/AsyncStates";
 import { useLocale } from "../lib/locale";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import {
+  isStaleWriteConflict,
+  localizedErrorMessage,
+} from "../lib/errorMessage";
+import { parseGoogleCalendarShare } from "../lib/googleCalendarShare";
+import { formatExactLocalDate } from "../lib/relativeDate";
 
 interface ShareOption {
   key: string;
@@ -30,6 +36,9 @@ interface ShareOption {
   id: number;
   title: string;
   subtitle: string;
+  notes: string;
+  dueDate: string | null;
+  revision: number;
 }
 
 interface CompletedShare {
@@ -47,6 +56,9 @@ function optionForTask(task: Task, strings: Strings): ShareOption {
     subtitle: task.projectTitle
       ? `${strings.task} · ${task.projectTitle}`
       : strings.task,
+    notes: task.notes,
+    dueDate: task.dueDate,
+    revision: task.revision,
   };
 }
 
@@ -60,6 +72,9 @@ function optionForProject(
     id: project.id,
     title: project.title,
     subtitle: strings.project,
+    notes: project.notes,
+    dueDate: project.dueDate,
+    revision: project.revision,
   };
 }
 
@@ -151,11 +166,20 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
     [incoming, locale],
   );
   const appendBlock = useMemo(() => shareTargetToTextBlock(incoming), [incoming]);
+  const calendarMetadata = useMemo(
+    () => parseGoogleCalendarShare(incoming, { locale }),
+    [incoming, locale],
+  );
+  const calendarDueDate = calendarMetadata?.dueDate ?? null;
+  const formattedCalendarDueDate = calendarDueDate
+    ? formatExactLocalDate(calendarDueDate, locale)
+    : null;
   const [captureOpen, setCaptureOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState<CompletedShare | null>(null);
+  const [pendingConflict, setPendingConflict] = useState<ShareOption | null>(null);
 
   const projectsState = useAsync(() => api.getProjects(), []);
   const tasksState = useAsync(() => api.searchTasks({}), []);
@@ -215,24 +239,70 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
     );
   }, [allOptions, locale, query]);
 
-  const appendTo = async (option: ShareOption) => {
+  const completeShare = (option: ShareOption) => {
+    rememberShareTarget({
+      kind: option.kind,
+      id: option.id,
+    } satisfies RecentShareTarget);
+    bump();
+    setCompleted({ kind: option.kind, id: option.id, title: option.title });
+    setPendingConflict(null);
+  };
+
+  const reloadTargets = () => {
+    projectsState.reload();
+    tasksState.reload();
+    agendaState.reload();
+  };
+
+  const applyTo = async (
+    option: ShareOption,
+    deadlineAction: "append" | "calendar",
+  ) => {
     if (!appendBlock || busyKey) return;
     setBusyKey(option.key);
     setError(null);
     try {
-      if (option.kind === "task") {
+      if (deadlineAction === "calendar" && calendarDueDate) {
+        const patch = {
+          notes: appendTextBlock(option.notes, appendBlock),
+          dueDate: calendarDueDate,
+          expectedRevision: option.revision,
+        };
+        if (option.kind === "task") {
+          await api.updateTask(option.id, patch);
+        } else {
+          await api.updateProject(option.id, patch);
+        }
+      } else if (option.kind === "task") {
         await api.appendTaskNotes(option.id, appendBlock);
       } else {
         await api.appendProjectNotes(option.id, appendBlock);
       }
-      rememberShareTarget({ kind: option.kind, id: option.id } satisfies RecentShareTarget);
-      bump();
-      setCompleted({ kind: option.kind, id: option.id, title: option.title });
+      completeShare(option);
     } catch (cause) {
+      if (isStaleWriteConflict(cause)) {
+        bump();
+        setPendingConflict(null);
+        reloadTargets();
+      }
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setBusyKey(null);
     }
+  };
+
+  const appendTo = (option: ShareOption) => {
+    if (!calendarDueDate || option.dueDate === calendarDueDate) {
+      void applyTo(option, "append");
+      return;
+    }
+    if (option.dueDate === null) {
+      void applyTo(option, "calendar");
+      return;
+    }
+    setError(null);
+    setPendingConflict(option);
   };
 
   const completeCapture = (result: CaptureResult) => {
@@ -280,16 +350,53 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
       <h1>{strings.shareWithMachbar}</h1>
       <section className="card share-preview">
         <strong>{captureDraft.title}</strong>
+        {formattedCalendarDueDate ? (
+          <p className="share-preview-deadline">
+            {strings.calendarDeadlinePreview(formattedCalendarDueDate)}
+          </p>
+        ) : null}
         {captureDraft.notes ? <p>{captureDraft.notes}</p> : null}
       </section>
 
-      {captureOpen ? (
+      {pendingConflict && formattedCalendarDueDate ? (
+        <section className="card stack share-deadline-conflict" role="alert">
+          <p>
+            {strings.calendarDeadlineConflict(
+              pendingConflict.title,
+              formatExactLocalDate(pendingConflict.dueDate ?? "", locale) ??
+                pendingConflict.dueDate ??
+                "",
+              formattedCalendarDueDate,
+            )}
+          </p>
+          <div className="stack">
+            <button
+              type="button"
+              className="btn btn-block"
+              disabled={busyKey !== null}
+              onClick={() => void applyTo(pendingConflict, "append")}
+            >
+              {strings.keepExistingDeadline}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              disabled={busyKey !== null}
+              onClick={() => void applyTo(pendingConflict, "calendar")}
+            >
+              {strings.useCalendarDeadline(formattedCalendarDueDate)}
+            </button>
+          </div>
+        </section>
+      ) : captureOpen ? (
         <section className="section share-capture" aria-labelledby="share-new-heading">
           <h2 className="section-title" id="share-new-heading">{strings.createNew}</h2>
           <CaptureForm
             initialTitle={captureDraft.title}
             initialNotes={captureDraft.notes}
+            initialDueDate={calendarDueDate}
             showNotes
+            showDueDate={calendarDueDate !== null}
             onCancel={() => setCaptureOpen(false)}
             onCaptured={completeCapture}
           />
@@ -305,8 +412,8 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
       )}
 
       {error ? <p className="capture-error" role="alert">{error}</p> : null}
-      {loading ? <LoadingState /> : null}
-      {loadError ? (
+      {!pendingConflict && loading ? <LoadingState /> : null}
+      {!pendingConflict && loadError ? (
         <ErrorState
           message={loadError}
           onRetry={() => {
@@ -316,20 +423,20 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
           }}
         />
       ) : null}
-      {!loading && !loadError ? (
+      {!pendingConflict && !loading && !loadError ? (
         <>
           {recentOptions.length > 0 ? (
             <section className="section" aria-labelledby="share-recent-heading">
               <h2 className="section-title" id="share-recent-heading">
                 {strings.recentDestinations}
               </h2>
-              <TargetRows options={recentOptions} busyKey={busyKey} onChoose={(option) => void appendTo(option)} />
+              <TargetRows options={recentOptions} busyKey={busyKey} onChoose={appendTo} />
             </section>
           ) : null}
           {todayOptions.length > 0 && !query.trim() ? (
             <section className="section" aria-labelledby="share-today-heading">
               <h2 className="section-title" id="share-today-heading">{strings.today}</h2>
-              <TargetRows options={todayOptions} busyKey={busyKey} onChoose={(option) => void appendTo(option)} />
+              <TargetRows options={todayOptions} busyKey={busyKey} onChoose={appendTo} />
             </section>
           ) : null}
           <section className="section">
@@ -346,7 +453,7 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
               <p className="text-muted">{strings.destinationSearchEmpty}</p>
             ) : null}
             {searchOptions.length > 0 ? (
-              <TargetRows options={searchOptions} busyKey={busyKey} onChoose={(option) => void appendTo(option)} />
+              <TargetRows options={searchOptions} busyKey={busyKey} onChoose={appendTo} />
             ) : null}
           </section>
         </>

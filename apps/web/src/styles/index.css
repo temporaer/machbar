@@ -1402,6 +1402,14 @@ details[open] > .disclosure-summary::after {
   white-space: pre-wrap;
 }
 
+.share-preview .share-preview-deadline {
+  font-weight: 600;
+}
+
+.share-deadline-conflict p {
+  margin: 0;
+}
+
 .share-new-button {
   min-height: 48px;
 }

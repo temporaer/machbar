@@ -6,6 +6,7 @@ import { useStrings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { ownerAssignmentPatch } from "./TaskQuickActionSheet";
 import { MarkdownEditor } from "./MarkdownEditor";
+import { HumanDateInput } from "./HumanDateInput";
 
 export type CaptureResult =
   | {
@@ -21,9 +22,11 @@ export type CaptureResult =
 export interface CaptureFormProps {
   initialTitle?: string;
   initialNotes?: string;
+  initialDueDate?: string | null;
   projectId?: number | null;
   parentTaskId?: number | null;
   showNotes?: boolean;
+  showDueDate?: boolean;
   autoFocus?: boolean;
   onCancel: () => void;
   onCaptured: (result: CaptureResult) => void;
@@ -33,9 +36,11 @@ export interface CaptureFormProps {
 export function CaptureForm({
   initialTitle = "",
   initialNotes = "",
+  initialDueDate = null,
   projectId,
   parentTaskId,
   showNotes = false,
+  showDueDate = false,
   autoFocus = true,
   onCancel,
   onCaptured,
@@ -43,6 +48,8 @@ export function CaptureForm({
   const strings = useStrings();
   const [title, setTitle] = useState(initialTitle);
   const [notes, setNotes] = useState(initialNotes);
+  const [dueDate, setDueDate] = useState<string | null>(initialDueDate);
+  const [dueDateValid, setDueDateValid] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { currentMemberId } = useIdentity();
@@ -54,7 +61,7 @@ export function CaptureForm({
     parentTaskId: parentTaskId ?? null,
     createdByMemberId: currentMemberId,
     status: needsClarification ? "captured" : "actionable",
-    dueDate: null,
+    dueDate,
     scheduledDate: null,
     ...(currentMemberId === null ? {} : ownerAssignmentPatch(currentMemberId)),
   });
@@ -83,6 +90,7 @@ export function CaptureForm({
         ...(notes ? { notes } : {}),
         status: currentMemberId === null ? "backlog" : "active",
         ownerMemberId: currentMemberId,
+        ...(showDueDate ? { dueDate } : {}),
       });
       onCaptured({ kind: "project", project });
     } catch (cause) {
@@ -122,19 +130,34 @@ export function CaptureForm({
           />
         </div>
       ) : null}
+      {showDueDate ? (
+        <div className="field">
+          <label htmlFor="capture-due">{strings.due}</label>
+          <HumanDateInput
+            id="capture-due"
+            value={dueDate}
+            onChange={setDueDate}
+            onValidityChange={setDueDateValid}
+          />
+        </div>
+      ) : null}
       {error ? <p className="capture-error" role="alert">{error}</p> : null}
       <div className="capture-shape-actions">
         <button type="button" className="btn" onClick={onCancel}>
           {strings.cancel}
         </button>
-        <button type="submit" className="btn" disabled={saving || !title.trim()}>
+        <button
+          type="submit"
+          className="btn"
+          disabled={saving || !title.trim() || !dueDateValid}
+        >
           {strings.clarifyLater}
         </button>
         <button
           type="button"
           className="btn btn-primary capture-shape-action"
           aria-label={strings.captureMachbar}
-          disabled={saving || !title.trim()}
+          disabled={saving || !title.trim() || !dueDateValid}
           onClick={() => void createTask(false)}
         >
           <span>{strings.captureMachbar}</span>
@@ -144,7 +167,7 @@ export function CaptureForm({
           type="button"
           className="btn btn-primary capture-shape-action"
           aria-label={strings.captureProject}
-          disabled={saving || !title.trim()}
+          disabled={saving || !title.trim() || !dueDateValid}
           onClick={() => void createProject()}
         >
           <span>{strings.captureProject}</span>
