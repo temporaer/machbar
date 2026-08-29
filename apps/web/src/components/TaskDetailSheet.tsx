@@ -26,6 +26,7 @@ import { MemberLabel } from "./MemberAvatar";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MarkdownNotes } from "./MarkdownNotes";
 import { NativeShareButton } from "./NativeShareButton";
+import { CalendarExportButton } from "./CalendarExportButton";
 import { IconActionButton } from "./IconActionButton";
 import { serializeTaskForShare } from "../lib/shareText";
 import { buildTaskShareUrl } from "../lib/shareUrls";
@@ -424,13 +425,26 @@ export function TaskDetailSheet() {
       labelledBy="task-detail-title"
       headerActions={
         task ? (
-          <NativeShareButton
-            title={task.title}
-            text={serializeTaskForShare(task, locale)}
-            url={buildTaskShareUrl(task.id)}
-            showStatus={false}
-            onStatusChange={setShareStatus}
-          />
+          <>
+            <NativeShareButton
+              title={task.title}
+              text={serializeTaskForShare(task, locale)}
+              url={buildTaskShareUrl(task.id)}
+              showStatus={false}
+              onStatusChange={setShareStatus}
+            />
+            <CalendarExportButton
+              item={{
+                kind: "task",
+                id: task.id,
+                title: task.title,
+                notes: task.notes,
+                dueDate: task.dueDate,
+              }}
+              showStatus={false}
+              onStatusChange={setShareStatus}
+            />
+          </>
         ) : null
       }
       headerStatus={

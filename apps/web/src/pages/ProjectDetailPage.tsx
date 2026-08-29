@@ -15,6 +15,7 @@ import { TaskSequenceSheet } from "../components/TaskSequenceSheet";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownNotes } from "../components/MarkdownNotes";
 import { NativeShareButton } from "../components/NativeShareButton";
+import { CalendarExportButton } from "../components/CalendarExportButton";
 import { serializeProjectForShare } from "../lib/shareText";
 import { buildProjectShareUrl } from "../lib/shareUrls";
 import { useRefresh } from "../lib/refresh";
@@ -175,6 +176,15 @@ export function ProjectDetailPage() {
                   title={project.title}
                   text={serializeProjectForShare(project, locale)}
                   url={buildProjectShareUrl(project.id)}
+                />
+                <CalendarExportButton
+                  item={{
+                    kind: "project",
+                    id: project.id,
+                    title: project.title,
+                    notes: project.notes,
+                    dueDate: project.dueDate,
+                  }}
                 />
                 <IconActionButton
                   kind="edit"

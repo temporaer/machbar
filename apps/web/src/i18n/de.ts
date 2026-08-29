@@ -529,6 +529,18 @@ const extra = {
   shareCompleted: "Geteilt",
   copiedToClipboard: "In die Zwischenablage kopiert",
   clipboardUnavailable: "Teilen und Zwischenablage sind nicht verfügbar.",
+  addToCalendar: "In Kalender",
+  calendarExportShared: "An Kalender geteilt",
+  calendarExportDownloaded: "Kalenderdatei heruntergeladen",
+  calendarDeadlinePreview: (date: string) => `Fällig: ${date}`,
+  calendarDeadlineConflict: (
+    title: string,
+    existingDate: string,
+    calendarDate: string,
+  ) =>
+    `„${title}“ ist bereits am ${existingDate} fällig. Kalendertermin: ${calendarDate}.`,
+  keepExistingDeadline: "Bestehende Deadline behalten",
+  useCalendarDeadline: (date: string) => `${date} übernehmen`,
   markdownToolbar: "Markdown formatieren",
   markdownBulletList: "Aufzählung",
   markdownTaskList: "Checkbox",

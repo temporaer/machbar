@@ -71,4 +71,21 @@ describe("share target helpers", () => {
     expect(appendTextBlock("", " Inhalt ")).toBe("Inhalt");
     expect(appendTextBlock("Inhalt", "")).toBe("Inhalt");
   });
+
+  it("preserves Calendar metadata and time as generic shared content", () => {
+    const target = {
+      title: "Elternabend",
+      text:
+        "15. Sept. • 19:00–21:00 • Details ansehen\nhttps://calendar.app.google/abc123",
+      url: "",
+    };
+    expect(shareTargetToCaptureDraft(target)).toEqual({
+      title: "Elternabend",
+      notes:
+        "15. Sept. • 19:00–21:00 • Details ansehen\nhttps://calendar.app.google/abc123",
+    });
+    expect(shareTargetToTextBlock(target)).toBe(
+      "Elternabend\n\n15. Sept. • 19:00–21:00 • Details ansehen\nhttps://calendar.app.google/abc123",
+    );
+  });
 });

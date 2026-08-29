@@ -186,6 +186,37 @@ describe("ProjectDetailPage task explanations", () => {
     expect(within(notesSection).getByRole("button", { name: "Notizen speichern" })).toBeInTheDocument();
   });
 
+  it("shows Calendar export beside Share only for a dated Project", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({
+        id: 42,
+        title: "Sommerfest planen",
+        ownerMemberId: 1,
+        dueDate: "2026-09-15",
+      }),
+      tasks: [],
+    });
+    renderWithProviders(<ProjectDetailPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Teilen" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "In Kalender" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not show Calendar export for a Project without a deadline", async () => {
+    renderWithProviders(<ProjectDetailPage />);
+
+    expect(
+      await screen.findByRole("button", { name: "Teilen" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "In Kalender" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("opens the focused outcome editor on direct navigation and clears only the focus query when closed", async () => {
     renderProjectRoute("/projects/42?focus=outcome");
 
