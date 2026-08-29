@@ -8,14 +8,10 @@ import { PageHeader } from "../components/PageHeader";
 import "./BacklogReviewPage.css";
 
 /**
- * "Backlog prüfen" (Mehr › Backlog prüfen): review stories still sitting in
- * the `backlog` status — their acceptance-criteria progress, optional
- * driver, dates and task summary — and act on them via swipe/kebab
- * (activate, assign a driver, plan dates, edit, archive) without leaving
- * this list. Rows are the same `ProjectStoryRow` the Projekte tab uses (in
- * its compact variant); see that component for the per-row gesture
- * behaviour and `lib/useProjectWorkflowActions.ts` for the optimistic
- * transition retention.
+ * "Backlog prüfen" answers whether a backlog project should start, remain
+ * parked, be prepared further, or be archived. Existing task/criteria
+ * summaries are planning context, not clarification defects; activation
+ * opens the shared readiness preflight in `ProjectStoryRow`.
  */
 export function BacklogReviewPage() {
   const strings = useStrings();

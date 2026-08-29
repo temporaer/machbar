@@ -7,6 +7,7 @@ import { buildWaitingGroups } from "../domain/waiting.js";
 import { getMemberOrThrow } from "../domain/mutations.js";
 import { AppError } from "../errors.js";
 import { validationDetails } from "../validation.js";
+import { isTaskInWorkingSystem } from "../domain/workEligibility.js";
 
 const agendaQuerySchema = z.object({
   memberId: z.coerce.number().int().positive().optional(),
@@ -69,9 +70,19 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
 
   app.get("/api/inbox", async () => {
     const graph = Graph.load(db);
+    const projectStatusById = new Map(
+      [...graph.projectsById.values()].map((project) => [
+        project.id,
+        project.status,
+      ]),
+    );
     const captured = graph
       .allTasks()
-      .filter((task) => task.status === "captured");
+      .filter(
+        (task) =>
+          task.status === "captured" &&
+          isTaskInWorkingSystem(task, projectStatusById),
+      );
     const capturedIds = new Set(captured.map((task) => task.id));
     const cloneCaptured = (task: (typeof captured)[number]): (typeof captured)[number] => ({
       ...task,

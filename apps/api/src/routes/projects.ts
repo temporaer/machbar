@@ -55,17 +55,36 @@ function projectOrThrow(db: Db, id: number) {
       { projectId: id },
     );
   }
-  const issues = buildRefinementIssues(graph).issues.filter(
+  const diagnostics = buildRefinementIssues(graph);
+  const issues = diagnostics.issues.filter(
     (issue) => issue.projectId === id,
   );
-  return { graph, project: { ...project, refinementIssues: issues } };
+  const readiness = diagnostics.projects.find(
+    (entry) => entry.projectId === id,
+  );
+  return {
+    graph,
+    project: {
+      ...project,
+      refinementIssues: issues,
+      ...(readiness ? { readiness } : {}),
+    },
+  };
 }
 
 function projectsWithIssues(graph: Graph) {
-  const issues = buildRefinementIssues(graph).issues;
+  const diagnostics = buildRefinementIssues(graph);
+  const readinessByProjectId = new Map(
+    diagnostics.projects.map((entry) => [entry.projectId, entry]),
+  );
   return graph.listProjectsWithComputed().map((project) => ({
     ...project,
-    refinementIssues: issues.filter((issue) => issue.projectId === project.id),
+    refinementIssues: diagnostics.issues.filter(
+      (issue) => issue.projectId === project.id,
+    ),
+    ...(readinessByProjectId.has(project.id)
+      ? { readiness: readinessByProjectId.get(project.id) }
+      : {}),
   }));
 }
 

@@ -120,6 +120,12 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
     await screen.findByText("Kellerregal bauen");
 
     swipe(container, 100);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Aktivierung vorbereiten",
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Aktiv machen" }),
+    );
     await act(async () => {
       await flushMicrotasks();
     });
@@ -199,40 +205,64 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
   });
 });
 
-describe("ProjectStoryRow – missing driver popup on activation", () => {
+describe("ProjectStoryRow – activation preparation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Noah" })]);
   });
 
-  it.each<[ProjectStatus, number]>([
-    ["backlog", 30],
-    ["archived", 31],
-  ])("asks for a driver instead of failing when activating a %s story without one", async (status, id) => {
-    const story = makeProject({ id, title: `Ohne Driver ${status}`, status, ownerMemberId: null });
+  it("requires a driver in the backlog activation preflight", async () => {
+    const story = makeProject({ id: 30, title: "Ohne Driver backlog", status: "backlog", ownerMemberId: null });
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active", ownerMemberId: 2 });
     const { container } = renderWithProviders(<Harness story={story} />);
-    await screen.findByText(`Ohne Driver ${status}`);
+    await screen.findByText("Ohne Driver backlog");
 
     swipe(container, 100);
 
-    expect(await screen.findByRole("heading", { name: "Verantwortliche Person zuweisen" })).toBeInTheDocument();
-    expect(
-      screen.getByText("Für die Aktivierung muss zuerst eine verantwortliche Person zugewiesen werden."),
-    ).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", {
+      name: "Aktivierung vorbereiten",
+    });
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
 
-    const group = screen.getByRole("group", { name: "Verantwortlich" });
-    // Activating without a driver is illegal — no "Niemand zugewiesen" chip.
+    const group = within(dialog).getByRole("group", { name: "Verantwortlich" });
     expect(within(group).queryByRole("button", { name: "Niemand zugewiesen" })).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "Aktiv machen" }),
+    ).toBeDisabled();
 
     await userEvent.click(within(group).getByRole("button", { name: "Noah" }));
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Aktiv machen" }),
+    );
 
     // Assigning and activating happen in one atomic backend call.
-    await waitFor(() => expect(mockedApi.activateProject).toHaveBeenCalledWith(id, { ownerMemberId: 2 }));
+    await waitFor(() => expect(mockedApi.activateProject).toHaveBeenCalledWith(30, { ownerMemberId: 2 }));
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
+  });
+
+  it("keeps the focused driver sheet for archived activation", async () => {
+    const story = makeProject({
+      id: 31,
+      title: "Ohne Driver archived",
+      status: "archived",
+      ownerMemberId: null,
+    });
+    mockedApi.activateProject.mockResolvedValue({
+      ...story,
+      status: "active",
+      ownerMemberId: 2,
+    });
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Ohne Driver archived");
+
+    swipe(container, 100);
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Verantwortliche Person zuweisen",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("asks for a driver when activating via the chip of an archived story too", async () => {

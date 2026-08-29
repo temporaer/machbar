@@ -41,15 +41,10 @@ function selectionLabel(
 }
 
 /**
- * The Scrum refinement view: an effective-owner × S/M/L/XL/unestimated
- * matrix (including the always-present "Gemeinsam / offen" shared row) on
- * top of a list of every open task still needing refinement, with its
- * owner, story (project), current size and blocked/waiting context. A
- * matrix cell/row/column filters the list below; the list itself supports
- * a right-swipe size-cycle, a left-swipe/kebab chip strip with direct
- * S/M/L/XL/clear choices, a targeted Zuweisen popup (the same focused
- * `AssignOwnerSheet` the task chip strip uses) and the Zum-Projekt
- * navigation used elsewhere in the app.
+ * "Arbeit klären" combines concrete project/task diagnostics with a
+ * secondary owner × S/M/L/XL/unestimated view of work that is already in
+ * the working system. Backlog-project tasks are intentionally absent until
+ * activation; standalone work and tasks in active projects remain visible.
  */
 export function RefinementPage() {
   const strings = useStrings();

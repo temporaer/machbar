@@ -1,7 +1,13 @@
-import type { Member, TaskSize, TaskStatus } from "@machbar/shared";
+import type {
+  Member,
+  ProjectStatus,
+  TaskSize,
+  TaskStatus,
+} from "@machbar/shared";
 import { taskSizes } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
+import { isTaskInWorkingSystem } from "../domain/workEligibility.js";
 import { getEffectiveOwners, getEffectiveTagIds } from "./effectiveRepo.js";
 
 /**
@@ -81,6 +87,16 @@ function loadFilteredOpenTasks(
 } {
   const effective = getEffectiveOwners(db);
   const effectiveTagIds = getEffectiveTagIds(db);
+  const projectStatusById = new Map(
+    db
+      .select({ id: schema.projects.id, status: schema.projects.status })
+      .from(schema.projects)
+      .all()
+      .map((project) => [
+        project.id,
+        project.status as ProjectStatus,
+      ]),
+  );
   const allTasks = db
     .select({
       id: schema.tasks.id,
@@ -108,6 +124,7 @@ function loadFilteredOpenTasks(
 
   const rows = allTasks.filter((t) => {
     if (!isOpenStatus(t.status)) return false;
+    if (!isTaskInWorkingSystem(t, projectStatusById)) return false;
     if (filters?.projectId !== undefined && t.projectId !== filters.projectId) {
       return false;
     }

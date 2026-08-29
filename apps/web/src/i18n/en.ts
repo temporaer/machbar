@@ -462,8 +462,8 @@ const en = {
   },
   refinementMatrixTitle: "Owner × effort",
   refinementMatrixHint:
-    "Alternative view: tap a row or column to filter by owner and effort.",
-  refinementListTitle: "Open tasks by effort",
+    "Tap a row, column, or cell to inspect active work by owner and effort. “No effort set” is not an error.",
+  refinementListTitle: "Inspect work",
   unestimated: "No effort set",
   total: "Total",
   allSizes: "Any effort",
@@ -483,16 +483,23 @@ const en = {
   clarificationNeedsHint:
     "These items need attention. Resolve the next specific issue for each one.",
   clarificationNeedsEmpty: "Nothing needs clarification right now.",
-  effortGuide: "Effort",
+  effortGuide: "Review effort",
   effortGuideHint:
-    "S = quick job · M = regular task · L = longer block · XL = too large",
+    "S = quick job · M = regular task · L = longer block · XL = probably split it · no effort = not estimated yet",
 
-  backlogReview: "Project review",
-  refinement: "Task review",
+  backlogReview: "Review backlog",
+  refinement: "Clarify work",
   backlogReviewHint:
-    "Review projects that are not active yet, fill in what is missing, then make them active.",
+    "Decide whether to start, leave, prepare, or archive projects that are not active yet.",
   backlogReviewEmpty: "No projects under “Later / not active yet.”",
   activateStory: "Make active",
+  activateAnyway: "Make active anyway",
+  activationPreparation: "Prepare activation",
+  activationPreparationHint:
+    "Check whether the project is ready enough to start. Only a project lead is required.",
+  activationDriverRequired: "An active project must have a project lead.",
+  activationAdvisoryHeading: "Optional before starting",
+  activationAdvisoryReady: "The outcome and next step are already prepared.",
   driver: "Lead",
   assignDriver: "Assign a project lead",
   assignDriverToActivateHint:
@@ -766,6 +773,7 @@ const en = {
     captured: "Blocking task is not clarified",
     waiting: "Blocking task is not scheduled",
     someday: "Blocking task is not ready",
+    backlog_project: "Blocking task belongs to the backlog",
     terminal_project: "Blocking task is not ready",
     cycle: "Dependencies form a cycle",
   } satisfies Record<RefinementBlockingReason, string>,
@@ -773,6 +781,7 @@ const en = {
     captured: "This task has only been captured and is not ready yet.",
     waiting: "It needs a future follow-up date.",
     someday: "It is not ready right now.",
+    backlog_project: "It belongs to a project that is not active yet.",
     terminal_project: "It belongs to a completed or archived project.",
     cycle: "Review the dependencies there.",
   } satisfies Record<RefinementBlockingReason, string>,

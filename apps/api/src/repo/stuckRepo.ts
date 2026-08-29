@@ -186,7 +186,7 @@ export function getStuckReasonsByProject(
               AND NOT (
                 (
                   blocker.project_id IS NULL
-                  OR blocker_project.status NOT IN ('completed', 'archived')
+                  OR blocker_project.status = 'active'
                 )
                 AND (
                   (

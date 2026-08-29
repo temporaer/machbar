@@ -78,7 +78,11 @@ describe("search/filter and project CRUD/archive", () => {
       await ctx.app.inject({
         method: "POST",
         url: "/api/projects",
-        payload: { title: "Heizung", tagIds: [actor.id] },
+        payload: {
+          title: "Heizung",
+          status: "active",
+          tagIds: [actor.id],
+        },
       })
     ).json();
     await ctx.app.inject({

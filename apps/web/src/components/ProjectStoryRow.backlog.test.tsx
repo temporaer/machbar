@@ -136,6 +136,12 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Garten aufräumen");
 
     swipe(container, 100);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Aktivierung vorbereiten",
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Aktiv machen" }),
+    );
     await act(async () => {
       await flushMicrotasks();
     });
@@ -147,7 +153,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
   });
 
-  it("reveals the driver-assignment sheet instead of failing when right-swiping a story without a driver, then activates once one is picked", async () => {
+  it("uses the activation preflight to require a driver before activation", async () => {
     const story = makeProject({ id: 13, title: "Homeoffice-Ecke einrichten", status: "backlog", ownerMemberId: null });
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active", ownerMemberId: 2 });
     const { container } = renderWithProviders(<Harness story={story} />);
@@ -155,9 +161,12 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
 
     swipe(container, 100);
 
-    // No failure/error — the assignment sheet opens instead.
-    expect(await screen.findByRole("heading", { name: "Verantwortliche Person zuweisen" })).toBeInTheDocument();
-    expect(screen.getByText("Für die Aktivierung muss zuerst eine verantwortliche Person zugewiesen werden.")).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", {
+      name: "Aktivierung vorbereiten",
+    });
+    expect(
+      screen.getByText("Eine verantwortliche Person ist für aktive Projekte erforderlich."),
+    ).toBeInTheDocument();
 
     // Activating without a driver is illegal, so no "Niemand zugewiesen" chip
     // is offered here — only the household members.
@@ -177,10 +186,69 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
       "aria-pressed",
       "true",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Aktiv machen" }),
+    );
 
     await waitFor(() =>
       expect(mockedApi.activateProject).toHaveBeenCalledWith(13, { ownerMemberId: 2 }),
+    );
+  });
+
+  it("shows outcome and next-action gaps as advisory and still allows activation", async () => {
+    const story = makeProject({
+      id: 131,
+      title: "Projekt mit offenen Vorbereitungen",
+      status: "backlog",
+      ownerMemberId: 1,
+      readiness: {
+        projectId: 131,
+        ready: true,
+        issues: [
+          {
+            code: "missing_outcome",
+            severity: "info",
+            suggestedAction: { code: "add_outcome" },
+            entityType: "project",
+            entityId: 131,
+            entityTitle: "Projekt mit offenen Vorbereitungen",
+            projectId: 131,
+            projectTitle: "Projekt mit offenen Vorbereitungen",
+          },
+          {
+            code: "missing_next_action",
+            severity: "info",
+            suggestedAction: { code: "add_next_action" },
+            entityType: "project",
+            entityId: 131,
+            entityTitle: "Projekt mit offenen Vorbereitungen",
+            projectId: 131,
+            projectTitle: "Projekt mit offenen Vorbereitungen",
+          },
+        ],
+      },
+    });
+    mockedApi.activateProject.mockResolvedValue({ ...story, status: "active" });
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Projekt mit offenen Vorbereitungen");
+
+    swipe(container, 100);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Aktivierung vorbereiten",
+    });
+    expect(within(dialog).getByText("Ergebnis noch unklar")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Kein nächster Schritt"),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Trotzdem aktiv machen",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.activateProject).toHaveBeenCalledWith(131, undefined),
     );
   });
 
@@ -273,6 +341,12 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Fehlerfall Aktivierung");
 
     swipe(container, 100);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Aktivierung vorbereiten",
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Aktiv machen" }),
+    );
     await screen.findByText("Netzwerkfehler");
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
 

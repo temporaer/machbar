@@ -4,6 +4,7 @@ import type {
 } from "@machbar/shared";
 import type { Graph } from "./graph.js";
 import type { TaskRecord } from "./graph.js";
+import { isTaskInWorkingSystem } from "./workEligibility.js";
 
 function isOpen(t: TaskRecord): boolean {
   return t.status !== "done" && t.status !== "cancelled";
@@ -86,6 +87,14 @@ export function buildAgenda(
   const { dueSoonDays = 3, memberId, today = todayIso() } = options;
   const soonLimit = addDaysIso(today, dueSoonDays);
   const seen = new Set<number>();
+  const projectStatusById = new Map(
+    [...graph.projectsById.values()].map((project) => [
+      project.id,
+      project.status,
+    ]),
+  );
+  const isOperationalTask = (task: TaskRecord) =>
+    isTaskInWorkingSystem(task, projectStatusById);
 
   const take = (predicate: (t: TaskRecord) => boolean): TaskRecord[] => {
     const results = graph
@@ -93,6 +102,7 @@ export function buildAgenda(
       .filter(
         (t) =>
           isOpen(t) &&
+          isOperationalTask(t) &&
           t.status !== "captured" &&
           !t.blocked &&
           !seen.has(t.id) &&
@@ -109,6 +119,7 @@ export function buildAgenda(
     .filter(
       (t) =>
         isOpen(t) &&
+        isOperationalTask(t) &&
         t.status !== "captured" &&
         t.status === "waiting" &&
         !!t.scheduledDate &&
@@ -148,6 +159,7 @@ export function buildAgenda(
     .filter(
       (t) =>
         isOpen(t) &&
+        isOperationalTask(t) &&
         t.status !== "captured" &&
         t.status === "actionable" &&
         t.blocked &&

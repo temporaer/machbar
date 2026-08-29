@@ -120,6 +120,12 @@ describe("RefinementPage", () => {
     renderWithProviders(<RefinementPage />);
 
     await screen.findByText("Angebot einholen");
+    expect(
+      screen.getByRole("heading", { name: "Arbeit klären" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Aufwand überblicken"),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Mira" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Gemeinsam / offen" })).toBeInTheDocument();
     expect(screen.getByText(/Hausumbau/)).toBeInTheDocument();

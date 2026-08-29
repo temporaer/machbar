@@ -277,6 +277,7 @@ export interface Project {
   waitingOn?: string[];
   waitingUntil?: string | null;
   refinementIssues?: RefinementIssue[];
+  readiness?: ProjectReadiness;
 }
 
 export interface Dependency {
@@ -488,6 +489,7 @@ export type RefinementBlockingReason =
   | "captured"
   | "waiting"
   | "someday"
+  | "backlog_project"
   | "terminal_project"
   | "cycle";
 
