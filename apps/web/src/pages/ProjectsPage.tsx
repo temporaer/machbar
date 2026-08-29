@@ -22,6 +22,7 @@ import { ListOptionDisclosureTrigger } from "../components/ListOptionDisclosure"
 import { CollapsibleGroup } from "../components/CollapsibleGroup";
 import { PageHeader } from "../components/PageHeader";
 import { useLocale } from "../lib/locale";
+import { IconActionGlyph } from "../components/IconActionButton";
 
 /**
  * The Projekte tab: every project is a user story, and every row carries the
@@ -45,8 +46,7 @@ export function ProjectsPage() {
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<ProjectVisibilityScope>("mine");
   const [groupBy, setGroupBy] = useState<GroupableTagKind | null>(null);
-  const [openViewControl, setOpenViewControl] = useState<"filter" | "grouping" | null>(null);
-  const filterTriggerRef = useRef<HTMLButtonElement>(null);
+  const [groupingOpen, setGroupingOpen] = useState(false);
   const groupingTriggerRef = useRef<HTMLButtonElement>(null);
 
   const submit = async () => {
@@ -146,6 +146,20 @@ export function ProjectsPage() {
     <div className="projects-page">
       <PageHeader
         title={strings.projects}
+        actions={
+          <button
+            type="button"
+            className="page-header-button projects-scope-toggle"
+            aria-label={strings.projectHouseholdScope}
+            aria-pressed={scope === "all"}
+            title={strings.projectHouseholdScope}
+            onClick={() =>
+              setScope((current) => (current === "mine" ? "all" : "mine"))
+            }
+          >
+            <IconActionGlyph kind="household" />
+          </button>
+        }
         hints={[{ text: strings.projectsSwipeHint }]}
       />
       <div className="stack projects-controls">
@@ -157,65 +171,21 @@ export function ProjectsPage() {
         />
         <div className="project-list-options">
           <ListOptionDisclosureTrigger
-            label={strings.filters}
-            value={scope === "mine" ? strings.projectScopeMineOpen : strings.projectScopeAll}
-            expanded={openViewControl === "filter"}
-            controls="project-filter-options"
-            onClick={() =>
-              setOpenViewControl((current) => (current === "filter" ? null : "filter"))
-            }
-            buttonRef={filterTriggerRef}
-          />
-          <ListOptionDisclosureTrigger
             label={strings.grouping}
             value={groupBy ? strings.tagKindLabels[groupBy] : strings.noGrouping}
-            expanded={openViewControl === "grouping"}
+            expanded={groupingOpen}
             controls="project-grouping-options"
-            onClick={() =>
-              setOpenViewControl((current) => (current === "grouping" ? null : "grouping"))
-            }
+            onClick={() => setGroupingOpen((current) => !current)}
             buttonRef={groupingTriggerRef}
           />
-          <div className="project-list-options-panel" hidden={openViewControl === null}>
-            <div
-              id="project-filter-options"
-              className="list-option-group"
-              role="group"
-              aria-label={strings.filters}
-              hidden={openViewControl !== "filter"}
-            >
-              <button
-                type="button"
-                className="list-option-button"
-                aria-pressed={scope === "mine"}
-                onClick={() => {
-                  setScope("mine");
-                  setOpenViewControl(null);
-                  filterTriggerRef.current?.focus();
-                }}
-              >
-                {strings.projectScopeMineOpen}
-              </button>
-              <button
-                type="button"
-                className="list-option-button"
-                aria-pressed={scope === "all"}
-                onClick={() => {
-                  setScope("all");
-                  setOpenViewControl(null);
-                  filterTriggerRef.current?.focus();
-                }}
-              >
-                {strings.projectScopeAll}
-              </button>
-            </div>
+          <div className="project-list-options-panel" hidden={!groupingOpen}>
             <TagGroupingOptions
               id="project-grouping-options"
               value={groupBy}
-              hidden={openViewControl !== "grouping"}
+              hidden={!groupingOpen}
               onChange={(nextValue) => {
                 setGroupBy(nextValue);
-                setOpenViewControl(null);
+                setGroupingOpen(false);
                 groupingTriggerRef.current?.focus();
               }}
             />

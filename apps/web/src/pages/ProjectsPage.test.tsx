@@ -274,33 +274,23 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     renderWithProviders(<ProjectsPage />);
     await screen.findByText("Anruf erledigen");
 
-    const filterTrigger = screen.getByRole("button", { name: /Filter.*Meine & offen/ });
+    const scopeToggle = within(
+      document.querySelector(".page-header") as HTMLElement,
+    ).getByRole("button", { name: "Projekte aller Personen anzeigen" });
     const groupingTrigger = screen.getByRole("button", { name: /Gruppierung.*Keine/ });
-    const controls = filterTrigger.closest(".projects-controls") as HTMLElement;
+    const controls = groupingTrigger.closest(".projects-controls") as HTMLElement;
     expect(getComputedStyle(controls).marginBottom).toBe("12px");
-    expect(filterTrigger.closest(".project-list-options")).toBe(
-      groupingTrigger.closest(".project-list-options"),
-    );
-    expect(filterTrigger).toHaveAttribute("aria-expanded", "false");
+    expect(scopeToggle).toHaveAttribute("aria-pressed", "false");
     expect(groupingTrigger).toHaveAttribute("aria-expanded", "false");
-    expect(document.getElementById(filterTrigger.getAttribute("aria-controls")!)).toBeInTheDocument();
     expect(document.getElementById(groupingTrigger.getAttribute("aria-controls")!)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Filter/ })).not.toBeInTheDocument();
+    expect(document.getElementById("project-filter-options")).toBeNull();
     expect(screen.queryByRole("group", { name: "Gruppieren nach" })).not.toBeInTheDocument();
 
-    fireEvent.click(filterTrigger);
-    expect(filterTrigger).toHaveAttribute("aria-expanded", "true");
-    const filter = screen.getByRole("group", { name: "Filter" });
-    expect(visibleListOptionLabels(controls)).toEqual(["Meine & offen", "Alle"]);
-
-    fireEvent.click(within(filter).getByRole("button", { name: "Alle" }));
-    expect(filterTrigger).toHaveAttribute("aria-expanded", "false");
-    expect(filterTrigger).toHaveFocus();
-
-    fireEvent.click(filterTrigger);
+    fireEvent.click(scopeToggle);
+    expect(scopeToggle).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(groupingTrigger);
     const grouping = screen.getByRole("group", { name: "Gruppieren nach" });
-    expect(filterTrigger).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("group", { name: "Filter" })).not.toBeInTheDocument();
     expect(groupingTrigger).toHaveAttribute("aria-expanded", "true");
     expect(visibleListOptionLabels(controls)).toEqual([
       "Keine",
@@ -393,23 +383,41 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     expect(screen.getByText("Küche renovieren")).toBeInTheDocument();
   });
 
-  it("the 'Alle' chip reveals every story regardless of owner", async () => {
-    renderWithProviders(<ProjectsPage />);
+  it("switches between my and all projects from the compact header toggle", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Küche renovieren");
 
-    fireEvent.click(screen.getByRole("button", { name: /Filter.*Meine & offen/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Alle" }));
+    const header = container.querySelector<HTMLElement>(".page-header")!;
+    const toggle = within(header).getByRole("button", {
+      name: "Projekte aller Personen anzeigen",
+    });
+    expect(toggle).toHaveClass("page-header-button", "projects-scope-toggle");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(toggle.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByText("Theos Geschichte")).not.toBeInTheDocument();
 
+    await userEvent.click(toggle);
     await waitFor(() => expect(screen.getByText("Theos Geschichte")).toBeInTheDocument());
     expect(screen.getByText("Miras aktive Geschichte")).toBeInTheDocument();
     expect(screen.getByText("Festgefahrene Geschichte")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(toggle);
+    await waitFor(() =>
+      expect(screen.queryByText("Theos Geschichte")).not.toBeInTheDocument(),
+    );
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
   });
 
   it("searches title, criteria, and waiting reasons case-insensitively and diacritic-tolerantly", async () => {
     renderWithProviders(<ProjectsPage />);
     await screen.findByText("Küche renovieren");
-    fireEvent.click(screen.getByRole("button", { name: /Filter.*Meine & offen/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Alle" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Projekte aller Personen anzeigen",
+      }),
+    );
     await screen.findByText("Theos Geschichte");
 
     const searchInput = screen.getByLabelText("Suchen");

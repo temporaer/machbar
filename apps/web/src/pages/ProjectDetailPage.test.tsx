@@ -209,14 +209,15 @@ describe("ProjectDetailPage task explanations", () => {
       renderProjectRoute(`/projects/42?focus=${focus}`);
 
       const control = await screen.findByRole(role, { name });
-      expect(control).toHaveFocus();
+      await waitFor(() => expect(control).toHaveFocus());
     },
   );
 
   it("opens the project-scoped task capture sheet for a next-action repair link", async () => {
     renderProjectRoute("/projects/42?focus=next-action");
 
-    expect(await screen.findByPlaceholderText(strings.quickAddPlaceholder)).toHaveFocus();
+    const input = await screen.findByPlaceholderText(strings.quickAddPlaceholder);
+    await waitFor(() => expect(input).toHaveFocus());
     expect(screen.getByLabelText("project-route")).toHaveTextContent(
       "/projects/42?focus=next-action",
     );
