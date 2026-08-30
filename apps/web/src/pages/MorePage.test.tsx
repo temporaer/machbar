@@ -12,6 +12,10 @@ vi.mock("../lib/api", () => ({
       member: null,
     }),
     getMembers: vi.fn().mockResolvedValue([]),
+    getPushConfig: vi.fn().mockResolvedValue({
+      enabled: false,
+      publicKey: null,
+    }),
     getContributionSummary: vi.fn().mockResolvedValue({
       windowStartedAt: "2026-08-21T10:00:00.000Z",
       windowEndedAt: "2026-08-28T10:00:00.000Z",

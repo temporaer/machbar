@@ -1,0 +1,157 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { renderWithProviders } from "../test/testUtils";
+import { PushNotificationSettings } from "./PushNotificationSettings";
+import { api } from "../lib/api";
+
+const pushManager = {
+  getSubscription: vi.fn(),
+  subscribe: vi.fn(),
+};
+const registration = { pushManager } as unknown as ServiceWorkerRegistration;
+
+vi.mock("../lib/serviceWorker", () => ({
+  currentServiceWorkerRegistration: vi.fn(async () => registration),
+  ensureServiceWorkerRegistration: vi.fn(async () => registration),
+}));
+
+vi.mock("../lib/api", () => ({
+  api: {
+    getAuthStatus: vi.fn(),
+    getMembers: vi.fn(),
+    getPushConfig: vi.fn(),
+    registerPushSubscription: vi.fn(),
+    unregisterPushSubscription: vi.fn(),
+  },
+}));
+
+const mockedApi = vi.mocked(api);
+
+function installBrowserSupport(
+  permission: NotificationPermission,
+  requestedPermission: NotificationPermission = permission,
+) {
+  const requestPermission = vi.fn(async () => requestedPermission);
+  vi.stubGlobal("Notification", { permission, requestPermission });
+  vi.stubGlobal("PushManager", class PushManager {});
+  Object.defineProperty(navigator, "serviceWorker", {
+    configurable: true,
+    value: {},
+  });
+  return requestPermission;
+}
+
+function subscription(endpoint = "https://push.example/device") {
+  return {
+    endpoint,
+    options: {
+      applicationServerKey: new Uint8Array([1, 0, 1]).buffer,
+      userVisibleOnly: true,
+    },
+    toJSON: () => ({
+      endpoint,
+      keys: { p256dh: "key", auth: "auth" },
+    }),
+    unsubscribe: vi.fn(async () => true),
+  } as unknown as PushSubscription;
+}
+
+describe("PushNotificationSettings", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    mockedApi.getAuthStatus.mockResolvedValue({
+      enabled: false,
+      authenticated: false,
+      member: null,
+    });
+    mockedApi.getMembers.mockResolvedValue([
+      { id: 1, name: "Hannes", color: "#123456", pictureUrl: null },
+    ]);
+    mockedApi.getPushConfig.mockResolvedValue({
+      enabled: true,
+      publicKey: "AQAB",
+    });
+    mockedApi.registerPushSubscription.mockResolvedValue(undefined);
+    mockedApi.unregisterPushSubscription.mockResolvedValue(undefined);
+    pushManager.getSubscription.mockResolvedValue(null);
+    pushManager.subscribe.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete (navigator as { serviceWorker?: unknown }).serviceWorker;
+    vi.clearAllMocks();
+  });
+
+  it("shows unsupported and server-unconfigured states", async () => {
+    renderWithProviders(<PushNotificationSettings />);
+    expect(
+      await screen.findByText(/unterstützt keine Push-Benachrichtigungen/),
+    ).toBeInTheDocument();
+
+    installBrowserSupport("default");
+    mockedApi.getPushConfig.mockResolvedValue({
+      enabled: false,
+      publicKey: null,
+    });
+    renderWithProviders(<PushNotificationSettings />);
+    expect(
+      await screen.findByText(/auf dem Server nicht eingerichtet/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows denied and actual missing-subscription states", async () => {
+    installBrowserSupport("denied");
+    renderWithProviders(<PushNotificationSettings />);
+    expect(
+      await screen.findByText(/Browser-Einstellungen blockiert/),
+    ).toBeInTheDocument();
+
+    cleanup();
+    installBrowserSupport("granted");
+    pushManager.getSubscription.mockResolvedValue(null);
+    renderWithProviders(<PushNotificationSettings />);
+    expect(
+      await screen.findByText("Auf diesem Gerät nicht aktiviert."),
+    ).toBeInTheDocument();
+  });
+
+  it("requests permission from the enable action and registers the device", async () => {
+    const requestPermission = installBrowserSupport("default", "granted");
+    const created = subscription();
+    pushManager.subscribe.mockResolvedValue(created);
+    renderWithProviders(<PushNotificationSettings />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Aktivieren" }));
+
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(mockedApi.registerPushSubscription).toHaveBeenCalledWith(
+        expect.objectContaining({
+          endpoint: created.endpoint,
+          locale: "de",
+        }),
+      ),
+    );
+    expect(screen.getByText("Auf diesem Gerät aktiviert.")).toBeInTheDocument();
+  });
+
+  it("reflects and disables an existing subscription", async () => {
+    installBrowserSupport("granted");
+    const existing = subscription();
+    pushManager.getSubscription.mockResolvedValue(existing);
+    renderWithProviders(<PushNotificationSettings />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Deaktivieren" }));
+
+    expect(mockedApi.unregisterPushSubscription).toHaveBeenCalledWith(
+      existing.endpoint,
+    );
+    expect(existing.unsubscribe).toHaveBeenCalled();
+    expect(
+      screen.getByText("Auf diesem Gerät nicht aktiviert."),
+    ).toBeInTheDocument();
+  });
+});

@@ -6,6 +6,9 @@ import type {
   ContributionCategory,
   ContributionEntityType,
   ContributionReason,
+  NotificationEntityType,
+  NotificationKind,
+  PushLocale,
 } from "@machbar/shared";
 import {
   index,
@@ -68,6 +71,19 @@ const contributionReasons = [
   "project_due_plan_added",
 ] as const satisfies readonly ContributionReason[];
 
+const notificationKinds = [
+  "task_assigned",
+  "project_assigned",
+  "task_reminder",
+] as const satisfies readonly NotificationKind[];
+
+const notificationEntityTypes = [
+  "task",
+  "project",
+] as const satisfies readonly NotificationEntityType[];
+
+const pushLocales = ["de", "en"] as const satisfies readonly PushLocale[];
+
 /**
  * Members of the household / team. Tasks and projects can be
  * owned (explicitly or via inheritance) by a member.
@@ -129,6 +145,28 @@ export const authSessions = sqliteTable(
       .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
   },
   (t) => [index("auth_sessions_member_idx").on(t.memberId)],
+);
+
+export const pushSubscriptions = sqliteTable(
+  "push_subscriptions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    endpoint: text("endpoint").notNull().unique(),
+    memberId: integer("member_id")
+      .notNull()
+      .references(() => members.id, { onDelete: "cascade" }),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    locale: text("locale", { enum: pushLocales }).notNull(),
+    timezone: text("timezone"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (t) => [index("push_subscriptions_member_idx").on(t.memberId)],
 );
 
 export const tags = sqliteTable("tags", {
@@ -251,6 +289,7 @@ export const tasks = sqliteTable(
     index("tasks_parent_idx").on(t.parentTaskId),
     index("tasks_status_idx").on(t.status),
     index("tasks_size_idx").on(t.size),
+    index("tasks_reminder_idx").on(t.reminderAt, t.status),
   ],
 );
 
@@ -317,6 +356,32 @@ export const activityEvents = sqliteTable(
       t.createdAt,
       t.id,
     ),
+  ],
+);
+
+export const notificationEvents = sqliteTable(
+  "notification_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    kind: text("kind", { enum: notificationKinds }).notNull(),
+    recipientMemberId: integer("recipient_member_id")
+      .notNull()
+      .references(() => members.id, { onDelete: "cascade" }),
+    actorMemberId: integer("actor_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    entityType: text("entity_type", { enum: notificationEntityTypes }).notNull(),
+    entityId: integer("entity_id").notNull(),
+    entityTitle: text("entity_title").notNull(),
+    sourceKey: text("source_key").notNull().unique(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    processedAt: text("processed_at"),
+  },
+  (t) => [
+    index("notification_events_pending_idx").on(t.processedAt, t.id),
+    index("notification_events_recipient_idx").on(t.recipientMemberId, t.id),
   ],
 );
 

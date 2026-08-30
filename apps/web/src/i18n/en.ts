@@ -584,6 +584,16 @@ const en = {
 
   appearance: "Appearance",
   appearanceHint: "Choose how Machbar looks on this device.",
+  pushTitle: "Notifications",
+  pushDeviceHint: "Push notifications on this device",
+  pushLoading: "Loading status…",
+  pushUnsupported: "This browser does not support Push notifications.",
+  pushUnconfigured: "Push notifications are not configured on the server.",
+  pushDenied: "Notifications are blocked in the browser settings.",
+  pushDisabled: "Not enabled on this device.",
+  pushEnabled: "Enabled on this device.",
+  pushEnable: "Enable",
+  pushDisable: "Disable",
   theme: "Theme",
   themeLabels: {
     system: "System",
@@ -841,6 +851,8 @@ const en = {
     project_title_required: "Enter a project title.",
     project_transition_invalid:
       "The project cannot move to that status from here.",
+    push_member_required:
+      "Choose a person before enabling Push notifications.",
     refinement_filters_invalid: "The task-review filters are invalid.",
     request_body_invalid: "The submitted data is invalid.",
     request_origin_forbidden: "This request is not allowed.",

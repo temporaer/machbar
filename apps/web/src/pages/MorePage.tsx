@@ -10,6 +10,7 @@ import { supportedLocales, useLocale } from "../lib/locale";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { themePreferences, useTheme } from "../lib/theme";
 import { ContributionCard } from "../components/ContributionCard";
+import { PushNotificationSettings } from "../components/PushNotificationSettings";
 
 export function MorePage() {
   const strings = useStrings();
@@ -84,6 +85,8 @@ export function MorePage() {
             ))}
           </div>
         </div>
+
+        <PushNotificationSettings />
 
         <div className="card">
           <h3 style={{ margin: 0 }}>{strings.language}</h3>

@@ -6,6 +6,49 @@ describe("OIDC environment configuration", () => {
     expect(loadEnv({}).oidc).toBeNull();
   });
 
+  describe("VAPID environment configuration", () => {
+    const unauthenticated = { ALLOW_UNAUTHENTICATED: "true" };
+
+    it("keeps Push disabled when no VAPID variables are present", () => {
+      expect(loadEnv(unauthenticated).push).toBeNull();
+    });
+
+    it("rejects partial VAPID configuration", () => {
+      expect(() =>
+        loadEnv({
+          ...unauthenticated,
+          VAPID_PUBLIC_KEY: "public",
+        }),
+      ).toThrow(/VAPID configuration is incomplete/);
+    });
+
+    it("loads complete VAPID configuration", () => {
+      expect(
+        loadEnv({
+          ...unauthenticated,
+          VAPID_PUBLIC_KEY: "public",
+          VAPID_PRIVATE_KEY: "private",
+          VAPID_SUBJECT: "https://machbar.example",
+        }).push,
+      ).toEqual({
+        publicKey: "public",
+        privateKey: "private",
+        subject: "https://machbar.example",
+      });
+    });
+
+    it("rejects an insecure non-mailto subject", () => {
+      expect(() =>
+        loadEnv({
+          ...unauthenticated,
+          VAPID_PUBLIC_KEY: "public",
+          VAPID_PRIVATE_KEY: "private",
+          VAPID_SUBJECT: "http://machbar.example",
+        }),
+      ).toThrow(/HTTPS/);
+    });
+  });
+
   it("requires OIDC configuration in production", () => {
     expect(() => loadEnv({ NODE_ENV: "production" })).toThrow(
       /required in production/i,

@@ -372,6 +372,14 @@ details[open] > .disclosure-summary::after {
   margin-top: 10px;
 }
 
+.push-settings h3 {
+  margin: 0;
+}
+
+.push-settings-state {
+  font-weight: 600;
+}
+
 .contribution-card {
   display: grid;
   gap: 12px;

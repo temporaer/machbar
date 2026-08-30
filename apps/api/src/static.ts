@@ -27,11 +27,21 @@ export function registerStatic(app: FastifyInstance, env: Env) {
   // works; everything else (API routes, other methods, paths outside
   // BASE_PATH) gets a stable JSON 404.
   app.setNotFoundHandler((request, reply) => {
+    const requestPath = request.url.split("?", 1)[0];
     const isApiRequest = request.url.startsWith("/api/");
     const isUnderBasePath =
       env.basePath === "/" ||
-      request.url === env.basePath ||
+      requestPath === env.basePath ||
       request.url.startsWith(`${env.basePath}/`);
+    if (
+      hasWebBuild &&
+      request.method === "GET" &&
+      env.basePath !== "/" &&
+      requestPath === env.basePath
+    ) {
+      reply.redirect(`${env.basePath}/`);
+      return;
+    }
     if (hasWebBuild && request.method === "GET" && !isApiRequest && isUnderBasePath) {
       reply.sendFile("index.html", env.webDistDir);
       return;

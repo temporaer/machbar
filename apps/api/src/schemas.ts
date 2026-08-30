@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   inheritanceModes,
+  pushLocales,
   projectStatuses,
   tagGroupingModes,
   tagKinds,
@@ -11,7 +12,10 @@ import {
 const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must use YYYY-MM-DD format.");
-const isoDateTime = z.string().min(1);
+const isoDateTime = z
+  .string()
+  .datetime({ offset: true })
+  .transform((value) => new Date(value).toISOString());
 
 export const createProjectSchema = z.object({
   title: z.string().min(1, "Project title must not be empty."),
@@ -149,6 +153,18 @@ export const moveSubtreeSchema = z.object({
 
 export const dependencySchema = z.object({
   dependsOnTaskId: z.number().int(),
+});
+
+export const pushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  p256dh: z.string().min(1),
+  auth: z.string().min(1),
+  locale: z.enum(pushLocales),
+  timezone: z.string().min(1).max(255).nullable().optional(),
+});
+
+export const pushSubscriptionRemovalSchema = z.object({
+  endpoint: z.string().url(),
 });
 
 export const tagRefSchema = z.object({

@@ -10,6 +10,7 @@ export interface Env {
   seedDatabase: boolean;
   webDistDir: string;
   oidc: OidcConfig | null;
+  push: VapidConfig | null;
 }
 
 export interface OidcConfig {
@@ -18,6 +19,12 @@ export interface OidcConfig {
   clientSecret: string;
   publicUrl: string;
   sessionTtlDays: number;
+}
+
+export interface VapidConfig {
+  publicKey: string;
+  privateKey: string;
+  subject: string;
 }
 
 function normalizeBasePath(input: string | undefined): string {
@@ -77,6 +84,31 @@ function loadOidcConfig(source: NodeJS.ProcessEnv): OidcConfig | null {
   };
 }
 
+function loadVapidConfig(source: NodeJS.ProcessEnv): VapidConfig | null {
+  const required = [
+    "VAPID_PUBLIC_KEY",
+    "VAPID_PRIVATE_KEY",
+    "VAPID_SUBJECT",
+  ] as const;
+  const configured = required.filter((key) => source[key]?.trim());
+  if (configured.length === 0) return null;
+  if (configured.length !== required.length) {
+    const missing = required.filter((key) => !source[key]?.trim()).join(", ");
+    throw new Error(`VAPID configuration is incomplete. Missing: ${missing}.`);
+  }
+
+  const subject = source.VAPID_SUBJECT!.trim();
+  if (!subject.startsWith("mailto:")) {
+    parseHttpsUrl("VAPID_SUBJECT", subject);
+  }
+
+  return {
+    publicKey: source.VAPID_PUBLIC_KEY!.trim(),
+    privateKey: source.VAPID_PRIVATE_KEY!.trim(),
+    subject,
+  };
+}
+
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const port = Number.parseInt(source.PORT ?? "3000", 10);
   const host = source.HOST ?? "0.0.0.0";
@@ -89,6 +121,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     source.WEB_DIST_DIR ?? "../web/dist",
   );
   const oidc = loadOidcConfig(source);
+  const push = loadVapidConfig(source);
   if (
     (source.NODE_ENV ?? "development") === "production" &&
     oidc === null &&
@@ -109,5 +142,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     seedDatabase,
     webDistDir,
     oidc,
+    push,
   };
 }

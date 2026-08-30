@@ -11,6 +11,10 @@ import {
   ChangeNotifier,
   registerChangeNotifications,
 } from "./changeNotifier.js";
+import {
+  registerNotificationRunner,
+} from "./notifications/runner.js";
+import type { PushTransport } from "./notifications/delivery.js";
 
 export interface BuildAppOptions {
   db: Db;
@@ -18,6 +22,7 @@ export interface BuildAppOptions {
   logger?: boolean;
   oidcProvider?: OidcProvider;
   changeNotifier?: ChangeNotifier;
+  pushTransport?: PushTransport;
 }
 
 /** Builds a fully configured Fastify instance. Used by both the production
@@ -28,6 +33,7 @@ export function buildApp({
   logger = false,
   oidcProvider,
   changeNotifier,
+  pushTransport,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger });
 
@@ -76,7 +82,8 @@ export function buildApp({
   registerAuthentication(app, db, env, { provider: oidcProvider });
   registerActivityActorResolution(app, db, env);
   registerChangeNotifications(app, changeNotifier ?? new ChangeNotifier());
-  registerRoutes(app, db);
+  registerRoutes(app, db, env);
+  registerNotificationRunner(app, db, env.push, pushTransport);
   registerStatic(app, env);
 
   return app;

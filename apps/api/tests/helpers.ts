@@ -9,6 +9,8 @@ import type { Env } from "../src/env.js";
 import type { OidcConfig } from "../src/env.js";
 import type { OidcProvider } from "../src/auth/oidcClient.js";
 import type { ChangeNotifier } from "../src/changeNotifier.js";
+import type { VapidConfig } from "../src/env.js";
+import type { PushTransport } from "../src/notifications/delivery.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -24,6 +26,8 @@ export function createTestContext(options?: {
   oidcProvider?: OidcProvider;
   basePath?: string;
   changeNotifier?: ChangeNotifier;
+  push?: VapidConfig;
+  pushTransport?: PushTransport;
 }): TestContext {
   const handle = openDb(":memory:");
   runMigrations(handle.db);
@@ -40,6 +44,7 @@ export function createTestContext(options?: {
     seedDatabase: false,
     webDistDir: path.join(__dirname, "__no_web_dist__"),
     oidc: options?.oidc ?? null,
+    push: options?.push ?? null,
   };
   const app = buildApp({
     db: handle.db,
@@ -47,6 +52,7 @@ export function createTestContext(options?: {
     logger: false,
     oidcProvider: options?.oidcProvider,
     changeNotifier: options?.changeNotifier,
+    pushTransport: options?.pushTransport,
   });
   return { app, handle };
 }
