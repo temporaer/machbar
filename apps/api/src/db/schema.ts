@@ -270,9 +270,6 @@ export const tasks = sqliteTable(
     ),
     dueDate: text("due_date"),
     scheduledDate: text("scheduled_date"),
-    // Legacy-only storage retained until a future tasks-table rebuild.
-    // Current external waits live in task_external_waits.
-    waitingFor: text("waiting_for"),
     priority: integer("priority"),
     size: text("size"), // nullable S | M | L | XL
     position: integer("position").notNull().default(0),

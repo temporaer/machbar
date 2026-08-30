@@ -9,6 +9,7 @@ import type {
   DebugMetrics,
   InheritanceMode,
   Member,
+  MoreCounts,
   Project,
   ProjectAgendaEntry,
   ProjectStatus,
@@ -419,6 +420,8 @@ export const api = {
     ),
   getRefinementIssues: () =>
     request<RefinementIssueResponse>("/refinement/issues"),
+  getMoreCounts: () =>
+    request<MoreCounts>("/views/more-counts"),
 
   getActivity: (filters?: ActivityFilters) =>
     request<ActivityPage>(

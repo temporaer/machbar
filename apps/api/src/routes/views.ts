@@ -8,6 +8,7 @@ import { getMemberOrThrow } from "../domain/mutations.js";
 import { AppError } from "../errors.js";
 import { validationDetails } from "../validation.js";
 import { isTaskInWorkingSystem } from "../domain/workEligibility.js";
+import { buildRefinementIssues } from "../domain/refinementIssues.js";
 
 const agendaQuerySchema = z.object({
   memberId: z.coerce.number().int().positive().optional(),
@@ -51,6 +52,17 @@ function parseAgendaQuery(query: unknown): z.infer<typeof agendaQuerySchema> {
 }
 
 export function registerViewRoutes(app: FastifyInstance, db: Db) {
+  app.get("/api/views/more-counts", async () => {
+    const graph = Graph.load(db);
+    return {
+      stuckProjects: graph.listStuckProjects().length,
+      backlogReview: [...graph.projectsById.values()].filter(
+        (project) => project.status === "backlog",
+      ).length,
+      refinement: buildRefinementIssues(graph).issues.length,
+    };
+  });
+
   app.get("/api/agenda/today", async (request) => {
     const {
       memberId: requestedMemberId,

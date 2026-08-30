@@ -1107,6 +1107,20 @@ details[open] > .disclosure-summary::after {
   font-weight: 600;
 }
 
+.more-link-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.more-count-badge {
+  min-width: 1.65rem;
+  justify-content: center;
+  background: var(--color-status-neutral-surface);
+  color: var(--color-status-neutral);
+  font-variant-numeric: tabular-nums;
+}
+
 .badge-clarification {
   background: var(--color-clarification-surface);
   color: var(--color-clarification);

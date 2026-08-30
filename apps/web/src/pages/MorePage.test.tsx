@@ -40,6 +40,11 @@ vi.mock("../lib/api", () => ({
         level: "low",
       })),
     }),
+    getMoreCounts: vi.fn().mockResolvedValue({
+      stuckProjects: 2,
+      backlogReview: 4,
+      refinement: 7,
+    }),
   },
 }));
 
@@ -63,6 +68,20 @@ describe("MorePage", () => {
       "href",
       "/more/activity",
     );
+  });
+
+  it("shows live counts for the three review queues", async () => {
+    renderWithProviders(<MorePage />);
+
+    const stuck = await screen.findByRole("link", {
+      name: /Festgefahrene Projekte.*2/,
+    });
+    const backlog = screen.getByRole("link", { name: /Backlog prüfen.*4/ });
+    const refinement = screen.getByRole("link", { name: /Arbeit klären.*7/ });
+
+    expect(stuck).toHaveAttribute("href", "/more/stuck");
+    expect(backlog).toHaveAttribute("href", "/more/backlog");
+    expect(refinement).toHaveAttribute("href", "/more/refinement");
   });
 
   it("keeps diagnostics at the bottom of settings", async () => {

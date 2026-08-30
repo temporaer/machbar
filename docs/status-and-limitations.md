@@ -36,7 +36,11 @@ installation but does not cache application data for offline use.
 Connected browsers receive coarse change notifications through server-sent
 events and refetch their current views. Returning to the app or reconnecting
 also refreshes immediately; while the event stream is unavailable, a visible
-client polls every two minutes as a recovery fallback.
+client polls every two minutes as a recovery fallback. Same-query background
+revalidation keeps the last successful data rendered without re-entering the
+foreground loading or error layout. Changing a query's dependencies still
+starts a foreground load so data from the previous query is never presented
+as the new result.
 
 Task and project metadata saves include a monotonic entity revision. If another
 client changed the entity first, Machbar rejects the stale save, reloads the

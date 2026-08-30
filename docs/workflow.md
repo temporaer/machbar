@@ -47,11 +47,16 @@ currently relevant while keeping the underlying project structure available.
 
 ### 4. Wait and follow up
 
-Waiting is a first-class state, not a hidden note. A waiting task records what
-or whom it is waiting for. A follow-up date brings it back for attention, and
-follow-up notes preserve an attributed history.
+Waiting is explicit blocker data, not a lifecycle status or hidden note. An
+actionable task can wait on an external person, organization, event, or
+delivery. Its existing planning date then acts as a **Wiedervorlage**: once
+reached, the blocked task returns to Today for attention. Follow-up notes
+preserve an attributed history.
 
-Dependencies can also block a task until prerequisite work is complete.
+Dependencies can also block a task until prerequisite work is complete. A
+task may have both blocker types and becomes executable only after all of them
+are resolved. The **Wartet** view shows each blocked task once with its actual
+blocker context.
 
 ### 5. Review
 
@@ -59,7 +64,8 @@ Machbar identifies projects that need a decision, for example:
 
 - there is no clarified next action;
 - the available action has no owner;
-- every remaining task is waiting without a follow-up;
+- an external wait has no future revisit;
+- an external follow-up is due;
 - a dependency chain has no useful path forward;
 - all tasks are finished but the project itself has not been reviewed.
 

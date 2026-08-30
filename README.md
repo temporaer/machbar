@@ -46,9 +46,10 @@ quietly disappear.
 
 ### Waiting that remains actionable
 
-Move blocked work into **Waiting**, record what or whom it depends on, and set a
-follow-up date. Dependencies and overdue follow-ups surface when attention is
-useful rather than relying on somebody to remember.
+Actionable work can wait on another Machbar task or on an external person,
+organization, event, or delivery without changing its workflow status. Add a
+revisit date when useful; the **Waiting** view gathers blocked work, while
+reached revisits return to **Today**.
 
 ### Recurring routines that adapt to real completion
 
