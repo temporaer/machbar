@@ -25,7 +25,6 @@ import type {
   TaskRecurrenceHistory,
   TaskSize,
   TaskStatus,
-  WaitingGroup,
 } from "@machbar/shared";
 import { readRequestActorMemberId } from "./identityStorage";
 import { getClientId } from "./clientId";
@@ -159,7 +158,6 @@ export interface CreateTaskInput {
   createdByMemberId?: number | null;
   dueDate?: string | null;
   scheduledDate?: string | null;
-  waitingFor?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
   repeatAfterDays?: number | null;
@@ -254,6 +252,19 @@ export interface RefinementTaskRow {
   effectiveOwnerSource: "task" | "parent" | "project" | "none";
   position: number;
   updatedAt: string;
+  blocked: boolean;
+  executable: boolean;
+  externalWait: { waitingFor: string | null } | null;
+  nextBlockerAttentionDate: string | null;
+  blockers: Task["blockers"];
+  dependencies: Task["dependencies"];
+  effectiveTags: Tag[];
+}
+
+export interface ExternalWaitInput {
+  waitingFor?: string | null;
+  scheduledDate?: string | null;
+  expectedRevision?: number;
 }
 
 /** Matches `apps/api/src/routes/refinement.ts`'s query params. */
@@ -303,8 +314,9 @@ export type UpdateMemberInput = Partial<CreateMemberInput>;
  * being wired up, and once it's guaranteed present — with no further
  * frontend change needed once every build is in sync.
  */
-export type AgendaResponse = Agenda & {
+export type AgendaResponse = Omit<Agenda, "followUp"> & {
   revisit?: Task[];
+  followUp?: Task[];
 };
 
 export type AgendaScope = "mine" | "all";
@@ -450,7 +462,7 @@ export const api = {
   },
   getInbox: () => request<Task[]>("/inbox"),
   getWaiting: (actorTagId?: number) =>
-    request<WaitingGroup[]>(`/waiting${query({ actorTagId })}`),
+    request<Task[]>(`/waiting${query({ actorTagId })}`),
   searchTasks: (filters: SearchFilters) =>
     request<Task[]>(
       `/search${query({
@@ -463,7 +475,8 @@ export const api = {
         dueTo: filters.dueTo,
         scheduledFrom: filters.scheduledFrom,
         scheduledTo: filters.scheduledTo,
-        waitingFor: filters.waitingFor,
+        blocked: filters.blocked,
+        externalWait: filters.externalWait,
       })}`,
     ),
 
@@ -489,6 +502,18 @@ export const api = {
     }),
   updateTask: (id: number, patch: UpdateTaskInput) =>
     request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  setExternalWait: (id: number, input: ExternalWaitInput) =>
+    request<Task>(`/tasks/${id}/external-wait`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  resolveExternalWait: (id: number, expectedRevision?: number) =>
+    request<Task>(`/tasks/${id}/external-wait`, {
+      method: "DELETE",
+      body: JSON.stringify(
+        expectedRevision === undefined ? {} : { expectedRevision },
+      ),
+    }),
   transitionTaskStatus: (
     id: number,
     status: TaskStatus,

@@ -44,6 +44,16 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     return res.json();
   }
 
+  async function addExternalWait(taskId: number, waitingFor: string | null = null) {
+    const res = await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${taskId}/external-wait`,
+      payload: { waitingFor },
+    });
+    expect(res.statusCode).toBe(200);
+    return res.json();
+  }
+
   async function getAgenda() {
     const res = await ctx.app.inject({ method: "GET", url: "/api/agenda/today" });
     expect(res.statusCode).toBe(200);
@@ -61,7 +71,6 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     "dueSoon",
     "shared",
     "unscheduled",
-    "followUp",
     "revisit",
   ] as const;
 
@@ -134,21 +143,19 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Erst morgen für Theo")).toEqual([]);
   });
 
-  it("puts due waiting follow-ups under Nachhaken and keeps future waits out", async () => {
-    const blocker = await createTask({ title: "Offene Abhängigkeit" });
+  it("puts due external follow-ups in revisit and keeps future waits out", async () => {
     const dueWaiting = await createTask({
       title: "Heute nachhaken",
-      status: "waiting",
       scheduledDate: today,
     });
-    await addDependency(dueWaiting.id, blocker.id);
-    await createTask({
+    await addExternalWait(dueWaiting.id, "Offene Rückmeldung");
+    const futureWaiting = await createTask({
       title: "Später nachhaken",
-      status: "waiting",
       scheduledDate: tomorrow,
     });
+    await addExternalWait(futureWaiting.id, "Spätere Rückmeldung");
 
-    expect(await bucketsContaining("Heute nachhaken")).toEqual(["followUp"]);
+    expect(await bucketsContaining("Heute nachhaken")).toEqual(["revisit"]);
     expect(await bucketsContaining("Später nachhaken")).toEqual([]);
   });
 
@@ -765,7 +772,7 @@ describe("Heute agenda: compiled project prompts", () => {
     const blocker = await createTask({
       projectId: blocked.id,
       title: "Offener Blockierer",
-      status: "waiting",
+      needsClarification: true,
     });
     const blockedAction = await createTask({
       projectId: blocked.id,
@@ -795,7 +802,7 @@ describe("Heute agenda: compiled project prompts", () => {
     ).toBe(next.id);
     expect(
       prompts.find((entry) => entry.project.id === blocked.id)?.stuck?.reason,
-    ).toBe("blocked_dependencies");
+    ).toBe("blocked_without_clear_path");
     const capturedEntry = prompts.find(
       (entry) => entry.project.id === captured.id,
     );

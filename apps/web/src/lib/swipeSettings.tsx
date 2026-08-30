@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
  * primary swipe instead of re-applying the configured transition, so the
  * state rules stay coherent (see `useTaskActions.ts::requestPrimarySwipe`).
  */
-export const primarySwipeActions = ["complete", "waiting", "someday", "cancel"] as const;
+export const primarySwipeActions = ["complete", "someday", "cancel"] as const;
 export type PrimarySwipeAction = (typeof primarySwipeActions)[number];
 
 const STORAGE_KEY = "machbar:primary-swipe-action";

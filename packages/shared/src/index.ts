@@ -1,7 +1,6 @@
 export const taskStatuses = [
   "captured",
   "actionable",
-  "waiting",
   "someday",
   "done",
   "cancelled",
@@ -25,6 +24,9 @@ export const activityEventKinds = [
   "task_descendants_status_changed",
   "task_moved",
   "task_dependencies_changed",
+  "task_external_wait_started",
+  "task_external_wait_updated",
+  "task_external_wait_resolved",
   "task_tags_changed",
   "project_created",
   "project_updated",
@@ -63,6 +65,8 @@ export const notificationEntityTypes = ["task", "project"] as const;
 export const pushLocales = ["de", "en"] as const;
 
 export type TaskStatus = (typeof taskStatuses)[number];
+/** Includes retired values that may still occur in immutable activity data. */
+export type HistoricalTaskStatus = TaskStatus | "waiting";
 export type ProjectStatus = (typeof projectStatuses)[number];
 export type InheritanceMode = (typeof inheritanceModes)[number];
 export type TaskSize = (typeof taskSizes)[number];
@@ -96,6 +100,8 @@ export type ApiErrorCode =
   | "auth_return_target_invalid"
   | "auth_query_invalid"
   | "descendants_policy_required"
+  | "external_wait_recurring_forbidden"
+  | "external_wait_status_invalid"
   | "internal_error"
   | "identifier_invalid"
   | "malformed_request"
@@ -161,8 +167,8 @@ export interface ApiErrorResponse {
 
 export interface ActivityEventMetadata {
   changedFields?: string[];
-  previousStatus?: TaskStatus | ProjectStatus;
-  nextStatus?: TaskStatus | ProjectStatus;
+  previousStatus?: HistoricalTaskStatus | ProjectStatus;
+  nextStatus?: HistoricalTaskStatus | ProjectStatus;
   checked?: boolean;
   affectedCount?: number;
   relatedTaskIds?: number[];
@@ -337,6 +343,23 @@ export interface Dependency {
   resolved?: boolean;
 }
 
+export interface ExternalWait {
+  waitingFor: string | null;
+}
+
+export type TaskBlockerSummary =
+  | {
+      type: "external";
+      waitingFor: string | null;
+    }
+  | {
+      type: "dependency";
+      taskId: number;
+      title?: string;
+      scheduledDate?: string | null;
+      resolved: boolean;
+    };
+
 export interface Task {
   id: number;
   revision: number;
@@ -351,7 +374,7 @@ export interface Task {
   createdByMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
-  waitingFor: string | null;
+  externalWait: ExternalWait | null;
   priority: number | null;
   size: TaskSize | null;
   position: number;
@@ -371,6 +394,9 @@ export interface Task {
   explicitTags: Tag[];
   excludedTagIds: number[];
   blocked: boolean;
+  executable: boolean;
+  nextBlockerAttentionDate: string | null;
+  blockers: TaskBlockerSummary[];
   dependencies: Dependency[];
   children: Task[];
   projectTitle?: string | null;
@@ -408,9 +434,9 @@ export interface TaskRecurrenceHistory {
 
 export type StuckReason =
   | "no_next_action"
-  | "only_waiting_without_followup"
+  | "waiting_without_followup"
   | "followup_due"
-  | "blocked_dependencies"
+  | "blocked_without_clear_path"
   | "unassigned_actionable"
   // An `active` project whose tasks are all `done`/`cancelled`: it is not
   // "stuck" from a next-action standpoint, but it needs a human decision
@@ -440,8 +466,6 @@ export interface Agenda {
   dueSoon: Task[];
   shared: Task[];
   unscheduled: Task[];
-  /** Waiting tasks whose Wiedervorlage has arrived. */
-  followUp: Task[];
   /**
    * Tasks that are normally excluded from "Heute" because they are
    * `blocked` (unresolved dependencies), but whose own `scheduledDate` is
@@ -481,6 +505,7 @@ export interface DebugMetrics {
       tasks: number;
       tags: number;
       dependencies: number;
+      externalWaits: number;
       activityEvents: number;
       contributionEvents: number;
     };
@@ -492,12 +517,6 @@ export interface DebugMetrics {
     activityEventsCreatedLast7Days: number;
   };
   graphLoads: GraphLoadMetrics;
-}
-
-export interface WaitingGroup {
-  /** Null when the task has no explicit waiting-for description. */
-  waitingFor: string | null;
-  tasks: Task[];
 }
 
 export type RefinementIssueSeverity = "info" | "warning" | "urgent";
@@ -536,7 +555,8 @@ export interface RefinementAction {
 
 export type RefinementBlockingReason =
   | "captured"
-  | "waiting"
+  | "waiting_without_followup"
+  | "followup_due"
   | "someday"
   | "backlog_project"
   | "terminal_project"
@@ -571,5 +591,6 @@ export interface SearchFilters {
   dueTo?: string;
   scheduledFrom?: string;
   scheduledTo?: string;
-  waitingFor?: string;
+  blocked?: boolean;
+  externalWait?: boolean;
 }

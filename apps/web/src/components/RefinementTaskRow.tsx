@@ -154,11 +154,18 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
             ) : null}
             {ownerName ? <span>{ownerName}</span> : <span>{strings.shared}</span>}
             <span>{strings.taskStatusLabels[task.status]}</span>
-            {task.status === "waiting" && task.waitingFor ? (
+            {task.externalWait ? (
               <span>
-                {strings.waitingFor}: {task.waitingFor}
+                {strings.waitingFor}: {task.externalWait.waitingFor?.trim() || strings.unknown}
               </span>
             ) : null}
+            {task.dependencies
+              .filter((dependency) => !dependency.resolved)
+              .map((dependency) => (
+                <span key={dependency.id}>
+                  {strings.blockedBy}: {dependency.title ?? `#${dependency.dependsOnTaskId}`}
+                </span>
+              ))}
           </div>
         </button>
         <button

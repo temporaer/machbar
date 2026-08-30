@@ -1,6 +1,7 @@
 import type {
   ActivityEvent,
   ActivityEventMetadata,
+  HistoricalTaskStatus,
   ProjectStatus,
   TaskStatus,
 } from "@machbar/shared";
@@ -12,10 +13,11 @@ import {
 import { localeTag } from "./format";
 
 function statusLabel(
-  status: TaskStatus | ProjectStatus | undefined,
+  status: HistoricalTaskStatus | ProjectStatus | undefined,
   strings: TranslationCatalog,
 ): string | null {
   if (!status) return null;
+  if (status === "waiting") return strings.waiting;
   if (status in strings.taskStatusLabels) {
     return strings.taskStatusLabels[status as TaskStatus];
   }
@@ -125,6 +127,13 @@ export function formatActivityDescription(
             event.metadata.relatedTaskTitles,
           )
         : strings.activityText.dependenciesChanged;
+    case "task_external_wait_started":
+    case "task_external_wait_updated":
+    case "task_external_wait_resolved":
+      return strings.activityText.entityUpdated(
+        "task",
+        changedFields(event.metadata, strings),
+      );
     case "task_tags_changed":
       return strings.activityText.taskTagsChanged;
     case "project_tags_changed":

@@ -13,7 +13,6 @@ import type { TranslationCatalog } from "./catalog";
 const taskStatusLabels: Record<TaskStatus, string> = {
   captured: "Captured",
   actionable: "Ready",
-  waiting: "Waiting",
   someday: "Someday",
   done: "Done",
   cancelled: "Discarded",
@@ -21,9 +20,9 @@ const taskStatusLabels: Record<TaskStatus, string> = {
 
 const stuckReasonLabels: Record<StuckReason, string> = {
   no_next_action: "No next step",
-  only_waiting_without_followup: "Waiting without a follow-up date",
+  waiting_without_followup: "Waiting without a follow-up date",
   followup_due: "Follow-up due",
-  blocked_dependencies: "Blocked by dependencies",
+  blocked_without_clear_path: "Blocked without a clear path forward",
   unassigned_actionable: "Ready task with no owner",
   completion_review: "Ready to wrap up",
 };
@@ -86,6 +85,10 @@ const en = {
   dependencies: "Dependencies",
   subtasks: "Subtasks",
   waitingFor: "Waiting for",
+  externalWait: "External wait",
+  addExternalWait: "Add wait",
+  updateExternalWait: "Update wait",
+  resolveExternalWait: "Resolve wait",
   inherited: "Inherited",
   inheritedProject: "Inherited from project",
   inheritedParent: "Inherited from parent task",
@@ -161,11 +164,11 @@ const en = {
   stuckRepairLabels: {
     no_next_action:
       "Choose a next step: swipe an inbox task right to mark it as ready.",
-    only_waiting_without_followup:
+    waiting_without_followup:
       "Set a follow-up date or plan a next step of your own.",
     followup_due:
       "Follow up now or mark a waiting task as ready again.",
-    blocked_dependencies:
+    blocked_without_clear_path:
       "Check exactly what is blocking the work so a task can become ready.",
     unassigned_actionable: "Assign the open ready task to someone.",
     completion_review:
@@ -456,7 +459,6 @@ const en = {
   assignProject: "Assign project",
   primarySwipeActionLabels: {
     complete: "Complete / reopen",
-    waiting: "Waiting",
     someday: "Someday",
     cancel: "Discard",
   },
@@ -781,7 +783,8 @@ const en = {
   } satisfies Record<RefinementActionCode, string>,
   refinementBlockingLabels: {
     captured: "Blocking task is not clarified",
-    waiting: "Blocking task is not scheduled",
+    waiting_without_followup: "Blocking task is not scheduled",
+    followup_due: "The blocking task's follow-up is due",
     someday: "Blocking task is not ready",
     backlog_project: "Blocking task belongs to the backlog",
     terminal_project: "Blocking task is not ready",
@@ -789,7 +792,8 @@ const en = {
   } satisfies Record<RefinementBlockingReason, string>,
   refinementBlockingExplanations: {
     captured: "This task has only been captured and is not ready yet.",
-    waiting: "It needs a future follow-up date.",
+    waiting_without_followup: "It needs a future follow-up date.",
+    followup_due: "Its follow-up date has arrived and needs attention.",
     someday: "It is not ready right now.",
     backlog_project: "It belongs to a project that is not active yet.",
     terminal_project: "It belongs to a completed or archived project.",
@@ -890,6 +894,10 @@ const en = {
     task_sequence_too_short: "A task sequence needs at least two steps.",
     task_title_required: "Enter a task title.",
     waiting_query_invalid: "The Waiting query is invalid.",
+    external_wait_recurring_forbidden:
+      "Recurring tasks cannot have an external wait.",
+    external_wait_status_invalid:
+      "An external wait is not allowed for this task status.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `A person named “${name}” already exists.`,

@@ -51,8 +51,10 @@ export function WaitingFollowUpSheet({
     [locale, task, memberName],
   );
   const [notes, setNotes] = useState(initialNotes);
-  const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
-  const [makeActionable, setMakeActionable] = useState(false);
+  const [scheduledDate, setScheduledDate] = useState(
+    task.nextBlockerAttentionDate ?? task.scheduledDate ?? "",
+  );
+  const [resolveWait, setResolveWait] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scheduledDateValid, setScheduledDateValid] = useState(true);
@@ -64,12 +66,19 @@ export function WaitingFollowUpSheet({
     setSaving(true);
     setError(null);
     try {
-      await api.updateTask(task.id, {
+      const updated = await api.updateTask(task.id, {
         notes,
-        scheduledDate: scheduledDate || null,
-        ...(makeActionable ? { status: "actionable" as const } : {}),
         expectedRevision: task.revision,
       });
+      if (resolveWait) {
+        await api.resolveExternalWait(task.id, updated.revision);
+      } else {
+        await api.setExternalWait(task.id, {
+          waitingFor: task.externalWait?.waitingFor ?? null,
+          scheduledDate: scheduledDate || null,
+          expectedRevision: updated.revision,
+        });
+      }
       bump();
       onClose();
     } catch (err) {
@@ -112,10 +121,10 @@ export function WaitingFollowUpSheet({
         <label className="row">
           <input
             type="checkbox"
-            checked={makeActionable}
-            onChange={(event) => setMakeActionable(event.target.checked)}
+            checked={resolveWait}
+            onChange={(event) => setResolveWait(event.target.checked)}
           />
-          {strings.makeActionable}
+          {strings.resolveExternalWait}
         </label>
 
         {error ? (

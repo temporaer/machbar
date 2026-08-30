@@ -43,6 +43,13 @@ function taskRow(overrides: Partial<RefinementTaskRow> = {}): RefinementTaskRow 
     effectiveOwnerSource: "none",
     position: 0,
     updatedAt: "2026-01-01T09:00:00.000Z",
+    blocked: false,
+    executable: true,
+    externalWait: null,
+    nextBlockerAttentionDate: null,
+    blockers: [],
+    dependencies: [],
+    effectiveTags: [],
     ...overrides,
     revision: overrides.revision ?? 1,
   };
@@ -132,13 +139,17 @@ describe("RefinementPage", () => {
     expect(screen.getByText("Rasen mähen")).toBeInTheDocument();
   });
 
-  it("merges blocked/waiting-for context from the unfiltered task search into the refinement list", async () => {
+  it("uses self-contained blocker context from refinement rows", async () => {
     mockedApi.getRefinementOwners.mockResolvedValue([ownerRow({ ownerId: null, ownerName: null })]);
     mockedApi.getRefinementTasks.mockResolvedValue([
-      taskRow({ id: 201, title: "Handwerker anrufen", status: "waiting", effectiveOwnerId: null }),
-    ]);
-    mockedApi.searchTasks.mockResolvedValue([
-      makeTask({ id: 201, status: "waiting", waitingFor: "Rückruf vom Handwerker", blocked: true }),
+      taskRow({
+        id: 201,
+        title: "Handwerker anrufen",
+        effectiveOwnerId: null,
+        externalWait: { waitingFor: "Rückruf vom Handwerker" },
+        blocked: true,
+        executable: false,
+      }),
     ]);
 
     renderWithProviders(<RefinementPage />);
@@ -214,9 +225,9 @@ describe("RefinementPage", () => {
       taskRow({ id: 502, title: "Mit Bereich", effectiveOwnerId: null }),
       taskRow({ id: 503, title: "Ohne Bereich", effectiveOwnerId: null }),
     ]);
-    mockedApi.searchTasks.mockResolvedValue([
-      makeTask({ id: 502, effectiveTags: [kitchen] }),
-      makeTask({ id: 503 }),
+    mockedApi.getRefinementTasks.mockResolvedValue([
+      taskRow({ id: 502, title: "Mit Bereich", effectiveOwnerId: null, effectiveTags: [kitchen] }),
+      taskRow({ id: 503, title: "Ohne Bereich", effectiveOwnerId: null }),
     ]);
 
     renderWithProviders(<RefinementPage />);
@@ -316,8 +327,8 @@ describe("RefinementPage", () => {
 
   it.each([
     ["assign_task", "owner", false],
-    ["set_followup", "schedule", false],
-    ["follow_up", "schedule", false],
+    ["set_followup", "dependencies", false],
+    ["follow_up", "dependencies", false],
     ["plan_task", "schedule", false],
     ["resolve_blocker", "dependencies", false],
     ["add_child", "subtasks", false],
@@ -355,8 +366,8 @@ describe("RefinementPage", () => {
       issues: [issue("plan_task", "project")],
       projects: [],
     });
-    mockedApi.searchTasks.mockResolvedValue([
-      makeTask({ id: 73, projectId: 41, status: "actionable" }),
+    mockedApi.getRefinementTasks.mockResolvedValue([
+      taskRow({ id: 73, projectId: 41, status: "actionable" }),
     ]);
 
     renderWithProviders(

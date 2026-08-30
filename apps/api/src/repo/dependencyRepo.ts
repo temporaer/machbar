@@ -32,19 +32,26 @@ export function wouldCreateDependencyCycle(
 }
 
 /**
- * A task is blocked when at least one of its dependencies points at a task
- * that is not yet done/cancelled. Computed for every task in a single
- * query; returns the set of blocked task ids.
+ * An actionable task is blocked when it has an unresolved task dependency
+ * or an active external wait. This query is the repository-level projection
+ * used by callers that only need ids; path health and attention dates live in
+ * the canonical domain analyzer.
  */
 export function getBlockedTaskIds(db: Db): Set<number> {
   const rows = db.all<{ id: number }>(sql`
     SELECT t.id AS id
     FROM tasks t
-    WHERE EXISTS (
-      SELECT 1 FROM task_dependencies td
-      JOIN tasks dep ON dep.id = td.depends_on_task_id
-      WHERE td.task_id = t.id AND dep.status NOT IN ('done', 'cancelled')
-    )
+    WHERE t.status = 'actionable'
+      AND (
+        EXISTS (
+          SELECT 1 FROM task_external_waits ew WHERE ew.task_id = t.id
+        )
+        OR EXISTS (
+          SELECT 1 FROM task_dependencies td
+          JOIN tasks dep ON dep.id = td.depends_on_task_id
+          WHERE td.task_id = t.id AND dep.status NOT IN ('done', 'cancelled')
+        )
+      )
   `);
   return new Set(rows.map((r) => r.id));
 }

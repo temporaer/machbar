@@ -16,6 +16,9 @@ const isoDateTime = z
   .string()
   .datetime({ offset: true })
   .transform((value) => new Date(value).toISOString());
+const queryBoolean = z
+  .union([z.boolean(), z.enum(["true", "false"])])
+  .transform((value) => value === true || value === "true");
 
 export const createProjectSchema = z.object({
   title: z.string().min(1, "Project title must not be empty."),
@@ -74,7 +77,6 @@ export const createTaskSchema = z.object({
   createdByMemberId: z.number().int().nullable().optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
-  waitingFor: z.string().nullable().optional(),
   priority: z.number().int().nullable().optional(),
   size: z.enum(taskSizes).nullable().optional(),
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
@@ -104,7 +106,6 @@ export const updateTaskSchema = z.object({
   ownerInheritanceMode: z.enum(inheritanceModes).optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
-  waitingFor: z.string().nullable().optional(),
   priority: z.number().int().nullable().optional(),
   size: z.enum(taskSizes).nullable().optional(),
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
@@ -153,6 +154,16 @@ export const moveSubtreeSchema = z.object({
 
 export const dependencySchema = z.object({
   dependsOnTaskId: z.number().int(),
+});
+
+export const upsertExternalWaitSchema = z.object({
+  waitingFor: z.string().nullable().optional(),
+  scheduledDate: isoDate.nullable().optional(),
+  expectedRevision: z.number().int().positive().optional(),
+});
+
+export const resolveExternalWaitSchema = z.object({
+  expectedRevision: z.number().int().positive().optional(),
 });
 
 export const pushSubscriptionSchema = z.object({
@@ -211,7 +222,8 @@ export const searchQuerySchema = z.object({
   dueTo: isoDate.optional(),
   scheduledFrom: isoDate.optional(),
   scheduledTo: isoDate.optional(),
-  waitingFor: z.string().optional(),
+  blocked: queryBoolean.optional(),
+  externalWait: queryBoolean.optional(),
 });
 
 export const activityQuerySchema = z.object({

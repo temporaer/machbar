@@ -5,7 +5,7 @@ import { WaitingPage } from "./WaitingPage";
 import { api } from "../lib/api";
 import { de as strings } from "../i18n/de";
 import { renderWithProviders } from "../test/testUtils";
-import { makeMember, makeTag, makeTask, makeWaitingGroup } from "../test/fixtures";
+import { makeMember, makeTag, makeTask } from "../test/fixtures";
 import "../styles/index.css";
 
 vi.mock("../lib/api", () => ({
@@ -65,21 +65,19 @@ describe("WaitingPage grouping controls", () => {
 
   it("hides the waiting interaction instructions behind the established page info control", async () => {
     mockedApi.getWaiting.mockResolvedValue([
-      makeWaitingGroup({
-        tasks: [
           makeTask({
             id: 93,
             title: "Freigabe abwarten",
-            status: "waiting",
+            blocked: true,
+            executable: false,
+            externalWait: { waitingFor: "Freigabe" },
           }),
-        ],
-      }),
     ]);
 
     renderWithProviders(<WaitingPage />);
     await screen.findByText("Freigabe abwarten");
 
-    const hint = strings.taskGestureHint(strings.makeActionable);
+    const hint = strings.taskGestureHint(strings.done);
     const infoButton = screen.getByRole("button", {
       name: "Hinweise zu dieser Seite anzeigen",
     });
@@ -96,18 +94,22 @@ describe("WaitingPage grouping controls", () => {
   it("changes the waiting list grouping and keeps selection state accessible", async () => {
     const phone = makeTag({ id: 91, name: "Telefon", kind: "context" });
     mockedApi.getWaiting.mockResolvedValue([
-      makeWaitingGroup({
-        tasks: [
           makeTask({
             id: 90,
             title: "Rückruf abwarten",
-            status: "waiting",
+            blocked: true,
+            executable: false,
+            externalWait: { waitingFor: "Rückruf" },
             effectiveTags: [phone],
-            scheduledDate: localToday(),
+            nextBlockerAttentionDate: localToday(),
           }),
-          makeTask({ id: 92, title: "Antwort abwarten", status: "waiting" }),
-        ],
-      }),
+          makeTask({
+            id: 92,
+            title: "Antwort abwarten",
+            blocked: true,
+            executable: false,
+            externalWait: { waitingFor: "Antwort" },
+          }),
     ]);
 
     renderWithProviders(<WaitingPage />);

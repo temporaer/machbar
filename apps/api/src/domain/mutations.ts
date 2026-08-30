@@ -142,7 +142,7 @@ function projectHasTaskPlan(db: Db, projectId: number): boolean {
     .where(
       and(
         eq(schema.tasks.projectId, projectId),
-        inArray(schema.tasks.status, ["captured", "actionable", "waiting", "someday"]),
+        inArray(schema.tasks.status, ["captured", "actionable", "someday"]),
       ),
     )
     .all()
@@ -1354,7 +1354,6 @@ export interface CreateTaskInput {
   createdByMemberId?: number | null;
   dueDate?: string | null;
   scheduledDate?: string | null;
-  waitingFor?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
   repeatAfterDays?: number | null;
@@ -1514,7 +1513,6 @@ function insertTask(
       createdByMemberId: input.createdByMemberId ?? null,
       dueDate: recurrence.enabled ? recurrence.dueDate : input.dueDate ?? null,
       scheduledDate,
-      waitingFor: input.waitingFor ?? null,
       priority: input.priority ?? null,
       size: input.size ?? null,
       repeatAfterDays,
@@ -1856,7 +1854,6 @@ export interface UpdateTaskInput {
   ownerInheritanceMode?: InheritanceMode;
   dueDate?: string | null;
   scheduledDate?: string | null;
-  waitingFor?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
   repeatAfterDays?: number | null;
@@ -1877,6 +1874,11 @@ export function updateTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const currentTask = getTaskOrThrow(txDb, id);
+    const currentExternalWait = tx
+      .select()
+      .from(schema.taskExternalWaits)
+      .where(eq(schema.taskExternalWaits.taskId, id))
+      .get();
     assertExpectedRevision("task", id, currentTask.revision, input.expectedRevision);
     const effectiveOwnerBefore = effectiveOwnerId(txDb, id);
     const projectHadNextAction =
@@ -1935,6 +1937,13 @@ export function updateTask(
       nextScheduledDate,
       input.dueDate,
     );
+    if (currentExternalWait && nextRepeatAfterDays !== null) {
+      throw AppError.conflict(
+        "external_wait_recurring_forbidden",
+        "Resolve the external wait before enabling recurrence.",
+        { taskId: id },
+      );
+    }
     const recurringCompletion =
       nextStatus === "done" && recurrence.enabled;
     if (recurrence.enabled && currentTask.repeatAfterDays === null) {
@@ -1959,11 +1968,22 @@ export function updateTask(
     }
     const statusChanged =
       nextStatus !== undefined && nextStatus !== currentTask.status;
+    const removingExternalWait =
+      statusChanged &&
+      nextStatus !== "actionable" &&
+      currentExternalWait !== undefined;
     if (statusChanged && !recurringCompletion) {
       patch.status = nextStatus;
       patch.needsClarification = nextStatus === "captured";
       patch.completedAt = nextStatus === "done" ? nowIso() : null;
       patch.cancelledAt = nextStatus === "cancelled" ? nowIso() : null;
+      if (removingExternalWait) {
+        patch.scheduledDate = null;
+        changedFields.push("externalWait");
+        if (currentTask.scheduledDate !== null) {
+          changedFields.push("scheduledDate");
+        }
+      }
     }
     if (
       input.ownerMemberId !== undefined &&
@@ -1992,18 +2012,14 @@ export function updateTask(
       changedFields.push("dueDate");
     }
     if (
+      !removingExternalWait &&
       input.scheduledDate !== undefined &&
       input.scheduledDate !== currentTask.scheduledDate
     ) {
       patch.scheduledDate = input.scheduledDate;
       changedFields.push("scheduledDate");
     }
-    for (const field of [
-      "waitingFor",
-      "priority",
-      "size",
-      "reminderAt",
-    ] as const) {
+    for (const field of ["priority", "size", "reminderAt"] as const) {
       if (input[field] !== undefined && input[field] !== currentTask[field]) {
         patch[field] = input[field] as never;
         changedFields.push(field);
@@ -2087,6 +2103,11 @@ export function updateTask(
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = nowIso();
       tx.update(schema.tasks).set(patch).where(eq(schema.tasks.id, id)).run();
+    }
+    if (removingExternalWait) {
+      tx.delete(schema.taskExternalWaits)
+        .where(eq(schema.taskExternalWaits.taskId, id))
+        .run();
     }
 
     if (tagsChanged) {
@@ -2303,9 +2324,8 @@ export function updateTask(
           personalEligible: true,
         });
       } else if (
-        currentTask.status === "waiting" &&
+        currentExternalWait &&
         currentTask.scheduledDate === null &&
-        updated.status === "waiting" &&
         updated.scheduledDate !== null
       ) {
         recordContribution(txDb, {
@@ -2599,6 +2619,13 @@ export function completeTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
+    const taskHasExternalWait = Boolean(
+      tx
+        .select({ taskId: schema.taskExternalWaits.taskId })
+        .from(schema.taskExternalWaits)
+        .where(eq(schema.taskExternalWaits.taskId, id))
+        .get(),
+    );
     const openChildren = openDescendants(txDb, id);
     const descendantsOnly =
       task.status === "done" &&
@@ -2646,10 +2673,14 @@ export function completeTask(
           status: "done",
           needsClarification: false,
           completedAt: now,
+          scheduledDate: taskHasExternalWait ? null : task.scheduledDate,
           revision: sql`${schema.tasks.revision} + 1`,
           updatedAt: now,
         })
         .where(eq(schema.tasks.id, id))
+        .run();
+      tx.delete(schema.taskExternalWaits)
+        .where(eq(schema.taskExternalWaits.taskId, id))
         .run();
     }
 
@@ -2660,10 +2691,20 @@ export function completeTask(
             status: "done",
             needsClarification: false,
             completedAt: now,
+            scheduledDate: tx
+              .select({ taskId: schema.taskExternalWaits.taskId })
+              .from(schema.taskExternalWaits)
+              .where(eq(schema.taskExternalWaits.taskId, child.id))
+              .get()
+              ? null
+              : child.scheduledDate,
             revision: sql`${schema.tasks.revision} + 1`,
             updatedAt: now,
           })
           .where(eq(schema.tasks.id, child.id))
+          .run();
+        tx.delete(schema.taskExternalWaits)
+          .where(eq(schema.taskExternalWaits.taskId, child.id))
           .run();
       }
     }
@@ -2712,6 +2753,13 @@ export function cancelTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
+    const taskHasExternalWait = Boolean(
+      tx
+        .select({ taskId: schema.taskExternalWaits.taskId })
+        .from(schema.taskExternalWaits)
+        .where(eq(schema.taskExternalWaits.taskId, id))
+        .get(),
+    );
     const projectHadNextAction =
       task.projectId === null ? true : projectHasNextAction(txDb, task.projectId);
     const projectHadTaskPlan =
@@ -2747,10 +2795,14 @@ export function cancelTask(
           status: "cancelled",
           needsClarification: false,
           cancelledAt: now,
+          scheduledDate: taskHasExternalWait ? null : task.scheduledDate,
           revision: sql`${schema.tasks.revision} + 1`,
           updatedAt: now,
         })
         .where(eq(schema.tasks.id, id))
+        .run();
+      tx.delete(schema.taskExternalWaits)
+        .where(eq(schema.taskExternalWaits.taskId, id))
         .run();
     }
 
@@ -2761,10 +2813,20 @@ export function cancelTask(
             status: "cancelled",
             needsClarification: false,
             cancelledAt: now,
+            scheduledDate: tx
+              .select({ taskId: schema.taskExternalWaits.taskId })
+              .from(schema.taskExternalWaits)
+              .where(eq(schema.taskExternalWaits.taskId, child.id))
+              .get()
+              ? null
+              : child.scheduledDate,
             revision: sql`${schema.tasks.revision} + 1`,
             updatedAt: now,
           })
           .where(eq(schema.tasks.id, child.id))
+          .run();
+        tx.delete(schema.taskExternalWaits)
+          .where(eq(schema.taskExternalWaits.taskId, child.id))
           .run();
       }
     }
@@ -3200,6 +3262,207 @@ export function outdentTask(db: Db, taskId: number, context?: MutationContext) {
     input.projectId = parent.projectId;
   }
   return moveTask(db, taskId, input, context);
+}
+
+// ---------------------------------------------------------------------------
+// External waits
+// ---------------------------------------------------------------------------
+
+export interface UpsertExternalWaitInput {
+  waitingFor?: string | null;
+  scheduledDate?: string | null;
+  expectedRevision?: number;
+}
+
+export function upsertExternalWait(
+  db: Db,
+  taskId: number,
+  input: UpsertExternalWaitInput,
+  context?: MutationContext,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, taskId);
+    assertExpectedRevision(
+      "task",
+      taskId,
+      task.revision,
+      input.expectedRevision,
+    );
+    if (task.status !== "actionable") {
+      throw AppError.conflict(
+        "external_wait_status_invalid",
+        "Only actionable tasks can wait for an external event.",
+        { taskId, currentStatus: task.status },
+      );
+    }
+    if (task.repeatAfterDays !== null) {
+      throw AppError.conflict(
+        "external_wait_recurring_forbidden",
+        "Recurring tasks cannot use an external wait.",
+        { taskId },
+      );
+    }
+    const projectHadNextAction =
+      task.projectId === null
+        ? true
+        : projectHasNextAction(txDb, task.projectId);
+
+    const existing = tx
+      .select()
+      .from(schema.taskExternalWaits)
+      .where(eq(schema.taskExternalWaits.taskId, taskId))
+      .get();
+    const waitingFor =
+      input.waitingFor === undefined
+        ? existing?.waitingFor ?? null
+        : input.waitingFor?.trim() || null;
+    const scheduledDate =
+      input.scheduledDate === undefined
+        ? task.scheduledDate
+        : input.scheduledDate;
+    const waitChanged = !existing || existing.waitingFor !== waitingFor;
+    const scheduleChanged = scheduledDate !== task.scheduledDate;
+    if (!waitChanged && !scheduleChanged) return existing;
+
+    const now = nowIso();
+    if (existing) {
+      tx.update(schema.taskExternalWaits)
+        .set({ waitingFor, updatedAt: now })
+        .where(eq(schema.taskExternalWaits.taskId, taskId))
+        .run();
+    } else {
+      tx.insert(schema.taskExternalWaits)
+        .values({
+          taskId,
+          waitingFor,
+          createdAt: now,
+          updatedAt: now,
+        })
+        .run();
+    }
+    if (scheduleChanged) {
+      tx.update(schema.tasks)
+        .set({ scheduledDate })
+        .where(eq(schema.tasks.id, taskId))
+        .run();
+    }
+    touchTask(txDb, taskId);
+    const activityEventId = recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: existing ? "task_external_wait_updated" : "task_external_wait_started",
+      entityType: "task",
+      entityTitle: task.title,
+      taskId,
+      projectId: task.projectId,
+      metadata: {
+        changedFields: [
+          ...(waitChanged ? ["externalWait"] : []),
+          ...(scheduleChanged ? ["scheduledDate"] : []),
+        ],
+      },
+    });
+    if (
+      task.scheduledDate === null &&
+      scheduledDate !== null
+    ) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "waiting_followup_added",
+        entityType: "task",
+        entityId: taskId,
+        personalEligible: true,
+      });
+    }
+    if (
+      task.projectId !== null &&
+      projectHadNextAction &&
+      !projectHasNextAction(txDb, task.projectId)
+    ) {
+      neutralizeContribution(txDb, {
+        activityEventId,
+        reason: "project_next_action_added",
+        entityType: "project",
+        entityId: task.projectId,
+      });
+    }
+    return tx
+      .select()
+      .from(schema.taskExternalWaits)
+      .where(eq(schema.taskExternalWaits.taskId, taskId))
+      .get()!;
+  });
+}
+
+export function resolveExternalWait(
+  db: Db,
+  taskId: number,
+  expectedRevision?: number,
+  context?: MutationContext,
+): void {
+  db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, taskId);
+    assertExpectedRevision(
+      "task",
+      taskId,
+      task.revision,
+      expectedRevision,
+    );
+    const existing = tx
+      .select()
+      .from(schema.taskExternalWaits)
+      .where(eq(schema.taskExternalWaits.taskId, taskId))
+      .get();
+    if (!existing) return;
+    const projectHadNextAction =
+      task.projectId === null
+        ? true
+        : projectHasNextAction(txDb, task.projectId);
+
+    tx.delete(schema.taskExternalWaits)
+      .where(eq(schema.taskExternalWaits.taskId, taskId))
+      .run();
+    tx.update(schema.tasks)
+      .set({ scheduledDate: null })
+      .where(eq(schema.tasks.id, taskId))
+      .run();
+    touchTask(txDb, taskId);
+    const activityEventId = recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_external_wait_resolved",
+      entityType: "task",
+      entityTitle: task.title,
+      taskId,
+      projectId: task.projectId,
+      metadata: {
+        changedFields: ["externalWait", "scheduledDate"],
+      },
+    });
+    neutralizeContribution(txDb, {
+      activityEventId,
+      reason: "waiting_followup_added",
+      entityType: "task",
+      entityId: taskId,
+    });
+    if (
+      task.projectId !== null &&
+      !projectHadNextAction &&
+      projectHasNextAction(txDb, task.projectId)
+    ) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_next_action_added",
+        entityType: "project",
+        entityId: task.projectId,
+        personalEligible: true,
+      });
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------

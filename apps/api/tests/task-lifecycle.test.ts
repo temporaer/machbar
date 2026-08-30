@@ -231,14 +231,14 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(projectCapture.needsClarification).toBe(true);
   });
 
-  it("normalizes legacy clarification patches without changing unrelated statuses", async () => {
-    const waiting = await createTask({ title: "Wartet", status: "waiting" });
-    const waitingRes = await ctx.app.inject({
+  it("normalizes legacy clarification patches without changing actionable work", async () => {
+    const actionable = await createTask({ title: "Machbar", status: "actionable" });
+    const actionableRes = await ctx.app.inject({
       method: "PATCH",
-      url: `/api/tasks/${waiting.id}`,
+      url: `/api/tasks/${actionable.id}`,
       payload: { needsClarification: false },
     });
-    expect(waitingRes.json().status).toBe("waiting");
+    expect(actionableRes.json().status).toBe("actionable");
 
     const captured = await createTask({ title: "Erfasst" });
     const clarifiedRes = await ctx.app.inject({
@@ -253,7 +253,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
 
     const recapturedRes = await ctx.app.inject({
       method: "PATCH",
-      url: `/api/tasks/${waiting.id}`,
+      url: `/api/tasks/${actionable.id}`,
       payload: { needsClarification: true },
     });
     expect(recapturedRes.json()).toMatchObject({
@@ -262,7 +262,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     });
   });
 
-  it.each(["actionable", "waiting", "someday", "done", "cancelled"])(
+  it.each(["actionable", "someday", "done", "cancelled"])(
     "clears capture when deliberately transitioning to %s",
     async (status) => {
       const task = await createTask({ title: `Status ${status}` });
@@ -299,7 +299,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     const waitingRes = await ctx.app.inject({
       method: "PATCH",
       url: `/api/tasks/${task.id}`,
-      payload: { status: "waiting" },
+      payload: { status: "actionable" },
     });
     expect(waitingRes.json().completedAt).toBeNull();
     expect(waitingRes.json().cancelledAt).toBeNull();
@@ -310,12 +310,12 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     const transitionRes = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${task.id}/status`,
-      payload: { status: "waiting" },
+      payload: { status: "actionable" },
     });
 
     expect(transitionRes.statusCode).toBe(200);
     expect(transitionRes.json()).toMatchObject({
-      status: "waiting",
+      status: "actionable",
       completedAt: null,
       cancelledAt: null,
       needsClarification: false,

@@ -61,7 +61,7 @@ export interface BuildAgendaOptions {
 /**
  * Builds the "Heute" (today) agenda. Categories are mutually exclusive:
  * a task is placed in the first matching bucket in the order
- * followUp > planned > overdue > dueToday > dueSoon > shared > unscheduled, so
+ * revisit > planned > overdue > dueToday > dueSoon > shared > unscheduled, so
  * nothing is duplicated across sections. The final bucket keeps actionable
  * work assigned to the selected member visible even when it has no
  * `scheduledDate`; unassigned actionable work has already been claimed by
@@ -103,8 +103,7 @@ export function buildAgenda(
         (t) =>
           isOpen(t) &&
           isOperationalTask(t) &&
-          t.status !== "captured" &&
-          !t.blocked &&
+          t.executable &&
           !seen.has(t.id) &&
           matchesSelectedOwner(t, memberId) &&
           predicate(t),
@@ -114,20 +113,19 @@ export function buildAgenda(
     return results;
   };
 
-  const followUp = graph
+  const revisit = graph
     .allTasks()
     .filter(
       (t) =>
         isOpen(t) &&
         isOperationalTask(t) &&
-        t.status !== "captured" &&
-        t.status === "waiting" &&
+        t.blocked &&
         !!t.scheduledDate &&
         t.scheduledDate <= today &&
         matchesSelectedOwner(t, memberId),
     )
     .sort(sortByDueThenPriority);
-  for (const task of followUp) seen.add(task.id);
+  for (const task of revisit) seen.add(task.id);
   const planned = take(
     (t) =>
       t.status === "actionable" &&
@@ -153,22 +151,6 @@ export function buildAgenda(
       !t.scheduledDate &&
       !t.dueDate,
   );
-
-  const revisit = graph
-    .allTasks()
-    .filter(
-      (t) =>
-        isOpen(t) &&
-        isOperationalTask(t) &&
-        t.status !== "captured" &&
-        t.status === "actionable" &&
-        t.blocked &&
-        !seen.has(t.id) &&
-        !!t.scheduledDate &&
-        t.scheduledDate <= today &&
-        matchesSelectedOwner(t, memberId),
-    )
-    .sort(sortByDueThenPriority);
 
   const projectDueLimit = addDaysIso(today, 7);
   const stuckByProject = new Map(
@@ -223,7 +205,6 @@ export function buildAgenda(
     });
 
   return {
-    followUp,
     planned,
     overdue,
     dueToday,

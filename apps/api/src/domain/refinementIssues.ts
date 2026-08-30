@@ -8,6 +8,7 @@ import type {
 } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
+import { analyzeTaskBlockers } from "./blockers.js";
 
 const actionCodeByIssue: Record<RefinementIssueCode, RefinementActionCode> = {
   missing_driver: "assign_driver",
@@ -72,183 +73,36 @@ function isOpen(task: TaskRecord): boolean {
   return task.status !== "done" && task.status !== "cancelled";
 }
 
-function hasExecutableProjectPath(
-  graph: Graph,
-  openTasks: TaskRecord[],
-  today: string,
-): boolean {
-  return (
-    openTasks.some(
-      (task) =>
-        task.status === "actionable" &&
-        (!task.blocked || blockedTaskHasClearPath(graph, task, today)),
-    ) ||
-    (openTasks.length > 0 &&
-      openTasks.every(
-        (task) =>
-          task.status === "waiting" &&
-          !!task.scheduledDate &&
-          task.scheduledDate > today,
-      ))
-  );
-}
-
-function unresolvedDependencies(graph: Graph, task: TaskRecord): TaskRecord[] {
-  return task.dependencies
-    .filter((dependency) => !dependency.resolved)
-    .map((dependency) => graph.tasksById.get(dependency.dependsOnTaskId))
-    .filter((dependency): dependency is TaskRecord => dependency !== undefined)
-    .sort(
-      (a, b) =>
-        a.position - b.position ||
-        a.title.localeCompare(b.title, "de") ||
-        a.id - b.id,
-    );
-}
-
-type BlockingPrerequisiteReason = RefinementBlockingReason;
-
-interface BlockingPrerequisite {
-  task: TaskRecord;
-  reason: BlockingPrerequisiteReason;
-  path: TaskRecord[];
-}
-
-function blockingPrerequisiteInBranch(
-  graph: Graph,
-  task: TaskRecord,
-  today: string,
-  visiting: Set<number>,
-  path: TaskRecord[],
-): BlockingPrerequisite | null {
-  if (!isOpen(task)) return null;
-  const nextPath = [...path, task];
-  if (visiting.has(task.id)) {
-    return { task, reason: "cycle", path: nextPath };
-  }
-  if (task.status === "captured") {
-    return { task, reason: "captured", path: nextPath };
-  }
-  const project =
-    task.projectId === null ? null : graph.projectsById.get(task.projectId);
-  if (project?.status === "backlog") {
-    return { task, reason: "backlog_project", path: nextPath };
-  }
-  if (project?.status === "completed" || project?.status === "archived") {
-    return { task, reason: "terminal_project", path: nextPath };
-  }
-
-  const dependencies = unresolvedDependencies(graph, task);
-  const nextVisiting = new Set(visiting).add(task.id);
-  if (task.status === "actionable") {
-    for (const dependency of dependencies) {
-      const diagnosis = blockingPrerequisiteInBranch(
-        graph,
-        dependency,
-        today,
-        nextVisiting,
-        nextPath,
-      );
-      if (diagnosis) return diagnosis;
-    }
-    return null;
-  }
-  if (
-    task.status === "waiting" &&
-    task.scheduledDate !== null &&
-    task.scheduledDate > today
-  ) {
-    for (const dependency of dependencies) {
-      const diagnosis = blockingPrerequisiteInBranch(
-        graph,
-        dependency,
-        today,
-        nextVisiting,
-        nextPath,
-      );
-      if (diagnosis) return diagnosis;
-    }
-    return null;
-  }
-  if (task.status === "waiting") {
-    return { task, reason: "waiting", path: nextPath };
-  }
-  return { task, reason: "someday", path: nextPath };
-}
-
-export function findBlockingPrerequisite(
-  graph: Graph,
-  task: TaskRecord,
-  today: string,
-): BlockingPrerequisite | null {
-  for (const dependency of unresolvedDependencies(graph, task)) {
-    const diagnosis = blockingPrerequisiteInBranch(
-      graph,
-      dependency,
-      today,
-      new Set([task.id]),
-      [task],
-    );
-    if (diagnosis) return diagnosis;
-  }
-  return null;
-}
-
-export function blockedTaskHasClearPath(
-  graph: Graph,
-  task: TaskRecord,
-  today: string,
-): boolean {
-  const dependencies = unresolvedDependencies(graph, task);
-  return dependencies.length > 0 && findBlockingPrerequisite(graph, task, today) === null;
-}
-
 function blockingPrerequisiteIssue(
+  graph: Graph,
   task: TaskRecord,
-  diagnosis: BlockingPrerequisite,
+  diagnosis: NonNullable<
+    ReturnType<Graph["blockerAnalysisFor"]>
+  >["diagnoses"][number],
 ): RefinementIssue {
-  const target = diagnosis.task;
-  const dependencyPath = diagnosis.path.map((pathTask) => ({
-    taskId: pathTask.id,
-    title: pathTask.title,
+  const target = graph.tasksById.get(diagnosis.targetTaskId);
+  const dependencyPath = diagnosis.path.map((taskId) => ({
+    taskId,
+    title: graph.tasksById.get(taskId)?.title ?? `#${taskId}`,
   }));
-
-  if (diagnosis.reason === "captured") {
-    return taskIssue(task, "blocked_without_clear_path", "warning", {
-      blockingReason: diagnosis.reason,
-      suggestedAction: {
-        code: "clarify_task",
-        targetTaskId: target.id,
-      },
-      dependencyPath,
-    });
-  }
-  if (diagnosis.reason === "waiting") {
-    return taskIssue(task, "blocked_without_clear_path", "warning", {
-      blockingReason: diagnosis.reason,
-      suggestedAction: {
-        code: "set_followup",
-        targetTaskId: target.id,
-      },
-      dependencyPath,
-    });
-  }
-  if (diagnosis.reason === "cycle") {
-    return taskIssue(task, "blocked_without_clear_path", "warning", {
-      blockingReason: diagnosis.reason,
-      suggestedAction: {
-        code: "resolve_blocker",
-        targetTaskId: target.id,
-      },
-      dependencyPath,
-    });
-  }
+  const blockingReason: RefinementBlockingReason =
+    (diagnosis.reason === "missing_task"
+      ? "cycle"
+      : diagnosis.reason) as RefinementBlockingReason;
+  const suggestedAction =
+    blockingReason === "captured"
+      ? { code: "clarify_task" as const, targetTaskId: diagnosis.targetTaskId }
+      : blockingReason === "waiting_without_followup"
+        ? { code: "set_followup" as const, targetTaskId: diagnosis.targetTaskId }
+        : blockingReason === "followup_due"
+          ? { code: "follow_up" as const, targetTaskId: diagnosis.targetTaskId }
+          : {
+              code: "resolve_blocker" as const,
+              targetTaskId: target?.id ?? diagnosis.targetTaskId,
+            };
   return taskIssue(task, "blocked_without_clear_path", "warning", {
-    blockingReason: diagnosis.reason,
-    suggestedAction: {
-      code: "resolve_blocker",
-      targetTaskId: target.id,
-    },
+    blockingReason,
+    suggestedAction,
     dependencyPath,
   });
 }
@@ -264,6 +118,33 @@ export function buildRefinementIssues(
   today = new Date().toISOString().slice(0, 10),
 ): RefinementIssueResult {
   const issues: RefinementIssue[] = [];
+  const projectStatuses = new Map(
+    [...graph.projectsById.values()].map((project) => [
+      project.id,
+      project.status,
+    ]),
+  );
+  const blockerAnalysis = analyzeTaskBlockers(
+    new Map(
+      graph.allTasks().map((task) => [
+        task.id,
+        {
+          id: task.id,
+          title: task.title,
+          status: task.status,
+          projectId: task.projectId,
+          scheduledDate: task.scheduledDate,
+          externalWait: task.externalWait,
+          dependencies: task.dependencies.map((dependency) => ({
+            dependsOnTaskId: dependency.dependsOnTaskId,
+            resolved: dependency.resolved ?? false,
+          })),
+        },
+      ]),
+    ),
+    projectStatuses,
+    today,
+  );
 
   for (const project of graph.listProjectsWithComputed()) {
     if (project.status !== "active") continue;
@@ -282,7 +163,15 @@ export function buildRefinementIssues(
       project.status === "active"
     ) {
       issues.push(projectIssue(project, "completion_review", "info"));
-    } else if (!hasExecutableProjectPath(graph, openTasks, today)) {
+    } else if (
+      !openTasks.some(
+        (task) =>
+          task.status === "actionable" &&
+          (blockerAnalysis.get(task.id)?.executable ||
+            blockerAnalysis.get(task.id)?.healthyProgressPath),
+      ) &&
+      !openTasks.some((task) => task.status === "captured")
+    ) {
       issues.push(projectIssue(project, "missing_next_action", "warning"));
     }
     if (
@@ -307,22 +196,21 @@ export function buildRefinementIssues(
       issues.push(taskIssue(task, "needs_clarification", "warning"));
       continue;
     }
-    if (task.status === "waiting") {
+    if (task.externalWait) {
       if (!task.scheduledDate) {
         issues.push(taskIssue(task, "waiting_without_followup", "warning"));
       } else if (task.scheduledDate <= today) {
         issues.push(taskIssue(task, "followup_due", "urgent"));
       }
-      continue;
     }
     if (task.status !== "actionable") continue;
     if (task.effectiveOwnerId === null) {
       issues.push(taskIssue(task, "unassigned_actionable", "warning"));
     }
     if (task.blocked) {
-      const diagnosis = findBlockingPrerequisite(graph, task, today);
-      if (diagnosis) {
-        issues.push(blockingPrerequisiteIssue(task, diagnosis));
+      const diagnoses = blockerAnalysis.get(task.id)?.diagnoses ?? [];
+      for (const diagnosis of diagnoses) {
+        issues.push(blockingPrerequisiteIssue(graph, task, diagnosis));
       }
     }
     if (task.size === "XL" && !task.children.some(isOpen)) {
@@ -335,9 +223,17 @@ export function buildRefinementIssues(
     warning: 1,
     info: 2,
   };
+  const issueOrder: Partial<Record<RefinementIssueCode, number>> = {
+    followup_due: 0,
+    waiting_without_followup: 1,
+    blocked_without_clear_path: 2,
+    needs_clarification: 3,
+    unassigned_actionable: 4,
+  };
   issues.sort(
     (a, b) =>
       severityOrder[a.severity] - severityOrder[b.severity] ||
+      (issueOrder[a.code] ?? 10) - (issueOrder[b.code] ?? 10) ||
       a.code.localeCompare(b.code) ||
       a.entityId - b.entityId,
   );
@@ -354,7 +250,14 @@ export function buildRefinementIssues(
       if (project.acceptanceCriteria.length === 0) {
         projectIssues.push(projectIssue(project, "missing_outcome", "info"));
       }
-      if (!hasExecutableProjectPath(graph, openTasks, today)) {
+      if (
+        !openTasks.some(
+          (task) =>
+            task.status === "actionable" &&
+            (task.executable ||
+              blockerAnalysis.get(task.id)?.healthyProgressPath),
+        )
+      ) {
         projectIssues.push(
           projectIssue(project, "missing_next_action", "info"),
         );

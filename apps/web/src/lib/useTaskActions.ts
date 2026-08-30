@@ -339,7 +339,7 @@ export function useTaskActions() {
 
   /** Quick, prompt-free status change (used by the "Warten" swipe chip / config). Never terminal. */
   const setStatus = useCallback(
-    (task: Task, status: Extract<TaskStatus, "waiting" | "someday" | "actionable">) => {
+    (task: Task, status: Extract<TaskStatus, "someday" | "actionable">) => {
       const optimistic: Task = {
         ...task,
         revision: task.revision + 1,
@@ -446,9 +446,6 @@ export function useTaskActions() {
         return;
       }
       switch (action) {
-        case "waiting":
-          void setStatus(task, "waiting");
-          return;
         case "someday":
           void setStatus(task, "someday");
           return;

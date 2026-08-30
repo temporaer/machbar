@@ -43,9 +43,9 @@ describe("seed data", () => {
     expect(byTitle["Steuererklärung 2025"]).toBe("unassigned_actionable");
     expect(byTitle["Küche renovieren"]).toBe("no_next_action");
     expect(byTitle["Wartungsplan Auto"]).toBe(
-      "only_waiting_without_followup",
+      "waiting_without_followup",
     );
-    expect(byTitle["Bücherregal aufbauen"]).toBe("blocked_dependencies");
+    expect(byTitle["Bücherregal aufbauen"]).toBe("waiting_without_followup");
     expect(byTitle["Umzug nach Leipzig"]).toBeUndefined();
     expect(byTitle["Garten winterfest machen"]).toBeUndefined();
   });
@@ -64,11 +64,18 @@ describe("seed data", () => {
     expect(titles).toContain("Ummeldung Wohnsitz");
   });
 
-  it("groups Wartet tasks by waitingFor", async () => {
+  it("lists externally blocked work with structured wait context", async () => {
     const res = await ctx.app.inject({ method: "GET", url: "/api/waiting" });
-    const groups = res.json() as Array<{ waitingFor: string; tasks: unknown[] }>;
-    const vermieter = groups.find((g) => g.waitingFor === "Vermieter");
-    expect(vermieter?.tasks).toHaveLength(1);
+    const tasks = res.json() as Array<{
+      title: string;
+      externalWait: { waitingFor: string | null } | null;
+    }>;
+    expect(tasks).toContainEqual(
+      expect.objectContaining({
+        title: "Nebenkostenabrechnung klären",
+        externalWait: { waitingFor: "Vermieter" },
+      }),
+    );
   });
 
   it("builds the Heute agenda without duplicate tasks across sections", async () => {

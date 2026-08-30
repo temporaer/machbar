@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Db } from "../db/client.js";
 import { Graph } from "../domain/graph.js";
 import { buildAgenda } from "../domain/agenda.js";
-import { buildWaitingGroups } from "../domain/waiting.js";
+import { buildBlockedWork } from "../domain/waiting.js";
 import { getMemberOrThrow } from "../domain/mutations.js";
 import { AppError } from "../errors.js";
 import { validationDetails } from "../validation.js";
@@ -110,6 +110,6 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       );
     }
     const graph = Graph.load(db);
-    return buildWaitingGroups(graph, parsed.data.actorTagId);
+    return buildBlockedWork(graph, parsed.data.actorTagId);
   });
 }

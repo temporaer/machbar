@@ -31,6 +31,9 @@ export function getNextActionTaskIdsByProject(db: Db): Map<number, number> {
           JOIN tasks dep ON dep.id = td.depends_on_task_id
           WHERE td.task_id = t.id AND dep.status NOT IN ('done', 'cancelled')
         )
+        AND NOT EXISTS (
+          SELECT 1 FROM task_external_waits ew WHERE ew.task_id = t.id
+        )
     )
     SELECT project_id, task_id FROM ranked WHERE rn = 1
   `);

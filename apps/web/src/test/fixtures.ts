@@ -1,4 +1,4 @@
-import type { AcceptanceCriterion, Member, Tag, Task, WaitingGroup } from "@machbar/shared";
+import type { AcceptanceCriterion, Member, Tag, Task } from "@machbar/shared";
 import type { ProjectWithActions, StuckProjectWithActions } from "../lib/api";
 import { workflowActionsByStatus } from "../lib/projectWorkflow";
 
@@ -49,7 +49,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     createdByMemberId: null,
     dueDate: null,
     scheduledDate: null,
-    waitingFor: null,
+    externalWait: null,
     priority: null,
     size: null,
     position: 0,
@@ -69,6 +69,9 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     explicitTags: [],
     excludedTagIds: [],
     blocked: false,
+    executable: status === "actionable",
+    nextBlockerAttentionDate: null,
+    blockers: [],
     dependencies: [],
     children: [],
     ...overrides,
@@ -118,8 +121,4 @@ export function makeStuckProject(overrides: Partial<StuckProjectWithActions> = {
     stuckReason: "no_next_action",
     ...overrides,
   };
-}
-
-export function makeWaitingGroup(overrides: Partial<WaitingGroup> = {}): WaitingGroup {
-  return { waitingFor: "Antwort von Steuerberater", tasks: [makeTask({ status: "waiting" })], ...overrides };
 }

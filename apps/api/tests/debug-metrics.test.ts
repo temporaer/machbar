@@ -23,6 +23,12 @@ describe("debug metrics", () => {
       payload: { title: "Measured task", status: "actionable" },
     });
     expect(created.statusCode).toBe(201);
+    const externalWait = await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${created.json().id}/external-wait`,
+      payload: { waitingFor: null },
+    });
+    expect(externalWait.statusCode).toBe(200);
 
     const response = await ctx.app.inject({
       method: "GET",
@@ -32,7 +38,9 @@ describe("debug metrics", () => {
 
     const metrics = response.json();
     expect(metrics.database.counts.tasks).toBe(1);
+    expect(metrics.database.counts.externalWaits).toBe(1);
     expect(metrics.database.taskStatusCounts.actionable).toBe(1);
+    expect(metrics.database.taskStatusCounts.waiting).toBeUndefined();
     expect(metrics.database.allocatedBytes).toBeGreaterThan(0);
     expect(metrics.database.maxTaskDepth).toBe(0);
     expect(metrics.graphLoads.totalLoads).toBeGreaterThanOrEqual(1);

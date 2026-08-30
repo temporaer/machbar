@@ -10,6 +10,7 @@ vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
     createTask: vi.fn(),
+    setExternalWait: vi.fn(),
     addCriterion: vi.fn(),
     updateProject: vi.fn(),
   },
@@ -23,6 +24,7 @@ describe("CaptureProjectBreakdownSheet", () => {
     window.localStorage.setItem("machbar:identity-member-id", "1");
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.createTask.mockResolvedValue(makeTask({ projectId: 42 }) as never);
+    mockedApi.setExternalWait.mockResolvedValue(makeTask({ projectId: 42 }) as never);
     mockedApi.addCriterion.mockResolvedValue(makeProject({ id: 42 }) as never);
     mockedApi.updateProject.mockResolvedValue(makeProject({ id: 42 }) as never);
   });
@@ -68,10 +70,16 @@ describe("CaptureProjectBreakdownSheet", () => {
           title: "Auf Angebot warten",
           projectId: 42,
           parentTaskId: null,
-          status: "waiting",
-          waitingFor: "Fliesenleger",
+          status: "actionable",
         }),
       ),
+    );
+    expect(mockedApi.setExternalWait).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.objectContaining({
+        waitingFor: "Fliesenleger",
+        expectedRevision: 1,
+      }),
     );
 
     await userEvent.type(screen.getByLabelText("Erledigt, wenn …"), "Auftrag vergeben");

@@ -22,8 +22,10 @@ import {
   removeDependency,
   removeExcludedTag,
   removeTaskTag,
+  resolveExternalWait,
   reopenTask,
   reorderTask,
+  upsertExternalWait,
   updateTask,
 } from "../domain/mutations.js";
 import {
@@ -40,6 +42,8 @@ import {
   tagRefSchema,
   transitionTaskStatusSchema,
   updateTaskSchema,
+  upsertExternalWaitSchema,
+  resolveExternalWaitSchema,
 } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
 
@@ -301,6 +305,30 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         actorMemberId: request.activityActor?.id ?? null,
       });
       reply.status(201);
+      return taskOrThrow(db, id);
+    },
+  );
+
+  app.put<{ Params: { id: string } }>(
+    "/api/tasks/:id/external-wait",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(upsertExternalWaitSchema, request.body ?? {});
+      upsertExternalWait(db, id, body, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
+      return taskOrThrow(db, id);
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>(
+    "/api/tasks/:id/external-wait",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(resolveExternalWaitSchema, request.body ?? {});
+      resolveExternalWait(db, id, body.expectedRevision, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
       return taskOrThrow(db, id);
     },
   );

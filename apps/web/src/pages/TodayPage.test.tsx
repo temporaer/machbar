@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TodayPage } from "./TodayPage";
@@ -36,7 +36,6 @@ function makeEmptyAgenda(): Agenda {
     dueSoon: [],
     shared: [],
     unscheduled: [],
-    followUp: [],
     revisit: [],
   };
 }
@@ -182,6 +181,37 @@ describe("TodayPage", () => {
     ).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("keeps the loaded agenda stable during a background refresh", async () => {
+    let resolveRefresh!: (agenda: Agenda) => void;
+    const refresh = new Promise<Agenda>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    mockedApi.getAgenda
+      .mockResolvedValueOnce({
+        ...makeEmptyAgenda(),
+        dueToday: [makeTask({ title: "Bleibt sichtbar" })],
+      })
+      .mockReturnValueOnce(refresh);
+    const { container } = renderWithProviders(<TodayPage />);
+
+    expect(await screen.findByText("Bleibt sichtbar")).toBeInTheDocument();
+    expect(container.querySelector(".loading-state")).not.toBeInTheDocument();
+
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Bleibt sichtbar")).toBeInTheDocument();
+    expect(container.querySelector(".loading-state")).not.toBeInTheDocument();
+
+    act(() =>
+      resolveRefresh({
+        ...makeEmptyAgenda(),
+        dueToday: [makeTask({ title: "Frisch geladen" })],
+      }),
+    );
+    expect(await screen.findByText("Frisch geladen")).toBeInTheDocument();
+    expect(screen.queryByText("Bleibt sichtbar")).not.toBeInTheDocument();
+  });
+
   it("zeigt keinen manuellen Heute-Umschalter mehr an und erklärt die Ansicht im Seitenhinweis", async () => {
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
@@ -229,27 +259,19 @@ describe("TodayPage", () => {
       id: 2,
       title: "Leiter zurückbringen",
       blocked: true,
+      executable: false,
       scheduledDate: today,
+      nextBlockerAttentionDate: today,
     });
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
       revisit: [revisitTask],
-      followUp: [
-        makeTask({
-          id: 6,
-          title: "Installateur anrufen",
-          status: "waiting",
-        }),
-      ],
     });
     renderWithProviders(<TodayPage />);
 
     expect(await screen.findByText("Blockiert prüfen")).toBeInTheDocument();
     const revisitHint = "Blockiert, aber heute wieder zu prüfen.";
-    const followUpHint =
-      "Die Wiedervorlage ist erreicht. Jetzt nachhaken oder die Aufgabe wieder machbar machen.";
     expect(screen.queryByText(revisitHint)).not.toBeInTheDocument();
-    expect(screen.queryByText(followUpHint)).not.toBeInTheDocument();
     const infoButtons = screen.getAllByRole("button", {
       name: "Hinweise zu dieser Seite anzeigen",
     });
@@ -258,7 +280,6 @@ describe("TodayPage", () => {
       screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
     );
     expect(screen.getByText(revisitHint)).toBeInTheDocument();
-    expect(screen.getByText(followUpHint)).toBeInTheDocument();
     expect(screen.getByText("Leiter zurückbringen")).toBeInTheDocument();
     expect(screen.getByText("Wiedervorlage: heute")).toBeInTheDocument();
     // The normal blocked lock indicator from TaskRow must still show up.
@@ -289,24 +310,6 @@ describe("TodayPage", () => {
     // visible section like every other one on this page.
     expect(heading.closest("details")).toBeNull();
     expect(screen.getByText("Keller aufräumen")).toBeVisible();
-  });
-
-  it("zeigt fällige Wiedervorlagen wartender Aufgaben unter Nachhaken", async () => {
-    mockedApi.getAgenda.mockResolvedValue({
-      ...makeEmptyAgenda(),
-      followUp: [
-        makeTask({
-          id: 5,
-          title: "Installateur anrufen",
-          status: "waiting",
-          scheduledDate: "2026-01-01",
-        }),
-      ],
-    });
-    renderWithProviders(<TodayPage />);
-
-    expect(await screen.findByText("Nachhaken")).toBeInTheDocument();
-    expect(screen.getByText("Installateur anrufen")).toBeInTheDocument();
   });
 
   it("zeigt Projekttermine in einem eigenen Abschnitt der Heute-Ansicht", async () => {

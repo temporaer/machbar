@@ -28,7 +28,7 @@ describe("classifyProjectListItem", () => {
   });
 
   it.each([
-    ["blocked active project", "blocked_dependencies", makeTask()],
+    ["blocked active project", "blocked_without_clear_path", makeTask()],
     ["active project with no task", "no_next_action", null],
     ["active project awaiting completion review", "completion_review", null],
   ] as const)("classifies a %s as stuck rather than waiting", (_label, stuckReason, nextAction) => {

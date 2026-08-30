@@ -22,7 +22,7 @@ interface SeedTaskInput {
   ownerInheritanceMode?: (typeof schema.tasks.$inferInsert)["ownerInheritanceMode"];
   dueDate?: string | null;
   scheduledDate?: string | null;
-  waitingFor?: string | null;
+  externalWait?: { waitingFor: string | null } | null;
   priority?: number | null;
   size?: (typeof schema.tasks.$inferInsert)["size"];
   tagNames?: string[];
@@ -43,6 +43,7 @@ interface SeedCriterionInput {
  */
 export function seedDatabase(db: Db): void {
   db.transaction((tx) => {
+    tx.delete(schema.taskExternalWaits).run();
     tx.delete(schema.taskDependencies).run();
     tx.delete(schema.taskExcludedTags).run();
     tx.delete(schema.taskTags).run();
@@ -133,7 +134,6 @@ export function seedDatabase(db: Db): void {
             createdByMemberId: anna.id,
             dueDate: input.dueDate ?? null,
             scheduledDate: input.scheduledDate ?? null,
-            waitingFor: input.waitingFor ?? null,
             priority: input.priority ?? null,
             size: input.size ?? null,
             position: index,
@@ -142,6 +142,14 @@ export function seedDatabase(db: Db): void {
           })
           .returning()
           .get();
+        if (input.externalWait) {
+          tx.insert(schema.taskExternalWaits)
+            .values({
+              taskId: row.id,
+              waitingFor: input.externalWait.waitingFor,
+            })
+            .run();
+        }
         idsByTitle.set(input.title, row.id);
 
         if (input.tagNames && input.tagNames.length > 0) {
@@ -243,8 +251,10 @@ export function seedDatabase(db: Db): void {
             },
             {
               title: "Vertrag unterschreiben",
-              status: "waiting",
-              waitingFor: "Umzugsunternehmen Rückmeldung",
+              status: "actionable",
+              externalWait: {
+                waitingFor: "Umzugsunternehmen Rückmeldung",
+              },
               dependsOn: ["Angebote einholen"],
             },
           ],
@@ -262,8 +272,8 @@ export function seedDatabase(db: Db): void {
         },
         {
           title: "Nebenkostenabrechnung klären",
-          status: "waiting",
-          waitingFor: "Vermieter",
+          status: "actionable",
+          externalWait: { waitingFor: "Vermieter" },
         },
       ],
     });
@@ -328,8 +338,8 @@ export function seedDatabase(db: Db): void {
         },
         {
           title: "Steuerberater kontaktieren",
-          status: "waiting",
-          waitingFor: "Steuerberater Rückruf",
+          status: "actionable",
+          externalWait: { waitingFor: "Steuerberater Rückruf" },
         },
       ],
     });
@@ -351,7 +361,7 @@ export function seedDatabase(db: Db): void {
       ],
     });
 
-    // 5. Wartungsplan Auto — every open task is "waiting" ("only_waiting").
+    // 5. Wartungsplan Auto — every open task has an unresolved external wait.
     createProject({
       title: "Wartungsplan Auto",
       criteria: [
@@ -363,19 +373,19 @@ export function seedDatabase(db: Db): void {
       tasks: [
         {
           title: "Werkstatt Rückmeldung abwarten",
-          status: "waiting",
-          waitingFor: "Werkstatt",
+          status: "actionable",
+          externalWait: { waitingFor: "Werkstatt" },
         },
         {
           title: "Ersatzteil Lieferung abwarten",
-          status: "waiting",
-          waitingFor: "Zulieferer",
+          status: "actionable",
+          externalWait: { waitingFor: "Zulieferer" },
         },
       ],
     });
 
     // 6. Bücherregal aufbauen — the only actionable task is blocked by a
-    //    dependency that is itself not actionable ("blocked_dependencies").
+    //    dependency that is itself externally blocked.
     createProject({
       title: "Bücherregal aufbauen",
       criteria: [
@@ -387,8 +397,8 @@ export function seedDatabase(db: Db): void {
       tasks: [
         {
           title: "Farbe kaufen",
-          status: "waiting",
-          waitingFor: "Baumarkt Lieferung",
+          status: "actionable",
+          externalWait: { waitingFor: "Baumarkt Lieferung" },
         },
         {
           title: "Regal aufbauen",

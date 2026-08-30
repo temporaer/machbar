@@ -43,21 +43,26 @@ export function CaptureProjectBreakdownSheet({
   const addTask = async (
     kind: "next-action" | "subtask" | "waiting",
     title: string,
-    extra: { status?: "actionable" | "waiting"; waitingFor?: string | null } = {},
+    externalWaitingFor?: string,
   ) => {
     const trimmed = title.trim();
     if (!trimmed || saving) return;
     setSaving(kind);
     setError(null);
     try {
-      await api.createTask({
+      const created = await api.createTask({
         title: trimmed,
         projectId: project.id,
         parentTaskId: null,
         createdByMemberId: currentMemberId,
-        status: extra.status ?? "actionable",
-        ...(extra.waitingFor === undefined ? {} : { waitingFor: extra.waitingFor }),
+        status: "actionable",
       });
+      if (externalWaitingFor !== undefined) {
+        await api.setExternalWait(created.id, {
+          waitingFor: externalWaitingFor,
+          expectedRevision: created.revision,
+        });
+      }
       if (kind === "next-action") setNextAction("");
       if (kind === "subtask") setSubtask("");
       if (kind === "waiting") {
@@ -178,7 +183,7 @@ export function CaptureProjectBreakdownSheet({
             type="button"
             className="btn"
             disabled={saving !== null || !waitingTitle.trim() || !waitingFor.trim()}
-            onClick={() => void addTask("waiting", waitingTitle, { status: "waiting", waitingFor: waitingFor.trim() })}
+            onClick={() => void addTask("waiting", waitingTitle, waitingFor.trim())}
           >
             {strings.addWaitingItem}
           </button>

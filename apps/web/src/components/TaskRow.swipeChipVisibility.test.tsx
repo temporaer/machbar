@@ -152,7 +152,7 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
 
     swipe(row, -100);
 
-    const chipButtons = ["Zuweisen", "Planen", "Notizen", "Wartet", "Mehr"].map((name) =>
+    const chipButtons = ["Zuweisen", "Planen", "Notizen", "Mehr"].map((name) =>
       screen.getByRole("button", { name }),
     );
     for (const btn of chipButtons) {
@@ -172,16 +172,11 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     await screen.findByText("Rückruf einplanen");
 
     swipe(container, -100);
-    expect(screen.getByRole("button", { name: "Wartet" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Notizen" })).toBeInTheDocument();
     const cancelBg = container.querySelector(".task-row-swipe-bg.cancel") as HTMLElement;
     expect(getComputedStyle(cancelBg).opacity).toBe("1");
 
-    await userEvent.click(screen.getByRole("button", { name: "Wartet" }));
-
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(6, {
-      status: "waiting",
-      expectedRevision: 1,
-    }));
+    await userEvent.click(screen.getByRole("button", { name: "Notizen" }));
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
     expect(getComputedStyle(cancelBg).opacity).toBe("0");
   });

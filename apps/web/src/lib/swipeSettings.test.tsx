@@ -20,7 +20,7 @@ describe("swipeSettings", () => {
 
   it("reads a previously persisted valid choice from localStorage", () => {
     window.localStorage.setItem(STORAGE_KEY, "waiting");
-    expect(readStoredPrimarySwipeAction()).toBe("waiting");
+    expect(readStoredPrimarySwipeAction()).toBe("complete");
   });
 
   it("falls back to the default for garbage/unknown stored values", () => {
@@ -29,7 +29,7 @@ describe("swipeSettings", () => {
   });
 
   it("exposes exactly the four documented options", () => {
-    expect(primarySwipeActions).toEqual(["complete", "waiting", "someday", "cancel"]);
+    expect(primarySwipeActions).toEqual(["complete", "someday", "cancel"]);
   });
 
   it("persists a changed setting to localStorage so it survives a reload", () => {
