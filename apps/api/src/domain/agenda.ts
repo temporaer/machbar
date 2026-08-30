@@ -141,15 +141,13 @@ export function buildAgenda(
     (t) =>
       t.status === "actionable" &&
       t.effectiveOwnerId === null &&
-      !t.scheduledDate &&
-      !t.dueDate,
+      !t.scheduledDate,
   );
   const unscheduled = take(
     (t) =>
       t.status === "actionable" &&
       t.effectiveOwnerId !== null &&
-      !t.scheduledDate &&
-      !t.dueDate,
+      !t.scheduledDate,
   );
 
   const projectDueLimit = addDaysIso(today, 7);
