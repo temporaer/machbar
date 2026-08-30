@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import type { RefinementIssue } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -22,7 +22,45 @@ import { CollapsibleGroup } from "../components/CollapsibleGroup";
 import { PageHeader } from "../components/PageHeader";
 import { formatRefinementIssue } from "../lib/refinementFormatting";
 import { useLocale } from "../lib/locale";
+import { ProjectEditSheet } from "../components/ProjectEditSheet";
+import { StoryCriteriaSheet } from "../components/StoryCriteriaSheet";
+import { QuickAdd } from "../components/QuickAdd";
+import { BottomSheet } from "../components/BottomSheet";
+import { flattenTasks } from "../lib/taskHelpers";
 import "./RefinementPage.css";
+
+interface RepairOrigin {
+  issueKey: string;
+  issueIndex: number;
+}
+
+interface TaskRepair extends RepairOrigin {
+  opened: boolean;
+}
+
+interface ProjectRepair extends RepairOrigin {
+  issue: RefinementIssue;
+}
+
+interface RefinementLocationState {
+  refinementReturn?: RepairOrigin;
+}
+
+function refinementIssueKey(issue: RefinementIssue): string {
+  return [
+    issue.entityType,
+    issue.entityId,
+    issue.code,
+    issue.suggestedAction.targetTaskId ?? "",
+  ].join(":");
+}
+
+function scrollIntoViewIfNeeded(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  if (rect.top < 0 || rect.bottom > window.innerHeight) {
+    element.scrollIntoView?.({ block: "nearest" });
+  }
+}
 
 function selectionLabel(
   selection: RefinementMatrixSelection,
@@ -50,8 +88,15 @@ export function RefinementPage() {
   const strings = useStrings();
   const { locale } = useLocale();
   const { members } = useIdentity();
+  const location = useLocation();
   const [selection, setSelection] = useState<RefinementMatrixSelection | null>(null);
   const [groupBy, setGroupBy] = useState<GroupableTagKind | null>(null);
+  const [taskRepair, setTaskRepair] = useState<TaskRepair | null>(null);
+  const [projectRepair, setProjectRepair] = useState<ProjectRepair | null>(null);
+  const [pendingReturn, setPendingReturn] = useState<
+    (RepairOrigin & { previousResult: object | null }) | null
+  >(null);
+  const issueRefs = useRef(new Map<string, HTMLElement>());
   const actions = useRefinementActions();
   const navigate = useNavigate();
   const taskDetail = useTaskDetail();
@@ -61,6 +106,18 @@ export function RefinementPage() {
     error: issuesError,
     reload: reloadIssues,
   } = useAsync(() => api.getRefinementIssues(), []);
+  const {
+    data: repairProject,
+    loading: repairProjectLoading,
+    error: repairProjectError,
+    reload: reloadRepairProject,
+  } = useAsync(
+    () =>
+      projectRepair
+        ? api.getProject(projectRepair.issue.entityId)
+        : Promise.resolve(null),
+    [projectRepair?.issue.entityId],
+  );
 
   const {
     data: ownerRows,
@@ -104,42 +161,118 @@ export function RefinementPage() {
   const loading = issuesLoading || ownersLoading || tasksLoading;
   const error = issuesError ?? ownersError ?? tasksError;
 
-  const repair = (issue: RefinementIssue) => {
-    if (issue.entityType === "project") {
-      const projectFocusByAction: Partial<
-        Record<RefinementIssue["suggestedAction"]["code"], string>
-      > = {
-        assign_driver: "driver",
-        add_outcome: "outcome",
-        add_next_action: "next-action",
-        review_completion: "completion",
-      };
-      const projectFocus = projectFocusByAction[issue.suggestedAction.code];
-      if (projectFocus) {
-        navigate(`/projects/${issue.entityId}?focus=${projectFocus}`);
-        return;
-      }
-      if (issue.suggestedAction.code === "plan_task") {
-        const taskToPlan = taskRows?.find(
-          (task) => task.projectId === issue.entityId,
+  const beginReturn = (origin: RepairOrigin) => {
+    setPendingReturn({
+      ...origin,
+      previousResult: issueResult,
+    });
+    reloadIssues();
+  };
+
+  useEffect(() => {
+    if (!taskRepair) return;
+    if (taskDetail.openTaskId !== null) {
+      if (!taskRepair.opened) {
+        setTaskRepair((current) =>
+          current ? { ...current, opened: true } : current,
         );
-        if (taskToPlan) {
-          taskDetail.open(taskToPlan.id, "schedule");
-          return;
-        }
-        navigate(`/projects/${issue.entityId}?focus=planning`);
-        return;
       }
-      navigate(`/projects/${issue.entityId}`);
       return;
     }
-    const repairTaskId = issue.suggestedAction.targetTaskId ?? issue.entityId;
-    if (issue.suggestedAction.code === "clarify_task") {
-      taskDetail.openQueue([repairTaskId], "title");
+    if (taskRepair.opened) {
+      const origin = taskRepair;
+      setTaskRepair(null);
+      beginReturn(origin);
+    }
+  }, [taskDetail.openTaskId, taskRepair]);
+
+  useEffect(() => {
+    if (
+      !pendingReturn ||
+      !issueResult ||
+      issueResult === pendingReturn.previousResult
+    ) {
+      return;
+    }
+    const issues = issueResult.issues;
+    const target =
+      issues.find(
+        (candidate) =>
+          refinementIssueKey(candidate) === pendingReturn.issueKey,
+      ) ?? issues[Math.min(pendingReturn.issueIndex, issues.length - 1)];
+    setPendingReturn(null);
+    if (!target) return;
+    const element = issueRefs.current.get(refinementIssueKey(target));
+    if (!element) return;
+    scrollIntoViewIfNeeded(element);
+    element.focus();
+  }, [issueResult, pendingReturn]);
+
+  useEffect(() => {
+    const returnTarget = (location.state as RefinementLocationState | null)
+      ?.refinementReturn;
+    if (!returnTarget || pendingReturn) return;
+    setPendingReturn({
+      ...returnTarget,
+      previousResult: null,
+    });
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.pathname, location.state, navigate, pendingReturn]);
+
+  useEffect(() => {
+    if (
+      projectRepair?.issue.suggestedAction.code !== "plan_task" ||
+      !repairProject
+    ) {
+      return;
+    }
+    const taskToPlan = flattenTasks(repairProject.tasks).find(
+      (task) =>
+        task.status !== "done" &&
+        task.status !== "cancelled" &&
+        !task.dueDate &&
+        !task.scheduledDate,
+    );
+    if (!taskToPlan) return;
+    const origin = projectRepair;
+    setProjectRepair(null);
+    setTaskRepair({ ...origin, opened: false });
+    taskDetail.open(taskToPlan.id, "schedule");
+  }, [projectRepair, repairProject, taskDetail]);
+
+  const startTaskRepair = (
+    issue: RefinementIssue,
+    issueIndex: number,
+    focus:
+      | "title"
+      | "owner"
+      | "schedule"
+      | "dependencies"
+      | "subtasks"
+      | undefined,
+    taskId = issue.suggestedAction.targetTaskId ?? issue.entityId,
+  ) => {
+    const origin = {
+      issueKey: refinementIssueKey(issue),
+      issueIndex,
+    };
+    setTaskRepair({ ...origin, opened: false });
+    taskDetail.open(taskId, focus);
+  };
+
+  const repair = (issue: RefinementIssue, issueIndex: number) => {
+    if (issue.entityType === "project") {
+      setProjectRepair({
+        issue,
+        issueKey: refinementIssueKey(issue),
+        issueIndex,
+      });
       return;
     }
     const focus =
-      issue.suggestedAction.code === "assign_task"
+      issue.suggestedAction.code === "clarify_task"
+        ? "title"
+        : issue.suggestedAction.code === "assign_task"
         ? "owner"
         : issue.suggestedAction.code === "set_followup" ||
             issue.suggestedAction.code === "follow_up"
@@ -151,7 +284,29 @@ export function RefinementPage() {
             : issue.suggestedAction.code === "add_child"
               ? "subtasks"
               : undefined;
-    taskDetail.open(repairTaskId, focus);
+    startTaskRepair(issue, issueIndex, focus);
+  };
+
+  const openDetails = (issue: RefinementIssue, issueIndex: number) => {
+    const origin = {
+      issueKey: refinementIssueKey(issue),
+      issueIndex,
+    };
+    if (issue.entityType === "task") {
+      setTaskRepair({ ...origin, opened: false });
+      taskDetail.open(issue.entityId);
+      return;
+    }
+    navigate(`/projects/${issue.entityId}`, {
+      state: { refinementReturn: origin } satisfies RefinementLocationState,
+    });
+  };
+
+  const closeProjectRepair = () => {
+    if (!projectRepair) return;
+    const origin = projectRepair;
+    setProjectRepair(null);
+    beginReturn(origin);
   };
 
   return (
@@ -201,13 +356,19 @@ export function RefinementPage() {
           <EmptyState message={strings.clarificationNeedsEmpty} />
         ) : null}
         <div className="clarification-issue-list">
-          {issueResult?.issues.map((issue) => (
+          {issueResult?.issues.map((issue, issueIndex) => (
             (() => {
               const copy = formatRefinementIssue(issue, locale);
+              const issueKey = refinementIssueKey(issue);
               return (
                 <article
                   className={`card clarification-issue clarification-issue--${issue.severity}`}
-                  key={`${issue.entityType}-${issue.entityId}-${issue.code}`}
+                  key={issueKey}
+                  ref={(element) => {
+                    if (element) issueRefs.current.set(issueKey, element);
+                    else issueRefs.current.delete(issueKey);
+                  }}
+                  tabIndex={-1}
                 >
                   <div>
                     <strong>{issue.entityTitle}</strong>
@@ -217,13 +378,22 @@ export function RefinementPage() {
                   </div>
                   <div className="clarification-issue-label">{copy.label}</div>
                   <p className="text-muted">{copy.explanation}</p>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
-                    onClick={() => repair(issue)}
-                  >
-                    {copy.actionLabel}
-                  </button>
+                  <div className="clarification-issue-actions">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      onClick={() => repair(issue, issueIndex)}
+                    >
+                      {copy.actionLabel}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      onClick={() => openDetails(issue, issueIndex)}
+                    >
+                      {strings.taskDetails}
+                    </button>
+                  </div>
                 </article>
               );
             })()
@@ -295,6 +465,58 @@ export function RefinementPage() {
             ))
           : null}
       </div>
+      {projectRepair ? (
+        repairProject ? (
+          projectRepair.issue.suggestedAction.code === "add_outcome" ? (
+            <StoryCriteriaSheet
+              story={repairProject}
+              onClose={closeProjectRepair}
+            />
+          ) : projectRepair.issue.suggestedAction.code === "add_next_action" ? (
+            <QuickAdd
+              projectId={repairProject.id}
+              autoOpen
+              onAutoOpenClose={closeProjectRepair}
+            />
+          ) : projectRepair.issue.suggestedAction.code === "plan_task" ? (
+            <BottomSheet
+              title={strings.refinement}
+              onClose={closeProjectRepair}
+              labelledBy="refinement-project-repair-title"
+            >
+              <EmptyState message={strings.noTasks} />
+            </BottomSheet>
+          ) : (
+            <ProjectEditSheet
+              project={repairProject}
+              focusField={
+                projectRepair.issue.suggestedAction.code === "assign_driver"
+                  ? "driver"
+                  : projectRepair.issue.suggestedAction.code ===
+                      "review_completion"
+                    ? "completion"
+                    : undefined
+              }
+              onClose={closeProjectRepair}
+              onDeleted={closeProjectRepair}
+            />
+          )
+        ) : (
+          <BottomSheet
+            title={strings.refinement}
+            onClose={closeProjectRepair}
+            labelledBy="refinement-project-repair-title"
+          >
+            {repairProjectLoading ? <LoadingState /> : null}
+            {repairProjectError ? (
+              <ErrorState
+                message={repairProjectError}
+                onRetry={reloadRepairProject}
+              />
+            ) : null}
+          </BottomSheet>
+        )
+      ) : null}
     </div>
   );
 }

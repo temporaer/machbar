@@ -52,10 +52,12 @@ export type ProjectEditFocusField = "driver" | "completion";
 export function ProjectEditSheet({
   project,
   onClose,
+  onDeleted,
   focusField,
 }: {
   project: ProjectDetail;
   onClose: () => void;
+  onDeleted?: (() => void) | undefined;
   focusField?: ProjectEditFocusField | undefined;
 }) {
   const strings = useStrings();
@@ -220,9 +222,13 @@ export function ProjectEditSheet({
     setActionError(null);
     try {
       await api.deleteProject(project.id);
-      onClose();
       bump();
-      navigate("/projects");
+      if (onDeleted) {
+        onDeleted();
+      } else {
+        onClose();
+        navigate("/projects");
+      }
     } catch (err) {
       setActionError(errorMessage(err, strings));
       setDeleting(false);

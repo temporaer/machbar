@@ -425,9 +425,15 @@ Because that drag takes no pointer capture, the click the browser synthesises on
 `RefinementPage` defaults to **Klärungsbedarf** cards grouped by operational
 defect: needs clarification, no responsibility, waiting without follow-up,
 follow-up due, blocked, due without a plan, XL without children, or ready to
-complete. Tapping the single suggested action opens an existing focused task
-sheet or the project detail. The interaction is repair-one-thing-at-a-time,
-not a mandatory multi-step wizard.
+complete. The primary action opens the narrowest existing task/project sheet
+over the still-mounted refinement page. Closing it reloads the canonical issue
+projection: an unresolved issue regains focus, while a resolved issue advances
+focus to the next item at the same fresh-list position. This deliberately
+avoids a static queue because one repair can remove several diagnostics or
+change their ordering. A secondary **Details** action always exposes the full
+task sheet or project page; project-detail navigation carries an explicit
+return anchor back to Arbeit klären. The interaction remains
+repair-one-thing-at-a-time, not a mandatory multi-step wizard.
 
 The owner × effort matrix remains collapsed as a secondary view, backed by
 `GET /api/refinement/owners` and `GET /api/refinement/tasks`.
