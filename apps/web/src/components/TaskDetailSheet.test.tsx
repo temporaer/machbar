@@ -158,6 +158,59 @@ describe("TaskDetailSheet", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("groups common fields and collapses rare task controls", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 42, title: "Strukturierte Aufgabe" }),
+    );
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await screen.findByDisplayValue("Strukturierte Aufgabe");
+
+    for (const heading of [
+      "Aufgabe",
+      "Planung",
+      "Inhalt",
+      "Wartet auf",
+      "Teilaufgaben",
+    ]) {
+      expect(
+        screen.getByRole("heading", { name: heading, level: 3 }),
+      ).toBeVisible();
+    }
+
+    const recurrence = screen
+      .getByRole("heading", { name: "Wiederholung", level: 3 })
+      .closest("details");
+    const organization = screen
+      .getByRole("heading", { name: "Organisation", level: 3 })
+      .closest("details");
+    const activity = screen
+      .getByRole("heading", { name: "Letzte Aktivitäten", level: 2 })
+      .closest("details");
+    const danger = screen
+      .getByRole("heading", { name: "Gefahrenbereich", level: 3 })
+      .closest("details");
+
+    expect(recurrence).not.toHaveAttribute("open");
+    expect(organization).not.toHaveAttribute("open");
+    expect(activity).not.toHaveAttribute("open");
+    expect(danger).not.toHaveAttribute("open");
+    expect(
+      screen.getByRole("button", { name: "Löschen", hidden: true }),
+    ).not.toBeVisible();
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: "Organisation", level: 3 }),
+    );
+    expect(screen.getByText("Sortier-Werkzeuge")).toBeVisible();
+    expect(screen.getByText(/Erstellt:/)).toBeVisible();
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: "Gefahrenbereich", level: 3 }),
+    );
+    expect(screen.getByRole("button", { name: "Löschen" })).toBeVisible();
+  });
+
   it("loads task activity only after its collapsed disclosure is opened", async () => {
     mockedApi.getTask.mockResolvedValue(makeTask({ id: 42, title: "Reparaturziel" }));
     renderSheet(42);
@@ -520,6 +573,11 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await screen.findByDisplayValue("Filter wechseln");
 
+    expect(
+      screen
+        .getByRole("heading", { name: "Wiederholung", level: 3 })
+        .closest("details"),
+    ).toHaveAttribute("open");
     expect(screen.getByLabelText("Fällig")).toBeDisabled();
     expect(
       screen.getByRole("checkbox", { name: "Aktiv" }),
