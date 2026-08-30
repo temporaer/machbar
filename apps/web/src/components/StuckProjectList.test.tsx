@@ -8,7 +8,7 @@ describe("StuckProjectList", () => {
   it("zeigt Festgefahren-Gründe und Reparaturvorschläge auf Deutsch", () => {
     const project = makeStuckProject({
       title: "Umzug organisieren",
-      stuckReason: "blocked_dependencies",
+      stuckReason: "blocked_without_clear_path",
     });
     render(
       <MemoryRouter>
@@ -17,7 +17,7 @@ describe("StuckProjectList", () => {
     );
 
     expect(screen.getByText("Umzug organisieren")).toBeInTheDocument();
-    expect(screen.getByText("Durch Abhängigkeiten blockiert")).toBeInTheDocument();
+    expect(screen.getByText("Blockiert ohne klaren Fortsetzungsweg")).toBeInTheDocument();
     expect(
       screen.getByText(/Prüfe die konkret blockierenden Voraussetzungen/),
     ).toBeInTheDocument();

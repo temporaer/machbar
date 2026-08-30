@@ -54,9 +54,7 @@ export function TaskOutline({
   const taskActions = useTaskActions();
   const { open } = useTaskDetail();
   const { primarySwipeAction } = useSwipeSettings();
-  const rightSwipeAction = waitingInteraction
-    ? strings.makeActionable
-    : strings.primarySwipeActionLabels[primarySwipeAction];
+  const rightSwipeAction = strings.primarySwipeActionLabels[primarySwipeAction];
   // Structural editing (drag gesture and the selected-task toolbar) keeps
   // its own optimistic view of the tree, so render what it hands back
   // rather than the raw prop.

@@ -74,14 +74,6 @@ export function RefinementPage() {
     error: tasksError,
     reload: reloadTasks,
   } = useAsync(() => api.getRefinementTasks({}), []);
-  // `GET /api/refinement/tasks` doesn't carry blocked/waitingFor (see
-  // `useRefinementActions.ts`'s `RefinementListItem` doc comment) — this
-  // unfiltered `searchTasks` call (the same technique `SearchPage` already
-  // uses for its initial, filter-less load) supplies them by task id.
-  const { data: contextTasks } = useAsync(
-    () => api.searchTasks({}),
-    [],
-  );
 
   const ownerNameById = useMemo(() => {
     const map = new Map<number, string>();
@@ -93,17 +85,8 @@ export function RefinementPage() {
 
   const listItems = useMemo<RefinementListItem[]>(() => {
     if (!taskRows) return [];
-    const contextById = new Map((contextTasks ?? []).map((t) => [t.id, t]));
-    return taskRows.map((row) => {
-      const ctx = contextById.get(row.id);
-      return {
-        ...row,
-        blocked: ctx?.blocked ?? false,
-        waitingFor: ctx?.waitingFor ?? null,
-        effectiveTags: ctx?.effectiveTags ?? [],
-      };
-    });
-  }, [taskRows, contextTasks]);
+    return taskRows;
+  }, [taskRows]);
 
   const filteredItems = useMemo(() => {
     if (!selection) return listItems;
@@ -137,14 +120,9 @@ export function RefinementPage() {
         return;
       }
       if (issue.suggestedAction.code === "plan_task") {
-        const taskToPlan =
-          contextTasks?.find(
-            (task) =>
-              task.projectId === issue.entityId &&
-              task.status !== "done" &&
-              task.status !== "cancelled",
-          ) ??
-          taskRows?.find((task) => task.projectId === issue.entityId);
+        const taskToPlan = taskRows?.find(
+          (task) => task.projectId === issue.entityId,
+        );
         if (taskToPlan) {
           taskDetail.open(taskToPlan.id, "schedule");
           return;
@@ -164,9 +142,10 @@ export function RefinementPage() {
       issue.suggestedAction.code === "assign_task"
         ? "owner"
         : issue.suggestedAction.code === "set_followup" ||
-            issue.suggestedAction.code === "follow_up" ||
-            issue.suggestedAction.code === "plan_task"
-          ? "schedule"
+            issue.suggestedAction.code === "follow_up"
+          ? "dependencies"
+          : issue.suggestedAction.code === "plan_task"
+            ? "schedule"
           : issue.suggestedAction.code === "resolve_blocker"
             ? "dependencies"
             : issue.suggestedAction.code === "add_child"

@@ -127,9 +127,36 @@ describe("api request() Content-Type handling", () => {
       status: 201,
       text: async () => JSON.stringify({ id: 1, name: "Lea" }),
     });
+
     await api.createMember({ name: "Lea" });
 
     expect(headersOf(fetchMock)).toMatchObject({ "Content-Type": "application/json" });
+  });
+
+  it("uses dedicated external-wait endpoints with revision-safe JSON bodies", async () => {
+    const putFetch = mockFetchOnce();
+    await api.setExternalWait(9, {
+      waitingFor: "Vermieter",
+      scheduledDate: "2026-09-05",
+      expectedRevision: 3,
+    });
+    expect(putFetch.mock.calls[0]?.[0]).toBe("/api/tasks/9/external-wait");
+    expect(putFetch.mock.calls[0]?.[1]).toMatchObject({
+      method: "PUT",
+      body: JSON.stringify({
+        waitingFor: "Vermieter",
+        scheduledDate: "2026-09-05",
+        expectedRevision: 3,
+      }),
+    });
+
+    const deleteFetch = mockFetchOnce();
+    await api.resolveExternalWait(9, 4);
+    expect(deleteFetch.mock.calls[0]?.[0]).toBe("/api/tasks/9/external-wait");
+    expect(deleteFetch.mock.calls[0]?.[1]).toMatchObject({
+      method: "DELETE",
+      body: JSON.stringify({ expectedRevision: 4 }),
+    });
   });
 
   it("lets an explicitly supplied header override the default (including for bodyless requests)", async () => {

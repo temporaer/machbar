@@ -35,7 +35,6 @@ const emptyAgenda = {
   dueSoon: [],
   shared: [],
   unscheduled: [],
-  followUp: [],
   revisit: [],
 };
 

@@ -215,7 +215,6 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
         ...agenda.overdue,
         ...agenda.dueToday,
         ...agenda.dueSoon,
-        ...agenda.followUp,
         ...(agenda.revisit ?? []),
         ...agenda.shared,
         ...agenda.unscheduled,

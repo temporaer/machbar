@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import type { Task, TaskStatus } from "@machbar/shared";
+import type { Task } from "@machbar/shared";
 import type { TaskDetailFocusField } from "../lib/taskDetailContext";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
@@ -46,22 +46,13 @@ const KEY_DIRECTIONS: Record<string, OrganizeDirection> = {
 };
 
 /**
- * Opts a `TaskOutline`/`TaskRow` tree into "waiting row mode", used by the
- * Warten page's own outline. Its mere presence (regardless of `onFollowUp`
- * actually doing anything) switches the primary (right) swipe from the
- * globally configured `PrimarySwipeAction` to always setting the task back
- * to `actionable` — "erledigen"/"Irgendwann"/"Verwerfen" make no sense
- * against a row that is, by construction, always `waiting` here — while
- * still going through the existing optimistic retention/error flow (see
- * `useTaskActions`), completely independent of the global swipe setting
- * stored by `useSwipeSettings`.
+ * Lets blocker-focused views open the external-wait follow-up editor while
+ * preserving the normal task-row swipe behavior.
  */
 export interface TaskRowWaitingInteraction {
   /**
-   * Hands a waiting task back to the host so it can open its own follow-up
-   * UI (e.g. `WaitingFollowUpSheet`). Only offered as a chip when the task
-   * is still `waiting` — a row that a swipe/chip already turned actionable
-   * has nothing left to "follow up" on.
+   * Hands an externally blocked task back to the host so it can open its
+   * timestamped follow-up UI.
    */
   onFollowUp: (task: Task) => void;
 }
@@ -89,8 +80,6 @@ function primaryActionBgLabel(
   if (task.status === "done" || task.status === "cancelled") return strings.reopen;
   if (task.status === "captured") return strings.actionable;
   switch (action) {
-    case "waiting":
-      return strings.waiting;
     case "someday":
       return strings.someday;
     case "cancel":
@@ -155,7 +144,6 @@ export function TaskRow({
   const {
     requestToggle,
     requestPrimarySwipe,
-    setStatus,
     quickUpdate,
     busyId,
     retained,
@@ -210,9 +198,7 @@ export function TaskRow({
   // "remains open after drag reset" requirement) until the chips close.
   const showCompleteBg = dragX > 0;
   const showCancelBg = dragX < 0 || chipsOpen;
-  const primarySwipeLabel = waitingInteraction
-    ? strings.makeActionable
-    : primaryActionBgLabel(task, primarySwipeAction, strings);
+  const primarySwipeLabel = primaryActionBgLabel(task, primarySwipeAction, strings);
   const swipeCoach = useSwipeCoach(
     `task:${task.id}`,
     busyId !== task.id && !isRetained && !chipsOpen,
@@ -240,12 +226,12 @@ export function TaskRow({
     ? formatExactLocalDate(task.projectDueDate, locale)
     : null;
   const revisitRelative =
-    showRevisitDate && task.scheduledDate
-      ? formatRelativeScheduleDate(task.scheduledDate, new Date(), locale)
+    showRevisitDate && task.nextBlockerAttentionDate
+      ? formatRelativeScheduleDate(task.nextBlockerAttentionDate, new Date(), locale)
       : null;
   const revisitExact =
-    showRevisitDate && task.scheduledDate
-      ? formatExactLocalDate(task.scheduledDate, locale)
+    showRevisitDate && task.nextBlockerAttentionDate
+      ? formatExactLocalDate(task.nextBlockerAttentionDate, locale)
       : null;
 
   const clearLongPress = () => {
@@ -300,30 +286,16 @@ export function TaskRow({
     if (!dragState.current.dragging) return;
     dragState.current.dragging = false;
     if (dragX > SWIPE_THRESHOLD) {
-      if (waitingInteraction) {
-        // Waiting rows always move to "Machbar" before any configurable
-        // terminal transition can apply.
-        setStatus(task, "actionable");
-      } else {
-        // Captured tasks are clarified by requestPrimarySwipe before the
-        // configured transition may apply.
-        requestPrimarySwipe(task, primarySwipeAction);
-      }
+      requestPrimarySwipe(task, primarySwipeAction);
     } else if (dragX < -SWIPE_THRESHOLD) {
       // The opposite direction reveals the touch-chip row instead of acting.
       setChipsOpen(true);
     }
     setDragX(0);
-  }, [dragX, requestPrimarySwipe, setStatus, task, primarySwipeAction, waitingInteraction]);
+  }, [dragX, requestPrimarySwipe, task, primarySwipeAction]);
 
   const openQuickAction = (action: TaskQuickAction) => {
     setQuickAction(action);
-    setChipsOpen(false);
-  };
-
-  const toggleWaitingChip = () => {
-    const next: TaskStatus = task.status === "waiting" ? "actionable" : "waiting";
-    setStatus(task, next);
     setChipsOpen(false);
   };
 
@@ -332,10 +304,6 @@ export function TaskRow({
     setChipsOpen(false);
   };
 
-  // Only wired up by the host of "waiting row mode" (the Warten page) — see
-  // `TaskRowWaitingInteraction`. The icon itself never renders without both
-  // `waitingInteraction` and a `waiting` task, so this is only ever called
-  // in that combination.
   const followUpChip = () => {
     waitingInteraction?.onFollowUp(task);
     setChipsOpen(false);
@@ -544,11 +512,18 @@ export function TaskRow({
                   {strings.taskStatusLabels[task.status]}
                 </span>
               ) : null}
-              {task.status === "waiting" && task.waitingFor ? (
+              {task.externalWait ? (
                 <span className="task-row-meta-item">
-                  {strings.waitingFor}: {task.waitingFor}
+                  {strings.waitingFor}: {task.externalWait.waitingFor?.trim() || strings.unknown}
                 </span>
               ) : null}
+              {task.dependencies
+                .filter((dependency) => !dependency.resolved)
+                .map((dependency) => (
+                  <span className="task-row-meta-item" key={dependency.id}>
+                    {strings.blockedBy}: {dependency.title ?? `#${dependency.dependsOnTaskId}`}
+                  </span>
+                ))}
               {due ? (
                 <span className={`task-row-meta-item${overdue ? " overdue" : ""}`}>
                   {strings.due}: {due}
@@ -557,10 +532,10 @@ export function TaskRow({
               {revisitRelative && revisitExact ? (
                 <span
                   className="task-row-meta-item"
-                  title={`${strings.revisitDate}: ${revisitExact}`}
-                  aria-label={`${strings.revisitDate}: ${revisitRelative} (${revisitExact})`}
+                  title={`${task.executable ? strings.scheduled : strings.revisitDate}: ${revisitExact}`}
+                  aria-label={`${task.executable ? strings.scheduled : strings.revisitDate}: ${revisitRelative} (${revisitExact})`}
                 >
-                  {strings.revisitDate}: {revisitRelative}
+                  {task.executable ? strings.scheduled : strings.revisitDate}: {revisitRelative}
                 </span>
               ) : null}
               {projectDueRelative && projectDueExact ? (
@@ -631,22 +606,9 @@ export function TaskRow({
             onClick={goToProjectChip}
           />
           {isDone || isCancelled ? (
-            // A finished/cancelled task has no "waiting" state to toggle —
-            // offer the real reopen flow instead of letting this chip fall
-            // through to a generic status update (which wouldn't clear
-            // completedAt/cancelledAt and would leave them stale).
             <IconActionButton kind="reopen" label={strings.reopen} onClick={reopenChip} />
-          ) : (
-            <IconActionButton
-              kind={task.status === "waiting" ? "actionable" : "waiting"}
-              label={task.status === "waiting" ? strings.makeActionable : strings.waiting}
-              onClick={toggleWaitingChip}
-            />
-          )}
-          {waitingInteraction && task.status === "waiting" ? (
-            // Only offered by the host of "waiting row mode" (the Warten
-            // page) and only against a still-waiting task — see
-            // `TaskRowWaitingInteraction`.
+          ) : null}
+          {waitingInteraction && task.externalWait ? (
             <IconActionButton kind="followUp" label={strings.followUp} onClick={followUpChip} />
           ) : null}
           <IconActionButton kind="more" label={strings.more} onClick={() => onOpenDetail(task.id)} />

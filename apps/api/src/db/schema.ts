@@ -27,6 +27,9 @@ const activityEventKinds = [
   "task_descendants_status_changed",
   "task_moved",
   "task_dependencies_changed",
+  "task_external_wait_started",
+  "task_external_wait_updated",
+  "task_external_wait_resolved",
   "task_tags_changed",
   "project_created",
   "project_updated",
@@ -267,6 +270,8 @@ export const tasks = sqliteTable(
     ),
     dueDate: text("due_date"),
     scheduledDate: text("scheduled_date"),
+    // Legacy-only storage retained until a future tasks-table rebuild.
+    // Current external waits live in task_external_waits.
     waitingFor: text("waiting_for"),
     priority: integer("priority"),
     size: text("size"), // nullable S | M | L | XL
@@ -292,6 +297,19 @@ export const tasks = sqliteTable(
     index("tasks_reminder_idx").on(t.reminderAt, t.status),
   ],
 );
+
+export const taskExternalWaits = sqliteTable("task_external_waits", {
+  taskId: integer("task_id")
+    .primaryKey()
+    .references(() => tasks.id, { onDelete: "cascade" }),
+  waitingFor: text("waiting_for"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+});
 
 export const taskRecurrenceOccurrences = sqliteTable(
   "task_recurrence_occurrences",

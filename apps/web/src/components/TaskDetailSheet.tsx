@@ -42,7 +42,6 @@ import {
 interface TextFieldsSnapshot {
   title: string;
   notes: string;
-  waitingFor: string;
 }
 
 function localCalendarDate(date = new Date()): string {
@@ -57,7 +56,6 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
   return {
     title: task.title,
     notes: task.notes ?? "",
-    waitingFor: task.waitingFor ?? "",
   };
 }
 
@@ -113,7 +111,9 @@ export function TaskDetailSheet() {
   const [depResults, setDepResults] = useState<Task[]>([]);
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
-  const [waitingForDraft, setWaitingForDraft] = useState("");
+  const [externalWaitDraft, setExternalWaitDraft] = useState("");
+  const [externalWaitDateDraft, setExternalWaitDateDraft] = useState("");
+  const [externalWaitDateValid, setExternalWaitDateValid] = useState(true);
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
   const [savingTextFields, setSavingTextFields] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -189,14 +189,16 @@ export function TaskDetailSheet() {
       setShareStatus(null);
       setDueDateValid(true);
       setScheduledDateValid(true);
+      setExternalWaitDateValid(true);
       setStatusDraft(task.status);
+      setExternalWaitDraft(task.externalWait?.waitingFor ?? "");
+      setExternalWaitDateDraft(task.externalWait ? task.scheduledDate ?? "" : "");
     }
     const hasUnsavedEdits =
       !isNewTask &&
       textFieldsBaseline !== null &&
       (titleDraft !== textFieldsBaseline.title ||
-        notesDraft !== textFieldsBaseline.notes ||
-        waitingForDraft !== textFieldsBaseline.waitingFor);
+        notesDraft !== textFieldsBaseline.notes);
 
     if (hasUnsavedEdits && textFieldsBaseline !== null) {
       const previousBaseline = textFieldsBaseline;
@@ -206,16 +208,10 @@ export function TaskDetailSheet() {
       setNotesDraft((current) =>
         current === previousBaseline.notes ? nextBaseline.notes : current,
       );
-      setWaitingForDraft((current) =>
-        current === previousBaseline.waitingFor
-          ? nextBaseline.waitingFor
-          : current,
-      );
       setTextFieldsBaseline(nextBaseline);
     } else {
       setTitleDraft(nextBaseline.title);
       setNotesDraft(nextBaseline.notes);
-      setWaitingForDraft(nextBaseline.waitingFor);
       setTextFieldsBaseline(nextBaseline);
     }
     lastLoadedTaskIdRef.current = task.id;
@@ -298,8 +294,7 @@ export function TaskDetailSheet() {
   const textFieldsDirty =
     textFieldsBaseline !== null &&
     (titleDraft !== textFieldsBaseline.title ||
-      notesDraft !== textFieldsBaseline.notes ||
-      waitingForDraft !== textFieldsBaseline.waitingFor);
+      notesDraft !== textFieldsBaseline.notes);
   const saveChangesDisabled = !textFieldsDirty || !titleIsValid || savingTextFields;
   const saveNextDisabled = !titleIsValid || savingTextFields;
 
@@ -309,7 +304,6 @@ export function TaskDetailSheet() {
     const snapshot: TextFieldsSnapshot = {
       title: titleDraft.trim(),
       notes: notesDraft,
-      waitingFor: waitingForDraft,
     };
     setSavingTextFields(true);
     setSaveError(null);
@@ -317,7 +311,6 @@ export function TaskDetailSheet() {
       const updated = await api.updateTask(task.id, {
         title: snapshot.title,
         notes: snapshot.notes,
-        waitingFor: snapshot.waitingFor || null,
         ...(clarify ? { status: "actionable" as const } : {}),
         expectedRevision: revisionRef.current ?? task.revision,
       });
@@ -418,6 +411,49 @@ export function TaskDetailSheet() {
     setDepResults(results.filter((t) => task && t.id !== task.id).slice(0, 8));
   };
 
+  const saveExternalWait = async () => {
+    if (!task || !externalWaitDateValid) return;
+    setSaveError(null);
+    try {
+      const updated = await api.setExternalWait(task.id, {
+        waitingFor: externalWaitDraft.trim() || null,
+        scheduledDate: externalWaitDateDraft || null,
+        expectedRevision: revisionRef.current ?? task.revision,
+      });
+      revisionRef.current = updated.revision;
+      bump();
+      reload();
+    } catch (err) {
+      if (isStaleWriteConflict(err)) {
+        bump();
+        reload();
+      }
+      setSaveError(localizedErrorMessage(err, strings));
+    }
+  };
+
+  const resolveExternalWait = async () => {
+    if (!task) return;
+    setSaveError(null);
+    try {
+      const updated = await api.resolveExternalWait(
+        task.id,
+        revisionRef.current ?? task.revision,
+      );
+      revisionRef.current = updated.revision;
+      setExternalWaitDraft("");
+      setExternalWaitDateDraft("");
+      bump();
+      reload();
+    } catch (err) {
+      if (isStaleWriteConflict(err)) {
+        bump();
+        reload();
+      }
+      setSaveError(localizedErrorMessage(err, strings));
+    }
+  };
+
   return (
     <BottomSheet
       title={strings.taskDetails}
@@ -492,19 +528,6 @@ export function TaskDetailSheet() {
             </select>
           </div>
 
-          {task.status === "waiting" ? (
-            <div className="field">
-              <label htmlFor="task-waiting-for">{strings.waitingFor}</label>
-              <input
-                id="task-waiting-for"
-                value={waitingForDraft}
-                placeholder={strings.waitingForPlaceholder}
-                onChange={(e) => setWaitingForDraft(e.target.value)}
-                onBlur={(e) => saveOnBlur(e.relatedTarget)}
-              />
-            </div>
-          ) : null}
-
           <div className="field" ref={ownerFieldRef}>
             {task.ownerInheritanceMode !== "explicit" ? <label>{strings.owner}</label> : null}
             <InheritanceControl
@@ -553,18 +576,22 @@ export function TaskDetailSheet() {
                 </span>
               ) : null}
             </div>
-            <div className="field" style={{ flex: 1 }} ref={scheduleFieldRef}>
-              <label htmlFor="task-scheduled">{strings.scheduled}</label>
-              <HumanDateInput
-                inputRef={scheduleInputRef}
-                id="task-scheduled"
-                value={task.scheduledDate ?? ""}
-                onChange={(scheduledDate) => void patch({ scheduledDate })}
-                onValidityChange={setScheduledDateValid}
-              />
-            </div>
+            {!task.externalWait ? (
+              <div className="field" style={{ flex: 1 }} ref={scheduleFieldRef}>
+                <label htmlFor="task-scheduled">
+                  {task.blocked ? strings.revisitDate : strings.scheduled}
+                </label>
+                <HumanDateInput
+                  inputRef={scheduleInputRef}
+                  id="task-scheduled"
+                  value={task.scheduledDate ?? ""}
+                  onChange={(scheduledDate) => void patch({ scheduledDate })}
+                  onValidityChange={setScheduledDateValid}
+                />
+              </div>
+            ) : null}
           </div>
-          {task.repeatAfterDays === null ? (
+          {task.repeatAfterDays === null && !task.externalWait ? (
             <ScheduleShortcuts
               value={task.scheduledDate}
               onChange={(scheduledDate) => void patch({ scheduledDate })}
@@ -786,6 +813,48 @@ export function TaskDetailSheet() {
           ) : null}
 
           <div className="field" ref={dependenciesFieldRef}>
+            <label>{strings.waitingFor}</label>
+            <div className="stack blocker-control">
+              <div className="field">
+                <label htmlFor="task-external-wait">{strings.externalWait}</label>
+                <input
+                  id="task-external-wait"
+                  value={externalWaitDraft}
+                  placeholder={strings.waitingForPlaceholder}
+                  onChange={(event) => setExternalWaitDraft(event.target.value)}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="task-external-wait-date">
+                  {strings.revisitDate}
+                </label>
+                <HumanDateInput
+                  id="task-external-wait-date"
+                  value={externalWaitDateDraft}
+                  onChange={(date) => setExternalWaitDateDraft(date ?? "")}
+                  onValidityChange={setExternalWaitDateValid}
+                />
+              </div>
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={!externalWaitDateValid}
+                  onClick={() => void saveExternalWait()}
+                >
+                  {task.externalWait ? strings.updateExternalWait : strings.addExternalWait}
+                </button>
+                {task.externalWait ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => void resolveExternalWait()}
+                  >
+                    {strings.resolveExternalWait}
+                  </button>
+                ) : null}
+              </div>
+            </div>
             <label>{strings.dependencies}</label>
             {task.dependencies.length === 0 ? <p className="text-muted">{strings.noDependencies}</p> : null}
             <ul className="list" style={{ padding: 0, margin: 0 }}>

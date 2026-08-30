@@ -16,6 +16,7 @@ interface DatabaseCounts {
   tasks: number;
   tags: number;
   dependencies: number;
+  externalWaits: number;
   activityEvents: number;
   contributionEvents: number;
   tasksCreatedToday: number;
@@ -44,6 +45,7 @@ export function registerDebugRoutes(app: FastifyInstance, db: Db) {
         (SELECT COUNT(*) FROM tasks) AS tasks,
         (SELECT COUNT(*) FROM tags) AS tags,
         (SELECT COUNT(*) FROM task_dependencies) AS dependencies,
+        (SELECT COUNT(*) FROM task_external_waits) AS externalWaits,
         (SELECT COUNT(*) FROM activity_events) AS activityEvents,
         (SELECT COUNT(*) FROM contribution_events) AS contributionEvents,
         (SELECT COUNT(*) FROM tasks
@@ -64,7 +66,10 @@ export function registerDebugRoutes(app: FastifyInstance, db: Db) {
         (SELECT freelist_count FROM pragma_freelist_count) AS freelistPages
     `);
     const taskStatuses = db.all<{ status: TaskStatus; count: number }>(sql`
-      SELECT status, COUNT(*) AS count FROM tasks GROUP BY status
+      SELECT status, COUNT(*) AS count
+      FROM tasks
+      WHERE status IN ('captured', 'actionable', 'someday', 'done', 'cancelled')
+      GROUP BY status
     `);
     const projectStatuses = db.all<{
       status: ProjectStatus;
@@ -102,11 +107,12 @@ export function registerDebugRoutes(app: FastifyInstance, db: Db) {
           tasks: counts?.tasks ?? 0,
           tags: counts?.tags ?? 0,
           dependencies: counts?.dependencies ?? 0,
+          externalWaits: counts?.externalWaits ?? 0,
           activityEvents: counts?.activityEvents ?? 0,
           contributionEvents: counts?.contributionEvents ?? 0,
         },
         taskStatusCounts: completeCounts(
-          ["captured", "actionable", "waiting", "someday", "done", "cancelled"],
+          ["captured", "actionable", "someday", "done", "cancelled"],
           taskStatuses,
         ),
         projectStatusCounts: completeCounts(

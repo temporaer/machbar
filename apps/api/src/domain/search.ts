@@ -44,10 +44,12 @@ export function searchTasks(graph: Graph, filters: SearchFilters): TaskRecord[] 
       (t) => !!t.scheduledDate && t.scheduledDate <= filters.scheduledTo!,
     );
   }
-  if (filters.waitingFor !== undefined && filters.waitingFor.trim() !== "") {
-    const needle = filters.waitingFor.trim().toLowerCase();
-    results = results.filter((t) =>
-      (t.waitingFor ?? "").toLowerCase().includes(needle),
+  if (filters.blocked !== undefined) {
+    results = results.filter((task) => task.blocked === filters.blocked);
+  }
+  if (filters.externalWait !== undefined) {
+    results = results.filter(
+      (task) => (task.externalWait !== null) === filters.externalWait,
     );
   }
 

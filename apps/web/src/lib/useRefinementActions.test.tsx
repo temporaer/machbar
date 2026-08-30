@@ -28,8 +28,12 @@ function makeItem(overrides: Partial<RefinementListItem> = {}): RefinementListIt
     position: 0,
     updatedAt: "2026-01-01T09:00:00.000Z",
     blocked: false,
+    executable: true,
     effectiveTags: [],
-    waitingFor: null,
+    externalWait: null,
+    nextBlockerAttentionDate: null,
+    blockers: [],
+    dependencies: [],
     ...overrides,
   };
 }

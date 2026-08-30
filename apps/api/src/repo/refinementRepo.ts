@@ -9,6 +9,7 @@ import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { isTaskInWorkingSystem } from "../domain/workEligibility.js";
 import { getEffectiveOwners, getEffectiveTagIds } from "./effectiveRepo.js";
+import { Graph } from "../domain/graph.js";
 
 /**
  * "Open" work for refinement purposes: everything that isn't finished or
@@ -44,6 +45,7 @@ export interface OwnerSizeCounts {
 
 export interface RefinementTaskRow {
   id: number;
+  revision: number;
   title: string;
   status: TaskStatus;
   size: TaskSize | null;
@@ -53,6 +55,35 @@ export interface RefinementTaskRow {
   effectiveOwnerSource: "task" | "parent" | "project" | "none";
   position: number;
   updatedAt: string;
+  blocked: boolean;
+  executable: boolean;
+  externalWait: { waitingFor: string | null } | null;
+  nextBlockerAttentionDate: string | null;
+  blockers: Array<
+    | { type: "external"; waitingFor: string | null }
+    | {
+        type: "dependency";
+        taskId: number;
+        title?: string;
+        scheduledDate?: string | null;
+        resolved: boolean;
+      }
+  >;
+  dependencies: Array<{
+    id: number;
+    taskId: number;
+    dependsOnTaskId: number;
+    title?: string;
+    resolved?: boolean;
+  }>;
+  effectiveTags: Array<{
+    id: number;
+    name: string;
+    color: string;
+    kind: "area" | "actor" | "context" | "plain";
+    groupingMode: "auto" | "pinned" | "hidden";
+    sortPosition: number | null;
+  }>;
 }
 
 interface OpenTaskRow {
@@ -214,29 +245,55 @@ export function getRefinementTasks(
   db: Db,
   filters?: RefinementFilters,
 ): RefinementTaskRow[] {
-  const projects = db
-    .select({ id: schema.projects.id, title: schema.projects.title })
-    .from(schema.projects)
-    .all();
-  const projectTitleById = new Map(projects.map((p) => [p.id, p.title]));
-
-  const { rows, effectiveOwnerId, effectiveOwnerSource } = loadFilteredOpenTasks(
-    db,
-    filters,
+  const graph = Graph.load(db);
+  const projectStatusById = new Map(
+    [...graph.projectsById.values()].map((project) => [
+      project.id,
+      project.status,
+    ]),
   );
-
-  return rows
-    .map((row) => ({
-      id: row.id,
-      title: row.title,
-      status: row.status,
-      size: row.size,
-      projectId: row.projectId,
-      projectTitle: row.projectId !== null ? projectTitleById.get(row.projectId) ?? null : null,
-      effectiveOwnerId: effectiveOwnerId.get(row.id) ?? null,
-      effectiveOwnerSource: effectiveOwnerSource.get(row.id) ?? "none",
-      position: row.position,
-      updatedAt: row.updatedAt,
+  return graph
+    .allTasks()
+    .filter((task) => {
+      if (!isOpenStatus(task.status)) return false;
+      if (!isTaskInWorkingSystem(task, projectStatusById)) return false;
+      if (
+        filters?.projectId !== undefined &&
+        task.projectId !== filters.projectId
+      ) {
+        return false;
+      }
+      if (
+        filters?.ownerId !== undefined &&
+        task.effectiveOwnerId !== filters.ownerId
+      ) {
+        return false;
+      }
+      if (filters?.tagIds?.length) {
+        const tagIds = new Set(task.effectiveTags.map((tag) => tag.id));
+        if (!filters.tagIds.every((tagId) => tagIds.has(tagId))) return false;
+      }
+      return true;
+    })
+    .map((task) => ({
+      id: task.id,
+      revision: task.revision,
+      title: task.title,
+      status: task.status,
+      size: task.size,
+      projectId: task.projectId,
+      projectTitle: task.projectTitle ?? null,
+      effectiveOwnerId: task.effectiveOwnerId,
+      effectiveOwnerSource: task.effectiveOwnerSource,
+      position: task.position,
+      updatedAt: task.updatedAt,
+      blocked: task.blocked,
+      executable: task.executable,
+      externalWait: task.externalWait,
+      nextBlockerAttentionDate: task.nextBlockerAttentionDate,
+      blockers: task.blockers,
+      dependencies: task.dependencies,
+      effectiveTags: task.effectiveTags,
     }))
     .sort((a, b) => {
       const aProject = a.projectId ?? Number.MAX_SAFE_INTEGER;

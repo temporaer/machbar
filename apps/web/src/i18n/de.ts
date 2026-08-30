@@ -59,6 +59,10 @@ const base = {
   dependencies: "Abhängigkeiten",
   subtasks: "Teilaufgaben",
   waitingFor: "Wartet auf",
+  externalWait: "Externer Wartegrund",
+  addExternalWait: "Wartepunkt hinzufügen",
+  updateExternalWait: "Wartepunkt aktualisieren",
+  resolveExternalWait: "Wartepunkt auflösen",
   inherited: "Geerbt",
   inheritedProject: "Von Projekt geerbt",
   inheritedParent: "Von übergeordneter Aufgabe geerbt",
@@ -138,11 +142,11 @@ const extra = {
   stuckRepairLabels: {
     no_next_action:
       "Lege einen nächsten Schritt fest: Wische eine Aufgabe im Eingang nach rechts, um sie als Machbar zu markieren.",
-    only_waiting_without_followup:
+    waiting_without_followup:
       "Setze eine Wiedervorlage oder plane einen eigenen nächsten Schritt.",
     followup_due:
       "Hake jetzt nach oder markiere eine wartende Aufgabe wieder als machbar.",
-    blocked_dependencies:
+    blocked_without_clear_path:
       "Prüfe die konkret blockierenden Voraussetzungen, damit eine Aufgabe machbar wird.",
     unassigned_actionable: "Weise die offene machbare Aufgabe einer Person zu.",
     completion_review: "Prüfe das Ergebnis und schließe das Projekt ab oder ergänze die noch fehlende Arbeit.",
@@ -435,7 +439,6 @@ const extra = {
   assignProject: "Projekt zuweisen",
   primarySwipeActionLabels: {
     complete: "Erledigen / Wieder öffnen",
-    waiting: "Warten",
     someday: "Irgendwann",
     cancel: "Verwerfen",
   } satisfies Record<PrimarySwipeAction, string>,
@@ -760,7 +763,8 @@ const extra = {
   } satisfies Record<RefinementActionCode, string>,
   refinementBlockingLabels: {
     captured: "Blockierende Aufgabe ungeklärt",
-    waiting: "Blockierende Aufgabe nicht terminiert",
+    waiting_without_followup: "Blockierende Aufgabe nicht terminiert",
+    followup_due: "Wiedervorlage der blockierenden Aufgabe ist fällig",
     someday: "Blockierende Aufgabe nicht machbar",
     backlog_project: "Blockierende Aufgabe liegt im Backlog",
     terminal_project: "Blockierende Aufgabe nicht machbar",
@@ -768,7 +772,8 @@ const extra = {
   } satisfies Record<RefinementBlockingReason, string>,
   refinementBlockingExplanations: {
     captured: "Diese Aufgabe ist erst erfasst und noch nicht machbar.",
-    waiting: "Sie braucht eine zukünftige Wiedervorlage.",
+    waiting_without_followup: "Sie braucht eine zukünftige Wiedervorlage.",
+    followup_due: "Die Wiedervorlage ist erreicht und muss geprüft werden.",
     someday: "Sie ist derzeit nicht machbar.",
     backlog_project:
       "Sie gehört zu einem Projekt, das noch nicht aktiv ist.",
@@ -879,6 +884,10 @@ const extra = {
       "Eine Aufgabenfolge braucht mindestens zwei Schritte.",
     task_title_required: "Bitte gib einen Aufgabentitel ein.",
     waiting_query_invalid: "Die Wartelisten-Abfrage ist ungültig.",
+    external_wait_recurring_forbidden:
+      "Wiederkehrende Aufgaben können keinen externen Wartepunkt haben.",
+    external_wait_status_invalid:
+      "Ein externer Wartepunkt ist für diesen Aufgabenstatus nicht möglich.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `Eine Person mit dem Namen „${name}“ ist bereits vorhanden.`,
@@ -904,7 +913,6 @@ const extra = {
 const taskStatusLabels: Record<TaskStatus, string> = {
   captured: "Erfasst",
   actionable: "Machbar",
-  waiting: "Wartet",
   someday: "Irgendwann",
   done: "Erledigt",
   cancelled: "Verworfen",
@@ -912,9 +920,9 @@ const taskStatusLabels: Record<TaskStatus, string> = {
 
 const stuckReasonLabels: Record<StuckReason, string> = {
   no_next_action: "Kein nächster Schritt",
-  only_waiting_without_followup: "Wartet ohne Wiedervorlage",
+  waiting_without_followup: "Wartet ohne Wiedervorlage",
   followup_due: "Nachhaken fällig",
-  blocked_dependencies: "Durch Abhängigkeiten blockiert",
+  blocked_without_clear_path: "Blockiert ohne klaren Fortsetzungsweg",
   unassigned_actionable: "Offene Aufgabe ohne Zuständigkeit",
   completion_review: "Bereit zum Abschließen",
 };

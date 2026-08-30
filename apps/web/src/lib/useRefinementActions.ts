@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Tag, TaskSize } from "@machbar/shared";
+import type { TaskSize } from "@machbar/shared";
 import { api } from "./api";
 import type { RefinementTaskRow } from "./api";
 import { useRefresh } from "./refresh";
@@ -10,21 +10,7 @@ import {
   localizedErrorMessage,
 } from "./errorMessage";
 
-/**
- * `GET /api/refinement/tasks` (see `api.ts::getRefinementTasks` /
- * `apps/api/src/repo/refinementRepo.ts::RefinementTaskRow`) doesn't carry
- * `blocked`/`waitingFor` — those live on the full `Task` contract returned
- * by e.g. `api.searchTasks`. `RefinementPage` merges them in by task id
- * (the same "fetch everything, no filters" technique `SearchPage` already
- * uses) so the list/row can still show blocked/waiting context. Declared
- * here (not backend-mirrored) so the page, this hook, and
- * `RefinementTaskRow` all share one shape.
- */
-export interface RefinementListItem extends RefinementTaskRow {
-  blocked: boolean;
-  waitingFor: string | null;
-  effectiveTags: Tag[];
-}
+export type RefinementListItem = RefinementTaskRow;
 
 /**
  * How long a refinement row whose size just changed keeps showing its new

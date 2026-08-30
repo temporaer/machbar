@@ -85,14 +85,13 @@ describe("atomic activity recording", () => {
       title: "Nachher",
       notes: "streng vertraulicher Notiztext",
       dueDate: "2026-09-01",
-      waitingFor: "Rückmeldung",
     });
 
     const edit = events().at(-1)!;
     expect(edit.kind).toBe("task_updated");
     expect(edit.entityTitle).toBe("Nachher");
     expect(edit.metadata).toEqual({
-      changedFields: ["title", "notes", "dueDate", "waitingFor"],
+      changedFields: ["title", "notes", "dueDate"],
     });
     expect(JSON.stringify(edit.metadata)).not.toContain("streng vertraulich");
   });

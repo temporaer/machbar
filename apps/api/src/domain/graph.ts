@@ -17,15 +17,18 @@ import {
   type ProjectWorkflowAction,
 } from "./mutations.js";
 import {
-  getBlockedTaskIds,
   getEffectiveOwners,
   getEffectiveTagIds,
-  getNextActionTaskIdsByProject,
-  getStuckReasonsByProject,
-} from "../repo/index.js";
+} from "../repo/effectiveRepo.js";
+import { getNextActionTaskIdsByProject } from "../repo/nextActionRepo.js";
 import { selectPrimaryAreaTag } from "./projectAreas.js";
 import { performance } from "node:perf_hooks";
 import { recordGraphLoad } from "../diagnostics/graphMetrics.js";
+import {
+  analyzeTaskBlockers,
+  type BlockerPathDiagnosis,
+  type TaskBlockerAnalysis,
+} from "./blockers.js";
 
 export interface ProjectRecord extends SharedProject {
   /** Workflow actions currently legal for this project's status (see
@@ -62,7 +65,6 @@ interface RawTask {
   createdByMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
-  waitingFor: string | null;
   priority: number | null;
   size: TaskSize | null;
   position: number;
@@ -87,6 +89,23 @@ interface RawProject {
   position: number;
 }
 
+function stuckReasonForDiagnoses(
+  diagnoses: BlockerPathDiagnosis[],
+): StuckReason {
+  if (diagnoses.some((diagnosis) => diagnosis.reason === "followup_due")) {
+    return "followup_due";
+  }
+  if (
+    diagnoses.some(
+      (diagnosis) => diagnosis.reason === "waiting_without_followup",
+    )
+  ) {
+    return "waiting_without_followup";
+  }
+  if (diagnoses.length > 0) return "blocked_without_clear_path";
+  return "no_next_action";
+}
+
 /**
  * Assembles the fully computed project/task shapes described by
  * @machbar/shared for API responses.
@@ -109,6 +128,10 @@ export class Graph {
   readonly rootsByProject = new Map<number | null, TaskRecord[]>();
   private readonly stuckReasonByProject: Map<number, StuckReason>;
   private readonly nextActionIdByProject: Map<number, number>;
+  private readonly blockerAnalysisByTask = new Map<
+    number,
+    TaskBlockerAnalysis
+  >();
 
   private constructor(
     stuckReasonByProject: Map<number, StuckReason>,
@@ -118,16 +141,16 @@ export class Graph {
     this.nextActionIdByProject = nextActionIdByProject;
   }
 
-  static load(db: Db): Graph {
+  static load(
+    db: Db,
+    today = new Date().toISOString().slice(0, 10),
+  ): Graph {
     const startedAt = performance.now();
     // --- SQL/CTE-computed derivations (repo layer) ---------------------
     const effectiveOwners = getEffectiveOwners(db);
     const effectiveTagIdsByTask = getEffectiveTagIds(db);
-    const blockedTaskIds = getBlockedTaskIds(db);
     const nextActionIdByProject = getNextActionTaskIdsByProject(db);
-    const stuckReasonByProject = getStuckReasonsByProject(db);
-
-    const graph = new Graph(stuckReasonByProject, nextActionIdByProject);
+    const graph = new Graph(new Map(), nextActionIdByProject);
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
     const rawProjects = db.select().from(schema.projects).all() as RawProject[];
@@ -173,6 +196,13 @@ export class Graph {
       list.push({ id: row.id, dependsOnTaskId: row.dependsOnTaskId });
       dependenciesByTask.set(row.taskId, list);
     }
+    const externalWaitRows = db.select().from(schema.taskExternalWaits).all();
+    const externalWaitByTask = new Map(
+      externalWaitRows.map((row) => [
+        row.taskId,
+        { waitingFor: row.waitingFor },
+      ]),
+    );
 
     const criteriaRows = db
       .select()
@@ -197,6 +227,43 @@ export class Graph {
     }
 
     const rawTasksById = new Map(rawTasks.map((t) => [t.id, t]));
+    const projectStatuses = new Map(
+      rawProjects.map((project) => [project.id, project.status]),
+    );
+    const blockerInputs = new Map(
+      rawTasks.map((task) => [
+        task.id,
+        {
+          id: task.id,
+          title: task.title,
+          status: task.status,
+          projectId: task.projectId,
+          scheduledDate: task.scheduledDate,
+          externalWait: externalWaitByTask.get(task.id) ?? null,
+          dependencies: (dependenciesByTask.get(task.id) ?? []).map(
+            (dependency) => {
+              const prerequisite = rawTasksById.get(
+                dependency.dependsOnTaskId,
+              );
+              return {
+                dependsOnTaskId: dependency.dependsOnTaskId,
+                resolved:
+                  prerequisite?.status === "done" ||
+                  prerequisite?.status === "cancelled",
+              };
+            },
+          ),
+        },
+      ]),
+    );
+    const blockerAnalysis = analyzeTaskBlockers(
+      blockerInputs,
+      projectStatuses,
+      today,
+    );
+    for (const [taskId, analysis] of blockerAnalysis) {
+      graph.blockerAnalysisByTask.set(taskId, analysis);
+    }
 
     for (const p of rawProjects) {
       graph.projectsById.set(p.id, {
@@ -273,7 +340,30 @@ export class Graph {
           resolved,
         };
       });
-      const blocked = blockedTaskIds.has(raw.id);
+      const execution = blockerAnalysis.get(raw.id);
+      const externalWait = externalWaitByTask.get(raw.id) ?? null;
+      const blockers = [
+        ...(externalWait
+          ? [
+              {
+                type: "external" as const,
+                waitingFor: externalWait.waitingFor,
+              },
+            ]
+          : []),
+        ...dependencies
+          .filter((dependency) => !dependency.resolved)
+          .map((dependency) => {
+            const prerequisite = rawTasksById.get(dependency.dependsOnTaskId);
+            return {
+              type: "dependency" as const,
+              taskId: dependency.dependsOnTaskId,
+              title: dependency.title,
+              scheduledDate: prerequisite?.scheduledDate ?? null,
+              resolved: false,
+            };
+          }),
+      ];
 
       return {
         id: raw.id,
@@ -289,7 +379,7 @@ export class Graph {
         createdByMemberId: raw.createdByMemberId,
         dueDate: raw.dueDate,
         scheduledDate: raw.scheduledDate,
-        waitingFor: raw.waitingFor,
+        externalWait,
         priority: raw.priority,
         size: raw.size,
         position: raw.position,
@@ -308,7 +398,11 @@ export class Graph {
         effectiveContextTags,
         explicitTags,
         excludedTagIds,
-        blocked,
+        blocked: execution?.blocked ?? false,
+        executable: execution?.executable ?? false,
+        nextBlockerAttentionDate:
+          execution?.nextBlockerAttentionDate ?? null,
+        blockers,
         dependencies,
         children: [],
         projectTitle: project?.title ?? null,
@@ -346,6 +440,44 @@ export class Graph {
       graph.rootsByProject.set(projectId, list);
     }
 
+    for (const project of graph.projectsById.values()) {
+      if (project.status !== "active") continue;
+      const tasks = graph.tasksForProject(project.id);
+      const openTasks = tasks.filter(
+        (task) => task.status !== "done" && task.status !== "cancelled",
+      );
+      let reason: StuckReason | null = null;
+      if (tasks.length === 0) {
+        reason = "no_next_action";
+      } else if (openTasks.length === 0) {
+        reason = "completion_review";
+      } else {
+        const blockedDiagnoses = openTasks
+          .filter((task) => task.blocked)
+          .flatMap(
+            (task) => blockerAnalysis.get(task.id)?.diagnoses ?? [],
+          );
+        const hasHealthyPath = openTasks.some((task) => {
+          const analysis = blockerAnalysis.get(task.id);
+          return (
+            task.status === "actionable" &&
+            (analysis?.executable || analysis?.healthyProgressPath)
+          );
+        });
+        if (!hasHealthyPath) {
+          reason = stuckReasonForDiagnoses(blockedDiagnoses);
+        } else if (
+          openTasks.some(
+            (task) =>
+              task.status === "actionable" && task.effectiveOwnerId === null,
+          )
+        ) {
+          reason = "unassigned_actionable";
+        }
+      }
+      if (reason) graph.stuckReasonByProject.set(project.id, reason);
+    }
+
     recordGraphLoad(
       performance.now() - startedAt,
       graph.tasksById.size,
@@ -374,6 +506,10 @@ export class Graph {
     return this.stuckReasonByProject.get(projectId) ?? null;
   }
 
+  blockerAnalysisFor(taskId: number): TaskBlockerAnalysis | null {
+    return this.blockerAnalysisByTask.get(taskId) ?? null;
+  }
+
   projectWithComputed(projectId: number): ProjectRecord | null {
     const project = this.projectsById.get(projectId);
     if (!project) return null;
@@ -385,19 +521,22 @@ export class Graph {
     const waitingOn = [
       ...new Set(
         tasks
-          .filter((task) => task.status === "waiting")
+          .filter((task) => task.externalWait !== null)
           .sort(
             (a, b) =>
               a.position - b.position ||
               a.title.localeCompare(b.title, "de") ||
               a.id - b.id,
           )
-          .map((task) => task.waitingFor?.trim() || task.title),
+          .map(
+            (task) =>
+              task.externalWait?.waitingFor?.trim() || task.title,
+          ),
       ),
     ];
     const waitingUntil =
       tasks
-          .filter((task) => task.status === "waiting" && task.scheduledDate)
+          .filter((task) => task.externalWait && task.scheduledDate)
           .map((task) => task.scheduledDate!)
           .sort()[0] ?? null;
     const effectiveTags = dedupeTags([

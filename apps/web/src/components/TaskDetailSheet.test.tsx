@@ -21,6 +21,8 @@ vi.mock("../lib/api", () => ({
     getTask: vi.fn(),
     getTaskRecurrenceHistory: vi.fn(),
     updateTask: vi.fn(),
+    setExternalWait: vi.fn(),
+    resolveExternalWait: vi.fn(),
     transitionTaskStatus: vi.fn(),
     completeTask: vi.fn(),
     cancelTask: vi.fn(),
@@ -112,6 +114,8 @@ describe("TaskDetailSheet", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getTags.mockResolvedValue([makeTag({ id: 10, name: "büro" })]);
     mockedApi.updateTask.mockResolvedValue(makeTask());
+    mockedApi.setExternalWait.mockResolvedValue(makeTask());
+    mockedApi.resolveExternalWait.mockResolvedValue(makeTask());
     mockedApi.transitionTaskStatus.mockResolvedValue(makeTask());
     mockedApi.getActivity.mockResolvedValue({ items: [], nextCursor: null });
     mockedApi.getTaskRecurrenceHistory.mockResolvedValue({
@@ -202,6 +206,38 @@ describe("TaskDetailSheet", () => {
     const removeButton = screen.getByRole("button", { name: "Entfernen" });
     await waitFor(() => expect(searchInput).toHaveFocus());
     expect(removeButton).not.toHaveFocus();
+  });
+
+  it("manages external waits beside dependencies without a waiting status", async () => {
+    const task = makeTask({
+      id: 42,
+      title: "Freigabe",
+      externalWait: { waitingFor: "Vermieter" },
+      blocked: true,
+      executable: false,
+      scheduledDate: "2026-09-05",
+      nextBlockerAttentionDate: "2026-09-05",
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.setExternalWait.mockResolvedValue({ ...task, revision: 2 });
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+
+    const status = await screen.findByLabelText("Status");
+    expect(within(status).queryByRole("option", { name: "Wartet" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Externer Wartegrund")).toHaveValue("Vermieter");
+    expect(screen.getAllByText("Wiedervorlage").length).toBeGreaterThan(0);
+
+    await userEvent.clear(screen.getByLabelText("Externer Wartegrund"));
+    await userEvent.type(screen.getByLabelText("Externer Wartegrund"), "Hausverwaltung");
+    await userEvent.click(screen.getByRole("button", { name: "Wartepunkt aktualisieren" }));
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(42, {
+        waitingFor: "Hausverwaltung",
+        scheduledDate: "2026-09-05",
+        expectedRevision: 1,
+      }),
+    );
   });
 
   it("focuses the add-child input after closed child reopen controls", async () => {
@@ -351,10 +387,10 @@ describe("TaskDetailSheet", () => {
     renderSheet(47);
     await userEvent.click(screen.getByText("open"));
 
-    await userEvent.selectOptions(await screen.findByLabelText("Status"), "waiting");
+    await userEvent.selectOptions(await screen.findByLabelText("Status"), "someday");
 
     await waitFor(() =>
-      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(47, "waiting"),
+      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(47, "someday"),
     );
     expect(mockedApi.reopenTask).not.toHaveBeenCalled();
   });
@@ -396,11 +432,11 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     const status = await screen.findByLabelText("Status");
 
-    await userEvent.selectOptions(status, "waiting");
+    await userEvent.selectOptions(status, "someday");
 
-    expect(status).toHaveValue("waiting");
+    expect(status).toHaveValue("someday");
     expect(status).toBeDisabled();
-    resolveTransition({ ...task, status: "waiting", completedAt: null });
+    resolveTransition({ ...task, status: "someday", completedAt: null });
     await waitFor(() => expect(status).not.toBeDisabled());
   });
 
@@ -607,7 +643,6 @@ describe("TaskDetailSheet", () => {
       expect(mockedApi.updateTask).toHaveBeenCalledWith(58, {
         title: "Ausflug planen",
         notes: "Neue Notiz",
-        waitingFor: null,
         expectedRevision: 1,
       }),
     );
@@ -639,7 +674,6 @@ describe("TaskDetailSheet", () => {
       expect(mockedApi.updateTask).toHaveBeenCalledWith(46, {
         title: "Einkaufen gehen",
         notes: "Milch",
-        waitingFor: null,
         expectedRevision: 1,
       }),
     );
@@ -698,7 +732,6 @@ describe("TaskDetailSheet", () => {
       expect(mockedApi.updateTask).toHaveBeenLastCalledWith(60, {
         title: "Remote umbenannt",
         notes: "Mein lokaler Entwurf",
-        waitingFor: null,
         expectedRevision: 2,
       }),
     );
@@ -782,7 +815,6 @@ describe("TaskDetailSheet", () => {
       expect(mockedApi.updateTask).toHaveBeenCalledWith(50, {
         title: "Erste Erfassung",
         notes: "",
-        waitingFor: null,
         status: "actionable",
         expectedRevision: 1,
       }),
@@ -823,7 +855,6 @@ describe("TaskDetailSheet", () => {
     expect(mockedApi.updateTask).toHaveBeenLastCalledWith(54, {
       title: "Roh erfasst",
       notes: "Ergänzung",
-      waitingFor: null,
       expectedRevision: 1,
     });
   });
@@ -836,10 +867,10 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await screen.findByDisplayValue("Status wählen");
 
-    await userEvent.selectOptions(screen.getByLabelText("Status"), "waiting");
+    await userEvent.selectOptions(screen.getByLabelText("Status"), "someday");
 
     await waitFor(() =>
-      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(55, "waiting"),
+      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(55, "someday"),
     );
   });
 });

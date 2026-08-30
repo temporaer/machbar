@@ -52,9 +52,15 @@ describe("working-system task eligibility", () => {
     });
     const waiting = await createTask({
       title: "Vorbereitete Rückmeldung",
-      status: "waiting",
+      status: "actionable",
       scheduledDate: today,
     });
+    const waitResponse = await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${waiting.id}/external-wait`,
+      payload: { waitingFor: "Rückmeldung" },
+    });
+    expect(waitResponse.statusCode).toBe(200);
     const captured = await createTask({
       title: "Vorbereitete offene Frage",
       needsClarification: true,
@@ -68,7 +74,6 @@ describe("working-system task eligibility", () => {
     ).json();
     expect([
       ...agendaBefore.planned,
-      ...agendaBefore.followUp,
       ...agendaBefore.overdue,
       ...agendaBefore.dueToday,
       ...agendaBefore.dueSoon,
@@ -142,16 +147,14 @@ describe("working-system task eligibility", () => {
       actionable.id,
     );
     expect(
-      agendaAfter.followUp.map((task: { id: number }) => task.id),
+      agendaAfter.revisit.map((task: { id: number }) => task.id),
     ).toContain(waiting.id);
     expect(
       (
         await ctx.app.inject({ method: "GET", url: "/api/waiting" })
       )
         .json()
-        .flatMap((group: { tasks: Array<{ id: number }> }) =>
-          group.tasks.map((task) => task.id),
-        ),
+        .map((task: { id: number }) => task.id),
     ).toContain(waiting.id);
     expect(
       (

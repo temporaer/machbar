@@ -16,7 +16,7 @@ describe("ProjectStuckNotice", () => {
   });
 
   it("gives process-specific guidance for waiting projects", () => {
-    render(<ProjectStuckNotice reason="only_waiting_without_followup" />);
+    render(<ProjectStuckNotice reason="waiting_without_followup" />);
 
     expect(screen.getByText("Wartet ohne Wiedervorlage")).toBeInTheDocument();
     expect(screen.getByText(/Setze eine Wiedervorlage/)).toBeInTheDocument();

@@ -51,6 +51,10 @@ describe("refinementRepo", () => {
       return buildRefinementIssues(Graph.load(handle.db), today).issues;
     }
 
+    function addExternalWait(taskId: number, waitingFor: string | null = null) {
+      handle.db.insert(schema.taskExternalWaits).values({ taskId, waitingFor }).run();
+    }
+
     it("flags a legacy active project without a responsible person as urgent", () => {
       const project = createProject(handle.db, {
         title: "Legacy aktiv",
@@ -104,12 +108,12 @@ describe("refinementRepo", () => {
         .run();
 
       expect(
-        issueCodes().some(
+        issueCodes().filter(
           (entry) =>
             entry.projectId === project.id &&
             entry.code === "missing_next_action",
         ),
-      ).toBe(true);
+      ).toHaveLength(1);
     });
 
     it("flags a project with no executable next action", () => {
@@ -134,28 +138,36 @@ describe("refinementRepo", () => {
     it("distinguishes missing, future, and due waiting follow-ups", () => {
       const missing = createTask(handle.db, {
         title: "Ohne Wiedervorlage",
-        status: "waiting",
+        status: "actionable",
       });
       const future = createTask(handle.db, {
         title: "Später nachhaken",
-        status: "waiting",
+        status: "actionable",
         scheduledDate: "2026-08-26",
       });
       const todayTask = createTask(handle.db, {
         title: "Heute nachhaken",
-        status: "waiting",
+        status: "actionable",
         scheduledDate: today,
       });
       const past = createTask(handle.db, {
         title: "Gestern nachhaken",
-        status: "waiting",
+        status: "actionable",
         scheduledDate: "2026-08-24",
       });
+      for (const task of [missing, future, todayTask, past]) addExternalWait(task.id);
       const issues = issueCodes();
       expect(
         issues.find((entry) => entry.entityId === missing.id)?.code,
       ).toBe("waiting_without_followup");
-      expect(issues.some((entry) => entry.entityId === future.id)).toBe(false);
+      expect(
+        issues.some(
+          (entry) =>
+            entry.entityId === future.id &&
+            (entry.code === "waiting_without_followup" ||
+              entry.code === "followup_due"),
+        ),
+      ).toBe(false);
       expect(
         issues.find((entry) => entry.entityId === todayTask.id)?.code,
       ).toBe("followup_due");
@@ -262,8 +274,9 @@ describe("refinementRepo", () => {
     it("flags a dependency branch that ends in waiting without a follow-up", () => {
       const waiting = createTask(handle.db, {
         title: "Auf Rückmeldung warten",
-        status: "waiting",
+        status: "actionable",
       });
+      addExternalWait(waiting.id, "Rückmeldung");
       const downstream = createTask(handle.db, {
         title: "Termin vereinbaren",
         status: "actionable",
@@ -284,7 +297,13 @@ describe("refinementRepo", () => {
             issue.entityId === downstream.id &&
             issue.code === "blocked_without_clear_path",
         ),
-      ).toBeDefined();
+      ).toMatchObject({
+        blockingReason: "waiting_without_followup",
+        suggestedAction: {
+          code: "set_followup",
+          targetTaskId: waiting.id,
+        },
+      });
     });
 
     it("names and targets the captured prerequisite blocking a downstream task", () => {
@@ -357,9 +376,10 @@ describe("refinementRepo", () => {
     it("accepts a future waiting endpoint but flags a reached follow-up endpoint", () => {
       const future = createTask(handle.db, {
         title: "Geparkte Rückmeldung",
-        status: "waiting",
+        status: "actionable",
         scheduledDate: "2026-08-26",
       });
+      addExternalWait(future.id);
       const afterFuture = createTask(handle.db, {
         title: "Nach geparkter Rückmeldung",
         needsClarification: false,
@@ -368,9 +388,10 @@ describe("refinementRepo", () => {
 
       const due = createTask(handle.db, {
         title: "Fällige Rückmeldung",
-        status: "waiting",
+        status: "actionable",
         scheduledDate: today,
       });
+      addExternalWait(due.id);
       const afterDue = createTask(handle.db, {
         title: "Nach fälliger Rückmeldung",
         needsClarification: false,
@@ -393,6 +414,19 @@ describe("refinementRepo", () => {
         ),
       ).toBe(true);
       expect(
+        issues.find(
+          (issue) =>
+            issue.entityId === afterDue.id &&
+            issue.code === "blocked_without_clear_path",
+        ),
+      ).toMatchObject({
+        blockingReason: "followup_due",
+        suggestedAction: {
+          code: "follow_up",
+          targetTaskId: due.id,
+        },
+      });
+      expect(
         issues.some(
           (issue) =>
             issue.entityId === due.id && issue.code === "followup_due",
@@ -414,9 +448,10 @@ describe("refinementRepo", () => {
       const waiting = createTask(handle.db, {
         projectId: project.id,
         title: "Angebot kommt",
-        status: "waiting",
+        status: "actionable",
         scheduledDate: "2026-08-26",
       });
+      addExternalWait(waiting.id);
       const downstream = createTask(handle.db, {
         projectId: project.id,
         title: "Termin vereinbaren",
@@ -494,7 +529,7 @@ describe("refinementRepo", () => {
         },
       });
       expect(getStuckReasonsByProject(handle.db, today).get(activeProject.id)).toBe(
-        "blocked_dependencies",
+        "blocked_without_clear_path",
       );
     });
   });
@@ -652,6 +687,54 @@ describe("refinementRepo", () => {
 
     const shared = countsFor(null, getRefinementOwnerSizeCounts(handle.db));
     expect(shared).toMatchObject({ S: 1, M: 1, L: 0, XL: 0, total: 2 });
+  });
+
+  it("returns self-contained blocker rows with transitive attention dates", () => {
+    const external = createTask(handle.db, {
+      title: "Lieferung abwarten",
+      status: "actionable",
+      scheduledDate: "2026-09-02",
+    });
+    handle.db
+      .insert(schema.taskExternalWaits)
+      .values({ taskId: external.id, waitingFor: "Spedition" })
+      .run();
+    const middle = createTask(handle.db, {
+      title: "Montage vorbereiten",
+      status: "actionable",
+    });
+    const downstream = createTask(handle.db, {
+      title: "Schrank montieren",
+      status: "actionable",
+    });
+    addDependency(handle.db, middle.id, external.id);
+    addDependency(handle.db, downstream.id, middle.id);
+
+    const row = getRefinementTasks(handle.db).find((entry) => entry.id === downstream.id);
+    expect(row).toMatchObject({
+      id: downstream.id,
+      title: "Schrank montieren",
+      blocked: true,
+      executable: false,
+      externalWait: null,
+      nextBlockerAttentionDate: "2026-09-02",
+      dependencies: [
+        expect.objectContaining({
+          dependsOnTaskId: middle.id,
+          title: "Montage vorbereiten",
+          resolved: false,
+        }),
+      ],
+      blockers: [
+        expect.objectContaining({
+          type: "dependency",
+          taskId: middle.id,
+          title: "Montage vorbereiten",
+        }),
+      ],
+    });
+    expect(row).toHaveProperty("effectiveTags");
+    expect(row).toHaveProperty("effectiveOwnerSource");
   });
 
   it("keeps unestimated tasks in the effort view without creating an estimate issue", () => {

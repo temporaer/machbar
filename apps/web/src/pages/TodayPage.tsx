@@ -51,7 +51,6 @@ export function TodayPage() {
     writeTodayScope(nextScope);
   };
   const revisitTasks = agenda?.revisit ?? [];
-  const followUpTasks = agenda?.followUp ?? [];
   const additionalTasks = [...(agenda?.shared ?? []), ...(agenda?.unscheduled ?? [])];
   const projectAgenda = agenda?.projects ?? [];
   const pageHints: PageHint[] = [
@@ -63,9 +62,6 @@ export function TodayPage() {
         strings.primarySwipeActionLabels[primarySwipeAction],
       ),
     },
-    ...(followUpTasks.length > 0
-      ? [{ label: strings.followUp, text: strings.followUpHint }]
-      : []),
     ...(revisitTasks.length > 0
       ? [{ label: strings.revisit, text: strings.revisitHint }]
       : []),
@@ -96,7 +92,6 @@ export function TodayPage() {
         (() => {
           const total =
             sections.reduce((sum, s) => sum + agenda[s.key].length, 0) +
-            followUpTasks.length +
             additionalTasks.length +
             revisitTasks.length +
             projectAgenda.length;
@@ -138,16 +133,6 @@ export function TodayPage() {
                     />
                   </div>
                 ))}
-              {followUpTasks.length > 0 ? (
-                <div className="section">
-                  <div className="section-title">{strings.followUp}</div>
-                  <TaskOutline
-                    tasks={followUpTasks}
-                    emptyMessage={strings.noItems}
-                    showSwipeHint={false}
-                  />
-                </div>
-              ) : null}
               {revisitTasks.length > 0 ? (
                 <div className="section" key="revisit">
                   <div className="section-title">{strings.revisit}</div>

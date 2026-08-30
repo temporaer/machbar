@@ -174,7 +174,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
   });
 
   it("clarifies a captured task before a configured defer action outside Eingang", async () => {
-    window.localStorage.setItem(STORAGE_KEY, "waiting");
+    window.localStorage.setItem(STORAGE_KEY, "someday");
     const task = makeTask({
       id: 15,
       title: "Später einordnen",
@@ -193,7 +193,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalledWith(
       15,
-      expect.objectContaining({ status: "waiting" }),
+      expect.objectContaining({ status: "someday" }),
     );
   });
 
@@ -215,21 +215,6 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     swipe(container, 100);
     await waitFor(() => expect(mockedApi.reopenTask).toHaveBeenCalledWith(9));
-  });
-
-  it("respects a configured 'Warten' primary swipe action on an open task", async () => {
-    window.localStorage.setItem(STORAGE_KEY, "waiting");
-    const task = makeTask({ id: 2, title: "Antwort abwarten", status: "actionable" });
-    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
-    await screen.findByText("Antwort abwarten");
-
-    swipe(container, 100);
-
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(2, {
-      status: "waiting",
-      expectedRevision: 1,
-    }));
-    expect(mockedApi.completeTask).not.toHaveBeenCalled();
   });
 
   it("respects a configured 'Irgendwann' primary swipe action on an open task", async () => {
@@ -275,7 +260,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await waitFor(() => expect(mockedApi.cancelTask).toHaveBeenCalledWith(4, "leave_open"));
   });
 
-  it.each(["waiting", "someday", "cancel", "complete"] as const)(
+  it.each(["someday", "cancel", "complete"] as const)(
     "always reopens an already done task via the primary swipe, regardless of the '%s' setting",
     async (configured) => {
       window.localStorage.setItem(STORAGE_KEY, configured);
@@ -292,7 +277,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
   );
 
   it("always reopens an already cancelled task via the primary swipe", async () => {
-    window.localStorage.setItem(STORAGE_KEY, "waiting");
+    window.localStorage.setItem(STORAGE_KEY, "someday");
     const task = makeTask({ id: 6, title: "Verworfene Aufgabe", status: "cancelled" });
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Verworfene Aufgabe");
@@ -312,7 +297,6 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(screen.getByRole("button", { name: "Zuweisen" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Planen" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Notizen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Wartet" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Mehr" })).toBeInTheDocument();
     expect(mockedApi.completeTask).not.toHaveBeenCalled();
     expect(mockedApi.cancelTask).not.toHaveBeenCalled();
@@ -343,7 +327,6 @@ describe("TaskRow – primary swipe direction mapping", () => {
       "Teilaufgabe hinzufügen",
       "Nächsten Schritt danach hinzufügen",
       "Zum Projekt",
-      "Wartet",
       "Mehr",
     ]) {
       const button = screen.getByRole("button", { name });
@@ -444,7 +427,6 @@ describe("TaskRow – calm shared card presentation", () => {
   });
 
   it.each([
-    ["waiting", "Wartet"],
     ["someday", "Irgendwann"],
     ["done", "Erledigt"],
     ["cancelled", "Verworfen"],
@@ -636,18 +618,4 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     expect(await screen.findByDisplayValue("Umzug planen")).toBeInTheDocument();
   });
 
-  it("sets the task to 'waiting' directly from the 'Warten' chip, without opening the sheet", async () => {
-    const task = makeTask({ id: 34, title: "Lieferung abwarten", status: "actionable" });
-    renderOutlineWithDetail(task);
-    await screen.findByText("Lieferung abwarten");
-
-    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Wartet" }));
-
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(34, {
-      status: "waiting",
-      expectedRevision: 1,
-    }));
-    expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
-  });
 });

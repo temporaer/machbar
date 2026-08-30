@@ -11,7 +11,7 @@ import type { GroupableTagKind } from "../lib/tagGrouping";
 export function WaitingPage() {
   const strings = useStrings();
   const [groupBy, setGroupBy] = useState<GroupableTagKind | null>(null);
-  const { data: groups, loading, error, reload } = useAsync(
+  const { data: tasks, loading, error, reload } = useAsync(
     () => api.getWaiting(),
     [],
   );
@@ -22,7 +22,7 @@ export function WaitingPage() {
         hints={[
           {
             label: strings.taskGestures,
-            text: strings.taskGestureHint(strings.makeActionable),
+            text: strings.taskGestureHint(strings.done),
           },
         ]}
       />
@@ -31,7 +31,7 @@ export function WaitingPage() {
       </div>
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
-      {groups ? <WaitingGroupList groups={groups} groupBy={groupBy} /> : null}
+      {tasks ? <WaitingGroupList tasks={tasks} groupBy={groupBy} /> : null}
     </div>
   );
 }

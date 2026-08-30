@@ -26,7 +26,7 @@ describe("ProjectAgendaCard", () => {
             qualification: "both",
             nextAction: makeTask({ title: "Catering anrufen" }),
             stuck: {
-              reason: "blocked_dependencies",
+              reason: "blocked_without_clear_path",
             },
           }}
         />

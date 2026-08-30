@@ -36,6 +36,9 @@ describe("TaskRow Wiedervorlage date", () => {
     const task = makeTask({
       title: "Lieferung erneut prüfen",
       scheduledDate: "2026-08-22",
+      nextBlockerAttentionDate: "2026-08-22",
+      blocked: true,
+      executable: false,
     });
     const { rerender } = renderWithProviders(
       <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
@@ -64,6 +67,9 @@ describe("TaskRow Wiedervorlage date", () => {
           makeTask({
             title: "Abhängigkeit nachhalten",
             scheduledDate: "2026-08-25",
+            nextBlockerAttentionDate: "2026-08-25",
+            blocked: true,
+            executable: false,
             dueDate: "2026-08-24",
             projectDueDate: "2026-08-28",
           }),

@@ -34,8 +34,12 @@ function makeItem(overrides: Partial<RefinementListItem> = {}): RefinementListIt
     position: 0,
     updatedAt: "2026-01-01T09:00:00.000Z",
     blocked: false,
+    executable: true,
     effectiveTags: [],
-    waitingFor: null,
+    externalWait: null,
+    nextBlockerAttentionDate: null,
+    blockers: [],
+    dependencies: [],
     ...overrides,
     revision: overrides.revision ?? 1,
   };
@@ -127,7 +131,11 @@ describe("RefinementTaskRow", () => {
   });
 
   it("shows blocked and waiting-for context when present", async () => {
-    const task = makeItem({ status: "waiting", waitingFor: "Antwort vom Handwerker", blocked: true });
+    const task = makeItem({
+      externalWait: { waitingFor: "Antwort vom Handwerker" },
+      blocked: true,
+      executable: false,
+    });
     renderRow(task);
     expect(await screen.findByText(/Antwort vom Handwerker/)).toBeInTheDocument();
     expect(screen.getByLabelText("Blockiert durch")).toBeInTheDocument();

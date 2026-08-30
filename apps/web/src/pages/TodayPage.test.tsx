@@ -36,7 +36,6 @@ function makeEmptyAgenda(): Agenda {
     dueSoon: [],
     shared: [],
     unscheduled: [],
-    followUp: [],
     revisit: [],
   };
 }
@@ -229,27 +228,19 @@ describe("TodayPage", () => {
       id: 2,
       title: "Leiter zurückbringen",
       blocked: true,
+      executable: false,
       scheduledDate: today,
+      nextBlockerAttentionDate: today,
     });
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
       revisit: [revisitTask],
-      followUp: [
-        makeTask({
-          id: 6,
-          title: "Installateur anrufen",
-          status: "waiting",
-        }),
-      ],
     });
     renderWithProviders(<TodayPage />);
 
     expect(await screen.findByText("Blockiert prüfen")).toBeInTheDocument();
     const revisitHint = "Blockiert, aber heute wieder zu prüfen.";
-    const followUpHint =
-      "Die Wiedervorlage ist erreicht. Jetzt nachhaken oder die Aufgabe wieder machbar machen.";
     expect(screen.queryByText(revisitHint)).not.toBeInTheDocument();
-    expect(screen.queryByText(followUpHint)).not.toBeInTheDocument();
     const infoButtons = screen.getAllByRole("button", {
       name: "Hinweise zu dieser Seite anzeigen",
     });
@@ -258,7 +249,6 @@ describe("TodayPage", () => {
       screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
     );
     expect(screen.getByText(revisitHint)).toBeInTheDocument();
-    expect(screen.getByText(followUpHint)).toBeInTheDocument();
     expect(screen.getByText("Leiter zurückbringen")).toBeInTheDocument();
     expect(screen.getByText("Wiedervorlage: heute")).toBeInTheDocument();
     // The normal blocked lock indicator from TaskRow must still show up.
@@ -289,24 +279,6 @@ describe("TodayPage", () => {
     // visible section like every other one on this page.
     expect(heading.closest("details")).toBeNull();
     expect(screen.getByText("Keller aufräumen")).toBeVisible();
-  });
-
-  it("zeigt fällige Wiedervorlagen wartender Aufgaben unter Nachhaken", async () => {
-    mockedApi.getAgenda.mockResolvedValue({
-      ...makeEmptyAgenda(),
-      followUp: [
-        makeTask({
-          id: 5,
-          title: "Installateur anrufen",
-          status: "waiting",
-          scheduledDate: "2026-01-01",
-        }),
-      ],
-    });
-    renderWithProviders(<TodayPage />);
-
-    expect(await screen.findByText("Nachhaken")).toBeInTheDocument();
-    expect(screen.getByText("Installateur anrufen")).toBeInTheDocument();
   });
 
   it("zeigt Projekttermine in einem eigenen Abschnitt der Heute-Ansicht", async () => {
