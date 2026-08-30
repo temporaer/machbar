@@ -16,6 +16,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
   const today = todayIso();
   const yesterday = addDaysIso(today, -1);
   const tomorrow = addDaysIso(today, 1);
+  const afterDueSoonWindow = addDaysIso(today, 4);
 
   beforeEach(() => {
     ctx = createTestContext();
@@ -114,6 +115,32 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     });
 
     expect(await bucketsContaining("Machbar ohne Termin")).toEqual(["unscheduled"]);
+  });
+
+  it("keeps executable tasks discoverable before their deadline enters due soon", async () => {
+    const ownerRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: { name: "Mira" },
+    });
+    const owner = ownerRes.json();
+    await createTask({
+      title: "Später fällig, jetzt machbar",
+      ownerMemberId: owner.id,
+      ownerInheritanceMode: "explicit",
+      dueDate: afterDueSoonWindow,
+    });
+    await createTask({
+      title: "Geteilt und später fällig",
+      dueDate: afterDueSoonWindow,
+    });
+
+    expect(await bucketsContaining("Später fällig, jetzt machbar")).toEqual([
+      "unscheduled",
+    ]);
+    expect(await bucketsContaining("Geteilt und später fällig")).toEqual([
+      "shared",
+    ]);
   });
 
   it("excludes Später-klären captures from Heute", async () => {
