@@ -124,10 +124,43 @@ With Compose, obtain the generated container name with `docker compose ps`.
 | `OIDC_CLIENT_SECRET` | unset | Pocket ID client secret |
 | `OIDC_PUBLIC_URL` | unset | Exact public HTTPS origin |
 | `OIDC_SESSION_TTL_DAYS` | `30` | Local session lifetime, 1–365 days |
+| `VAPID_PUBLIC_KEY` | unset | Public VAPID key exposed to browsers when Web Push is enabled |
+| `VAPID_PRIVATE_KEY` | unset | Private VAPID signing key; keep it only in deployment secrets or the uncommitted `.env` |
+| `VAPID_SUBJECT` | unset | HTTPS URL or `mailto:` contact identifying the Push sender |
 
 The application treats a partial OIDC configuration as a startup error.
 Production refuses to start when OIDC is completely unset unless
 `ALLOW_UNAUTHENTICATED=true` explicitly enables unauthenticated mode.
+Web Push is optional, but a partial VAPID configuration is also a startup
+error.
+
+## Web Push notifications
+
+Web Push requires HTTPS at the browser-facing origin (localhost is the usual
+development exception) and a service-worker-capable browser. Generate a VAPID
+key pair once for an installation:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Store the generated values outside source control:
+
+```dotenv
+VAPID_PUBLIC_KEY=replace-with-generated-public-key
+VAPID_PRIVATE_KEY=replace-with-generated-private-key
+VAPID_SUBJECT=https://machbar.example.com
+```
+
+The private key never leaves the server. Each browser/PWA installation must be
+enabled separately under **More → Notifications**; a member may subscribe
+several devices, and a shared unauthenticated browser is reassociated when its
+selected Machbar identity changes.
+
+The current version sends Push notifications only when another person assigns
+or reassigns a task/project to the member, or when an explicit task
+`reminderAt` becomes due. It does not send due-date digests, workflow-hygiene
+alerts, comments, or mentions.
 
 ## Reverse proxy
 

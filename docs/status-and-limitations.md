@@ -54,8 +54,14 @@ Backups are file/database operations managed by the operator.
 
 ### Recurrence, reminders, and notifications
 
-The data model contains recurrence and reminder fields, but Machbar does not
-currently regenerate recurring tasks or deliver reminder notifications.
+Recurring task completion advances the next occurrence. Explicit task
+`reminderAt` values can produce server-triggered Web Push notifications when
+the installation has VAPID configured and the member opted in on that device.
+Assignments by another person can also produce Push notifications.
+
+Machbar does not currently provide a notification inbox, comments, mentions,
+ordinary due-date notifications, or a daily digest. Push availability depends
+on HTTPS, service-worker support, and the browser/operating system.
 
 ### Sharing
 

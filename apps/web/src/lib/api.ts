@@ -13,6 +13,8 @@ import type {
   ProjectAgendaEntry,
   ProjectStatus,
   ProjectReadiness,
+  PushConfig,
+  PushSubscriptionRegistration,
   RefinementIssue,
   SearchFilters,
   StuckProject,
@@ -312,6 +314,17 @@ export type { ProjectAgendaEntry };
 export const api = {
   getAuthStatus: () => request<AuthStatus>("/auth/status"),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
+  getPushConfig: () => request<PushConfig>("/push/config"),
+  registerPushSubscription: (input: PushSubscriptionRegistration) =>
+    request<void>("/push/subscription", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  unregisterPushSubscription: (endpoint: string) =>
+    request<void>("/push/subscription", {
+      method: "DELETE",
+      body: JSON.stringify({ endpoint }),
+    }),
 
   getMembers: () => request<Member[]>("/members"),
   createMember: (input: CreateMemberInput) =>

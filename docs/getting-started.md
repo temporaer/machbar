@@ -88,6 +88,12 @@ the system share sheet for incoming text and URLs.
 PWA installation does not make the app offline-capable. The browser must still
 reach the Machbar server.
 
+When the server has [Web Push configured](deployment.md#web-push-notifications),
+notifications can be enabled separately on each device under **More →
+Notifications**. Permission is requested only after pressing the enable
+button. Machbar currently notifies a member about assignments made by another
+person and explicit task reminders.
+
 ## Stop or inspect the service
 
 ```bash

@@ -559,6 +559,16 @@ const extra = {
 
   appearance: "Darstellung",
   appearanceHint: "Wähle, wie Machbar auf diesem Gerät aussieht.",
+  pushTitle: "Benachrichtigungen",
+  pushDeviceHint: "Push-Benachrichtigungen auf diesem Gerät",
+  pushLoading: "Status wird geladen …",
+  pushUnsupported: "Dieser Browser unterstützt keine Push-Benachrichtigungen.",
+  pushUnconfigured: "Push-Benachrichtigungen sind auf dem Server nicht eingerichtet.",
+  pushDenied: "Benachrichtigungen sind in den Browser-Einstellungen blockiert.",
+  pushDisabled: "Auf diesem Gerät nicht aktiviert.",
+  pushEnabled: "Auf diesem Gerät aktiviert.",
+  pushEnable: "Aktivieren",
+  pushDisable: "Deaktivieren",
   theme: "Design",
   themeLabels: {
     system: "System",
@@ -825,6 +835,8 @@ const extra = {
     project_title_required: "Bitte gib einen Projekttitel ein.",
     project_transition_invalid:
       "Dieser Projektstatus kann so nicht geändert werden.",
+    push_member_required:
+      "Wähle zuerst eine Person für Push-Benachrichtigungen aus.",
     refinement_filters_invalid: "Die Klärungsfilter sind ungültig.",
     request_body_invalid: "Die eingegebenen Daten sind ungültig.",
     request_origin_forbidden: "Diese Anfrage ist nicht erlaubt.",

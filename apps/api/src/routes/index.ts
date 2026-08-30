@@ -10,8 +10,10 @@ import { registerTagRoutes } from "./tags.js";
 import { registerTaskRoutes } from "./tasks.js";
 import { registerViewRoutes } from "./views.js";
 import { registerDebugRoutes } from "./debug.js";
+import { registerPushRoutes } from "./push.js";
+import type { Env } from "../env.js";
 
-export function registerRoutes(app: FastifyInstance, db: Db) {
+export function registerRoutes(app: FastifyInstance, db: Db, env: Env) {
   registerActivityRoutes(app, db);
   registerContributionRoutes(app, db);
   registerMemberRoutes(app, db);
@@ -22,4 +24,5 @@ export function registerRoutes(app: FastifyInstance, db: Db) {
   registerSearchRoutes(app, db);
   registerRefinementRoutes(app, db);
   registerDebugRoutes(app, db);
+  registerPushRoutes(app, db, env);
 }

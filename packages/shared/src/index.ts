@@ -54,6 +54,13 @@ export const contributionReasons = [
   "project_due_plan_added",
 ] as const;
 export const ACTIVITY_ACTOR_HEADER = "x-machbar-actor-member-id";
+export const notificationKinds = [
+  "task_assigned",
+  "project_assigned",
+  "task_reminder",
+] as const;
+export const notificationEntityTypes = ["task", "project"] as const;
+export const pushLocales = ["de", "en"] as const;
 
 export type TaskStatus = (typeof taskStatuses)[number];
 export type ProjectStatus = (typeof projectStatuses)[number];
@@ -66,6 +73,9 @@ export type ActivityEntityType = (typeof activityEntityTypes)[number];
 export type ContributionEntityType = ActivityEntityType | "task_occurrence";
 export type ContributionCategory = (typeof contributionCategories)[number];
 export type ContributionReason = (typeof contributionReasons)[number];
+export type NotificationKind = (typeof notificationKinds)[number];
+export type NotificationEntityType = (typeof notificationEntityTypes)[number];
+export type PushLocale = (typeof pushLocales)[number];
 export type ContributionPulseLevel =
   | "negative"
   | "none"
@@ -108,6 +118,7 @@ export type ApiErrorCode =
   | "project_not_found"
   | "project_title_required"
   | "project_transition_invalid"
+  | "push_member_required"
   | "refinement_filters_invalid"
   | "request_body_invalid"
   | "request_origin_forbidden"
@@ -234,6 +245,44 @@ export interface AuthStatus {
   enabled: boolean;
   authenticated: boolean;
   member: Member | null;
+}
+
+export interface PushConfig {
+  enabled: boolean;
+  publicKey: string | null;
+}
+
+export interface PushSubscriptionRegistration {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  locale: PushLocale;
+  timezone?: string | null;
+}
+
+export interface PushSubscriptionRemoval {
+  endpoint: string;
+}
+
+export type PushNotificationAction = "today" | "open" | "complete";
+
+export interface PushNotificationPayload {
+  version: 1;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  tag: string;
+  entity: {
+    type: NotificationEntityType;
+    id: number;
+  };
+  recipientMemberId: number;
+  actions: Array<{
+    action: PushNotificationAction;
+    title: string;
+  }>;
+  taskRevision?: number;
+  recurringTask?: boolean;
 }
 
 export interface Tag {
