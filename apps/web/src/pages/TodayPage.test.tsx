@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TodayPage } from "./TodayPage";
@@ -179,6 +179,37 @@ describe("TodayPage", () => {
         name: "Aufgaben aller Personen anzeigen",
       }),
     ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("keeps the loaded agenda stable during a background refresh", async () => {
+    let resolveRefresh!: (agenda: Agenda) => void;
+    const refresh = new Promise<Agenda>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    mockedApi.getAgenda
+      .mockResolvedValueOnce({
+        ...makeEmptyAgenda(),
+        dueToday: [makeTask({ title: "Bleibt sichtbar" })],
+      })
+      .mockReturnValueOnce(refresh);
+    const { container } = renderWithProviders(<TodayPage />);
+
+    expect(await screen.findByText("Bleibt sichtbar")).toBeInTheDocument();
+    expect(container.querySelector(".loading-state")).not.toBeInTheDocument();
+
+    window.dispatchEvent(new Event("focus"));
+    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Bleibt sichtbar")).toBeInTheDocument();
+    expect(container.querySelector(".loading-state")).not.toBeInTheDocument();
+
+    act(() =>
+      resolveRefresh({
+        ...makeEmptyAgenda(),
+        dueToday: [makeTask({ title: "Frisch geladen" })],
+      }),
+    );
+    expect(await screen.findByText("Frisch geladen")).toBeInTheDocument();
+    expect(screen.queryByText("Bleibt sichtbar")).not.toBeInTheDocument();
   });
 
   it("zeigt keinen manuellen Heute-Umschalter mehr an und erklärt die Ansicht im Seitenhinweis", async () => {
