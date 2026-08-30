@@ -1144,6 +1144,65 @@ details[open] > .disclosure-summary::after {
   background: var(--color-surface-alt);
 }
 
+.task-detail-content {
+  gap: 14px;
+}
+
+.task-detail-section,
+.task-detail-content > .contextual-activity,
+.task-detail-content > .recurrence-history {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.task-detail-section-title,
+.task-detail-content > .contextual-activity > .section-title {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.task-detail-section-body {
+  margin-top: 12px;
+}
+
+.task-detail-section-body > :last-child,
+.task-detail-section-body > .field:last-child {
+  margin-bottom: 0;
+}
+
+.task-detail-disclosure > .task-detail-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.task-detail-recurrence .recurrence-editor {
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.task-detail-metadata {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+}
+
+.task-detail-danger {
+  border-color: color-mix(in srgb, var(--color-danger) 35%, var(--color-border));
+}
+
+.task-detail-danger > .task-detail-section-title {
+  color: var(--color-danger);
+}
+
 .recurrence-editor h3,
 .recurrence-editor p,
 .recurrence-history h3,
@@ -1216,6 +1275,17 @@ details[open] > .disclosure-summary::after {
 }
 
 @media (max-width: 520px) {
+  .task-detail-section,
+  .task-detail-content > .contextual-activity,
+  .task-detail-content > .recurrence-history {
+    padding: 12px;
+  }
+
+  .task-detail-date-row {
+    flex-direction: column;
+    gap: 0;
+  }
+
   .recurrence-editor > .row-between,
   .recurrence-history > .row-between {
     align-items: flex-start;

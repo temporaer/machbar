@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import type { InheritanceMode, Task } from "@machbar/shared";
 import { inheritanceModes, taskStatuses } from "@machbar/shared";
 import { api } from "../lib/api";
@@ -88,6 +96,64 @@ function InheritanceControl({
         </button>
       ))}
     </div>
+  );
+}
+
+function TaskDetailSection({
+  title,
+  children,
+  className = "",
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  const headingId = useId();
+  return (
+    <section
+      className={`task-detail-section${className ? ` ${className}` : ""}`}
+      aria-labelledby={headingId}
+    >
+      <h3 id={headingId} className="task-detail-section-title">
+        {title}
+      </h3>
+      <div className="task-detail-section-body">{children}</div>
+    </section>
+  );
+}
+
+function TaskDetailDisclosure({
+  title,
+  children,
+  defaultOpen = false,
+  resetKey,
+  className = "",
+}: {
+  title: string;
+  children: ReactNode;
+  defaultOpen?: boolean;
+  resetKey: number;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  useEffect(() => {
+    setOpen(defaultOpen);
+  }, [defaultOpen, resetKey]);
+
+  return (
+    <details
+      className={`task-detail-section task-detail-disclosure${className ? ` ${className}` : ""}`}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="task-detail-section-title disclosure-summary">
+        <span role="heading" aria-level={3}>
+          {title}
+        </span>
+      </summary>
+      <div className="task-detail-section-body">{children}</div>
+    </details>
   );
 }
 
@@ -494,73 +560,76 @@ export function TaskDetailSheet() {
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {task ? (
-        <div className="stack">
+        <div className="stack task-detail-content">
           {task.blocked ? <div className="badge badge-status-waiting">{strings.blockedHint}</div> : null}
 
-          <div className="field" ref={titleFieldRef}>
-            <label htmlFor="task-title">{strings.title}</label>
-            <input
-              ref={titleInputRef}
-              id="task-title"
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={(e) => saveOnBlur(e.relatedTarget)}
-            />
-          </div>
-
-          <div className="field">
-            <label htmlFor="task-status">{strings.status}</label>
-            <select
-              id="task-status"
-              value={statusDraft}
-              disabled={
-                changingStatus ||
-                taskActions.busyId === task.id ||
-                taskActions.pendingTask?.id === task.id
-              }
-              onChange={(e) => void changeStatus(e.target.value as Task["status"])}
-            >
-              {taskStatuses.map((s) => (
-                <option key={s} value={s}>
-                  {strings.taskStatusLabels[s]}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="field" ref={ownerFieldRef}>
-            {task.ownerInheritanceMode !== "explicit" ? <label>{strings.owner}</label> : null}
-            <InheritanceControl
-              focusRef={ownerInputRef}
-              mode={task.ownerInheritanceMode}
-              onChange={(mode) => void patch({ ownerInheritanceMode: mode })}
-            />
-            {task.ownerInheritanceMode === "explicit" ? (
-              <MemberChoiceGroup
-                label={strings.owner}
-                idPrefix={`task-owner-${task.id}`}
-                members={members}
-                value={task.ownerMemberId}
-                onChange={(ownerMemberId) => void patch({ ownerMemberId })}
-                unassignedLabel={strings.unassigned}
+          <TaskDetailSection title={strings.taskSection}>
+            <div className="field" ref={titleFieldRef}>
+              <label htmlFor="task-title">{strings.title}</label>
+              <input
+                ref={titleInputRef}
+                id="task-title"
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={(e) => saveOnBlur(e.relatedTarget)}
               />
-            ) : (
-              <p className="text-muted">
-                {(() => {
-                  const owner = members.find(
-                    (member) => member.id === task.effectiveOwnerId,
-                  );
-                  return owner ? (
-                    <MemberLabel member={owner} size="sm" />
-                  ) : (
-                    strings.unassigned
-                  );
-                })()}
-              </p>
-            )}
-          </div>
+            </div>
 
-          <div className="row">
+            <div className="field">
+              <label htmlFor="task-status">{strings.status}</label>
+              <select
+                id="task-status"
+                value={statusDraft}
+                disabled={
+                  changingStatus ||
+                  taskActions.busyId === task.id ||
+                  taskActions.pendingTask?.id === task.id
+                }
+                onChange={(e) => void changeStatus(e.target.value as Task["status"])}
+              >
+                {taskStatuses.map((s) => (
+                  <option key={s} value={s}>
+                    {strings.taskStatusLabels[s]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field" ref={ownerFieldRef}>
+              {task.ownerInheritanceMode !== "explicit" ? <label>{strings.owner}</label> : null}
+              <InheritanceControl
+                focusRef={ownerInputRef}
+                mode={task.ownerInheritanceMode}
+                onChange={(mode) => void patch({ ownerInheritanceMode: mode })}
+              />
+              {task.ownerInheritanceMode === "explicit" ? (
+                <MemberChoiceGroup
+                  label={strings.owner}
+                  idPrefix={`task-owner-${task.id}`}
+                  members={members}
+                  value={task.ownerMemberId}
+                  onChange={(ownerMemberId) => void patch({ ownerMemberId })}
+                  unassignedLabel={strings.unassigned}
+                />
+              ) : (
+                <p className="text-muted">
+                  {(() => {
+                    const owner = members.find(
+                      (member) => member.id === task.effectiveOwnerId,
+                    );
+                    return owner ? (
+                      <MemberLabel member={owner} size="sm" />
+                    ) : (
+                      strings.unassigned
+                    );
+                  })()}
+                </p>
+              )}
+            </div>
+          </TaskDetailSection>
+
+          <TaskDetailSection title={strings.taskPlanningSection}>
+            <div className="row task-detail-date-row">
             <div className="field" style={{ flex: 1 }}>
               <label htmlFor="task-due">{strings.due}</label>
               <HumanDateInput
@@ -590,7 +659,7 @@ export function TaskDetailSheet() {
                 />
               </div>
             ) : null}
-          </div>
+            </div>
           {task.repeatAfterDays === null && !task.externalWait ? (
             <ScheduleShortcuts
               value={task.scheduledDate}
@@ -598,12 +667,32 @@ export function TaskDetailSheet() {
             />
           ) : null}
 
-          <section className="recurrence-editor" aria-labelledby="task-recurrence-title">
+          <div className="field">
+            <label htmlFor="task-priority">{strings.priority}</label>
+            <select
+              id="task-priority"
+              value={task.priority ?? ""}
+              onChange={(e) => void patch({ priority: e.target.value ? Number(e.target.value) : null })}
+            >
+              <option value="">{strings.none}</option>
+              <option value="1">1 – {strings.priorityHighest}</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5 – {strings.priorityLowest}</option>
+            </select>
+          </div>
+          </TaskDetailSection>
+
+          <TaskDetailDisclosure
+            title={strings.recurrence}
+            defaultOpen={task.repeatAfterDays !== null}
+            resetKey={task.id}
+            className="task-detail-recurrence"
+          >
+            <div className="recurrence-editor">
             <div className="row-between">
-              <div>
-                <h3 id="task-recurrence-title">{strings.recurrence}</h3>
-                <p className="text-muted">{strings.recurrenceHint}</p>
-              </div>
+              <p className="text-muted">{strings.recurrenceHint}</p>
               <label className="recurrence-toggle">
                 <input
                   type="checkbox"
@@ -678,25 +767,11 @@ export function TaskDetailSheet() {
                 </p>
               </>
             ) : null}
-          </section>
+            </div>
+          </TaskDetailDisclosure>
 
-          <div className="field">
-            <label htmlFor="task-priority">{strings.priority}</label>
-            <select
-              id="task-priority"
-              value={task.priority ?? ""}
-              onChange={(e) => void patch({ priority: e.target.value ? Number(e.target.value) : null })}
-            >
-              <option value="">{strings.none}</option>
-              <option value="1">1 – {strings.priorityHighest}</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5 – {strings.priorityLowest}</option>
-            </select>
-          </div>
-
-          <div className="field">
+          <TaskDetailSection title={strings.taskContentSection}>
+            <div className="field">
             <label>{strings.effectiveTags}</label>
             <div className="row" style={{ flexWrap: "wrap" }}>
               {task.explicitTags.length === 0 && inheritedTags.length === 0 ? (
@@ -811,9 +886,10 @@ export function TaskDetailSheet() {
               <span className="text-muted">{saveError ?? taskActions.errors[task.id]}</span>
             </div>
           ) : null}
+          </TaskDetailSection>
 
-          <div className="field" ref={dependenciesFieldRef}>
-            <label>{strings.waitingFor}</label>
+          <TaskDetailSection title={strings.waitingFor}>
+            <div className="field" ref={dependenciesFieldRef}>
             <div className="stack blocker-control">
               <div className="field">
                 <label htmlFor="task-external-wait">{strings.externalWait}</label>
@@ -903,12 +979,11 @@ export function TaskDetailSheet() {
                 ))}
               </ul>
             ) : null}
-          </div>
-
-          <div className="field" ref={subtasksFieldRef}>
-            <div className="row-between">
-              <label>{strings.subtasks}</label>
             </div>
+          </TaskDetailSection>
+
+          <TaskDetailSection title={strings.subtasks}>
+            <div className="field" ref={subtasksFieldRef}>
             {task.children.length === 0 ? <p className="text-muted">{strings.noTasks}</p> : null}
             <ul className="list" style={{ padding: 0, margin: 0 }}>
               {sortByPosition(task.children).map((child) => (
@@ -942,9 +1017,14 @@ export function TaskDetailSheet() {
             ) : (
               <p className="text-muted">{strings.recurringTaskLeafHint}</p>
             )}
-          </div>
+            </div>
+          </TaskDetailSection>
 
-          <div className="field">
+          <TaskDetailDisclosure
+            title={strings.taskOrganizationSection}
+            resetKey={task.id}
+          >
+            <div className="field">
             <label>{strings.organizeControls}</label>
             <div className="row" style={{ flexWrap: "wrap" }}>
               <button type="button" className="btn btn-sm" onClick={() => setMovePrompt("parent")}>
@@ -957,12 +1037,13 @@ export function TaskDetailSheet() {
                 {strings.moveSubtree}
               </button>
             </div>
-          </div>
+            </div>
 
-          <p className="text-muted">
-            {strings.created}: {formatDateTime(task.createdAt, locale)} ·{" "}
-            {strings.updated}: {formatDateTime(task.updatedAt, locale)}
-          </p>
+            <p className="text-muted task-detail-metadata">
+              {strings.created}: {formatDateTime(task.createdAt, locale)} ·{" "}
+              {strings.updated}: {formatDateTime(task.updatedAt, locale)}
+            </p>
+          </TaskDetailDisclosure>
 
           {task.repeatAfterDays !== null ||
           (recurrenceHistory?.summary.totalCount ?? 0) > 0 ? (
@@ -1057,20 +1138,26 @@ export function TaskDetailSheet() {
             idPrefix={`task-${task.id}-activity`}
           />
 
-          <button
-            type="button"
-            className="btn btn-danger btn-block"
-            onClick={() => {
-              if (window.confirm(strings.deleteTaskConfirm)) {
-                void api.deleteTask(task.id).then(() => {
-                  bump();
-                  close();
-                });
-              }
-            }}
+          <TaskDetailDisclosure
+            title={strings.taskDangerSection}
+            resetKey={task.id}
+            className="task-detail-danger"
           >
-            {strings.delete}
-          </button>
+            <button
+              type="button"
+              className="btn btn-danger btn-block"
+              onClick={() => {
+                if (window.confirm(strings.deleteTaskConfirm)) {
+                  void api.deleteTask(task.id).then(() => {
+                    bump();
+                    close();
+                  });
+                }
+              }}
+            >
+              {strings.delete}
+            </button>
+          </TaskDetailDisclosure>
         </div>
       ) : null}
 
