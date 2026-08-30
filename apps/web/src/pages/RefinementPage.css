@@ -245,6 +245,11 @@
   border-left: 4px solid var(--color-border);
 }
 
+.clarification-issue:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 .clarification-issue--urgent {
   border-left-color: var(--color-danger);
 }
@@ -260,6 +265,12 @@
 
 .clarification-issue p {
   margin: 4px 0 10px;
+}
+
+.clarification-issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .refinement-secondary > summary {

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, Link, useSearchParams } from "react-router-dom";
+import {
+  useParams,
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
@@ -35,6 +41,8 @@ import {
 export function ProjectDetailPage() {
   const strings = useStrings();
   const { locale } = useLocale();
+  const location = useLocation();
+  const navigate = useNavigate();
   const params = useParams<{ id: string }>();
   const projectId = Number(params.id);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -76,6 +84,11 @@ export function ProjectDetailPage() {
   }, [searchParams, setSearchParams]);
 
   const planningFocusActive = focus === "planning";
+  const refinementReturn = (
+    location.state as {
+      refinementReturn?: { issueKey: string; issueIndex: number };
+    } | null
+  )?.refinementReturn;
 
   useEffect(() => {
     if (!planningFocusActive) return;
@@ -161,8 +174,12 @@ export function ProjectDetailPage() {
 
   return (
     <div>
-      <Link to="/projects" className="link-plain">
-        ← {strings.projects}
+      <Link
+        to={refinementReturn ? "/more/refinement" : "/projects"}
+        state={refinementReturn ? { refinementReturn } : undefined}
+        className="link-plain"
+      >
+        ← {refinementReturn ? strings.refinement : strings.projects}
       </Link>
       {projectLoading ? <LoadingState /> : null}
       {projectError ? <ErrorState message={projectError} onRetry={reloadProject} /> : null}
@@ -335,6 +352,14 @@ export function ProjectDetailPage() {
             setEditing(false);
             if (focus === "driver" || focus === "completion") clearRouteFocus();
           }}
+          onDeleted={
+            refinementReturn
+              ? () =>
+                  navigate("/more/refinement", {
+                    state: { refinementReturn },
+                  })
+              : undefined
+          }
         />
       ) : null}
       {focus === "outcome" && project ? (

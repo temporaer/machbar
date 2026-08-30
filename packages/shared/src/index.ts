@@ -65,8 +65,6 @@ export const notificationEntityTypes = ["task", "project"] as const;
 export const pushLocales = ["de", "en"] as const;
 
 export type TaskStatus = (typeof taskStatuses)[number];
-/** Includes retired values that may still occur in immutable activity data. */
-export type HistoricalTaskStatus = TaskStatus | "waiting";
 export type ProjectStatus = (typeof projectStatuses)[number];
 export type InheritanceMode = (typeof inheritanceModes)[number];
 export type TaskSize = (typeof taskSizes)[number];
@@ -167,8 +165,8 @@ export interface ApiErrorResponse {
 
 export interface ActivityEventMetadata {
   changedFields?: string[];
-  previousStatus?: HistoricalTaskStatus | ProjectStatus;
-  nextStatus?: HistoricalTaskStatus | ProjectStatus;
+  previousStatus?: TaskStatus | ProjectStatus;
+  nextStatus?: TaskStatus | ProjectStatus;
   checked?: boolean;
   affectedCount?: number;
   relatedTaskIds?: number[];
@@ -475,6 +473,12 @@ export interface Agenda {
    * never inherited from a project or parent task for this purpose.
    */
   revisit: Task[];
+}
+
+export interface MoreCounts {
+  stuckProjects: number;
+  backlogReview: number;
+  refinement: number;
 }
 
 export interface GraphLoadMetrics {

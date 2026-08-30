@@ -55,7 +55,7 @@ choices apply to this browser.
 | **Today** | **Heute** | Work surfaced for the selected person—or the whole household—from planning dates, due dates, responsibility, follow-ups, and project attention |
 | **Inbox** | **Eingang** | Captured items that still need clarification |
 | **Projects** | **Projekte** | Household outcomes, their tasks, driver, progress, and workflow state |
-| **Waiting** | **Wartet** | Tasks paused for another person, organization, event, or delivery |
+| **Waiting** | **Wartet** | Actionable tasks blocked by another task or by an external person, organization, event, or delivery |
 | **More** | **Mehr** | Search, stuck projects, project clarification, task refinement, activity, tags, people, and settings |
 
 ## Add the first work
@@ -74,7 +74,8 @@ For a useful first project:
 2. Add “Erledigt, wenn …” criteria that make completion observable.
 3. Assign one driver who keeps the overview.
 4. Add at least one concrete next action.
-5. Move external dependencies to Waiting and set a follow-up date when needed.
+5. Mark an actionable task as waiting on something external, or link a real
+   prerequisite task; set a revisit date when needed.
 
 The [Household workflow](workflow.md) explains the model without requiring
 prior knowledge of GTD, org-mode, or Scrum.

@@ -11,6 +11,8 @@ import { localizedErrorMessage } from "../lib/errorMessage";
 import { themePreferences, useTheme } from "../lib/theme";
 import { ContributionCard } from "../components/ContributionCard";
 import { PushNotificationSettings } from "../components/PushNotificationSettings";
+import { api } from "../lib/api";
+import { useAsync } from "../lib/useAsync";
 
 export function MorePage() {
   const strings = useStrings();
@@ -20,6 +22,7 @@ export function MorePage() {
   const { primarySwipeAction, setPrimarySwipeAction } = useSwipeSettings();
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
+  const { data: counts } = useAsync(() => api.getMoreCounts(), []);
 
   return (
     <div>
@@ -37,19 +40,34 @@ export function MorePage() {
         <Link to="/more/stuck" className="card list-link">
           <span className="row-between">
             <span>{strings.stuckProjects}</span>
-            <span aria-hidden="true">›</span>
+            <span className="more-link-trailing">
+              {counts ? (
+                <span className="badge more-count-badge">{counts.stuckProjects}</span>
+              ) : null}
+              <span aria-hidden="true">›</span>
+            </span>
           </span>
         </Link>
         <Link to="/more/backlog" className="card list-link">
           <span className="row-between">
             <span>{strings.backlogReview}</span>
-            <span aria-hidden="true">›</span>
+            <span className="more-link-trailing">
+              {counts ? (
+                <span className="badge more-count-badge">{counts.backlogReview}</span>
+              ) : null}
+              <span aria-hidden="true">›</span>
+            </span>
           </span>
         </Link>
         <Link to="/more/refinement" className="card list-link">
           <span className="row-between">
             <span>{strings.refinement}</span>
-            <span aria-hidden="true">›</span>
+            <span className="more-link-trailing">
+              {counts ? (
+                <span className="badge more-count-badge">{counts.refinement}</span>
+              ) : null}
+              <span aria-hidden="true">›</span>
+            </span>
           </span>
         </Link>
         <Link to="/more/activity" className="card list-link">

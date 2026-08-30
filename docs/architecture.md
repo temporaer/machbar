@@ -36,8 +36,8 @@ Member   Tag
   │        └─────────────────────┐
   ▼                              ▼
 Project ──── Task ──── SubTask (Task.parentTaskId)
-               │
-               └── Dependency (taskId → dependsOnTaskId)
+               ├── Dependency (taskId → dependsOnTaskId)
+               └── ExternalWait (one-to-one by taskId)
 ```
 
 - **Members** are the people who use the app. Every task and project can be assigned an owner (`ownerMemberId`).
@@ -105,7 +105,11 @@ The API computes several derived fields before returning tasks to the client:
 | `effectiveTags` | Ancestor tag union minus excluded IDs |
 | `effectiveAreaTags` / `effectiveActorTags` / `effectiveContextTags` | Kind-filtered views of `effectiveTags` |
 | `explicitTags` | Tags directly on this task |
-| `blocked` | `true` if any dependency is unresolved (`Dependency.resolved = false`) |
+| `externalWait` | Nullable unresolved external blocker; row presence blocks even when its description is empty |
+| `blocked` | `true` for actionable tasks with an external wait or any unresolved dependency |
+| `executable` | `true` only for actionable, unblocked tasks |
+| `blockers` | Structured external/dependency blocker summaries |
+| `nextBlockerAttentionDate` | Earliest derived attention date through unresolved blocker branches; never persisted or copied to the dependent task |
 | `children` | Direct sub-tasks (recursive to arbitrary depth) |
 | `dependencies` | Outgoing dependency edges with their resolution state |
 
@@ -124,16 +128,17 @@ These views are **read-only projections** — they are not stored in SQLite; the
 
 The **Heute** agenda is also query-derived. Its primary sections contain work
 explicitly scheduled for today or earlier, overdue work, work due today,
-soon-due work, and waiting tasks whose Wiedervorlage is due (**Nachhaken**).
+soon-due work, and blocked tasks whose own Wiedervorlage is due.
 It is member-scoped by default (including shared/unassigned work), while the
 explicit `scope=all` query returns the same compiled buckets for the complete
 household. The frontend exposes that distinction as a session-scoped
 **Meine | Alle** header toggle.
-Undated actionable work is returned only as the secondary `shared` /
-`unscheduled` buckets and rendered in the visibly separate **Weitere machbare
-Aufgaben** section. It stays immediately available without being mixed into
-the scheduled/due agenda. Future-scheduled work,
-captured work, completed/cancelled work, and ordinary dependency-blocked work
+Executable work without a `scheduledDate` falls through to the secondary
+`shared` / `unscheduled` buckets and is rendered in the visibly separate
+**Weitere machbare Aufgaben** section. A future deadline does not hide an
+otherwise executable task: once it enters the three-day due-soon window, the
+earlier due bucket wins without duplication. Future-scheduled work, captured
+work, completed/cancelled work, and blocked work without a reached revisit
 stay out.
 
 Active projects have a separate compiled `projects` bucket. A project enters
@@ -150,6 +155,10 @@ become task dates.
 
 - Every write that touches more than one table (e.g. creating a task + adding tags) uses an explicit SQLite transaction.
 - Hierarchy moves, dependency changes, and multi-table metadata writes are performed inside the same transaction as the originating write.
+- External waits use revision-aware `PUT /api/tasks/:id/external-wait` and
+  `DELETE /api/tasks/:id/external-wait` resources. Starting/updating a wait can
+  change its description and the task's revisit date atomically; resolving it
+  deletes the relation and clears that date in the same transaction.
 - SQLite's WAL mode is enabled (`PRAGMA journal_mode=WAL`) so reads do not block concurrent writes.
 - Tasks and projects carry monotonic revisions. Metadata PATCHes compare the client's rendered revision inside the write transaction and reject stale saves with HTTP 409.
 - The database file lives in `DATA_DIR` (default `/data`). The path is `${DATA_DIR}/${DATABASE_FILE}`.
@@ -158,8 +167,13 @@ After a successful mutating API response commits, the single application
 process publishes a coarse invalidation through an authenticated SSE stream.
 Each browser tab identifies its own writes so their echo does not interrupt
 local optimistic-retention UI. Other tabs/devices refetch through the existing
-frontend refresh bus. No external pub/sub is required under the supported
-single-process deployment model.
+frontend refresh bus. `useAsync` treats these same-query refetches as
+stale-while-revalidate: successful data remains rendered, `loading` stays
+false, and background failures do not replace the page with its foreground
+error state. Dependency changes start a new logical query generation and hide
+old-query data immediately. Request IDs and effect cancellation prevent stale
+or unmounted requests from committing. No external pub/sub is required under
+the supported single-process deployment model.
 
 ---
 
@@ -217,20 +231,29 @@ Home Assistant strips the dynamic Ingress prefix while proxying to the add-on. M
 ### Tasks
 
 ```
-actionable ──► done
-    │
-    ├──► waiting ──► actionable
-    ├──► someday ──► actionable
-    └──► cancelled
+captured ──► actionable ──► done
+                 │
+                 ├──► someday ──► actionable
+                 └──► cancelled
 ```
 
-Capture is independent of this workflow. `needsClarification = true` places a
-task in **Eingang** and marks it **Zu klären** even when it already belongs to
-a project. Global Quick Add captures an actionable task; project and child
-creation start clarified. Explicit workflow choices and **Speichern & weiter**
-clear the flag, while metadata edits and refiling do not. Captured tasks stay
-visible in project trees but are excluded from Heute, next-action selection,
-and actionable stuck counts.
+`TaskStatus` is `captured | actionable | someday | done | cancelled`.
+`captured` is the current clarification state and appears in **Eingang**.
+Project and child creation can start as already clarified actionable work.
+Captured tasks stay visible in project trees but are excluded from Heute,
+next-action selection, and blocker classification.
+
+Waiting is deliberately not a task status. `task_external_waits` stores an
+optional description in a one-to-one row whose presence means the actionable
+task has an unresolved external blocker. `task_dependencies` stores real task
+prerequisites. Blocking and executability are derived from both sources, and
+current create/update/status APIs accept only the five statuses above.
+
+For an executable task, `scheduledDate` is its planned work date. For a
+blocked task, the same field is its Wiedervorlage. Resolving an external wait
+clears that revisit date by default so it does not silently become a work
+schedule. Resolving a task dependency never clears the dependent task's own
+date.
 
 Tasks in `done` or `cancelled` are retained in the database and visible in search/history views.
 
@@ -271,29 +294,30 @@ responsible person; the clarification service flags them urgently.
 
 ### Stuck detection
 
-`apps/api/src/repo/stuckRepo.ts` classifies **`active` projects only** (backlog stories are not "stuck" — they are simply not started). Priority order:
+`Graph` and the canonical cycle-safe analyzer in
+`apps/api/src/domain/blockers.ts` classify **`active` projects only** (backlog
+stories are not "stuck" — they are simply not started).
 
 | Reason | Condition |
 |--------|-----------|
-| `no_next_action` | Project has no tasks at all |
+| `no_next_action` | No healthy actionable path exists and no more specific blocker diagnosis explains it (including an empty project or open work that is only captured/someday) |
 | `completion_review` | Project has tasks but **zero open** ones — everything is `done`/`cancelled`, so the story is ready to be completed or extended |
-| `unassigned_actionable` | Has actionable tasks with no effective owner |
-| *(healthy)* | Every open task is `waiting` and has a future `scheduledDate`; the project is intentionally parked |
-| `followup_due` | Waiting work has a Wiedervorlage today or in the past and needs attention again |
-| *(healthy)* | Every actionable task is dependency-blocked, and every unresolved dependency branch ends at either a clarified, unblocked actionable task or clarified waiting work with a future Wiedervorlage |
-| `only_waiting_without_followup` | Open work is waiting without a complete future Wiedervorlage plan |
-| `no_next_action` | No clarified actionable task, including projects whose open work still needs clarification, and not the all-waiting case above |
-| `blocked_dependencies` | Every actionable task is blocked by an unresolved dependency |
+| `waiting_without_followup` | An external blocker path has no Wiedervorlage |
+| `followup_due` | An external wait's Wiedervorlage is today or in the past |
+| `blocked_without_clear_path` | A dependency path ends in captured/someday/non-operational work, a missing task, or a corrupt cycle |
+| `unassigned_actionable` | A project has a healthy actionable path but actionable work lacks an effective owner |
+| *(healthy)* | At least one meaningful path reaches executable work or an intentional future external-wait revisit |
 
 Dependency chains are deliberately **not** defects by themselves. A sequence
 such as `Angebot → Termin → Arbeit → Rechnung → Bezahlen` is healthy while
 every unresolved branch leads back to a task that can be done now or to work
-intentionally parked with a future Wiedervorlage. An unscheduled/due waiting
-endpoint, captured blocker, someday task, or any other branch without a
-progression anchor produces `blocked_without_clear_path` and may keep the
-project stuck. Open tasks in completed/archived projects are not valid
-progression anchors. More specific issues remain attached to the terminal blocker
-so the repair action points at the cause rather than every downstream task.
+intentionally parked with a future Wiedervorlage. An external wait without a
+future revisit, captured blocker, someday task, or any other branch without a
+progression anchor produces a specific waiting reason or
+`blocked_without_clear_path` and may keep the project stuck. Open tasks in
+completed/archived projects are not valid progression anchors. More specific
+issues remain attached to the terminal blocker so the repair action points at
+the cause rather than every downstream task.
 Once all blockers close, normal next-action or completion-review semantics
 take over.
 
@@ -311,7 +335,8 @@ Sequence entry has two lightweight surfaces:
 `POST /api/tasks/:id/successors` perform creation and dependency insertion in
 one SQLite transaction. A failed request therefore never leaves a partial
 chain. The entry surfaces intentionally collect titles only; existing focused
-actions handle waiting state, Wiedervorlage, ownership, notes, and dates.
+actions handle external waits, dependencies, Wiedervorlage, ownership, notes,
+and dates.
 
 ---
 
@@ -400,9 +425,15 @@ Because that drag takes no pointer capture, the click the browser synthesises on
 `RefinementPage` defaults to **Klärungsbedarf** cards grouped by operational
 defect: needs clarification, no responsibility, waiting without follow-up,
 follow-up due, blocked, due without a plan, XL without children, or ready to
-complete. Tapping the single suggested action opens an existing focused task
-sheet or the project detail. The interaction is repair-one-thing-at-a-time,
-not a mandatory multi-step wizard.
+complete. The primary action opens the narrowest existing task/project sheet
+over the still-mounted refinement page. Closing it reloads the canonical issue
+projection: an unresolved issue regains focus, while a resolved issue advances
+focus to the next item at the same fresh-list position. This deliberately
+avoids a static queue because one repair can remove several diagnostics or
+change their ordering. A secondary **Details** action always exposes the full
+task sheet or project page; project-detail navigation carries an explicit
+return anchor back to Arbeit klären. The interaction remains
+repair-one-thing-at-a-time, not a mandatory multi-step wizard.
 
 The owner × effort matrix remains collapsed as a secondary view, backed by
 `GET /api/refinement/owners` and `GET /api/refinement/tasks`.
@@ -439,7 +470,7 @@ Interactions target one field at a time instead of opening the full detail sheet
 | `AcceptanceCriteriaEditor` | Reusable ordered criteria editor; shared by `ProjectEditSheet` and `StoryCriteriaSheet` |
 | `StoryCriteriaSheet` | Targeted criteria popup for a story row |
 | `PlanDatesSheet` | Due/scheduled dates only |
-| `WaitingFollowUpSheet` | Append-only follow-up log for `waiting` tasks |
+| `WaitingFollowUpSheet` | Append-only follow-up log, revisit editor, and external-wait resolution for blocked tasks |
 | `DestinationPicker` | Searchable refile destination list with recents (see below) |
 
 `AssignOwnerSheet` reads members from `useIdentity`, so any test mounting it (directly or via `TaskQuickActionSheet`/`RefinementTaskRow`) must wrap in `IdentityProvider` and mock `api.getMembers`.
@@ -455,7 +486,13 @@ A household has at most ~5 members, so every focused assignment popup renders th
 - An explicit "nobody" chip (`Gemeinsam / offen` for tasks, `Niemand zugewiesen` for stories) where clearing is legal. `AssignDriverSheet` omits it in activate mode, because the API rejects activating without a driver.
 - Chips keep a ~44 px touch target (`.choice-chip`) and wrap rather than scroll.
 
-The **full** editors (`TaskDetailSheet`, `ProjectEditSheet`) keep their selects: they are dense multi-field forms reached by a deliberate "Bearbeiten"/"Mehr" tap, not one-decision popups. Filters (`SearchFilterBar`) and settings (`MorePage`) are likewise unaffected.
+The **full** editors (`TaskDetailSheet`, `ProjectEditSheet`) keep their selects:
+they are multi-field forms reached by a deliberate "Bearbeiten"/"Mehr" tap,
+not one-decision popups. `TaskDetailSheet` groups always-visible task,
+planning, content, blocker, and subtask sections; recurrence, organization,
+activity, and deletion use accessible disclosures, with active recurrence
+opened automatically. Filters (`SearchFilterBar`) and settings (`MorePage`)
+are likewise unaffected.
 
 ### Outline structure editing: drag, keyboard, one toolbar
 
@@ -510,7 +547,10 @@ The picker only selects. Move modes and their API calls are unchanged (`changePa
 <text>
 ```
 
-produced by `followUpEntryHeader()`, so the log stays readable and attributable in plain text. The same sheet sets the task's `scheduledDate` (*Wiedervorlage*), which feeds the healthy-revisit rule in §6.
+produced by `followUpEntryHeader()`, so the log stays readable and attributable
+in plain text. The same sheet updates the task's `scheduledDate`
+(*Wiedervorlage*) and can explicitly end its external wait. Ending the wait
+clears both the external-wait row and its revisit date.
 
 ---
 
@@ -528,3 +568,9 @@ Drizzle migrations live in `apps/api/drizzle/` and are applied on every server s
 4. adds `tasks.size` + `tasks_size_idx`.
 
 `apps/api/tests/migration-acceptance-criteria.test.ts` pins this behaviour against `tests/fixtures/pre-0002-migrations`.
+
+`0015_external_waits.sql` introduces the external-wait relation and migrates
+existing waiting tasks without changing their `scheduled_date`. The following
+`0016_remove_waiting_compatibility.sql` migration removes the superseded task
+column and normalizes activity status metadata to the current lifecycle
+vocabulary.

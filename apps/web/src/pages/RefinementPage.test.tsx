@@ -1,14 +1,14 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { act, fireEvent, screen, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useLocation } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 import type { RefinementIssue } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { de as strings } from "../i18n/de";
 import type { OwnerSizeCounts, RefinementTaskRow } from "../lib/api";
 import { REFINEMENT_RETENTION_MS } from "../lib/useRefinementActions";
-import { makeTag, makeTask } from "../test/fixtures";
+import { makeProject, makeTag, makeTask } from "../test/fixtures";
 import { RefinementPage } from "./RefinementPage";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import "../styles/index.css";
@@ -21,6 +21,7 @@ vi.mock("../lib/api", () => ({
     getRefinementOwners: vi.fn(),
     getRefinementTasks: vi.fn(),
     getRefinementIssues: vi.fn(),
+    getProject: vi.fn(),
     updateTask: vi.fn(),
   },
 }));
@@ -77,11 +78,16 @@ function RepairState() {
   const location = useLocation();
   const taskDetail = useTaskDetail();
   return (
-    <output aria-label="repair-state">
-      {location.pathname}
-      {location.search}|{taskDetail.openTaskId ?? "none"}|
-      {taskDetail.focusField ?? "none"}|{String(taskDetail.queueActive)}
-    </output>
+    <>
+      <output aria-label="repair-state">
+        {location.pathname}
+        {location.search}|{taskDetail.openTaskId ?? "none"}|
+        {taskDetail.focusField ?? "none"}|{String(taskDetail.queueActive)}
+      </output>
+      <button type="button" onClick={taskDetail.close}>
+        Close task repair
+      </button>
+    </>
   );
 }
 
@@ -100,6 +106,18 @@ describe("RefinementPage", () => {
     mockedApi.getRefinementOwners.mockResolvedValue([]);
     mockedApi.getRefinementTasks.mockResolvedValue([]);
     mockedApi.getRefinementIssues.mockResolvedValue({ issues: [], projects: [] });
+    mockedApi.getProject.mockImplementation(async (id) => ({
+      ...makeProject({ id, title: "Testprojekt" }),
+      tasks: [
+        makeTask({
+          id: 73,
+          projectId: id,
+          title: "Projektaufgabe",
+          dueDate: null,
+          scheduledDate: null,
+        }),
+      ],
+    }));
   });
 
   afterEach(() => {
@@ -257,38 +275,124 @@ describe("RefinementPage", () => {
     expect(screen.getByRole("heading", { name: "Ohne Bereich" })).toBeInTheDocument();
   });
 
-  it.each([
-    ["assign_driver", "driver"],
-    ["add_outcome", "outcome"],
-    ["add_next_action", "next-action"],
-    ["review_completion", "completion"],
-  ] as const)(
-    "deep-links project repair %s to its focused existing editor",
-    async (actionCode, focus) => {
-      const repairIssue = issue(actionCode, "project");
-      mockedApi.getRefinementIssues.mockResolvedValue({
-        issues: [repairIssue],
-        projects: [],
-      });
+  it("keeps driver repair over Arbeit klären and focuses the project editor", async () => {
+    const repairIssue = issue("assign_driver", "project");
+    mockedApi.getRefinementIssues.mockResolvedValue({
+      issues: [repairIssue],
+      projects: [],
+    });
 
-      renderWithProviders(
-        <>
-          <RefinementPage />
-          <RepairState />
-        </>,
-        { initialEntries: ["/more/refinement"] },
-      );
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/more/refinement"] },
+    );
 
-      await userEvent.click(
-        await screen.findByRole("button", {
-          name: strings.refinementActionLabels[actionCode],
-        }),
-      );
-      expect(screen.getByLabelText("repair-state")).toHaveTextContent(
-        `/projects/41?focus=${focus}|none|none|false`,
-      );
-    },
-  );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: strings.refinementActionLabels.assign_driver,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: strings.editProject }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: strings.noDriver })).toHaveFocus();
+    expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+      "/more/refinement|none|none|false",
+    );
+  });
+
+  it("keeps outcome repair over Arbeit klären", async () => {
+    const repairIssue = issue("add_outcome", "project");
+    mockedApi.getRefinementIssues.mockResolvedValue({
+      issues: [repairIssue],
+      projects: [],
+    });
+
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/more/refinement"] },
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: strings.refinementActionLabels.add_outcome,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: `${strings.criteria}: Testprojekt`,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+      "/more/refinement|none|none|false",
+    );
+  });
+
+  it("keeps next-action repair over Arbeit klären", async () => {
+    const repairIssue = issue("add_next_action", "project");
+    mockedApi.getRefinementIssues.mockResolvedValue({
+      issues: [repairIssue],
+      projects: [],
+    });
+
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/more/refinement"] },
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: strings.refinementActionLabels.add_next_action,
+      }),
+    );
+
+    expect(
+      await screen.findByPlaceholderText(strings.quickAddPlaceholder),
+    ).toHaveFocus();
+    expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+      "/more/refinement|none|none|false",
+    );
+  });
+
+  it("keeps completion repair over Arbeit klären and focuses the lifecycle action", async () => {
+    const repairIssue = issue("review_completion", "project");
+    mockedApi.getRefinementIssues.mockResolvedValue({
+      issues: [repairIssue],
+      projects: [],
+    });
+
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/more/refinement"] },
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: strings.refinementActionLabels.review_completion,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("button", { name: strings.completeStory }),
+    ).toHaveFocus();
+    expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+      "/more/refinement|none|none|false",
+    );
+  });
 
   it("opens the named blocking prerequisite instead of the downstream task", async () => {
     const blockerIssue = issue("clarify_task");
@@ -321,7 +425,7 @@ describe("RefinementPage", () => {
     );
 
     expect(screen.getByLabelText("repair-state")).toHaveTextContent(
-      "/more/refinement|31|title|true",
+      "/more/refinement|31|title|false",
     );
   });
 
@@ -332,7 +436,7 @@ describe("RefinementPage", () => {
     ["plan_task", "schedule", false],
     ["resolve_blocker", "dependencies", false],
     ["add_child", "subtasks", false],
-    ["clarify_task", "title", true],
+    ["clarify_task", "title", false],
   ] as const)(
     "opens task repair %s at the narrowest existing task field",
     async (actionCode, focus, queueActive) => {
@@ -388,7 +492,7 @@ describe("RefinementPage", () => {
     );
   });
 
-  it("keeps project planning repair focused through route state while task context is still loading", async () => {
+  it("loads the project and opens its concrete planning task without leaving refinement", async () => {
     mockedApi.getRefinementIssues.mockResolvedValue({
       issues: [issue("plan_task", "project")],
       projects: [],
@@ -407,8 +511,183 @@ describe("RefinementPage", () => {
         name: strings.refinementActionLabels.plan_task,
       }),
     );
+    await screen.findByText("Testobjekt");
+    expect(mockedApi.getProject).toHaveBeenCalledWith(41);
     expect(screen.getByLabelText("repair-state")).toHaveTextContent(
-      "/projects/41?focus=planning|none|none|false",
+      "/more/refinement|73|schedule|false",
+    );
+  });
+
+  it("refocuses the same issue after an incomplete task repair", async () => {
+    const unresolved = issue("assign_task");
+    unresolved.entityTitle = "Noch offen";
+    const other = issue("add_child");
+    other.entityId = 42;
+    other.entityTitle = "Danach";
+    mockedApi.getRefinementIssues
+      .mockResolvedValueOnce({ issues: [unresolved, other], projects: [] })
+      .mockResolvedValueOnce({ issues: [unresolved, other], projects: [] });
+
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/more/refinement"] },
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: strings.refinementActionLabels.assign_task,
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Close task repair" }));
+
+    await waitFor(() =>
+      expect(mockedApi.getRefinementIssues).toHaveBeenCalledTimes(2),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Noch offen").closest("article")).toHaveFocus(),
+    );
+  });
+
+  it("focuses the next freshly unresolved issue instead of following a static queue", async () => {
+    const resolved = issue("assign_task");
+    resolved.entityTitle = "Wird behoben";
+    const next = issue("add_child");
+    next.entityId = 42;
+    next.entityTitle = "Jetzt als Nächstes";
+    mockedApi.getRefinementIssues
+      .mockResolvedValueOnce({ issues: [resolved, next], projects: [] })
+      .mockResolvedValueOnce({ issues: [next], projects: [] });
+
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/more/refinement"] },
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: strings.refinementActionLabels.assign_task,
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Close task repair" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Jetzt als Nächstes").closest("article")).toHaveFocus(),
+    );
+  });
+
+  it("returns from an in-page project repair to the refreshed issue list", async () => {
+    const resolved = issue("assign_driver", "project");
+    resolved.entityTitle = "Projekt klären";
+    const next = issue("assign_task");
+    next.entityId = 42;
+    next.entityTitle = "Aufgabe klären";
+    mockedApi.getRefinementIssues
+      .mockResolvedValueOnce({ issues: [resolved, next], projects: [] })
+      .mockResolvedValueOnce({ issues: [next], projects: [] });
+
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/more/refinement"] },
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: strings.refinementActionLabels.assign_driver,
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: strings.editProject });
+    await userEvent.click(within(dialog).getByRole("button", { name: strings.close }));
+
+    expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+      "/more/refinement|none|none|false",
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Aufgabe klären").closest("article")).toHaveFocus(),
+    );
+  });
+
+  it("offers full task details without replacing the focused repair action", async () => {
+    const taskIssue = issue("assign_task");
+    taskIssue.entityTitle = "Aufgabendetails";
+    mockedApi.getRefinementIssues.mockResolvedValue({
+      issues: [taskIssue],
+      projects: [],
+    });
+
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/more/refinement"] },
+    );
+
+    await userEvent.click(
+      (await screen.findAllByRole("button", { name: strings.taskDetails }))[0]!,
+    );
+    expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+      "/more/refinement|41|none|false",
+    );
+  });
+
+  it("navigates full project details with a refinement return anchor", async () => {
+    const projectIssue = issue("assign_driver", "project");
+    mockedApi.getRefinementIssues.mockResolvedValue({
+      issues: [projectIssue],
+      projects: [],
+    });
+    renderWithProviders(
+      <>
+        <Routes>
+          <Route path="/more/refinement" element={<RefinementPage />} />
+          <Route path="/projects/:id" element={<p>Project details</p>} />
+        </Routes>
+        <RepairState />
+      </>,
+      { initialEntries: ["/more/refinement"] },
+    );
+
+    await userEvent.click(
+      (await screen.findAllByRole("button", { name: strings.taskDetails }))[0]!,
+    );
+    expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+      "/projects/41|none|none|false",
+    );
+    expect(screen.getByText("Project details")).toBeInTheDocument();
+  });
+
+  it("opens the displayed task's details rather than its blocker repair target", async () => {
+    const blockerIssue = issue("clarify_task");
+    blockerIssue.entityId = 34;
+    blockerIssue.entityTitle = "Abhängige Aufgabe";
+    blockerIssue.suggestedAction.targetTaskId = 31;
+    mockedApi.getRefinementIssues.mockResolvedValue({
+      issues: [blockerIssue],
+      projects: [],
+    });
+
+    renderWithProviders(
+      <>
+        <RefinementPage />
+        <RepairState />
+      </>,
+      { initialEntries: ["/more/refinement"] },
+    );
+
+    await userEvent.click(
+      (await screen.findAllByRole("button", { name: strings.taskDetails }))[0]!,
+    );
+    expect(screen.getByLabelText("repair-state")).toHaveTextContent(
+      "/more/refinement|34|none|false",
     );
   });
 

@@ -25,7 +25,17 @@ const mockedApi = vi.mocked(api, true);
 
 function ProjectRouteLocation() {
   const location = useLocation();
-  return <output aria-label="project-route">{location.pathname}{location.search}</output>;
+  const refinementReturn = (
+    location.state as {
+      refinementReturn?: { issueKey: string };
+    } | null
+  )?.refinementReturn;
+  return (
+    <output aria-label="project-route">
+      {location.pathname}
+      {location.search}|{refinementReturn?.issueKey ?? "none"}
+    </output>
+  );
 }
 
 function TaskRouteState() {
@@ -56,6 +66,21 @@ function RouteControls() {
       </button>
       <button
         type="button"
+        onClick={() =>
+          navigate("/projects/42", {
+            state: {
+              refinementReturn: {
+                issueKey: "project:42:missing_driver:",
+                issueIndex: 0,
+              },
+            },
+          })
+        }
+      >
+        Open from refinement
+      </button>
+      <button
+        type="button"
         onClick={() => {
           const next = new URLSearchParams(searchParams);
           next.delete("focus");
@@ -74,6 +99,7 @@ function renderProjectRoute(entry: string, initialEntries = [entry]) {
       <Routes>
         <Route path="/projects/:id" element={<ProjectDetailPage />} />
         <Route path="/projects" element={<p>Projects destination</p>} />
+        <Route path="/more/refinement" element={<p>Refinement destination</p>} />
       </Routes>
       <TaskDetailHost />
       <ProjectRouteLocation />
@@ -215,6 +241,23 @@ describe("ProjectDetailPage task explanations", () => {
     expect(
       screen.queryByRole("button", { name: "In Kalender" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("returns full project details to the originating refinement issue", async () => {
+    renderProjectRoute("/more/refinement");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open from refinement" }),
+    );
+    expect(await screen.findByText("Sommerfest planen")).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("link", { name: `← ${strings.refinement}` }),
+    );
+
+    expect(screen.getByText("Refinement destination")).toBeInTheDocument();
+    expect(screen.getByLabelText("project-route")).toHaveTextContent(
+      "/more/refinement|project:42:missing_driver:",
+    );
   });
 
   it("opens the focused outcome editor on direct navigation and clears only the focus query when closed", async () => {

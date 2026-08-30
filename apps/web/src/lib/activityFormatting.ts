@@ -1,7 +1,6 @@
 import type {
   ActivityEvent,
   ActivityEventMetadata,
-  HistoricalTaskStatus,
   ProjectStatus,
   TaskStatus,
 } from "@machbar/shared";
@@ -13,11 +12,10 @@ import {
 import { localeTag } from "./format";
 
 function statusLabel(
-  status: HistoricalTaskStatus | ProjectStatus | undefined,
+  status: TaskStatus | ProjectStatus | undefined,
   strings: TranslationCatalog,
 ): string | null {
   if (!status) return null;
-  if (status === "waiting") return strings.waiting;
   if (status in strings.taskStatusLabels) {
     return strings.taskStatusLabels[status as TaskStatus];
   }

@@ -1,15 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ActivityEventMetadata } from "@machbar/shared";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-describe("0015 migration: external waits", () => {
-  it("migrates only waiting tasks without disturbing related history or scheduling", () => {
-    const historicalMetadata: ActivityEventMetadata = {
+describe("external-wait migrations", () => {
+  it("migrates waiting tasks, then removes superseded storage and status metadata", () => {
+    const oldStatusMetadata = {
       previousStatus: "actionable",
       nextStatus: "waiting",
     };
@@ -49,11 +48,11 @@ describe("0015 migration: external waits", () => {
         (3, 'Waiting for reply', 'waiting', NULL, 'Reply'),
         (4, 'Waiting until date', 'waiting', '2026-09-02', NULL),
         (5, 'Waiting for delivery until date', 'waiting', '2026-09-03', 'Delivery'),
-        (6, 'Stale legacy waiting-for', 'actionable', '2026-09-04', 'Stale'),
+        (6, 'Stale waiting-for', 'actionable', '2026-09-04', 'Stale'),
         (7, 'Dependency prerequisite', 'actionable', NULL, NULL);
       INSERT INTO task_dependencies (task_id, depends_on_task_id) VALUES (1, 7);
       INSERT INTO activity_events (task_id, metadata)
-        VALUES (5, '${JSON.stringify(historicalMetadata)}');
+        VALUES (5, '${JSON.stringify(oldStatusMetadata)}');
       INSERT INTO contribution_events (activity_event_id, reason)
         VALUES (1, 'waiting_followup_added');
     `);
@@ -125,7 +124,7 @@ describe("0015 migration: external waits", () => {
           .pluck()
           .get() as string,
       ),
-    ).toEqual(historicalMetadata);
+    ).toEqual(oldStatusMetadata);
     expect(
       sqlite.prepare("SELECT COUNT(*) FROM contribution_events").pluck().get(),
     ).toBe(1);
@@ -137,6 +136,44 @@ describe("0015 migration: external waits", () => {
         .pluck()
         .get(),
     ).toBe(0);
+
+    const cleanupMigration = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../drizzle/0016_remove_waiting_compatibility.sql",
+      ),
+      "utf8",
+    );
+    sqlite.pragma("foreign_keys = OFF");
+    for (const statement of cleanupMigration.split("--> statement-breakpoint")) {
+      if (statement.trim()) sqlite.exec(statement);
+    }
+    sqlite.pragma("foreign_keys = ON");
+
+    expect(
+      sqlite
+        .prepare("PRAGMA table_info(tasks)")
+        .all()
+        .map((column) => (column as { name: string }).name),
+    ).not.toContain("waiting_for");
+    expect(
+      JSON.parse(
+        sqlite
+          .prepare("SELECT metadata FROM activity_events")
+          .pluck()
+          .get() as string,
+      ),
+    ).toEqual({
+      previousStatus: "actionable",
+      nextStatus: "actionable",
+    });
+    expect(
+      sqlite.prepare("SELECT COUNT(*) FROM task_dependencies").pluck().get(),
+    ).toBe(1);
+    expect(
+      sqlite.prepare("SELECT COUNT(*) FROM contribution_events").pluck().get(),
+    ).toBe(1);
+    expect(sqlite.pragma("foreign_key_check")).toEqual([]);
     sqlite.close();
   });
 });
