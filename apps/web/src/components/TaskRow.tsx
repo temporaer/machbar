@@ -514,7 +514,9 @@ export function TaskRow({
               ) : null}
               {task.externalWait ? (
                 <span className="task-row-meta-item">
-                  {strings.waitingFor}: {task.externalWait.waitingFor?.trim() || strings.unknown}
+                  {task.externalWait.waitingFor?.trim()
+                    ? `${strings.waitingFor}: ${task.externalWait.waitingFor.trim()}`
+                    : strings.waitingReasonMissing}
                 </span>
               ) : null}
               {task.dependencies

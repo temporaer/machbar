@@ -65,6 +65,8 @@ describe("WaitingGroupList", () => {
     });
     renderWithProviders(<WaitingGroupList tasks={[task]} groupBy="context" />);
     expect(await screen.findByRole("heading", { name: "Telefon" })).toBeInTheDocument();
+    expect(screen.getByText("Wartet – Grund nicht angegeben")).toBeInTheDocument();
+    expect(screen.queryByText(/Wartet auf: Unbekannt/)).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Nachhaken" }));
