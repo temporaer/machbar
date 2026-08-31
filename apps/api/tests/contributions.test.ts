@@ -227,9 +227,9 @@ describe("contribution scoring", () => {
     expect(award(6, "task_estimated", "planning")?.sharedPoints).toBe(0);
   });
 
-  it("uses an exact trailing-seven-day window", () => {
+  it("uses seven fixed calendar days instead of a rolling-hour window", () => {
     const mira = member("Mira");
-    const now = new Date("2026-08-28T10:00:00.000Z");
+    const now = new Date("2026-08-28T22:00:00.000Z");
     const activity = ctx.handle.db
       .insert(schema.activityEvents)
       .values({
@@ -244,7 +244,7 @@ describe("contribution scoring", () => {
       .get();
     ctx.handle.db.insert(schema.contributionEvents).values([
       {
-        createdAt: "2026-08-21T10:00:00.000Z",
+        createdAt: "2026-08-22T00:00:00.000Z",
         activityEventId: activity.id,
         actorMemberId: mira.id,
         category: "completion",
@@ -257,13 +257,70 @@ describe("contribution scoring", () => {
       },
     ]).run();
 
-    expect(getContributionSummary(ctx.handle.db, now).sharedTotal).toBe(2);
+    expect(getContributionSummary(ctx.handle.db, now, "UTC").sharedTotal).toBe(2);
     expect(
       getContributionSummary(
         ctx.handle.db,
-        new Date("2026-08-28T10:00:00.001Z"),
+        new Date("2026-08-28T23:59:59.999Z"),
+        "UTC",
+      ).sharedTotal,
+    ).toBe(2);
+    expect(
+      getContributionSummary(
+        ctx.handle.db,
+        new Date("2026-08-29T00:00:00.000Z"),
+        "UTC",
       ).sharedTotal,
     ).toBe(0);
+  });
+
+  it("keeps prior-day buckets fixed as the current local day progresses", () => {
+    const morning = getContributionSummary(
+      ctx.handle.db,
+      new Date("2026-08-28T06:00:00.000Z"),
+      "Europe/Berlin",
+    );
+    const evening = getContributionSummary(
+      ctx.handle.db,
+      new Date("2026-08-28T20:00:00.000Z"),
+      "Europe/Berlin",
+    );
+
+    expect(evening.windowStartedAt).toBe(morning.windowStartedAt);
+    expect(evening.pulse).toEqual(morning.pulse);
+    expect(morning.pulse[0]).toMatchObject({
+      startedAt: "2026-08-21T22:00:00.000Z",
+      endedAt: "2026-08-22T22:00:00.000Z",
+    });
+  });
+
+  it("uses local midnights across daylight-saving transitions", () => {
+    const pulse = getContributionSummary(
+      ctx.handle.db,
+      new Date("2026-03-30T12:00:00.000Z"),
+      "Europe/Berlin",
+    ).pulse;
+    const transitionDay = pulse.find(
+      (bucket) => bucket.startedAt === "2026-03-28T23:00:00.000Z",
+    );
+
+    expect(transitionDay).toMatchObject({
+      endedAt: "2026-03-29T22:00:00.000Z",
+    });
+  });
+
+  it("starts a day at the first valid instant when DST skips midnight", () => {
+    const pulse = getContributionSummary(
+      ctx.handle.db,
+      new Date("2026-04-24T12:00:00.000Z"),
+      "Africa/Cairo",
+    ).pulse;
+    const currentDay = pulse.at(-1);
+
+    expect(currentDay).toMatchObject({
+      startedAt: "2026-04-23T22:00:00.000Z",
+      endedAt: "2026-04-24T21:00:00.000Z",
+    });
   });
 
   it("keeps penalties uncapped without restoring positive cap capacity", () => {
@@ -348,10 +405,10 @@ describe("contribution scoring", () => {
     );
   });
 
-  it("returns seven exact rolling pulse buckets with qualitative levels", () => {
+  it("returns seven fixed local-calendar pulse buckets with qualitative levels", () => {
     const mira = member("Mira");
     const now = new Date("2026-08-28T10:00:00.000Z");
-    const start = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+    const start = Date.parse("2026-08-22T00:00:00.000Z");
 
     const insertPoints = (
       createdAt: string,
@@ -397,7 +454,7 @@ describe("contribution scoring", () => {
     insertPoints(now.toISOString(), 6, 1);
     insertPoints(new Date(now.getTime() + 1).toISOString(), 7, 6);
 
-    const pulse = getContributionSummary(ctx.handle.db, now).pulse;
+    const pulse = getContributionSummary(ctx.handle.db, now, "UTC").pulse;
     expect(pulse).toHaveLength(7);
     expect(pulse.map((bucket) => bucket.level)).toEqual([
       "low",
@@ -409,13 +466,13 @@ describe("contribution scoring", () => {
       "low",
     ]);
     expect(pulse[0]).toMatchObject({
-      startedAt: "2026-08-21T10:00:00.000Z",
-      endedAt: "2026-08-22T10:00:00.000Z",
+      startedAt: "2026-08-22T00:00:00.000Z",
+      endedAt: "2026-08-23T00:00:00.000Z",
     });
     for (let index = 1; index < pulse.length; index += 1) {
       expect(pulse[index]?.startedAt).toBe(pulse[index - 1]?.endedAt);
     }
-    expect(pulse.at(-1)?.endedAt).toBe(now.toISOString());
+    expect(pulse.at(-1)?.endedAt).toBe("2026-08-29T00:00:00.000Z");
   });
 
   it("moves a deleted member's former personal points into shared-only", () => {
@@ -467,6 +524,18 @@ describe("contribution scoring", () => {
           categories: { completion: 2, planning: 0 },
         },
       ],
+    });
+  });
+
+  it("rejects an invalid contribution-history timezone", async () => {
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: "/api/contributions/summary?timezone=Not%2FAZone",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toMatchObject({
+      code: "contribution_query_invalid",
     });
   });
 });

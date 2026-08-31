@@ -441,8 +441,12 @@ export const api = {
       })}`,
     ),
 
-  getContributionSummary: () =>
-    request<ContributionSummary>("/contributions/summary"),
+  getContributionSummary: () => {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    return request<ContributionSummary>(
+      `/contributions/summary?timezone=${encodeURIComponent(timezone)}`,
+    );
+  },
 
   getDebugMetrics: () => request<DebugMetrics>("/debug/metrics"),
 

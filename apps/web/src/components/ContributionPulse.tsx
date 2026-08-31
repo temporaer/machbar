@@ -1,4 +1,5 @@
 import type { ContributionPulseLevel } from "@machbar/shared";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -9,12 +10,41 @@ const EMPTY_PULSE: ContributionPulseLevel[] = Array.from(
   () => "none",
 );
 
+function localCalendarDate(date = new Date()): string {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 export function ContributionPulse() {
   const strings = useStrings();
+  const [calendarDay, setCalendarDay] = useState(localCalendarDate);
   const { data, error, reload } = useAsync(
     () => api.getContributionSummary(),
-    [],
+    [calendarDay],
   );
+  useEffect(() => {
+    const now = new Date();
+    const nextMidnight = new Date(now);
+    nextMidnight.setHours(24, 0, 0, 0);
+    const timeout = window.setTimeout(
+      () => setCalendarDay(localCalendarDate()),
+      nextMidnight.getTime() - now.getTime() + 100,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [calendarDay]);
+  useEffect(() => {
+    const refreshAfterSleep = () => {
+      if (document.visibilityState === "visible") {
+        setCalendarDay(localCalendarDate());
+      }
+    };
+    document.addEventListener("visibilitychange", refreshAfterSleep);
+    return () =>
+      document.removeEventListener("visibilitychange", refreshAfterSleep);
+  }, []);
   const levels = data?.pulse.map((bucket) => bucket.level) ?? EMPTY_PULSE;
   const levelLabels: Record<ContributionPulseLevel, string> = {
     negative: strings.contributionPulseLevelNegative,

@@ -834,6 +834,8 @@ const en = {
   refinementInspectTarget: (title: string) => `Review ${title}`,
 
   apiErrorMessages: {
+    contribution_query_invalid:
+      "The timezone for contribution history is invalid.",
     acceptance_criteria_order_invalid:
       "The acceptance-criteria order is invalid.",
     acceptance_criterion_not_found:
