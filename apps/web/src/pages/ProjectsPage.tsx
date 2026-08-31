@@ -25,8 +25,8 @@ import { useLocale } from "../lib/locale";
 import { IconActionGlyph } from "../components/IconActionButton";
 
 /**
- * The Projekte tab: every project is a user story, and every row carries the
- * full Scrum-style workflow directly — right swipe (or the dedicated primary
+ * The Projekte tab: current and terminal projects are user stories, and every
+ * row carries the full Scrum-style workflow directly — right swipe (or the dedicated primary
  * button on larger screens) performs the status-appropriate next step, while
  * left swipe or ⋯ reveals the targeted chips plus the remaining legal
  * transitions.
@@ -64,7 +64,10 @@ export function ProjectsPage() {
     }
   };
 
-  const listed = projects ?? [];
+  // Backlog projects have their own review surface. A project returned to the
+  // backlog from this page may remain briefly through the retained projection,
+  // but fetched backlog inventory must not leak into the Projects tab.
+  const listed = (projects ?? []).filter((project) => project.status !== "backlog");
   // A story that just transitioned optimistically must keep rendering during
   // its retention window even if a refetch drops it from this list — but,
   // just like every other row, it still obeys the current search/scope and
@@ -86,8 +89,9 @@ export function ProjectsPage() {
     locale,
   });
   // Keep workflow meaning ahead of tag grouping: actionable and stuck work
-  // stays first, healthy waiting gets its own visible section, backlog comes
-  // after it, and terminal work remains folded at the bottom.
+  // stays first, healthy waiting gets its own visible section, and terminal
+  // work remains folded at the bottom. The backlog bucket can only contain a
+  // retained row that just left this page.
   const classifications = new Map(
     filteredProjects.map((project) => [project.id, classifyProjectListItem(project)]),
   );

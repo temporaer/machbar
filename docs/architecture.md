@@ -398,11 +398,13 @@ runs through `useProjectActions`.
 
 ### Projects tab — `/projects`
 
-`ProjectsPage` renders the same `ProjectStoryRow` (card variant) for projects
-of every status. Compact issue badges make missing clarification visible
-without opening a separate planning screen.
+`ProjectsPage` renders the same `ProjectStoryRow` (card variant) for active,
+completed, and archived projects. Backlog inventory is intentionally exclusive
+to `/more/backlog`; a row just returned to backlog may remain only for its
+optimistic retention window. Compact issue badges make missing clarification
+visible without opening a separate planning screen.
 
-- **Right swipe / primary button** runs the status-appropriate next step: `backlog → aktivieren`, `active → abschließen`, `completed → wieder öffnen`, `archived → aktivieren`. The button (`.story-row-primary`, `aria-label` = the action) is the explicit non-gesture equivalent and stays available on touch.
+- **Right swipe / primary button** runs the status-appropriate next step: `active → abschließen`, `completed → wieder öffnen`, `archived → aktivieren`. Backlog activation is offered on Backlog Review. The button (`.story-row-primary`, `aria-label` = the action) is the explicit non-gesture equivalent and stays available on touch.
 - **Left swipe / ⋯** reveals the chip strip: the targeted popups above plus every *remaining* legal transition from the row's `availableActions` (e.g. `In Backlog zurücklegen`, `Archivieren`).
 - The candidate action is always intersected with `availableActions`; `lib/projectWorkflow.ts` mirrors the backend's `workflowActionsByStatus` map (and is reused by the test fixtures) so the UI never offers an illegal step.
 - Activating a story without a driver opens `MemberSelectionSheet` first and then activates **atomically** via `activateProject(id, { ownerMemberId })`.
@@ -414,8 +416,8 @@ without opening a separate planning screen.
 
 - **Search** folds diacritics (`NFD` + combining-mark strip) and lower-cases both sides, then substring-matches the title **and** every `acceptanceCriteria[].text`. The list endpoint already returns criteria (`Graph.load`), so no extra request is needed.
 - **Scope** is `mine` by default — the selected member's stories plus `ownerMemberId === null`. With no identity selected there is no "mine", so it collapses to unassigned-only rather than to everything. `all` disables the filter.
-- **Sort buckets**, in order: active & healthy, active & `stuckReason`, backlog, completed, archived; ties break on `position`, then `title.localeCompare(…, "de")`, then `id`, so the order is stable across reloads and retentions.
-- Active/backlog rows form the primary list. Completed and archived rows keep
+- **Sort buckets**, in order: active & healthy, active & `stuckReason`, completed, archived; ties break on `position`, then `title.localeCompare(…, "de")`, then `id`, so the order is stable across reloads and retentions.
+- Active rows form the primary list. Completed and archived rows keep
   that same deterministic order inside the folded **Abgeschlossen &
   archiviert** section. A non-empty search reveals matching terminal
   rows automatically.

@@ -97,9 +97,9 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     ]);
   });
 
-  it("shows every project status and reveals its swipe hint on demand", async () => {
+  it("omits backlog projects and reveals its swipe hint on demand", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
-    await screen.findByText("Backlog-Geschichte");
+    await screen.findByText("Aktive Geschichte");
 
     const hint =
       "Nach rechts wischen führt den nächsten Workflow-Schritt aus, nach links wischen oder ⋯ zeigt weitere Aktionen.";
@@ -109,14 +109,13 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     );
     expect(screen.getByText(hint)).toBeInTheDocument();
     const badges = [...container.querySelectorAll(".story-row-status-badge")].map((b) => b.textContent);
-    // New deterministic sort order: active healthy/stuck, then backlog,
-    // completed, archived — not the fetch order.
-    expect(badges).toEqual(["Aktiv", "Später / noch nicht aktiv", "Abgeschlossen", "Archiviert"]);
+    expect(screen.queryByText("Backlog-Geschichte")).not.toBeInTheDocument();
+    expect(badges).toEqual(["Aktiv", "Abgeschlossen", "Archiviert"]);
   });
 
   it("opens project creation from the bottom-right plus button", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
-    await screen.findByText("Backlog-Geschichte");
+    await screen.findByText("Aktive Geschichte");
 
     const addButton = screen.getByRole("button", { name: "Projekt anlegen" });
     expect(addButton).toHaveClass("quick-add-fab");
@@ -129,7 +128,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
 
   it("changes a status only through named buttons, never through a status dropdown", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
-    await screen.findByText("Backlog-Geschichte");
+    await screen.findByText("Aktive Geschichte");
 
     expect(screen.queryAllByRole("combobox")).toHaveLength(0);
     expect(container.querySelector("select")).toBeNull();
@@ -137,7 +136,6 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     // Every row exposes its next workflow step as an explicitly labelled
     // control, and the status badge itself is not interactive.
     const expected: [string, string][] = [
-      ["Backlog-Geschichte", "Aktiv machen"],
       ["Aktive Geschichte", "Abschließen"],
       ["Fertige Geschichte", "Wieder öffnen"],
       ["Archivierte Geschichte", "Aktiv machen"],
@@ -171,65 +169,6 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(rowFor(container, "Aktive Geschichte").querySelector(".story-row-status-badge")).toHaveTextContent(
       "Abgeschlossen",
     );
-  });
-
-  it("selects a missing driver and continues backlog activation immediately", async () => {
-    const { container } = renderWithProviders(<ProjectsPage />);
-    await screen.findByText("Backlog-Geschichte");
-    mockedApi.activateProject.mockResolvedValue(
-      makeProject({ id: 70, title: "Backlog-Geschichte", status: "active", ownerMemberId: 1 }),
-    );
-
-    swipeRow(rowFor(container, "Backlog-Geschichte"), 100);
-    const dialog = await screen.findByRole("dialog", {
-      name: "Verantwortliche Person zuweisen",
-    });
-
-    const group = within(dialog).getByRole("group", { name: "Verantwortlich" });
-    fireEvent.click(within(group).getByRole("button", { name: "Mira" }));
-
-    await waitFor(() =>
-      expect(mockedApi.activateProject).toHaveBeenCalledWith(70, {
-        expectedRevision: 1,
-        ownerMemberId: 1,
-      }),
-    );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("uses the confirmed stuck classification after activating a backlog project", async () => {
-    const backlog = makeProject({
-      id: 74,
-      title: "Noch ohne nächsten Schritt",
-      status: "backlog",
-      ownerMemberId: 1,
-      nextAction: null,
-      stuckReason: null,
-    });
-    mockedApi.getProjects.mockResolvedValue([backlog]);
-    mockedApi.activateProject.mockResolvedValue(
-      makeProject({
-        ...backlog,
-        status: "active",
-        nextAction: null,
-        stuckReason: "no_next_action",
-      }),
-    );
-
-    const { container } = renderWithProviders(<ProjectsPage />);
-    await screen.findByText("Noch ohne nächsten Schritt");
-
-    swipeRow(rowFor(container, "Noch ohne nächsten Schritt"), 100);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-
-    await waitFor(() =>
-      expect(rowFor(container, "Noch ohne nächsten Schritt")).toHaveClass(
-        "story-row-accent-stuck",
-      ),
-    );
-    expect(
-      screen.queryByRole("heading", { name: "Wartet (1)" }),
-    ).not.toBeInTheDocument();
   });
 
   it("reveals per-row chips with the remaining legal transitions on a left swipe", async () => {
@@ -345,7 +284,7 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
       makeProject({
         id: 3,
         title: "Küche renovieren",
-        status: "backlog",
+        status: "active",
         ownerMemberId: null,
         acceptanceCriteria: [makeCriterion({ id: 30, projectId: 3, text: "Fliesen sind café-farben lackiert" })],
       }),
@@ -355,6 +294,12 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
         status: "active",
         ownerMemberId: 2,
         nextAction: makeTask({ id: 40, title: "Nächster Schritt" }),
+      }),
+      makeProject({
+        id: 5,
+        title: "Backlog Küche",
+        status: "backlog",
+        ownerMemberId: null,
       }),
     ]);
   });
@@ -366,6 +311,7 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
 
     expect(screen.getByText("Festgefahrene Geschichte")).toBeInTheDocument();
     expect(screen.getByText("Küche renovieren")).toBeInTheDocument();
+    expect(screen.queryByText("Backlog Küche")).not.toBeInTheDocument();
     expect(screen.queryByText("Theos Geschichte")).not.toBeInTheDocument();
   });
 
@@ -449,7 +395,7 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     });
   });
 
-  it("sorts active-stuck stories after active-healthy ones but before backlog", async () => {
+  it("sorts active-stuck stories after actionable ones and before healthy waiting", async () => {
     window.localStorage.setItem("machbar:identity-member-id", "1");
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Miras aktive Geschichte");
@@ -516,7 +462,7 @@ describe("ProjectsPage – workflow sections", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
-  it("renders active/stuck, counted waiting, backlog, and terminal sections in workflow order", async () => {
+  it("renders active/stuck, counted waiting, and terminal sections without backlog inventory", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({ id: 1, title: "Backlog", status: "backlog", ownerMemberId: null }),
       makeProject({
@@ -564,10 +510,10 @@ describe("ProjectsPage – workflow sections", () => {
     expect(
       [...container.querySelectorAll<HTMLElement>("[data-project-section]")]
         .map((section) => section.dataset.projectSection),
-    ).toEqual(["active", "waiting", "backlog", "terminal"]);
+    ).toEqual(["active", "waiting", "terminal"]);
     expect(screen.getByRole("region", { name: "Aktiv & festgefahren" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Wartet (2)" })).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Später / noch nicht aktiv" })).toBeInTheDocument();
+    expect(screen.queryByText("Backlog")).not.toBeInTheDocument();
     expect(rowFor(container, "Machbar").closest("[data-project-section]")).toHaveAttribute(
       "data-project-section",
       "active",
@@ -585,13 +531,9 @@ describe("ProjectsPage – workflow sections", () => {
         "Wartet auf: Angebot der Schreinerei",
       ),
     ).toBeInTheDocument();
-    expect(rowFor(container, "Backlog").closest("[data-project-section]")).toHaveAttribute(
-      "data-project-section",
-      "backlog",
-    );
   });
 
-  it("groups by tag separately inside active, waiting, and backlog sections", async () => {
+  it("groups by tag separately inside active, waiting, and terminal sections", async () => {
     const phone = makeTag({ id: 91, name: "Telefon", kind: "context" });
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
@@ -633,8 +575,8 @@ describe("ProjectsPage – workflow sections", () => {
     fireEvent.click(within(screen.getByRole("group", { name: "Gruppieren nach" }))
       .getByRole("button", { name: "Kontext" }));
 
-    expect(screen.getAllByRole("heading", { name: "Telefon" })).toHaveLength(4);
-    for (const sectionName of ["active", "waiting", "backlog", "terminal"]) {
+    expect(screen.getAllByRole("heading", { name: "Telefon" })).toHaveLength(3);
+    for (const sectionName of ["active", "waiting", "terminal"]) {
       const section = container.querySelector<HTMLElement>(
         `[data-project-section="${sectionName}"]`,
       );
@@ -697,7 +639,7 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
-  it("keeps active/backlog stories primary and folds completed+archived into one closed, counted section", async () => {
+  it("keeps active stories primary, omits backlog, and folds terminal stories", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 1,
@@ -713,9 +655,9 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Aktive Geschichte");
 
-    // Active/backlog rows are not nested inside any <details> fold.
+    // Active rows are not nested inside the terminal <details> fold.
     expect(rowFor(container, "Aktive Geschichte").closest("details")).toBeNull();
-    expect(rowFor(container, "Backlog-Geschichte").closest("details")).toBeNull();
+    expect(screen.queryByText("Backlog-Geschichte")).not.toBeInTheDocument();
 
     const summary = screen.getByText("Abgeschlossen & archiviert (2)");
     const details = summary.closest("details");
