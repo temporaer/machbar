@@ -3715,13 +3715,6 @@ export function addDependency(
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
     const dependency = getTaskOrThrow(txDb, dependsOnTaskId);
-    if (task.status === "captured" || dependency.status === "captured") {
-      throw AppError.conflict(
-        "task_promotion_invalid",
-        "Classify captured inbox items before adding dependencies.",
-        { taskId, dependsOnTaskId, reason: "captured_dependency_forbidden" },
-      );
-    }
     const hadNextAction =
       task.projectId === null
         ? true

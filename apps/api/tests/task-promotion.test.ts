@@ -180,8 +180,15 @@ describe("captured task promotion", () => {
     const dependency = await post(`/api/tasks/${captured.id}/dependencies`, {
       dependsOnTaskId: blocker.id,
     });
-    expect(dependency.statusCode).toBe(409);
-    expect(dependency.json().error.code).toBe("task_promotion_invalid");
+    expect(dependency.statusCode).toBe(201);
+    const dependencyPromotion = await post(
+      `/api/tasks/${captured.id}/promote-to-project`,
+      { status: "backlog" },
+    );
+    expect(dependencyPromotion.statusCode).toBe(409);
+    expect(dependencyPromotion.json().error.code).toBe(
+      "task_promotion_invalid",
+    );
 
     const child = await post(`/api/tasks/${captured.id}/children`, {
       title: "Unzulässiger Schritt",

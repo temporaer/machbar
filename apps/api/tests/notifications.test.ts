@@ -324,12 +324,14 @@ describe("reminders and Push delivery", () => {
     const hannes = addMember(ctx, "Hannes");
     const due = createTask(ctx.handle.db, {
       title: "Paket abholen",
+      status: "actionable",
       ownerMemberId: hannes.id,
       ownerInheritanceMode: "explicit",
       reminderAt: "2026-08-30T08:00:00.000Z",
     });
     const future = createTask(ctx.handle.db, {
       title: "Später",
+      status: "actionable",
       ownerMemberId: hannes.id,
       ownerInheritanceMode: "explicit",
       reminderAt: "2026-09-01T08:00:00.000Z",
@@ -398,6 +400,7 @@ describe("reminders and Push delivery", () => {
     const hannes = addMember(ctx, "Hannes");
     const task = createTask(ctx.handle.db, {
       title: "Pflanzen gießen",
+      status: "actionable",
       scheduledDate: "2026-08-30",
       repeatAfterDays: 7,
       allowedDeviationDays: 0,
