@@ -19,6 +19,7 @@ import {
   moveSubtreeToProject,
   moveTask,
   outdentTask,
+  promoteTaskToProject,
   removeDependency,
   removeExcludedTag,
   removeTaskTag,
@@ -38,6 +39,7 @@ import {
   dependencySchema,
   moveSubtreeSchema,
   moveTaskSchema,
+  promoteTaskToProjectSchema,
   reorderTaskSchema,
   tagRefSchema,
   transitionTaskStatusSchema,
@@ -192,6 +194,20 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null },
       );
       return taskOrThrow(db, id);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/tasks/:id/promote-to-project",
+    async (request, reply) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(promoteTaskToProjectSchema, request.body);
+      const project = promoteTaskToProject(db, id, body, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
+      const graph = Graph.load(db);
+      reply.status(201);
+      return graph.projectWithComputed(project.id);
     },
   );
 

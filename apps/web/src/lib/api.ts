@@ -181,6 +181,13 @@ export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "parentTaskId" | "pr
   completedOn?: string;
 };
 
+export interface PromoteTaskToProjectInput {
+  status: "active" | "backlog";
+  title?: string;
+  notes?: string;
+  expectedRevision?: number;
+}
+
 /**
  * Project notes hold free-form context independently from the structured
  * "Erledigt, wenn …" checklist.
@@ -505,6 +512,11 @@ export const api = {
     }),
   updateTask: (id: number, patch: UpdateTaskInput) =>
     request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  promoteTaskToProject: (id: number, input: PromoteTaskToProjectInput) =>
+    request<ProjectWithActions>(`/tasks/${id}/promote-to-project`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   setExternalWait: (id: number, input: ExternalWaitInput) =>
     request<Task>(`/tasks/${id}/external-wait`, {
       method: "PUT",

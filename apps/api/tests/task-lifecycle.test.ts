@@ -322,7 +322,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     });
   });
 
-  it("does not clear capture for metadata updates or refiling", async () => {
+  it("keeps capture for metadata updates but requires promotion instead of refiling", async () => {
     const task = await createTask({ title: "Ungeklärte Aufgabe" });
     const metadataRes = await ctx.app.inject({
       method: "PATCH",
@@ -341,7 +341,8 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
       url: `/api/tasks/${task.id}/move`,
       payload: { projectId: projectRes.json().id },
     });
-    expect(moveRes.json().needsClarification).toBe(true);
+    expect(moveRes.statusCode).toBe(409);
+    expect(moveRes.json().error.code).toBe("task_promotion_invalid");
   });
 
   it("rejects an empty title", async () => {
@@ -470,7 +471,10 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
   });
 
   it("creates a child task via the dedicated children endpoint", async () => {
-    const parent = await createTask({ title: "Elternaufgabe 5" });
+    const parent = await createTask({
+      title: "Elternaufgabe 5",
+      status: "actionable",
+    });
     const res = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${parent.id}/children`,

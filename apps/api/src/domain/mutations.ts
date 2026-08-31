@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type {
   InheritanceMode,
   ProjectStatus,
@@ -1440,6 +1440,25 @@ function normalizeTaskStatus(
   return fallback;
 }
 
+function assertCapturedTaskShape(
+  status: TaskStatus,
+  input: {
+    repeatAfterDays: number | null;
+    reminderAt: string | null;
+  },
+): void {
+  if (
+    status === "captured" &&
+    (input.repeatAfterDays !== null || input.reminderAt !== null)
+  ) {
+    throw AppError.conflict(
+      "task_promotion_invalid",
+      "A captured inbox item cannot recur or have a reminder.",
+      { reason: "captured_shape_invalid" },
+    );
+  }
+}
+
 function nextPositionForGroup(
   db: Db,
   parentTaskId: number | null,
@@ -1492,6 +1511,10 @@ function insertTask(
     scheduledDate,
     input.dueDate,
   );
+  assertCapturedTaskShape(status, {
+    repeatAfterDays,
+    reminderAt: input.reminderAt ?? null,
+  });
   if (recurrence.enabled && status === "done") {
     throw AppError.badRequest(
       "recurrence_completion_date_required",
@@ -1596,6 +1619,13 @@ export function createChildTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const parent = getTaskOrThrow(txDb, parentTaskId);
+    if (parent.status === "captured") {
+      throw AppError.conflict(
+        "task_promotion_invalid",
+        "Promote the captured item to a project before adding steps.",
+        { taskId: parentTaskId, reason: "captured_child_forbidden" },
+      );
+    }
     assertParentAcceptsChildren(txDb, parentTaskId);
     const hadNextAction =
       parent.projectId === null
@@ -1865,6 +1895,167 @@ export interface UpdateTaskInput {
   expectedRevision?: number;
 }
 
+export interface PromoteTaskToProjectInput {
+  status: "active" | "backlog";
+  title?: string;
+  notes?: string;
+  expectedRevision?: number;
+}
+
+export function promoteTaskToProject(
+  db: Db,
+  taskId: number,
+  input: PromoteTaskToProjectInput,
+  context?: MutationContext,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, taskId);
+    assertExpectedRevision("task", taskId, task.revision, input.expectedRevision);
+    if (
+      task.status !== "captured" ||
+      task.projectId !== null ||
+      task.parentTaskId !== null
+    ) {
+      throw AppError.conflict(
+        "task_promotion_invalid",
+        "Only a root-level captured inbox item can be promoted to a project.",
+        { taskId, reason: "not_root_capture" },
+      );
+    }
+    const title = input.title?.trim() ?? task.title;
+    if (title === "") {
+      throw AppError.badRequest(
+        "project_title_required",
+        "The project title must not be empty.",
+        { taskId },
+      );
+    }
+    const externalWait = tx
+      .select({ taskId: schema.taskExternalWaits.taskId })
+      .from(schema.taskExternalWaits)
+      .where(eq(schema.taskExternalWaits.taskId, taskId))
+      .get();
+    const dependency = tx
+      .select({ id: schema.taskDependencies.id })
+      .from(schema.taskDependencies)
+      .where(
+        or(
+          eq(schema.taskDependencies.taskId, taskId),
+          eq(schema.taskDependencies.dependsOnTaskId, taskId),
+        ),
+      )
+      .get();
+    const recurrenceOccurrence = tx
+      .select({ id: schema.taskRecurrenceOccurrences.id })
+      .from(schema.taskRecurrenceOccurrences)
+      .where(eq(schema.taskRecurrenceOccurrences.taskId, taskId))
+      .get();
+    if (
+      externalWait ||
+      dependency ||
+      recurrenceOccurrence ||
+      task.repeatAfterDays !== null ||
+      task.reminderAt !== null
+    ) {
+      throw AppError.conflict(
+        "task_promotion_invalid",
+        "Resolve task-only waits, dependencies, recurrence, and reminders before promotion.",
+        { taskId, reason: "task_only_relations" },
+      );
+    }
+
+    const maxPosition = tx
+      .select({ position: schema.projects.position })
+      .from(schema.projects)
+      .all()
+      .reduce((max, project) => Math.max(max, project.position), -1);
+    const ownerMemberId =
+      task.ownerInheritanceMode === "explicit" ? task.ownerMemberId : null;
+    if (input.status === "active" && ownerMemberId === null) {
+      throw AppError.conflict(
+        "project_driver_required",
+        "An active project needs a driver.",
+        { taskId, reason: "capture_driver_required" },
+      );
+    }
+    const project = tx
+      .insert(schema.projects)
+      .values({
+        title,
+        notes: input.notes ?? task.notes,
+        status: input.status,
+        ownerMemberId,
+        dueDate: task.dueDate,
+        scheduledDate: task.scheduledDate,
+        position: maxPosition + 1,
+      })
+      .returning()
+      .get();
+
+    const tagIds = tx
+      .select({ tagId: schema.taskTags.tagId })
+      .from(schema.taskTags)
+      .where(eq(schema.taskTags.taskId, taskId))
+      .all()
+      .map((row) => row.tagId);
+    for (const tagId of tagIds) {
+      tx.insert(schema.projectTags).values({ projectId: project.id, tagId }).run();
+    }
+
+    const descendantIds = repoGetDescendantIds(txDb, taskId);
+    if (descendantIds.length > 0) {
+      tx.update(schema.tasks)
+        .set({
+          projectId: project.id,
+          revision: sql`${schema.tasks.revision} + 1`,
+          updatedAt: nowIso(),
+        })
+        .where(inArray(schema.tasks.id, descendantIds))
+        .run();
+      tx.update(schema.tasks)
+        .set({
+          parentTaskId: null,
+          revision: sql`${schema.tasks.revision} + 1`,
+          updatedAt: nowIso(),
+        })
+        .where(eq(schema.tasks.parentTaskId, taskId))
+        .run();
+    }
+
+    const activityEventId = recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_created",
+      entityType: "project",
+      entityTitle: project.title,
+      projectId: project.id,
+      metadata: {
+        changedFields: ["promotedFromCapture"],
+        relatedTaskIds: [taskId],
+        relatedTaskTitles: [task.title],
+        affectedCount: descendantIds.length,
+      },
+    });
+    neutralizeEntityContributions(txDb, {
+      activityEventId,
+      entityType: "task",
+      entityId: taskId,
+    });
+    recordContribution(txDb, {
+      activityEventId,
+      actorMemberId: actor(context),
+      category: "planning",
+      reason: "project_outcome_added",
+      entityType: "project",
+      entityId: project.id,
+      personalEligible: true,
+    });
+    enqueueProjectAssignment(txDb, project, activityEventId, context);
+    tx.delete(schema.tasks).where(eq(schema.tasks.id, taskId)).run();
+    return project;
+  });
+}
+
 export function updateTask(
   db: Db,
   id: number,
@@ -1931,6 +2122,32 @@ export function updateTask(
       input.scheduledDate !== undefined
         ? input.scheduledDate
         : currentTask.scheduledDate;
+    if ((nextStatus ?? currentTask.status) === "captured") {
+      assertCapturedTaskShape("captured", {
+        repeatAfterDays: nextRepeatAfterDays,
+        reminderAt:
+          input.reminderAt !== undefined
+            ? input.reminderAt
+            : currentTask.reminderAt,
+      });
+      const hasDependency = tx
+        .select({ id: schema.taskDependencies.id })
+        .from(schema.taskDependencies)
+        .where(
+        or(
+          eq(schema.taskDependencies.taskId, id),
+          eq(schema.taskDependencies.dependsOnTaskId, id),
+        ),
+        )
+        .get();
+      if (currentExternalWait || hasDependency) {
+        throw AppError.conflict(
+        "task_promotion_invalid",
+        "A captured inbox item cannot have waits, dependencies, or reminders.",
+        { taskId: id, reason: "captured_task_only_relations" },
+        );
+      }
+    }
     const recurrence = recurrenceDates(
       nextRepeatAfterDays,
       nextAllowedDeviationDays,
@@ -3032,6 +3249,18 @@ export function moveTask(
       newProjectId = newParent.projectId;
     } else {
       newProjectId = "projectId" in input ? input.projectId ?? null : task.projectId;
+    }
+    if (
+      task.status === "captured" &&
+      task.projectId === null &&
+      task.parentTaskId === null &&
+      (newParentTaskId !== null || newProjectId !== null)
+    ) {
+      throw AppError.conflict(
+        "task_promotion_invalid",
+        "Promote the captured inbox item instead of filing it as a task.",
+        { taskId, reason: "captured_root_move_forbidden" },
+      );
     }
 
     const sourceHadNextAction =

@@ -147,6 +147,7 @@ export type ApiErrorCode =
   | "task_indent_unavailable"
   | "task_not_found"
   | "task_parent_self"
+  | "task_promotion_invalid"
   | "task_sequence_too_short"
   | "task_title_required"
   | "waiting_query_invalid";

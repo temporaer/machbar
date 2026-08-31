@@ -123,6 +123,13 @@ export const transitionTaskStatusSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
 });
 
+export const promoteTaskToProjectSchema = z.object({
+  status: z.enum(["active", "backlog"]),
+  title: z.string().min(1).optional(),
+  notes: z.string().optional(),
+  expectedRevision: z.number().int().positive().optional(),
+});
+
 export const completeTaskSchema = z.object({
   descendantsPolicy: z.enum(["leave_open", "complete_children"]).optional(),
   completedOn: isoDate.optional(),

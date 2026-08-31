@@ -81,7 +81,10 @@ describe("dependency blocking and cycle prevention", () => {
   });
 
   it("rejects setting a task's parent to one of its own descendants", async () => {
-    const grandparent = await createTask({ title: "Großelternaufgabe" });
+    const grandparent = await createTask({
+      title: "Großelternaufgabe",
+      status: "actionable",
+    });
     const parentRes = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${grandparent.id}/children`,

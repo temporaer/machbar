@@ -115,7 +115,7 @@ describe("effective owner and typed-tag inheritance", () => {
       await ctx.app.inject({
         method: "POST",
         url: "/api/tasks",
-        payload: { title: "Erst im Eingang" },
+        payload: { title: "Erst im Eingang", status: "actionable" },
       })
     ).json();
     const refiled = (
