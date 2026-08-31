@@ -236,6 +236,72 @@ describe("project workflow (HTTP routes)", () => {
       details: { projectId: 999999 },
     });
   });
+
+  it.each([
+    ["activate", "backlog"],
+    ["return-to-backlog", "active"],
+    ["complete", "active"],
+    ["reopen", "completed"],
+    ["archive", "backlog"],
+  ] as const)(
+    "rejects a stale revision for project %s without applying the transition",
+    async (action, initialStatus) => {
+      const anna = await createMemberRoute(`Anna ${action}`);
+      const project = await createProjectRoute({
+        status: initialStatus,
+        ownerMemberId: anna.id,
+      });
+      const updated = await ctx.app.inject({
+        method: "PATCH",
+        url: `/api/projects/${project.id}`,
+        payload: {
+          notes: "Concurrent edit",
+          expectedRevision: project.revision,
+        },
+      });
+      expect(updated.statusCode).toBe(200);
+
+      const response = await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${project.id}/${action}`,
+        payload: { expectedRevision: project.revision },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.code).toBe("stale_write_conflict");
+      const current = await ctx.app.inject({
+        method: "GET",
+        url: `/api/projects/${project.id}`,
+      });
+      expect(current.json()).toMatchObject({
+        status: initialStatus,
+        notes: "Concurrent edit",
+        revision: updated.json().revision,
+      });
+    },
+  );
+
+  it("accepts the current revision for every project lifecycle action and returns confirmed entities", async () => {
+    const anna = await createMemberRoute("Revision driver");
+    let project = await createProjectRoute({ ownerMemberId: anna.id });
+    for (const action of [
+      "activate",
+      "complete",
+      "reopen",
+      "return-to-backlog",
+      "archive",
+    ]) {
+      const response = await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${project.id}/${action}`,
+        payload: { expectedRevision: project.revision },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().id).toBe(project.id);
+      expect(response.json().revision).toBe(project.revision + 1);
+      project = response.json();
+    }
+  });
 });
 
 /**

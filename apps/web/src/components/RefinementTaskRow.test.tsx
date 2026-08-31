@@ -291,16 +291,6 @@ describe("RefinementTaskRow", () => {
     );
 
     await userEvent.click(within(group).getByRole("button", { name: "Jonas" }));
-    expect(within(group).getByRole("button", { name: "Jonas" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(within(group).getByRole("button", { name: "Gemeinsam / offen" })).toHaveAttribute(
-      "aria-pressed",
-      "false",
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(27, {
@@ -327,9 +317,8 @@ describe("RefinementTaskRow", () => {
       "aria-pressed",
       "true",
     );
-
     await userEvent.click(within(group).getByRole("button", { name: "Gemeinsam / offen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
+    await userEvent.click(within(group).getByRole("button", { name: "Gemeinsam / offen" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(32, {

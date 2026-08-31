@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { followUpEntryHeader } from "./WaitingFollowUpSheet";
 import { WaitingFollowUpSheet } from "./WaitingFollowUpSheet";
 import { api } from "../lib/api";
 import { makeMember, makeTask } from "../test/fixtures";
@@ -10,62 +9,147 @@ import { renderWithProviders } from "../test/testUtils";
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
-    updateTask: vi.fn(),
-    setExternalWait: vi.fn(),
-    resolveExternalWait: vi.fn(),
+    followUpExternalWait: vi.fn(),
   },
 }));
 
 const mockedApi = vi.mocked(api, true);
 
-describe("followUpEntryHeader", () => {
+describe("WaitingFollowUpSheet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
-  it("serializes the generated follow-up timestamp in the selected locale", () => {
-    const now = new Date(2026, 7, 27, 18, 5);
-    const timestamp = new Intl.DateTimeFormat("en-US", {
-      dateStyle: "short",
-      timeStyle: "short",
-    }).format(now);
-
-    expect(followUpEntryHeader("Mira", now, "en")).toBe(
-      `[${timestamp} · Mira]`,
-    );
-  });
-
-  it("appends a timestamped note and resolves the external wait without a status mutation", async () => {
+  it("sends only the authored content and the task's own scheduled date in one continue command", async () => {
     const task = makeTask({
       id: 9,
       notes: "Erste Anfrage.",
       revision: 3,
       externalWait: { waitingFor: "Vermieter" },
       scheduledDate: "2026-09-05",
-      nextBlockerAttentionDate: "2026-09-05",
+      nextBlockerAttentionDate: "2026-08-31",
       blocked: true,
       executable: false,
     });
-    mockedApi.updateTask.mockResolvedValue({ ...task, revision: 4 });
-    mockedApi.resolveExternalWait.mockResolvedValue({
+    mockedApi.followUpExternalWait.mockResolvedValue({
       ...task,
-      revision: 5,
-      externalWait: null,
-      scheduledDate: null,
-      nextBlockerAttentionDate: null,
+      revision: 4,
     });
-    renderWithProviders(<WaitingFollowUpSheet task={task} onClose={vi.fn()} />);
+    const onClose = vi.fn();
+    renderWithProviders(
+      <WaitingFollowUpSheet task={task} onClose={onClose} />,
+    );
 
-    const notes = await screen.findByLabelText("Notizen");
-    expect((notes as HTMLTextAreaElement).value).toMatch(/\[[^\]]+ · [^\]]+\]/);
-    await userEvent.type(notes, "Erneut angerufen.");
-    await userEvent.click(screen.getByRole("checkbox", { name: "Wartepunkt auflösen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
+    const content = await screen.findByLabelText("Notizen");
+    expect(content).toHaveValue("");
+    await userEvent.type(content, "Erneut angerufen.");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
-      expect(mockedApi.resolveExternalWait).toHaveBeenCalledWith(9, 4),
+      expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(9, {
+        action: "continue",
+        content: "Erneut angerufen.",
+        waitingFor: "Vermieter",
+        scheduledDate: "2026-09-05",
+        expectedRevision: 3,
+      }),
     );
-    expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
+    expect(mockedApi.followUpExternalWait).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves the wait together with the newly authored follow-up", async () => {
+    const task = makeTask({
+      id: 10,
+      notes: "Erste Anfrage.",
+      revision: 7,
+      externalWait: { waitingFor: "Vermieter" },
+      scheduledDate: "2026-09-05",
+    });
+    mockedApi.followUpExternalWait.mockResolvedValue({
+      ...task,
+      revision: 8,
+      externalWait: null,
+      scheduledDate: null,
+    });
+    renderWithProviders(
+      <WaitingFollowUpSheet task={task} onClose={vi.fn()} />,
+    );
+
+    await userEvent.type(
+      await screen.findByLabelText("Notizen"),
+      "Antwort erhalten.",
+    );
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: "Wartepunkt auflösen" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() =>
+      expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(10, {
+        action: "resolve",
+        content: "Antwort erhalten.",
+        expectedRevision: 7,
+      }),
+    );
+    expect(mockedApi.followUpExternalWait).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains the draft and error after a failed atomic save", async () => {
+    const task = makeTask({
+      id: 11,
+      revision: 2,
+      externalWait: { waitingFor: "Lieferant" },
+    });
+    mockedApi.followUpExternalWait.mockRejectedValue(new Error("Save failed"));
+    const onClose = vi.fn();
+    renderWithProviders(
+      <WaitingFollowUpSheet task={task} onClose={onClose} />,
+    );
+
+    const content = await screen.findByLabelText("Notizen");
+    await userEvent.type(content, "Mein Entwurf");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Save failed");
+    expect(content).toHaveValue("Mein Entwurf");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("offers explicit Save and Cancel actions and blocks every close path while pending", async () => {
+    const task = makeTask({
+      id: 12,
+      revision: 4,
+      externalWait: { waitingFor: "Amt" },
+    });
+    let resolveRequest!: (task: ReturnType<typeof makeTask>) => void;
+    mockedApi.followUpExternalWait.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }),
+    );
+    const onClose = vi.fn();
+    renderWithProviders(
+      <WaitingFollowUpSheet task={task} onClose={onClose} />,
+    );
+
+    const save = screen.getByRole("button", { name: "Speichern" });
+    const cancel = screen.getByRole("button", { name: "Abbrechen" });
+    expect(save).toBeDisabled();
+    await userEvent.type(await screen.findByLabelText("Notizen"), "Nachfrage");
+    expect(save).toBeEnabled();
+    await userEvent.click(save);
+    await waitFor(() =>
+      expect(mockedApi.followUpExternalWait).toHaveBeenCalledTimes(1),
+    );
+    expect(cancel).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Schließen" }));
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+
+    resolveRequest({ ...task, revision: 5 });
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 });

@@ -270,7 +270,12 @@ describe("TaskOutline Ziehen und Umbauen", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.completeTask).toHaveBeenCalledWith(1, "leave_open");
+    expect(mockedApi.completeTask).toHaveBeenCalledWith(
+      1,
+      "leave_open",
+      undefined,
+      1,
+    );
     expect(mockedApi.reorderTask).not.toHaveBeenCalled();
   });
 
@@ -372,14 +377,25 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     // Eine Zeile, die nur noch als Rückhalte-Schnappschuss existiert, gehört
     // nicht mehr zur gespeicherten Geschwistergruppe: sie darf weder selbst
     // gezogen werden noch als Ablageziel die Indizes verschieben.
-    mockedApi.completeTask.mockResolvedValue(makeTask({ id: 1, status: "done" }));
     const tasks = outlineTasks();
+    mockedApi.completeTask.mockResolvedValue({
+      ...tasks[0]!,
+      revision: 2,
+      status: "done",
+    });
     const { rerender } = renderWithProviders(
       <TaskOutline tasks={tasks} emptyMessage="Nichts da" organizable />,
     );
     await screen.findByText("Alpha");
     await userEvent.click(screen.getAllByRole("button", { name: "Erledigt" })[0] as HTMLElement);
-    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledWith(1, "leave_open"));
+    await waitFor(() =>
+      expect(mockedApi.completeTask).toHaveBeenCalledWith(
+        1,
+        "leave_open",
+        undefined,
+        1,
+      ),
+    );
 
     // Der Refetch liefert Alpha nicht mehr – die Zeile bleibt als Geist stehen.
     rerender(<TaskOutline tasks={[tasks[1]!, tasks[2]!]} emptyMessage="Nichts da" organizable />);
@@ -399,7 +415,14 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     fireEvent.pointerMove(content, { clientX: 120, pointerId: 2 });
     fireEvent.pointerUp(content, { pointerId: 2 });
 
-    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledWith(1, "leave_open"));
+    await waitFor(() =>
+      expect(mockedApi.completeTask).toHaveBeenCalledWith(
+        1,
+        "leave_open",
+        undefined,
+        1,
+      ),
+    );
     expect(mockedApi.reorderTask).not.toHaveBeenCalled();
 
     // Ein gewöhnlicher Klick öffnet weiterhin die Aktionen der Zeile …

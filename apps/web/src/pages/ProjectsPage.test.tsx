@@ -165,13 +165,15 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.completeProject).toHaveBeenCalledWith(71);
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(71, {
+      expectedRevision: 1,
+    });
     expect(rowFor(container, "Aktive Geschichte").querySelector(".story-row-status-badge")).toHaveTextContent(
       "Abgeschlossen",
     );
   });
 
-  it("opens activation preparation for a backlog row and activates atomically", async () => {
+  it("selects a missing driver and continues backlog activation immediately", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Backlog-Geschichte");
     mockedApi.activateProject.mockResolvedValue(
@@ -180,16 +182,19 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
 
     swipeRow(rowFor(container, "Backlog-Geschichte"), 100);
     const dialog = await screen.findByRole("dialog", {
-      name: "Aktivierung vorbereiten",
+      name: "Verantwortliche Person zuweisen",
     });
 
     const group = within(dialog).getByRole("group", { name: "Verantwortlich" });
     fireEvent.click(within(group).getByRole("button", { name: "Mira" }));
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Aktiv machen" }),
-    );
 
-    await waitFor(() => expect(mockedApi.activateProject).toHaveBeenCalledWith(70, { ownerMemberId: 1 }));
+    await waitFor(() =>
+      expect(mockedApi.activateProject).toHaveBeenCalledWith(70, {
+        expectedRevision: 1,
+        ownerMemberId: 1,
+      }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("uses the confirmed stuck classification after activating a backlog project", async () => {
@@ -215,12 +220,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     await screen.findByText("Noch ohne nächsten Schritt");
 
     swipeRow(rowFor(container, "Noch ohne nächsten Schritt"), 100);
-    const dialog = await screen.findByRole("dialog", {
-      name: "Aktivierung vorbereiten",
-    });
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Aktiv machen" }),
-    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
     await waitFor(() =>
       expect(rowFor(container, "Noch ohne nächsten Schritt")).toHaveClass(
@@ -258,7 +258,9 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.reopenProject).toHaveBeenCalledWith(72);
+    expect(mockedApi.reopenProject).toHaveBeenCalledWith(72, {
+      expectedRevision: 1,
+    });
     expect(screen.getByText("Fertige Geschichte")).toBeInTheDocument();
     expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
   });
@@ -499,7 +501,9 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.completeProject).toHaveBeenCalledWith(1);
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(1, {
+      expectedRevision: 1,
+    });
     expect(screen.getAllByText("Miras aktive Geschichte")).toHaveLength(1);
   });
 });
@@ -805,7 +809,9 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
       await flushMicrotasks();
     });
 
-    expect(mockedApi.completeProject).toHaveBeenCalledWith(1);
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(1, {
+      expectedRevision: 1,
+    });
     expect(screen.getByText("Abgeschlossen & archiviert (1)")).toBeInTheDocument();
     expect(rowFor(container, "Aktive Geschichte").closest("details")).not.toBeNull();
   });
@@ -839,7 +845,9 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
       await flushMicrotasks();
     });
 
-    expect(mockedApi.reopenProject).toHaveBeenCalledWith(1);
+    expect(mockedApi.reopenProject).toHaveBeenCalledWith(1, {
+      expectedRevision: 1,
+    });
     expect(screen.getByRole("heading", { name: "Wartet (1)" })).toBeInTheDocument();
     expect(screen.queryByText("Abgeschlossen & archiviert (1)")).not.toBeInTheDocument();
     expect(

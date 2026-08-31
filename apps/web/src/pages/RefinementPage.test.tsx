@@ -691,8 +691,42 @@ describe("RefinementPage", () => {
     );
   });
 
+  it("saves a refinement owner immediately when selected", async () => {
+    mockedApi.getMembers.mockResolvedValue([
+      { id: 1, name: "Mira", color: "#146356", pictureUrl: null },
+      { id: 2, name: "Jonas", color: "#2563eb", pictureUrl: null },
+    ]);
+    mockedApi.getRefinementOwners.mockResolvedValue([
+      ownerRow({ ownerId: null, ownerName: null, unestimated: 1, total: 1 }),
+      ownerRow({ ownerId: 2, ownerName: "Jonas" }),
+    ]);
+    mockedApi.getRefinementTasks.mockResolvedValue([
+      taskRow({ id: 400, title: "Owner direkt wählen", effectiveOwnerId: null }),
+    ]);
+    mockedApi.updateTask.mockResolvedValue(
+      makeTask({ id: 400, title: "Owner direkt wählen", ownerMemberId: 2 }),
+    );
+
+    renderWithProviders(<RefinementPage />);
+    await screen.findByText("Owner direkt wählen");
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Zuweisen" }));
+
+    const group = await screen.findByRole("group", { name: "Zuständig" });
+    expect(screen.queryByRole("button", { name: "Speichern" })).not.toBeInTheDocument();
+    await userEvent.click(within(group).getByRole("button", { name: "Jonas" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(400, {
+        ownerMemberId: 2,
+        ownerInheritanceMode: "explicit",
+        expectedRevision: 1,
+      }),
+    );
+    expect(screen.queryByRole("group", { name: "Zuständig" })).not.toBeInTheDocument();
+  });
+
   it("defers the owner/list refetch (so the matrix regrouping is visible) until the retention window elapses after a swipe-driven size change", async () => {
-    vi.useFakeTimers();
     mockedApi.getRefinementOwners.mockResolvedValue([
       ownerRow({ ownerId: null, ownerName: null, unestimated: 1, total: 1 }),
     ]);
@@ -700,15 +734,13 @@ describe("RefinementPage", () => {
       taskRow({ id: 401, title: "Neue Story schätzen", size: null, effectiveOwnerId: null }),
     ]);
     mockedApi.updateTask.mockResolvedValue(
-      makeTask({ id: 401, size: "S" }),
+      makeTask({ id: 401, title: "Neue Story schätzen", size: "S" }),
     );
 
     const { container } = renderWithProviders(<RefinementPage />);
-    await act(async () => {
-      await flushMicrotasks();
-    });
-    expect(screen.getByText("Neue Story schätzen")).toBeInTheDocument();
+    expect(await screen.findByText("Neue Story schätzen")).toBeInTheDocument();
     expect(mockedApi.getRefinementOwners).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers();
 
     const content = container.querySelector(".refinement-row-content") as HTMLElement;
     fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });

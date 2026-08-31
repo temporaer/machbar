@@ -39,30 +39,165 @@ describe("ProjectEditSheet", () => {
     mockedApi.getTags.mockResolvedValue([makeTag({ id: 10, name: "büro" })]);
   });
 
-  it("speichert Titel- und Kontextänderungen erst nach dem Verlassen des Felds (dirty save)", async () => {
+  it("speichert den Titel ausschließlich über dessen lokalen Speichern-Button", async () => {
     const project = makeProjectDetail({ id: 42, title: "Umzug organisieren" });
-    mockedApi.updateProject.mockResolvedValue(project);
+    mockedApi.updateProject.mockResolvedValue({
+      ...project,
+      revision: 2,
+      title: "Umzug nach Berlin",
+    });
 
     renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
 
     const titleInput = await screen.findByDisplayValue("Umzug organisieren");
-    const saveButton = screen.getByRole("button", { name: "Änderungen speichern" });
-    expect(saveButton).toBeDisabled();
+    expect(titleInput).toHaveAttribute("readonly");
+    expect(screen.queryByRole("button", { name: "Änderungen speichern" })).not.toBeInTheDocument();
 
+    await userEvent.click(screen.getByRole("button", { name: "Bearbeiten: Projekttitel" }));
+    expect(titleInput).toHaveFocus();
     await userEvent.clear(titleInput);
     await userEvent.type(titleInput, "Umzug nach Berlin");
-    expect(saveButton).not.toBeDisabled();
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
 
     await userEvent.tab();
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Speichern: Projekttitel" }));
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(42, {
         title: "Umzug nach Berlin",
-        notes: "",
         expectedRevision: 1,
       }),
     );
-    await waitFor(() => expect(saveButton).toBeDisabled());
+    expect(titleInput).toHaveAttribute("readonly");
+  });
+
+  it("stellt Titel und Notizen mit Abbrechen separat wieder her", async () => {
+    const project = makeProjectDetail({
+      id: 42,
+      title: "Umzug organisieren",
+      notes: "Alte Notiz",
+    });
+    renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
+
+    const titleInput = await screen.findByDisplayValue("Umzug organisieren");
+    await userEvent.click(screen.getByRole("button", { name: "Bearbeiten: Projekttitel" }));
+    await userEvent.clear(titleInput);
+    await userEvent.type(titleInput, "Verwerfen");
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen: Projekttitel" }));
+    expect(titleInput).toHaveValue("Umzug organisieren");
+
+    const notesInput = screen.getByLabelText("Notizen");
+    await userEvent.click(screen.getByRole("button", { name: "Bearbeiten: Notizen" }));
+    await userEvent.clear(notesInput);
+    await userEvent.type(notesInput, "Auch verwerfen");
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen: Notizen" }));
+    expect(notesInput).toHaveValue("Alte Notiz");
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+  });
+
+  it("behält einen fehlgeschlagenen Notiz-Entwurf zum erneuten Speichern", async () => {
+    const project = makeProjectDetail({ id: 42, notes: "Alt" });
+    mockedApi.updateProject.mockRejectedValue(new Error("Speichern fehlgeschlagen"));
+    renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
+
+    const notesInput = await screen.findByLabelText("Notizen");
+    await userEvent.click(screen.getByRole("button", { name: "Bearbeiten: Notizen" }));
+    await userEvent.clear(notesInput);
+    await userEvent.type(notesInput, "Wichtiger Entwurf");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern: Notizen" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Speichern fehlgeschlagen");
+    expect(notesInput).toHaveValue("Wichtiger Entwurf");
+    expect(screen.getByRole("button", { name: "Speichern: Notizen" })).toBeEnabled();
+  });
+
+  it("verwendet nach aufeinanderfolgenden Feld-Saves jeweils die bestätigte Revision", async () => {
+    const project = makeProjectDetail({ id: 42, title: "Alt", notes: "Vorher" });
+    mockedApi.updateProject
+      .mockResolvedValueOnce({ ...project, revision: 2, title: "Neu" })
+      .mockResolvedValueOnce({ ...project, revision: 3, title: "Neu", notes: "Nachher" });
+    renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
+
+    const titleInput = await screen.findByDisplayValue("Alt");
+    await userEvent.click(screen.getByRole("button", { name: "Bearbeiten: Projekttitel" }));
+    await userEvent.clear(titleInput);
+    await userEvent.type(titleInput, "Neu");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern: Projekttitel" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Bearbeiten: Notizen" }));
+    const notesInput = screen.getByLabelText("Notizen");
+    await userEvent.clear(notesInput);
+    await userEvent.type(notesInput, "Nachher");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern: Notizen" }));
+
+    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledTimes(2));
+    expect(mockedApi.updateProject).toHaveBeenNthCalledWith(1, 42, {
+      title: "Neu",
+      expectedRevision: 1,
+    });
+    expect(mockedApi.updateProject).toHaveBeenNthCalledWith(2, 42, {
+      notes: "Nachher",
+      expectedRevision: 2,
+    });
+  });
+
+  it("speichert Driver, Tags und Termine weiterhin sofort und revisionssicher", async () => {
+    const office = makeTag({ id: 10, name: "büro" });
+    const project = makeProjectDetail({ id: 42, ownerMemberId: null, tags: [] });
+    mockedApi.updateProject
+      .mockResolvedValueOnce({ ...project, revision: 2, ownerMemberId: 1 })
+      .mockResolvedValueOnce({ ...project, revision: 3, ownerMemberId: 1, tags: [office] })
+      .mockResolvedValueOnce({
+        ...project,
+        revision: 4,
+        ownerMemberId: 1,
+        tags: [office],
+        dueDate: "2026-09-10",
+      });
+    renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
+
+    await screen.findByDisplayValue(project.title);
+    await userEvent.click(screen.getByRole("button", { name: /Mira/ }));
+    await waitFor(() =>
+      expect(mockedApi.updateProject).toHaveBeenNthCalledWith(1, 42, {
+        ownerMemberId: 1,
+        expectedRevision: 1,
+      }),
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: "büro" }));
+    await waitFor(() =>
+      expect(mockedApi.updateProject).toHaveBeenNthCalledWith(2, 42, {
+        tagIds: [10],
+        expectedRevision: 2,
+      }),
+    );
+
+    const dueInput = screen.getByLabelText("Fällig");
+    await userEvent.clear(dueInput);
+    await userEvent.type(dueInput, "2026-09-10{Enter}");
+    await waitFor(() =>
+      expect(mockedApi.updateProject).toHaveBeenNthCalledWith(3, 42, {
+        dueDate: "2026-09-10",
+        expectedRevision: 3,
+      }),
+    );
+  });
+
+  it("schließt ohne offene Textentwürfe zu speichern", async () => {
+    const onClose = vi.fn();
+    const project = makeProjectDetail({ id: 42, title: "Bleibt" });
+    renderWithProviders(<ProjectEditSheet project={project} onClose={onClose} />);
+
+    const titleInput = await screen.findByDisplayValue("Bleibt");
+    await userEvent.click(screen.getByRole("button", { name: "Bearbeiten: Projekttitel" }));
+    await userEvent.clear(titleInput);
+    await userEvent.type(titleInput, "Nicht speichern");
+    await userEvent.click(screen.getByRole("button", { name: "Schließen" }));
+
+    expect(onClose).toHaveBeenCalled();
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+    expect(titleInput).toHaveValue("Bleibt");
   });
 
   it("zeigt nur die für den aktuellen Status erlaubten Workflow-Aktionen an", async () => {
@@ -107,26 +242,76 @@ describe("ProjectEditSheet", () => {
     expect(actionLabels).toEqual(["Abschließen", "Auf später verschieben", "Archivieren"]);
   });
 
-  it("zeigt den German-Fehler des Backends an, wenn die Aktivierung ohne Driver fehlschlägt", async () => {
+  it("fordert bei der Aktivierung einen Driver an und setzt denselben Befehl atomar fort", async () => {
     const project = makeProjectDetail({
       id: 7,
       status: "backlog",
       ownerMemberId: null,
       availableActions: ["activate", "archive"],
     });
-    mockedApi.activateProject.mockRejectedValue(
-      new Error('Bevor "Beispielprojekt" aktiv werden kann, muss eine verantwortliche Person zugewiesen werden.'),
-    );
+    mockedApi.activateProject.mockResolvedValue({
+      ...project,
+      ownerMemberId: 1,
+      status: "active",
+      revision: 2,
+      availableActions: ["complete", "return_to_backlog", "archive"],
+    });
     renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
 
     await screen.findByDisplayValue(project.title);
     await userEvent.click(screen.getByRole("button", { name: "Aktiv machen" }));
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
 
-    expect(
-      await screen.findByText(
-        'Bevor "Beispielprojekt" aktiv werden kann, muss eine verantwortliche Person zugewiesen werden.',
-      ),
-    ).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Mira" }));
+    await waitFor(() =>
+      expect(mockedApi.activateProject).toHaveBeenCalledWith(7, {
+        expectedRevision: 1,
+        ownerMemberId: 1,
+      }),
+    );
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+  });
+
+  it("verwirft eine ausstehende Aktivierung, sobald ein anderer Workflow-Befehl läuft", async () => {
+    const project = makeProjectDetail({
+      id: 8,
+      status: "backlog",
+      ownerMemberId: null,
+      availableActions: ["activate", "archive"],
+    });
+    const archived = {
+      ...project,
+      status: "archived" as const,
+      revision: 2,
+      availableActions: ["activate" as const],
+    };
+    mockedApi.archiveProject.mockResolvedValue(archived);
+    mockedApi.updateProject.mockResolvedValue({
+      ...archived,
+      ownerMemberId: 1,
+      revision: 3,
+    });
+    renderWithProviders(
+      <ProjectEditSheet project={project} onClose={vi.fn()} />,
+    );
+
+    await screen.findByDisplayValue(project.title);
+    await userEvent.click(screen.getByRole("button", { name: "Aktiv machen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Archivieren" }));
+    await waitFor(() =>
+      expect(mockedApi.archiveProject).toHaveBeenCalledWith(8, {
+        expectedRevision: 1,
+      }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Mira" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateProject).toHaveBeenCalledWith(8, {
+        ownerMemberId: 1,
+        expectedRevision: 2,
+      }),
+    );
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 
   it("fügt ein Akzeptanzkriterium hinzu, hakt es ab und entfernt es wieder", async () => {

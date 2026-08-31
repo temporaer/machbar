@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api } from "../lib/api";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { formatDate } from "../lib/format";
@@ -14,8 +13,6 @@ import {
   classifyProjectListItem,
   type ProjectListClassification,
 } from "../lib/projectListFilter";
-import { useRefresh } from "../lib/refresh";
-import { isStaleWriteConflict } from "../lib/errorMessage";
 import {
   canClearDriver,
   needsDriverBeforeAction,
@@ -26,8 +23,6 @@ import {
   secondaryWorkflowActions,
 } from "../lib/projectWorkflow";
 import type { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
-import { AssignDriverSheet } from "./AssignDriverSheet";
-import { ActivationReadinessSheet } from "./ActivationReadinessSheet";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
@@ -38,6 +33,7 @@ import { formatRefinementIssue } from "../lib/refinementFormatting";
 import "./ProjectStoryRow.css";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
+import { MemberSelectionSheet } from "./MemberSelectionSheet";
 
 const SWIPE_THRESHOLD = 72;
 /** Beyond this the pointer sequence counts as a drag, not a tap. */
@@ -72,7 +68,6 @@ export interface ProjectStoryRowProps {
 }
 
 type Sheet =
-  | "activation-readiness"
   | "assign-to-activate"
   | "assign-driver"
   | "plan-dates"
@@ -115,20 +110,28 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
   // browser synthesises afterwards does not navigate to the detail page.
   const swallowNextClick = useRef(false);
   const { members } = useIdentity();
-  const { bump } = useRefresh();
   const navigate = useNavigate();
-  const { busyId, retained, errors, clearError, runAction, activate, assignDriver, schedule } = actions;
+  const {
+    isPending,
+    retained,
+    errors,
+    clearError,
+    runAction,
+    activate,
+    update,
+    assignDriver,
+    schedule,
+  } = actions;
 
   // A story that just transitioned keeps rendering here — muted, with the
   // past-tense confirmation of what happened — for `RETENTION_MS` (~4s)
   // instead of snapping to its refetched state immediately. Exactly like the
-  // task list, the row stays *actionable* the moment the request resolves
-  // (only `busyId` disables it), so workflows can be cycled straight away.
+  // task list, the row stays *actionable* the moment the request resolves.
   const retainedEntry = retained.get(storyProp.id);
   const story = retainedEntry?.story ?? storyProp;
   const isRetained = Boolean(retainedEntry);
   const rowError = errors[storyProp.id];
-  const busy = busyId === story.id;
+  const busy = isPending(story.id);
 
   const driver = story.ownerMemberId ? members.find((m) => m.id === story.ownerMemberId) : null;
   const criteria = story.acceptanceCriteria ?? [];
@@ -144,7 +147,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
     ? projectWorkflowLabel(primaryAction, strings)
     : strings.workflowStep;
   const secondaryActions = secondaryWorkflowActions(story);
-  const statusLabel = retainedEntry
+  const statusLabel = retainedEntry?.action
     ? projectTransitionLabel(retainedEntry.action, strings)
     : strings.projectStatusLabels[story.status];
   const classification = classifyProjectListItem(story);
@@ -183,10 +186,6 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
   const doPrimary = useCallback(() => {
     if (busy || !primaryAction) return;
-    if (primaryAction === "activate" && story.status === "backlog") {
-      setSheet("activation-readiness");
-      return;
-    }
     if (needsDriverBeforeAction(story, primaryAction)) {
       setSheet("assign-to-activate");
       return;
@@ -201,10 +200,6 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
   const runSecondary = (action: ProjectWorkflowAction) => {
     setChipsOpen(false);
-    if (action === "activate" && story.status === "backlog") {
-      setSheet("activation-readiness");
-      return;
-    }
     if (needsDriverBeforeAction(story, action)) {
       setSheet("assign-to-activate");
       return;
@@ -448,48 +443,47 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
       ) : null}
 
       {sheet === "assign-to-activate" ? (
-        <AssignDriverSheet
+        <MemberSelectionSheet
+          title={strings.assignDriver}
+          label={strings.driver}
+          idPrefix={`activate-driver-${story.id}`}
           members={members}
-          currentOwnerMemberId={story.ownerMemberId}
-          activateHint
+          value={story.ownerMemberId}
+          unassignedLabel={null}
+          hint={strings.assignDriverToActivateHint}
           onClose={() => setSheet(null)}
-          onAssign={async (ownerMemberId) => {
+          onSelect={async (ownerMemberId) => {
             await activate(story, ownerMemberId);
           }}
         />
       ) : null}
 
-      {sheet === "activation-readiness" ? (
-        <ActivationReadinessSheet
-          story={story}
-          members={members}
-          onClose={() => setSheet(null)}
-          onActivate={(ownerMemberId) => activate(story, ownerMemberId)}
-          onRepairOutcome={() => setSheet("criteria")}
-          onRepairNextAction={() => {
-            setSheet(null);
-            navigate(`/projects/${story.id}?focus=next-action`);
-          }}
-        />
-      ) : null}
-
       {sheet === "assign-driver" ? (
-        <AssignDriverSheet
+        <MemberSelectionSheet
+          title={strings.assignDriver}
+          label={strings.driver}
+          idPrefix={`project-driver-${story.id}`}
           members={members}
-          currentOwnerMemberId={story.ownerMemberId}
-          activateHint={false}
-          // The backend rejects clearing the driver of a story that has left
-          // the backlog, so that choice is not even offered there.
-          allowUnassigned={canClearDriver(story)}
+          value={story.ownerMemberId}
+          unassignedLabel={canClearDriver(story) ? strings.noDriver : null}
+          hint={canClearDriver(story) ? undefined : strings.driverLockedHint}
           onClose={() => setSheet(null)}
-          onAssign={(ownerMemberId) => assignDriver(story, ownerMemberId)}
+          onSelect={async (ownerMemberId) => {
+            await assignDriver(story, ownerMemberId);
+          }}
         />
       ) : null}
 
       {sheet === "criteria" ? <StoryCriteriaSheet story={story} onClose={() => setSheet(null)} /> : null}
 
       {sheet === "plan-dates" ? (
-        <PlanDatesSheet story={story} onClose={() => setSheet(null)} onSave={(patch) => schedule(story, patch)} />
+        <PlanDatesSheet
+          story={story}
+          onClose={() => setSheet(null)}
+          onSave={async (patch) => {
+            await schedule(story, patch);
+          }}
+        />
       ) : null}
 
       {sheet === "tags" ? (
@@ -497,16 +491,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
           story={story}
           onClose={() => setSheet(null)}
           onSave={async (tagIds) => {
-            try {
-              await api.updateProject(story.id, {
-                tagIds,
-                expectedRevision: story.revision,
-              });
-              bump();
-            } catch (error) {
-              if (isStaleWriteConflict(error)) bump();
-              throw error;
-            }
+            await update(story, { tagIds }, undefined, true);
           }}
         />
       ) : null}

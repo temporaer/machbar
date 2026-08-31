@@ -142,8 +142,14 @@ export function RefinementPage() {
 
   const listItems = useMemo<RefinementListItem[]>(() => {
     if (!taskRows) return [];
-    return taskRows;
-  }, [taskRows]);
+    const retainedOnly = [...actions.retained.values()].filter(
+      (retained) => !taskRows.some((task) => task.id === retained.id),
+    );
+    return [
+      ...taskRows.map((task) => actions.retained.get(task.id) ?? task),
+      ...retainedOnly,
+    ];
+  }, [actions.retained, taskRows]);
 
   const filteredItems = useMemo(() => {
     if (!selection) return listItems;

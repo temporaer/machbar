@@ -841,6 +841,7 @@ function assertWorkflowAction(
 
 export interface ActivateProjectInput {
   ownerMemberId?: number | null;
+  expectedRevision?: number;
 }
 
 /**
@@ -858,6 +859,7 @@ export function activateProject(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
+    assertExpectedRevision("project", id, project.revision, input.expectedRevision);
     assertWorkflowAction(project, "activate");
     const ownerMemberId =
       input.ownerMemberId !== undefined ? input.ownerMemberId : project.ownerMemberId;
@@ -921,10 +923,12 @@ export function returnProjectToBacklog(
   db: Db,
   id: number,
   context?: MutationContext,
+  expectedRevision?: number,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
+    assertExpectedRevision("project", id, project.revision, expectedRevision);
     assertWorkflowAction(project, "return_to_backlog");
     tx.update(schema.projects)
       .set({
@@ -957,10 +961,16 @@ export function returnProjectToBacklog(
  * prompting a human to call this action (or {@link reopenProject}/
  * {@link archiveProject} instead).
  */
-export function completeProject(db: Db, id: number, context?: MutationContext) {
+export function completeProject(
+  db: Db,
+  id: number,
+  context?: MutationContext,
+  expectedRevision?: number,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
+    assertExpectedRevision("project", id, project.revision, expectedRevision);
     assertWorkflowAction(project, "complete");
     tx.update(schema.projects)
       .set({
@@ -995,10 +1005,16 @@ export function completeProject(db: Db, id: number, context?: MutationContext) {
 }
 
 /** `completed` -> `active` again. The driver is retained unchanged. */
-export function reopenProject(db: Db, id: number, context?: MutationContext) {
+export function reopenProject(
+  db: Db,
+  id: number,
+  context?: MutationContext,
+  expectedRevision?: number,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
+    assertExpectedRevision("project", id, project.revision, expectedRevision);
     assertWorkflowAction(project, "reopen");
     tx.update(schema.projects)
       .set({
@@ -1031,10 +1047,16 @@ export function reopenProject(db: Db, id: number, context?: MutationContext) {
  * `backlog`/`active`/`completed` -> `archived`. Shelves/retires a story
  * without touching its driver.
  */
-export function archiveProject(db: Db, id: number, context?: MutationContext) {
+export function archiveProject(
+  db: Db,
+  id: number,
+  context?: MutationContext,
+  expectedRevision?: number,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
+    assertExpectedRevision("project", id, project.revision, expectedRevision);
     assertWorkflowAction(project, "archive");
     tx.update(schema.projects)
       .set({
@@ -2807,8 +2829,12 @@ export function deleteTask(db: Db, id: number, context?: MutationContext) {
 // Complete / cancel / reopen with explicit descendants policy
 // ---------------------------------------------------------------------------
 
-export type CompleteDescendantsPolicy = "leave_open" | "complete_children";
-export type CancelDescendantsPolicy = "leave_open" | "cancel_children";
+export type DescendantsPolicy =
+  | "leave_open"
+  | "complete_children"
+  | "cancel_children";
+export type CompleteDescendantsPolicy = DescendantsPolicy;
+export type CancelDescendantsPolicy = DescendantsPolicy;
 
 function openDescendants(db: Db, id: number) {
   return listDescendants(db, id).filter(
@@ -2836,6 +2862,7 @@ export function completeTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
+    assertExpectedRevision("task", id, task.revision, expectedRevision);
     const taskHasExternalWait = Boolean(
       tx
         .select({ taskId: schema.taskExternalWaits.taskId })
@@ -2846,7 +2873,8 @@ export function completeTask(
     const openChildren = openDescendants(txDb, id);
     const descendantsOnly =
       task.status === "done" &&
-      descendantsPolicy === "complete_children" &&
+      descendantsPolicy !== undefined &&
+      descendantsPolicy !== "leave_open" &&
       openChildren.length > 0;
     if (
       task.status === "done" &&
@@ -2863,7 +2891,7 @@ export function completeTask(
           taskId: id,
           transition: "complete",
           openChildrenCount: openChildren.length,
-          options: ["leave_open", "complete_children"],
+          options: ["leave_open", "complete_children", "cancel_children"],
         },
       );
     }
@@ -2901,13 +2929,19 @@ export function completeTask(
         .run();
     }
 
-    if (descendantsPolicy === "complete_children") {
+    if (
+      descendantsPolicy === "complete_children" ||
+      descendantsPolicy === "cancel_children"
+    ) {
+      const descendantStatus =
+        descendantsPolicy === "complete_children" ? "done" : "cancelled";
       for (const child of openChildren) {
         tx.update(schema.tasks)
           .set({
-            status: "done",
+            status: descendantStatus,
             needsClarification: false,
-            completedAt: now,
+            completedAt: descendantStatus === "done" ? now : null,
+            cancelledAt: descendantStatus === "cancelled" ? now : null,
             scheduledDate: tx
               .select({ taskId: schema.taskExternalWaits.taskId })
               .from(schema.taskExternalWaits)
@@ -2936,11 +2970,16 @@ export function completeTask(
       taskId: id,
       projectId: updated.projectId,
       metadata: descendantsOnly
-        ? { nextStatus: "done", affectedCount: openChildren.length }
+        ? {
+            nextStatus:
+              descendantsPolicy === "complete_children" ? "done" : "cancelled",
+            affectedCount: openChildren.length,
+          }
         : {
             previousStatus: task.status as TaskStatus,
             nextStatus: "done",
-            ...(descendantsPolicy === "complete_children"
+            ...(descendantsPolicy !== undefined &&
+            descendantsPolicy !== "leave_open"
               ? { affectedCount: openChildren.length + 1 }
               : {}),
           },
@@ -2966,10 +3005,12 @@ export function cancelTask(
   id: number,
   descendantsPolicy?: CancelDescendantsPolicy,
   context?: MutationContext,
+  expectedRevision?: number,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
+    assertExpectedRevision("task", id, task.revision, expectedRevision);
     const taskHasExternalWait = Boolean(
       tx
         .select({ taskId: schema.taskExternalWaits.taskId })
@@ -2984,7 +3025,8 @@ export function cancelTask(
     const openChildren = openDescendants(txDb, id);
     const descendantsOnly =
       task.status === "cancelled" &&
-      descendantsPolicy === "cancel_children" &&
+      descendantsPolicy !== undefined &&
+      descendantsPolicy !== "leave_open" &&
       openChildren.length > 0;
     if (
       task.status === "cancelled" &&
@@ -3001,7 +3043,23 @@ export function cancelTask(
           taskId: id,
           transition: "cancel",
           openChildrenCount: openChildren.length,
-          options: ["leave_open", "cancel_children"],
+          options: ["leave_open", "complete_children", "cancel_children"],
+        },
+      );
+    }
+    const recurringOpenChildren = openChildren.filter(
+      (child) => child.repeatAfterDays !== null,
+    );
+    if (
+      descendantsPolicy === "complete_children" &&
+      recurringOpenChildren.length > 0
+    ) {
+      throw AppError.conflict(
+        "recurring_descendant_completion_required",
+        "Recurring subtasks must be completed individually.",
+        {
+          taskId: id,
+          recurringTaskIds: recurringOpenChildren.map((child) => child.id),
         },
       );
     }
@@ -3023,13 +3081,19 @@ export function cancelTask(
         .run();
     }
 
-    if (descendantsPolicy === "cancel_children") {
+    if (
+      descendantsPolicy === "complete_children" ||
+      descendantsPolicy === "cancel_children"
+    ) {
+      const descendantStatus =
+        descendantsPolicy === "complete_children" ? "done" : "cancelled";
       for (const child of openChildren) {
         tx.update(schema.tasks)
           .set({
-            status: "cancelled",
+            status: descendantStatus,
             needsClarification: false,
-            cancelledAt: now,
+            completedAt: descendantStatus === "done" ? now : null,
+            cancelledAt: descendantStatus === "cancelled" ? now : null,
             scheduledDate: tx
               .select({ taskId: schema.taskExternalWaits.taskId })
               .from(schema.taskExternalWaits)
@@ -3058,11 +3122,16 @@ export function cancelTask(
       taskId: id,
       projectId: updated.projectId,
       metadata: descendantsOnly
-        ? { nextStatus: "cancelled", affectedCount: openChildren.length }
+        ? {
+            nextStatus:
+              descendantsPolicy === "complete_children" ? "done" : "cancelled",
+            affectedCount: openChildren.length,
+          }
         : {
             previousStatus: task.status as TaskStatus,
             nextStatus: "cancelled",
-            ...(descendantsPolicy === "cancel_children"
+            ...(descendantsPolicy !== undefined &&
+            descendantsPolicy !== "leave_open"
               ? { affectedCount: openChildren.length + 1 }
               : {}),
           },
@@ -3103,10 +3172,16 @@ export function cancelTask(
   });
 }
 
-export function reopenTask(db: Db, id: number, context?: MutationContext) {
+export function reopenTask(
+  db: Db,
+  id: number,
+  context?: MutationContext,
+  expectedRevision?: number,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
+    assertExpectedRevision("task", id, task.revision, expectedRevision);
     if (task.status === "actionable") return task;
     const now = nowIso();
     tx.update(schema.tasks)
@@ -3141,6 +3216,20 @@ export function reopenTask(db: Db, id: number, context?: MutationContext) {
     });
     return updated;
   });
+}
+
+export function clarifyTask(
+  db: Db,
+  id: number,
+  expectedRevision?: number,
+  context?: MutationContext,
+) {
+  return updateTask(
+    db,
+    id,
+    { status: "actionable", expectedRevision },
+    context,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -3501,6 +3590,190 @@ export interface UpsertExternalWaitInput {
   waitingFor?: string | null;
   scheduledDate?: string | null;
   expectedRevision?: number;
+}
+
+export type ExternalWaitFollowUpInput =
+  | {
+      action: "resolve";
+      content: string;
+      expectedRevision?: number;
+    }
+  | {
+      action: "continue";
+      content: string;
+      waitingFor?: string | null;
+      scheduledDate?: string | null;
+      expectedRevision?: number;
+    };
+
+function followUpAttribution(db: Db, context?: MutationContext): string {
+  const actorMemberId = actor(context);
+  if (actorMemberId === null) return "Unknown actor";
+  return (
+    db
+      .select({ name: schema.members.name })
+      .from(schema.members)
+      .where(eq(schema.members.id, actorMemberId))
+      .get()?.name ?? "Unknown actor"
+  );
+}
+
+export function followUpExternalWait(
+  db: Db,
+  taskId: number,
+  input: ExternalWaitFollowUpInput,
+  context?: MutationContext,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, taskId);
+    assertExpectedRevision(
+      "task",
+      taskId,
+      task.revision,
+      input.expectedRevision,
+    );
+    if (task.status !== "actionable") {
+      throw AppError.conflict(
+        "external_wait_status_invalid",
+        "Only actionable tasks can receive an external-wait follow-up.",
+        { taskId, currentStatus: task.status },
+      );
+    }
+    if (task.repeatAfterDays !== null) {
+      throw AppError.conflict(
+        "external_wait_recurring_forbidden",
+        "Recurring tasks cannot use an external wait.",
+        { taskId },
+      );
+    }
+    const existing = tx
+      .select()
+      .from(schema.taskExternalWaits)
+      .where(eq(schema.taskExternalWaits.taskId, taskId))
+      .get();
+    if (!existing) {
+      throw AppError.conflict(
+        "external_wait_status_invalid",
+        "This task has no external wait to follow up.",
+        { taskId, reason: "external_wait_missing" },
+      );
+    }
+    const content = input.content.trim();
+    if (content === "") {
+      throw AppError.badRequest(
+        "request_body_invalid",
+        "Follow-up text must not be empty.",
+        { taskId, field: "content" },
+      );
+    }
+
+    const waitingFor =
+      input.action === "continue"
+        ? input.waitingFor === undefined
+          ? existing.waitingFor?.trim() ?? ""
+          : input.waitingFor?.trim() ?? ""
+        : null;
+    if (input.action === "continue" && !waitingFor) {
+      throw AppError.badRequest(
+        "external_wait_reason_required",
+        "An external wait requires a reason.",
+        { taskId },
+      );
+    }
+    const scheduledDate =
+      input.action === "resolve"
+        ? null
+        : input.scheduledDate === undefined
+          ? task.scheduledDate
+          : input.scheduledDate;
+    const projectHadNextAction =
+      task.projectId === null
+        ? true
+        : projectHasNextAction(txDb, task.projectId);
+    const now = nowIso();
+    const notes = appendNoteContent(
+      task.notes,
+      `[${now} · ${followUpAttribution(txDb, context)}]\n${content}`,
+    );
+
+    if (input.action === "resolve") {
+      tx.delete(schema.taskExternalWaits)
+        .where(eq(schema.taskExternalWaits.taskId, taskId))
+        .run();
+    } else {
+      tx.update(schema.taskExternalWaits)
+        .set({ waitingFor, updatedAt: now })
+        .where(eq(schema.taskExternalWaits.taskId, taskId))
+        .run();
+    }
+    const updated = tx
+      .update(schema.tasks)
+      .set({
+        notes,
+        scheduledDate,
+        revision: sql`${schema.tasks.revision} + 1`,
+        updatedAt: now,
+      })
+      .where(eq(schema.tasks.id, taskId))
+      .returning()
+      .get();
+    const waitChanged =
+      input.action === "resolve" || waitingFor !== existing.waitingFor;
+    const scheduleChanged = scheduledDate !== task.scheduledDate;
+    const activityEventId = recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind:
+        input.action === "resolve"
+          ? "task_external_wait_resolved"
+          : "task_external_wait_updated",
+      entityType: "task",
+      entityTitle: task.title,
+      taskId,
+      projectId: task.projectId,
+      metadata: {
+        changedFields: [
+          "notesAppended",
+          ...(waitChanged ? ["externalWait"] : []),
+          ...(scheduleChanged ? ["scheduledDate"] : []),
+        ],
+      },
+    });
+    if (input.action === "resolve") {
+      neutralizeContribution(txDb, {
+        activityEventId,
+        reason: "waiting_followup_added",
+        entityType: "task",
+        entityId: taskId,
+      });
+      if (
+        task.projectId !== null &&
+        !projectHadNextAction &&
+        projectHasNextAction(txDb, task.projectId)
+      ) {
+        recordContribution(txDb, {
+          activityEventId,
+          actorMemberId: actor(context),
+          category: "planning",
+          reason: "project_next_action_added",
+          entityType: "project",
+          entityId: task.projectId,
+          personalEligible: true,
+        });
+      }
+    } else if (task.scheduledDate === null && scheduledDate !== null) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "waiting_followup_added",
+        entityType: "task",
+        entityId: taskId,
+        personalEligible: true,
+      });
+    }
+    return updated;
+  });
 }
 
 export function upsertExternalWait(

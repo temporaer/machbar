@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Project } from "@machbar/shared";
+import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
@@ -12,30 +13,36 @@ export function PlanDatesSheet({
 }: {
   story: Project;
   onClose: () => void;
-  onSave: (patch: { dueDate: string | null; scheduledDate: string | null }) => Promise<void>;
+  onSave: (patch: { dueDate?: string | null; scheduledDate?: string | null }) => Promise<void>;
 }) {
   const strings = useStrings();
-  const [dueDate, setDueDate] = useState(story.dueDate ?? "");
-  const [scheduledDate, setScheduledDate] = useState(story.scheduledDate ?? "");
   const [saving, setSaving] = useState(false);
-  const [dueDateValid, setDueDateValid] = useState(true);
-  const [scheduledDateValid, setScheduledDateValid] = useState(true);
-  const closeIfValid = () => {
-    if (dueDateValid && scheduledDateValid) onClose();
-  };
+  const [error, setError] = useState<string | null>(null);
 
-  const submit = async () => {
+  const commit = async (
+    patch: { dueDate?: string | null; scheduledDate?: string | null },
+  ) => {
+    if (saving) return;
     setSaving(true);
+    setError(null);
     try {
-      await onSave({ dueDate: dueDate || null, scheduledDate: scheduledDate || null });
+      await onSave(patch);
       onClose();
+    } catch (cause) {
+      setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <BottomSheet title={strings.planDatesTitle} onClose={closeIfValid} labelledBy="plan-dates-title">
+    <BottomSheet
+      title={strings.planDatesTitle}
+      onClose={() => {
+        if (!saving) onClose();
+      }}
+      labelledBy="plan-dates-title"
+    >
       <div className="stack">
         <p className="text-muted">{story.title}</p>
         <div className="row">
@@ -43,34 +50,25 @@ export function PlanDatesSheet({
             <label htmlFor="story-due">{strings.due}</label>
             <HumanDateInput
               id="story-due"
-              value={dueDate}
-              onChange={(date) => setDueDate(date ?? "")}
-              onValidityChange={setDueDateValid}
+              value={story.dueDate ?? ""}
+              onChange={(date) => void commit({ dueDate: date })}
+              disabled={saving}
             />
           </div>
           <div className="field" style={{ flex: 1 }}>
             <label htmlFor="story-scheduled">{strings.scheduled}</label>
             <HumanDateInput
               id="story-scheduled"
-              value={scheduledDate}
-              onChange={(date) => setScheduledDate(date ?? "")}
-              onValidityChange={setScheduledDateValid}
+              value={story.scheduledDate ?? ""}
+              onChange={(date) => void commit({ scheduledDate: date })}
+              disabled={saving}
             />
           </div>
         </div>
-        <div className="row">
-          <button type="button" className="btn" onClick={closeIfValid}>
-            {strings.cancel}
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary btn-block"
-            disabled={saving || !dueDateValid || !scheduledDateValid}
-            onClick={() => void submit()}
-          >
-            {strings.save}
-          </button>
-        </div>
+        {error ? <p role="alert" style={{ color: "var(--color-danger)" }}>{error}</p> : null}
+        <button type="button" className="btn" onClick={onClose} disabled={saving}>
+          {strings.cancel}
+        </button>
       </div>
     </BottomSheet>
   );

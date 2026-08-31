@@ -14,6 +14,7 @@ import { useOutlineOrganizeRow } from "../lib/useOutlineOrganize";
 import type { OrganizeDirection } from "../lib/useOutlineOrganize";
 import { INDENT_WIDTH } from "../lib/taskTreeMove";
 import { useIdentity } from "../lib/identity";
+import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import {
   TaskQuickActionSheet,
   type TaskQuickAction,
@@ -144,12 +145,14 @@ export function TaskRow({
   const {
     requestToggle,
     requestPrimarySwipe,
-    quickUpdate,
-    busyId,
+    update,
+    assignOwner,
+    isPending,
     retained,
     errors,
     clearError,
   } = taskActions;
+  const busy = isPending(taskProp.id);
 
   // A row that just transitioned keeps rendering with its optimistic status
   // (crossed out / muted) for a few seconds even once the compiled view
@@ -201,7 +204,7 @@ export function TaskRow({
   const primarySwipeLabel = primaryActionBgLabel(task, primarySwipeAction, strings);
   const swipeCoach = useSwipeCoach(
     `task:${task.id}`,
-    busyId !== task.id && !isRetained && !chipsOpen,
+    !busy && !isRetained && !chipsOpen,
   );
 
   const children = sortByPosition(task.children);
@@ -243,7 +246,7 @@ export function TaskRow({
 
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (busyId === task.id || organize?.activeId != null) return;
+      if (busy || organize?.activeId != null) return;
       swallowNextClick.current = false;
       dragState.current = { startX: e.clientX, dragging: true, pointerId: e.pointerId, captured: false };
       // Long press is the touch shortcut into the same drag the visible
@@ -259,7 +262,7 @@ export function TaskRow({
         organize?.beginLongPressDrag(task.id, clientX, clientY);
       }, LONG_PRESS_MS);
     },
-    [busyId, task.id, organize, organizeEnabled],
+    [busy, task.id, organize, organizeEnabled],
   );
 
   const handlePointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
@@ -486,7 +489,7 @@ export function TaskRow({
           type="button"
           className={`task-row-checkbox${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}
           aria-label={isDone || isCancelled ? strings.reopen : strings.done}
-          disabled={busyId === task.id}
+          disabled={busy}
           onClick={() => requestToggle(task)}
         >
           {isDone ? "✓" : isCancelled ? "×" : ""}
@@ -572,7 +575,7 @@ export function TaskRow({
           className="task-row-kebab"
           aria-label={strings.moreActions}
           aria-expanded={chipsOpen}
-          disabled={busyId === task.id}
+          disabled={busy}
           ref={kebabButtonRef}
           onClick={() => setChipsOpen((o) => !o)}
         >
@@ -591,13 +594,13 @@ export function TaskRow({
           <IconActionButton
             kind="child"
             label={strings.addChild}
-            disabled={busyId === task.id}
+            disabled={busy}
             onClick={openChildComposer}
           />
           <IconActionButton
             kind="successor"
             label={strings.addSuccessor}
-            disabled={busyId === task.id}
+            disabled={busy}
             onClick={openSuccessorComposer}
           />
           <IconActionButton
@@ -632,14 +635,28 @@ export function TaskRow({
         />
       ) : null}
 
-      {quickAction ? (
+      {quickAction === "owner" ? (
+        <MemberSelectionSheet
+          title={`${strings.assign}: ${task.title}`}
+          label={strings.owner}
+          idPrefix={`quick-owner-${task.id}`}
+          members={members}
+          value={task.effectiveOwnerId}
+          valueIsExplicit={task.effectiveOwnerSource === "task"}
+          unassignedLabel={strings.shared}
+          onClose={() => setQuickAction(null)}
+          onSelect={async (ownerMemberId) => {
+            await assignOwner(task, ownerMemberId);
+          }}
+        />
+      ) : quickAction ? (
         <TaskQuickActionSheet
           task={task}
           action={quickAction}
           onClose={() => setQuickAction(null)}
-          onSave={(patch, optimisticPatch) =>
-            quickUpdate(task, patch, optimisticPatch)
-          }
+          onSave={async (patch, optimisticPatch) => {
+            await update(task, patch, optimisticPatch, true);
+          }}
         />
       ) : null}
 

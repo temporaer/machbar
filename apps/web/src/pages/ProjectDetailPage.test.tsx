@@ -302,11 +302,13 @@ describe("ProjectDetailPage task explanations", () => {
 
     const dialog = await screen.findByRole("dialog", { name: strings.taskDetails });
     await waitFor(() => expect(within(dialog).getByLabelText(strings.scheduled)).toHaveFocus());
-    expect(within(dialog).getByDisplayValue("Ort reservieren")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Ort reservieren", { selector: "strong" }),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("task-route-state")).toHaveTextContent("7|none");
   });
 
-  it("keeps the initial planning target open when scheduling refreshes the project", async () => {
+  it("keeps the initial planning target open after its schedule commits immediately", async () => {
     let scheduled = false;
     mockedApi.getProject.mockImplementation(async () => ({
       ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
@@ -336,7 +338,11 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42?focus=planning");
 
     const dialog = await screen.findByRole("dialog", { name: strings.taskDetails });
-    expect(await within(dialog).findByDisplayValue("Ort reservieren")).toBeInTheDocument();
+    expect(
+      await within(dialog).findByText("Ort reservieren", {
+        selector: "strong",
+      }),
+    ).toBeInTheDocument();
     await userEvent.click(
       within(dialog).getByRole("button", { name: strings.scheduleShortcutLabels.today }),
     );
@@ -347,10 +353,11 @@ describe("ProjectDetailPage task explanations", () => {
         expectedRevision: 1,
       }),
     );
-    await waitFor(() => expect(mockedApi.getProject).toHaveBeenCalledTimes(2));
-    expect(within(dialog).getByDisplayValue("Ort reservieren")).toBeInTheDocument();
+    expect(dialog).toBeInTheDocument();
     expect(mockedApi.getTask).not.toHaveBeenCalledWith(8);
-    expect(screen.getByLabelText("task-route-state")).toHaveTextContent("7|none");
+    expect(screen.getByLabelText("task-route-state")).toHaveTextContent(
+      "7|none",
+    );
   });
 
   it.each([
@@ -378,12 +385,20 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42?focus=planning");
 
     const planningDialog = await screen.findByRole("dialog", { name: strings.taskDetails });
-    expect(await within(planningDialog).findByDisplayValue("Ort reservieren")).toBeInTheDocument();
+    expect(
+      await within(planningDialog).findByText("Ort reservieren", {
+        selector: "strong",
+      }),
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Open another task" }));
 
     const currentDialog = screen.getByRole("dialog", { name: strings.taskDetails });
-    expect(await within(currentDialog).findByDisplayValue("Catering bestätigen")).toBeInTheDocument();
+    expect(
+      await within(currentDialog).findByText("Catering bestätigen", {
+        selector: "strong",
+      }),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText("project-route")).not.toHaveTextContent("focus="),
     );
@@ -396,11 +411,19 @@ describe("ProjectDetailPage task explanations", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Open another task" }));
     const userDialog = await screen.findByRole("dialog", { name: strings.taskDetails });
-    expect(await within(userDialog).findByDisplayValue("Catering bestätigen")).toBeInTheDocument();
+    expect(
+      await within(userDialog).findByText("Catering bestätigen", {
+        selector: "strong",
+      }),
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Navigate to planning" }));
     expect(await screen.findByText("Sommerfest planen")).toBeInTheDocument();
-    expect(within(userDialog).getByDisplayValue("Catering bestätigen")).toBeInTheDocument();
+    expect(
+      within(userDialog).getByText("Catering bestätigen", {
+        selector: "strong",
+      }),
+    ).toBeInTheDocument();
     expect(mockedApi.getTask).not.toHaveBeenCalledWith(7);
 
     await userEvent.click(screen.getByRole("button", { name: "Back" }));

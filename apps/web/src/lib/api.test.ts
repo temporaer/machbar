@@ -157,6 +157,76 @@ describe("api request() Content-Type handling", () => {
       method: "DELETE",
       body: JSON.stringify({ expectedRevision: 4 }),
     });
+
+    const continueFetch = mockFetchOnce();
+    await api.followUpExternalWait(9, {
+      action: "continue",
+      content: "Noch einmal angerufen.",
+      waitingFor: "Vermieter",
+      scheduledDate: "2026-09-12",
+      expectedRevision: 5,
+    });
+    expect(continueFetch.mock.calls[0]?.[0]).toBe(
+      "/api/tasks/9/external-wait/follow-up",
+    );
+    expect(continueFetch.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        action: "continue",
+        content: "Noch einmal angerufen.",
+        waitingFor: "Vermieter",
+        scheduledDate: "2026-09-12",
+        expectedRevision: 5,
+      }),
+    });
+
+    const resolveFetch = mockFetchOnce();
+    await api.followUpExternalWait(9, {
+      action: "resolve",
+      content: "Antwort erhalten.",
+      expectedRevision: 6,
+    });
+    expect(resolveFetch.mock.calls[0]?.[0]).toBe(
+      "/api/tasks/9/external-wait/follow-up",
+    );
+    expect(resolveFetch.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      body: JSON.stringify({
+        action: "resolve",
+        content: "Antwort erhalten.",
+        expectedRevision: 6,
+      }),
+    });
+  });
+
+  it("sends revision-safe task lifecycle commands", async () => {
+    const fetchMock = mockFetchOnce();
+
+    await api.completeTask(9, "cancel_children", "2026-09-12", 4);
+    await api.cancelTask(9, "complete_children", 5);
+    await api.reopenTask(9, 6);
+    await api.clarifyTask(9, 7);
+
+    const calls = fetchMock.mock.calls as [string, RequestInit][];
+    expect(calls.map(([url]) => url)).toEqual([
+      "/api/tasks/9/complete",
+      "/api/tasks/9/cancel",
+      "/api/tasks/9/reopen",
+      "/api/tasks/9/clarify",
+    ]);
+    expect(calls.map(([, init]) => init.body)).toEqual([
+      JSON.stringify({
+        descendantsPolicy: "cancel_children",
+        completedOn: "2026-09-12",
+        expectedRevision: 4,
+      }),
+      JSON.stringify({
+        descendantsPolicy: "complete_children",
+        expectedRevision: 5,
+      }),
+      JSON.stringify({ expectedRevision: 6 }),
+      JSON.stringify({ expectedRevision: 7 }),
+    ]);
   });
 
   it("lets an explicitly supplied header override the default (including for bodyless requests)", async () => {
@@ -303,11 +373,11 @@ describe("api project workflow/criteria/refinement contracts", () => {
 
   it("hits the explicit workflow transition endpoints (backlog <-> active -> completed, archive)", async () => {
     const fetchMock = mockFetchOnce({ text: async () => JSON.stringify({}) });
-    await api.activateProject(1, { ownerMemberId: 2 });
-    await api.returnProjectToBacklog(1);
-    await api.completeProject(1);
-    await api.reopenProject(1);
-    await api.archiveProject(1);
+    await api.activateProject(1, { ownerMemberId: 2, expectedRevision: 7 });
+    await api.returnProjectToBacklog(1, { expectedRevision: 8 });
+    await api.completeProject(1, { expectedRevision: 9 });
+    await api.reopenProject(1, { expectedRevision: 10 });
+    await api.archiveProject(1, { expectedRevision: 11 });
 
     const urls = fetchMock.mock.calls.map((c) => (c as [string, RequestInit])[0]);
     expect(urls).toEqual([
@@ -317,9 +387,21 @@ describe("api project workflow/criteria/refinement contracts", () => {
       "/api/projects/1/reopen",
       "/api/projects/1/archive",
     ]);
-    const activateInit = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(activateInit.method).toBe("POST");
-    expect(activateInit.body).toBe(JSON.stringify({ ownerMemberId: 2 }));
+    const calls = fetchMock.mock.calls as [string, RequestInit][];
+    expect(calls.map(([, init]) => init.method)).toEqual([
+      "POST",
+      "POST",
+      "POST",
+      "POST",
+      "POST",
+    ]);
+    expect(calls.map(([, init]) => init.body)).toEqual([
+      JSON.stringify({ ownerMemberId: 2, expectedRevision: 7 }),
+      JSON.stringify({ expectedRevision: 8 }),
+      JSON.stringify({ expectedRevision: 9 }),
+      JSON.stringify({ expectedRevision: 10 }),
+      JSON.stringify({ expectedRevision: 11 }),
+    ]);
   });
 
   it("hits the ordered acceptance-criteria endpoints", async () => {

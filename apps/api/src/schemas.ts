@@ -47,6 +47,11 @@ export const appendNotesSchema = z.object({
 
 export const activateProjectSchema = z.object({
   ownerMemberId: z.number().int().nullable().optional(),
+  expectedRevision: z.number().int().positive().optional(),
+});
+
+export const projectLifecycleSchema = z.object({
+  expectedRevision: z.number().int().positive().optional(),
 });
 
 export const addCriterionSchema = z.object({
@@ -131,13 +136,22 @@ export const promoteTaskToProjectSchema = z.object({
 });
 
 export const completeTaskSchema = z.object({
-  descendantsPolicy: z.enum(["leave_open", "complete_children"]).optional(),
+  descendantsPolicy: z
+    .enum(["leave_open", "complete_children", "cancel_children"])
+    .optional(),
   completedOn: isoDate.optional(),
   expectedRevision: z.number().int().positive().optional(),
 });
 
 export const cancelTaskSchema = z.object({
-  descendantsPolicy: z.enum(["leave_open", "cancel_children"]).optional(),
+  descendantsPolicy: z
+    .enum(["leave_open", "complete_children", "cancel_children"])
+    .optional(),
+  expectedRevision: z.number().int().positive().optional(),
+});
+
+export const taskLifecycleSchema = z.object({
+  expectedRevision: z.number().int().positive().optional(),
 });
 
 export const moveTaskSchema = z.object({
@@ -172,6 +186,22 @@ export const upsertExternalWaitSchema = z.object({
 export const resolveExternalWaitSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
 });
+
+const externalWaitFollowUpBaseSchema = z.object({
+  content: z.string().trim().min(1, "Follow-up text must not be empty."),
+  expectedRevision: z.number().int().positive().optional(),
+});
+
+export const externalWaitFollowUpSchema = z.discriminatedUnion("action", [
+  externalWaitFollowUpBaseSchema.extend({
+    action: z.literal("resolve"),
+  }),
+  externalWaitFollowUpBaseSchema.extend({
+    action: z.literal("continue"),
+    waitingFor: z.string().nullable().optional(),
+    scheduledDate: isoDate.nullable().optional(),
+  }),
+]);
 
 export const pushSubscriptionSchema = z.object({
   endpoint: z.string().url(),

@@ -1,38 +1,14 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { Task } from "@machbar/shared";
 import { api } from "../lib/api";
-import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
-import { useLocale, type Locale } from "../lib/locale";
-import { localeTag } from "../lib/format";
 import {
   isStaleWriteConflict,
   localizedErrorMessage,
 } from "../lib/errorMessage";
-
-export function followUpEntryHeader(
-  memberName: string,
-  now = new Date(),
-  locale: Locale = "de",
-): string {
-  const timestamp = new Intl.DateTimeFormat(localeTag(locale), {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(now);
-  return `[${timestamp} · ${memberName}]`;
-}
-
-function initialFollowUpNote(
-  task: Task,
-  memberName: string,
-  locale: Locale,
-): string {
-  const prefix = task.notes.trim() ? `${task.notes.trimEnd()}\n\n` : "";
-  return `${prefix}${followUpEntryHeader(memberName, new Date(), locale)}\n`;
-}
 
 export function WaitingFollowUpSheet({
   task,
@@ -42,43 +18,37 @@ export function WaitingFollowUpSheet({
   onClose: () => void;
 }) {
   const strings = useStrings();
-  const { locale } = useLocale();
-  const { currentMember } = useIdentity();
   const { bump } = useRefresh();
-  const memberName = currentMember?.name ?? strings.unknownMember;
-  const initialNotes = useMemo(
-    () => initialFollowUpNote(task, memberName, locale),
-    [locale, task, memberName],
-  );
-  const [notes, setNotes] = useState(initialNotes);
-  const [scheduledDate, setScheduledDate] = useState(
-    task.nextBlockerAttentionDate ?? task.scheduledDate ?? "",
-  );
+  const [content, setContent] = useState("");
+  const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [resolveWait, setResolveWait] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [scheduledDateValid, setScheduledDateValid] = useState(true);
-  const closeIfValid = () => {
-    if (scheduledDateValid) onClose();
+  const closeIfIdle = () => {
+    if (!saving) onClose();
   };
 
   const save = async () => {
     setSaving(true);
     setError(null);
     try {
-      const updated = await api.updateTask(task.id, {
-        notes,
-        expectedRevision: task.revision,
-      });
-      if (resolveWait) {
-        await api.resolveExternalWait(task.id, updated.revision);
-      } else {
-        await api.setExternalWait(task.id, {
-          waitingFor: task.externalWait?.waitingFor ?? null,
-          scheduledDate: scheduledDate || null,
-          expectedRevision: updated.revision,
-        });
-      }
+      await api.followUpExternalWait(
+        task.id,
+        resolveWait
+          ? {
+              action: "resolve",
+              content: content.trim(),
+              expectedRevision: task.revision,
+            }
+          : {
+              action: "continue",
+              content: content.trim(),
+              waitingFor: task.externalWait?.waitingFor ?? null,
+              scheduledDate: scheduledDate || null,
+              expectedRevision: task.revision,
+            },
+      );
       bump();
       onClose();
     } catch (err) {
@@ -92,7 +62,7 @@ export function WaitingFollowUpSheet({
   return (
     <BottomSheet
       title={`${strings.followUp}: ${task.title}`}
-      onClose={closeIfValid}
+      onClose={closeIfIdle}
     >
       <div className="stack">
         <div className="field">
@@ -100,8 +70,9 @@ export function WaitingFollowUpSheet({
           <textarea
             id={`follow-up-notes-${task.id}`}
             rows={6}
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
+            value={content}
+            onChange={(event) => setContent(event.target.value)}
+            disabled={saving}
             autoFocus
           />
         </div>
@@ -115,6 +86,7 @@ export function WaitingFollowUpSheet({
             value={scheduledDate}
             onChange={(date) => setScheduledDate(date ?? "")}
             onValidityChange={setScheduledDateValid}
+            disabled={saving}
           />
         </div>
 
@@ -123,6 +95,7 @@ export function WaitingFollowUpSheet({
             type="checkbox"
             checked={resolveWait}
             onChange={(event) => setResolveWait(event.target.checked)}
+            disabled={saving}
           />
           {strings.resolveExternalWait}
         </label>
@@ -134,16 +107,16 @@ export function WaitingFollowUpSheet({
         ) : null}
 
         <div className="row">
-          <button type="button" className="btn" onClick={closeIfValid} disabled={saving}>
-            {strings.close}
+          <button type="button" className="btn" onClick={closeIfIdle} disabled={saving}>
+            {strings.cancel}
           </button>
           <button
             type="button"
             className="btn btn-primary"
             onClick={() => void save()}
-            disabled={saving || notes.trim().length === 0 || !scheduledDateValid}
+            disabled={saving || content.trim().length === 0 || !scheduledDateValid}
           >
-            {strings.saveChanges}
+            {strings.save}
           </button>
         </div>
       </div>
