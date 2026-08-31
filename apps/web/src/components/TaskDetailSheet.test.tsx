@@ -12,7 +12,7 @@ import {
 } from "../lib/taskDetailContext";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { api } from "../lib/api";
-import { makeMember, makeTag, makeTask } from "../test/fixtures";
+import { makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -21,7 +21,11 @@ vi.mock("../lib/api", () => ({
     getTask: vi.fn(),
     getTaskRecurrenceHistory: vi.fn(),
     updateTask: vi.fn(),
+    promoteTaskToProject: vi.fn(),
+    createTask: vi.fn(),
     setExternalWait: vi.fn(),
+    addCriterion: vi.fn(),
+    updateProject: vi.fn(),
     resolveExternalWait: vi.fn(),
     transitionTaskStatus: vi.fn(),
     completeTask: vi.fn(),
@@ -114,6 +118,12 @@ describe("TaskDetailSheet", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getTags.mockResolvedValue([makeTag({ id: 10, name: "büro" })]);
     mockedApi.updateTask.mockResolvedValue(makeTask());
+    mockedApi.promoteTaskToProject.mockResolvedValue(
+      makeProject({ id: 80, title: "Projekt aus Erfassung" }),
+    );
+    mockedApi.createTask.mockResolvedValue(makeTask());
+    mockedApi.addCriterion.mockResolvedValue(makeProject());
+    mockedApi.updateProject.mockResolvedValue(makeProject());
     mockedApi.setExternalWait.mockResolvedValue(makeTask());
     mockedApi.resolveExternalWait.mockResolvedValue(makeTask());
     mockedApi.transitionTaskStatus.mockResolvedValue(makeTask());
@@ -858,7 +868,7 @@ describe("TaskDetailSheet", () => {
     expect(screen.getByLabelText("Notizen")).toHaveValue("alt neu");
   });
 
-  it("klärt mit Speichern & weiter auch unveränderte Aufgaben und öffnet erst nach Erfolg die nächste", async () => {
+  it("klassifiziert eine Erfassung explizit als machbar und öffnet erst nach Erfolg die nächste", async () => {
     const first = makeTask({ id: 50, title: "Erste Erfassung", needsClarification: true });
     const second = makeTask({ id: 51, title: "Zweite Erfassung", needsClarification: true });
     mockedApi.getTask.mockImplementation(async (id) => (id === 50 ? first : second));
@@ -867,7 +877,8 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open queue"));
     await screen.findByDisplayValue("Erste Erfassung");
 
-    await userEvent.click(screen.getByRole("button", { name: "Speichern & weiter" }));
+    expect(screen.queryByRole("button", { name: "Speichern & weiter" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(50, {
@@ -889,7 +900,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open queue"));
     await screen.findByDisplayValue("Nicht verlieren");
 
-    await userEvent.click(screen.getByRole("button", { name: "Speichern & weiter" }));
+    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Speichern fehlgeschlagen");
     expect(screen.getByDisplayValue("Nicht verlieren")).toBeInTheDocument();
@@ -917,7 +928,7 @@ describe("TaskDetailSheet", () => {
     });
   });
 
-  it("löscht die Klärungsmarkierung bei einer expliziten Statuswahl", async () => {
+  it("klassifiziert eine Erfassung explizit als irgendwann", async () => {
     const task = makeTask({ id: 55, title: "Status wählen", needsClarification: true });
     mockedApi.getTask.mockResolvedValue(task);
 
@@ -925,10 +936,74 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await screen.findByDisplayValue("Status wählen");
 
-    await userEvent.selectOptions(screen.getByLabelText("Status"), "someday");
+    expect(screen.queryByLabelText("Status")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Irgendwann" }));
 
     await waitFor(() =>
-      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(55, "someday"),
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(55, {
+        title: "Status wählen",
+        notes: "",
+        status: "someday",
+        expectedRevision: 1,
+      }),
+    );
+  });
+
+  it("promotes a captured item and opens the existing project breakdown", async () => {
+    const task = makeTask({
+      id: 56,
+      title: "Kinderzimmer renovieren",
+      notes: "Farbe auswählen",
+      needsClarification: true,
+    });
+    const project = makeProject({
+      id: 80,
+      title: "Kinderzimmer renovieren",
+      notes: "Farbe auswählen",
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.promoteTaskToProject.mockResolvedValue(project);
+
+    renderQueueSheet([56]);
+    await userEvent.click(screen.getByText("open queue"));
+    await screen.findByDisplayValue("Kinderzimmer renovieren");
+    await userEvent.click(
+      screen.getByRole("button", { name: "In Schritte zerlegen" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.promoteTaskToProject).toHaveBeenCalledWith(56, {
+        status: "active",
+        title: "Kinderzimmer renovieren",
+        notes: "Farbe auswählen",
+        expectedRevision: 1,
+      }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Projekt weiterdenken" }),
+    ).toBeInTheDocument();
+  });
+
+  it("promotes a captured item directly into the backlog", async () => {
+    const task = makeTask({
+      id: 57,
+      title: "Vielleicht umziehen",
+      needsClarification: true,
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(57);
+    await userEvent.click(screen.getByText("open"));
+    await screen.findByDisplayValue("Vielleicht umziehen");
+    await userEvent.click(screen.getByRole("button", { name: "Backlog" }));
+
+    await waitFor(() =>
+      expect(mockedApi.promoteTaskToProject).toHaveBeenCalledWith(57, {
+        status: "backlog",
+        title: "Vielleicht umziehen",
+        notes: "",
+        expectedRevision: 1,
+      }),
     );
   });
 });

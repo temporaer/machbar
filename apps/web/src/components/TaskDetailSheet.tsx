@@ -10,6 +10,7 @@ import {
 import type { InheritanceMode, Task } from "@machbar/shared";
 import { inheritanceModes, taskStatuses } from "@machbar/shared";
 import { api } from "../lib/api";
+import type { ProjectWithActions } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
@@ -26,6 +27,7 @@ import { StatusBadge } from "./StatusBadge";
 import { TagChip } from "./TagChip";
 import { TagPicker } from "./TagPicker";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
+import { CaptureProjectBreakdownSheet } from "./CaptureProjectBreakdownSheet";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
@@ -189,6 +191,9 @@ export function TaskDetailSheet() {
   const [scheduledDateValid, setScheduledDateValid] = useState(true);
   const [statusDraft, setStatusDraft] = useState<Task["status"]>("actionable");
   const [changingStatus, setChangingStatus] = useState(false);
+  const [classificationBusy, setClassificationBusy] = useState(false);
+  const [promotedProject, setPromotedProject] =
+    useState<ProjectWithActions | null>(null);
   const titleFieldRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const ownerFieldRef = useRef<HTMLDivElement>(null);
@@ -362,11 +367,10 @@ export function TaskDetailSheet() {
     (titleDraft !== textFieldsBaseline.title ||
       notesDraft !== textFieldsBaseline.notes);
   const saveChangesDisabled = !textFieldsDirty || !titleIsValid || savingTextFields;
-  const saveNextDisabled = !titleIsValid || savingTextFields;
 
-  const saveTextFields = async (clarify = false): Promise<boolean> => {
+  const saveTextFields = async (): Promise<boolean> => {
     if (!task || !titleIsValid || savingTextFields) return false;
-    if (!clarify && !textFieldsDirty) return true;
+    if (!textFieldsDirty) return true;
     const snapshot: TextFieldsSnapshot = {
       title: titleDraft.trim(),
       notes: notesDraft,
@@ -377,7 +381,6 @@ export function TaskDetailSheet() {
       const updated = await api.updateTask(task.id, {
         title: snapshot.title,
         notes: snapshot.notes,
-        ...(clarify ? { status: "actionable" as const } : {}),
         expectedRevision: revisionRef.current ?? task.revision,
       });
       revisionRef.current = updated.revision;
@@ -417,6 +420,69 @@ export function TaskDetailSheet() {
       if (!saved) return;
     }
     close();
+  };
+
+  const finishClassification = () => {
+    if (queueActive) {
+      advanceQueue();
+    } else {
+      close();
+    }
+  };
+
+  const classifyCapture = async (status: "actionable" | "someday") => {
+    if (!task || !titleIsValid || classificationBusy) return;
+    setClassificationBusy(true);
+    setSaveError(null);
+    try {
+      await api.updateTask(task.id, {
+        title: titleDraft.trim(),
+        notes: notesDraft,
+        status,
+        expectedRevision: revisionRef.current ?? task.revision,
+      });
+      bump();
+      finishClassification();
+    } catch (err) {
+      if (isStaleWriteConflict(err)) {
+        bump();
+        reload();
+      }
+      setSaveError(localizedErrorMessage(err, strings));
+    } finally {
+      setClassificationBusy(false);
+    }
+  };
+
+  const promoteCapture = async (
+    status: "active" | "backlog",
+    openBreakdown: boolean,
+  ) => {
+    if (!task || !titleIsValid || classificationBusy) return;
+    setClassificationBusy(true);
+    setSaveError(null);
+    try {
+      const project = await api.promoteTaskToProject(task.id, {
+        status,
+        title: titleDraft.trim(),
+        notes: notesDraft,
+        expectedRevision: revisionRef.current ?? task.revision,
+      });
+      bump();
+      if (openBreakdown) {
+        setPromotedProject(project);
+      } else {
+        finishClassification();
+      }
+    } catch (err) {
+      if (isStaleWriteConflict(err)) {
+        bump();
+        reload();
+      }
+      setSaveError(localizedErrorMessage(err, strings));
+    } finally {
+      setClassificationBusy(false);
+    }
   };
 
   const changeStatus = async (nextStatus: Task["status"]) => {
@@ -520,7 +586,13 @@ export function TaskDetailSheet() {
     }
   };
 
+  const isCapturedInboxItem =
+    task?.status === "captured" &&
+    task.projectId === null &&
+    task.parentTaskId === null;
+
   return (
+    <>
     <BottomSheet
       title={strings.taskDetails}
       onClose={() => void closeWithSave()}
@@ -575,7 +647,7 @@ export function TaskDetailSheet() {
               />
             </div>
 
-            <div className="field">
+            {!isCapturedInboxItem ? <div className="field">
               <label htmlFor="task-status">{strings.status}</label>
               <select
                 id="task-status"
@@ -593,7 +665,7 @@ export function TaskDetailSheet() {
                   </option>
                 ))}
               </select>
-            </div>
+            </div> : null}
 
             <div className="field" ref={ownerFieldRef}>
               {task.ownerInheritanceMode !== "explicit" ? <label>{strings.owner}</label> : null}
@@ -627,6 +699,45 @@ export function TaskDetailSheet() {
               )}
             </div>
           </TaskDetailSection>
+
+          {isCapturedInboxItem ? (
+            <TaskDetailSection title={strings.classificationPrompt}>
+              <div className="capture-shape-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary capture-shape-action"
+                  disabled={classificationBusy || !titleIsValid}
+                  onClick={() => void classifyCapture("actionable")}
+                >
+                  {strings.classifyAsAction}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary capture-shape-action"
+                  disabled={classificationBusy || !titleIsValid}
+                  onClick={() => void promoteCapture("active", true)}
+                >
+                  {strings.classifyAsProjectSteps}
+                </button>
+                <button
+                  type="button"
+                  className="btn capture-shape-action"
+                  disabled={classificationBusy || !titleIsValid}
+                  onClick={() => void promoteCapture("backlog", false)}
+                >
+                  {strings.classifyAsBacklog}
+                </button>
+                <button
+                  type="button"
+                  className="btn capture-shape-action"
+                  disabled={classificationBusy || !titleIsValid}
+                  onClick={() => void classifyCapture("someday")}
+                >
+                  {strings.classifyAsSomeday}
+                </button>
+              </div>
+            </TaskDetailSection>
+          ) : null}
 
           <TaskDetailSection title={strings.taskPlanningSection}>
             <div className="row task-detail-date-row">
@@ -864,22 +975,6 @@ export function TaskDetailSheet() {
             {strings.saveChanges}
           </button>
 
-          {queueActive ? (
-            <button
-              type="button"
-              className="btn btn-block btn-primary"
-              disabled={saveNextDisabled}
-              data-text-save
-              onClick={() => {
-                void saveTextFields(true).then((saved) => {
-                  if (saved) advanceQueue();
-                });
-              }}
-            >
-              {strings.saveNext}
-            </button>
-          ) : null}
-
           {saveError ?? taskActions.errors[task.id] ? (
             <div className="task-row-error" role="alert">
               <span>{strings.error}</span>
@@ -1008,15 +1103,15 @@ export function TaskDetailSheet() {
                 </li>
               ))}
             </ul>
-            {task.repeatAfterDays === null ? (
+            {task.repeatAfterDays === null && !isCapturedInboxItem ? (
               <AddChildForm
                 parentTaskId={task.id}
                 inputRef={subtaskInputRef}
                 onAdded={reload}
               />
-            ) : (
+            ) : task.repeatAfterDays !== null ? (
               <p className="text-muted">{strings.recurringTaskLeafHint}</p>
-            )}
+            ) : null}
             </div>
           </TaskDetailSection>
 
@@ -1187,6 +1282,16 @@ export function TaskDetailSheet() {
         />
       ) : null}
     </BottomSheet>
+    {promotedProject ? (
+      <CaptureProjectBreakdownSheet
+        project={promotedProject}
+        onClose={() => {
+          setPromotedProject(null);
+          finishClassification();
+        }}
+      />
+    ) : null}
+    </>
   );
 }
 

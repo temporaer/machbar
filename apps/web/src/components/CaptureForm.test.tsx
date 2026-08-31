@@ -65,6 +65,28 @@ describe("CaptureForm", () => {
     );
   });
 
+  it("creates project-scoped tasks as actionable without a defer option", async () => {
+    render(
+      <CaptureForm
+        initialTitle="Farbe aussuchen"
+        projectId={42}
+        onCancel={vi.fn()}
+        onCaptured={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Später klären" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: 42, status: "actionable" }),
+      ),
+    );
+  });
+
   it("submits an initial deadline for a new Project", async () => {
     render(
       <CaptureForm

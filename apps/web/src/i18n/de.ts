@@ -297,11 +297,17 @@ const extra = {
   projectBreakdownTitle: "Projekt weiterdenken",
   nextStepQuestion: "Was ist der nächste Schritt?",
   addNextAction: "Nächsten Schritt hinzufügen",
+  addStep: "Schritt hinzufügen",
   waitingItem: "Wartepunkt",
   addWaitingItem: "Wartepunkt hinzufügen",
   saveNotes: "Notizen speichern",
   finishLater: "Später fertig machen",
   clarifyNow: "Jetzt klären",
+  classificationPrompt: "Was ist daraus geworden?",
+  classifyAsAction: "Machbar",
+  classifyAsProjectSteps: "In Schritte zerlegen",
+  classifyAsBacklog: "Backlog",
+  classifyAsSomeday: "Irgendwann",
   needsClarification: "Zu klären",
   clarifyEmpty: "Der Eingang ist leer. Gute Arbeit!",
   waitingEmpty: "Nichts wartet gerade.",
@@ -885,6 +891,8 @@ const extra = {
     task_not_found: "Die Aufgabe wurde nicht gefunden.",
     task_parent_self:
       "Eine Aufgabe kann nicht ihre eigene übergeordnete Aufgabe sein.",
+    task_promotion_invalid:
+      "Dieser Eingangseintrag kann in seinem aktuellen Zustand nicht in ein Projekt umgewandelt werden.",
     task_sequence_too_short:
       "Eine Aufgabenfolge braucht mindestens zwei Schritte.",
     task_title_required: "Bitte gib einen Aufgabentitel ein.",

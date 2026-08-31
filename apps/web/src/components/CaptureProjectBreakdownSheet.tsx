@@ -31,7 +31,7 @@ export function CaptureProjectBreakdownSheet({
   const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
   const [nextAction, setNextAction] = useState("");
-  const [subtask, setSubtask] = useState("");
+  const [step, setStep] = useState("");
   const [waitingTitle, setWaitingTitle] = useState("");
   const [waitingFor, setWaitingFor] = useState("");
   const [criterion, setCriterion] = useState("");
@@ -41,7 +41,7 @@ export function CaptureProjectBreakdownSheet({
   const [error, setError] = useState<string | null>(null);
 
   const addTask = async (
-    kind: "next-action" | "subtask" | "waiting",
+    kind: "next-action" | "step" | "waiting",
     title: string,
     externalWaitingFor?: string,
   ) => {
@@ -64,7 +64,7 @@ export function CaptureProjectBreakdownSheet({
         });
       }
       if (kind === "next-action") setNextAction("");
-      if (kind === "subtask") setSubtask("");
+      if (kind === "step") setStep("");
       if (kind === "waiting") {
         setWaitingTitle("");
         setWaitingFor("");
@@ -142,21 +142,21 @@ export function CaptureProjectBreakdownSheet({
 
         <div className="capture-breakdown-section">
           <div className="field">
-            <label htmlFor="capture-subtask">{strings.addChild}</label>
+            <label htmlFor="capture-step">{strings.addStep}</label>
             <input
-              id="capture-subtask"
-              value={subtask}
-              onChange={(event) => setSubtask(event.target.value)}
-              placeholder={strings.addChild}
+              id="capture-step"
+              value={step}
+              onChange={(event) => setStep(event.target.value)}
+              placeholder={strings.addStep}
             />
           </div>
           <button
             type="button"
             className="btn"
-            disabled={saving !== null || !subtask.trim()}
-            onClick={() => void addTask("subtask", subtask)}
+            disabled={saving !== null || !step.trim()}
+            onClick={() => void addTask("step", step)}
           >
-            {strings.addChild}
+            {strings.addStep}
           </button>
         </div>
 

@@ -53,6 +53,8 @@ export function CaptureForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { currentMemberId } = useIdentity();
+  const canDeferClassification =
+    (projectId ?? null) === null && (parentTaskId ?? null) === null;
 
   const taskInput = (needsClarification: boolean): CreateTaskInput => ({
     title: title.trim(),
@@ -105,7 +107,7 @@ export function CaptureForm({
       className="stack"
       onSubmit={(event) => {
         event.preventDefault();
-        void createTask(true);
+        void createTask(canDeferClassification);
       }}
     >
       <div className="field">
@@ -146,13 +148,15 @@ export function CaptureForm({
         <button type="button" className="btn" onClick={onCancel}>
           {strings.cancel}
         </button>
-        <button
-          type="submit"
-          className="btn"
-          disabled={saving || !title.trim() || !dueDateValid}
-        >
-          {strings.clarifyLater}
-        </button>
+        {canDeferClassification ? (
+          <button
+            type="submit"
+            className="btn"
+            disabled={saving || !title.trim() || !dueDateValid}
+          >
+            {strings.clarifyLater}
+          </button>
+        ) : null}
         <button
           type="button"
           className="btn btn-primary capture-shape-action"

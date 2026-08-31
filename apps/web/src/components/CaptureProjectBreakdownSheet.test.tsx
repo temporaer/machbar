@@ -48,8 +48,8 @@ describe("CaptureProjectBreakdownSheet", () => {
       ),
     );
 
-    await userEvent.type(screen.getByLabelText("Teilaufgabe hinzufügen"), "Fliesen auswählen");
-    await userEvent.click(screen.getByRole("button", { name: "Teilaufgabe hinzufügen" }));
+    await userEvent.type(screen.getByLabelText("Schritt hinzufügen"), "Fliesen auswählen");
+    await userEvent.click(screen.getByRole("button", { name: "Schritt hinzufügen" }));
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenLastCalledWith(
         expect.objectContaining({

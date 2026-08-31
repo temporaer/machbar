@@ -13,8 +13,9 @@ later.
 ### 1. Capture
 
 Record an idea, request, link, or commitment without completing a form first.
-Unclear captures go to **Eingang**. A concrete action can be marked
-**Machbar** immediately, and a multi-step outcome can start as a project.
+Unclear captures go to **Eingang** as unclassified items. A concrete action can
+be marked **Machbar** immediately, and a multi-step outcome can start as a
+project.
 
 Installed Android PWAs can receive text and URLs from the operating-system
 share sheet. Incoming material can create new work or be appended to an
@@ -32,6 +33,18 @@ Decide what the capture means:
 
 Clarification is separate from capture so that fast collection does not force
 premature planning.
+
+An inbox item leaves clarification through one explicit classification:
+
+- **Machbar** keeps it as a task and makes it actionable.
+- **Irgendwann** keeps it as a task outside the current action lists.
+- **In Schritte zerlegen** promotes it to an active project and opens the
+  project breakdown flow.
+- **Backlog** promotes it to a backlog project.
+
+Promotion keeps the captured title, notes, dates, tags, and sensible ownership.
+Existing child tasks become project-root steps while deeper task nesting stays
+intact; the temporary capture wrapper is removed.
 
 ### 3. Act
 

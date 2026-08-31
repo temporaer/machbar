@@ -155,6 +155,12 @@ become task dates.
 
 - Every write that touches more than one table (e.g. creating a task + adding tags) uses an explicit SQLite transaction.
 - Hierarchy moves, dependency changes, and multi-table metadata writes are performed inside the same transaction as the originating write.
+- `POST /api/tasks/:id/promote-to-project` atomically classifies a root
+  `captured` task as an active or backlog project. It copies project-compatible
+  metadata, promotes direct children to project roots, preserves deeper
+  descendants, and removes the temporary capture wrapper. Captured roots cannot
+  acquire task-only dependencies, waits, recurrence, reminders, or new child
+  tasks before classification.
 - External waits use revision-aware `PUT /api/tasks/:id/external-wait` and
   `DELETE /api/tasks/:id/external-wait` resources. Starting/updating a wait can
   change its description and the task's revisit date atomically; resolving it
