@@ -448,20 +448,17 @@ export function TaskDetailSheet() {
     }
   };
 
-  const promoteCapture = async (
-    status: "active" | "backlog",
-    openBreakdown: boolean,
-  ) => {
+  const promoteCapture = async (openHandoff: boolean) => {
     if (!task || classificationBusy || contentDirty) return;
     setClassificationBusy(true);
     setSaveError(null);
     try {
       const project = await api.promoteTaskToProject(task.id, {
-        status,
+        status: "backlog",
         expectedRevision: revisionRef.current ?? task.revision,
       });
       bump();
-      if (openBreakdown) {
+      if (openHandoff) {
         setPromotedProject(project);
       } else {
         finishClassification();
@@ -781,7 +778,7 @@ export function TaskDetailSheet() {
                   type="button"
                   className="btn btn-primary capture-shape-action"
                   disabled={classificationBusy || contentDirty}
-                  onClick={() => void promoteCapture("active", true)}
+                  onClick={() => void promoteCapture(true)}
                 >
                   {strings.classifyAsProjectSteps}
                 </button>
@@ -789,7 +786,7 @@ export function TaskDetailSheet() {
                   type="button"
                   className="btn capture-shape-action"
                   disabled={classificationBusy || contentDirty}
-                  onClick={() => void promoteCapture("backlog", false)}
+                  onClick={() => void promoteCapture(false)}
                 >
                   {strings.classifyAsBacklog}
                 </button>

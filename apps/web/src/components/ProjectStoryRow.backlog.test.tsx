@@ -11,9 +11,8 @@ import { ProjectStoryRow } from "./ProjectStoryRow";
 import { useProjectActions } from "../lib/useProjectActions";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
-import { makeCriterion, makeMember, makeProject } from "../test/fixtures";
+import { makeCriterion, makeMember, makeProject, makeTask } from "../test/fixtures";
 import "../styles/index.css";
-import "./../pages/BacklogReviewPage.css";
 import "./ProjectStoryRow.css";
 
 vi.mock("../lib/api", () => ({
@@ -130,7 +129,13 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
   });
 
   it("activates a story with a driver on a right swipe past the threshold", async () => {
-    const story = makeProject({ id: 12, title: "Garten aufräumen", status: "backlog", ownerMemberId: 1 });
+    const story = makeProject({
+      id: 12,
+      title: "Garten aufräumen",
+      status: "backlog",
+      ownerMemberId: 1,
+      nextAction: makeTask({ projectId: 12 }),
+    });
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active" });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Garten aufräumen");
@@ -151,7 +156,13 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
   });
 
   it("continues activation as soon as a missing driver is selected", async () => {
-    const story = makeProject({ id: 13, title: "Homeoffice-Ecke einrichten", status: "backlog", ownerMemberId: null });
+    const story = makeProject({
+      id: 13,
+      title: "Homeoffice-Ecke einrichten",
+      status: "backlog",
+      ownerMemberId: null,
+      nextAction: makeTask({ projectId: 13 }),
+    });
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active", ownerMemberId: 2 });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Homeoffice-Ecke einrichten");
@@ -183,54 +194,6 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
       }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  it("does not open an advisory wizard for outcome or next-action gaps", async () => {
-    const story = makeProject({
-      id: 131,
-      title: "Projekt mit offenen Vorbereitungen",
-      status: "backlog",
-      ownerMemberId: 1,
-      readiness: {
-        projectId: 131,
-        ready: true,
-        issues: [
-          {
-            code: "missing_outcome",
-            severity: "info",
-            suggestedAction: { code: "add_outcome" },
-            entityType: "project",
-            entityId: 131,
-            entityTitle: "Projekt mit offenen Vorbereitungen",
-            projectId: 131,
-            projectTitle: "Projekt mit offenen Vorbereitungen",
-          },
-          {
-            code: "missing_next_action",
-            severity: "info",
-            suggestedAction: { code: "add_next_action" },
-            entityType: "project",
-            entityId: 131,
-            entityTitle: "Projekt mit offenen Vorbereitungen",
-            projectId: 131,
-            projectTitle: "Projekt mit offenen Vorbereitungen",
-          },
-        ],
-      },
-    });
-    mockedApi.activateProject.mockResolvedValue({ ...story, status: "active" });
-    const { container } = renderWithProviders(<Harness story={story} />);
-    await screen.findByText("Projekt mit offenen Vorbereitungen");
-
-    swipe(container, 100);
-
-    await waitFor(() =>
-      expect(mockedApi.activateProject).toHaveBeenCalledWith(131, {
-        expectedRevision: 1,
-      }),
-    );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.queryByText("Ergebnis noch unklar")).not.toBeInTheDocument();
   });
 
   it("reveals the action-chip strip on a left swipe past the threshold, and via the kebab as a non-gesture alternative", async () => {
@@ -317,7 +280,13 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
   });
 
   it("shows an inline, dismissible error and does not retain the story when activation fails", async () => {
-    const story = makeProject({ id: 17, title: "Fehlerfall Aktivierung", status: "backlog", ownerMemberId: 1 });
+    const story = makeProject({
+      id: 17,
+      title: "Fehlerfall Aktivierung",
+      status: "backlog",
+      ownerMemberId: 1,
+      nextAction: makeTask({ projectId: 17 }),
+    });
     mockedApi.activateProject.mockRejectedValue(new Error("Netzwerkfehler"));
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Fehlerfall Aktivierung");

@@ -54,6 +54,8 @@ export const projectLifecycleSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
 });
 
+export const acknowledgeReviewSchema = projectLifecycleSchema;
+
 export const addCriterionSchema = z.object({
   text: z.string().min(1, "Acceptance criterion text must not be empty."),
 });

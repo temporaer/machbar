@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { openDb, type DbHandle } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
 import * as schema from "../src/db/schema.js";
@@ -7,12 +8,31 @@ import {
   archiveProject,
   completeProject,
   createMember,
-  createProject,
+  createProject as createProjectMutation,
+  createTask,
   reopenProject,
   returnProjectToBacklog,
   updateProject,
 } from "../src/domain/mutations.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
+
+function createProject(
+  ...args: Parameters<typeof createProjectMutation>
+): ReturnType<typeof createProjectMutation> {
+  const [db, input, context] = args;
+  const requestedActive = input.status === "active";
+  const project = createProjectMutation(
+    db,
+    requestedActive ? { ...input, status: "backlog" } : input,
+    context,
+  );
+  if (!requestedActive) return project;
+  db.update(schema.projects)
+    .set({ status: "active" })
+    .where(eq(schema.projects.id, project.id))
+    .run();
+  return { ...project, status: "active" };
+}
 
 /**
  * Route-level (HTTP) coverage of the explicit project workflow: new
@@ -38,12 +58,38 @@ describe("project workflow (HTTP routes)", () => {
   }
 
   async function createProjectRoute(payload: Record<string, unknown> = {}) {
+    const requestedActive = payload.status === "active";
     const res = await ctx.app.inject({
       method: "POST",
       url: "/api/projects",
-      payload: { title: "Testprojekt", ...payload },
+      payload: {
+        title: "Testprojekt",
+        ...payload,
+        ...(requestedActive ? { status: "backlog" } : {}),
+      },
     });
-    return res.json();
+    const project = res.json();
+    if (requestedActive) {
+      ctx.handle.sqlite
+        .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+        .run(project.id);
+      return (
+        await ctx.app.inject({
+          method: "GET",
+          url: `/api/projects/${project.id}`,
+        })
+      ).json();
+    }
+    return project;
+  }
+
+  async function addProgressTask(projectId: number) {
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { projectId, title: "Next action", status: "actionable" },
+    });
+    expect(response.statusCode).toBe(201);
   }
 
   it("defaults a newly created project to backlog with activate/archive as its only actions", async () => {
@@ -68,6 +114,7 @@ describe("project workflow (HTTP routes)", () => {
   it("activates a project by supplying a driver in the same call", async () => {
     const anna = await createMemberRoute("Anna");
     const project = await createProjectRoute();
+    await addProgressTask(project.id);
 
     const res = await ctx.app.inject({
       method: "POST",
@@ -86,6 +133,7 @@ describe("project workflow (HTTP routes)", () => {
   it("activates a project that already has a driver, without supplying one again", async () => {
     const anna = await createMemberRoute("Anna");
     const project = await createProjectRoute({ ownerMemberId: anna.id });
+    await addProgressTask(project.id);
 
     const res = await ctx.app.inject({
       method: "POST",
@@ -112,6 +160,64 @@ describe("project workflow (HTTP routes)", () => {
         action: "activate",
       },
     });
+  });
+
+  it("rejects direct active creation and activation without a viable progress or waiting path", async () => {
+      const anna = await createMemberRoute("Readiness owner");
+      const direct = await ctx.app.inject({
+        method: "POST",
+        url: "/api/projects",
+        payload: {
+          title: "Bypass",
+          status: "active",
+          ownerMemberId: anna.id,
+        },
+      });
+      expect(direct.statusCode).toBe(409);
+      expect(direct.json().error.code).toBe("project_activation_not_ready");
+
+      const project = await createProjectRoute({ ownerMemberId: anna.id });
+      const activation = await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${project.id}/activate`,
+      });
+      expect(activation.statusCode).toBe(409);
+      expect(activation.json().error).toMatchObject({
+        code: "project_activation_not_ready",
+        details: {
+          projectId: project.id,
+          hasViableProgressPath: false,
+          hasHealthyFutureWaiting: false,
+        },
+      });
+  });
+
+  it("allows activation when the only credible path is a healthy future wait", async () => {
+      const anna = await createMemberRoute("Waiting owner");
+      const project = await createProjectRoute({ ownerMemberId: anna.id });
+      const task = (
+        await ctx.app.inject({
+          method: "POST",
+          url: "/api/tasks",
+          payload: {
+            projectId: project.id,
+            title: "Wait for reply",
+            scheduledDate: "2099-01-01",
+          },
+        })
+      ).json();
+      await ctx.app.inject({
+        method: "PUT",
+        url: `/api/tasks/${task.id}/external-wait`,
+        payload: { waitingFor: "Reply" },
+      });
+
+      const activation = await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${project.id}/activate`,
+      });
+      expect(activation.statusCode).toBe(200);
+      expect(activation.json().status).toBe("active");
   });
 
   it("keeps the driver when returning an active project to the backlog, and allows clearing it only then", async () => {
@@ -165,6 +271,7 @@ describe("project workflow (HTTP routes)", () => {
   it("completes an active project manually, and reopens a completed one back to active", async () => {
     const anna = await createMemberRoute("Anna");
     const project = await createProjectRoute({ ownerMemberId: anna.id, status: "active" });
+    await addProgressTask(project.id);
 
     const completed = (
       await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/complete` })
@@ -178,6 +285,47 @@ describe("project workflow (HTTP routes)", () => {
     ).json();
     expect(reopened.status).toBe("active");
     expect(reopened.ownerMemberId).toBe(anna.id);
+  });
+
+  it("rejects reopening a completed project without a viable progress or waiting path", async () => {
+    const anna = await createMemberRoute("Reopen owner");
+    const project = await createProjectRoute({
+      ownerMemberId: anna.id,
+      status: "completed",
+    });
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/reopen`,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({
+      code: "project_activation_not_ready",
+      details: {
+        projectId: project.id,
+        hasViableProgressPath: false,
+        hasHealthyFutureWaiting: false,
+      },
+    });
+  });
+
+  it("assigns a missing driver atomically while reopening a ready project", async () => {
+    const anna = await createMemberRoute("Replacement driver");
+    const project = await createProjectRoute({ status: "completed" });
+    await addProgressTask(project.id);
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/reopen`,
+      payload: { ownerMemberId: anna.id },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: "active",
+      ownerMemberId: anna.id,
+    });
   });
 
   it("rejects completing a backlog project", async () => {
@@ -284,6 +432,7 @@ describe("project workflow (HTTP routes)", () => {
   it("accepts the current revision for every project lifecycle action and returns confirmed entities", async () => {
     const anna = await createMemberRoute("Revision driver");
     let project = await createProjectRoute({ ownerMemberId: anna.id });
+    await addProgressTask(project.id);
     for (const action of [
       "activate",
       "complete",
@@ -321,9 +470,22 @@ describe("project workflow (service layer)", () => {
     handle.close();
   });
 
+  it("rejects direct active creation without an atomic progress path", () => {
+    const anna = createMember(handle.db, "Direct owner");
+    expect(() =>
+      createProjectMutation(handle.db, {
+        title: "Invalid direct active",
+        status: "active",
+        ownerMemberId: anna.id,
+      }),
+    ).toThrow(/executable progress path/);
+    expect(handle.db.select().from(schema.projects).all()).toEqual([]);
+  });
+
   it("re-activates an archived, previously-active project without requiring the driver again", () => {
     const anna = createMember(handle.db, "Anna");
     const project = createProject(handle.db, { title: "Aktiviert", ownerMemberId: anna.id });
+    createTask(handle.db, { title: "Next action", projectId: project.id });
     activateProject(handle.db, project.id);
     archiveProject(handle.db, project.id);
 

@@ -151,6 +151,45 @@ describe("household member create / rename / delete", () => {
     expect(projectRes.json().ownerMemberId).toBeNull();
   });
 
+  it("rejects deleting the driver of an active project", async () => {
+    const member = (await createMember("Aktive Projektleitung")).json();
+    const project = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/projects",
+        payload: { title: "Aktives Projekt", ownerMemberId: member.id },
+      })
+    ).json();
+    await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title: "Nächster Schritt", projectId: project.id },
+    });
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/activate`,
+    });
+
+    const response = await ctx.app.inject({
+      method: "DELETE",
+      url: `/api/members/${member.id}`,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({
+      code: "member_active_projects_conflict",
+      details: { memberId: member.id, projectIds: [project.id] },
+    });
+    expect(
+      (
+        await ctx.app.inject({
+          method: "GET",
+          url: `/api/projects/${project.id}`,
+        })
+      ).json().ownerMemberId,
+    ).toBe(member.id);
+  });
+
   it("deletes a member who owns a task, nulling the task's owner but keeping the task", async () => {
     const member = (await createMember("Aufgaben-Besitzer")).json();
     const task = (
@@ -262,7 +301,7 @@ describe("household member deletion against seeded, referenced sample data", () 
     await closeTestContext(ctx);
   });
 
-  it("deletes every seeded member, even though all of them own/create projects and tasks", async () => {
+  it("deletes every seeded member after parking their active projects, preserving all work", async () => {
     const membersBefore = (await ctx.app.inject({ method: "GET", url: "/api/members" })).json() as Array<{
       id: number;
       name: string;
@@ -271,12 +310,23 @@ describe("household member deletion against seeded, referenced sample data", () 
 
     const projectsBefore = (
       await ctx.app.inject({ method: "GET", url: "/api/projects" })
-    ).json() as Array<{ id: number }>;
+    ).json() as Array<{ id: number; revision: number; status: string }>;
     const tasksBefore = (
       await ctx.app.inject({ method: "GET", url: "/api/search" })
     ).json() as Array<{ id: number }>;
     expect(projectsBefore.length).toBeGreaterThan(0);
     expect(tasksBefore.length).toBeGreaterThan(0);
+
+    for (const project of projectsBefore.filter(
+      (candidate) => candidate.status === "active",
+    )) {
+      const response = await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${project.id}/return-to-backlog`,
+        payload: { expectedRevision: project.revision },
+      });
+      expect(response.statusCode).toBe(200);
+    }
 
     for (const member of membersBefore) {
       const res = await ctx.app.inject({ method: "DELETE", url: `/api/members/${member.id}` });

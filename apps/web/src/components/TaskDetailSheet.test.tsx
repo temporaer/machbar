@@ -1091,7 +1091,7 @@ describe("TaskDetailSheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.promoteTaskToProject).toHaveBeenCalledWith(56, {
-        status: "active",
+        status: "backlog",
         expectedRevision: 1,
       }),
     );

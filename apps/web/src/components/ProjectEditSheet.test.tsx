@@ -5,7 +5,13 @@ import { renderWithProviders } from "../test/testUtils";
 import { ProjectEditSheet } from "./ProjectEditSheet";
 import { api } from "../lib/api";
 import type { ProjectDetail } from "../lib/api";
-import { makeCriterion, makeMember, makeProject, makeTag } from "../test/fixtures";
+import {
+  makeCriterion,
+  makeMember,
+  makeProject,
+  makeTag,
+  makeTask,
+} from "../test/fixtures";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -37,6 +43,81 @@ describe("ProjectEditSheet", () => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getTags.mockResolvedValue([makeTag({ id: 10, name: "büro" })]);
+  });
+
+  it("routes incomplete project completion to the existing criteria editor", async () => {
+    const project = makeProjectDetail({
+      id: 42,
+      status: "active",
+      availableActions: ["complete"],
+      acceptanceCriteria: [
+        makeCriterion({ id: 9, projectId: 42, text: "Wände gestrichen", checked: false }),
+      ],
+    });
+    renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Abschließen" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Vor dem Abschluss müssen alle verbleibenden Kriterien",
+    );
+    expect(screen.getByDisplayValue("Wände gestrichen")).toBeInTheDocument();
+    expect(mockedApi.completeProject).not.toHaveBeenCalled();
+  });
+
+  it("routes an unready reopen to progress preparation", async () => {
+    const project = makeProjectDetail({
+      id: 43,
+      status: "completed",
+      ownerMemberId: 1,
+      availableActions: ["reopen"],
+      activationReadiness: {
+        ready: false,
+        hasDriver: true,
+        hasViableProgressPath: false,
+        hasHealthyFutureWaiting: false,
+      },
+    });
+    renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Wieder öffnen" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Füge zuerst einen ausführbaren nächsten Schritt hinzu",
+    );
+    expect(mockedApi.reopenProject).not.toHaveBeenCalled();
+  });
+
+  it("collects a missing driver before reopening", async () => {
+    const project = makeProjectDetail({
+      id: 44,
+      status: "completed",
+      ownerMemberId: null,
+      availableActions: ["reopen"],
+      nextAction: makeTask({ projectId: 44 }),
+      activationReadiness: {
+        ready: false,
+        hasDriver: false,
+        hasViableProgressPath: true,
+        hasHealthyFutureWaiting: false,
+      },
+    });
+    mockedApi.reopenProject.mockResolvedValue({
+      ...project,
+      status: "active",
+      ownerMemberId: 1,
+    });
+    renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Wieder öffnen" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Mira" }),
+    );
+
+    expect(mockedApi.reopenProject).toHaveBeenCalledWith(44, {
+      expectedRevision: 1,
+      ownerMemberId: 1,
+    });
   });
 
   it("speichert den Titel ausschließlich über dessen lokalen Speichern-Button", async () => {

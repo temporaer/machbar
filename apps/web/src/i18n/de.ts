@@ -1,9 +1,6 @@
 import type {
   ApiErrorCode,
   ProjectStatus,
-  RefinementActionCode,
-  RefinementBlockingReason,
-  RefinementIssueCode,
   StuckReason,
   TaskSize,
   TaskStatus,
@@ -138,7 +135,6 @@ const extra = {
   chooseDate: "Datum im Kalender wählen",
   dateInputPlaceholder: "z. B. morgen, Freitag, KW 36, 2w",
   invalidDate: "Datum nicht erkannt",
-  stuckProjects: "Festgefahrene Projekte",
   repairAction: "Reparaturvorschlag",
   stuckProjectHeading: "Dieses Projekt ist festgefahren",
   stuckRepairLabels: {
@@ -480,26 +476,52 @@ const extra = {
   resetFilter: "Filter zurücksetzen",
   filteredBy: "Gefiltert nach",
 
-  clarificationNeeds: "Klärungsbedarf",
-  clarificationNeedsHint: "Diese Dinge brauchen Klärung. Behebe jeweils den nächsten konkreten Punkt.",
-  clarificationNeedsEmpty: "Gerade gibt es keinen Klärungsbedarf.",
   effortGuide: "Aufwand überblicken",
   effortGuideHint: "S = kurzer Handgriff · M = normale Aufgabe · L = längerer Block · XL = wahrscheinlich zerlegen · ohne Aufwand = noch nicht geschätzt",
 
+  reviewTitle: "Review",
+  reviewHint:
+    "Entscheide bewusst, was weiter aktiv bleibt, vorbereitet, geparkt oder beendet wird.",
+  reviewEmpty: "Alles ist bewusst entschieden. Es gibt gerade nichts zu prüfen.",
+  reviewPrimaryQueue: "Entscheidungen",
+  reviewPlanningTools: "Optionale Planungswerkzeuge",
+  reviewPlanningToolsHint:
+    "Aufwand und Verteilung prüfen, wenn das für die Planung hilfreich ist.",
+  reviewOpenDetails: "Details öffnen",
+  reviewActionSetFollowup: "Wiedervorlage setzen",
+  reviewActionResolveBlocker: "Blockierung klären",
+  reviewKeep: "So beibehalten",
+  reviewStart: "Starten",
+  reviewBacklog: "Im Backlog lassen",
+  reviewSomeday: "Irgendwann lassen",
+  reviewArchive: "Archivieren",
+  reviewCancel: "Verwerfen",
+  reviewCategoryStructure: "Fortschritt ermöglichen",
+  reviewCategoryCompletion: "Ergebnis prüfen",
+  reviewCategoryRoutine: "Bewusst bestätigen",
+  reviewCategoryWaiting: "Warten klären",
+  reviewReasonMissingDriver: "Dem aktiven Projekt fehlt eine verantwortliche Person.",
+  reviewReasonNoProgressPath: "Das Projekt hat keinen ausführbaren nächsten Schritt oder gesunden Wartepfad.",
+  reviewReasonCompletion: "Alle Schritte sind beendet; das Ergebnis braucht eine bewusste Abschlussentscheidung.",
+  reviewReasonWaiting: "Der Wartepfad braucht eine künftige Wiedervorlage.",
+  reviewReasonBlocked: "Die Blockierung hat keinen erkennbaren Weg nach vorn.",
+  reviewReasonAge: "Diese Arbeit wurde länger nicht bewusst bestätigt.",
+  reviewReasonGeneric: "Der aktuelle Zustand braucht eine bewusste Entscheidung.",
+  reviewAcknowledged: "Für jetzt bestätigt",
+
+  allTitle: "Alles",
+  allHint:
+    "Vollständiger Bestand aller Projekte und eigenständigen Aufgaben. Projektaufgaben liegen im jeweiligen Projekt.",
+  allProjectsHeading: "Projekte",
+  allStandaloneTasksHeading: "Eigenständige Aufgaben",
+  allMatchingTasksHeading: "Passende Aufgaben",
+  allEmpty: "Keine passenden Projekte oder Aufgaben.",
+
   // --- Project clarification -------------------------------------------
-  backlogReview: "Backlog prüfen",
-  refinement: "Arbeit klären",
-  backlogReviewHint: "Entscheide bei noch nicht aktiven Projekten: anfangen, im Backlog lassen, vorbereiten oder archivieren.",
-  backlogReviewEmpty: "Keine Projekte unter „Später / noch nicht aktiv“.",
   activateStory: "Aktiv machen",
-  activateAnyway: "Trotzdem aktiv machen",
-  activationPreparation: "Aktivierung vorbereiten",
-  activationPreparationHint:
-    "Prüfe kurz, ob das Projekt startklar genug ist. Nur eine verantwortliche Person ist Pflicht.",
-  activationDriverRequired:
-    "Eine verantwortliche Person ist für aktive Projekte erforderlich.",
-  activationAdvisoryHeading: "Optional vor dem Start",
-  activationAdvisoryReady: "Ergebnis und nächster Schritt sind bereits vorbereitet.",
+  activationProgressRequired:
+    "Füge zuerst einen ausführbaren nächsten Schritt hinzu oder plane bewusst einen gesunden Wartepfad.",
+  activationReadyHint: "Das Projekt ist startklar. Starte es mit einer eigenen Entscheidung.",
   driver: "Verantwortlich",
   assignDriver: "Verantwortliche Person zuweisen",
   assignDriverToActivateHint: "Für die Aktivierung muss zuerst eine verantwortliche Person zugewiesen werden.",
@@ -541,6 +563,8 @@ const extra = {
   addCriterion: "Punkt hinzufügen",
   addCriterionPlaceholder: "Erledigt, wenn …",
   removeCriterion: "Kriterium entfernen",
+  completionCriteriaRequired:
+    "Vor dem Abschluss müssen alle verbleibenden Kriterien geprüft, bearbeitet oder entfernt werden.",
   moveCriterionUp: "Kriterium nach oben",
   moveCriterionDown: "Kriterium nach unten",
   noCriteria: "Noch nicht festgelegt, wann das Projekt erledigt ist.",
@@ -731,90 +755,6 @@ const extra = {
     criterionRemoved: "hat ein Ergebniskriterium entfernt",
   },
 
-  refinementIssueLabels: {
-    missing_driver: "Verantwortliche Person fehlt",
-    missing_outcome: "Ergebnis noch unklar",
-    missing_next_action: "Kein nächster Schritt",
-    needs_clarification: "Aufgabe braucht Klärung",
-    unassigned_actionable: "Ohne Zuständigkeit",
-    waiting_without_followup: "Wartet ohne Wiedervorlage",
-    followup_due: "Nachhaken fällig",
-    blocked_without_clear_path: "Blockierende Voraussetzung unklar",
-    due_without_plan: "Fällig, aber nicht machbar",
-    scheduled_in_past: "Planung überfällig",
-    too_large_without_children: "Zu groß — bitte aufteilen",
-    completion_review: "Bereit zum Abschließen",
-  } satisfies Record<RefinementIssueCode, string>,
-  refinementIssueExplanations: {
-    missing_driver:
-      "Das Projekt braucht eine Person, die den Überblick behält.",
-    missing_outcome:
-      "Es fehlt mindestens ein konkreter Punkt unter „Erledigt, wenn …“.",
-    missing_next_action:
-      "Es gibt keine geklärte, machbare Aufgabe, mit der es weitergehen kann.",
-    needs_clarification:
-      "Die Aufgabe wurde erfasst, ist aber noch nicht als nächster Schritt geklärt.",
-    unassigned_actionable:
-      "Die machbare Aufgabe ist noch keiner Person zugeordnet.",
-    waiting_without_followup:
-      "Ohne Wiedervorlage kann diese wartende Aufgabe leicht vergessen werden.",
-    followup_due:
-      "Die Wiedervorlage ist erreicht. Jetzt nachhaken oder die Aufgabe wieder machbar machen.",
-    blocked_without_clear_path:
-      "Eine vorausgesetzte Aufgabe ist noch nicht machbar oder sinnvoll terminiert.",
-    due_without_plan:
-      "Der Termin rückt näher, aber es ist keine offene Aufgabe geplant.",
-    scheduled_in_past:
-      "Der geplante Termin ist vorbei und die Aufgabe noch offen.",
-    too_large_without_children:
-      "Diese XL-Aufgabe hat noch keine offenen Teilaufgaben.",
-    completion_review:
-      "Alle vorhandenen Aufgaben sind erledigt oder verworfen.",
-  } satisfies Record<RefinementIssueCode, string>,
-  refinementActionLabels: {
-    assign_driver: "Verantwortliche Person setzen",
-    add_outcome: "Ergebnis ergänzen",
-    add_next_action: "Nächsten Schritt hinzufügen",
-    clarify_task: "Aufgabe klären",
-    assign_task: "Person zuweisen",
-    set_followup: "Wiedervorlage setzen",
-    follow_up: "Nachhaken",
-    resolve_blocker: "Blockierende Aufgabe prüfen",
-    plan_task: "Aufgabe planen",
-    add_child: "Teilaufgabe hinzufügen",
-    review_completion: "Projekt prüfen",
-  } satisfies Record<RefinementActionCode, string>,
-  refinementBlockingLabels: {
-    captured: "Blockierende Aufgabe ungeklärt",
-    waiting_without_followup: "Blockierende Aufgabe nicht terminiert",
-    followup_due: "Wiedervorlage der blockierenden Aufgabe ist fällig",
-    someday: "Blockierende Aufgabe nicht machbar",
-    backlog_project: "Blockierende Aufgabe liegt im Backlog",
-    terminal_project: "Blockierende Aufgabe nicht machbar",
-    cycle: "Abhängigkeiten bilden einen Kreis",
-  } satisfies Record<RefinementBlockingReason, string>,
-  refinementBlockingExplanations: {
-    captured: "Diese Aufgabe ist erst erfasst und noch nicht machbar.",
-    waiting_without_followup: "Sie braucht eine zukünftige Wiedervorlage.",
-    followup_due: "Die Wiedervorlage ist erreicht und muss geprüft werden.",
-    someday: "Sie ist derzeit nicht machbar.",
-    backlog_project:
-      "Sie gehört zu einem Projekt, das noch nicht aktiv ist.",
-    terminal_project:
-      "Sie gehört zu einem abgeschlossenen oder archivierten Projekt.",
-    cycle: "Die Abhängigkeiten müssen dort geprüft werden.",
-  } satisfies Record<RefinementBlockingReason, string>,
-  refinementDependencyDirect: (task: string, target: string) =>
-    `„${task}“ wartet auf „${target}“.`,
-  refinementDependencyChain: (task: string, target: string) =>
-    `Die Voraussetzungskette von „${task}“ führt zu „${target}“.`,
-  refinementClarifyTarget: (title: string) => `${title} klären`,
-  refinementFollowUpTarget: (title: string) =>
-    `Wiedervorlage für ${title} setzen`,
-  refinementDependenciesTarget: (title: string) =>
-    `Abhängigkeiten von ${title} prüfen`,
-  refinementInspectTarget: (title: string) => `${title} prüfen`,
-
   apiErrorMessages: {
     contribution_query_invalid:
       "Die Zeitzone für den Punkteverlauf ist ungültig.",
@@ -837,6 +777,8 @@ const extra = {
     internal_error: "Ein unerwarteter Fehler ist aufgetreten.",
     identifier_invalid: "Die angegebene ID ist ungültig.",
     malformed_request: "Die Anfrage konnte nicht verarbeitet werden.",
+    member_active_projects_conflict:
+      "Weise die aktiven Projekte dieser Person neu zu oder lege sie zurück, bevor du sie löschst.",
     member_name_conflict: "Dieser Personenname ist bereits vergeben.",
     member_name_required: "Bitte gib einen Namen ein.",
     member_not_found: "Die Person wurde nicht gefunden.",
@@ -861,6 +803,10 @@ const extra = {
       "Die verantwortliche Person kann in diesem Projektstatus nicht entfernt werden.",
     project_driver_required:
       "Das Projekt braucht zuerst eine verantwortliche Person.",
+    project_activation_not_ready:
+      "Füge vor dem Start einen ausführbaren nächsten Schritt oder einen gesunden Wartepfad hinzu.",
+    project_completion_criteria_incomplete:
+      "Prüfe, bearbeite oder entferne vor dem Abschluss alle offenen Kriterien.",
     project_not_found: "Das Projekt wurde nicht gefunden.",
     project_title_required: "Bitte gib einen Projekttitel ein.",
     project_transition_invalid:

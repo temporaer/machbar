@@ -3,6 +3,7 @@ import type {
   Dependency,
   InheritanceMode,
   Project as SharedProject,
+  ProjectActivationReadiness,
   ProjectStatus,
   StuckReason,
   Tag,
@@ -29,12 +30,14 @@ import {
   type BlockerPathDiagnosis,
   type TaskBlockerAnalysis,
 } from "./blockers.js";
+import { evaluateProjectActivationReadiness } from "./projectReadiness.js";
 
 export interface ProjectRecord extends SharedProject {
   /** Workflow actions currently legal for this project's status (see
    * `availableProjectWorkflowActions` in `domain/mutations.ts`); not part
    * of the shared `Project` contract, purely an API-response convenience. */
   availableActions: ProjectWorkflowAction[];
+  activationReadiness: ProjectActivationReadiness;
 }
 
 export interface TaskRecord extends SharedTask {}
@@ -75,6 +78,7 @@ interface RawTask {
   reminderAt: string | null;
   createdAt: string;
   updatedAt: string;
+  reviewedAt: string | null;
 }
 
 interface RawProject {
@@ -87,6 +91,9 @@ interface RawProject {
   dueDate: string | null;
   scheduledDate: string | null;
   position: number;
+  createdAt: string;
+  updatedAt: string;
+  reviewedAt: string | null;
 }
 
 function stuckReasonForDiagnoses(
@@ -127,18 +134,22 @@ export class Graph {
   readonly childrenByParent = new Map<number | null, TaskRecord[]>();
   readonly rootsByProject = new Map<number | null, TaskRecord[]>();
   private readonly stuckReasonByProject: Map<number, StuckReason>;
-  private readonly nextActionIdByProject: Map<number, number>;
+  private readonly nextActionIdsByProject: Map<number, number[]>;
   private readonly blockerAnalysisByTask = new Map<
     number,
     TaskBlockerAnalysis
   >();
+  private readonly activationReadinessByProject = new Map<
+    number,
+    ProjectActivationReadiness
+  >();
 
   private constructor(
     stuckReasonByProject: Map<number, StuckReason>,
-    nextActionIdByProject: Map<number, number>,
+    nextActionIdsByProject: Map<number, number[]>,
   ) {
     this.stuckReasonByProject = stuckReasonByProject;
-    this.nextActionIdByProject = nextActionIdByProject;
+    this.nextActionIdsByProject = nextActionIdsByProject;
   }
 
   static load(
@@ -149,8 +160,8 @@ export class Graph {
     // --- SQL/CTE-computed derivations (repo layer) ---------------------
     const effectiveOwners = getEffectiveOwners(db);
     const effectiveTagIdsByTask = getEffectiveTagIds(db);
-    const nextActionIdByProject = getNextActionTaskIdsByProject(db);
-    const graph = new Graph(new Map(), nextActionIdByProject);
+    const nextActionIdsByProject = getNextActionTaskIdsByProject(db);
+    const graph = new Graph(new Map(), nextActionIdsByProject);
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
     const rawProjects = db.select().from(schema.projects).all() as RawProject[];
@@ -266,6 +277,26 @@ export class Graph {
     for (const [taskId, analysis] of blockerAnalysis) {
       graph.blockerAnalysisByTask.set(taskId, analysis);
     }
+    for (const project of rawProjects) {
+      const activationStatuses = new Map(projectStatuses);
+      activationStatuses.set(project.id, "active");
+      const activationBlockers =
+        project.status === "active"
+          ? blockerAnalysis
+          : analyzeTaskBlockers(blockerInputs, activationStatuses, today);
+      graph.activationReadinessByProject.set(
+        project.id,
+        evaluateProjectActivationReadiness({
+          ownerMemberId: project.ownerMemberId,
+          candidateTaskIds: nextActionIdsByProject.get(project.id) ?? [],
+          projectTaskIds: rawTasks
+            .filter((task) => task.projectId === project.id)
+            .map((task) => task.id),
+          blockerAnalysisByTask: activationBlockers,
+          today,
+        }),
+      );
+    }
 
     for (const p of rawProjects) {
       graph.projectsById.set(p.id, {
@@ -278,6 +309,9 @@ export class Graph {
         dueDate: p.dueDate,
         scheduledDate: p.scheduledDate,
         position: p.position,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+        reviewedAt: p.reviewedAt,
         tags: dedupeTags(projectTagsByProject.get(p.id) ?? []),
         effectiveTags: dedupeTags(projectTagsByProject.get(p.id) ?? []),
         effectiveAreaTags: dedupeTags(
@@ -288,6 +322,7 @@ export class Graph {
         primaryAreaTag: null,
         acceptanceCriteria: criteriaByProject.get(p.id) ?? [],
         availableActions: availableProjectWorkflowActions(p.status),
+        activationReadiness: graph.activationReadinessByProject.get(p.id)!,
       });
     }
 
@@ -392,6 +427,7 @@ export class Graph {
         reminderAt: raw.reminderAt,
         createdAt: raw.createdAt,
         updatedAt: raw.updatedAt,
+        reviewedAt: raw.reviewedAt,
         effectiveOwnerId,
         effectiveOwnerSource,
         effectiveTags,
@@ -499,9 +535,39 @@ export class Graph {
   }
 
   nextActionFor(projectId: number): TaskRecord | null {
-    const id = this.nextActionIdByProject.get(projectId);
+    const id = this.nextActionIdsByProject.get(projectId)?.[0];
     if (id === undefined) return null;
     return this.tasksById.get(id) ?? null;
+  }
+
+  nextActionCandidatesFor(projectId: number): TaskRecord[] {
+    return (this.nextActionIdsByProject.get(projectId) ?? [])
+      .map((id) => this.tasksById.get(id))
+      .filter((task): task is TaskRecord => task !== undefined);
+  }
+
+  todayNextActionsFor(
+    projectId: number,
+    selection:
+      | { scope: "mine"; memberId: number }
+      | { scope: "all" },
+  ): TaskRecord[] {
+    const candidates = this.nextActionCandidatesFor(projectId);
+    if (selection.scope === "mine") {
+      const selected = candidates.find(
+        (task) =>
+          task.effectiveOwnerId === selection.memberId ||
+          task.effectiveOwnerId === null,
+      );
+      return selected ? [selected] : [];
+    }
+
+    const seenLanes = new Set<number | null>();
+    return candidates.filter((task) => {
+      if (seenLanes.has(task.effectiveOwnerId)) return false;
+      seenLanes.add(task.effectiveOwnerId);
+      return true;
+    });
   }
 
   stuckReasonFor(projectId: number): StuckReason | null {

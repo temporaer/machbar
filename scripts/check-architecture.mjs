@@ -16,6 +16,7 @@ const TASK_MUTATIONS = new Set([
   "setExternalWait",
   "resolveExternalWait",
   "followUpExternalWait",
+  "acknowledgeTaskReview",
 ]);
 
 const PROJECT_MUTATIONS = new Set([
@@ -25,6 +26,7 @@ const PROJECT_MUTATIONS = new Set([
   "completeProject",
   "reopenProject",
   "archiveProject",
+  "acknowledgeProjectReview",
 ]);
 
 const ALLOWED_MUTATION_CALLERS = new Map([

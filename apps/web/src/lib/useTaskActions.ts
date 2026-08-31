@@ -272,6 +272,23 @@ export function useTaskActions() {
     [update],
   );
 
+  const acknowledgeReview = useCallback(
+    (task: Task) => {
+      const now = new Date().toISOString();
+      const optimistic: Task = {
+        ...task,
+        revision: task.revision + 1,
+        reviewedAt: now,
+      };
+      return runTransition(
+        task,
+        optimistic,
+        () => api.acknowledgeTaskReview(task.id, task.revision),
+      );
+    },
+    [runTransition],
+  );
+
   const runExternalWaitCommand = useCallback(
     (
       task: Pick<Task, "id">,
@@ -405,6 +422,7 @@ export function useTaskActions() {
     clarify,
     update,
     assignOwner,
+    acknowledgeReview,
     setExternalWait,
     resolveExternalWait,
     followUpExternalWait,

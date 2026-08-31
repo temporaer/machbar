@@ -2,8 +2,8 @@ import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
-import { buildRefinementIssues } from "../domain/refinementIssues.js";
 import {
+  acknowledgeProjectReview,
   activateProject,
   addCriterion,
   archiveProject,
@@ -21,6 +21,7 @@ import {
   updateProject,
 } from "../domain/mutations.js";
 import {
+  acknowledgeReviewSchema,
   activateProjectSchema,
   addCriterionSchema,
   appendNotesSchema,
@@ -56,56 +57,17 @@ function projectOrThrow(db: Db, id: number) {
       { projectId: id },
     );
   }
-  const diagnostics = buildRefinementIssues(graph);
-  const issues = diagnostics.issues.filter(
-    (issue) => issue.projectId === id,
-  );
-  const readiness = diagnostics.projects.find(
-    (entry) => entry.projectId === id,
-  );
-  return {
-    graph,
-    project: {
-      ...project,
-      refinementIssues: issues,
-      ...(readiness ? { readiness } : {}),
-    },
-  };
-}
-
-function projectsWithIssues(graph: Graph) {
-  const diagnostics = buildRefinementIssues(graph);
-  const readinessByProjectId = new Map(
-    diagnostics.projects.map((entry) => [entry.projectId, entry]),
-  );
-  return graph.listProjectsWithComputed().map((project) => ({
-    ...project,
-    refinementIssues: diagnostics.issues.filter(
-      (issue) => issue.projectId === project.id,
-    ),
-    ...(readinessByProjectId.has(project.id)
-      ? { readiness: readinessByProjectId.get(project.id) }
-      : {}),
-  }));
+  return { graph, project };
 }
 
 function projectWithIssues(graph: Graph, id: number) {
-  return projectsWithIssues(graph).find((project) => project.id === id) ?? null;
+  return graph.projectWithComputed(id);
 }
 
 export function registerProjectRoutes(app: FastifyInstance, db: Db) {
   app.get("/api/projects", async () => {
     const graph = Graph.load(db);
-    return projectsWithIssues(graph);
-  });
-
-  app.get("/api/projects/stuck", async () => {
-    const graph = Graph.load(db);
-    const issues = buildRefinementIssues(graph).issues;
-    return graph.listStuckProjects().map((project) => ({
-      ...project,
-      refinementIssues: issues.filter((issue) => issue.projectId === project.id),
-    }));
+    return graph.listProjectsWithComputed();
   });
 
   app.get<{ Params: { id: string } }>("/api/projects/:id", async (request) => {
@@ -234,12 +196,13 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     "/api/projects/:id/reopen",
     async (request) => {
       const id = parseId(request.params.id);
-      const body = parseOrThrow(projectLifecycleSchema, request.body ?? {});
+      const body = parseOrThrow(activateProjectSchema, request.body ?? {});
       reopenProject(
         db,
         id,
         { actorMemberId: request.activityActor?.id ?? null },
         body.expectedRevision,
+        body.ownerMemberId,
       );
       const graph = Graph.load(db);
       return projectWithIssues(graph, id);
@@ -327,6 +290,18 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       });
       const graph = Graph.load(db);
       return projectWithIssues(graph, id);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/projects/:id/review",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(acknowledgeReviewSchema, request.body ?? {});
+      acknowledgeProjectReview(db, id, body.expectedRevision, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
+      return projectWithIssues(Graph.load(db), id);
     },
   );
 }

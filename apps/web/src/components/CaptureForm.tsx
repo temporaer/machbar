@@ -90,7 +90,7 @@ export function CaptureForm({
       const project = await api.createProject({
         title: title.trim(),
         ...(notes ? { notes } : {}),
-        status: currentMemberId === null ? "backlog" : "active",
+        status: "backlog",
         ownerMemberId: currentMemberId,
         ...(showDueDate ? { dueDate } : {}),
       });

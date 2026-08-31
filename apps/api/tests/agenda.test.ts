@@ -152,6 +152,15 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Noch zu entscheiden")).toEqual([]);
   });
 
+  it("excludes standalone someday work even when it has a due date", async () => {
+    await createTask({
+      title: "Irgendwann fällig",
+      status: "someday",
+      dueDate: today,
+    });
+    expect(await bucketsContaining("Irgendwann fällig")).toEqual([]);
+  });
+
   it("does not treat future-scheduled assigned work as unscheduled", async () => {
     const ownerRes = await ctx.app.inject({
       method: "POST",
@@ -355,12 +364,19 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
   }
 
   async function createProject(payload: Record<string, unknown>) {
+    const requestedActive = payload.status === "active";
     const res = await ctx.app.inject({
       method: "POST",
       url: "/api/projects",
-      payload,
+      payload: requestedActive ? { ...payload, status: "backlog" } : payload,
     });
-    return res.json();
+    const project = res.json();
+    if (requestedActive) {
+      ctx.handle.sqlite
+        .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+        .run(project.id);
+    }
+    return project;
   }
 
   async function addDependency(taskId: number, dependsOnTaskId: number) {
@@ -534,6 +550,142 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     expect(await bucketsContaining("Gemeinsame blockierte Wiedervorlage", anna.id)).toEqual([
       "revisit",
     ]);
+  });
+
+  it("advances ordinary project work through canonical next-action order", async () => {
+    const anna = await createMember("Anna sequence");
+    const project = await createProject({
+      title: "Sequenced project",
+      status: "active",
+      ownerMemberId: anna.id,
+    });
+    const first = await createTask({
+      title: "First canonical",
+      projectId: project.id,
+    });
+    await createTask({
+      title: "Second canonical",
+      projectId: project.id,
+    });
+
+    expect(await bucketsContaining("First canonical", anna.id)).toEqual([
+      "unscheduled",
+    ]);
+    expect(await bucketsContaining("Second canonical", anna.id)).toEqual([]);
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${first.id}/complete`,
+      payload: {},
+    });
+    expect(await bucketsContaining("Second canonical", anna.id)).toEqual([
+      "unscheduled",
+    ]);
+  });
+
+  it("selects the first canonical project candidate in the member or shared lane", async () => {
+    const anna = await createMember("Anna lanes");
+    const ben = await createMember("Ben lanes");
+    const project = await createProject({
+      title: "Owned lanes",
+      status: "active",
+      ownerMemberId: anna.id,
+    });
+    await createTask({
+      title: "Ben first",
+      projectId: project.id,
+      ownerMemberId: ben.id,
+      ownerInheritanceMode: "explicit",
+    });
+    await createTask({
+      title: "Anna second",
+      projectId: project.id,
+      ownerMemberId: anna.id,
+      ownerInheritanceMode: "explicit",
+    });
+    await createTask({
+      title: "Shared third",
+      projectId: project.id,
+      ownerInheritanceMode: "none",
+    });
+
+    expect(await bucketsContaining("Ben first", anna.id)).toEqual([]);
+    expect(await bucketsContaining("Anna second", anna.id)).toEqual([
+      "unscheduled",
+    ]);
+    expect(await bucketsContaining("Shared third", anna.id)).toEqual([]);
+  });
+
+  it("in all scope keeps one canonical candidate per effective-owner/shared lane", async () => {
+    const anna = await createMember("Anna all");
+    const ben = await createMember("Ben all");
+    const project = await createProject({
+      title: "Parallel lanes",
+      status: "active",
+      ownerMemberId: anna.id,
+    });
+    for (const [title, ownerMemberId, ownerInheritanceMode] of [
+      ["Anna 1", anna.id, "explicit"],
+      ["Anna 2", anna.id, "explicit"],
+      ["Ben 1", ben.id, "explicit"],
+      ["Shared 1", null, "none"],
+      ["Shared 2", null, "none"],
+    ] as const) {
+      await createTask({
+        title,
+        projectId: project.id,
+        ownerMemberId,
+        ownerInheritanceMode,
+      });
+    }
+
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: `/api/agenda/today?scope=all&date=${today}`,
+    });
+    const agenda = response.json();
+    const ordinaryTitles = [...agenda.shared, ...agenda.unscheduled].map(
+      (task: { title: string }) => task.title,
+    );
+    expect(ordinaryTitles).toEqual(
+      expect.arrayContaining(["Anna 1", "Ben 1", "Shared 1"]),
+    );
+    expect(ordinaryTitles).not.toEqual(
+      expect.arrayContaining(["Anna 2", "Shared 2"]),
+    );
+  });
+
+  it("keeps explicit date signals independent of structural selection with no duplicates or review-age effect", async () => {
+    const anna = await createMember("Anna dates");
+    const project = await createProject({
+      title: "Dated project tasks",
+      status: "active",
+      ownerMemberId: anna.id,
+    });
+    await createTask({ title: "Ordinary selected", projectId: project.id });
+    const dated = await createTask({
+      title: "Later but due",
+      projectId: project.id,
+      dueDate: today,
+    });
+    ctx.handle.sqlite
+      .prepare(
+        "UPDATE projects SET reviewed_at = '2099-01-01T00:00:00.000Z' WHERE id = ?",
+      )
+      .run(project.id);
+    ctx.handle.sqlite
+      .prepare(
+        "UPDATE tasks SET reviewed_at = '2099-01-01T00:00:00.000Z' WHERE id = ?",
+      )
+      .run(dated.id);
+
+    expect(await bucketsContaining("Later but due", anna.id)).toEqual([
+      "dueToday",
+    ]);
+    const agenda = (await getAgenda(anna.id)).json();
+    const ids = bucketKeys.flatMap((key) =>
+      agenda[key].map((task: { id: number }) => task.id),
+    );
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it("rejects a non-positive-integer memberId with a structured 400", async () => {

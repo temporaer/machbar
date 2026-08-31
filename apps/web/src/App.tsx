@@ -13,10 +13,8 @@ import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { WaitingPage } from "./pages/WaitingPage";
 import { MorePage } from "./pages/MorePage";
-import { SearchPage } from "./pages/SearchPage";
-import { StuckPage } from "./pages/StuckPage";
-import { BacklogReviewPage } from "./pages/BacklogReviewPage";
-import { RefinementPage } from "./pages/RefinementPage";
+import { AllPage } from "./pages/AllPage";
+import { ReviewPage } from "./pages/ReviewPage";
 import { TagsPage } from "./pages/TagsPage";
 import { SharePage } from "./pages/SharePage";
 import { TaskDeepLinkPage } from "./pages/TaskDeepLinkPage";
@@ -64,10 +62,8 @@ function Shell() {
             <Route path="/projects/:id" element={<ProjectDetailPage />} />
             <Route path="/waiting" element={<WaitingPage />} />
             <Route path="/more" element={<MorePage />} />
-            <Route path="/more/search" element={<SearchPage />} />
-            <Route path="/more/stuck" element={<StuckPage />} />
-            <Route path="/more/backlog" element={<BacklogReviewPage />} />
-            <Route path="/more/refinement" element={<RefinementPage />} />
+            <Route path="/more/all" element={<AllPage />} />
+            <Route path="/more/review" element={<ReviewPage />} />
             <Route path="/more/tags" element={<TagsPage />} />
             <Route path="/more/activity" element={<ActivityPage />} />
             <Route

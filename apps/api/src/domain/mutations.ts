@@ -23,6 +23,7 @@ import {
 } from "../repo/index.js";
 import { addCalendarDays, isIsoCalendarDate } from "./calendarDate.js";
 import { enqueueNotification } from "../notifications/outbox.js";
+import { getProjectActivationReadiness } from "./projectReadiness.js";
 
 export interface MutationContext {
   actorMemberId?: number | null;
@@ -123,6 +124,32 @@ function effectiveOwnerId(db: Db, taskId: number): number | null {
 
 function projectHasNextAction(db: Db, projectId: number): boolean {
   return getNextActionTaskIdsByProject(db).has(projectId);
+}
+
+function assertProjectActivationReady(
+  db: Db,
+  projectId: number,
+  ownerMemberId: number | null,
+): void {
+  if (ownerMemberId === null) {
+    throw AppError.badRequest(
+      "project_driver_required",
+      "A project driver is required before the project can be activated.",
+      { projectId },
+    );
+  }
+  const readiness = getProjectActivationReadiness(
+    db,
+    projectId,
+    ownerMemberId,
+  );
+  if (!readiness.ready) {
+    throw AppError.conflict(
+      "project_activation_not_ready",
+      "An active project needs an executable progress path or a healthy future waiting point.",
+      { projectId, ...readiness },
+    );
+  }
 }
 
 function projectHasTaskPlan(db: Db, projectId: number): boolean {
@@ -275,11 +302,12 @@ export function renameMember(db: Db, id: number, name: string) {
 }
 
 /**
- * Deletes a household member. Any project/task references to the member
- * (as owner, and for tasks also as creator) are cleared to `null` first, in
- * the same transaction as the deletion itself, so projects and tasks are
- * always preserved — deleting a member never cascades into deleting the
- * work they were associated with. For tasks whose owner-inheritance mode is
+ * Deletes a household member unless they still drive an active project.
+ * Other project/task references to the member (as owner, and for tasks also
+ * as creator) are cleared to `null` first, in the same transaction as the
+ * deletion itself, so projects and tasks are always preserved — deleting a
+ * member never cascades into deleting their work. For tasks whose
+ * owner-inheritance mode is
  * `"inherit"`, the (now-unused) `ownerMemberId` column is cleared too, but
  * their effective owner keeps resolving from the project as before; for
  * `"explicit"` tasks the explicit owner simply becomes unset, which is a
@@ -291,6 +319,27 @@ export function deleteMember(db: Db, id: number) {
     const txDb = tx as unknown as Db;
     getMemberOrThrow(txDb, id);
     assertMemberNotOidcManaged(txDb, id);
+    const activeProjects = tx
+      .select({ id: schema.projects.id, title: schema.projects.title })
+      .from(schema.projects)
+      .where(
+        and(
+          eq(schema.projects.ownerMemberId, id),
+          eq(schema.projects.status, "active"),
+        ),
+      )
+      .all();
+    if (activeProjects.length > 0) {
+      throw AppError.conflict(
+        "member_active_projects_conflict",
+        "Reassign or park active projects before deleting their driver.",
+        {
+          memberId: id,
+          projectIds: activeProjects.map((project) => project.id),
+          projectTitles: activeProjects.map((project) => project.title),
+        },
+      );
+    }
 
     const now = nowIso();
     tx.update(schema.projects)
@@ -506,10 +555,9 @@ export function getProjectOrThrow(db: Db, id: number) {
 }
 
 /**
- * New stories always start in `backlog` unless a status is explicitly
- * requested (used by fixtures/tests and direct API creation) — there is no
- * driver requirement at creation time itself, only when a story is
- * explicitly *activated* via {@link activateProject} (see below).
+ * New stories default to `backlog`. Direct `active` creation goes through
+ * the same readiness invariant as {@link activateProject}; because this
+ * command creates no tasks, an unready active request is rolled back.
  */
 export function createProject(
   db: Db,
@@ -550,7 +598,11 @@ export function createProject(
           .run();
       }
     }
-    const activityEventId = recordActivity(tx as unknown as Db, {
+    const txDb = tx as unknown as Db;
+    if (project.status === "active") {
+      assertProjectActivationReady(txDb, project.id, project.ownerMemberId);
+    }
+    const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_created",
       entityType: "project",
@@ -559,7 +611,7 @@ export function createProject(
       metadata: {},
     });
     enqueueProjectAssignment(
-      tx as unknown as Db,
+      txDb,
       project,
       activityEventId,
       context,
@@ -863,13 +915,7 @@ export function activateProject(
     assertWorkflowAction(project, "activate");
     const ownerMemberId =
       input.ownerMemberId !== undefined ? input.ownerMemberId : project.ownerMemberId;
-    if (ownerMemberId === null) {
-      throw AppError.badRequest(
-        "project_driver_required",
-        "A project driver is required before the project can be activated.",
-        { projectId: id },
-      );
-    }
+    assertProjectActivationReady(txDb, id, ownerMemberId);
     tx.update(schema.projects)
       .set({
         status: "active",
@@ -972,6 +1018,28 @@ export function completeProject(
     const project = getProjectOrThrow(txDb, id);
     assertExpectedRevision("project", id, project.revision, expectedRevision);
     assertWorkflowAction(project, "complete");
+    const criteria = tx
+      .select({
+        id: schema.projectAcceptanceCriteria.id,
+        checked: schema.projectAcceptanceCriteria.checked,
+      })
+      .from(schema.projectAcceptanceCriteria)
+      .where(eq(schema.projectAcceptanceCriteria.projectId, id))
+      .all();
+    const incompleteCriterionIds = criteria
+      .filter((criterion) => !criterion.checked)
+      .map((criterion) => criterion.id);
+    if (incompleteCriterionIds.length > 0) {
+      throw AppError.conflict(
+        "project_completion_criteria_incomplete",
+        "Every acceptance criterion must be checked before completing the project.",
+        {
+          projectId: id,
+          criteriaCount: criteria.length,
+          incompleteCriterionIds,
+        },
+      );
+    }
     tx.update(schema.projects)
       .set({
         status: "completed",
@@ -1004,21 +1072,26 @@ export function completeProject(
   });
 }
 
-/** `completed` -> `active` again. The driver is retained unchanged. */
+/** `completed` -> `active` again, optionally replacing a missing driver atomically. */
 export function reopenProject(
   db: Db,
   id: number,
   context?: MutationContext,
   expectedRevision?: number,
+  ownerMemberId?: number | null,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
     assertExpectedRevision("project", id, project.revision, expectedRevision);
     assertWorkflowAction(project, "reopen");
+    const nextOwnerMemberId =
+      ownerMemberId !== undefined ? ownerMemberId : project.ownerMemberId;
+    assertProjectActivationReady(txDb, id, nextOwnerMemberId);
     tx.update(schema.projects)
       .set({
         status: "active",
+        ownerMemberId: nextOwnerMemberId,
         revision: sql`${schema.projects.revision} + 1`,
         updatedAt: nowIso(),
       })
@@ -2044,6 +2117,9 @@ export function promoteTaskToProject(
         .where(eq(schema.tasks.parentTaskId, taskId))
         .run();
     }
+    if (input.status === "active") {
+      assertProjectActivationReady(txDb, project.id, ownerMemberId);
+    }
 
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
@@ -2075,6 +2151,69 @@ export function promoteTaskToProject(
     enqueueProjectAssignment(txDb, project, activityEventId, context);
     tx.delete(schema.tasks).where(eq(schema.tasks.id, taskId)).run();
     return project;
+  });
+}
+
+export function acknowledgeProjectReview(
+  db: Db,
+  id: number,
+  expectedRevision?: number,
+  context?: MutationContext,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const project = getProjectOrThrow(txDb, id);
+    assertExpectedRevision("project", id, project.revision, expectedRevision);
+    const updated = tx
+      .update(schema.projects)
+      .set({
+        reviewedAt: nowIso(),
+        revision: sql`${schema.projects.revision} + 1`,
+      })
+      .where(eq(schema.projects.id, id))
+      .returning()
+      .get();
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "project_updated",
+      entityType: "project",
+      entityTitle: updated.title,
+      projectId: id,
+      metadata: { changedFields: ["reviewedAt"] },
+    });
+    return updated;
+  });
+}
+
+export function acknowledgeTaskReview(
+  db: Db,
+  id: number,
+  expectedRevision?: number,
+  context?: MutationContext,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, id);
+    assertExpectedRevision("task", id, task.revision, expectedRevision);
+    const updated = tx
+      .update(schema.tasks)
+      .set({
+        reviewedAt: nowIso(),
+        revision: sql`${schema.tasks.revision} + 1`,
+      })
+      .where(eq(schema.tasks.id, id))
+      .returning()
+      .get();
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_updated",
+      entityType: "task",
+      entityTitle: updated.title,
+      taskId: id,
+      projectId: updated.projectId,
+      metadata: { changedFields: ["reviewedAt"] },
+    });
+    return updated;
   });
 }
 

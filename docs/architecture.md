@@ -122,10 +122,11 @@ Projects additionally carry:
 | Field | Computed as |
 |-------|-------------|
 | `availableActions` | Workflow transitions legal for the current status (see §6) — the single source of truth for which buttons the UI renders |
+| `activationReadiness` | Canonical driver, executable-progress, and healthy-future-waiting evaluation used by activation UI |
 | `notes` | Free-form project context, independent from completion criteria |
 | `acceptanceCriteria` | Ordered “Erledigt, wenn …” rows with `checked` state |
 | `openCount` / `doneCount` | Task rollups |
-| `nextAction` | First actionable, unblocked task |
+| `nextAction` | First actionable, unblocked task in canonical outline order |
 | `stuckReason` | Diagnosis for `active` projects only (see §6) |
 
 These views are **read-only projections** — they are not stored in SQLite; they are assembled per-request.
@@ -137,13 +138,16 @@ It is member-scoped by default (including shared/unassigned work), while the
 explicit `scope=all` query returns the same compiled buckets for the complete
 household. The frontend exposes that distinction as a session-scoped
 **Meine | Alle** header toggle.
-Executable work without a `scheduledDate` falls through to the secondary
-`shared` / `unscheduled` buckets and is rendered in the visibly separate
-**Weitere machbare Aufgaben** section. A future deadline does not hide an
-otherwise executable task: once it enters the three-day due-soon window, the
-earlier due bucket wins without duplication. Future-scheduled work, captured
-work, completed/cancelled work, and blocked work without a reached revisit
-stay out.
+Executable standalone work without a `scheduledDate` falls through to the
+secondary `shared` / `unscheduled` buckets. Ordinary unscheduled project work
+enters those buckets only through the canonical selector in
+`nextActionRepo.ts`: member scope chooses the first candidate effectively owned
+by the member or shared, while household scope preserves at most one candidate
+per independent effective-owner/shared lane. A real task deadline or planning
+date remains an execution signal even when that task is not the structural next
+action. The first matching bucket wins, so a task never appears twice.
+Future-scheduled work, captured work, completed/cancelled work, and blocked work
+without a reached revisit stay out.
 
 Active projects have a separate compiled `projects` bucket. A project enters
 Heute seven local calendar days before its `dueDate`, or once its
@@ -280,35 +284,55 @@ Tasks in `done` or `cancelled` are retained in the database and visible in searc
 
 ### Projects
 
-`ProjectStatus`: `backlog → active → completed`, with `archived` reachable from — and escapable back to — `backlog`.
+`ProjectStatus`: `backlog → active → completed`, with `archived` reachable
+from any non-archived state. Completed work reopens to active; archived work
+can either return to backlog or activate directly when ready.
 
 ```
 backlog ──activate──► active ──complete──► completed
-   ▲   │                 │                    │
-   │   │                 └─return_to_backlog──┘ (reopen)
-   │   └──archive──► archived ──unarchive──► backlog
-   └──────────────────────────────────────────┘
+   ▲                    │           reopen ─────┘
+   └────return──────────┘
+   ▲
+archived ──activate──► active
 ```
 
 `availableProjectWorkflowActions()` in `apps/api/src/domain/mutations.ts` is the **single source of truth** for legal transitions and is surfaced on every project response as `availableActions`. Rules:
 
-- `PATCH /api/projects/:id` **refuses status changes** — status only moves through the dedicated workflow endpoints (`/activate`, `/complete`, `/return-to-backlog`, `/archive`, `/unarchive`).
+- `PATCH /api/projects/:id` **refuses status changes** — status only moves
+  through the dedicated workflow endpoints (`/activate`, `/complete`,
+  `/reopen`, `/return-to-backlog`, `/archive`).
 - Nothing auto-completes a story; completion is always an explicit human decision.
+- Acceptance criteria are optional. When none exist, completion is allowed;
+  when one or more exist, every remaining criterion must be checked first.
 - `DELETE /api/projects/:id` permanently removes the project, its tag links,
   and its “Erledigt, wenn …” rows. Existing tasks are preserved and detached
   (`tasks.project_id = NULL`) by the foreign key's `ON DELETE SET NULL`.
 
 ### Responsible-person invariant
 
-Every non-`backlog` project must have a responsible person (`ownerMemberId`):
+Every active project must have a responsible person (`ownerMemberId`) and
+either executable progress or an intentional healthy future-waiting path:
 
 - `POST /api/projects/:id/activate` fails with `project_driver_required`
   unless the project already has a responsible person or one is supplied
   inline (`{"ownerMemberId": n}`).
+- Activation and reopening also fail when the project has neither a canonical
+  executable candidate nor a healthy blocker path with future attention. Every
+  project response exposes that exact domain evaluation as
+  `activationReadiness`, so focused UI collects only the missing driver or next
+  step instead of approximating readiness from display fields.
 - `PATCH /api/projects/:id` with `ownerMemberId: null` fails with
   `project_driver_locked` unless the project is in `backlog`. Reassigning to a
   different member is always allowed. Individual task ownership remains
   independent.
+- Member deletion fails with `member_active_projects_conflict` while that
+  person still drives an active project. The project must be reassigned or
+  returned to backlog first.
+
+Quick project capture creates backlog work and preserves the selected driver.
+Its handoff may add a first action, but Start remains explicit. Active
+task-to-project promotion is subject to the same invariant; promotion preserves
+captured content and descendants rather than manufacturing readiness.
 
 Legacy rows migrated from before the invariant may still be `active` without a
 responsible person; the clarification service flags them urgently.
@@ -361,53 +385,63 @@ and dates.
 
 ---
 
-## 7. Projektklärung, Aufgabenklärung und Klärungsbedarf
+## 7. Review and exhaustive inventory
 
-The two routes under **Mehr** keep their technical paths for compatibility,
-but their product model is lightweight household clarification rather than
-backlog grooming.
+### Derived Review — `/more/review`
 
-`apps/api/src/domain/refinementIssues.ts` is the central service for project
-and task diagnostics. It returns typed issue codes, severity, German
-label/explanation, and one suggested repair action. The same result enriches
-project rows and powers the default **Klärungsbedarf** queue at
-`GET /api/refinement/issues`. It also computes readiness for inactive/active
-projects: responsible person, clear “Erledigt, wenn …” outcome, an executable
-next action, coherent waiting follow-ups, and no urgent issue. Readiness is
-guidance, not a wizard or a second workflow state.
+`apps/api/src/domain/reviewItems.ts` is the single deterministic maintenance
+projection. It derives compact project/task diagnoses from the graph and an
+injected calendar date; there is no Review table or workflow status.
 
-### Project clarification — `/more/backlog`
+Review contains structural decisions: missing project driver or progress path,
+due-without-plan, malformed waiting, broken blocker paths, XL work without
+breakdown, completion review, and age-based reconsideration. It deliberately
+excludes valid shared tasks, absent optional acceptance criteria, Inbox
+captures, reached follow-ups, and past planning dates already owned by Today.
+More's badge is the exact number of current derived items.
 
-Lists technically `backlog` projects as **Später / noch nicht aktiv**
-(`BacklogReviewPage` → `ProjectStoryRow`, compact variant). Every mutation
-flows through `useProjectActions`, preserving revision, error, refresh, and
-optimistic-retention behavior for both metadata and lifecycle changes.
+Nullable `projects.reviewed_at` and `tasks.reviewed_at` record only explicit
+"keep active/parked/later" decisions. Opening an item never acknowledges it,
+and acknowledgement advances the entity revision without changing
+`updated_at`. Ordinary edits naturally postpone review because age uses the
+latest meaningful update or acknowledgement. Active and backlog project age
+also considers descendant activity. The fixed calendar-day leases are 14 days
+for active projects, 30 for backlog projects, and 90 for standalone Someday
+tasks. Healthy future waiting suppresses generic active inactivity.
 
-Row gestures/chips open **targeted popups** rather than navigating away:
+Review decisions execute through `useProjectActions` and `useTaskActions`.
+Expected revisions, optimistic retention, stale conflicts, and refresh remain
+inside those canonical hooks. Focused repair reuses project/task detail,
+`MemberSelectionSheet`, `InlineTaskComposer`, and
+`AcceptanceCriteriaEditor`. The owner/effort matrix and sizing list remain
+available as optional secondary planning tools rather than a separate
+Refinement workflow.
 
-| Chip | Opens |
-|------|-------|
-| Verantwortlich | `MemberSelectionSheet` |
-| Erledigt, wenn … | `StoryCriteriaSheet` (wraps `AcceptanceCriteriaEditor`) |
-| Planen | `PlanDatesSheet` |
-| Bearbeiten | Full project detail page |
-| Archivieren | Direct action |
+### Alles — `/more/all`
 
-**Aktiv machen** surfaces the responsible-person requirement inline and then
-runs through `useProjectActions`.
+Alles evolves the existing Search implementation. It composes `getProjects()`
+with `searchTasks()` and `SearchFilterBar`; it does not introduce another
+storage or indexing model. With no filters, every non-deleted project is a
+first-class entry and standalone task trees cover all lifecycle/blocker states.
+Project descendants are reached through project detail rather than duplicated
+beside the project. Active search/filtering may return a matching nested task
+directly and searches project title/notes as well as tasks.
 
 ### Projects tab — `/projects`
 
 `ProjectsPage` renders the same `ProjectStoryRow` (card variant) for active,
-completed, and archived projects. Backlog inventory is intentionally exclusive
-to `/more/backlog`; a row just returned to backlog may remain only for its
-optimistic retention window. Compact issue badges make missing clarification
-visible without opening a separate planning screen.
+completed, and archived projects. Backlog inventory remains available through
+Alles and appears in Review only when it has a real reconsideration reason; a
+row just returned to backlog may remain on Projects only for its optimistic
+retention window.
 
-- **Right swipe / primary button** runs the status-appropriate next step: `active → abschließen`, `completed → wieder öffnen`, `archived → aktivieren`. Backlog activation is offered on Backlog Review. The button (`.story-row-primary`, `aria-label` = the action) is the explicit non-gesture equivalent and stays available on touch.
+- **Right swipe / primary button** runs the status-appropriate next step: `active → abschließen`, `completed → wieder öffnen`, `archived → aktivieren`. Backlog activation is offered from Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action) is the explicit non-gesture equivalent and stays available on touch.
 - **Left swipe / ⋯** reveals the chip strip: the targeted popups above plus every *remaining* legal transition from the row's `availableActions` (e.g. `In Backlog zurücklegen`, `Archivieren`).
 - The candidate action is always intersected with `availableActions`; `lib/projectWorkflow.ts` mirrors the backend's `workflowActionsByStatus` map (and is reused by the test fixtures) so the UI never offers an illegal step.
-- Activating a story without a driver opens `MemberSelectionSheet` first and then activates **atomically** via `activateProject(id, { ownerMemberId })`.
+- Activation requires a driver plus an executable progress path or intentional
+  healthy future wait. Focused preflight opens `MemberSelectionSheet` or the
+  existing task composer for the missing decision and then uses the canonical
+  project action.
 - Every row shows its status; inside the retention window the same badge shows what just happened (`Aktiviert`, `Abgeschlossen`, `Wieder geöffnet`, `Zurück im Backlog`, `Archiviert`).
 
 #### Filtering and ordering the list
@@ -454,23 +488,10 @@ long press becomes real, so the two mechanics never run at once.
 real structural drag. Both suppression paths are one-shot and reset for the
 next independent pointer sequence.
 
-### Task clarification — `/more/refinement`
+### Optional planning tools
 
-`RefinementPage` defaults to **Klärungsbedarf** cards grouped by operational
-defect: needs clarification, no responsibility, waiting without follow-up,
-follow-up due, blocked, due without a plan, XL without children, or ready to
-complete. The primary action opens the narrowest existing task/project sheet
-over the still-mounted refinement page. Closing it reloads the canonical issue
-projection: an unresolved issue regains focus, while a resolved issue advances
-focus to the next item at the same fresh-list position. This deliberately
-avoids a static queue because one repair can remove several diagnostics or
-change their ordering. A secondary **Details** action always exposes the full
-task sheet or project page; project-detail navigation carries an explicit
-return anchor back to Arbeit klären. The interaction remains
-repair-one-thing-at-a-time, not a mandatory multi-step wizard.
-
-The owner × effort matrix remains collapsed as a secondary view, backed by
-`GET /api/refinement/owners` and `GET /api/refinement/tasks`.
+The owner × effort matrix remains a collapsed secondary view inside Review,
+backed by `GET /api/refinement/owners` and `GET /api/refinement/tasks`.
 
 `RefinementTaskRow` supports:
 
@@ -483,7 +504,7 @@ The owner × effort matrix remains collapsed as a secondary view, backed by
 Task metadata execution and owner-assignment semantics live in the non-React
 `lib/taskMutations.ts`. `useTaskActions` and `useRefinementActions` both use
 that revision-safe executor, but deliberately keep separate optimistic
-projections: normal task lists retain a `Task`, while Refinement retains its
+projections: normal task lists retain a `Task`, while the planning tools retain their
 owner × effort row so regrouping waits until the retention window elapses.
 
 ---
@@ -592,7 +613,7 @@ the moved task, matching the backend contract.
 
 **Optimism and rollback.** `applyMove` renumbers `position` in both affected groups the same way the server's `reindexGroup` does, otherwise the position-sorted render would snap straight back. Position normalization is group bookkeeping and does not advance sibling revisions; the explicitly moved task advances exactly once, so the optimistic tree can carry its deterministic next revision and safely accept another move immediately. The override survives unrelated older refresh responses and drops only when authoritative data reaches that revision. A rejected move restores the previous tree **in place** and shows `Verschieben fehlgeschlagen` plus the server message on that row. A stale rejection refreshes authoritative data and blocks only that stale task until its revision advances; other hierarchy edits remain available.
 
-**Where it is offered.** `TaskOutline` takes an explicit `organizable` prop and only `ProjectDetailPage` passes it: `GET /api/projects/:id` returns `graph.rootsByProject`, the complete stored sibling group. Compiled views (`TodayPage`, `InboxPage`, `SearchPage`) show a filtered slice of tasks from unrelated groups, where a position read off the screen would be applied to the *full* group on the server and silently shuffle rows the user never saw. `outlineRootGroup` is then applied on top as a structural second guard (all roots must share `parentTaskId` **and** `projectId`). Retention ghosts are rendered outside the organize provider, so they get no handle and never shift a drop index.
+**Where it is offered.** `TaskOutline` takes an explicit `organizable` prop and only `ProjectDetailPage` passes it: `GET /api/projects/:id` returns `graph.rootsByProject`, the complete stored sibling group. Compiled views (`TodayPage`, `InboxPage`, `AllPage`) show a filtered slice of tasks from unrelated groups, where a position read off the screen would be applied to the *full* group on the server and silently shuffle rows the user never saw. `outlineRootGroup` is then applied on top as a structural second guard (all roots must share `parentTaskId` **and** `projectId`). Retention ghosts are rendered outside the organize provider, so they get no handle and never shift a drop index.
 
 **Details that are easy to get wrong, and are covered by tests:**
 

@@ -102,7 +102,11 @@ describe("CaptureForm", () => {
 
     await waitFor(() =>
       expect(mockedApi.createProject).toHaveBeenCalledWith(
-        expect.objectContaining({ dueDate: "2026-09-15" }),
+        expect.objectContaining({
+          dueDate: "2026-09-15",
+          status: "backlog",
+          ownerMemberId: 1,
+        }),
       ),
     );
   });

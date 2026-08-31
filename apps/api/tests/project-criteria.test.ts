@@ -247,6 +247,54 @@ describe("project acceptance criteria (HTTP routes)", () => {
       details: { projectId: projectB.id, criterionId },
     });
   });
+
+  it("allows completion with zero criteria but rejects one or more unchecked criteria", async () => {
+      const empty = await createProjectRoute();
+      ctx.handle.sqlite
+        .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+        .run(empty.id);
+      const emptyCompletion = await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${empty.id}/complete`,
+      });
+      expect(emptyCompletion.statusCode).toBe(200);
+
+      const guarded = await createProjectRoute();
+      const withCriterion = (
+        await ctx.app.inject({
+          method: "POST",
+          url: `/api/projects/${guarded.id}/criteria`,
+          payload: { text: "Verified" },
+        })
+      ).json();
+      ctx.handle.sqlite
+        .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+        .run(guarded.id);
+      const rejected = await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${guarded.id}/complete`,
+      });
+      expect(rejected.statusCode).toBe(409);
+      expect(rejected.json().error).toMatchObject({
+        code: "project_completion_criteria_incomplete",
+        details: {
+          projectId: guarded.id,
+          criteriaCount: 1,
+          incompleteCriterionIds: [withCriterion.acceptanceCriteria[0].id],
+        },
+      });
+
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${guarded.id}/criteria/${withCriterion.acceptanceCriteria[0].id}/check`,
+        payload: { checked: true },
+      });
+      const completed = await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${guarded.id}/complete`,
+      });
+    expect(completed.statusCode).toBe(200);
+  });
 });
 
 /**

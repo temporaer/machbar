@@ -93,11 +93,11 @@ export function ProjectDetailPage() {
   }, [searchParams, setSearchParams]);
 
   const planningFocusActive = focus === "planning";
-  const refinementReturn = (
+  const reviewReturn = (
     location.state as {
-      refinementReturn?: { issueKey: string; issueIndex: number };
+      reviewReturn?: { issueKey: string; issueIndex: number };
     } | null
-  )?.refinementReturn;
+  )?.reviewReturn;
 
   useEffect(() => {
     if (!planningFocusActive) return;
@@ -157,11 +157,11 @@ export function ProjectDetailPage() {
   return (
     <div>
       <Link
-        to={refinementReturn ? "/more/refinement" : "/projects"}
-        state={refinementReturn ? { refinementReturn } : undefined}
+        to={reviewReturn ? "/more/review" : "/projects"}
+        state={reviewReturn ? { reviewReturn } : undefined}
         className="link-plain"
       >
-        ← {refinementReturn ? strings.refinement : strings.projects}
+        ← {reviewReturn ? strings.reviewTitle : strings.projects}
       </Link>
       {projectLoading ? <LoadingState /> : null}
       {projectError ? <ErrorState message={projectError} onRetry={reloadProject} /> : null}
@@ -308,10 +308,10 @@ export function ProjectDetailPage() {
             if (focus === "driver" || focus === "completion") clearRouteFocus();
           }}
           onDeleted={
-            refinementReturn
+            reviewReturn
               ? () =>
-                  navigate("/more/refinement", {
-                    state: { refinementReturn },
+                  navigate("/more/review", {
+                    state: { reviewReturn },
                   })
               : undefined
           }

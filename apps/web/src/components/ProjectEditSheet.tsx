@@ -20,6 +20,8 @@ import { TagPicker } from "./TagPicker";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { HumanDateInput } from "./HumanDateInput";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
+import { QuickAdd } from "./QuickAdd";
+import { isProjectReadyToStart } from "../lib/projectCommitments";
 
 function errorMessage(err: unknown, strings: Strings): string {
   return localizedErrorMessage(err, strings);
@@ -73,7 +75,6 @@ export function ProjectEditSheet({
     errors,
     clearError,
     runAction,
-    activate,
     update,
     assignDriver,
     schedule,
@@ -87,6 +88,12 @@ export function ProjectEditSheet({
   const [savingProperty, setSavingProperty] = useState(false);
   const [busyAction, setBusyAction] = useState<ProjectWorkflowAction | null>(null);
   const [activationNeedsDriver, setActivationNeedsDriver] = useState(false);
+  const [driverAction, setDriverAction] = useState<
+    Extract<ProjectWorkflowAction, "activate" | "reopen">
+  >("activate");
+  const [activationNeedsProgress, setActivationNeedsProgress] = useState(false);
+  const [addingNextAction, setAddingNextAction] = useState(false);
+  const [completionNeedsCriteria, setCompletionNeedsCriteria] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const lastLoadedProjectIdRef = useRef<number | null>(null);
@@ -97,6 +104,7 @@ export function ProjectEditSheet({
   const notesFieldRef = useRef<HTMLDivElement>(null);
   const driverFieldRef = useRef<HTMLDivElement>(null);
   const lifecycleFieldRef = useRef<HTMLDivElement>(null);
+  const criteriaFieldRef = useRef<HTMLDivElement>(null);
   const appliedFocusRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -244,7 +252,20 @@ export function ProjectEditSheet({
   };
 
   const performAction = async (action: ProjectWorkflowAction) => {
-    if (action === "activate" && confirmedProjectRef.current.ownerMemberId === null) {
+    if (
+      action === "complete" &&
+      confirmedProjectRef.current.acceptanceCriteria.some((criterion) => !criterion.checked)
+    ) {
+      setCompletionNeedsCriteria(true);
+      criteriaFieldRef.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      criteriaFieldRef.current?.querySelector<HTMLElement>("button, input")?.focus();
+      return;
+    }
+    if (
+      (action === "activate" || action === "reopen") &&
+      confirmedProjectRef.current.ownerMemberId === null
+    ) {
+      setDriverAction(action);
       setActivationNeedsDriver(true);
       driverFieldRef.current?.scrollIntoView?.({
         block: "center",
@@ -255,7 +276,16 @@ export function ProjectEditSheet({
         ?.focus();
       return;
     }
+    if (
+      (action === "activate" || action === "reopen") &&
+      !isProjectReadyToStart(confirmedProjectRef.current)
+    ) {
+      setActivationNeedsProgress(true);
+      return;
+    }
     setActivationNeedsDriver(false);
+    setActivationNeedsProgress(false);
+    setCompletionNeedsCriteria(false);
     if (!beginOperation()) return;
     setBusyAction(action);
     try {
@@ -275,8 +305,9 @@ export function ProjectEditSheet({
     if (!beginOperation()) return;
     setSavingProperty(true);
     try {
-      const confirmed = await activate(
+      const confirmed = await runAction(
         confirmedProjectRef.current,
+        driverAction,
         ownerMemberId,
       );
       if (confirmed) {
@@ -329,12 +360,13 @@ export function ProjectEditSheet({
   };
 
   return (
-    <BottomSheet
-      title={strings.editProject}
-      onClose={closeSheet}
-      labelledBy="project-edit-title"
-    >
-      <div className="stack">
+    <>
+      <BottomSheet
+        title={strings.editProject}
+        onClose={closeSheet}
+        labelledBy="project-edit-title"
+      >
+        <div className="stack">
         {actionError ?? workflowError ? (
           <p role="alert" style={{ color: "var(--color-danger)" }}>
             {actionError ?? workflowError}
@@ -484,6 +516,18 @@ export function ProjectEditSheet({
         displayedProject.ownerMemberId === null ? (
           <p className="text-muted">{strings.assignDriverToActivateHint}</p>
         ) : null}
+        {activationNeedsProgress ? (
+          <div className="stack" role="alert">
+            <p className="text-muted">{strings.activationProgressRequired}</p>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setAddingNextAction(true)}
+            >
+              {strings.addNextAction}
+            </button>
+          </div>
+        ) : null}
 
         <div ref={driverFieldRef}>
           <MemberChoiceGroup
@@ -532,11 +576,18 @@ export function ProjectEditSheet({
           </fieldset>
         </div>
 
-        <AcceptanceCriteriaEditor
-          projectId={project.id}
-          criteria={project.acceptanceCriteria}
-          onError={setActionError}
-        />
+        <div ref={criteriaFieldRef}>
+          {completionNeedsCriteria ? (
+            <p className="capture-error" role="alert">
+              {strings.completionCriteriaRequired}
+            </p>
+          ) : null}
+          <AcceptanceCriteriaEditor
+            projectId={project.id}
+            criteria={displayedProject.acceptanceCriteria}
+            onError={setActionError}
+          />
+        </div>
 
         <button
           type="button"
@@ -546,7 +597,19 @@ export function ProjectEditSheet({
         >
           {strings.deleteProject}
         </button>
-      </div>
-    </BottomSheet>
+        </div>
+      </BottomSheet>
+      {addingNextAction ? (
+        <QuickAdd
+          projectId={project.id}
+          autoOpen
+          onAutoOpenClose={() => {
+            setAddingNextAction(false);
+            setActivationNeedsProgress(false);
+            bump();
+          }}
+        />
+      ) : null}
+    </>
   );
 }

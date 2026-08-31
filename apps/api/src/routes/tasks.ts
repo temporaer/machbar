@@ -4,6 +4,7 @@ import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
 import { getTaskRecurrenceHistory } from "../repo/recurrenceRepo.js";
 import {
+  acknowledgeTaskReview,
   addDependency,
   addExcludedTag,
   addTaskTag,
@@ -27,6 +28,7 @@ import {
   updateTask,
 } from "../domain/mutations.js";
 import {
+  acknowledgeReviewSchema,
   appendNotesSchema,
   cancelTaskSchema,
   completeTaskSchema,
@@ -75,6 +77,18 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     const id = parseId(request.params.id);
     return taskOrThrow(db, id);
   });
+
+  app.post<{ Params: { id: string } }>(
+    "/api/tasks/:id/review",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(acknowledgeReviewSchema, request.body ?? {});
+      acknowledgeTaskReview(db, id, body.expectedRevision, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
+      return taskOrThrow(db, id);
+    },
+  );
 
   app.get<{ Params: { id: string } }>(
     "/api/tasks/:id/recurrence-history",

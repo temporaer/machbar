@@ -34,20 +34,33 @@ describe("seed data", () => {
     );
   });
 
-  it("classifies every Festgefahren scenario correctly", async () => {
-    const res = await ctx.app.inject({ method: "GET", url: "/api/projects/stuck" });
+  it("derives the consolidated Review queue without obsolete unassigned debt", async () => {
+    const res = await ctx.app.inject({ method: "GET", url: "/api/review" });
     expect(res.statusCode).toBe(200);
-    const byTitle = Object.fromEntries(
-      res.json().map((p: { title: string; stuckReason: string }) => [p.title, p.stuckReason]),
+    const review = res.json() as Array<{
+      entityTitle: string;
+      projectTitle: string | null;
+      reason: string;
+    }>;
+    expect(review).toContainEqual(
+      expect.objectContaining({
+        projectTitle: "Küche renovieren",
+        reason: "no_viable_progress_path",
+      }),
     );
-    expect(byTitle["Steuererklärung 2025"]).toBe("unassigned_actionable");
-    expect(byTitle["Küche renovieren"]).toBe("no_next_action");
-    expect(byTitle["Wartungsplan Auto"]).toBe(
-      "waiting_without_followup",
+    expect(review).toContainEqual(
+      expect.objectContaining({
+        projectTitle: "Wartungsplan Auto",
+        reason: "waiting_without_followup",
+      }),
     );
-    expect(byTitle["Bücherregal aufbauen"]).toBe("waiting_without_followup");
-    expect(byTitle["Umzug nach Leipzig"]).toBeUndefined();
-    expect(byTitle["Garten winterfest machen"]).toBeUndefined();
+    expect(
+      review.some(
+        (item) =>
+          item.projectTitle === "Steuererklärung 2025" &&
+          item.reason === "unassigned_actionable",
+      ),
+    ).toBe(false);
   });
 
   it("computes a next action for healthy projects", async () => {
