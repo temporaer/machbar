@@ -141,6 +141,20 @@ describe("RefinementTaskRow", () => {
     expect(screen.getByLabelText("Blockiert durch")).toBeInTheDocument();
   });
 
+  it("does not label a task as waiting when no reason exists", async () => {
+    const task = makeItem({
+      externalWait: { waitingFor: null },
+      blocked: false,
+      executable: true,
+    });
+    renderRow(task);
+
+    await screen.findByText(task.title);
+    expect(
+      screen.queryByText(/Wartet auf|Grund nicht angegeben|Unbekannt/),
+    ).not.toBeInTheDocument();
+  });
+
   it("a right swipe past the threshold cycles the size forward (null -> S)", async () => {
     const task = makeItem({ id: 20, size: null });
     mockedApi.updateTask.mockResolvedValue({ ...task, size: "S" } as never);

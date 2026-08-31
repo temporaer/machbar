@@ -62,7 +62,8 @@ currently relevant while keeping the underlying project structure available.
 
 Waiting is explicit blocker data, not a lifecycle status or hidden note. An
 actionable task can wait on an external person, organization, event, or
-delivery. Its existing planning date then acts as a **Wiedervorlage**: once
+delivery, identified by a required reason. Without a reason, the task is not
+waiting. Its existing planning date then acts as a **Wiedervorlage**: once
 reached, the blocked task returns to Today for attention. Follow-up notes
 preserve an attributed history.
 

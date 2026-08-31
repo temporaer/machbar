@@ -906,6 +906,8 @@ const extra = {
     task_sequence_too_short:
       "Eine Aufgabenfolge braucht mindestens zwei Schritte.",
     task_title_required: "Bitte gib einen Aufgabentitel ein.",
+    external_wait_reason_required:
+      "Bitte gib an, worauf diese Aufgabe wartet.",
     waiting_query_invalid: "Die Wartelisten-Abfrage ist ungültig.",
     external_wait_recurring_forbidden:
       "Wiederkehrende Aufgaben können keinen externen Wartepunkt haben.",

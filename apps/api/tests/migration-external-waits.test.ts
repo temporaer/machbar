@@ -173,6 +173,37 @@ describe("external-wait migrations", () => {
     expect(
       sqlite.prepare("SELECT COUNT(*) FROM contribution_events").pluck().get(),
     ).toBe(1);
+
+    sqlite
+      .prepare(
+        `INSERT INTO task_external_waits (task_id, waiting_for)
+         VALUES (6, char(9) || char(10))`,
+      )
+      .run();
+    const requireReasonMigration = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../drizzle/0017_require_external_wait_reason.sql",
+      ),
+      "utf8",
+    );
+    for (const statement of requireReasonMigration.split("--> statement-breakpoint")) {
+      if (statement.trim()) sqlite.exec(statement);
+    }
+    expect(
+      sqlite
+        .prepare(
+          `SELECT task_id AS taskId, waiting_for AS waitingFor
+           FROM task_external_waits ORDER BY task_id`,
+        )
+        .all(),
+    ).toEqual([{ taskId: 3, waitingFor: "Reply" }]);
+    expect(
+      sqlite.prepare("SELECT scheduled_date FROM tasks WHERE id = 4").pluck().get(),
+    ).toBeNull();
+    expect(
+      sqlite.prepare("SELECT scheduled_date FROM tasks WHERE id = 6").pluck().get(),
+    ).toBeNull();
     expect(sqlite.pragma("foreign_key_check")).toEqual([]);
     sqlite.close();
   });

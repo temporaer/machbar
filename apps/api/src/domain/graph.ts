@@ -198,10 +198,12 @@ export class Graph {
     }
     const externalWaitRows = db.select().from(schema.taskExternalWaits).all();
     const externalWaitByTask = new Map(
-      externalWaitRows.map((row) => [
-        row.taskId,
-        { waitingFor: row.waitingFor },
-      ]),
+      externalWaitRows
+        .filter((row) => Boolean(row.waitingFor?.trim()))
+        .map((row) => [
+          row.taskId,
+          { waitingFor: row.waitingFor?.trim() ?? null },
+        ]),
     );
 
     const criteriaRows = db

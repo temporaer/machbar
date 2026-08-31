@@ -3544,8 +3544,15 @@ export function upsertExternalWait(
       .get();
     const waitingFor =
       input.waitingFor === undefined
-        ? existing?.waitingFor ?? null
-        : input.waitingFor?.trim() || null;
+        ? existing?.waitingFor?.trim() ?? ""
+        : input.waitingFor?.trim() ?? "";
+    if (!waitingFor) {
+      throw AppError.badRequest(
+        "external_wait_reason_required",
+        "An external wait requires a reason.",
+        { taskId },
+      );
+    }
     const scheduledDate =
       input.scheduledDate === undefined
         ? task.scheduledDate

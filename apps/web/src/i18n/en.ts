@@ -916,6 +916,7 @@ const en = {
       "This inbox item cannot be converted to a project in its current state.",
     task_sequence_too_short: "A task sequence needs at least two steps.",
     task_title_required: "Enter a task title.",
+    external_wait_reason_required: "Enter what this task is waiting for.",
     waiting_query_invalid: "The Waiting query is invalid.",
     external_wait_recurring_forbidden:
       "Recurring tasks cannot have an external wait.",

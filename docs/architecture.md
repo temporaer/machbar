@@ -105,7 +105,7 @@ The API computes several derived fields before returning tasks to the client:
 | `effectiveTags` | Ancestor tag union minus excluded IDs |
 | `effectiveAreaTags` / `effectiveActorTags` / `effectiveContextTags` | Kind-filtered views of `effectiveTags` |
 | `explicitTags` | Tags directly on this task |
-| `externalWait` | Nullable unresolved external blocker; row presence blocks even when its description is empty |
+| `externalWait` | Nullable unresolved external blocker with a required non-empty reason |
 | `blocked` | `true` for actionable tasks with an external wait or any unresolved dependency |
 | `executable` | `true` only for actionable, unblocked tasks |
 | `blockers` | Structured external/dependency blocker summaries |
@@ -249,8 +249,8 @@ Project and child creation can start as already clarified actionable work.
 Captured tasks stay visible in project trees but are excluded from Heute,
 next-action selection, and blocker classification.
 
-Waiting is deliberately not a task status. `task_external_waits` stores an
-optional description in a one-to-one row whose presence means the actionable
+Waiting is deliberately not a task status. `task_external_waits` stores a
+required non-empty reason in a one-to-one row whose presence means the actionable
 task has an unresolved external blocker. `task_dependencies` stores real task
 prerequisites. Blocking and executability are derived from both sources, and
 current create/update/status APIs accept only the five statuses above.

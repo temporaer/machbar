@@ -82,7 +82,7 @@ describe("canonical blocker analysis", () => {
       dependencies: [{ dependsOnTaskId: 3, resolved: false }],
     });
     const c = task(3, {
-      externalWait: { waitingFor: null },
+      externalWait: { waitingFor: "External event" },
       scheduledDate: "2026-09-02",
     });
     const saturday = task(4, { scheduledDate: "2026-09-05" });
@@ -96,7 +96,7 @@ describe("canonical blocker analysis", () => {
 
   it("diagnoses missing and reached external follow-ups precisely", () => {
     const result = analyze([
-      task(1, { externalWait: { waitingFor: null } }),
+      task(1, { externalWait: { waitingFor: "External event" } }),
       task(2, {
         externalWait: { waitingFor: "Reply" },
         scheduledDate: today,

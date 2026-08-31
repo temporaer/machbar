@@ -512,9 +512,9 @@ export function TaskRow({
                   {strings.taskStatusLabels[task.status]}
                 </span>
               ) : null}
-              {task.externalWait ? (
+              {task.externalWait?.waitingFor?.trim() ? (
                 <span className="task-row-meta-item">
-                  {strings.waitingFor}: {task.externalWait.waitingFor?.trim() || strings.unknown}
+                  {strings.waitingFor}: {task.externalWait.waitingFor.trim()}
                 </span>
               ) : null}
               {task.dependencies

@@ -55,7 +55,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       .get();
   }
 
-  function addExternalWait(taskId: number, waitingFor: string | null = null) {
+  function addExternalWait(taskId: number, waitingFor = "External event") {
     handle.db.insert(schema.taskExternalWaits).values({ taskId, waitingFor }).run();
   }
 
