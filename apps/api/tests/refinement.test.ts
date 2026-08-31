@@ -51,7 +51,7 @@ describe("refinementRepo", () => {
       return buildRefinementIssues(Graph.load(handle.db), today).issues;
     }
 
-    function addExternalWait(taskId: number, waitingFor: string | null = null) {
+    function addExternalWait(taskId: number, waitingFor = "External event") {
       handle.db.insert(schema.taskExternalWaits).values({ taskId, waitingFor }).run();
     }
 

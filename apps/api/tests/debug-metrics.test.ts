@@ -26,7 +26,7 @@ describe("debug metrics", () => {
     const externalWait = await ctx.app.inject({
       method: "PUT",
       url: `/api/tasks/${created.json().id}/external-wait`,
-      payload: { waitingFor: null },
+      payload: { waitingFor: "Metrics dependency" },
     });
     expect(externalWait.statusCode).toBe(200);
 

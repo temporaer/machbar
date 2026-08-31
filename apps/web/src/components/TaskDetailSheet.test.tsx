@@ -336,6 +336,19 @@ describe("TaskDetailSheet", () => {
     );
   });
 
+  it("does not allow an external wait without a reason", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 42, title: "Rechnung prüfen" }),
+    );
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Wartepunkt hinzufügen" }),
+    ).toBeDisabled();
+    expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
+  });
+
   it("focuses the add-child input after closed child reopen controls", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({

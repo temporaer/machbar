@@ -141,18 +141,18 @@ describe("RefinementTaskRow", () => {
     expect(screen.getByLabelText("Blockiert durch")).toBeInTheDocument();
   });
 
-  it("identifies an external wait whose reason was not provided", async () => {
+  it("does not label a task as waiting when no reason exists", async () => {
     const task = makeItem({
       externalWait: { waitingFor: null },
-      blocked: true,
-      executable: false,
+      blocked: false,
+      executable: true,
     });
     renderRow(task);
 
+    await screen.findByText(task.title);
     expect(
-      await screen.findByText("Wartet – Grund nicht angegeben"),
-    ).toBeInTheDocument();
-    expect(screen.queryByText(/Wartet auf: Unbekannt/)).not.toBeInTheDocument();
+      screen.queryByText(/Wartet auf|Grund nicht angegeben|Unbekannt/),
+    ).not.toBeInTheDocument();
   });
 
   it("a right swipe past the threshold cycles the size forward (null -> S)", async () => {

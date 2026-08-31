@@ -26,7 +26,7 @@ describe("task external waits", () => {
     return response.json();
   }
 
-  it("starts an external wait with an optional description and revisit date", async () => {
+  it("requires a reason before a task becomes externally blocked", async () => {
     const task = await createTask({ title: "Schrank aufbauen" });
     const response = await ctx.app.inject({
       method: "PUT",
@@ -38,15 +38,19 @@ describe("task external waits", () => {
       },
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      status: "actionable",
-      externalWait: { waitingFor: null },
-      scheduledDate: "2026-09-02",
-      blocked: true,
-      executable: false,
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("external_wait_reason_required");
+    const unchanged = await ctx.app.inject({
+      method: "GET",
+      url: `/api/tasks/${task.id}`,
     });
-    expect(response.json().revision).toBeGreaterThan(task.revision);
+    expect(unchanged.json()).toMatchObject({
+      externalWait: null,
+      scheduledDate: null,
+      blocked: false,
+      executable: true,
+      revision: task.revision,
+    });
   });
 
   it("resolves the wait and clears its revisit date by default", async () => {
@@ -144,7 +148,7 @@ describe("task external waits", () => {
     await ctx.app.inject({
       method: "PUT",
       url: `/api/tasks/${both.id}/external-wait`,
-      payload: { waitingFor: null },
+      payload: { waitingFor: "Approval" },
     });
 
     const response = await ctx.app.inject({

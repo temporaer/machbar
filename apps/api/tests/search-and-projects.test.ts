@@ -14,7 +14,7 @@ describe("search/filter and project CRUD/archive", () => {
     await closeTestContext(ctx);
   });
 
-  function addExternalWaitRow(taskId: number, waitingFor: string | null = null) {
+  function addExternalWaitRow(taskId: number, waitingFor = "External event") {
     ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId, waitingFor }).run();
   }
 
@@ -330,7 +330,7 @@ describe("search/filter and project CRUD/archive", () => {
       },
       {
         title: "Lieferung verfolgen",
-        waitingFor: null,
+        waitingFor: "Liefertermin",
         scheduledDate: "2099-10-02",
       },
       {
@@ -377,7 +377,7 @@ describe("search/filter and project CRUD/archive", () => {
     expect(listedProject).toMatchObject({
       nextAction: null,
       stuckReason: null,
-      waitingOn: ["Angebot der Schreinerei", "Lieferung verfolgen"],
+      waitingOn: ["Angebot der Schreinerei", "Liefertermin"],
       waitingUntil: "2099-10-01",
     });
 
@@ -387,7 +387,7 @@ describe("search/filter and project CRUD/archive", () => {
     expect(waitingTasks).toContainEqual(
       expect.objectContaining({
         title: "Lieferung verfolgen",
-        externalWait: { waitingFor: null },
+        externalWait: { waitingFor: "Liefertermin" },
       }),
     );
   });

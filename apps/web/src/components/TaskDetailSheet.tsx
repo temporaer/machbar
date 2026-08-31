@@ -575,7 +575,7 @@ export function TaskDetailSheet() {
     setSaveError(null);
     try {
       const updated = await api.setExternalWait(task.id, {
-        waitingFor: externalWaitDraft.trim() || null,
+        waitingFor: externalWaitDraft.trim(),
         scheduledDate: externalWaitDateDraft || null,
         expectedRevision: revisionRef.current ?? task.revision,
       });
@@ -1037,7 +1037,7 @@ export function TaskDetailSheet() {
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
-                  disabled={!externalWaitDateValid}
+                  disabled={!externalWaitDraft.trim() || !externalWaitDateValid}
                   onClick={() => void saveExternalWait()}
                 >
                   {task.externalWait ? strings.updateExternalWait : strings.addExternalWait}

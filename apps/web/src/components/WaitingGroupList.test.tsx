@@ -60,13 +60,12 @@ describe("WaitingGroupList", () => {
       title: "Rückruf",
       blocked: true,
       executable: false,
-      externalWait: { waitingFor: null },
+      externalWait: { waitingFor: "Vermieter" },
       effectiveTags: [phone],
     });
     renderWithProviders(<WaitingGroupList tasks={[task]} groupBy="context" />);
     expect(await screen.findByRole("heading", { name: "Telefon" })).toBeInTheDocument();
-    expect(screen.getByText("Wartet – Grund nicht angegeben")).toBeInTheDocument();
-    expect(screen.queryByText(/Wartet auf: Unbekannt/)).not.toBeInTheDocument();
+    expect(screen.getByText("Wartet auf: Vermieter")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Nachhaken" }));

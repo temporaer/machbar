@@ -45,7 +45,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     return res.json();
   }
 
-  async function addExternalWait(taskId: number, waitingFor: string | null = null) {
+  async function addExternalWait(taskId: number, waitingFor = "External event") {
     const res = await ctx.app.inject({
       method: "PUT",
       url: `/api/tasks/${taskId}/external-wait`,

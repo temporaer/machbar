@@ -154,11 +154,9 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
             ) : null}
             {ownerName ? <span>{ownerName}</span> : <span>{strings.shared}</span>}
             <span>{strings.taskStatusLabels[task.status]}</span>
-            {task.externalWait ? (
+            {task.externalWait?.waitingFor?.trim() ? (
               <span>
-                {task.externalWait.waitingFor?.trim()
-                  ? `${strings.waitingFor}: ${task.externalWait.waitingFor.trim()}`
-                  : strings.waitingReasonMissing}
+                {strings.waitingFor}: {task.externalWait.waitingFor.trim()}
               </span>
             ) : null}
             {task.dependencies

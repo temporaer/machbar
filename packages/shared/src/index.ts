@@ -150,6 +150,7 @@ export type ApiErrorCode =
   | "task_promotion_invalid"
   | "task_sequence_too_short"
   | "task_title_required"
+  | "external_wait_reason_required"
   | "waiting_query_invalid";
 
 export interface ApiErrorPayload {
