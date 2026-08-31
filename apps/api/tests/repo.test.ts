@@ -5,7 +5,7 @@ import { runMigrations } from "../src/db/migrate.js";
 import * as schema from "../src/db/schema.js";
 import {
   addDependency,
-  createProject,
+  createProject as createProjectMutation,
   createTask,
   getOrCreateTag,
   moveTask,
@@ -52,6 +52,24 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       .values({ name, color: "#123456" })
       .returning()
       .get();
+  }
+
+  function createProject(
+    ...args: Parameters<typeof createProjectMutation>
+  ): ReturnType<typeof createProjectMutation> {
+    const [db, input, context] = args;
+    const requestedActive = input.status === "active";
+    const project = createProjectMutation(
+      db,
+      requestedActive ? { ...input, status: "backlog" } : input,
+      context,
+    );
+    if (!requestedActive) return project;
+    db.update(schema.projects)
+      .set({ status: "active" })
+      .where(eq(schema.projects.id, project.id))
+      .run();
+    return { ...project, status: "active" };
   }
 
   function addExternalWait(taskId: number, waitingFor = "External event") {
@@ -242,11 +260,11 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
 
       // root is blocked, so pre-order should skip straight to its own
       // (unblocked) child before reaching the later top-level sibling.
-      expect(getNextActionTaskIdsByProject(handle.db).get(project.id)).toBe(rootChild.id);
+      expect(getNextActionTaskIdsByProject(handle.db).get(project.id)?.[0]).toBe(rootChild.id);
 
       updateTask(handle.db, blocker.id, { status: "done" });
       // Once unblocked, root itself comes first in pre-order.
-      expect(getNextActionTaskIdsByProject(handle.db).get(project.id)).toBe(root.id);
+      expect(getNextActionTaskIdsByProject(handle.db).get(project.id)?.[0]).toBe(root.id);
     });
 
     it("omits a project with no actionable candidates from the result map", () => {
@@ -283,7 +301,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         .prepare("UPDATE tasks SET status = 'captured', needs_clarification = 1 WHERE id IN (?, ?)")
         .run(capturedRoot.id, capturedBlocker.id);
 
-      expect(getNextActionTaskIdsByProject(handle.db).get(project.id)).toBe(
+      expect(getNextActionTaskIdsByProject(handle.db).get(project.id)?.[0]).toBe(
         laterChild.id,
       );
     });

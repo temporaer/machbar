@@ -11,12 +11,12 @@ import type {
   Member,
   MoreCounts,
   Project,
+  ProjectActivationReadiness,
   ProjectAgendaEntry,
   ProjectStatus,
-  ProjectReadiness,
   PushConfig,
   PushSubscriptionRegistration,
-  RefinementIssue,
+  ReviewItem,
   SearchFilters,
   StuckProject,
   Tag,
@@ -224,8 +224,14 @@ export type ProjectWorkflowAction =
  * lifecycle transitions are currently legal, so the UI never has to
  * reimplement the backlog/active/completed/archived state machine itself.
  */
-export type ProjectWithActions = Project & { availableActions: ProjectWorkflowAction[] };
-export type StuckProjectWithActions = StuckProject & { availableActions: ProjectWorkflowAction[] };
+export type ProjectWithActions = Project & {
+  availableActions: ProjectWorkflowAction[];
+  activationReadiness: ProjectActivationReadiness;
+};
+export type StuckProjectWithActions = StuckProject & {
+  availableActions: ProjectWorkflowAction[];
+  activationReadiness: ProjectActivationReadiness;
+};
 export type ProjectDetail = ProjectWithActions & { tasks: Task[] };
 
 /** Body for `POST /api/projects/:id/activate` (matches `activateProjectSchema`). */
@@ -320,11 +326,6 @@ export interface UpdateTagInput {
   sortPosition?: number | null;
 }
 
-export interface RefinementIssueResponse {
-  issues: RefinementIssue[];
-  projects: ProjectReadiness[];
-}
-
 export interface CreateMemberInput {
   name: string;
 }
@@ -381,7 +382,6 @@ export const api = {
   deleteTag: (id: number) => request<void>(`/tags/${id}`, { method: "DELETE" }),
 
   getProjects: () => request<ProjectWithActions[]>("/projects"),
-  getStuckProjects: () => request<StuckProjectWithActions[]>("/projects/stuck"),
   getProject: (id: number) => request<ProjectDetail>(`/projects/${id}`),
   createProject: (input: CreateProjectInput) =>
     request<ProjectWithActions>("/projects", { method: "POST", body: JSON.stringify(input) }),
@@ -411,13 +411,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  reopenProject: (id: number, input: ProjectWorkflowInput) =>
+  reopenProject: (id: number, input: ActivateProjectInput) =>
     request<ProjectWithActions>(`/projects/${id}/reopen`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
   archiveProject: (id: number, input: ProjectWorkflowInput) =>
     request<ProjectWithActions>(`/projects/${id}/archive`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  acknowledgeProjectReview: (id: number, input: ProjectWorkflowInput) =>
+    request<ProjectWithActions>(`/projects/${id}/review`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
@@ -457,8 +462,7 @@ export const api = {
     request<RefinementTaskRow[]>(
       `/refinement/tasks${query({ ownerId: filters?.ownerId, projectId: filters?.projectId, tagIds: filters?.tagIds })}`,
     ),
-  getRefinementIssues: () =>
-    request<RefinementIssueResponse>("/refinement/issues"),
+  getReviewItems: () => request<ReviewItem[]>("/review"),
   getMoreCounts: () =>
     request<MoreCounts>("/views/more-counts"),
 
@@ -527,6 +531,11 @@ export const api = {
     ),
 
   getTask: (id: number) => request<Task>(`/tasks/${id}`),
+  acknowledgeTaskReview: (id: number, expectedRevision: number) =>
+    request<Task>(`/tasks/${id}/review`, {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision }),
+    }),
   getTaskRecurrenceHistory: (id: number) =>
     request<TaskRecurrenceHistory>(`/tasks/${id}/recurrence-history`),
   createTask: (input: CreateTaskInput) =>

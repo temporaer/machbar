@@ -299,6 +299,11 @@ describe("notification event creation", () => {
     const hannes = addMember(ctx, "Hannes");
     const sarah = addMember(ctx, "Sarah");
     const project = createProject(ctx.handle.db, { title: "Kinderzimmer" });
+    createTask(ctx.handle.db, {
+      title: "Next action",
+      projectId: project.id,
+      status: "actionable",
+    });
     activateProject(
       ctx.handle.db,
       project.id,

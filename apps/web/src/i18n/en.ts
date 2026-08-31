@@ -1,9 +1,6 @@
 import type {
   ApiErrorCode,
   ProjectStatus,
-  RefinementActionCode,
-  RefinementBlockingReason,
-  RefinementIssueCode,
   StuckReason,
   TaskSize,
   TaskStatus,
@@ -160,7 +157,6 @@ const en = {
   chooseDate: "Choose a date from the calendar",
   dateInputPlaceholder: "e.g. tomorrow, Friday, week 36, 2w",
   invalidDate: "Date not recognized",
-  stuckProjects: "Stuck projects",
   repairAction: "Suggested fix",
   stuckProjectHeading: "This project is stuck",
   stuckRepairLabels: {
@@ -503,27 +499,52 @@ const en = {
   resetFilter: "Reset filter",
   filteredBy: "Filtered by",
 
-  clarificationNeeds: "Needs clarification",
-  clarificationNeedsHint:
-    "These items need attention. Resolve the next specific issue for each one.",
-  clarificationNeedsEmpty: "Nothing needs clarification right now.",
   effortGuide: "Review effort",
   effortGuideHint:
     "S = quick job · M = regular task · L = longer block · XL = probably split it · no effort = not estimated yet",
 
-  backlogReview: "Review backlog",
-  refinement: "Clarify work",
-  backlogReviewHint:
-    "Decide whether to start, leave, prepare, or archive projects that are not active yet.",
-  backlogReviewEmpty: "No projects under “Later / not active yet.”",
+  reviewTitle: "Review",
+  reviewHint:
+    "Make an intentional decision about what stays active, gets prepared, remains parked, or ends.",
+  reviewEmpty: "Everything is intentional. There is nothing to review right now.",
+  reviewPrimaryQueue: "Decisions",
+  reviewPlanningTools: "Optional planning tools",
+  reviewPlanningToolsHint:
+    "Review effort and distribution when that helps your planning.",
+  reviewOpenDetails: "Open details",
+  reviewActionSetFollowup: "Set a revisit",
+  reviewActionResolveBlocker: "Resolve blockage",
+  reviewKeep: "Keep as is",
+  reviewStart: "Start",
+  reviewBacklog: "Keep in backlog",
+  reviewSomeday: "Keep for someday",
+  reviewArchive: "Archive",
+  reviewCancel: "Discard",
+  reviewCategoryStructure: "Enable progress",
+  reviewCategoryCompletion: "Review outcome",
+  reviewCategoryRoutine: "Confirm intentionally",
+  reviewCategoryWaiting: "Clarify waiting",
+  reviewReasonMissingDriver: "The active project has no project lead.",
+  reviewReasonNoProgressPath: "The project has no executable next step or healthy waiting path.",
+  reviewReasonCompletion: "All steps are finished; the outcome needs an explicit completion decision.",
+  reviewReasonWaiting: "The waiting path needs a future revisit.",
+  reviewReasonBlocked: "The blockage has no clear path forward.",
+  reviewReasonAge: "This work has not been intentionally confirmed for a while.",
+  reviewReasonGeneric: "The current state needs an intentional decision.",
+  reviewAcknowledged: "Confirmed for now",
+
+  allTitle: "All",
+  allHint:
+    "Complete inventory of projects and standalone tasks. Project tasks live inside their project.",
+  allProjectsHeading: "Projects",
+  allStandaloneTasksHeading: "Standalone tasks",
+  allMatchingTasksHeading: "Matching tasks",
+  allEmpty: "No matching projects or tasks.",
+
   activateStory: "Make active",
-  activateAnyway: "Make active anyway",
-  activationPreparation: "Prepare activation",
-  activationPreparationHint:
-    "Check whether the project is ready enough to start. Only a project lead is required.",
-  activationDriverRequired: "An active project must have a project lead.",
-  activationAdvisoryHeading: "Optional before starting",
-  activationAdvisoryReady: "The outcome and next step are already prepared.",
+  activationProgressRequired:
+    "Add an executable next action first, or deliberately plan a healthy waiting path.",
+  activationReadyHint: "This project is ready. Starting it is a separate decision.",
   driver: "Lead",
   assignDriver: "Assign a project lead",
   assignDriverToActivateHint:
@@ -565,6 +586,8 @@ const en = {
   addCriterion: "Add item",
   addCriterionPlaceholder: "Done when…",
   removeCriterion: "Remove criterion",
+  completionCriteriaRequired:
+    "Before completing, check, edit, or remove every remaining criterion.",
   moveCriterionUp: "Move criterion up",
   moveCriterionDown: "Move criterion down",
   noCriteria: "It has not been decided what done looks like yet.",
@@ -753,86 +776,6 @@ const en = {
     criterionRemoved: "removed an acceptance criterion",
   },
 
-  refinementIssueLabels: {
-    missing_driver: "Project lead missing",
-    missing_outcome: "Outcome not clear yet",
-    missing_next_action: "No next step",
-    needs_clarification: "Task needs clarification",
-    unassigned_actionable: "No owner",
-    waiting_without_followup: "Waiting without a follow-up date",
-    followup_due: "Follow-up due",
-    blocked_without_clear_path: "Blocking prerequisite is unclear",
-    due_without_plan: "Due, but not ready",
-    scheduled_in_past: "Schedule overdue",
-    too_large_without_children: "Too large — split it up",
-    completion_review: "Ready to wrap up",
-  } satisfies Record<RefinementIssueCode, string>,
-  refinementIssueExplanations: {
-    missing_driver: "The project needs someone to keep track of it.",
-    missing_outcome:
-      "Add at least one concrete item under “Done when…”.",
-    missing_next_action:
-      "There is no clarified, ready task that can move the project forward.",
-    needs_clarification:
-      "The task was captured but has not been clarified as a next step.",
-    unassigned_actionable: "The ready task has not been assigned to anyone.",
-    waiting_without_followup:
-      "Without a follow-up date, this waiting task can easily be forgotten.",
-    followup_due:
-      "The follow-up date has arrived. Check in now or make the task ready again.",
-    blocked_without_clear_path:
-      "A prerequisite task is not ready or scheduled meaningfully.",
-    due_without_plan:
-      "The due date is approaching, but no open task is scheduled.",
-    scheduled_in_past:
-      "The scheduled date has passed and the task is still open.",
-    too_large_without_children:
-      "This XL task does not have any open subtasks yet.",
-    completion_review:
-      "All existing tasks have been completed or discarded.",
-  } satisfies Record<RefinementIssueCode, string>,
-  refinementActionLabels: {
-    assign_driver: "Assign project lead",
-    add_outcome: "Add outcome",
-    add_next_action: "Add next step",
-    clarify_task: "Clarify task",
-    assign_task: "Assign person",
-    set_followup: "Set follow-up date",
-    follow_up: "Follow up",
-    resolve_blocker: "Review blocking task",
-    plan_task: "Schedule task",
-    add_child: "Add subtask",
-    review_completion: "Review project",
-  } satisfies Record<RefinementActionCode, string>,
-  refinementBlockingLabels: {
-    captured: "Blocking task is not clarified",
-    waiting_without_followup: "Blocking task is not scheduled",
-    followup_due: "The blocking task's follow-up is due",
-    someday: "Blocking task is not ready",
-    backlog_project: "Blocking task belongs to the backlog",
-    terminal_project: "Blocking task is not ready",
-    cycle: "Dependencies form a cycle",
-  } satisfies Record<RefinementBlockingReason, string>,
-  refinementBlockingExplanations: {
-    captured: "This task has only been captured and is not ready yet.",
-    waiting_without_followup: "It needs a future follow-up date.",
-    followup_due: "Its follow-up date has arrived and needs attention.",
-    someday: "It is not ready right now.",
-    backlog_project: "It belongs to a project that is not active yet.",
-    terminal_project: "It belongs to a completed or archived project.",
-    cycle: "Review the dependencies there.",
-  } satisfies Record<RefinementBlockingReason, string>,
-  refinementDependencyDirect: (task: string, target: string) =>
-    `“${task}” is waiting for “${target}”.`,
-  refinementDependencyChain: (task: string, target: string) =>
-    `The prerequisite chain from “${task}” leads to “${target}”.`,
-  refinementClarifyTarget: (title: string) => `Clarify ${title}`,
-  refinementFollowUpTarget: (title: string) =>
-    `Set a follow-up date for ${title}`,
-  refinementDependenciesTarget: (title: string) =>
-    `Review ${title}'s dependencies`,
-  refinementInspectTarget: (title: string) => `Review ${title}`,
-
   apiErrorMessages: {
     contribution_query_invalid:
       "The timezone for contribution history is invalid.",
@@ -855,6 +798,8 @@ const en = {
     internal_error: "An unexpected error occurred.",
     identifier_invalid: "The supplied ID is invalid.",
     malformed_request: "The request could not be processed.",
+    member_active_projects_conflict:
+      "Reassign or park this person's active projects before deleting them.",
     member_name_conflict: "That person name is already in use.",
     member_name_required: "Enter a name.",
     member_not_found: "The person could not be found.",
@@ -876,6 +821,10 @@ const en = {
     project_driver_locked:
       "The project lead cannot be removed in this project status.",
     project_driver_required: "The project needs a lead first.",
+    project_activation_not_ready:
+      "Add an executable next step or a healthy waiting path before starting.",
+    project_completion_criteria_incomplete:
+      "Check, edit, or remove every open criterion before completing.",
     project_not_found: "The project could not be found.",
     project_title_required: "Enter a project title.",
     project_transition_invalid:

@@ -104,6 +104,7 @@ export type ApiErrorCode =
   | "internal_error"
   | "identifier_invalid"
   | "malformed_request"
+  | "member_active_projects_conflict"
   | "member_name_conflict"
   | "member_name_required"
   | "member_not_found"
@@ -120,6 +121,8 @@ export type ApiErrorCode =
   | "oidc_username_ambiguous"
   | "project_driver_locked"
   | "project_driver_required"
+  | "project_activation_not_ready"
+  | "project_completion_criteria_incomplete"
   | "project_not_found"
   | "project_title_required"
   | "project_transition_invalid"
@@ -311,6 +314,13 @@ export interface AcceptanceCriterion {
   updatedAt: string;
 }
 
+export interface ProjectActivationReadiness {
+  ready: boolean;
+  hasDriver: boolean;
+  hasViableProgressPath: boolean;
+  hasHealthyFutureWaiting: boolean;
+}
+
 export interface Project {
   id: number;
   revision: number;
@@ -321,6 +331,9 @@ export interface Project {
   dueDate: string | null;
   scheduledDate: string | null;
   position: number;
+  createdAt: string;
+  updatedAt: string;
+  reviewedAt: string | null;
   tags: Tag[];
   effectiveTags: Tag[];
   effectiveAreaTags: Tag[];
@@ -332,8 +345,6 @@ export interface Project {
   stuckReason?: StuckReason | null;
   waitingOn?: string[];
   waitingUntil?: string | null;
-  refinementIssues?: RefinementIssue[];
-  readiness?: ProjectReadiness;
 }
 
 export interface Dependency {
@@ -386,6 +397,7 @@ export interface Task {
   reminderAt: string | null;
   createdAt: string;
   updatedAt: string;
+  reviewedAt: string | null;
   effectiveOwnerId: number | null;
   effectiveOwnerSource: "task" | "parent" | "project" | "none";
   effectiveTags: Tag[];
@@ -479,9 +491,7 @@ export interface Agenda {
 }
 
 export interface MoreCounts {
-  stuckProjects: number;
-  backlogReview: number;
-  refinement: number;
+  review: number;
 }
 
 export interface GraphLoadMetrics {
@@ -526,66 +536,50 @@ export interface DebugMetrics {
   graphLoads: GraphLoadMetrics;
 }
 
-export type RefinementIssueSeverity = "info" | "warning" | "urgent";
+export type ReviewCategory =
+  | "clarification_repair"
+  | "reconsider"
+  | "completion";
 
-export type RefinementIssueCode =
+export type ReviewReason =
   | "missing_driver"
-  | "missing_outcome"
-  | "missing_next_action"
-  | "needs_clarification"
-  | "unassigned_actionable"
+  | "no_viable_progress_path"
+  | "due_without_credible_plan"
   | "waiting_without_followup"
-  | "followup_due"
-  | "blocked_without_clear_path"
-  | "due_without_plan"
-  | "scheduled_in_past"
-  | "too_large_without_children"
-  | "completion_review";
+  | "broken_blocker_path"
+  | "xl_without_children"
+  | "completion_review"
+  | "active_stale"
+  | "backlog_stale"
+  | "backlog_due"
+  | "standalone_someday_stale";
 
-export type RefinementActionCode =
+export type ReviewActionCode =
   | "assign_driver"
-  | "add_outcome"
   | "add_next_action"
-  | "clarify_task"
-  | "assign_task"
-  | "set_followup"
-  | "follow_up"
-  | "resolve_blocker"
   | "plan_task"
+  | "set_followup"
+  | "resolve_blocker"
   | "add_child"
-  | "review_completion";
+  | "review_completion"
+  | "review_project"
+  | "review_task";
 
-export interface RefinementAction {
-  code: RefinementActionCode;
-  targetTaskId?: number;
+export interface ReviewAction {
+  code: ReviewActionCode;
+  targetEntityType?: "project" | "task";
+  targetEntityId?: number;
 }
 
-export type RefinementBlockingReason =
-  | "captured"
-  | "waiting_without_followup"
-  | "followup_due"
-  | "someday"
-  | "backlog_project"
-  | "terminal_project"
-  | "cycle";
-
-export interface RefinementIssue {
-  code: RefinementIssueCode;
-  severity: RefinementIssueSeverity;
-  suggestedAction: RefinementAction;
+export interface ReviewItem {
   entityType: "project" | "task";
   entityId: number;
   entityTitle: string;
   projectId: number | null;
   projectTitle: string | null;
-  blockingReason?: RefinementBlockingReason;
-  dependencyPath?: Array<{ taskId: number; title: string }>;
-}
-
-export interface ProjectReadiness {
-  projectId: number;
-  ready: boolean;
-  issues: RefinementIssue[];
+  category: ReviewCategory;
+  reason: ReviewReason;
+  suggestedAction: ReviewAction;
 }
 
 export interface SearchFilters {

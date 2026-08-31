@@ -199,6 +199,7 @@ export const projects = sqliteTable("projects", {
   updatedAt: text("updated_at")
     .notNull()
     .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  reviewedAt: text("reviewed_at"),
 });
 
 /**
@@ -285,6 +286,7 @@ export const tasks = sqliteTable(
     updatedAt: text("updated_at")
       .notNull()
       .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    reviewedAt: text("reviewed_at"),
   },
   (t) => [
     index("tasks_project_idx").on(t.projectId),

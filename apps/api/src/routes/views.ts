@@ -8,7 +8,7 @@ import { getMemberOrThrow } from "../domain/mutations.js";
 import { AppError } from "../errors.js";
 import { validationDetails } from "../validation.js";
 import { isTaskInWorkingSystem } from "../domain/workEligibility.js";
-import { buildRefinementIssues } from "../domain/refinementIssues.js";
+import { buildReviewItems } from "../domain/reviewItems.js";
 
 const agendaQuerySchema = z.object({
   memberId: z.coerce.number().int().positive().optional(),
@@ -55,12 +55,12 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
   app.get("/api/views/more-counts", async () => {
     const graph = Graph.load(db);
     return {
-      stuckProjects: graph.listStuckProjects().length,
-      backlogReview: [...graph.projectsById.values()].filter(
-        (project) => project.status === "backlog",
-      ).length,
-      refinement: buildRefinementIssues(graph).issues.length,
+      review: buildReviewItems(graph).length,
     };
+  });
+
+  app.get("/api/review", async () => {
+    return buildReviewItems(Graph.load(db));
   });
 
   app.get("/api/agenda/today", async (request) => {
@@ -77,7 +77,11 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       getMemberOrThrow(db, memberId);
     }
     const graph = Graph.load(db);
-    return buildAgenda(graph, { memberId, today: date });
+    return buildAgenda(graph, {
+      memberId,
+      today: date,
+      scope: scope === "all" || memberId === undefined ? "all" : "mine",
+    });
   });
 
   app.get("/api/inbox", async () => {

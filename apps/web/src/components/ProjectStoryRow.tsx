@@ -28,12 +28,12 @@ import { ProjectTagsSheet } from "./ProjectTagsSheet";
 import { IconActionButton, IconActionGlyph } from "./IconActionButton";
 import { MemberAvatar } from "./MemberAvatar";
 import { useLocale } from "../lib/locale";
-import { formatRefinementIssue } from "../lib/refinementFormatting";
 import "./ProjectStoryRow.css";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
 import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
+import { hasProjectProgressPath } from "../lib/projectCommitments";
 
 /**
  * Semantic accent driving the row's status badge, left-edge stripe, primary
@@ -56,7 +56,7 @@ export interface ProjectStoryRowProps {
   story: ProjectWithActions;
   actions: ReturnType<typeof useProjectActions>;
   /**
-   * `compact` — the Backlog-Review meta line (criteria, driver, dates, tasks).
+   * `compact` — the inventory/Review meta line (criteria, driver, dates, tasks).
    * `card` — the Projekte tab: same meta plus next action and the task /
    * acceptance-criteria progress bars.
    */
@@ -65,6 +65,7 @@ export interface ProjectStoryRowProps {
 
 type Sheet =
   | "assign-to-activate"
+  | "assign-to-reopen"
   | "assign-driver"
   | "plan-dates"
   | "criteria"
@@ -73,7 +74,7 @@ type Sheet =
 
 /**
  * One story row with the full mobile workflow gestures, shared by the
- * Projekte tab (`ProjectsPage`) and Backlog Review (`BacklogReviewPage`).
+ * project lists and inventory views.
  *
  * Gestures mirror `TaskRow`'s semantics: a **right swipe** performs the
  * status-appropriate primary transition (backlog → aktivieren, aktiv →
@@ -104,7 +105,6 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
     errors,
     clearError,
     runAction,
-    activate,
     update,
     assignDriver,
     schedule,
@@ -166,12 +166,27 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
   const doPrimary = useCallback(() => {
     if (busy || !primaryAction) return;
+    if (primaryAction === "complete" && criteria.some((criterion) => !criterion.checked)) {
+      setSheet("criteria");
+      return;
+    }
+    if (
+      (primaryAction === "activate" || primaryAction === "reopen") &&
+      !hasProjectProgressPath(story)
+    ) {
+      navigate(`/projects/${story.id}?focus=next-action`);
+      return;
+    }
     if (needsDriverBeforeAction(story, primaryAction)) {
-      setSheet("assign-to-activate");
+      setSheet(
+        primaryAction === "reopen"
+          ? "assign-to-reopen"
+          : "assign-to-activate",
+      );
       return;
     }
     void runAction(story, primaryAction);
-  }, [busy, primaryAction, runAction, story]);
+  }, [busy, criteria, navigate, primaryAction, runAction, story]);
   const swipe = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy,
     onPrimary: doPrimary,
@@ -192,8 +207,21 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
 
   const runSecondary = (action: ProjectWorkflowAction) => {
     setChipsOpen(false);
+    if (action === "complete" && criteria.some((criterion) => !criterion.checked)) {
+      setSheet("criteria");
+      return;
+    }
+    if (
+      (action === "activate" || action === "reopen") &&
+      !hasProjectProgressPath(story)
+    ) {
+      navigate(`/projects/${story.id}?focus=next-action`);
+      return;
+    }
     if (needsDriverBeforeAction(story, action)) {
-      setSheet("assign-to-activate");
+      setSheet(
+        action === "reopen" ? "assign-to-reopen" : "assign-to-activate",
+      );
       return;
     }
     void runAction(story, action);
@@ -272,14 +300,6 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
               ) : null}
             </div>
           ) : null}
-          {story.refinementIssues?.slice(0, 2).map((issue) => (
-            <span
-              className={issue.severity === "urgent" ? "badge badge-stuck" : "badge"}
-              key={`${issue.entityType}-${issue.entityId}-${issue.code}`}
-            >
-              {formatRefinementIssue(issue, locale).label}
-            </span>
-          ))}
           {variant === "card" ? (
             <>
               {criterionSummary ? (
@@ -383,7 +403,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
         </div>
       ) : null}
 
-      {sheet === "assign-to-activate" ? (
+      {sheet === "assign-to-activate" || sheet === "assign-to-reopen" ? (
         <MemberSelectionSheet
           title={strings.assignDriver}
           label={strings.driver}
@@ -394,7 +414,11 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
           hint={strings.assignDriverToActivateHint}
           onClose={() => setSheet(null)}
           onSelect={async (ownerMemberId) => {
-            await activate(story, ownerMemberId);
+            await runAction(
+              story,
+              sheet === "assign-to-reopen" ? "reopen" : "activate",
+              ownerMemberId,
+            );
           }}
         />
       ) : null}

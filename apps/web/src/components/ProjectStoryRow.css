@@ -1,7 +1,7 @@
 /*
  * Stylesheet for `ProjectStoryRow`, imported by the component itself so both
  * surfaces that render it — the Projekte tab (`ProjectsPage`) and Backlog
- * Review (`BacklogReviewPage`) — are styled without either page having to
+ * project inventories and Review — are styled without either page having to
  * remember to pull it in. It reuses the CSS custom properties defined
  * globally in `styles/index.css` (`--color-*`, `--radius-*`, …) and mirrors
  * `.task-row`'s single-cell grid pattern from that file (see the comment

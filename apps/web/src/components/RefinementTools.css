@@ -1,5 +1,5 @@
 /*
- * RefinementPage-local styles. This page must not depend on (or edit)
+ * Refinement-tool styles. These controls must not depend on (or edit)
  * `TaskRow.tsx`'s classes or the global `styles/index.css` file, so the
  * "single-column grid with stacked swipe backgrounds" concept used there
  * for `.task-row` is reimplemented here from scratch under `.refinement-row*`

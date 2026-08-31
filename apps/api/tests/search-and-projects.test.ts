@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { addDependency, createProject, createTask } from "../src/domain/mutations.js";
+import { eq } from "drizzle-orm";
+import {
+  addDependency,
+  createProject as createProjectMutation,
+  createTask,
+} from "../src/domain/mutations.js";
 import * as schema from "../src/db/schema.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -16,6 +21,24 @@ describe("search/filter and project CRUD/archive", () => {
 
   function addExternalWaitRow(taskId: number, waitingFor = "External event") {
     ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId, waitingFor }).run();
+  }
+
+  function createProject(
+    ...args: Parameters<typeof createProjectMutation>
+  ): ReturnType<typeof createProjectMutation> {
+    const [db, input, context] = args;
+    const requestedActive = input.status === "active";
+    const project = createProjectMutation(
+      db,
+      requestedActive ? { ...input, status: "backlog" } : input,
+      context,
+    );
+    if (!requestedActive) return project;
+    db.update(schema.projects)
+      .set({ status: "active" })
+      .where(eq(schema.projects.id, project.id))
+      .run();
+    return { ...project, status: "active" };
   }
 
   it("filters search results by canonical external-wait state", async () => {
@@ -92,7 +115,6 @@ describe("search/filter and project CRUD/archive", () => {
         url: "/api/projects",
         payload: {
           title: "Heizung",
-          status: "active",
           tagIds: [actor.id],
         },
       })
@@ -106,6 +128,9 @@ describe("search/filter and project CRUD/archive", () => {
         status: "actionable",
       },
     })).json();
+    ctx.handle.sqlite
+      .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+      .run(project.id);
     const wait = await ctx.app.inject({
       method: "PUT",
       url: `/api/tasks/${task.id}/external-wait`,
@@ -254,12 +279,14 @@ describe("search/filter and project CRUD/archive", () => {
     expect(survivingTask.json().projectId).toBeNull();
   });
 
-  it("drops a waiting-only project from /api/projects/stuck once a revisit is scheduled", async () => {
-    const stuckTitles = async () => {
-      const res = await ctx.app.inject({ method: "GET", url: "/api/projects/stuck" });
-      return (res.json() as Array<{ title: string; stuckReason: string }>).map(
-        (p) => `${p.title}:${p.stuckReason}`,
-      );
+  it("drops waiting-without-followup review debt once a revisit is scheduled", async () => {
+    const reviewItems = async () => {
+      const res = await ctx.app.inject({ method: "GET", url: "/api/review" });
+      return res.json() as Array<{
+        entityId: number;
+        projectId: number | null;
+        reason: string;
+      }>;
     };
 
     const projects = (await ctx.app
@@ -267,16 +294,20 @@ describe("search/filter and project CRUD/archive", () => {
       .then((r) => r.json())) as Array<{ id: number; title: string }>;
     const waitingProject = projects.find((p) => p.title === "Wartungsplan Auto")!;
 
-    expect(await stuckTitles()).toContain(
-      "Wartungsplan Auto:waiting_without_followup",
-    );
-
     const detail = (await ctx.app
       .inject({ method: "GET", url: `/api/projects/${waitingProject.id}` })
       .then((r) => r.json())) as {
       tasks: Array<{ id: number; externalWait: { waitingFor: string | null } | null }>;
     };
     const waitingTasks = detail.tasks.filter((task) => task.externalWait !== null);
+    for (const waitingTask of waitingTasks) {
+      expect(await reviewItems()).toContainEqual(
+        expect.objectContaining({
+          entityId: waitingTask.id,
+          reason: "waiting_without_followup",
+        }),
+      );
+    }
     for (const waitingTask of waitingTasks) {
       const scheduled = await ctx.app.inject({
         method: "PATCH",
@@ -287,9 +318,13 @@ describe("search/filter and project CRUD/archive", () => {
       expect(scheduled.statusCode).toBe(200);
     }
 
-    expect(await stuckTitles()).not.toContain(
-      "Wartungsplan Auto:waiting_without_followup",
-    );
+    expect(
+      (await reviewItems()).some(
+        (item) =>
+          item.projectId === waitingProject.id &&
+          item.reason === "waiting_without_followup",
+      ),
+    ).toBe(false);
 
     for (const waitingTask of waitingTasks) {
       await ctx.app.inject({
@@ -299,9 +334,13 @@ describe("search/filter and project CRUD/archive", () => {
       });
     }
 
-    expect(await stuckTitles()).toContain(
-      "Wartungsplan Auto:waiting_without_followup",
-    );
+    expect(
+      (await reviewItems()).some(
+        (item) =>
+          item.projectId === waitingProject.id &&
+          item.reason === "waiting_without_followup",
+      ),
+    ).toBe(true);
   });
 
   it("summarizes ordered, deduplicated waiting reasons in project responses", async () => {
@@ -312,11 +351,13 @@ describe("search/filter and project CRUD/archive", () => {
         url: "/api/projects",
         payload: {
           title: "Küchenrenovierung",
-          status: "active",
           ownerMemberId: owner.id,
         },
       })
     ).json();
+    ctx.handle.sqlite
+      .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+      .run(project.id);
     for (const payload of [
       {
         title: "Fenster bestellen",
@@ -392,7 +433,7 @@ describe("search/filter and project CRUD/archive", () => {
     );
   });
 
-  it("omits only exclusively scheduled dependency chains from /api/projects/stuck", async () => {
+  it("omits healthy future-wait chains from Review but reports broken paths", async () => {
     const owner = ctx.handle.db
       .insert(schema.members)
       .values({ name: "API-Parkzuständige", color: "#123456" })
@@ -436,15 +477,18 @@ describe("search/filter and project CRUD/archive", () => {
 
     const response = await ctx.app.inject({
       method: "GET",
-      url: "/api/projects/stuck",
+      url: "/api/review",
     });
     expect(response.statusCode).toBe(200);
-    const stuck = response.json() as Array<{ id: number; stuckReason: string }>;
-    expect(stuck.some((project) => project.id === parked.id)).toBe(false);
-    expect(stuck).toContainEqual(
+    const review = response.json() as Array<{
+      projectId: number;
+      reason: string;
+    }>;
+    expect(review.some((item) => item.projectId === parked.id)).toBe(false);
+    expect(review).toContainEqual(
       expect.objectContaining({
-        id: mixed.id,
-        stuckReason: "blocked_without_clear_path",
+        projectId: mixed.id,
+        reason: "broken_blocker_path",
       }),
     );
   });

@@ -31,7 +31,7 @@ export interface RefinementTaskRowProps {
  * full task editor) and the shared Zum-Projekt navigation. Mirrors the same
  * "single-column grid with stacked swipe backgrounds" concept as
  * `TaskRow.tsx`/`index.css`'s `.task-row`, reimplemented in
- * `RefinementPage.css` under its own `.refinement-row*` class names so this
+ * `RefinementTools.css` under its own `.refinement-row*` class names so this
  * page never depends on (or risks colliding with edits to) the excluded
  * `TaskRow.tsx`/global `index.css`.
  */

@@ -40,36 +40,18 @@ export function MorePage() {
       <section className="more-section" aria-labelledby="more-review-heading">
         <h2 id="more-review-heading">{strings.moreFindAndReview}</h2>
         <div className="more-link-group">
-          <Link to="/more/search" className="list-link more-list-link">
-            <span>{strings.search}</span>
+          <Link to="/more/review" className="list-link more-list-link">
+            <span>{strings.reviewTitle}</span>
+            <span className="more-link-trailing">
+              {counts ? (
+                <span className="badge more-count-badge">{counts.review}</span>
+              ) : null}
+              <span aria-hidden="true">›</span>
+            </span>
+          </Link>
+          <Link to="/more/all" className="list-link more-list-link">
+            <span>{strings.allTitle}</span>
             <span aria-hidden="true">›</span>
-          </Link>
-          <Link to="/more/stuck" className="list-link more-list-link">
-            <span>{strings.stuckProjects}</span>
-            <span className="more-link-trailing">
-              {counts ? (
-                <span className="badge more-count-badge">{counts.stuckProjects}</span>
-              ) : null}
-              <span aria-hidden="true">›</span>
-            </span>
-          </Link>
-          <Link to="/more/backlog" className="list-link more-list-link">
-            <span>{strings.backlogReview}</span>
-            <span className="more-link-trailing">
-              {counts ? (
-                <span className="badge more-count-badge">{counts.backlogReview}</span>
-              ) : null}
-              <span aria-hidden="true">›</span>
-            </span>
-          </Link>
-          <Link to="/more/refinement" className="list-link more-list-link">
-            <span>{strings.refinement}</span>
-            <span className="more-link-trailing">
-              {counts ? (
-                <span className="badge more-count-badge">{counts.refinement}</span>
-              ) : null}
-              <span aria-hidden="true">›</span>
-            </span>
           </Link>
           <Link to="/more/activity" className="list-link more-list-link">
             <span>

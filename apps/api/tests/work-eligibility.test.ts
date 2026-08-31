@@ -109,14 +109,8 @@ describe("working-system task eligibility", () => {
         url: `/api/projects/${project.id}`,
       })
     ).json();
-    expect(detail.refinementIssues).toEqual([]);
-    expect(detail.readiness).toMatchObject({
-      projectId: project.id,
-      ready: true,
-      issues: expect.arrayContaining([
-        expect.objectContaining({ code: "missing_outcome" }),
-      ]),
-    });
+    expect(detail).not.toHaveProperty("refinementIssues");
+    expect(detail).not.toHaveProperty("readiness");
     expect(detail.tasks.map((task: { id: number }) => task.id)).toEqual(
       expect.arrayContaining([actionable.id, waiting.id, captured.id]),
     );

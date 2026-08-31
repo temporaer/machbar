@@ -32,17 +32,36 @@ life into corporate project management.
 ### A Today view that does the sorting
 
 Machbar builds personal and household-wide Today views from planning dates,
-deadlines, follow-ups, responsibility, and task state. Open shared work stays
-visible without burying the things assigned to you.
+deadlines, follow-ups, responsibility, and task state. Standalone work remains
+available, while projects contribute only their next useful action instead of
+dumping every open step into Today. Household mode preserves independent owner
+lanes, and real dates still surface later project tasks when they matter.
 
 ### Projects with an outcome, not just a pile of tasks
 
 Keep possible household projects in the backlog without prematurely planning
-or assigning them. When you decide to take one on, choose a visible driver,
-define observable “done when…” criteria, and add the concrete next actions.
-Individual tasks can then be delegated while one person keeps hold of the
-overall outcome. Machbar also calls out stuck projects instead of letting them
-quietly disappear.
+them. Starting one requires a visible driver and either a concrete progress path
+or intentional future waiting. Observable “done when…” criteria are optional;
+when you add them, they become a real commitment and must be checked or removed
+before completion. Individual tasks can still be delegated while one person
+keeps hold of the overall outcome.
+
+### Review without a weekly-review ritual
+
+**Review** gathers only work that needs a deliberate maintenance decision:
+broken progress or waiting paths, finished projects awaiting completion, and
+active, backlog, or Someday work that has genuinely gone stale. Valid shared
+tasks, Inbox captures, and ordinary work already surfaced by Today do not become
+fake review debt. Keeping something active, parked, or for later explicitly
+resets its lightweight review lease.
+
+### Alles means everything stays findable
+
+Derived views can hide work on purpose; **Alles** never does. It combines
+first-class project inventory with standalone tasks, search, and useful filters
+across active, parked, captured, waiting, completed, and archived work. Project
+details retain full outlines, while search can take you directly to a matching
+nested task.
 
 ### Waiting that remains actionable
 
@@ -85,8 +104,9 @@ English and supports system, light, and dark appearance modes.
 ![Machbar's mobile Projects view in dark mode](docs/images/projects-mobile.png)
 
 Its workflow borrows useful ideas from GTD, org-mode, and lightweight Scrum,
-but exposes them as practical views—**Today**, **Inbox**, **Projects**, and
-**Waiting**—rather than ceremonies your household has to learn.
+but exposes them as practical views—**Today**, **Inbox**, **Projects**,
+**Waiting**, **Review**, and **Alles**—rather than ceremonies your household has
+to learn.
 
 ## Is Machbar a good fit?
 

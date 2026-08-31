@@ -8,8 +8,6 @@ import {
   getRefinementTasks,
   type RefinementFilters,
 } from "../repo/refinementRepo.js";
-import { Graph } from "../domain/graph.js";
-import { buildRefinementIssues } from "../domain/refinementIssues.js";
 import { validationDetails } from "../validation.js";
 
 /**
@@ -59,10 +57,6 @@ function parseRefinementFilters(db: Db, query: unknown): RefinementFilters {
 }
 
 export function registerRefinementRoutes(app: FastifyInstance, db: Db) {
-  app.get("/api/refinement/issues", async () => {
-    return buildRefinementIssues(Graph.load(db));
-  });
-
   app.get("/api/refinement/owners", async (request) => {
     const filters = parseRefinementFilters(db, request.query);
     return getRefinementOwnerSizeCounts(db, filters);

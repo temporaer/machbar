@@ -56,6 +56,7 @@ export interface BuildAgendaOptions {
    * agenda is built for the whole household, unfiltered by owner.
    */
   memberId?: number;
+  scope?: "mine" | "all";
 }
 
 /**
@@ -85,6 +86,7 @@ export function buildAgenda(
   options: BuildAgendaOptions = {},
 ): Agenda {
   const { dueSoonDays = 3, memberId, today = todayIso() } = options;
+  const scope = options.scope ?? (memberId === undefined ? "all" : "mine");
   const soonLimit = addDaysIso(today, dueSoonDays);
   const seen = new Set<number>();
   const projectStatusById = new Map(
@@ -95,6 +97,22 @@ export function buildAgenda(
   );
   const isOperationalTask = (task: TaskRecord) =>
     isTaskInWorkingSystem(task, projectStatusById);
+  const selectedProjectTaskIds = new Set(
+    [...graph.projectsById.values()]
+      .filter((project) => project.status === "active")
+      .flatMap((project) =>
+        graph
+          .todayNextActionsFor(
+            project.id,
+            scope === "mine" && memberId !== undefined
+              ? { scope: "mine", memberId }
+              : { scope: "all" },
+          )
+          .map((task) => task.id),
+      ),
+  );
+  const isSelectedOrdinaryWork = (task: TaskRecord) =>
+    task.projectId === null || selectedProjectTaskIds.has(task.id);
 
   const take = (predicate: (t: TaskRecord) => boolean): TaskRecord[] => {
     const results = graph
@@ -141,13 +159,15 @@ export function buildAgenda(
     (t) =>
       t.status === "actionable" &&
       t.effectiveOwnerId === null &&
-      !t.scheduledDate,
+      !t.scheduledDate &&
+      isSelectedOrdinaryWork(t),
   );
   const unscheduled = take(
     (t) =>
       t.status === "actionable" &&
       t.effectiveOwnerId !== null &&
-      !t.scheduledDate,
+      !t.scheduledDate &&
+      isSelectedOrdinaryWork(t),
   );
 
   const projectDueLimit = addDaysIso(today, 7);

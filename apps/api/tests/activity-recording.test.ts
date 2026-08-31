@@ -422,6 +422,15 @@ describe("atomic activity recording", () => {
     });
     await ctx.app.inject({
       method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Activation path",
+        projectId: project.id,
+        status: "actionable",
+      },
+    });
+    await ctx.app.inject({
+      method: "POST",
       url: `/api/projects/${project.id}/activate`,
       payload: {},
     });

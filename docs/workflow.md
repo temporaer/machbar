@@ -38,25 +38,29 @@ An inbox item leaves clarification through one explicit classification:
 
 - **Machbar** keeps it as a task and makes it actionable.
 - **Irgendwann** keeps it as a task outside the current action lists.
-- **In Schritte zerlegen** promotes it to an active project and opens the
-  project breakdown flow.
+- **In Schritte zerlegen** promotes it to a project and opens the lightweight
+  handoff for adding a first action. Starting the project remains an explicit
+  decision once it has a driver and a viable progress or future-waiting path.
 - **Backlog** promotes it to a backlog project.
 
 Promotion keeps the captured title, notes, dates, tags, and sensible ownership.
 Existing child tasks become project-root steps while deeper task nesting stays
 intact; the temporary capture wrapper is removed.
 
-### 3. Act
+### 3. Execute
 
 **Heute** is derived rather than manually curated. It combines the selected
-person’s planned work, deadlines, due-soon tasks, reached follow-ups, and
-projects that need attention.
+person’s planned work, deadlines, due-soon tasks, reached follow-ups, standalone
+available work, and the next useful action from each active project.
 
 The compact **Meine | Alle** toggle can broaden this to the whole household
 without changing who is signed in or who is recorded as making changes.
 
-The goal is not to display every open task. It is to show work that is
-currently relevant while keeping the underlying project structure available.
+The goal is not to display every open task. Ordinary unscheduled project work
+is pulled in canonical outline order: **Meine** selects the first action owned
+by the selected person or shared with the household, while **Alle** can preserve
+one independent owner/shared lane per project. A real task date still surfaces
+that task even when it is not the structural next action.
 
 ### 4. Wait and follow up
 
@@ -75,17 +79,33 @@ their project, avoiding duplicate entries for the same external wait.
 
 ### 5. Review
 
-Machbar identifies projects that need a decision, for example:
+**Review** is one derived maintenance queue. It identifies organized work whose
+structure or continued state needs an intentional decision, for example:
 
-- there is no clarified next action;
-- the available action has no owner;
+- an active project has no driver or useful progress path;
 - an external wait has no future revisit;
-- an external follow-up is due;
 - a dependency chain has no useful path forward;
-- all tasks are finished but the project itself has not been reviewed.
+- all tasks are finished but the project itself has not been reviewed;
+- active, backlog, or standalone Someday work has reached its review age.
 
-Project clarification and task refinement views support a deliberate review
-without making those activities part of the daily Today screen.
+Ordinary shared tasks, missing acceptance criteria, Inbox captures, reached
+follow-ups, and past planning dates are not review debt. Keeping an item active,
+parked, or for later explicitly acknowledges it; merely opening it does not.
+Review age never adds work to Today. Healthy future waiting follows its own
+revisit date rather than generic inactivity.
+
+Optional owner/effort planning tools remain available inside Review without
+becoming another required workflow.
+
+### 6. Inventory
+
+**Alles** is exhaustive access to every non-deleted ordinary project and task.
+Projects and standalone task trees appear as first-class inventory. Project
+details own their complete outlines so descendants are not dumped twice by
+default; search can still return a matching nested task directly.
+
+Alles answers where an item is even when Today, Review, Inbox, and Waiting do
+not currently surface it.
 
 ## People and responsibility
 
@@ -110,7 +130,10 @@ A project represents a result that requires more than one action. It contains:
 
 Projects move through backlog, active, completed, and archived states. Machbar
 does not automatically complete a project when its tasks are done; a person
-reviews the outcome against its acceptance criteria.
+reviews the outcome against its acceptance criteria. Criteria are optional, but
+once present they are binding: every remaining criterion must be checked before
+completion. Starting a project requires a driver plus an executable progress
+path or intentional healthy future waiting.
 
 ![Machbar's mobile Projects view with active and stuck household projects](images/projects-mobile.png)
 

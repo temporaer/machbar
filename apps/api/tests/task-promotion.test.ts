@@ -145,6 +145,30 @@ describe("captured task promotion", () => {
     ).toMatchObject({ statusCode: 200 });
   });
 
+  it("rejects an active promotion with a driver but no progress path atomically", async () => {
+    const member = (await post("/api/members", { name: "No path owner" })).json();
+    const root = (
+      await post("/api/tasks", {
+        title: "Project-shaped capture",
+        ownerMemberId: member.id,
+        ownerInheritanceMode: "explicit",
+      })
+    ).json();
+    const response = await post(
+      `/api/tasks/${root.id}/promote-to-project`,
+      { status: "active", expectedRevision: root.revision },
+    );
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("project_activation_not_ready");
+    expect(
+      await ctx.app.inject({ method: "GET", url: `/api/tasks/${root.id}` }),
+    ).toMatchObject({ statusCode: 200 });
+    expect(
+      ctx.handle.db.select().from(schema.projects).all(),
+    ).toEqual([]);
+  });
+
   it("rejects non-root, classified, and task-only promotion states", async () => {
     const capturedWithReminder = await post("/api/tasks", {
       title: "Mit Erinnerung",

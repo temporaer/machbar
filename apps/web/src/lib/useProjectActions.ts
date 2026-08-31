@@ -19,7 +19,7 @@ export interface RetainedStory {
  * Project/story counterpart of `useTaskActions`: centralises **every**
  * lifecycle transition (activate / return to backlog / complete / reopen /
  * archive) plus project metadata edits (title, notes, driver, tags, and
- * scheduling), for the project editor, Projekte tab, and Backlog Review.
+ * scheduling), for the project editor, Projekte tab, and Review.
  *
  * Transitions are optimistic and retained for `RETENTION_MS`, mirroring
  * `TaskRow`'s "stays visible for ~4s before the list drops it" behaviour —
@@ -73,7 +73,10 @@ export function useProjectActions(
         case "complete":
           return api.completeProject(story.id, input);
         case "reopen":
-          return api.reopenProject(story.id, input);
+          return api.reopenProject(story.id, {
+            ...input,
+            ...(ownerMemberId !== undefined ? { ownerMemberId } : {}),
+          });
         case "archive":
         default:
           return api.archiveProject(story.id, input);
@@ -168,6 +171,28 @@ export function useProjectActions(
     [update],
   );
 
+  const acknowledgeReview = useCallback(
+    (story: ProjectWithActions) =>
+      run({
+        id: story.id,
+        optimistic: {
+          story: {
+            ...story,
+            revision: story.revision + 1,
+            reviewedAt: new Date().toISOString(),
+          },
+        },
+        mutate: () =>
+          api.acknowledgeProjectReview(story.id, {
+            expectedRevision: story.revision,
+          }),
+        confirmed: (confirmed) => ({ story: confirmed }),
+        refreshImmediately: true,
+        retainUntilRefresh: true,
+      }),
+    [run],
+  );
+
   return {
     pendingIds,
     isPending,
@@ -180,5 +205,6 @@ export function useProjectActions(
     update,
     assignDriver,
     schedule,
+    acknowledgeReview,
   };
 }

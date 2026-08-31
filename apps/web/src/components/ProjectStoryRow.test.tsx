@@ -114,7 +114,13 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
   });
 
   it("activates a backlog story that already has a driver", async () => {
-    const story = makeProject({ id: 20, title: "Kellerregal bauen", status: "backlog", ownerMemberId: 1 });
+    const story = makeProject({
+      id: 20,
+      title: "Kellerregal bauen",
+      status: "backlog",
+      ownerMemberId: 1,
+      nextAction: makeTask({ projectId: 20 }),
+    });
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active" });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Kellerregal bauen");
@@ -150,7 +156,13 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
   });
 
   it("reopens a completed story", async () => {
-    const story = makeProject({ id: 22, title: "Steuererklärung", status: "completed", ownerMemberId: 1 });
+    const story = makeProject({
+      id: 22,
+      title: "Steuererklärung",
+      status: "completed",
+      ownerMemberId: 1,
+      nextAction: makeTask({ projectId: 22 }),
+    });
     mockedApi.reopenProject.mockResolvedValue({ ...story, status: "active" });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Steuererklärung");
@@ -166,8 +178,62 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
     expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
   });
 
+  it("routes an unready reopen to next-action preparation", async () => {
+    const story = makeProject({
+      id: 25,
+      title: "Abgeschlossen ohne nächsten Schritt",
+      status: "completed",
+      ownerMemberId: 1,
+    });
+    renderWithProjectRoute(<Harness story={story} />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Wieder öffnen" }),
+    );
+
+    expect(await screen.findByTestId("project-page")).toHaveTextContent(
+      "Projektseite 25",
+    );
+    expect(mockedApi.reopenProject).not.toHaveBeenCalled();
+  });
+
+  it("collects a missing driver and reopens atomically", async () => {
+    const story = makeProject({
+      id: 26,
+      title: "Abgeschlossen ohne Driver",
+      status: "completed",
+      ownerMemberId: null,
+      nextAction: makeTask({ projectId: 26 }),
+    });
+    mockedApi.reopenProject.mockResolvedValue({
+      ...story,
+      status: "active",
+      ownerMemberId: 1,
+    });
+    const { container } = renderWithProviders(<Harness story={story} />);
+
+    swipe(container, 100);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Verantwortliche Person zuweisen",
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Mira" }),
+    );
+
+    expect(mockedApi.reopenProject).toHaveBeenCalledWith(26, {
+      expectedRevision: 1,
+      ownerMemberId: 1,
+    });
+  });
+
   it("activates an archived story that still has its driver", async () => {
-    const story = makeProject({ id: 23, title: "Gartenhaus streichen", status: "archived", ownerMemberId: 2 });
+    const story = makeProject({
+      id: 23,
+      title: "Gartenhaus streichen",
+      status: "archived",
+      ownerMemberId: 2,
+      nextAction: makeTask({ projectId: 23 }),
+    });
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active" });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Gartenhaus streichen");
@@ -218,7 +284,13 @@ describe("ProjectStoryRow – activation preparation", () => {
   });
 
   it("continues activation immediately after selecting a missing driver", async () => {
-    const story = makeProject({ id: 30, title: "Ohne Driver backlog", status: "backlog", ownerMemberId: null });
+    const story = makeProject({
+      id: 30,
+      title: "Ohne Driver backlog",
+      status: "backlog",
+      ownerMemberId: null,
+      nextAction: makeTask({ projectId: 30 }),
+    });
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active", ownerMemberId: 2 });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Ohne Driver backlog");
@@ -252,6 +324,7 @@ describe("ProjectStoryRow – activation preparation", () => {
       title: "Ohne Driver archived",
       status: "archived",
       ownerMemberId: null,
+      nextAction: makeTask({ projectId: 31 }),
     });
     mockedApi.activateProject.mockResolvedValue({
       ...story,
@@ -277,6 +350,7 @@ describe("ProjectStoryRow – activation preparation", () => {
       status: "completed",
       ownerMemberId: null,
       availableActions: ["reopen", "activate"],
+      nextAction: makeTask({ projectId: 32 }),
     });
     renderWithProviders(<Harness story={story} />);
     await screen.findByText("Archiv ohne Driver");
@@ -802,7 +876,13 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
   });
 
   it("lets the workflow be cycled immediately: complete, then reopen the very same retained row", async () => {
-    const story = makeProject({ id: 61, title: "Zyklus", status: "active", ownerMemberId: 1 });
+    const story = makeProject({
+      id: 61,
+      title: "Zyklus",
+      status: "active",
+      ownerMemberId: 1,
+      nextAction: makeTask({ projectId: 61 }),
+    });
     mockedApi.completeProject.mockResolvedValue({
       ...story,
       status: "completed",

@@ -26,15 +26,15 @@ const mockedApi = vi.mocked(api, true);
 
 function ProjectRouteLocation() {
   const location = useLocation();
-  const refinementReturn = (
+  const reviewReturn = (
     location.state as {
-      refinementReturn?: { issueKey: string };
+      reviewReturn?: { issueKey: string };
     } | null
-  )?.refinementReturn;
+  )?.reviewReturn;
   return (
     <output aria-label="project-route">
       {location.pathname}
-      {location.search}|{refinementReturn?.issueKey ?? "none"}
+      {location.search}|{reviewReturn?.issueKey ?? "none"}
     </output>
   );
 }
@@ -70,7 +70,7 @@ function RouteControls() {
         onClick={() =>
           navigate("/projects/42", {
             state: {
-              refinementReturn: {
+              reviewReturn: {
                 issueKey: "project:42:missing_driver:",
                 issueIndex: 0,
               },
@@ -78,7 +78,7 @@ function RouteControls() {
           })
         }
       >
-        Open from refinement
+        Open from Review
       </button>
       <button
         type="button"
@@ -100,7 +100,7 @@ function renderProjectRoute(entry: string, initialEntries = [entry]) {
       <Routes>
         <Route path="/projects/:id" element={<ProjectDetailPage />} />
         <Route path="/projects" element={<p>Projects destination</p>} />
-        <Route path="/more/refinement" element={<p>Refinement destination</p>} />
+        <Route path="/more/review" element={<p>Review destination</p>} />
       </Routes>
       <TaskDetailHost />
       <ProjectRouteLocation />
@@ -294,20 +294,20 @@ describe("ProjectDetailPage task explanations", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("returns full project details to the originating refinement issue", async () => {
-    renderProjectRoute("/more/refinement");
+  it("returns full project details to the originating Review item", async () => {
+    renderProjectRoute("/more/review");
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Open from refinement" }),
+      screen.getByRole("button", { name: "Open from Review" }),
     );
     expect(await screen.findByText("Sommerfest planen")).toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("link", { name: `← ${strings.refinement}` }),
+      screen.getByRole("link", { name: `← ${strings.reviewTitle}` }),
     );
 
-    expect(screen.getByText("Refinement destination")).toBeInTheDocument();
+    expect(screen.getByText("Review destination")).toBeInTheDocument();
     expect(screen.getByLabelText("project-route")).toHaveTextContent(
-      "/more/refinement|project:42:missing_driver:",
+      "/more/review|project:42:missing_driver:",
     );
   });
 

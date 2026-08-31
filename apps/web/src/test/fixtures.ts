@@ -60,6 +60,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     reminderAt: null,
     createdAt: new Date("2026-01-01T09:00:00Z").toISOString(),
     updatedAt: new Date("2026-01-01T09:00:00Z").toISOString(),
+    reviewedAt: null,
     effectiveOwnerId: null,
     effectiveOwnerSource: "none",
     effectiveTags: [],
@@ -82,6 +83,8 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
 
 export function makeProject(overrides: Partial<ProjectWithActions> = {}): ProjectWithActions {
   const status = overrides.status ?? "active";
+  const hasDriver = (overrides.ownerMemberId ?? null) !== null;
+  const hasViableProgressPath = overrides.nextAction?.executable === true;
   return {
     id: nextId(),
     revision: 1,
@@ -92,12 +95,21 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
     dueDate: null,
     scheduledDate: null,
     position: 0,
+    createdAt: new Date("2026-01-01T09:00:00Z").toISOString(),
+    updatedAt: new Date("2026-01-01T09:00:00Z").toISOString(),
+    reviewedAt: null,
     tags: [],
     effectiveTags: [],
     effectiveAreaTags: [],
     primaryAreaTag: null,
     acceptanceCriteria: [],
     availableActions: workflowActionsByStatus[status],
+    activationReadiness: {
+      ready: hasDriver && hasViableProgressPath,
+      hasDriver,
+      hasViableProgressPath,
+      hasHealthyFutureWaiting: false,
+    },
     ...overrides,
   };
 }

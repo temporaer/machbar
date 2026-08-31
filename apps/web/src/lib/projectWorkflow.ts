@@ -119,7 +119,10 @@ export function secondaryWorkflowActions(
  * same call instead of letting the request fail.
  */
 export function needsDriverBeforeAction(story: Project, action: ProjectWorkflowAction): boolean {
-  return action === "activate" && story.ownerMemberId === null;
+  return (
+    (action === "activate" || action === "reopen") &&
+    story.ownerMemberId === null
+  );
 }
 
 /**

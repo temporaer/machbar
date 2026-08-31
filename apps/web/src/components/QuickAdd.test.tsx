@@ -140,7 +140,7 @@ describe("QuickAdd", () => {
   });
 
   it("übergibt ein neues Projekt an leichte nächste-Schritt-, Öffnen- und Fertig-Aktionen", async () => {
-    const project = makeProject({ id: 55, title: "Küche renovieren", status: "active", ownerMemberId: 1 });
+    const project = makeProject({ id: 55, title: "Küche renovieren", status: "backlog", ownerMemberId: 1 });
     mockedApi.createProject.mockResolvedValue(project);
     mockedApi.createTask.mockResolvedValue(makeTask({ projectId: 55 }) as never);
     renderWithProviders(<QuickAdd />);
@@ -152,7 +152,7 @@ describe("QuickAdd", () => {
     await waitFor(() =>
       expect(mockedApi.createProject).toHaveBeenCalledWith({
         title: "Küche renovieren",
-        status: "active",
+        status: "backlog",
         ownerMemberId: 1,
       }),
     );

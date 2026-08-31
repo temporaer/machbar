@@ -92,7 +92,13 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
         doneCount: 1,
         nextAction: makeTask({ id: 710, title: "Nächster Schritt" }),
       }),
-      makeProject({ id: 72, title: "Fertige Geschichte", status: "completed", ownerMemberId: 1 }),
+      makeProject({
+        id: 72,
+        title: "Fertige Geschichte",
+        status: "completed",
+        ownerMemberId: 1,
+        nextAction: makeTask({ projectId: 72 }),
+      }),
       makeProject({ id: 73, title: "Archivierte Geschichte", status: "archived", ownerMemberId: 1 }),
     ]);
   });
@@ -601,6 +607,13 @@ describe("ProjectsPage – workflow sections", () => {
         ownerMemberId: 1,
         nextAction: null,
         stuckReason: null,
+        waitingUntil: "2099-01-01",
+        activationReadiness: {
+          ready: true,
+          hasDriver: true,
+          hasViableProgressPath: false,
+          hasHealthyFutureWaiting: true,
+        },
       }),
       makeProject({
         id: 3,
@@ -609,6 +622,13 @@ describe("ProjectsPage – workflow sections", () => {
         ownerMemberId: 1,
         nextAction: null,
         stuckReason: null,
+        waitingUntil: "2099-01-01",
+        activationReadiness: {
+          ready: true,
+          hasDriver: true,
+          hasViableProgressPath: false,
+          hasHealthyFutureWaiting: true,
+        },
       }),
     ]);
 
@@ -767,6 +787,13 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
         ownerMemberId: 1,
         nextAction: null,
         stuckReason: null,
+        waitingUntil: "2099-01-01",
+        activationReadiness: {
+          ready: true,
+          hasDriver: true,
+          hasViableProgressPath: false,
+          hasHealthyFutureWaiting: true,
+        },
       }),
     ]);
     mockedApi.reopenProject.mockResolvedValue(
@@ -777,6 +804,13 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
         ownerMemberId: 1,
         nextAction: null,
         stuckReason: null,
+        waitingUntil: "2099-01-01",
+        activationReadiness: {
+          ready: true,
+          hasDriver: true,
+          hasViableProgressPath: false,
+          hasHealthyFutureWaiting: true,
+        },
       }),
     );
     const { container } = renderWithProviders(<ProjectsPage />);

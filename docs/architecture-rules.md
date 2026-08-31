@@ -67,16 +67,18 @@ its retention and conflict behavior fit.
 
 `taskMutations.ts` owns pure revision-safe task metadata execution and owner
 assignment semantics. `useTaskActions.ts` owns normal task optimistic
-projection, lifecycle commands, and external-wait commands.
+projection, lifecycle commands, external-wait commands, and Review
+acknowledgement.
 
 Screens needing a distinct optimistic projection may call the pure task
-mutation functions, as Refinement does. They must not reproduce the raw
+mutation functions, as the optional Review planning tools do. They must not reproduce the raw
 `api.updateTask` contract.
 
 ### Project mutations
 
 `useProjectActions.ts` owns project metadata updates and lifecycle commands,
-including revision handling, optimistic retention, and confirmed overlays.
+including Review acknowledgement, revision handling, optimistic retention, and
+confirmed overlays.
 Presentation code must not reproduce those raw API calls.
 
 `SharePage` is an explicit exception for its unique conflict-aware share/import
@@ -115,6 +117,10 @@ behavior.
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |
 | Task metadata and lifecycle actions | `apps/web/src/lib/useTaskActions.ts` |
 | External-wait actions | `apps/web/src/lib/useTaskActions.ts` |
+| Project next-action selection | `apps/api/src/repo/nextActionRepo.ts` and `Graph` |
+| Derived review diagnosis | `apps/api/src/domain/reviewItems.ts` |
+| Review decisions | `apps/web/src/lib/useProjectActions.ts` and `apps/web/src/lib/useTaskActions.ts` |
+| Exhaustive inventory filtering | `apps/web/src/lib/allInventory.ts` |
 | Refinement sizing semantics | `apps/web/src/lib/refinementHelpers.ts` |
 | Refinement optimistic projection | `apps/web/src/lib/useRefinementActions.ts` |
 | Project metadata and lifecycle actions | `apps/web/src/lib/useProjectActions.ts` |
@@ -160,7 +166,7 @@ and useful architecture contracts.
 
 Do not freeze today's internal call graph when a behavioral assertion protects
 the contract. For example, test that owner assignment has identical semantics
-from normal task UI and Refinement, not that a component invokes one named hook.
+from normal task UI and Review planning tools, not that a component invokes one named hook.
 
 The architecture checker itself uses structural tests for rules that are
 intentionally about source boundaries.

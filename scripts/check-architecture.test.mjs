@@ -26,6 +26,19 @@ test("rejects a standard project mutation from a page", () => {
   );
 });
 
+test("rejects direct review acknowledgements outside canonical actions", () => {
+  assert.deepEqual(
+    rules(
+      "apps/web/src/pages/ReviewFoo.tsx",
+      [
+        "api.acknowledgeTaskReview(1, { expectedRevision: 2 });",
+        "api.acknowledgeProjectReview(2, { expectedRevision: 3 });",
+      ].join("\n"),
+    ),
+    ["canonical-task-mutations", "canonical-project-mutations"],
+  );
+});
+
 test("rejects a new direct task move caller", () => {
   assert.deepEqual(
     rules(
@@ -100,6 +113,7 @@ test("allows canonical action and pure mutation modules", () => {
       [
         "api.completeTask(1);",
         "api.setExternalWait(1, {});",
+        "api.acknowledgeTaskReview(1, {});",
       ].join("\n"),
     ),
     [],
@@ -114,7 +128,7 @@ test("allows canonical action and pure mutation modules", () => {
   assert.deepEqual(
     rules(
       "apps/web/src/lib/useProjectActions.ts",
-      "api.updateProject(1, {});",
+      "api.updateProject(1, {}); api.acknowledgeProjectReview(1, {});",
     ),
     [],
   );

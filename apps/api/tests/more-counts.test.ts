@@ -17,7 +17,7 @@ describe("GET /api/views/more-counts", () => {
     await closeTestContext(ctx);
   });
 
-  it("counts the three review queues from one compiled graph", async () => {
+  it("counts the consolidated derived review queue", async () => {
     const member = ctx.handle.db
       .insert(schema.members)
       .values({ name: "Mira", color: "#123456" })
@@ -56,10 +56,6 @@ describe("GET /api/views/more-counts", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      stuckProjects: 1,
-      backlogReview: 1,
-      refinement: 3,
-    });
+    expect(response.json()).toEqual({ review: 2 });
   });
 });

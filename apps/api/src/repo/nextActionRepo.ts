@@ -8,10 +8,11 @@ import type { Db } from "../db/client.js";
  * sibling `position` order at every level). Implemented as a single
  * SQLite recursive CTE that builds a lexicographically-sortable materialized
  * path per task (zero-padded position segments joined by `.`), combined
- * with a window function to pick the best candidate per project in one
- * query — no per-project queries and no DFS walk in application code.
+ * with one ordered result per project — no per-project queries and no DFS
+ * walk in application code. Keeping every eligible candidate lets Today pick
+ * the first canonical item for a selected member or for each ownership lane.
  */
-export function getNextActionTaskIdsByProject(db: Db): Map<number, number> {
+export function getNextActionTaskIdsByProject(db: Db): Map<number, number[]> {
   const rows = db.all<{ project_id: number; task_id: number }>(sql`
     WITH RECURSIVE sortkey(task_id, project_id, key) AS (
       SELECT id, project_id, printf('%08d', position) FROM tasks WHERE parent_task_id IS NULL
@@ -19,9 +20,8 @@ export function getNextActionTaskIdsByProject(db: Db): Map<number, number> {
       SELECT t.id, t.project_id, sk.key || '.' || printf('%08d', t.position)
       FROM tasks t JOIN sortkey sk ON t.parent_task_id = sk.task_id
     ),
-    ranked AS (
-      SELECT sk.task_id, sk.project_id,
-        ROW_NUMBER() OVER (PARTITION BY sk.project_id ORDER BY sk.key ASC) AS rn
+    eligible AS (
+      SELECT sk.task_id, sk.project_id, sk.key
       FROM sortkey sk
       JOIN tasks t ON t.id = sk.task_id
       WHERE sk.project_id IS NOT NULL
@@ -35,7 +35,13 @@ export function getNextActionTaskIdsByProject(db: Db): Map<number, number> {
           SELECT 1 FROM task_external_waits ew WHERE ew.task_id = t.id
         )
     )
-    SELECT project_id, task_id FROM ranked WHERE rn = 1
+    SELECT project_id, task_id FROM eligible ORDER BY project_id, key
   `);
-  return new Map(rows.map((r) => [r.project_id, r.task_id]));
+  const result = new Map<number, number[]>();
+  for (const row of rows) {
+    const ids = result.get(row.project_id) ?? [];
+    ids.push(row.task_id);
+    result.set(row.project_id, ids);
+  }
+  return result;
 }
