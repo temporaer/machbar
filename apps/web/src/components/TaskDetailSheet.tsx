@@ -44,6 +44,7 @@ import { HumanDateInput } from "./HumanDateInput";
 import { RecentActivity } from "./RecentActivity";
 import { useLocale } from "../lib/locale";
 import {
+  hasApiErrorCode,
   isStaleWriteConflict,
   localizedErrorMessage,
 } from "../lib/errorMessage";
@@ -177,7 +178,10 @@ export function TaskDetailSheet() {
   const [movePrompt, setMovePrompt] = useState<MoveMode | null>(null);
   const [depQuery, setDepQuery] = useState("");
   const [depResults, setDepResults] = useState<Task[]>([]);
-  const [dependencyError, setDependencyError] = useState<string | null>(null);
+  const [dependencyError, setDependencyError] = useState<{
+    candidateTaskId: number | null;
+    message: string;
+  } | null>(null);
   const [addingDependencyId, setAddingDependencyId] = useState<number | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
@@ -549,7 +553,10 @@ export function TaskDetailSheet() {
       setDepResults(results.filter((t) => task && t.id !== task.id).slice(0, 8));
     } catch (err) {
       setDepResults([]);
-      setDependencyError(localizedErrorMessage(err, strings));
+      setDependencyError({
+        candidateTaskId: null,
+        message: localizedErrorMessage(err, strings),
+      });
     }
   };
 
@@ -564,7 +571,12 @@ export function TaskDetailSheet() {
       bump();
       reload();
     } catch (err) {
-      setDependencyError(localizedErrorMessage(err, strings));
+      setDependencyError({
+        candidateTaskId: dependsOnTask.id,
+        message: hasApiErrorCode(err, "task_dependency_cycle")
+          ? strings.dependencyCycleExplanation(dependsOnTask.title, task.title)
+          : localizedErrorMessage(err, strings),
+      });
     } finally {
       setAddingDependencyId(null);
     }
@@ -1082,7 +1094,7 @@ export function TaskDetailSheet() {
             {depResults.length > 0 ? (
               <ul className="list" style={{ padding: 0, margin: 0 }}>
                 {depResults.map((t) => (
-                  <li key={t.id}>
+                  <li key={t.id} className="stack">
                     <button
                       type="button"
                       className="btn btn-sm btn-block"
@@ -1091,14 +1103,20 @@ export function TaskDetailSheet() {
                     >
                       {strings.addDependency}: {t.title}
                     </button>
+                    {dependencyError?.candidateTaskId === t.id ? (
+                      <div className="task-row-error" role="alert">
+                        <span>{strings.error}</span>
+                        <span className="text-muted">{dependencyError.message}</span>
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>
             ) : null}
-            {dependencyError ? (
+            {dependencyError?.candidateTaskId === null ? (
               <div className="task-row-error" role="alert">
                 <span>{strings.error}</span>
-                <span className="text-muted">{dependencyError}</span>
+                <span className="text-muted">{dependencyError.message}</span>
               </div>
             ) : null}
             </div>

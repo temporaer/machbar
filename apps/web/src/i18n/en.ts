@@ -248,6 +248,8 @@ const en = {
   includeInheritedTag: "Include again",
   excludedTagsTitle: "Excluded inherited tags",
   addDependency: "Add dependency",
+  dependencyCycleExplanation: (candidateTitle: string, taskTitle: string) =>
+    `“${candidateTitle}” already depends directly or indirectly on “${taskTitle}”. The reverse dependency would create a cycle.`,
   removeDependency: "Remove",
   resolved: "Resolved",
   unresolved: "Open",
