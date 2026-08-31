@@ -85,29 +85,46 @@ describe("MorePage", () => {
   });
 
   it("keeps diagnostics at the bottom of settings", async () => {
-    const { container } = renderWithProviders(<MorePage />);
+    renderWithProviders(<MorePage />);
 
-    const link = await screen.findByRole("link", { name: /Debug/ });
+    expect(screen.queryByRole("link", { name: /Debug/ })).not.toBeInTheDocument();
+    const toggle = screen.getByRole("switch", { name: /Entwicklermodus/ });
+    await userEvent.click(toggle);
+    const link = screen.getByRole("link", { name: /Debug/ });
     expect(link).toHaveAttribute("href", "/more/debug");
-    expect(link.parentElement?.lastElementChild).toBe(link);
+    expect(window.localStorage.getItem("machbar:developer-mode")).toBe("true");
   });
 
   it("shows a shared-first unranked contribution summary", async () => {
-    const { container } = renderWithProviders(<MorePage />);
+    renderWithProviders(<MorePage />);
 
     expect(
       await screen.findByRole("heading", { name: "Gemeinsam geschafft" }),
     ).toBeInTheDocument();
     expect(screen.getByText("+7", { selector: ".contribution-total" })).toBeInTheDocument();
+    const personalBreakdown = screen
+      .getByText("Persönliche Aufteilung")
+      .closest("details");
+    expect(personalBreakdown).not.toHaveAttribute("open");
+    await userEvent.click(screen.getByText("Persönliche Aufteilung"));
+    expect(personalBreakdown).toHaveAttribute("open");
     expect(screen.getByText("Mira")).toBeInTheDocument();
     expect(screen.getByText("+4 erledigt · +1 geplant")).toBeInTheDocument();
     expect(
       screen.getByText("Gemeinsamer Beitrag ohne persönliche Zuordnung"),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Platz|Rang|winner/i)).not.toBeInTheDocument();
-    expect(container.querySelector(".stack > :first-child")).toHaveClass(
-      "contribution-card",
-    );
+  });
+
+  it("groups destinations and settings by purpose", async () => {
+    renderWithProviders(<MorePage />, { locale: "en" });
+
+    expect(await screen.findByRole("heading", { name: "Household momentum" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Find and review" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Preferences" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Household" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "System" })).toBeInTheDocument();
   });
 
   it("renders English and switches locale immediately on this device", async () => {

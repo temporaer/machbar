@@ -121,7 +121,7 @@ describe("task external waits", () => {
     });
   });
 
-  it("lists dependency, external, and combined blockers exactly once", async () => {
+  it("lists direct external waits once and skips dependency-only blockers", async () => {
     const prerequisite = await createTask({ title: "Prerequisite" });
     const dependencyOnly = await createTask({ title: "Dependency only" });
     await ctx.app.inject({
@@ -153,8 +153,11 @@ describe("task external waits", () => {
     });
     expect(response.statusCode).toBe(200);
     const rows = response.json();
+    expect(rows.map((row: { title: string }) => row.title)).not.toContain(
+      "Dependency only",
+    );
     expect(rows.map((row: { title: string }) => row.title)).toEqual(
-      expect.arrayContaining(["Dependency only", "External only", "Both"]),
+      expect.arrayContaining(["External only", "Both"]),
     );
     expect(
       rows.filter((row: { id: number }) => row.id === both.id),

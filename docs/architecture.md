@@ -254,6 +254,9 @@ optional description in a one-to-one row whose presence means the actionable
 task has an unresolved external blocker. `task_dependencies` stores real task
 prerequisites. Blocking and executability are derived from both sources, and
 current create/update/status APIs accept only the five statuses above.
+The Waiting API includes only actionable tasks with their own
+`task_external_waits` row. Dependency-only blockers stay visible in project
+context instead of duplicating the external wait at the end of their chain.
 
 For an executable task, `scheduledDate` is its planned work date. For a
 blocked task, the same field is its Wiedervorlage. Resolving an external wait

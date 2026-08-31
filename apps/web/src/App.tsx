@@ -25,11 +25,17 @@ import { DebugPage } from "./pages/DebugPage";
 import { LocaleProvider } from "./lib/locale";
 import { ThemeProvider } from "./lib/theme";
 import { SwipeCoachProvider } from "./lib/swipeCoach";
+import { DeveloperModeProvider, useDeveloperMode } from "./lib/developerMode";
 
 function TaskDetailHost() {
   const { openTaskId } = useTaskDetail();
   if (openTaskId === null) return null;
   return <TaskDetailSheet />;
+}
+
+export function DeveloperModeRoute({ children }: { children: ReactNode }) {
+  const { developerMode } = useDeveloperMode();
+  return developerMode ? children : <Navigate to="/more" replace />;
 }
 
 function IdentityAwareRefreshProvider({ children }: { children: ReactNode }) {
@@ -64,7 +70,14 @@ function Shell() {
             <Route path="/more/refinement" element={<RefinementPage />} />
             <Route path="/more/tags" element={<TagsPage />} />
             <Route path="/more/activity" element={<ActivityPage />} />
-            <Route path="/more/debug" element={<DebugPage />} />
+            <Route
+              path="/more/debug"
+              element={
+                <DeveloperModeRoute>
+                  <DebugPage />
+                </DeveloperModeRoute>
+              }
+            />
             <Route path="/share" element={<SharePage />} />
             <Route path="/tasks/:id" element={<TaskDeepLinkPage />} />
             <Route path="*" element={<Navigate to="/today" replace />} />
@@ -81,19 +94,21 @@ export function App() {
   return (
     <ThemeProvider>
       <LocaleProvider>
-        <IdentityProvider>
-          <IdentityAwareRefreshProvider>
-            <SwipeSettingsProvider>
-              <SwipeCoachProvider>
-                <TaskDetailProvider>
-                  <HashRouter>
-                    <Shell />
-                  </HashRouter>
-                </TaskDetailProvider>
-              </SwipeCoachProvider>
-            </SwipeSettingsProvider>
-          </IdentityAwareRefreshProvider>
-        </IdentityProvider>
+        <DeveloperModeProvider>
+          <IdentityProvider>
+            <IdentityAwareRefreshProvider>
+              <SwipeSettingsProvider>
+                <SwipeCoachProvider>
+                  <TaskDetailProvider>
+                    <HashRouter>
+                      <Shell />
+                    </HashRouter>
+                  </TaskDetailProvider>
+                </SwipeCoachProvider>
+              </SwipeSettingsProvider>
+            </IdentityAwareRefreshProvider>
+          </IdentityProvider>
+        </DeveloperModeProvider>
       </LocaleProvider>
     </ThemeProvider>
   );

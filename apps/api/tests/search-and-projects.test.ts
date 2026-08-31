@@ -128,7 +128,7 @@ describe("search/filter and project CRUD/archive", () => {
     ).toBe(true);
   });
 
-  it("returns dependency-only, external-only, and combined blockers once each", async () => {
+  it("returns direct external waits and skips dependency-only blockers", async () => {
     const prerequisite = createTask(ctx.handle.db, {
       title: "Voraussetzung",
       status: "actionable",
@@ -156,12 +156,10 @@ describe("search/filter and project CRUD/archive", () => {
       id: number;
       blockers: Array<{ type: "dependency" | "external" }>;
     }>;
-    for (const task of [dependencyOnly, externalOnly, both]) {
+    expect(rows.some((row) => row.id === dependencyOnly.id)).toBe(false);
+    for (const task of [externalOnly, both]) {
       expect(rows.filter((row) => row.id === task.id)).toHaveLength(1);
     }
-    expect(rows.find((row) => row.id === dependencyOnly.id)?.blockers).toEqual([
-      expect.objectContaining({ type: "dependency" }),
-    ]);
     expect(rows.find((row) => row.id === externalOnly.id)?.blockers).toEqual([
       expect.objectContaining({ type: "external" }),
     ]);

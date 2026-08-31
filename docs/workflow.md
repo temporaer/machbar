@@ -68,8 +68,9 @@ preserve an attributed history.
 
 Dependencies can also block a task until prerequisite work is complete. A
 task may have both blocker types and becomes executable only after all of them
-are resolved. The **Wartet** view shows each blocked task once with its actual
-blocker context.
+are resolved. The **Wartet** view shows tasks with a direct external wait once
+with their actual blocker context. Tasks blocked only by another task stay in
+their project, avoiding duplicate entries for the same external wait.
 
 ### 5. Review
 

@@ -48,30 +48,35 @@ export function ContributionCard() {
             <span>{strings.contributionCompletion}: <strong>{signed(data.sharedCategories.completion)}</strong></span>
             <span>{strings.contributionPlanning}: <strong>{signed(data.sharedCategories.planning)}</strong></span>
           </div>
-          <div className="contribution-members">
-            {data.members.map(({ member, total, categories }) => (
-              <div className="contribution-member" key={member.id}>
-                <span className="row">
-                  <MemberAvatar member={member} size="sm" />
-                  <span>{member.name}</span>
-                </span>
-                <span className="contribution-member-score">
-                  <strong>{signed(total)}</strong>
-                  <small>
-                    {signed(categories.completion)} {strings.contributionCompletionShort}
-                    {" · "}
-                    {signed(categories.planning)} {strings.contributionPlanningShort}
-                  </small>
-                </span>
-              </div>
-            ))}
-            {data.sharedOnlyTotal !== 0 ? (
-              <div className="contribution-member contribution-shared-only">
-                <span>{strings.contributionSharedOnly}</span>
-                <strong>{signed(data.sharedOnlyTotal)}</strong>
-              </div>
-            ) : null}
-          </div>
+          <details className="contribution-details">
+            <summary className="disclosure-summary">
+              {strings.contributionPeopleTitle}
+            </summary>
+            <div className="contribution-members">
+              {data.members.map(({ member, total, categories }) => (
+                <div className="contribution-member" key={member.id}>
+                  <span className="row">
+                    <MemberAvatar member={member} size="sm" />
+                    <span>{member.name}</span>
+                  </span>
+                  <span className="contribution-member-score">
+                    <strong>{signed(total)}</strong>
+                    <small>
+                      {signed(categories.completion)} {strings.contributionCompletionShort}
+                      {" · "}
+                      {signed(categories.planning)} {strings.contributionPlanningShort}
+                    </small>
+                  </span>
+                </div>
+              ))}
+              {data.sharedOnlyTotal !== 0 ? (
+                <div className="contribution-member contribution-shared-only">
+                  <span>{strings.contributionSharedOnly}</span>
+                  <strong>{signed(data.sharedOnlyTotal)}</strong>
+                </div>
+              ) : null}
+            </div>
+          </details>
           <details className="contribution-rules">
             <summary className="disclosure-summary">
               {strings.contributionRulesTitle}
