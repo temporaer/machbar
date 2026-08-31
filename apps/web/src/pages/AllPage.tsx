@@ -14,9 +14,13 @@ import { PageHeader } from "../components/PageHeader";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { SearchFilterBar } from "../components/SearchFilterBar";
 import { TaskOutline } from "../components/TaskOutline";
+import { filterAndSortProjects } from "../lib/projectListFilter";
+import { useLocale } from "../lib/locale";
+import { sortInventoryTasks } from "../lib/sortOrder";
 
 export function AllPage() {
   const strings = useStrings();
+  const { locale } = useLocale();
   const [filters, setFilters] = useState<SearchFilters>({});
   const filtersKey = JSON.stringify(filters);
   const { data: projects, loading: projectsLoading, error: projectsError, reload: reloadProjects } =
@@ -30,15 +34,25 @@ export function AllPage() {
   } = useAsync(() => api.searchTasks(filters), [filtersKey]);
   const projectActions = useProjectActions(projects ?? []);
   const filteredProjects = useMemo(
-    () => filterInventoryProjects(projects ?? [], filters),
-    [filtersKey, projects],
+    () =>
+      filterAndSortProjects(filterInventoryProjects(projects ?? [], filters), {
+        query: "",
+        scope: "all",
+        currentMemberId: null,
+        locale,
+      }),
+    [filtersKey, locale, projects],
   );
   const filtering = hasInventoryFilters(filters);
-  const visibleTasks = filtering
-    ? topLevelTaskResults(tasks ?? [])
-    : (tasks ?? []).filter(
-        (task) => task.projectId === null && task.parentTaskId === null,
-      );
+  const visibleTasks = sortInventoryTasks(
+    filtering
+      ? topLevelTaskResults(tasks ?? [])
+      : (tasks ?? []).filter(
+          (task) => task.projectId === null && task.parentTaskId === null,
+        ),
+    filters.text ?? "",
+    locale,
+  );
   const loading = projectsLoading || tasksLoading;
   const error = projectsError ?? tasksError;
 
@@ -88,7 +102,11 @@ export function AllPage() {
                 <h2 id="all-tasks-heading" className="section-title">
                   {filtering ? strings.allMatchingTasksHeading : strings.allStandaloneTasksHeading}
                 </h2>
-                <TaskOutline tasks={visibleTasks} emptyMessage={strings.allEmpty} />
+                <TaskOutline
+                  tasks={visibleTasks}
+                  emptyMessage={strings.allEmpty}
+                  preserveRootOrder
+                />
               </section>
             ) : null}
           </>

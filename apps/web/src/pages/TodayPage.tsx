@@ -129,6 +129,7 @@ export function TodayPage() {
                     <TaskOutline
                       tasks={agenda[s.key]}
                       emptyMessage={strings.noItems}
+                      preserveRootOrder
                       showSwipeHint={false}
                     />
                   </div>
@@ -139,6 +140,7 @@ export function TodayPage() {
                   <TaskOutline
                     tasks={revisitTasks}
                     emptyMessage={strings.noItems}
+                    preserveRootOrder
                     showRevisitDate
                     showSwipeHint={false}
                   />
@@ -150,6 +152,7 @@ export function TodayPage() {
                   <TaskOutline
                     tasks={additionalTasks}
                     emptyMessage={strings.noItems}
+                    preserveRootOrder
                     showSwipeHint={false}
                   />
                 </div>

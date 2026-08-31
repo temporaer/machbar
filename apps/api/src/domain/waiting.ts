@@ -37,6 +37,6 @@ export function buildBlockedWork(
       const dueA = a.dueDate ?? "9999-99-99";
       const dueB = b.dueDate ?? "9999-99-99";
       if (dueA !== dueB) return dueA.localeCompare(dueB);
-      return a.position - b.position || a.id - b.id;
+      return a.title.localeCompare(b.title, "de") || a.id - b.id;
     });
 }

@@ -8,6 +8,8 @@ import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { LoadingState, ErrorState, EmptyState } from "./AsyncStates";
+import { useLocale } from "../lib/locale";
+import { sortMembersByName } from "../lib/sortOrder";
 
 function errorMessage(err: unknown, strings: Strings): string {
   return localizedErrorMessage(err, strings);
@@ -24,6 +26,7 @@ function errorMessage(err: unknown, strings: Strings): string {
  */
 export function MemberManager() {
   const strings = useStrings();
+  const { locale } = useLocale();
   const { members, membersLoading, membersError, reloadMembers } = useIdentity();
   const { bump } = useRefresh();
 
@@ -116,7 +119,7 @@ export function MemberManager() {
         <EmptyState message={strings.noMembers} />
       ) : (
         <ul className="list" style={{ padding: 0, margin: 0 }}>
-          {members.map((member) => (
+          {sortMembersByName(members, locale).map((member) => (
             <li key={member.id} className="row-between" style={{ padding: "6px 0" }}>
               {editingId === member.id ? (
                 <form

@@ -38,7 +38,7 @@ describe("MemberChoiceGroup", () => {
       within(group)
         .getAllByRole("button")
         .map((b) => b.textContent),
-    ).toEqual(["Gemeinsam / offen", "Mira", "Jonas", "Lea", "Timo", "Ada"]);
+    ).toEqual(["Gemeinsam / offen", "Ada", "Jonas", "Lea", "Mira", "Timo"]);
   });
 
   it("marks exactly the current choice with aria-pressed", () => {
@@ -166,6 +166,6 @@ describe("MemberChoiceGroup", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Mira" })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Ada" })).toHaveFocus();
   });
 });

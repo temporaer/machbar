@@ -33,9 +33,10 @@ life into corporate project management.
 
 Machbar builds personal and household-wide Today views from planning dates,
 deadlines, follow-ups, responsibility, and task state. Standalone work remains
-available, while projects contribute only their next useful action instead of
-dumping every open step into Today. Household mode preserves independent owner
-lanes, and real dates still surface later project tasks when they matter.
+available, while projects contribute only their canonical next useful action
+instead of dumping every open step into Today. A future-scheduled next action
+stays visibly deferred on Projects and remains out of Today until its date is
+reached. Household mode preserves independent owner lanes.
 
 ### Projects with an outcome, not just a pile of tasks
 
@@ -60,8 +61,8 @@ resets its lightweight review lease.
 Derived views can hide work on purpose; **Alles** never does. It combines
 first-class project inventory with standalone tasks, search, and useful filters
 across active, parked, captured, waiting, completed, and archived work. Project
-details retain full outlines, while search can take you directly to a matching
-nested task.
+details retain full outlines, while search favors relevant open results and can
+take you directly to a matching nested task.
 
 ### Waiting that remains actionable
 

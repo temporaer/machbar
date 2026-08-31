@@ -24,7 +24,11 @@ function Harness() {
       <SearchFilterBar
         filters={filters}
         onChange={setFilters}
-        projects={[makeProject({ id: 1, title: "Umzug" })]}
+        projects={[
+          makeProject({ id: 1, title: "Umzug" }),
+          makeProject({ id: 2, title: "Änderung" }),
+          makeProject({ id: 3, title: "Abstellraum" }),
+        ]}
         tags={[makeTag({ id: 2, name: "eilig" })]}
       />
       <output aria-label="Aktive Filter">{JSON.stringify(filters)}</output>
@@ -53,6 +57,12 @@ describe("SearchFilterBar", () => {
     expect(filterButton).toHaveAttribute("aria-expanded", "true");
     expect(await screen.findByText("Umzug")).toBeInTheDocument();
     expect(screen.getByText("eilig")).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("option")
+        .slice(1, 4)
+        .map((option) => option.textContent),
+    ).toEqual(["Abstellraum", "Änderung", "Umzug"]);
 
     await userEvent.click(screen.getByRole("button", { name: "Filter zurücksetzen" }));
     expect(screen.getByLabelText("Suchen")).toHaveValue("");

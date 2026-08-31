@@ -11,6 +11,8 @@ import { CaptureForm } from "./CaptureForm";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
 import { useIdentity } from "../lib/identity";
+import { useLocale } from "../lib/locale";
+import { sortProjectDestinations } from "../lib/sortOrder";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -30,6 +32,7 @@ export function QuickAdd({
   onAutoOpenClose?: () => void;
 }) {
   const strings = useStrings();
+  const { locale } = useLocale();
   const [open, setOpen] = useState(autoOpen);
   const [error, setError] = useState<string | null>(null);
   const [createdTask, setCreatedTask] = useState<Awaited<ReturnType<typeof api.createTask>> | null>(null);
@@ -107,7 +110,10 @@ export function QuickAdd({
     }
   };
 
-  const projectOptions: DestinationOption[] = (projects ?? []).map((project) => ({
+  const projectOptions: DestinationOption[] = sortProjectDestinations(
+    projects ?? [],
+    locale,
+  ).map((project) => ({
     id: project.id,
     title: project.title,
   }));

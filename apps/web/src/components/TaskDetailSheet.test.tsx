@@ -336,6 +336,72 @@ describe("TaskDetailSheet", () => {
     expect(result).toBeInTheDocument();
   });
 
+  it("ranks dependency matches before limiting and shows their project context", async () => {
+    const existing = makeTask({ id: 18, title: "Schon verknüpft" });
+    const task = makeTask({
+      id: 42,
+      title: "Reparaturziel",
+      projectId: 5,
+      dependencies: [
+        {
+          id: 71,
+          taskId: 42,
+          dependsOnTaskId: existing.id,
+          title: existing.title,
+          resolved: false,
+        },
+      ],
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.searchTasks.mockResolvedValue([
+      task,
+      existing,
+      makeTask({
+        id: 1,
+        title: "Freigabe",
+        projectId: 9,
+        projectTitle: "Bad",
+        status: "done",
+      }),
+      makeTask({
+        id: 2,
+        title: "Freigabe",
+        projectId: 5,
+        projectTitle: "Küche",
+      }),
+      makeTask({
+        id: 3,
+        title: "Bau Freigabe",
+        projectId: 5,
+        projectTitle: "Küche",
+      }),
+      makeTask({
+        id: 4,
+        title: "Notiz",
+        notes: "Freigabe",
+        projectId: 5,
+        projectTitle: "Küche",
+      }),
+    ]);
+    renderSheet(42);
+
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await userEvent.type(
+      await screen.findByLabelText("Aufgabe suchen …"),
+      "Freigabe",
+    );
+
+    const results = await screen.findAllByRole("button", {
+      name: /^Abhängigkeit hinzufügen:/,
+    });
+    expect(results.map((result) => result.textContent)).toEqual([
+      "Abhängigkeit hinzufügen: Freigabe · Küche",
+      "Abhängigkeit hinzufügen: Freigabe · Bad",
+      "Abhängigkeit hinzufügen: Bau Freigabe · Küche",
+      "Abhängigkeit hinzufügen: Notiz · Küche",
+    ]);
+  });
+
   it("manages external waits beside dependencies without a waiting status", async () => {
     const task = makeTask({
       id: 42,

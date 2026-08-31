@@ -28,6 +28,14 @@ function calendarDayDifference(value: string, now: Date): number | null {
   return Math.round((targetDay - localToday) / DAY_MS);
 }
 
+export function isFutureCalendarDate(
+  value: string,
+  now = new Date(),
+): boolean {
+  const days = calendarDayDifference(value, now);
+  return days !== null && days > 0;
+}
+
 export function formatExactLocalDate(
   value: string,
   locale: Locale = "de",

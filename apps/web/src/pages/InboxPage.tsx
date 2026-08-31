@@ -45,6 +45,7 @@ export function InboxPage() {
           <TaskOutline
             tasks={tasks}
             emptyMessage={strings.clarifyEmpty}
+            preserveRootOrder
             showSwipeHint={false}
           />
         )

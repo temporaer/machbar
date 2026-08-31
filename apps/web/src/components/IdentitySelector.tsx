@@ -6,6 +6,8 @@ import { useStrings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { MemberAvatar } from "./MemberAvatar";
+import { useLocale } from "../lib/locale";
+import { sortMembersByName } from "../lib/sortOrder";
 
 /**
  * Identity selection normally only chooses an existing member. On a fresh,
@@ -15,6 +17,7 @@ import { MemberAvatar } from "./MemberAvatar";
  */
 export function IdentitySelector({ onSelected }: { onSelected?: (member: Member) => void }) {
   const strings = useStrings();
+  const { locale } = useLocale();
   const { members, membersLoading, membersError, reloadMembers, currentMemberId, setCurrentMemberId } =
     useIdentity();
   const [newName, setNewName] = useState("");
@@ -67,7 +70,7 @@ export function IdentitySelector({ onSelected }: { onSelected?: (member: Member)
         </>
       ) : (
         <div className="identity-grid" role="listbox" aria-label={strings.identity}>
-          {members.map((member) => (
+          {sortMembersByName(members, locale).map((member) => (
             <button
               key={member.id}
               type="button"

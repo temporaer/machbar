@@ -38,6 +38,7 @@ export function WaitingGroupList({
       tasks={items}
       emptyMessage={strings.waitingEmpty}
       organizable={false}
+      preserveRootOrder
       waitingInteraction={{ onFollowUp: setFollowUpTask }}
       showRevisitDate
       showSwipeHint={false}

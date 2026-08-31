@@ -560,4 +560,79 @@ describe("review queue", () => {
     expect(endpoint.json().length).toBeGreaterThanOrEqual(items.length);
     expect(counts.json()).toEqual({ review: endpoint.json().length });
   });
+
+  it("orders equal review reasons by project and entity titles before stable type and ID ties", () => {
+    const member = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Queue owner", color: "#334455" })
+      .returning()
+      .get();
+    const zuluProject = ctx.handle.db
+      .insert(schema.projects)
+      .values({
+        title: "Zulu project",
+        status: "active",
+        ownerMemberId: member.id,
+      })
+      .returning()
+      .get();
+    const alphaProject = ctx.handle.db
+      .insert(schema.projects)
+      .values({
+        title: "Alpha project",
+        status: "active",
+        ownerMemberId: member.id,
+      })
+      .returning()
+      .get();
+    const zuluProjectTask = ctx.handle.db
+      .insert(schema.tasks)
+      .values({ projectId: zuluProject.id, title: "Alpha entity" })
+      .returning()
+      .get();
+    const alphaProjectTask = ctx.handle.db
+      .insert(schema.tasks)
+      .values({ projectId: alphaProject.id, title: "Zulu entity" })
+      .returning()
+      .get();
+    const duplicateFirst = ctx.handle.db
+      .insert(schema.tasks)
+      .values({ projectId: alphaProject.id, title: "Duplicate entity" })
+      .returning()
+      .get();
+    const duplicateSecond = ctx.handle.db
+      .insert(schema.tasks)
+      .values({ projectId: alphaProject.id, title: "Duplicate entity" })
+      .returning()
+      .get();
+    const standalone = ctx.handle.db
+      .insert(schema.tasks)
+      .values({ title: "A standalone entity" })
+      .returning()
+      .get();
+    for (const task of [
+      zuluProjectTask,
+      alphaProjectTask,
+      duplicateFirst,
+      duplicateSecond,
+      standalone,
+    ]) {
+      ctx.handle.db
+        .insert(schema.taskExternalWaits)
+        .values({ taskId: task.id, waitingFor: "Reply" })
+        .run();
+    }
+
+    expect(
+      reviewItems()
+        .filter((item) => item.reason === "waiting_without_followup")
+        .map((item) => item.entityId),
+    ).toEqual([
+      duplicateFirst.id,
+      duplicateSecond.id,
+      alphaProjectTask.id,
+      zuluProjectTask.id,
+      standalone.id,
+    ]);
+  });
 });

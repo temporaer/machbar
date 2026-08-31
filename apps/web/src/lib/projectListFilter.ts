@@ -1,5 +1,6 @@
 import type { ProjectWithActions } from "./api";
 import type { Locale } from "../i18n/catalog";
+import { isFutureCalendarDate } from "./relativeDate";
 
 /** The two visibility scopes the Projekte tab's compact chips switch between. */
 export type ProjectVisibilityScope = "mine" | "all";
@@ -11,6 +12,8 @@ export interface ProjectListFilterOptions {
   /** The currently selected identity, or `null` when no member is selected yet. */
   currentMemberId: number | null;
   locale?: Locale;
+  /** Local clock injected by tests; defaults to the current browser time. */
+  now?: Date;
 }
 
 export type ProjectListClassification =
@@ -75,11 +78,26 @@ export function classifyProjectListItem(project: ProjectWithActions): ProjectLis
 const projectListClassificationOrder: Record<ProjectListClassification, number> = {
   "active-actionable": 0,
   "active-stuck": 1,
-  "healthy-waiting": 2,
-  backlog: 3,
-  completed: 4,
-  archived: 5,
+  "healthy-waiting": 3,
+  backlog: 4,
+  completed: 5,
+  archived: 6,
 };
+
+function projectListSortOrder(
+  project: ProjectWithActions,
+  now: Date,
+): number {
+  const classification = classifyProjectListItem(project);
+  if (
+    classification === "active-actionable" &&
+    project.nextAction?.scheduledDate &&
+    isFutureCalendarDate(project.nextAction.scheduledDate, now)
+  ) {
+    return 2;
+  }
+  return projectListClassificationOrder[classification];
+}
 
 /**
  * A story is "terminal" once it has left the active workflow for good:
@@ -96,10 +114,11 @@ export function isTerminalProjectStatus(project: ProjectWithActions): boolean {
  * Projekte tab's story list. Filtering always runs before sorting so a
  * bucket never contains a story the current search/scope would hide.
  *
- * Sort buckets, in order: active & actionable, active & stuck, healthy
- * waiting, backlog, completed, archived. Within a bucket, ties break on the
- * backend-assigned `position`, then the locale-aware title, then the id, so
- * the order stays stable and reproducible across reloads/retentions.
+ * Sort buckets, in order: active & actionable, active & stuck, active with a
+ * future-scheduled next action, healthy waiting, backlog, completed, archived.
+ * Within a bucket, ties break on the backend-assigned `position`, then the
+ * locale-aware title, then the id, so the order stays stable and reproducible
+ * across reloads/retentions.
  */
 export function filterAndSortProjects(
   projects: ProjectWithActions[],
@@ -108,6 +127,7 @@ export function filterAndSortProjects(
     scope,
     currentMemberId,
     locale = "de",
+    now = new Date(),
   }: ProjectListFilterOptions,
 ): ProjectWithActions[] {
   const foldedQuery = foldForSearch(query.trim());
@@ -118,8 +138,7 @@ export function filterAndSortProjects(
   );
   return filtered.sort((a, b) => {
     const bucketDiff =
-      projectListClassificationOrder[classifyProjectListItem(a)] -
-      projectListClassificationOrder[classifyProjectListItem(b)];
+      projectListSortOrder(a, now) - projectListSortOrder(b, now);
     if (bucketDiff !== 0) return bucketDiff;
     if (a.position !== b.position) return a.position - b.position;
     const titleDiff = a.title.localeCompare(b.title, locale);
