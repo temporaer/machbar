@@ -33,6 +33,7 @@ vi.mock("../lib/api", () => ({
     reopenTask: vi.fn(),
     deleteTask: vi.fn(),
     searchTasks: vi.fn(),
+    addDependency: vi.fn(),
     getActivity: vi.fn(),
   },
 }));
@@ -127,6 +128,7 @@ describe("TaskDetailSheet", () => {
     mockedApi.setExternalWait.mockResolvedValue(makeTask());
     mockedApi.resolveExternalWait.mockResolvedValue(makeTask());
     mockedApi.transitionTaskStatus.mockResolvedValue(makeTask());
+    mockedApi.addDependency.mockResolvedValue(makeTask());
     mockedApi.getActivity.mockResolvedValue({ items: [], nextCursor: null });
     mockedApi.getTaskRecurrenceHistory.mockResolvedValue({
       summary: { hitCount: 0, missCount: 0, totalCount: 0, hitRate: null },
@@ -269,6 +271,37 @@ describe("TaskDetailSheet", () => {
     const removeButton = screen.getByRole("button", { name: "Entfernen" });
     await waitFor(() => expect(searchInput).toHaveFocus());
     expect(removeButton).not.toHaveFocus();
+  });
+
+  it("surfaces why a searched task cannot be added as a dependency", async () => {
+    const task = makeTask({ id: 42, title: "Reparaturziel" });
+    const candidate = makeTask({ id: 19, title: "Freigabe einholen" });
+    const cycleError = Object.assign(
+      new Error("This dependency would create a cycle."),
+      {
+        name: "ApiError",
+        code: "task_dependency_cycle" as const,
+      },
+    );
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.searchTasks.mockResolvedValue([candidate]);
+    mockedApi.addDependency.mockRejectedValue(cycleError);
+    renderSheet(42);
+
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await userEvent.type(
+      await screen.findByLabelText("Aufgabe suchen …"),
+      "Freigabe",
+    );
+    const result = await screen.findByRole("button", {
+      name: "Abhängigkeit hinzufügen: Freigabe einholen",
+    });
+    await userEvent.click(result);
+
+    expect(
+      await screen.findByText("Diese Abhängigkeit würde einen Kreis erzeugen."),
+    ).toBeInTheDocument();
+    expect(result).toBeInTheDocument();
   });
 
   it("manages external waits beside dependencies without a waiting status", async () => {

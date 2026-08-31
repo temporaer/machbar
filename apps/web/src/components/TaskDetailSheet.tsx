@@ -177,6 +177,8 @@ export function TaskDetailSheet() {
   const [movePrompt, setMovePrompt] = useState<MoveMode | null>(null);
   const [depQuery, setDepQuery] = useState("");
   const [depResults, setDepResults] = useState<Task[]>([]);
+  const [dependencyError, setDependencyError] = useState<string | null>(null);
+  const [addingDependencyId, setAddingDependencyId] = useState<number | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [externalWaitDraft, setExternalWaitDraft] = useState("");
@@ -264,6 +266,8 @@ export function TaskDetailSheet() {
       setStatusDraft(task.status);
       setExternalWaitDraft(task.externalWait?.waitingFor ?? "");
       setExternalWaitDateDraft(task.externalWait ? task.scheduledDate ?? "" : "");
+      setDependencyError(null);
+      setAddingDependencyId(null);
     }
     const hasUnsavedEdits =
       !isNewTask &&
@@ -535,12 +539,35 @@ export function TaskDetailSheet() {
 
   const runDependencySearch = async (value: string) => {
     setDepQuery(value);
+    setDependencyError(null);
     if (!value.trim()) {
       setDepResults([]);
       return;
     }
-    const results = await api.searchTasks({ text: value });
-    setDepResults(results.filter((t) => task && t.id !== task.id).slice(0, 8));
+    try {
+      const results = await api.searchTasks({ text: value });
+      setDepResults(results.filter((t) => task && t.id !== task.id).slice(0, 8));
+    } catch (err) {
+      setDepResults([]);
+      setDependencyError(localizedErrorMessage(err, strings));
+    }
+  };
+
+  const addTaskDependency = async (dependsOnTask: Task) => {
+    if (!task || addingDependencyId !== null) return;
+    setAddingDependencyId(dependsOnTask.id);
+    setDependencyError(null);
+    try {
+      await api.addDependency(task.id, dependsOnTask.id);
+      setDepQuery("");
+      setDepResults([]);
+      bump();
+      reload();
+    } catch (err) {
+      setDependencyError(localizedErrorMessage(err, strings));
+    } finally {
+      setAddingDependencyId(null);
+    }
   };
 
   const saveExternalWait = async () => {
@@ -1059,20 +1086,20 @@ export function TaskDetailSheet() {
                     <button
                       type="button"
                       className="btn btn-sm btn-block"
-                      onClick={() =>
-                        void api.addDependency(task.id, t.id).then(() => {
-                          setDepQuery("");
-                          setDepResults([]);
-                          bump();
-                          reload();
-                        })
-                      }
+                      disabled={addingDependencyId !== null}
+                      onClick={() => void addTaskDependency(t)}
                     >
                       {strings.addDependency}: {t.title}
                     </button>
                   </li>
                 ))}
               </ul>
+            ) : null}
+            {dependencyError ? (
+              <div className="task-row-error" role="alert">
+                <span>{strings.error}</span>
+                <span className="text-muted">{dependencyError}</span>
+              </div>
             ) : null}
             </div>
           </TaskDetailSection>
