@@ -225,6 +225,8 @@ const extra = {
   includeInheritedTag: "Ausschluss aufheben",
   excludedTagsTitle: "Ausgeschlossene geerbte Tags",
   addDependency: "Abhängigkeit hinzufügen",
+  dependencyCycleExplanation: (candidateTitle: string, taskTitle: string) =>
+    `„${candidateTitle}“ hängt bereits direkt oder indirekt von „${taskTitle}“ ab. Die umgekehrte Abhängigkeit würde einen Kreis erzeugen.`,
   removeDependency: "Entfernen",
   resolved: "Erledigt",
   unresolved: "Offen",

@@ -299,8 +299,15 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(result);
 
     expect(
-      await screen.findByText("Diese Abhängigkeit würde einen Kreis erzeugen."),
+      await screen.findByText(
+        "„Freigabe einholen“ hängt bereits direkt oder indirekt von „Reparaturziel“ ab. Die umgekehrte Abhängigkeit würde einen Kreis erzeugen.",
+      ),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "„Freigabe einholen“ hängt bereits direkt oder indirekt von „Reparaturziel“ ab. Die umgekehrte Abhängigkeit würde einen Kreis erzeugen.",
+      ).closest("li"),
+    ).toContainElement(result);
     expect(result).toBeInTheDocument();
   });
 

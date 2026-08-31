@@ -14,6 +14,13 @@ function isApiError(
   return error instanceof Error && error.name === "ApiError";
 }
 
+export function hasApiErrorCode(
+  error: unknown,
+  code: ApiErrorCode,
+): boolean {
+  return isApiError(error) && error.code === code;
+}
+
 export function isStaleWriteConflict(error: unknown): boolean {
   return isApiError(error) && error.code === "stale_write_conflict";
 }
