@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import {
   closeTestContext,
   createTestContext,
@@ -263,5 +264,149 @@ describe("task external waits", () => {
     expect(recurringWait.json().error.code).toBe(
       "external_wait_recurring_forbidden",
     );
+  });
+
+  it("atomically appends an attributed follow-up and updates the wait", async () => {
+    const member = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/members",
+        payload: { name: "Mira" },
+      })
+    ).json();
+    const task = await createTask({
+      title: "Ask again",
+      notes: "Initial request.",
+    });
+    const waiting = (
+      await ctx.app.inject({
+        method: "PUT",
+        url: `/api/tasks/${task.id}/external-wait`,
+        payload: {
+          waitingFor: "Landlord",
+          scheduledDate: "2026-09-02",
+          expectedRevision: task.revision,
+        },
+      })
+    ).json();
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/external-wait/follow-up`,
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(member.id) },
+      payload: {
+        action: "continue",
+        content: "Called again; awaiting the written answer.",
+        waitingFor: "Property manager",
+        scheduledDate: "2026-09-09",
+        expectedRevision: waiting.revision,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id: task.id,
+      status: "actionable",
+      scheduledDate: "2026-09-09",
+      externalWait: { waitingFor: "Property manager" },
+      revision: waiting.revision + 1,
+    });
+    expect(response.json().notes).toMatch(
+      /^Initial request\.\n\n\[[^\]]+ · Mira\]\nCalled again; awaiting the written answer\.$/,
+    );
+  });
+
+  it("atomically appends a follow-up and resolves the wait without changing task status", async () => {
+    const task = await createTask({
+      title: "Resolve after reply",
+      notes: "Initial request.",
+    });
+    const waiting = (
+      await ctx.app.inject({
+        method: "PUT",
+        url: `/api/tasks/${task.id}/external-wait`,
+        payload: {
+          waitingFor: "Supplier",
+          scheduledDate: "2026-09-02",
+          expectedRevision: task.revision,
+        },
+      })
+    ).json();
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/external-wait/follow-up`,
+      payload: {
+        action: "resolve",
+        content: "The delivery was confirmed.",
+        expectedRevision: waiting.revision,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      status: "actionable",
+      externalWait: null,
+      scheduledDate: null,
+      blocked: false,
+      revision: waiting.revision + 1,
+    });
+    expect(response.json().notes).toContain(
+      "· Unknown actor]\nThe delivery was confirmed.",
+    );
+  });
+
+  it("rolls back the whole follow-up on stale revision or a missing continuation reason", async () => {
+    const task = await createTask({
+      title: "Keep atomic",
+      notes: "Original note.",
+    });
+    const waiting = (
+      await ctx.app.inject({
+        method: "PUT",
+        url: `/api/tasks/${task.id}/external-wait`,
+        payload: {
+          waitingFor: "Authority",
+          scheduledDate: "2026-09-02",
+          expectedRevision: task.revision,
+        },
+      })
+    ).json();
+    const stale = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/external-wait/follow-up`,
+      payload: {
+        action: "resolve",
+        content: "Must not be appended.",
+        expectedRevision: task.revision,
+      },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error.code).toBe("stale_write_conflict");
+
+    const noReason = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/external-wait/follow-up`,
+      payload: {
+        action: "continue",
+        content: "Also must not be appended.",
+        waitingFor: "   ",
+        scheduledDate: "2026-09-10",
+        expectedRevision: waiting.revision,
+      },
+    });
+    expect(noReason.statusCode).toBe(400);
+    expect(noReason.json().error.code).toBe("external_wait_reason_required");
+
+    const current = await ctx.app.inject({
+      method: "GET",
+      url: `/api/tasks/${task.id}`,
+    });
+    expect(current.json()).toMatchObject({
+      notes: "Original note.",
+      scheduledDate: "2026-09-02",
+      externalWait: { waitingFor: "Authority" },
+      revision: waiting.revision,
+    });
   });
 });

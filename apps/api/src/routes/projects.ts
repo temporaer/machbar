@@ -27,6 +27,7 @@ import {
   checkCriterionSchema,
   createProjectSchema,
   createTaskSequenceSchema,
+  projectLifecycleSchema,
   reorderCriteriaSchema,
   updateCriterionSchema,
   updateProjectSchema,
@@ -201,9 +202,13 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     "/api/projects/:id/return-to-backlog",
     async (request) => {
       const id = parseId(request.params.id);
-      returnProjectToBacklog(db, id, {
-        actorMemberId: request.activityActor?.id ?? null,
-      });
+      const body = parseOrThrow(projectLifecycleSchema, request.body ?? {});
+      returnProjectToBacklog(
+        db,
+        id,
+        { actorMemberId: request.activityActor?.id ?? null },
+        body.expectedRevision,
+      );
       const graph = Graph.load(db);
       return projectWithIssues(graph, id);
     },
@@ -213,9 +218,13 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     "/api/projects/:id/complete",
     async (request) => {
       const id = parseId(request.params.id);
-      completeProject(db, id, {
-        actorMemberId: request.activityActor?.id ?? null,
-      });
+      const body = parseOrThrow(projectLifecycleSchema, request.body ?? {});
+      completeProject(
+        db,
+        id,
+        { actorMemberId: request.activityActor?.id ?? null },
+        body.expectedRevision,
+      );
       const graph = Graph.load(db);
       return projectWithIssues(graph, id);
     },
@@ -225,9 +234,13 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     "/api/projects/:id/reopen",
     async (request) => {
       const id = parseId(request.params.id);
-      reopenProject(db, id, {
-        actorMemberId: request.activityActor?.id ?? null,
-      });
+      const body = parseOrThrow(projectLifecycleSchema, request.body ?? {});
+      reopenProject(
+        db,
+        id,
+        { actorMemberId: request.activityActor?.id ?? null },
+        body.expectedRevision,
+      );
       const graph = Graph.load(db);
       return projectWithIssues(graph, id);
     },
@@ -237,9 +250,13 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     "/api/projects/:id/archive",
     async (request) => {
       const id = parseId(request.params.id);
-      archiveProject(db, id, {
-        actorMemberId: request.activityActor?.id ?? null,
-      });
+      const body = parseOrThrow(projectLifecycleSchema, request.body ?? {});
+      archiveProject(
+        db,
+        id,
+        { actorMemberId: request.activityActor?.id ?? null },
+        body.expectedRevision,
+      );
       const graph = Graph.load(db);
       return projectWithIssues(graph, id);
     },

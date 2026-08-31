@@ -136,24 +136,21 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Garten aufräumen");
 
     swipe(container, 100);
-    const dialog = await screen.findByRole("dialog", {
-      name: "Aktivierung vorbereiten",
-    });
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "Aktiv machen" }),
-    );
     await act(async () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.activateProject).toHaveBeenCalledWith(12, undefined);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockedApi.activateProject).toHaveBeenCalledWith(12, {
+      expectedRevision: 1,
+    });
     // Optimistic: still shown, muted, with the new status while retained.
     expect(screen.getByText("Garten aufräumen")).toBeInTheDocument();
     expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
     expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
   });
 
-  it("uses the activation preflight to require a driver before activation", async () => {
+  it("continues activation as soon as a missing driver is selected", async () => {
     const story = makeProject({ id: 13, title: "Homeoffice-Ecke einrichten", status: "backlog", ownerMemberId: null });
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active", ownerMemberId: 2 });
     const { container } = renderWithProviders(<Harness story={story} />);
@@ -162,12 +159,8 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     swipe(container, 100);
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Aktivierung vorbereiten",
+      name: "Verantwortliche Person zuweisen",
     });
-    expect(
-      screen.getByText("Eine verantwortliche Person ist für aktive Projekte erforderlich."),
-    ).toBeInTheDocument();
-
     // Activating without a driver is illegal, so no "Niemand zugewiesen" chip
     // is offered here — only the household members.
     const group = screen.getByRole("group", { name: "Verantwortlich" });
@@ -182,20 +175,17 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     ).toEqual(["Mira", "Noah"]);
 
     await userEvent.click(within(group).getByRole("button", { name: "Noah" }));
-    expect(within(group).getByRole("button", { name: "Noah" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "Aktiv machen" }),
-    );
 
     await waitFor(() =>
-      expect(mockedApi.activateProject).toHaveBeenCalledWith(13, { ownerMemberId: 2 }),
+      expect(mockedApi.activateProject).toHaveBeenCalledWith(13, {
+        expectedRevision: 1,
+        ownerMemberId: 2,
+      }),
     );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("shows outcome and next-action gaps as advisory and still allows activation", async () => {
+  it("does not open an advisory wizard for outcome or next-action gaps", async () => {
     const story = makeProject({
       id: 131,
       title: "Projekt mit offenen Vorbereitungen",
@@ -233,23 +223,14 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Projekt mit offenen Vorbereitungen");
 
     swipe(container, 100);
-    const dialog = await screen.findByRole("dialog", {
-      name: "Aktivierung vorbereiten",
-    });
-    expect(within(dialog).getByText("Ergebnis noch unklar")).toBeInTheDocument();
-    expect(
-      within(dialog).getByText("Kein nächster Schritt"),
-    ).toBeInTheDocument();
-
-    await userEvent.click(
-      within(dialog).getByRole("button", {
-        name: "Trotzdem aktiv machen",
-      }),
-    );
 
     await waitFor(() =>
-      expect(mockedApi.activateProject).toHaveBeenCalledWith(131, undefined),
+      expect(mockedApi.activateProject).toHaveBeenCalledWith(131, {
+        expectedRevision: 1,
+      }),
     );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ergebnis noch unklar")).not.toBeInTheDocument();
   });
 
   it("reveals the action-chip strip on a left swipe past the threshold, and via the kebab as a non-gesture alternative", async () => {
@@ -289,14 +270,13 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
       "aria-pressed",
       "true",
     );
-
     await userEvent.click(within(group).getByRole("button", { name: "Noah" }));
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(15, {
       ownerMemberId: 2,
       expectedRevision: 1,
     }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 
@@ -316,7 +296,9 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await act(async () => {
       await flushMicrotasks();
     });
-    expect(mockedApi.archiveProject).toHaveBeenCalledWith(16);
+    expect(mockedApi.archiveProject).toHaveBeenCalledWith(16, {
+      expectedRevision: 1,
+    });
     expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
     expect(screen.getByText("Archiviert")).toBeInTheDocument();
 
@@ -341,12 +323,6 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Fehlerfall Aktivierung");
 
     swipe(container, 100);
-    const dialog = await screen.findByRole("dialog", {
-      name: "Aktivierung vorbereiten",
-    });
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "Aktiv machen" }),
-    );
     await screen.findByText("Netzwerkfehler");
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
 

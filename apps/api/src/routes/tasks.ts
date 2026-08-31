@@ -10,11 +10,13 @@ import {
   appendTaskNotes,
   cancelTask,
   changeTaskParent,
+  clarifyTask,
   completeTask,
   createChildTask,
   createTaskSuccessor,
   createTask,
   deleteTask,
+  followUpExternalWait,
   indentTask,
   moveSubtreeToProject,
   moveTask,
@@ -37,11 +39,13 @@ import {
   createChildTaskSchema,
   createTaskSchema,
   dependencySchema,
+  externalWaitFollowUpSchema,
   moveSubtreeSchema,
   moveTaskSchema,
   promoteTaskToProjectSchema,
   reorderTaskSchema,
   tagRefSchema,
+  taskLifecycleSchema,
   transitionTaskStatusSchema,
   updateTaskSchema,
   upsertExternalWaitSchema,
@@ -233,9 +237,13 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(cancelTaskSchema, request.body ?? {});
-      cancelTask(db, id, body.descendantsPolicy, {
-        actorMemberId: request.activityActor?.id ?? null,
-      });
+      cancelTask(
+        db,
+        id,
+        body.descendantsPolicy,
+        { actorMemberId: request.activityActor?.id ?? null },
+        body.expectedRevision,
+      );
       return taskOrThrow(db, id);
     },
   );
@@ -244,7 +252,23 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     "/api/tasks/:id/reopen",
     async (request) => {
       const id = parseId(request.params.id);
-      reopenTask(db, id, {
+      const body = parseOrThrow(taskLifecycleSchema, request.body ?? {});
+      reopenTask(
+        db,
+        id,
+        { actorMemberId: request.activityActor?.id ?? null },
+        body.expectedRevision,
+      );
+      return taskOrThrow(db, id);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/tasks/:id/clarify",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(taskLifecycleSchema, request.body ?? {});
+      clarifyTask(db, id, body.expectedRevision, {
         actorMemberId: request.activityActor?.id ?? null,
       });
       return taskOrThrow(db, id);
@@ -343,6 +367,18 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const id = parseId(request.params.id);
       const body = parseOrThrow(resolveExternalWaitSchema, request.body ?? {});
       resolveExternalWait(db, id, body.expectedRevision, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
+      return taskOrThrow(db, id);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/tasks/:id/external-wait/follow-up",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(externalWaitFollowUpSchema, request.body);
+      followUpExternalWait(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
       });
       return taskOrThrow(db, id);

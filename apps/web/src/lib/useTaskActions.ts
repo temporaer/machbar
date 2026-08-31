@@ -1,20 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { Task, TaskStatus } from "@machbar/shared";
+import { useCallback, useState } from "react";
+import type { InheritanceMode, Task, TaskStatus } from "@machbar/shared";
 import { api } from "./api";
 import type { UpdateTaskInput } from "./api";
-import { useRefresh } from "./refresh";
-import { hasOpenDescendants, openDescendantRoots } from "./taskHelpers";
+import { hasOpenDescendants } from "./taskHelpers";
 import type { PrimarySwipeAction } from "./swipeSettings";
-import { useStrings } from "./strings";
-import type { Strings } from "./strings";
-import {
-  isStaleWriteConflict,
-  localizedErrorMessage,
-} from "./errorMessage";
+import { useRetainedMutations } from "./useRetainedMutations";
+export { RETENTION_MS } from "./useRetainedMutations";
 
 /** The three choices offered by the mandatory open-descendant policy prompt. */
 export type ChildPolicy = "leave_open" | "complete_children" | "cancel_children";
 export type PendingAction = "complete" | "cancel";
+
+export function ownerAssignmentPatch(ownerMemberId: number | null): {
+  ownerMemberId: number | null;
+  ownerInheritanceMode: InheritanceMode;
+} {
+  return {
+    ownerMemberId,
+    ownerInheritanceMode: ownerMemberId === null ? "none" : "explicit",
+  };
+}
 
 /**
  * How long a task that just left its compiled view (completed, cancelled,
@@ -22,8 +27,6 @@ export type PendingAction = "complete" | "cancel";
  * keeps rendering in place with its optimistic status before the retained
  * override is dropped. Kept mid-range of the "about 3-5 seconds" requirement.
  */
-export const RETENTION_MS = 4000;
-
 function localCalendarDate(date = new Date()): string {
   return [
     date.getFullYear(),
@@ -40,10 +43,6 @@ function addCalendarDays(value: string, days: number): string {
     String(date.getUTCMonth() + 1).padStart(2, "0"),
     String(date.getUTCDate()).padStart(2, "0"),
   ].join("-");
-}
-
-function errorMessage(err: unknown, strings: Strings): string {
-  return localizedErrorMessage(err, strings);
 }
 
 /**
@@ -107,104 +106,30 @@ function markOpenDescendantsTerminal(children: Task[], status: Extract<TaskStatu
  * consumers can surface inline — no delayed refresh is left behind.
  */
 export function useTaskActions() {
-  const strings = useStrings();
-  const { bump } = useRefresh();
   const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
-  const [busyId, setBusyId] = useState<number | null>(null);
-  const [retained, setRetained] = useState<Map<number, Task>>(new Map());
-  const [errors, setErrors] = useState<Record<number, string>>({});
-  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
-
-  // Never let a retention timer fire (and call setState) after this hook's
-  // owning component has unmounted, e.g. the user navigated away mid-window.
-  useEffect(
-    () => () => {
-      timers.current.forEach((t) => clearTimeout(t));
-      timers.current.clear();
-    },
-    [],
-  );
-
-  const release = useCallback((id: number) => {
-    const t = timers.current.get(id);
-    if (t) {
-      clearTimeout(t);
-      timers.current.delete(id);
-    }
-    setRetained((prev) => {
-      if (!prev.has(id)) return prev;
-      const next = new Map(prev);
-      next.delete(id);
-      return next;
-    });
-  }, []);
-
-  /**
-   * Starts (or restarts) the retention window for a task. When it naturally
-   * expires — i.e. it is never pre-empted by `release` (mutation failure) or
-   * superseded by a later `retain` call for the same id (a follow-up
-   * transition on the same task) — the row is released *and only then* is
-   * the global refresh bumped. See `runTransition` for why the bump must not
-   * happen any earlier.
-   */
-  const retain = useCallback(
-    (optimisticTask: Task) => {
-      setRetained((prev) => {
-        const next = new Map(prev);
-        next.set(optimisticTask.id, optimisticTask);
-        return next;
-      });
-      const existing = timers.current.get(optimisticTask.id);
-      if (existing) clearTimeout(existing);
-      const timeout = setTimeout(() => {
-        release(optimisticTask.id);
-        bump();
-      }, RETENTION_MS);
-      timers.current.set(optimisticTask.id, timeout);
-    },
-    [release, bump],
-  );
-
-  const clearError = useCallback((id: number) => {
-    setErrors((prev) => {
-      if (!(id in prev)) return prev;
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  }, []);
+  const mutations = useRetainedMutations<Task>();
+  const { run, pendingIds, isPending, retained, errors, clearError } = mutations;
 
   const runTransition = useCallback(
-    async (task: Task, optimisticTask: Task, job: () => Promise<unknown>) => {
-      setBusyId(task.id);
-      clearError(task.id);
-      retain(optimisticTask);
+    async (
+      task: Task,
+      optimisticTask: Task,
+      job: () => Promise<Task>,
+      throwOnError = false,
+    ) => {
       try {
-        await job();
-        // Deliberately no `bump()` here. Bumping now would let every
-        // subscribed compiled view (Heute/Eingang/Suche/…) refetch
-        // immediately — before the retention window is up — and some of
-        // those views conditionally render their child `TaskOutline` only
-        // while its section is non-empty (see e.g. `TodayPage`'s
-        // `.filter((s) => agenda[s.key].length > 0)`). An immediate refetch
-        // can therefore unmount *this very* `TaskOutline`, destroying the
-        // `retained` state we just optimistically set and cutting the
-        // crossed-out row's visible lifetime down to a single render frame
-        // instead of the full window. `retain`'s own timer releases the row
-        // and bumps exactly once, once the window has fully elapsed.
-      } catch (err) {
-        release(task.id);
-        if (isStaleWriteConflict(err)) bump();
-        setErrors((prev) => ({
-          ...prev,
-          [task.id]: errorMessage(err, strings),
-        }));
+        return await run({
+          id: task.id,
+          optimistic: optimisticTask,
+          mutate: job,
+          confirmed: (confirmed) => confirmed,
+          throwOnError,
+        });
       } finally {
-        setBusyId(null);
         setPending(null);
       }
     },
-    [clearError, retain, release, strings],
+    [run],
   );
 
   const complete = useCallback(
@@ -252,33 +177,14 @@ export function useTaskActions() {
                   )
                 : task.children,
             };
-      return runTransition(task, optimistic, async () => {
-        if (policy === "cancel_children") {
-          const openRoots = openDescendantRoots(task);
-          await Promise.all(openRoots.map((c) => api.cancelTask(c.id, "cancel_children")));
-          return task.repeatAfterDays !== null
-            ? api.completeTask(
-                task.id,
-                "leave_open",
-                completedOn,
-                task.revision,
-              )
-            : api.completeTask(task.id, "leave_open");
-        } else {
-          const descendantsPolicy =
-            policy === "complete_children"
-              ? "complete_children"
-              : "leave_open";
-          return task.repeatAfterDays !== null
-            ? api.completeTask(
-                task.id,
-                descendantsPolicy,
-                completedOn,
-                task.revision,
-              )
-            : api.completeTask(task.id, descendantsPolicy);
-        }
-      });
+      return runTransition(task, optimistic, () =>
+        api.completeTask(
+          task.id,
+          policy ?? "leave_open",
+          task.repeatAfterDays !== null ? completedOn : undefined,
+          task.revision,
+        ),
+      );
     },
     [runTransition],
   );
@@ -297,27 +203,9 @@ export function useTaskActions() {
         completedAt: null,
         children: descendantStatus ? markOpenDescendantsTerminal(task.children, descendantStatus, now) : task.children,
       };
-      return runTransition(task, optimistic, async () => {
-        if (policy === "complete_children") {
-          const openRoots = openDescendantRoots(task);
-          const completedOn = localCalendarDate();
-          await Promise.all(
-            openRoots.map((child) =>
-              child.repeatAfterDays !== null
-                ? api.completeTask(
-                    child.id,
-                    "complete_children",
-                    completedOn,
-                    child.revision,
-                  )
-                : api.completeTask(child.id, "complete_children"),
-            ),
-          );
-          return api.cancelTask(task.id, "leave_open");
-        } else {
-          return api.cancelTask(task.id, policy === "cancel_children" ? "cancel_children" : "leave_open");
-        }
-      });
+      return runTransition(task, optimistic, () =>
+        api.cancelTask(task.id, policy ?? "leave_open", task.revision),
+      );
     },
     [runTransition],
   );
@@ -332,7 +220,25 @@ export function useTaskActions() {
         completedAt: null,
         cancelledAt: null,
       };
-      return runTransition(task, optimistic, () => api.reopenTask(task.id));
+      return runTransition(task, optimistic, () => api.reopenTask(task.id, task.revision));
+    },
+    [runTransition],
+  );
+
+  const transitionStatus = useCallback(
+    (task: Task, status: TaskStatus) => {
+      const now = new Date().toISOString();
+      const optimistic: Task = {
+        ...task,
+        revision: task.revision + 1,
+        status,
+        needsClarification: status === "captured",
+        completedAt: status === "done" ? now : null,
+        cancelledAt: status === "cancelled" ? now : null,
+      };
+      return runTransition(task, optimistic, () =>
+        api.transitionTaskStatus(task.id, status, undefined, task.revision),
+      );
     },
     [runTransition],
   );
@@ -366,7 +272,7 @@ export function useTaskActions() {
         updatedAt: new Date().toISOString(),
       };
       return runTransition(task, optimistic, () =>
-        api.transitionTaskStatus(task.id, "actionable"),
+        api.clarifyTask(task.id, task.revision),
       );
     },
     [runTransition],
@@ -377,11 +283,12 @@ export function useTaskActions() {
    * view. This gives quick sheets the same stable, optimistic UX as status
    * swipes without opening the full task editor.
    */
-  const quickUpdate = useCallback(
+  const update = useCallback(
     (
       task: Task,
       patch: UpdateTaskInput,
       optimisticPatch: Partial<Task> = patch,
+      throwOnError = false,
     ) => {
       const optimistic: Task = {
         ...task,
@@ -389,14 +296,35 @@ export function useTaskActions() {
         revision: task.revision + 1,
         updatedAt: new Date().toISOString(),
       };
-      return runTransition(task, optimistic, () =>
-        api.updateTask(task.id, {
-          ...patch,
-          expectedRevision: task.revision,
-        }),
+      return runTransition(
+        task,
+        optimistic,
+        () =>
+          api.updateTask(task.id, {
+            ...patch,
+            expectedRevision: task.revision,
+          }),
+        throwOnError,
       );
     },
     [runTransition],
+  );
+
+  const assignOwner = useCallback(
+    (task: Task, ownerMemberId: number | null) => {
+      const patch = ownerAssignmentPatch(ownerMemberId);
+      return update(
+        task,
+        patch,
+        {
+          ...patch,
+          effectiveOwnerId: ownerMemberId,
+          effectiveOwnerSource: ownerMemberId === null ? "none" : "task",
+        },
+        true,
+      );
+    },
+    [update],
   );
 
   /** Toggle from a checkbox: asks first when there are open children. */
@@ -474,7 +402,8 @@ export function useTaskActions() {
   return {
     pendingTask: pending?.task ?? null,
     pendingAction: pending?.action ?? null,
-    busyId,
+    pendingIds,
+    isPending,
     retained,
     errors,
     clearError,
@@ -483,11 +412,13 @@ export function useTaskActions() {
     requestPrimarySwipe,
     setStatus,
     clarify,
-    quickUpdate,
+    update,
+    assignOwner,
     resolvePolicy,
     cancelPrompt,
     complete,
     cancel,
     reopen,
+    transitionStatus,
   };
 }

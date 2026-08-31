@@ -65,7 +65,12 @@ describe("TaskRow – retention of recently mutated rows", () => {
     });
 
     // Optimistic: crossed out immediately, before the network call is confirmed to the rest of the app.
-    expect(mockedApi.completeTask).toHaveBeenCalledWith(100, "leave_open");
+    expect(mockedApi.completeTask).toHaveBeenCalledWith(
+      100,
+      "leave_open",
+      undefined,
+      1,
+    );
     const title = screen.getByText("Bericht abschicken");
     expect(title.className).toContain("done");
     expect(container.querySelector(".task-row-content.retained")).toBeInTheDocument();
@@ -166,7 +171,7 @@ describe("TaskRow – retention of recently mutated rows", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.cancelTask).toHaveBeenCalledWith(101, "leave_open");
+    expect(mockedApi.cancelTask).toHaveBeenCalledWith(101, "leave_open", 1);
     expect(screen.getByText("Altes Angebot").className).toContain("cancelled");
 
     rerender(<TaskOutline tasks={[]} emptyMessage="Nichts da" />);
@@ -245,7 +250,26 @@ describe("TaskRow – parent retention snapshot covers the whole optimistic subt
       completedAt: "2025-01-01T00:00:00.000Z",
     });
     const parent = makeTask({ id: 301, title: "Elternaufgabe", status: "actionable", children: [openChild, alreadyDoneChild] });
-    mockedApi.completeTask.mockResolvedValue({ ...parent, status: "done" });
+    mockedApi.completeTask.mockResolvedValue({
+      ...parent,
+      revision: 2,
+      status: "done",
+      children: [
+        {
+          ...openChild,
+          status: "done",
+          needsClarification: false,
+          children: [
+            {
+              ...grandchild,
+              status: "done",
+              needsClarification: false,
+            },
+          ],
+        },
+        alreadyDoneChild,
+      ],
+    });
 
     const { container } = renderWithProviders(<TaskOutline tasks={[parent]} emptyMessage="Nichts da" />);
     await screen.findByText("Elternaufgabe");
@@ -262,7 +286,12 @@ describe("TaskRow – parent retention snapshot covers the whole optimistic subt
       await flushMicrotasks();
     });
 
-    expect(mockedApi.completeTask).toHaveBeenCalledWith(301, "complete_children");
+    expect(mockedApi.completeTask).toHaveBeenCalledWith(
+      301,
+      "complete_children",
+      undefined,
+      1,
+    );
     expect(mockedApi.cancelTask).not.toHaveBeenCalled();
 
     // Visual regression: the whole retained subtree — parent, the
@@ -280,8 +309,18 @@ describe("TaskRow – parent retention snapshot covers the whole optimistic subt
     const grandchild = makeTask({ id: 313, title: "Enkel B", status: "actionable" });
     const openChild = makeTask({ id: 312, title: "Kind offen B", status: "actionable", children: [grandchild] });
     const parent = makeTask({ id: 311, title: "Elternaufgabe B", status: "actionable", children: [openChild] });
-    mockedApi.completeTask.mockResolvedValue({ ...parent, status: "done" });
-    mockedApi.cancelTask.mockResolvedValue({ ...openChild, status: "cancelled" });
+    mockedApi.completeTask.mockResolvedValue({
+      ...parent,
+      revision: 2,
+      status: "done",
+      children: [
+        {
+          ...openChild,
+          status: "cancelled",
+          children: [{ ...grandchild, status: "cancelled" }],
+        },
+      ],
+    });
 
     const { container } = renderWithProviders(<TaskOutline tasks={[parent]} emptyMessage="Nichts da" />);
     await screen.findByText("Elternaufgabe B");
@@ -295,10 +334,14 @@ describe("TaskRow – parent retention snapshot covers the whole optimistic subt
       await flushMicrotasks();
     });
 
-    // Mixed policy: parent completes, its open descendants get cancelled —
-    // via the real cascading cancelTask(openChild.id, "cancel_children") call.
-    expect(mockedApi.cancelTask).toHaveBeenCalledWith(312, "cancel_children");
-    expect(mockedApi.completeTask).toHaveBeenCalledWith(311, "leave_open");
+    // One transactional completion applies the mixed descendant policy.
+    expect(mockedApi.completeTask).toHaveBeenCalledWith(
+      311,
+      "cancel_children",
+      undefined,
+      1,
+    );
+    expect(mockedApi.cancelTask).not.toHaveBeenCalled();
 
     expect(screen.getByText("Elternaufgabe B").className).toContain("done");
     expect(screen.getByText("Kind offen B").className).toContain("cancelled");
@@ -323,7 +366,12 @@ describe("TaskRow – parent retention snapshot covers the whole optimistic subt
       await flushMicrotasks();
     });
 
-    expect(mockedApi.completeTask).toHaveBeenCalledWith(322, "leave_open");
+    expect(mockedApi.completeTask).toHaveBeenCalledWith(
+      322,
+      "leave_open",
+      undefined,
+      1,
+    );
     expect(screen.getByText("Einzelnes Kind").className).toContain("done");
     // The parent itself is untouched by its child's own completion.
     expect(screen.getByText("Unveränderter Elternteil").className).not.toContain("done");
@@ -359,7 +407,9 @@ describe("TaskRow – finished/cancelled rows offer 'Wieder öffnen' instead of 
 
     fireEvent.click(within(chips).getByRole("button", { name: "Wieder öffnen" }));
 
-    await waitFor(() => expect(mockedApi.reopenTask).toHaveBeenCalledWith(401));
+    await waitFor(() =>
+      expect(mockedApi.reopenTask).toHaveBeenCalledWith(401, 1),
+    );
     // Must go through the dedicated reopen flow, never a generic status patch
     // (which wouldn't clear completedAt/cancelledAt on the backend).
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
@@ -378,7 +428,9 @@ describe("TaskRow – finished/cancelled rows offer 'Wieder öffnen' instead of 
 
     fireEvent.click(within(chips).getByRole("button", { name: "Wieder öffnen" }));
 
-    await waitFor(() => expect(mockedApi.reopenTask).toHaveBeenCalledWith(402));
+    await waitFor(() =>
+      expect(mockedApi.reopenTask).toHaveBeenCalledWith(402, 1),
+    );
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 });

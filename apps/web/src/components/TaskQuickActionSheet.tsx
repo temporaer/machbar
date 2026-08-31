@@ -1,36 +1,19 @@
 import { useState } from "react";
-import type { InheritanceMode, Task } from "@machbar/shared";
+import type { Task } from "@machbar/shared";
 import type { UpdateTaskInput } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
-import { AssignOwnerSheet } from "./AssignOwnerSheet";
 import { BottomSheet } from "./BottomSheet";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { HumanDateInput } from "./HumanDateInput";
 
 export type TaskQuickAction = "owner" | "schedule" | "notes";
-
-/**
- * Patch (plus its optimistic counterpart) for a task ownership change.
- * Exported so every targeted assignment surface derives the exact same
- * `ownerMemberId`/`ownerInheritanceMode` pair — an explicit member always
- * becomes an `explicit` owner, clearing it drops inheritance entirely
- * (`none`) rather than falling back to the parent/project owner.
- */
-export function ownerAssignmentPatch(ownerMemberId: number | null): {
-  ownerMemberId: number | null;
-  ownerInheritanceMode: InheritanceMode;
-} {
-  return {
-    ownerMemberId,
-    ownerInheritanceMode: ownerMemberId === null ? "none" : "explicit",
-  };
-}
+type TaskQuickEditorAction = Exclude<TaskQuickAction, "owner">;
 
 interface TaskQuickActionSheetProps {
   task: Task;
-  action: TaskQuickAction;
+  action: TaskQuickEditorAction;
   onClose: () => void;
   onSave: (
     patch: UpdateTaskInput,
@@ -49,29 +32,20 @@ export function TaskQuickActionSheet({
   const [notes, setNotes] = useState(task.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [scheduledDateValid, setScheduledDateValid] = useState(true);
 
   const title = {
-    owner: strings.assign,
     schedule: strings.schedule,
     notes: strings.notes,
   }[action];
-  const closeIfValid = () => {
-    if (action !== "schedule" || scheduledDateValid) onClose();
+  const closeIfIdle = () => {
+    if (!saving) onClose();
   };
 
   const submit = async () => {
     setSaving(true);
     setError(null);
     try {
-      if (action === "schedule") {
-        await onSave(
-          { scheduledDate: scheduledDate || null },
-          { scheduledDate: scheduledDate || null },
-        );
-      } else {
-        await onSave({ notes }, { notes });
-      }
+      await onSave({ notes }, { notes });
       onClose();
     } catch (err) {
       setError(localizedErrorMessage(err, strings));
@@ -80,28 +54,8 @@ export function TaskQuickActionSheet({
     }
   };
 
-  // Assignment is its own reusable focused sheet, shared verbatim with the
-  // refinement list's `Zuweisen` chip — see `AssignOwnerSheet`.
-  if (action === "owner") {
-    return (
-      <AssignOwnerSheet
-        title={`${title}: ${task.title}`}
-        groupId={`quick-owner-${task.id}`}
-        currentOwnerId={task.effectiveOwnerId}
-        onClose={onClose}
-        onAssign={(ownerMemberId) =>
-          onSave(ownerAssignmentPatch(ownerMemberId), {
-            ...ownerAssignmentPatch(ownerMemberId),
-            effectiveOwnerId: ownerMemberId,
-            effectiveOwnerSource: ownerMemberId === null ? "none" : "task",
-          })
-        }
-      />
-    );
-  }
-
   return (
-    <BottomSheet title={`${title}: ${task.title}`} onClose={closeIfValid}>
+    <BottomSheet title={`${title}: ${task.title}`} onClose={closeIfIdle}>
       <div className="stack task-quick-action-sheet">
         {action === "schedule" ? (
           <>
@@ -110,14 +64,37 @@ export function TaskQuickActionSheet({
               <HumanDateInput
                 id={`quick-schedule-${task.id}`}
                 value={scheduledDate}
-                onChange={(date) => setScheduledDate(date ?? "")}
-                onValidityChange={setScheduledDateValid}
+                onChange={(date) => {
+                  const value = date ?? "";
+                  setScheduledDate(value);
+                  setSaving(true);
+                  setError(null);
+                  void onSave(
+                    { scheduledDate: value || null },
+                    { scheduledDate: value || null },
+                  )
+                    .then(onClose)
+                    .catch((cause) => setError(localizedErrorMessage(cause, strings)))
+                    .finally(() => setSaving(false));
+                }}
                 autoFocus
               />
             </div>
             <ScheduleShortcuts
               value={scheduledDate}
-              onChange={(date) => setScheduledDate(date ?? "")}
+              onChange={(date) => {
+                const value = date ?? "";
+                setScheduledDate(value);
+                setSaving(true);
+                setError(null);
+                void onSave(
+                  { scheduledDate: value || null },
+                  { scheduledDate: value || null },
+                )
+                  .then(onClose)
+                  .catch((cause) => setError(localizedErrorMessage(cause, strings)))
+                  .finally(() => setSaving(false));
+              }}
               disabled={saving}
             />
           </>
@@ -140,17 +117,19 @@ export function TaskQuickActionSheet({
         {error ? <div className="task-row-error" role="alert">{error}</div> : null}
 
         <div className="row">
-          <button type="button" className="btn" onClick={closeIfValid} disabled={saving}>
-            {strings.close}
+          <button type="button" className="btn" onClick={closeIfIdle} disabled={saving}>
+            {action === "notes" ? strings.cancel : strings.close}
           </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => void submit()}
-            disabled={saving || (action === "schedule" && !scheduledDateValid)}
-          >
-            {strings.saveChanges}
-          </button>
+          {action === "notes" ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void submit()}
+              disabled={saving}
+            >
+              {strings.save}
+            </button>
+          ) : null}
         </div>
       </div>
     </BottomSheet>

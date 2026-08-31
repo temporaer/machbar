@@ -4,12 +4,13 @@ import { useRefresh } from "../lib/refresh";
 import { api } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
-import { ownerAssignmentPatch } from "./TaskQuickActionSheet";
-import { AssignOwnerSheet } from "./AssignOwnerSheet";
+import { useTaskActions } from "../lib/useTaskActions";
+import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { BottomSheet } from "./BottomSheet";
 import { CaptureForm } from "./CaptureForm";
-import { CaptureProjectBreakdownSheet } from "./CaptureProjectBreakdownSheet";
+import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
+import { useIdentity } from "../lib/identity";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -41,6 +42,8 @@ export function QuickAdd({
   const [createdProject, setCreatedProject] = useState<ProjectWithActions | null>(null);
   const [captureNotice, setCaptureNotice] = useState<string | null>(null);
   const { bump } = useRefresh();
+  const { members } = useIdentity();
+  const taskActions = useTaskActions();
 
   useEffect(() => {
     if (autoOpen) setOpen(true);
@@ -167,18 +170,20 @@ export function QuickAdd({
         </section>
       ) : null}
       {assigning && createdTask ? (
-        <AssignOwnerSheet
+        <MemberSelectionSheet
           title={strings.changeOwner}
-          groupId={`capture-owner-${createdTask.id}`}
-          currentOwnerId={createdTask.ownerMemberId}
+          label={strings.owner}
+          idPrefix={`capture-owner-${createdTask.id}`}
+          members={members}
+          value={createdTask.ownerMemberId}
+          unassignedLabel={strings.shared}
           onClose={() => setAssigning(false)}
-          onAssign={async (ownerMemberId) => {
-            const task = await api.updateTask(createdTask.id, {
-              ...ownerAssignmentPatch(ownerMemberId),
-              expectedRevision: createdTask.revision,
-            });
-            setCreatedTask(task);
-            bump();
+          onSelect={async (ownerMemberId) => {
+            const task = await taskActions.assignOwner(
+              createdTask,
+              ownerMemberId,
+            );
+            if (task) setCreatedTask(task);
           }}
         />
       ) : null}
@@ -220,7 +225,10 @@ export function QuickAdd({
         </BottomSheet>
       ) : null}
       {createdProject ? (
-        <CaptureProjectBreakdownSheet project={createdProject} onClose={() => setCreatedProject(null)} />
+        <CapturedProjectHandoff
+          project={createdProject}
+          onDone={() => setCreatedProject(null)}
+        />
       ) : null}
     </>
   );

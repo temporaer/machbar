@@ -1,32 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
-import type { ProjectDetail, ProjectWorkflowAction } from "../lib/api";
+import type {
+  ProjectDetail,
+  ProjectWithActions,
+  ProjectWorkflowAction,
+  UpdateProjectInput,
+} from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
-import {
-  isStaleWriteConflict,
-  localizedErrorMessage,
-} from "../lib/errorMessage";
+import { localizedErrorMessage } from "../lib/errorMessage";
+import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
 import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { BottomSheet } from "./BottomSheet";
 import { TagPicker } from "./TagPicker";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { HumanDateInput } from "./HumanDateInput";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
-
-/** The subset of story fields edited as free-text drafts in this sheet. */
-interface TextFieldsSnapshot {
-  title: string;
-  notes: string;
-}
-
-function textFieldsSnapshot(project: ProjectDetail): TextFieldsSnapshot {
-  return { title: project.title, notes: project.notes };
-}
 
 function errorMessage(err: unknown, strings: Strings): string {
   return localizedErrorMessage(err, strings);
@@ -39,10 +32,9 @@ export type ProjectEditFocusField = "driver" | "completion";
  * tags, due/scheduled dates), the ordered acceptance-criteria list
  * (add/edit/reorder/check/remove — replacing any free-text description),
  * and the explicit lifecycle actions legal for the story's current status
- * (`project.availableActions`, computed by the backend). Mirrors
- * `TaskDetailSheet`'s dirty-draft/baseline pattern for free-text fields so
- * unsaved edits are never silently lost or overwritten by a background
- * reload.
+ * (`project.availableActions`, computed by the backend). Title and notes are
+ * independent, explicit edit transactions; all structured properties still
+ * save immediately.
  *
  * The status itself is **never** a `<select>`: it is displayed as a
  * read-only badge, and it changes only through the labelled group of
@@ -72,53 +64,60 @@ export function ProjectEditSheet({
   const { bump } = useRefresh();
   const navigate = useNavigate();
   const { data: tags } = useAsync(() => api.getTags(), []);
+  const {
+    isPending,
+    retained,
+    errors,
+    clearError,
+    runAction,
+    activate,
+    update,
+    assignDriver,
+    schedule,
+  } = useProjectWorkflowActions();
 
   const [titleDraft, setTitleDraft] = useState(project.title);
   const [notesDraft, setNotesDraft] = useState(project.notes);
-  const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot>(textFieldsSnapshot(project));
-  const [savingTextFields, setSavingTextFields] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [savingField, setSavingField] = useState<"title" | "notes" | null>(null);
+  const [savingProperty, setSavingProperty] = useState(false);
   const [busyAction, setBusyAction] = useState<ProjectWorkflowAction | null>(null);
+  const [activationNeedsDriver, setActivationNeedsDriver] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [dueDateValid, setDueDateValid] = useState(true);
-  const [scheduledDateValid, setScheduledDateValid] = useState(true);
   const lastLoadedProjectIdRef = useRef<number | null>(null);
+  const operationRef = useRef(false);
+  const confirmedProjectRef = useRef<ProjectWithActions>(project);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const notesInputRef = useRef<HTMLTextAreaElement>(null);
   const driverFieldRef = useRef<HTMLDivElement>(null);
   const lifecycleFieldRef = useRef<HTMLDivElement>(null);
   const appliedFocusRef = useRef<string | null>(null);
-  const revisionRef = useRef(project.revision);
 
-  // Resets drafts (and the dirty-check baseline) whenever a *different*
-  // project is opened, or whenever fresh data arrives and the user has no
-  // unsaved edits — a background reload triggered mid-edit (e.g. another
-  // patch, or an unrelated refresh elsewhere) must never clobber in-progress
-  // typing, so it is skipped whenever the drafts still differ from the last
-  // known-saved baseline.
   useEffect(() => {
-    const nextBaseline = textFieldsSnapshot(project);
-    revisionRef.current = project.revision;
     const isNewProject = lastLoadedProjectIdRef.current !== project.id;
-    const hasUnsavedEdits =
-      !isNewProject &&
-      (titleDraft !== textFieldsBaseline.title ||
-        notesDraft !== textFieldsBaseline.notes);
-    if (hasUnsavedEdits) {
-      const previousBaseline = textFieldsBaseline;
-      setTitleDraft((current) =>
-        current === previousBaseline.title ? nextBaseline.title : current,
-      );
-      setNotesDraft((current) =>
-        current === previousBaseline.notes ? nextBaseline.notes : current,
-      );
-      setTextFieldsBaseline(nextBaseline);
-    } else {
-      setTitleDraft(nextBaseline.title);
-      setNotesDraft(nextBaseline.notes);
-      setTextFieldsBaseline(nextBaseline);
+    if (isNewProject) {
+      confirmedProjectRef.current = project;
+      setTitleDraft(project.title);
+      setNotesDraft(project.notes);
+      setEditingTitle(false);
+      setEditingNotes(false);
+    } else if (project.revision >= confirmedProjectRef.current.revision) {
+      confirmedProjectRef.current = project;
+      if (!editingTitle) setTitleDraft(project.title);
+      if (!editingNotes) setNotesDraft(project.notes);
     }
     lastLoadedProjectIdRef.current = project.id;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project]);
+  }, [editingNotes, editingTitle, project]);
+
+  useEffect(() => {
+    if (editingTitle) titleInputRef.current?.focus();
+  }, [editingTitle]);
+
+  useEffect(() => {
+    if (editingNotes) notesInputRef.current?.focus();
+  }, [editingNotes]);
 
   useEffect(() => {
     const focusKey = focusField ? `${project.id}:${focusField}` : null;
@@ -138,82 +137,157 @@ export function ProjectEditSheet({
     appliedFocusRef.current = focusKey;
   }, [focusField, project.id]);
 
-  const titleIsValid = titleDraft.trim().length > 0;
-  const textFieldsDirty =
-    titleDraft !== textFieldsBaseline.title ||
-    notesDraft !== textFieldsBaseline.notes;
-  const saveChangesDisabled = !textFieldsDirty || !titleIsValid || savingTextFields;
+  const retainedProject = retained.get(project.id)?.story;
+  const displayedProject = retainedProject ?? project;
+  const workflowError = errors[project.id] ?? null;
+  const projectPending = isPending(project.id);
+  const projectBusy =
+    projectPending ||
+    operationRef.current ||
+    savingField !== null ||
+    savingProperty ||
+    busyAction !== null;
 
-  const saveTextFields = async () => {
-    if (!titleIsValid) return;
-    const snapshot: TextFieldsSnapshot = {
-      title: titleDraft.trim(),
-      notes: notesDraft,
-    };
-    setSavingTextFields(true);
+  const beginOperation = () => {
+    if (operationRef.current) return false;
+    operationRef.current = true;
     setActionError(null);
-    try {
-      const updated = await api.updateProject(project.id, {
-        title: snapshot.title,
-        notes: snapshot.notes,
-        expectedRevision: revisionRef.current,
-      });
-      revisionRef.current = updated.revision;
-      // Adopt the just-saved values as the new baseline right away so the
-      // save button disables immediately, without waiting for the parent's
-      // reload round trip (which may race with further typing).
-      setTextFieldsBaseline(snapshot);
-      bump();
-    } catch (err) {
-      if (isStaleWriteConflict(err)) bump();
-      setActionError(errorMessage(err, strings));
-    } finally {
-      setSavingTextFields(false);
-    }
+    clearError(project.id);
+    return true;
   };
 
-  const patch = async (input: Parameters<typeof api.updateProject>[1]) => {
-    setActionError(null);
-    try {
-      const updated = await api.updateProject(project.id, {
-        ...input,
-        expectedRevision: revisionRef.current,
-      });
-      revisionRef.current = updated.revision;
-      bump();
-    } catch (err) {
-      if (isStaleWriteConflict(err)) bump();
-      setActionError(errorMessage(err, strings));
-    }
+  const finishOperation = () => {
+    operationRef.current = false;
   };
 
-  const runAction = async (action: ProjectWorkflowAction) => {
-    setBusyAction(action);
-    setActionError(null);
+  const saveTextField = async (field: "title" | "notes") => {
+    const value = field === "title" ? titleDraft.trim() : notesDraft;
+    if ((field === "title" && !value) || !beginOperation()) return;
+    setSavingField(field);
     try {
-      switch (action) {
-        case "activate":
-          await api.activateProject(project.id);
-          break;
-        case "return_to_backlog":
-          await api.returnProjectToBacklog(project.id);
-          break;
-        case "complete":
-          await api.completeProject(project.id);
-          break;
-        case "reopen":
-          await api.reopenProject(project.id);
-          break;
-        case "archive":
-          await api.archiveProject(project.id);
-          break;
+      const confirmed = await update(
+        confirmedProjectRef.current,
+        { [field]: value },
+        { [field]: value },
+        true,
+      );
+      if (!confirmed) return;
+      confirmedProjectRef.current = confirmed;
+      if (field === "title") {
+        setTitleDraft(confirmed.title);
+        setEditingTitle(false);
+      } else {
+        setNotesDraft(confirmed.notes);
+        setEditingNotes(false);
       }
-      bump();
-    } catch (err) {
-      setActionError(errorMessage(err, strings));
+    } catch {
+      // The workflow hook owns localized mutation errors. Keep this draft open.
+    } finally {
+      setSavingField(null);
+      finishOperation();
+    }
+  };
+
+  const patch = async (
+    input: UpdateProjectInput,
+    kind: "driver" | "schedule" | "tags",
+  ) => {
+    if (!beginOperation()) return;
+    setSavingProperty(true);
+    try {
+      const current = confirmedProjectRef.current;
+      let confirmed: ProjectWithActions | undefined;
+      if (kind === "driver") {
+        confirmed = await assignDriver(current, input.ownerMemberId ?? null);
+      } else if (kind === "schedule") {
+        confirmed = await schedule(current, {
+          ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
+          ...(input.scheduledDate !== undefined
+            ? { scheduledDate: input.scheduledDate }
+            : {}),
+        });
+      } else {
+        const tagIds = input.tagIds ?? [];
+        confirmed = await update(
+          current,
+          { tagIds },
+          { tags: (tags ?? current.tags).filter((tag) => tagIds.includes(tag.id)) },
+          true,
+        );
+      }
+      if (confirmed) confirmedProjectRef.current = confirmed;
+    } catch {
+      // The workflow hook owns localized mutation errors.
+    } finally {
+      setSavingProperty(false);
+      finishOperation();
+    }
+  };
+
+  const performAction = async (action: ProjectWorkflowAction) => {
+    if (action === "activate" && confirmedProjectRef.current.ownerMemberId === null) {
+      setActivationNeedsDriver(true);
+      driverFieldRef.current?.scrollIntoView?.({
+        block: "center",
+        behavior: "smooth",
+      });
+      driverFieldRef.current
+        ?.querySelector<HTMLElement>("button")
+        ?.focus();
+      return;
+    }
+    setActivationNeedsDriver(false);
+    if (!beginOperation()) return;
+    setBusyAction(action);
+    try {
+      const confirmed = await runAction(confirmedProjectRef.current, action);
+      if (confirmed) confirmedProjectRef.current = confirmed;
     } finally {
       setBusyAction(null);
+      finishOperation();
     }
+  };
+
+  const chooseDriver = async (ownerMemberId: number | null) => {
+    if (!activationNeedsDriver || ownerMemberId === null) {
+      await patch({ ownerMemberId }, "driver");
+      return;
+    }
+    if (!beginOperation()) return;
+    setSavingProperty(true);
+    try {
+      const confirmed = await activate(
+        confirmedProjectRef.current,
+        ownerMemberId,
+      );
+      if (confirmed) {
+        confirmedProjectRef.current = confirmed;
+        setActivationNeedsDriver(false);
+      }
+    } finally {
+      setSavingProperty(false);
+      finishOperation();
+    }
+  };
+
+  const cancelTextField = (field: "title" | "notes") => {
+    clearError(project.id);
+    setActionError(null);
+    if (field === "title") {
+      setTitleDraft(confirmedProjectRef.current.title);
+      setEditingTitle(false);
+    } else {
+      setNotesDraft(confirmedProjectRef.current.notes);
+      setEditingNotes(false);
+    }
+  };
+
+  const closeSheet = () => {
+    setTitleDraft(confirmedProjectRef.current.title);
+    setNotesDraft(confirmedProjectRef.current.notes);
+    setEditingTitle(false);
+    setEditingNotes(false);
+    onClose();
   };
 
   const removeProject = async () => {
@@ -238,38 +312,123 @@ export function ProjectEditSheet({
   return (
     <BottomSheet
       title={strings.editProject}
-      onClose={() => {
-        if (dueDateValid && scheduledDateValid) onClose();
-      }}
+      onClose={closeSheet}
       labelledBy="project-edit-title"
     >
       <div className="stack">
-        {actionError ? (
+        {actionError ?? workflowError ? (
           <p role="alert" style={{ color: "var(--color-danger)" }}>
-            {actionError}
+            {actionError ?? workflowError}
           </p>
         ) : null}
 
         <div className="field">
           <label htmlFor="project-notes">{strings.notes}</label>
           <MarkdownEditor
+            ref={notesInputRef}
             id="project-notes"
             value={notesDraft}
             onChange={setNotesDraft}
-            onBlur={() => void saveTextFields()}
+            disabled={!editingNotes || projectBusy}
             rows={4}
             toolbarLabel={strings.markdownToolbar}
           />
+          <div className="row">
+            {editingNotes ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  aria-label={`${strings.save}: ${strings.notes}`}
+                  disabled={
+                    projectBusy || notesDraft === confirmedProjectRef.current.notes
+                  }
+                  onClick={() => void saveTextField("notes")}
+                >
+                  {strings.save}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  aria-label={`${strings.cancel}: ${strings.notes}`}
+                  disabled={projectBusy}
+                  onClick={() => cancelTextField("notes")}
+                >
+                  {strings.cancel}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                aria-label={`${strings.edit}: ${strings.notes}`}
+                disabled={projectBusy}
+                onClick={() => {
+                  clearError(project.id);
+                  setActionError(null);
+                  setNotesDraft(confirmedProjectRef.current.notes);
+                  setEditingNotes(true);
+                }}
+              >
+                {strings.edit}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="field">
           <label htmlFor="project-title">{strings.projectTitle}</label>
           <input
+            ref={titleInputRef}
             id="project-title"
             value={titleDraft}
+            readOnly={!editingTitle}
+            disabled={projectBusy && editingTitle}
             onChange={(e) => setTitleDraft(e.target.value)}
-            onBlur={() => void saveTextFields()}
           />
+          <div className="row">
+            {editingTitle ? (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  aria-label={`${strings.save}: ${strings.projectTitle}`}
+                  disabled={
+                    projectBusy ||
+                    !titleDraft.trim() ||
+                    titleDraft.trim() === confirmedProjectRef.current.title
+                  }
+                  onClick={() => void saveTextField("title")}
+                >
+                  {strings.save}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  aria-label={`${strings.cancel}: ${strings.projectTitle}`}
+                  disabled={projectBusy}
+                  onClick={() => cancelTextField("title")}
+                >
+                  {strings.cancel}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                aria-label={`${strings.edit}: ${strings.projectTitle}`}
+                disabled={projectBusy}
+                onClick={() => {
+                  clearError(project.id);
+                  setActionError(null);
+                  setTitleDraft(confirmedProjectRef.current.title);
+                  setEditingTitle(true);
+                }}
+              >
+                {strings.edit}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="field">
@@ -277,7 +436,7 @@ export function ProjectEditSheet({
             {strings.projectStatus}
           </span>
           <div>
-            <span className="badge">{strings.projectStatusLabels[project.status]}</span>
+            <span className="badge">{strings.projectStatusLabels[displayedProject.status]}</span>
           </div>
         </div>
 
@@ -287,7 +446,7 @@ export function ProjectEditSheet({
           aria-labelledby="project-status-label"
           ref={lifecycleFieldRef}
         >
-          {project.availableActions.map((action) => (
+          {displayedProject.availableActions.map((action) => (
             <button
               key={action}
               type="button"
@@ -295,14 +454,15 @@ export function ProjectEditSheet({
                 action === "archive" ? " btn-ghost" : ""
               }`}
               data-workflow-action={action}
-              disabled={busyAction !== null}
-              onClick={() => void runAction(action)}
+              disabled={projectBusy}
+              onClick={() => void performAction(action)}
             >
               {lifecycleLabels[action]}
             </button>
           ))}
         </div>
-        {project.availableActions.includes("activate") && project.ownerMemberId === null ? (
+        {displayedProject.availableActions.includes("activate") &&
+        displayedProject.ownerMemberId === null ? (
           <p className="text-muted">{strings.assignDriverToActivateHint}</p>
         ) : null}
 
@@ -311,9 +471,10 @@ export function ProjectEditSheet({
             label={strings.driver}
             idPrefix={`project-driver-${project.id}`}
             members={members}
-            value={project.ownerMemberId}
-            onChange={(ownerMemberId) => void patch({ ownerMemberId })}
+            value={displayedProject.ownerMemberId}
+            onChange={(ownerMemberId) => void chooseDriver(ownerMemberId)}
             unassignedLabel={strings.noDriver}
+            disabled={projectBusy}
           />
         </div>
 
@@ -322,39 +483,35 @@ export function ProjectEditSheet({
             <label htmlFor="project-due">{strings.due}</label>
             <HumanDateInput
               id="project-due"
-              value={project.dueDate ?? ""}
-              onChange={(dueDate) => void patch({ dueDate })}
-              onValidityChange={setDueDateValid}
+              value={displayedProject.dueDate ?? ""}
+              onChange={(dueDate) => void patch({ dueDate }, "schedule")}
+              disabled={projectBusy}
             />
           </div>
           <div className="field" style={{ flex: 1 }}>
             <label htmlFor="project-scheduled">{strings.scheduled}</label>
             <HumanDateInput
               id="project-scheduled"
-              value={project.scheduledDate ?? ""}
-              onChange={(scheduledDate) => void patch({ scheduledDate })}
-              onValidityChange={setScheduledDateValid}
+              value={displayedProject.scheduledDate ?? ""}
+              onChange={(scheduledDate) => void patch({ scheduledDate }, "schedule")}
+              disabled={projectBusy}
             />
           </div>
         </div>
 
         <div className="field">
           <label>{strings.tags}</label>
-          <TagPicker
-            tags={tags ?? []}
-            selectedIds={project.tags.map((tag) => tag.id)}
-            onChange={(tagIds) => patch({ tagIds })}
-          />
+          <fieldset
+            disabled={projectBusy}
+            style={{ border: 0, margin: 0, padding: 0 }}
+          >
+            <TagPicker
+              tags={tags ?? []}
+              selectedIds={displayedProject.tags.map((tag) => tag.id)}
+              onChange={(tagIds) => patch({ tagIds }, "tags")}
+            />
+          </fieldset>
         </div>
-
-        <button
-          type="button"
-          className={`btn btn-block${saveChangesDisabled ? "" : " btn-primary"}`}
-          disabled={saveChangesDisabled}
-          onClick={() => void saveTextFields()}
-        >
-          {strings.saveChanges}
-        </button>
 
         <AcceptanceCriteriaEditor
           projectId={project.id}
@@ -365,7 +522,7 @@ export function ProjectEditSheet({
         <button
           type="button"
           className="btn btn-danger btn-block"
-          disabled={deleting || busyAction !== null}
+          disabled={deleting || projectBusy}
           onClick={() => void removeProject()}
         >
           {strings.deleteProject}

@@ -1,9 +1,8 @@
-import { useRef, useState } from "react";
 import { api } from "../lib/api";
 import { useStrings } from "../lib/strings";
-import { localizedErrorMessage } from "../lib/errorMessage";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
+import { InlineTaskComposer } from "./InlineTaskComposer";
 
 export function InlineSuccessorComposer({
   predecessorId,
@@ -15,85 +14,26 @@ export function InlineSuccessorComposer({
   onCreated: () => void;
 }) {
   const strings = useStrings();
-  const [title, setTitle] = useState("");
-  const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
-  const [error, setError] = useState<string | null>(null);
   const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
-  const inputId = `inline-successor-title-${predecessorId}`;
 
-  const submit = async () => {
-    if (savingRef.current) return;
-    const trimmed = title.trim();
-    if (!trimmed) return;
-    savingRef.current = true;
-    setSaving(true);
-    setError(null);
-    try {
-      await api.createTaskSuccessor(predecessorId, {
-        title: trimmed,
-        createdByMemberId: currentMemberId,
-        status: "actionable",
-      });
-      bump();
-      onCreated();
-    } catch (err) {
-      setError(localizedErrorMessage(err, strings));
-      savingRef.current = false;
-      setSaving(false);
-    }
+  const create = async (title: string) => {
+    await api.createTaskSuccessor(predecessorId, {
+      title,
+      createdByMemberId: currentMemberId,
+      status: "actionable",
+    });
+    bump();
+    onCreated();
   };
 
   return (
-    <form
-      className="inline-child-composer"
-      aria-label={strings.addSuccessor}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-    >
-      <label htmlFor={inputId} className="sr-only">
-        {strings.addSuccessor}
-      </label>
-      <input
-        id={inputId}
-        autoFocus
-        value={title}
-        placeholder={strings.successorPlaceholder}
-        disabled={saving}
-        onChange={(event) => setTitle(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.stopPropagation();
-            onCancel();
-          }
-        }}
-      />
-      {error ? (
-        <div className="task-row-error" role="alert">
-          <span>{strings.error}</span>
-          <span className="text-muted">{error}</span>
-        </div>
-      ) : null}
-      <div className="row">
-        <button
-          type="button"
-          className="btn btn-sm btn-ghost"
-          disabled={saving}
-          onClick={onCancel}
-        >
-          {strings.cancel}
-        </button>
-        <button
-          type="submit"
-          className="btn btn-sm btn-primary"
-          disabled={saving || !title.trim()}
-        >
-          {strings.save}
-        </button>
-      </div>
-    </form>
+    <InlineTaskComposer
+      inputId={`inline-successor-title-${predecessorId}`}
+      label={strings.addSuccessor}
+      placeholder={strings.successorPlaceholder}
+      onCancel={onCancel}
+      onSave={create}
+    />
   );
 }

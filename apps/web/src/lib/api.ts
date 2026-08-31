@@ -136,10 +136,11 @@ function query(
   return s ? `?${s}` : "";
 }
 
-/** Matches `apps/api/src/schemas.ts::completeTaskSchema`. */
-export type CompleteDescendantsPolicy = "leave_open" | "complete_children";
-/** Matches `apps/api/src/schemas.ts::cancelTaskSchema`. */
-export type CancelDescendantsPolicy = "leave_open" | "cancel_children";
+/** Matches the transactional task lifecycle policy accepted by complete/cancel. */
+export type TaskDescendantsPolicy =
+  | "leave_open"
+  | "complete_children"
+  | "cancel_children";
 
 export interface MoveTaskInput {
   parentTaskId?: number | null;
@@ -227,7 +228,11 @@ export type StuckProjectWithActions = StuckProject & { availableActions: Project
 export type ProjectDetail = ProjectWithActions & { tasks: Task[] };
 
 /** Body for `POST /api/projects/:id/activate` (matches `activateProjectSchema`). */
-export interface ActivateProjectInput {
+export interface ProjectWorkflowInput {
+  expectedRevision: number;
+}
+
+export interface ActivateProjectInput extends ProjectWorkflowInput {
   ownerMemberId?: number | null;
 }
 
@@ -274,6 +279,20 @@ export interface ExternalWaitInput {
   scheduledDate?: string | null;
   expectedRevision?: number;
 }
+
+export type ExternalWaitFollowUpInput =
+  | {
+      action: "resolve";
+      content: string;
+      expectedRevision: number;
+    }
+  | {
+      action: "continue";
+      content: string;
+      waitingFor?: string | null;
+      scheduledDate?: string | null;
+      expectedRevision: number;
+    };
 
 /** Matches `apps/api/src/routes/refinement.ts`'s query params. */
 export interface RefinementFilters {
@@ -381,14 +400,26 @@ export const api = {
       method: "POST",
       body: JSON.stringify(input ?? {}),
     }),
-  returnProjectToBacklog: (id: number) =>
-    request<ProjectWithActions>(`/projects/${id}/return-to-backlog`, { method: "POST" }),
-  completeProject: (id: number) =>
-    request<ProjectWithActions>(`/projects/${id}/complete`, { method: "POST" }),
-  reopenProject: (id: number) =>
-    request<ProjectWithActions>(`/projects/${id}/reopen`, { method: "POST" }),
-  archiveProject: (id: number) =>
-    request<ProjectWithActions>(`/projects/${id}/archive`, { method: "POST" }),
+  returnProjectToBacklog: (id: number, input: ProjectWorkflowInput) =>
+    request<ProjectWithActions>(`/projects/${id}/return-to-backlog`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  completeProject: (id: number, input: ProjectWorkflowInput) =>
+    request<ProjectWithActions>(`/projects/${id}/complete`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  reopenProject: (id: number, input: ProjectWorkflowInput) =>
+    request<ProjectWithActions>(`/projects/${id}/reopen`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  archiveProject: (id: number, input: ProjectWorkflowInput) =>
+    request<ProjectWithActions>(`/projects/${id}/archive`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
 
   // --- acceptance criteria (ordered, structured; replaces free-text description) ---
   addCriterion: (projectId: number, text: string) =>
@@ -533,6 +564,11 @@ export const api = {
         expectedRevision === undefined ? {} : { expectedRevision },
       ),
     }),
+  followUpExternalWait: (id: number, input: ExternalWaitFollowUpInput) =>
+    request<Task>(`/tasks/${id}/external-wait/follow-up`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   transitionTaskStatus: (
     id: number,
     status: TaskStatus,
@@ -544,8 +580,15 @@ export const api = {
       body: JSON.stringify({
         status,
         ...(completedOn ? { completedOn } : {}),
-        ...(expectedRevision ? { expectedRevision } : {}),
+        ...(expectedRevision !== undefined ? { expectedRevision } : {}),
       }),
+    }),
+  clarifyTask: (id: number, expectedRevision?: number) =>
+    request<Task>(`/tasks/${id}/clarify`, {
+      method: "POST",
+      body: JSON.stringify(
+        expectedRevision === undefined ? {} : { expectedRevision },
+      ),
     }),
   appendTaskNotes: (id: number, content: string) =>
     request<Task>(`/tasks/${id}/notes`, {
@@ -556,7 +599,7 @@ export const api = {
 
   completeTask: (
     id: number,
-    descendantsPolicy?: CompleteDescendantsPolicy,
+    descendantsPolicy: TaskDescendantsPolicy = "leave_open",
     completedOn?: string,
     expectedRevision?: number,
   ) =>
@@ -565,15 +608,28 @@ export const api = {
       body: JSON.stringify({
         ...(descendantsPolicy ? { descendantsPolicy } : {}),
         ...(completedOn ? { completedOn } : {}),
-        ...(expectedRevision ? { expectedRevision } : {}),
+        ...(expectedRevision !== undefined ? { expectedRevision } : {}),
       }),
     }),
-  cancelTask: (id: number, descendantsPolicy?: CancelDescendantsPolicy) =>
+  cancelTask: (
+    id: number,
+    descendantsPolicy: TaskDescendantsPolicy = "leave_open",
+    expectedRevision?: number,
+  ) =>
     request<Task>(`/tasks/${id}/cancel`, {
       method: "POST",
-      body: JSON.stringify(descendantsPolicy ? { descendantsPolicy } : {}),
+      body: JSON.stringify({
+        descendantsPolicy,
+        ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+      }),
     }),
-  reopenTask: (id: number) => request<Task>(`/tasks/${id}/reopen`, { method: "POST" }),
+  reopenTask: (id: number, expectedRevision?: number) =>
+    request<Task>(`/tasks/${id}/reopen`, {
+      method: "POST",
+      body: JSON.stringify(
+        expectedRevision === undefined ? {} : { expectedRevision },
+      ),
+    }),
 
   moveTask: (id: number, input: MoveTaskInput) =>
     request<Task>(`/tasks/${id}/move`, { method: "POST", body: JSON.stringify(input) }),

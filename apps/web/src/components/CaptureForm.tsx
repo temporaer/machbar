@@ -4,7 +4,7 @@ import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
-import { ownerAssignmentPatch } from "./TaskQuickActionSheet";
+import { ownerAssignmentPatch } from "../lib/useTaskActions";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { HumanDateInput } from "./HumanDateInput";
 

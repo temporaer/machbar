@@ -27,7 +27,8 @@ import { StatusBadge } from "./StatusBadge";
 import { TagChip } from "./TagChip";
 import { TagPicker } from "./TagPicker";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
-import { CaptureProjectBreakdownSheet } from "./CaptureProjectBreakdownSheet";
+import { InlineChildComposer } from "./InlineChildComposer";
+import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
@@ -191,7 +192,10 @@ export function TaskDetailSheet() {
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
   const [savingTextFields, setSavingTextFields] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [titleEditing, setTitleEditing] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
+  const [addingChild, setAddingChild] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [dueDateValid, setDueDateValid] = useState(true);
   const [scheduledDateValid, setScheduledDateValid] = useState(true);
@@ -210,16 +214,18 @@ export function TaskDetailSheet() {
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
   const dependencyInputRef = useRef<HTMLInputElement>(null);
   const subtasksFieldRef = useRef<HTMLDivElement>(null);
-  const subtaskInputRef = useRef<HTMLInputElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
   const revisionRef = useRef<number | null>(null);
 
   const {
-    data: task,
+    data: loadedTask,
     loading,
     error,
     reload,
   } = useAsync(() => (openTaskId ? api.getTask(openTaskId) : Promise.resolve(null)), [openTaskId]);
+  const task = loadedTask
+    ? (taskActions.retained.get(loadedTask.id) ?? loadedTask)
+    : null;
   const {
     data: recurrenceHistory,
     loading: recurrenceHistoryLoading,
@@ -252,24 +258,29 @@ export function TaskDetailSheet() {
   // it is skipped whenever the current drafts still differ from the last
   // known-saved baseline.
   useEffect(() => {
-    if (!task) {
+    if (!loadedTask) {
       lastLoadedTaskIdRef.current = null;
       setTextFieldsBaseline(null);
       return;
     }
-    revisionRef.current = task.revision;
-    const nextBaseline = textFieldsSnapshot(task);
-    const isNewTask = lastLoadedTaskIdRef.current !== task.id;
+    revisionRef.current = loadedTask.revision;
+    const nextBaseline = textFieldsSnapshot(loadedTask);
+    const isNewTask = lastLoadedTaskIdRef.current !== loadedTask.id;
     if (isNewTask) {
       setSaveError(null);
+      setTitleEditing(false);
       setNotesEditing(false);
+      setAddingChild(false);
+      setDeleting(false);
       setShareStatus(null);
       setDueDateValid(true);
       setScheduledDateValid(true);
       setExternalWaitDateValid(true);
-      setStatusDraft(task.status);
-      setExternalWaitDraft(task.externalWait?.waitingFor ?? "");
-      setExternalWaitDateDraft(task.externalWait ? task.scheduledDate ?? "" : "");
+      setStatusDraft(loadedTask.status);
+      setExternalWaitDraft(loadedTask.externalWait?.waitingFor ?? "");
+      setExternalWaitDateDraft(
+        loadedTask.externalWait ? loadedTask.scheduledDate ?? "" : "",
+      );
       setDependencyError(null);
       setAddingDependencyId(null);
     }
@@ -293,9 +304,9 @@ export function TaskDetailSheet() {
       setNotesDraft(nextBaseline.notes);
       setTextFieldsBaseline(nextBaseline);
     }
-    lastLoadedTaskIdRef.current = task.id;
+    lastLoadedTaskIdRef.current = loadedTask.id;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [task]);
+  }, [loadedTask]);
 
   useEffect(() => {
     if (task) setStatusDraft(task.status);
@@ -310,6 +321,10 @@ export function TaskDetailSheet() {
   // relevant field of this same edit flow instead of just the sheet's top.
   useEffect(() => {
     if (!task || !focusField) return;
+    if (focusField === "title" && !titleEditing) {
+      setTitleEditing(true);
+      return;
+    }
     if (focusField === "notes" && !notesEditing) {
       setNotesEditing(true);
       return;
@@ -328,7 +343,7 @@ export function TaskDetailSheet() {
       schedule: scheduleInputRef.current,
       notes: notesRef.current,
       dependencies: dependencyInputRef.current,
-      subtasks: subtaskInputRef.current,
+      subtasks: null,
     };
     const scrollTarget = scrollTargets[focusField];
     const focusTarget = focusTargets[focusField];
@@ -339,7 +354,7 @@ export function TaskDetailSheet() {
       focusTarget?.focus();
     }
     clearFocusField();
-  }, [task, focusField, clearFocusField, notesEditing]);
+  }, [task, focusField, clearFocusField, notesEditing, titleEditing]);
 
   const inheritedTags = useMemo(() => {
     if (!task) return [];
@@ -353,57 +368,47 @@ export function TaskDetailSheet() {
     if (!task) return;
     setSaveError(null);
     try {
-      const updated = await api.updateTask(task.id, {
-        ...input,
-        expectedRevision: revisionRef.current ?? task.revision,
-      });
+      const updated = await taskActions.update(task, input, input, true);
+      if (!updated) return;
       revisionRef.current = updated.revision;
-      bump();
-      reload();
     } catch (err) {
-      if (isStaleWriteConflict(err)) {
-        bump();
-        reload();
-      }
+      if (isStaleWriteConflict(err)) reload();
       setSaveError(localizedErrorMessage(err, strings));
     }
   };
 
   const titleIsValid = titleDraft.trim().length > 0;
-  const textFieldsDirty =
-    textFieldsBaseline !== null &&
-    (titleDraft !== textFieldsBaseline.title ||
-      notesDraft !== textFieldsBaseline.notes);
-  const saveChangesDisabled = !textFieldsDirty || !titleIsValid || savingTextFields;
+  const titleDirty =
+    textFieldsBaseline !== null && titleDraft !== textFieldsBaseline.title;
+  const notesDirty =
+    textFieldsBaseline !== null && notesDraft !== textFieldsBaseline.notes;
+  const contentDirty = titleDirty || notesDirty;
 
-  const saveTextFields = async (): Promise<boolean> => {
-    if (!task || !titleIsValid || savingTextFields) return false;
-    if (!textFieldsDirty) return true;
-    const snapshot: TextFieldsSnapshot = {
-      title: titleDraft.trim(),
-      notes: notesDraft,
-    };
+  const saveContentField = async (
+    field: "title" | "notes",
+  ): Promise<boolean> => {
+    if (!task || savingTextFields) return false;
+    const value = field === "title" ? titleDraft.trim() : notesDraft;
+    if (field === "title" && !value) return false;
+    const dirty = field === "title" ? titleDirty : notesDirty;
+    if (!dirty) return true;
     setSavingTextFields(true);
     setSaveError(null);
     try {
-      const updated = await api.updateTask(task.id, {
-        title: snapshot.title,
-        notes: snapshot.notes,
-        expectedRevision: revisionRef.current ?? task.revision,
-      });
+      const updated = await taskActions.update(
+        task,
+        { [field]: value },
+        { [field]: value },
+        true,
+      );
+      if (!updated) return false;
       revisionRef.current = updated.revision;
-      // Adopt the just-saved values as the new baseline right away so the
-      // save button disables immediately, without waiting for the follow-up
-      // reload's round trip (which may race with further typing).
-      setTextFieldsBaseline(snapshot);
-      bump();
-      reload();
+      setTextFieldsBaseline((current) =>
+        current ? { ...current, [field]: value } : current,
+      );
       return true;
     } catch (err) {
-      if (isStaleWriteConflict(err)) {
-        bump();
-        reload();
-      }
+      if (isStaleWriteConflict(err)) reload();
       setSaveError(localizedErrorMessage(err, strings));
       return false;
     } finally {
@@ -411,23 +416,14 @@ export function TaskDetailSheet() {
     }
   };
 
-  const saveOnBlur = (relatedTarget: EventTarget | null) => {
-    if (relatedTarget instanceof Element && relatedTarget.closest("[data-text-save]")) return;
-    void saveTextFields();
+  const cancelTitleEdit = () => {
+    setTitleDraft(textFieldsBaseline?.title ?? task?.title ?? "");
+    setTitleEditing(false);
   };
 
   const cancelNotesEdit = () => {
     setNotesDraft(textFieldsBaseline?.notes ?? task?.notes ?? "");
     setNotesEditing(false);
-  };
-
-  const closeWithSave = async () => {
-    if (!dueDateValid || !scheduledDateValid) return;
-    if (textFieldsDirty) {
-      const saved = await saveTextFields();
-      if (!saved) return;
-    }
-    close();
   };
 
   const finishClassification = () => {
@@ -439,17 +435,15 @@ export function TaskDetailSheet() {
   };
 
   const classifyCapture = async (status: "actionable" | "someday") => {
-    if (!task || !titleIsValid || classificationBusy) return;
+    if (!task || classificationBusy || contentDirty) return;
     setClassificationBusy(true);
     setSaveError(null);
     try {
-      await api.updateTask(task.id, {
-        title: titleDraft.trim(),
-        notes: notesDraft,
-        status,
-        expectedRevision: revisionRef.current ?? task.revision,
-      });
-      bump();
+      const updated =
+        status === "actionable"
+          ? await taskActions.clarify(task)
+          : await taskActions.setStatus(task, "someday");
+      if (!updated) return;
       finishClassification();
     } catch (err) {
       if (isStaleWriteConflict(err)) {
@@ -466,14 +460,12 @@ export function TaskDetailSheet() {
     status: "active" | "backlog",
     openBreakdown: boolean,
   ) => {
-    if (!task || !titleIsValid || classificationBusy) return;
+    if (!task || classificationBusy || contentDirty) return;
     setClassificationBusy(true);
     setSaveError(null);
     try {
       const project = await api.promoteTaskToProject(task.id, {
         status,
-        title: titleDraft.trim(),
-        notes: notesDraft,
         expectedRevision: revisionRef.current ?? task.revision,
       });
       bump();
@@ -501,16 +493,8 @@ export function TaskDetailSheet() {
     if (previousStatus === "done" || previousStatus === "cancelled") {
       setChangingStatus(true);
       try {
-        await (nextStatus === "done" && task.repeatAfterDays !== null
-          ? api.transitionTaskStatus(
-              task.id,
-              nextStatus,
-              localCalendarDate(),
-              task.revision,
-            )
-          : api.transitionTaskStatus(task.id, nextStatus));
-        bump();
-        reload();
+        const updated = await taskActions.transitionStatus(task, nextStatus);
+        if (!updated) setStatusDraft(previousStatus);
       } catch (err) {
         setStatusDraft(previousStatus);
         setSaveError(localizedErrorMessage(err, strings));
@@ -530,9 +514,21 @@ export function TaskDetailSheet() {
     }
     setChangingStatus(true);
     try {
-      await api.transitionTaskStatus(task.id, nextStatus);
-      bump();
-      reload();
+      const updated =
+        nextStatus === "captured"
+          ? await taskActions.update(
+              task,
+              { status: nextStatus },
+              {
+                status: nextStatus,
+                needsClarification: true,
+                completedAt: null,
+                cancelledAt: null,
+              },
+              true,
+            )
+          : await taskActions.setStatus(task, nextStatus);
+      if (!updated) setStatusDraft(previousStatus);
     } catch (err) {
       setStatusDraft(previousStatus);
       setSaveError(localizedErrorMessage(err, strings));
@@ -629,12 +625,22 @@ export function TaskDetailSheet() {
     task?.status === "captured" &&
     task.projectId === null &&
     task.parentTaskId === null;
+  const taskMutationPending = task ? taskActions.isPending(task.id) : false;
 
   return (
     <>
     <BottomSheet
       title={strings.taskDetails}
-      onClose={() => void closeWithSave()}
+      onClose={() => {
+        if (
+          !savingTextFields &&
+          !classificationBusy &&
+          !deleting &&
+          !taskMutationPending
+        ) {
+          close();
+        }
+      }}
       labelledBy="task-detail-title"
       headerActions={
         task ? (
@@ -671,19 +677,62 @@ export function TaskDetailSheet() {
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
       {task ? (
-        <div className="stack task-detail-content">
+        <fieldset
+          className="stack task-detail-content"
+          disabled={taskMutationPending}
+          aria-busy={taskMutationPending}
+          style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}
+        >
           {task.blocked ? <div className="badge badge-status-waiting">{strings.blockedHint}</div> : null}
 
           <TaskDetailSection title={strings.taskSection}>
             <div className="field" ref={titleFieldRef}>
-              <label htmlFor="task-title">{strings.title}</label>
-              <input
-                ref={titleInputRef}
-                id="task-title"
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onBlur={(e) => saveOnBlur(e.relatedTarget)}
-              />
+              <div className="row-between">
+                <label className="field-label" htmlFor="task-title">
+                  {strings.title}
+                </label>
+                {!titleEditing ? (
+                  <IconActionButton
+                    kind="edit"
+                    label={strings.edit}
+                    onClick={() => setTitleEditing(true)}
+                  />
+                ) : null}
+              </div>
+              {titleEditing ? (
+                <>
+                  <input
+                    ref={titleInputRef}
+                    id="task-title"
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                  />
+                  <div className="row">
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={savingTextFields}
+                      onClick={cancelTitleEdit}
+                    >
+                      {strings.cancel}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      disabled={!titleIsValid || !titleDirty || savingTextFields}
+                      onClick={() =>
+                        void saveContentField("title").then((saved) => {
+                          if (saved) setTitleEditing(false);
+                        })
+                      }
+                    >
+                      {strings.save}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <strong>{task.title}</strong>
+              )}
             </div>
 
             {!isCapturedInboxItem ? <div className="field">
@@ -693,16 +742,18 @@ export function TaskDetailSheet() {
                 value={statusDraft}
                 disabled={
                   changingStatus ||
-                  taskActions.busyId === task.id ||
+                  taskActions.isPending(task.id) ||
                   taskActions.pendingTask?.id === task.id
                 }
                 onChange={(e) => void changeStatus(e.target.value as Task["status"])}
               >
-                {taskStatuses.map((s) => (
+                {taskStatuses
+                  .filter((status) => status !== "captured" || task.status === "captured")
+                  .map((s) => (
                   <option key={s} value={s}>
                     {strings.taskStatusLabels[s]}
                   </option>
-                ))}
+                  ))}
               </select>
             </div> : null}
 
@@ -745,7 +796,7 @@ export function TaskDetailSheet() {
                 <button
                   type="button"
                   className="btn btn-primary capture-shape-action"
-                  disabled={classificationBusy || !titleIsValid}
+                  disabled={classificationBusy || contentDirty}
                   onClick={() => void classifyCapture("actionable")}
                 >
                   {strings.classifyAsAction}
@@ -753,7 +804,7 @@ export function TaskDetailSheet() {
                 <button
                   type="button"
                   className="btn btn-primary capture-shape-action"
-                  disabled={classificationBusy || !titleIsValid}
+                  disabled={classificationBusy || contentDirty}
                   onClick={() => void promoteCapture("active", true)}
                 >
                   {strings.classifyAsProjectSteps}
@@ -761,7 +812,7 @@ export function TaskDetailSheet() {
                 <button
                   type="button"
                   className="btn capture-shape-action"
-                  disabled={classificationBusy || !titleIsValid}
+                  disabled={classificationBusy || contentDirty}
                   onClick={() => void promoteCapture("backlog", false)}
                 >
                   {strings.classifyAsBacklog}
@@ -769,7 +820,7 @@ export function TaskDetailSheet() {
                 <button
                   type="button"
                   className="btn capture-shape-action"
-                  disabled={classificationBusy || !titleIsValid}
+                  disabled={classificationBusy || contentDirty}
                   onClick={() => void classifyCapture("someday")}
                 >
                   {strings.classifyAsSomeday}
@@ -975,16 +1026,20 @@ export function TaskDetailSheet() {
                   rows={6}
                 />
                 <div className="row">
-                  <button type="button" className="btn btn-sm" data-text-save onClick={cancelNotesEdit}>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={savingTextFields}
+                    onClick={cancelNotesEdit}
+                  >
                     {strings.cancel}
                   </button>
                   <button
                     type="button"
                     className="btn btn-sm btn-primary"
-                    data-text-save
-                    disabled={!titleIsValid || savingTextFields}
+                    disabled={!notesDirty || savingTextFields}
                     onClick={() =>
-                      void saveTextFields().then((saved) => {
+                      void saveContentField("notes").then((saved) => {
                         if (saved) setNotesEditing(false);
                       })
                     }
@@ -999,20 +1054,6 @@ export function TaskDetailSheet() {
               <p className="text-muted">{strings.noNotes}</p>
             )}
           </div>
-
-          <button
-            type="button"
-            className={`btn btn-block${saveChangesDisabled ? "" : " btn-primary"}`}
-            disabled={saveChangesDisabled}
-            data-text-save
-            onClick={() =>
-              void saveTextFields().then((saved) => {
-                if (saved) setNotesEditing(false);
-              })
-            }
-          >
-            {strings.saveChanges}
-          </button>
 
           {saveError ?? taskActions.errors[task.id] ? (
             <div className="task-row-error" role="alert">
@@ -1149,11 +1190,24 @@ export function TaskDetailSheet() {
               ))}
             </ul>
             {task.repeatAfterDays === null && !isCapturedInboxItem ? (
-              <AddChildForm
-                parentTaskId={task.id}
-                inputRef={subtaskInputRef}
-                onAdded={reload}
-              />
+              addingChild ? (
+                <InlineChildComposer
+                  parentId={task.id}
+                  onCancel={() => setAddingChild(false)}
+                  onCreated={() => {
+                    setAddingChild(false);
+                    reload();
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setAddingChild(true)}
+                >
+                  {strings.addChild}
+                </button>
+              )
             ) : task.repeatAfterDays !== null ? (
               <p className="text-muted">{strings.recurringTaskLeafHint}</p>
             ) : null}
@@ -1286,19 +1340,28 @@ export function TaskDetailSheet() {
             <button
               type="button"
               className="btn btn-danger btn-block"
+              disabled={deleting}
               onClick={() => {
                 if (window.confirm(strings.deleteTaskConfirm)) {
-                  void api.deleteTask(task.id).then(() => {
-                    bump();
-                    close();
-                  });
+                  setDeleting(true);
+                  setSaveError(null);
+                  void api
+                    .deleteTask(task.id)
+                    .then(() => {
+                      bump();
+                      close();
+                    })
+                    .catch((cause) => {
+                      setSaveError(localizedErrorMessage(cause, strings));
+                      setDeleting(false);
+                    });
                 }
               }}
             >
               {strings.delete}
             </button>
           </TaskDetailDisclosure>
-        </div>
+        </fieldset>
       ) : null}
 
       {taskActions.pendingTask ? (
@@ -1328,65 +1391,14 @@ export function TaskDetailSheet() {
       ) : null}
     </BottomSheet>
     {promotedProject ? (
-      <CaptureProjectBreakdownSheet
+      <CapturedProjectHandoff
         project={promotedProject}
-        onClose={() => {
+        onDone={() => {
           setPromotedProject(null);
           finishClassification();
         }}
       />
     ) : null}
     </>
-  );
-}
-
-function AddChildForm({
-  parentTaskId,
-  inputRef,
-  onAdded,
-}: {
-  parentTaskId: number;
-  inputRef: RefObject<HTMLInputElement>;
-  onAdded: () => void;
-}) {
-  const strings = useStrings();
-  const [title, setTitle] = useState("");
-  const [saving, setSaving] = useState(false);
-  const { currentMemberId } = useIdentity();
-  const { bump } = useRefresh();
-
-  const submit = async () => {
-    const trimmed = title.trim();
-    if (!trimmed) return;
-    setSaving(true);
-    try {
-      await api.createChildTask(parentTaskId, { title: trimmed, createdByMemberId: currentMemberId });
-      setTitle("");
-      bump();
-      onAdded();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <form
-      className="row"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit();
-      }}
-    >
-      <input
-        ref={inputRef}
-        aria-label={strings.addSubtask}
-        placeholder={strings.addSubtask}
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-      />
-      <button type="submit" className="btn btn-sm" disabled={saving || !title.trim()}>
-        {strings.addChild}
-      </button>
-    </form>
   );
 }

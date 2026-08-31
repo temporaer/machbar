@@ -120,17 +120,14 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
     await screen.findByText("Kellerregal bauen");
 
     swipe(container, 100);
-    const dialog = await screen.findByRole("dialog", {
-      name: "Aktivierung vorbereiten",
-    });
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "Aktiv machen" }),
-    );
     await act(async () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.activateProject).toHaveBeenCalledWith(20, undefined);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockedApi.activateProject).toHaveBeenCalledWith(20, {
+      expectedRevision: 1,
+    });
     expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
     expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
   });
@@ -146,7 +143,9 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.completeProject).toHaveBeenCalledWith(21);
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(21, {
+      expectedRevision: 1,
+    });
     expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
   });
 
@@ -161,7 +160,9 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.reopenProject).toHaveBeenCalledWith(22);
+    expect(mockedApi.reopenProject).toHaveBeenCalledWith(22, {
+      expectedRevision: 1,
+    });
     expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
   });
 
@@ -176,7 +177,9 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.activateProject).toHaveBeenCalledWith(23, undefined);
+    expect(mockedApi.activateProject).toHaveBeenCalledWith(23, {
+      expectedRevision: 1,
+    });
     expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
   });
 
@@ -201,7 +204,9 @@ describe("ProjectStoryRow – status-appropriate primary swipe", () => {
     });
 
     expect(mockedApi.completeProject).not.toHaveBeenCalled();
-    expect(mockedApi.archiveProject).toHaveBeenCalledWith(24);
+    expect(mockedApi.archiveProject).toHaveBeenCalledWith(24, {
+      expectedRevision: 1,
+    });
   });
 });
 
@@ -212,7 +217,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Noah" })]);
   });
 
-  it("requires a driver in the backlog activation preflight", async () => {
+  it("continues activation immediately after selecting a missing driver", async () => {
     const story = makeProject({ id: 30, title: "Ohne Driver backlog", status: "backlog", ownerMemberId: null });
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active", ownerMemberId: 2 });
     const { container } = renderWithProviders(<Harness story={story} />);
@@ -221,23 +226,23 @@ describe("ProjectStoryRow – activation preparation", () => {
     swipe(container, 100);
 
     const dialog = await screen.findByRole("dialog", {
-      name: "Aktivierung vorbereiten",
+      name: "Verantwortliche Person zuweisen",
     });
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
 
     const group = within(dialog).getByRole("group", { name: "Verantwortlich" });
     expect(within(group).queryByRole("button", { name: "Niemand zugewiesen" })).not.toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("button", { name: "Aktiv machen" }),
-    ).toBeDisabled();
 
     await userEvent.click(within(group).getByRole("button", { name: "Noah" }));
-    await userEvent.click(
-      within(dialog).getByRole("button", { name: "Aktiv machen" }),
-    );
 
     // Assigning and activating happen in one atomic backend call.
-    await waitFor(() => expect(mockedApi.activateProject).toHaveBeenCalledWith(30, { ownerMemberId: 2 }));
+    await waitFor(() =>
+      expect(mockedApi.activateProject).toHaveBeenCalledWith(30, {
+        expectedRevision: 1,
+        ownerMemberId: 2,
+      }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
   });
 
@@ -340,7 +345,9 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(43);
+    expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(43, {
+      expectedRevision: 1,
+    });
     expect(screen.getByText("Auf später verschoben")).toBeInTheDocument();
   });
 
@@ -360,12 +367,12 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     ).toBeInTheDocument();
 
     await userEvent.click(within(group).getByRole("button", { name: "Noah" }));
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(44, {
       ownerMemberId: 2,
       expectedRevision: 1,
     }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     // A driver change must never move the story through the workflow.
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     expect(mockedApi.completeProject).not.toHaveBeenCalled();
@@ -415,13 +422,11 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     await userEvent.click(within(chips).getByRole("button", { name: "Planen" }));
     expect(await screen.findByRole("heading", { name: "Termine planen" })).toBeInTheDocument();
     const dueDate = screen.getByLabelText("Fällig");
-    await userEvent.type(dueDate, "1. Mai 2026");
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await userEvent.type(dueDate, "1. Mai 2026{Enter}");
 
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
         dueDate: "2026-05-01",
-        scheduledDate: null,
         expectedRevision: 1,
       }),
     );
@@ -454,29 +459,37 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     expect(within(dialog).getByRole("button", { name: "Vererbt" })).toHaveAttribute("aria-pressed", "false");
 
     await userEvent.click(within(dialog).getByRole("button", { name: "Telefon" }));
-    await userEvent.click(within(dialog).getByRole("button", { name: "Speichern" }));
 
     await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledWith(47, {
       tagIds: [10, 12],
       expectedRevision: 1,
     }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
   });
 
-  it("cancels local tag changes without mutating the project", async () => {
+  it("closes the tag sheet without a second mutation after an immediate toggle", async () => {
     const tag = makeTag({ id: 13, name: "Unterwegs", kind: "context" });
     const story = makeProject({ id: 48, title: "Tags abbrechen", tags: [] });
     mockedApi.getTags.mockResolvedValue([tag]);
+    mockedApi.updateProject.mockResolvedValue({ ...story, tags: [tag] });
     renderWithProviders(<Harness story={story} />);
     await screen.findByText("Tags abbrechen");
 
     await userEvent.click(within(openChips()).getByRole("button", { name: "Tags" }));
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Unterwegs" }));
-    await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
+    await waitFor(() => expect(mockedApi.updateProject).toHaveBeenCalledTimes(1));
+    await userEvent.click(
+      within(dialog)
+        .getAllByRole("button", { name: "Schließen" })
+        .find((button) => !button.classList.contains("icon-action-button"))!,
+    );
 
-    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+    expect(mockedApi.updateProject).toHaveBeenCalledWith(48, {
+      tagIds: [13],
+      expectedRevision: 1,
+    });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
@@ -491,7 +504,6 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     await userEvent.click(within(openChips()).getByRole("button", { name: "Tags" }));
     const dialog = await screen.findByRole("dialog");
     await userEvent.click(within(dialog).getByRole("button", { name: "Fehlerfall" }));
-    await userEvent.click(within(dialog).getByRole("button", { name: "Speichern" }));
 
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("Netzwerkfehler");
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -581,7 +593,9 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
       await flushMicrotasks();
     });
 
-    expect(mockedApi.completeProject).toHaveBeenCalledWith(51);
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(51, {
+      expectedRevision: 1,
+    });
   });
 
   it("keeps tap-to-detail as a real link, but a swipe never navigates", async () => {
@@ -786,7 +800,9 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
     await act(async () => {
       await flushMicrotasks();
     });
-    expect(mockedApi.completeProject).toHaveBeenCalledWith(61);
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(61, {
+      expectedRevision: 1,
+    });
 
     // The retained row already advertises the *next* step of the cycle.
     await waitFor(() =>
@@ -798,7 +814,9 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.reopenProject).toHaveBeenCalledWith(61);
+    expect(mockedApi.reopenProject).toHaveBeenCalledWith(61, {
+      expectedRevision: 1,
+    });
     expect(screen.getByText("Wieder geöffnet")).toBeInTheDocument();
   });
 
@@ -937,7 +955,9 @@ describe("ProjectStoryRow – semantic status accents", () => {
     await act(async () => {
       await flushMicrotasks();
     });
-    expect(mockedApi.completeProject).toHaveBeenCalledWith(81);
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(81, {
+      expectedRevision: 1,
+    });
   });
 
   it("limits a waiting summary to two reasons plus the remaining count", async () => {

@@ -60,13 +60,17 @@ describe("QuickAdd", () => {
   });
 
   it("legt Machbar ohne Klärungsbedarf an und hält Korrekturen persistent bereit", async () => {
+    mockedApi.getMembers.mockResolvedValue([
+      makeMember({ id: 1, name: "Mira" }),
+      makeMember({ id: 2, name: "Jonas" }),
+    ]);
     mockedApi.createTask.mockResolvedValue(
       makeTask({ id: 12, title: "Angebot senden", ownerMemberId: 1, ownerInheritanceMode: "explicit" }),
     );
     mockedApi.getProjects.mockResolvedValue([makeProject({ id: 7, title: "Umzug" })]);
     mockedApi.moveSubtree.mockResolvedValue(makeTask({ id: 12, projectId: 7 }) as never);
     mockedApi.updateTask.mockResolvedValue(
-      makeTask({ id: 12, ownerMemberId: 1, ownerInheritanceMode: "explicit" }) as never,
+      makeTask({ id: 12, ownerMemberId: 2, ownerInheritanceMode: "explicit" }) as never,
     );
     renderWithProviders(<QuickAdd />);
     await openCapture();
@@ -100,15 +104,15 @@ describe("QuickAdd", () => {
     expect(screen.getByText("In Heute hinzugefügt")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Zuständig ändern" }));
-    await userEvent.click(screen.getByRole("button", { name: "Mira" }));
-    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
+    await userEvent.click(screen.getByRole("button", { name: "Jonas" }));
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(12, {
-        ownerMemberId: 1,
+        ownerMemberId: 2,
         ownerInheritanceMode: "explicit",
         expectedRevision: 1,
       }),
     );
+    expect(screen.queryByRole("group", { name: "Zuständig" })).not.toBeInTheDocument();
   });
 
   it("bewahrt den Projektkontext für schnelle Aufgaben", async () => {
@@ -129,7 +133,7 @@ describe("QuickAdd", () => {
     );
   });
 
-  it("legt ein Projekt passend zur gewählten Identität an und öffnet den kleinen Breakdown", async () => {
+  it("übergibt ein neues Projekt an leichte nächste-Schritt-, Öffnen- und Fertig-Aktionen", async () => {
     const project = makeProject({ id: 55, title: "Küche renovieren", status: "active", ownerMemberId: 1 });
     mockedApi.createProject.mockResolvedValue(project);
     mockedApi.createTask.mockResolvedValue(makeTask({ projectId: 55 }) as never);
@@ -146,21 +150,27 @@ describe("QuickAdd", () => {
         ownerMemberId: 1,
       }),
     );
-    expect(screen.getByLabelText("Was ist der nächste Schritt?")).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Nächsten Schritt hinzufügen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Projekt öffnen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Erledigt" })).toBeInTheDocument();
+    expect(screen.queryByText("Erledigt, wenn …")).not.toBeInTheDocument();
 
-    await userEvent.type(screen.getByLabelText("Was ist der nächste Schritt?"), "Angebote vergleichen");
     await userEvent.click(screen.getByRole("button", { name: "Nächsten Schritt hinzufügen" }));
+    const nextAction = screen.getByPlaceholderText("Nächsten Schritt hinzufügen");
+    expect(nextAction).toHaveFocus();
+    await userEvent.type(nextAction, "Angebote vergleichen");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({
+        {
           title: "Angebote vergleichen",
           projectId: 55,
-          parentTaskId: null,
           status: "actionable",
-        }),
+          createdByMemberId: 1,
+        },
       ),
     );
-    expect(screen.getByRole("button", { name: "Später fertig machen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Erledigt" })).toBeInTheDocument();
   });
 
   it("legt Projekte ohne ausgewählte Identität ungeplant und unzugewiesen ab", async () => {

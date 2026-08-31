@@ -17,7 +17,7 @@ vi.mock("../lib/api", () => ({
     completeTask: vi.fn(),
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
-    transitionTaskStatus: vi.fn(),
+    clarifyTask: vi.fn(),
     updateTask: vi.fn(),
     createTaskSuccessor: vi.fn(),
     reorderTask: vi.fn(),
@@ -119,6 +119,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     mockedApi.completeTask.mockResolvedValue(makeTask());
     mockedApi.cancelTask.mockResolvedValue(makeTask());
     mockedApi.reopenTask.mockResolvedValue(makeTask());
+    mockedApi.clarifyTask.mockResolvedValue(makeTask());
     mockedApi.updateTask.mockResolvedValue(makeTask());
   });
 
@@ -129,7 +130,14 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     swipe(container, 100);
 
-    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledWith(1, "leave_open"));
+    await waitFor(() =>
+      expect(mockedApi.completeTask).toHaveBeenCalledWith(
+        1,
+        "leave_open",
+        undefined,
+        1,
+      ),
+    );
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
@@ -140,6 +148,11 @@ describe("TaskRow – primary swipe direction mapping", () => {
       status: "actionable",
       needsClarification: true,
     });
+    mockedApi.clarifyTask.mockResolvedValue({
+      ...task,
+      revision: 2,
+      needsClarification: false,
+    });
     const { container } = renderWithProviders(
       <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
     );
@@ -149,7 +162,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     swipe(container, 100);
 
     await waitFor(() =>
-      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(13, "actionable"),
+      expect(mockedApi.clarifyTask).toHaveBeenCalledWith(13, 1),
     );
     expect(mockedApi.completeTask).not.toHaveBeenCalled();
   });
@@ -181,6 +194,11 @@ describe("TaskRow – primary swipe direction mapping", () => {
       status: "actionable",
       needsClarification: true,
     });
+    mockedApi.clarifyTask.mockResolvedValue({
+      ...task,
+      revision: 2,
+      needsClarification: false,
+    });
     const { container } = renderWithProviders(
       <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
     );
@@ -189,7 +207,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     swipe(container, 100);
 
     await waitFor(() =>
-      expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(15, "actionable"),
+      expect(mockedApi.clarifyTask).toHaveBeenCalledWith(15, 1),
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalledWith(
       15,
@@ -209,12 +227,19 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     swipe(container, 100);
     await waitFor(() =>
-      expect(mockedApi.completeTask).toHaveBeenCalledWith(9, "leave_open"),
+      expect(mockedApi.completeTask).toHaveBeenCalledWith(
+        9,
+        "leave_open",
+        undefined,
+        1,
+      ),
     );
     expect(container.querySelector(".task-row-content.retained")).toBeInTheDocument();
 
     swipe(container, 100);
-    await waitFor(() => expect(mockedApi.reopenTask).toHaveBeenCalledWith(9));
+    await waitFor(() =>
+      expect(mockedApi.reopenTask).toHaveBeenCalledWith(9, 1),
+    );
   });
 
   it("respects a configured 'Irgendwann' primary swipe action on an open task", async () => {
@@ -257,7 +282,9 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     swipe(container, 100);
 
-    await waitFor(() => expect(mockedApi.cancelTask).toHaveBeenCalledWith(4, "leave_open"));
+    await waitFor(() =>
+      expect(mockedApi.cancelTask).toHaveBeenCalledWith(4, "leave_open", 1),
+    );
   });
 
   it.each(["someday", "cancel", "complete"] as const)(
@@ -270,7 +297,9 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
       swipe(container, 100);
 
-      await waitFor(() => expect(mockedApi.reopenTask).toHaveBeenCalledWith(5));
+      await waitFor(() =>
+        expect(mockedApi.reopenTask).toHaveBeenCalledWith(5, 1),
+      );
       expect(mockedApi.updateTask).not.toHaveBeenCalled();
       expect(mockedApi.cancelTask).not.toHaveBeenCalled();
     },
@@ -284,7 +313,9 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     swipe(container, 100);
 
-    await waitFor(() => expect(mockedApi.reopenTask).toHaveBeenCalledWith(6));
+    await waitFor(() =>
+      expect(mockedApi.reopenTask).toHaveBeenCalledWith(6, 1),
+    );
   });
 
   it("reveals the touch-chip row (not an action) on the opposite swipe direction", async () => {
@@ -540,12 +571,6 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     );
 
     await userEvent.click(within(group).getByRole("button", { name: "Mira" }));
-    expect(within(group).getByRole("button", { name: "Mira" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
-
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(30, {
         ownerMemberId: 1,
@@ -556,7 +581,37 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("schedules from a focused sheet", async () => {
+  it("can make an inherited effective owner explicit without changing the person", async () => {
+    const task = makeTask({
+      id: 35,
+      title: "Geerbte Zuständigkeit",
+      status: "actionable",
+      ownerMemberId: null,
+      effectiveOwnerId: 1,
+      effectiveOwnerSource: "project",
+    });
+    renderOutlineWithDetail(task);
+    await screen.findByText("Geerbte Zuständigkeit");
+
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Zuweisen" }));
+    await userEvent.click(
+      within(await screen.findByRole("group", { name: "Zuständig" })).getByRole(
+        "button",
+        { name: "Mira" },
+      ),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(35, {
+        ownerMemberId: 1,
+        ownerInheritanceMode: "explicit",
+        expectedRevision: 1,
+      }),
+    );
+  });
+
+  it("saves a valid focused schedule immediately and closes", async () => {
     const task = makeTask({ id: 31, title: "Termin vereinbaren", status: "actionable" });
     renderOutlineWithDetail(task);
     await screen.findByText("Termin vereinbaren");
@@ -564,26 +619,17 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Planen" }));
 
-    const scheduled = await screen.findByLabelText("Geplant");
+    await screen.findByLabelText("Geplant");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
-    expect(scheduled).toHaveValue(
-      new Intl.DateTimeFormat("de-DE", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-      }).format(new Date(`${resolveScheduleShortcut("tomorrow")}T12:00:00`)),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Nicht geplant" }));
-    expect(scheduled).toHaveValue("");
-    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
-        scheduledDate: null,
+        scheduledDate: resolveScheduleShortcut("tomorrow"),
         expectedRevision: 1,
       }),
     );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("edits notes from a focused sheet", async () => {
@@ -597,7 +643,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     const notes = await screen.findByLabelText("Notizen");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
     await userEvent.type(notes, "Rückfrage vorbereiten");
-    await userEvent.click(screen.getByRole("button", { name: "Änderungen speichern" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(32, {
@@ -615,7 +661,9 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Mehr" }));
 
-    expect(await screen.findByDisplayValue("Umzug planen")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Umzug planen", { selector: "strong" }),
+    ).toBeInTheDocument();
   });
 
 });

@@ -1,14 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
 import type { TaskSize } from "@machbar/shared";
 import { api } from "./api";
 import type { RefinementTaskRow } from "./api";
-import { useRefresh } from "./refresh";
-import { useStrings } from "./strings";
-import type { Strings } from "./strings";
-import {
-  isStaleWriteConflict,
-  localizedErrorMessage,
-} from "./errorMessage";
+import { RETENTION_MS, useRetainedMutations } from "./useRetainedMutations";
+import { ownerAssignmentPatch } from "./useTaskActions";
 
 export type RefinementListItem = RefinementTaskRow;
 
@@ -21,7 +16,7 @@ export type RefinementListItem = RefinementTaskRow;
  * rather than imported, since this hook must not depend on the excluded
  * `useTaskActions.ts` file's internal shape.
  */
-export const REFINEMENT_RETENTION_MS = 4000;
+export const REFINEMENT_RETENTION_MS = RETENTION_MS;
 
 /**
  * The size cycle a right-swipe on a refinement row performs:
@@ -37,10 +32,6 @@ export function nextSizeInCycle(current: TaskSize | null): TaskSize | null {
   return SIZE_CYCLE[nextIndex] ?? null;
 }
 
-function errorMessage(err: unknown, strings: Strings): string {
-  return localizedErrorMessage(err, strings);
-}
-
 /**
  * Centralises refinement-row size mutations (swipe-cycle, direct
  * S/M/L/XL chips, and "clear"), each optimistic and each retained in place
@@ -53,81 +44,21 @@ function errorMessage(err: unknown, strings: Strings): string {
  * could reorder/remove the very row whose optimistic state we just set.
  */
 export function useRefinementActions() {
-  const strings = useStrings();
-  const { bump } = useRefresh();
-  const [busyId, setBusyId] = useState<number | null>(null);
-  const [retained, setRetained] = useState<Map<number, RefinementListItem>>(new Map());
-  const [errors, setErrors] = useState<Record<number, string>>({});
-  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
-
-  useEffect(
-    () => () => {
-      timers.current.forEach((t) => clearTimeout(t));
-      timers.current.clear();
-    },
-    [],
-  );
-
-  const release = useCallback((id: number) => {
-    const t = timers.current.get(id);
-    if (t) {
-      clearTimeout(t);
-      timers.current.delete(id);
-    }
-    setRetained((prev) => {
-      if (!prev.has(id)) return prev;
-      const next = new Map(prev);
-      next.delete(id);
-      return next;
-    });
-  }, []);
-
-  const retain = useCallback(
-    (optimisticTask: RefinementListItem) => {
-      setRetained((prev) => {
-        const next = new Map(prev);
-        next.set(optimisticTask.id, optimisticTask);
-        return next;
-      });
-      const existing = timers.current.get(optimisticTask.id);
-      if (existing) clearTimeout(existing);
-      const timeout = setTimeout(() => {
-        release(optimisticTask.id);
-        bump();
-      }, REFINEMENT_RETENTION_MS);
-      timers.current.set(optimisticTask.id, timeout);
-    },
-    [release, bump],
-  );
-
-  const clearError = useCallback((id: number) => {
-    setErrors((prev) => {
-      if (!(id in prev)) return prev;
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  }, []);
+  const mutations = useRetainedMutations<RefinementListItem>();
+  const { run, pendingIds, isPending, retained, errors, clearError } = mutations;
 
   const setSize = useCallback(
     (task: RefinementListItem, size: TaskSize | null) => {
-      setBusyId(task.id);
-      clearError(task.id);
       const optimistic: RefinementListItem = { ...task, size };
-      retain(optimistic);
-      return api
-        .updateTask(task.id, { size, expectedRevision: task.revision })
-        .catch((err: unknown) => {
-          release(task.id);
-          if (isStaleWriteConflict(err)) bump();
-          setErrors((prev) => ({
-            ...prev,
-            [task.id]: errorMessage(err, strings),
-          }));
-        })
-        .finally(() => setBusyId(null));
+      return run({
+        id: task.id,
+        optimistic,
+        mutate: () =>
+          api.updateTask(task.id, { size, expectedRevision: task.revision }),
+        confirmed: (confirmed) => ({ ...task, ...confirmed, size }),
+      });
     },
-    [clearError, retain, release, strings],
+    [run],
   );
 
   const cycleSize = useCallback(
@@ -139,7 +70,7 @@ export function useRefinementActions() {
 
   /**
    * Assigns (or clears) the responsible member from the row's own focused
-   * `AssignOwnerSheet`, without ever opening the full task editor. Uses the
+   * shared member picker, without ever opening the full task editor. Uses the
    * same optimistic-retain treatment as a size change, since the owner is
    * the matrix's *other* axis: the row would otherwise jump to a different
    * owner bucket (or vanish behind an owner filter) the instant the patch
@@ -147,32 +78,40 @@ export function useRefinementActions() {
    */
   const assignOwner = useCallback(
     (task: RefinementListItem, ownerMemberId: number | null) => {
-      setBusyId(task.id);
-      clearError(task.id);
       const optimistic: RefinementListItem = {
         ...task,
         effectiveOwnerId: ownerMemberId,
         effectiveOwnerSource: ownerMemberId === null ? "none" : "task",
       };
-      retain(optimistic);
-      return api
-        .updateTask(task.id, {
-          ownerMemberId,
-          ownerInheritanceMode: ownerMemberId === null ? "none" : "explicit",
-          expectedRevision: task.revision,
-        })
-        .catch((err: unknown) => {
-          // Rolled back, then rethrown so the still-open `AssignOwnerSheet`
-          // reports the failure where the user acted, instead of closing and
-          // duplicating it as a row-level error banner.
-          release(task.id);
-          if (isStaleWriteConflict(err)) bump();
-          throw err;
-        })
-        .finally(() => setBusyId(null));
+      return run({
+        id: task.id,
+        optimistic,
+        mutate: () =>
+          api.updateTask(task.id, {
+            ...ownerAssignmentPatch(ownerMemberId),
+            expectedRevision: task.revision,
+          }),
+        confirmed: (confirmed) => ({
+          ...task,
+          ...confirmed,
+          effectiveOwnerId: ownerMemberId,
+          effectiveOwnerSource: ownerMemberId === null ? "none" : "task",
+        }),
+        throwOnError: true,
+      });
     },
-    [bump, clearError, retain, release],
+    [run],
   );
 
-  return { busyId, retained, errors, clearError, setSize, cycleSize, clearSize, assignOwner };
+  return {
+    pendingIds,
+    isPending,
+    retained,
+    errors,
+    clearError,
+    setSize,
+    cycleSize,
+    clearSize,
+    assignOwner,
+  };
 }

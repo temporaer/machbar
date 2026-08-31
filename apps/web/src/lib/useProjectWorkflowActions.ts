@@ -1,20 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
 import { api } from "./api";
-import type { ProjectWithActions, ProjectWorkflowAction } from "./api";
-import { useRefresh } from "./refresh";
+import type { ProjectWithActions, ProjectWorkflowAction, UpdateProjectInput } from "./api";
 import { statusAfterAction, workflowActionsByStatus } from "./projectWorkflow";
-// Reuses the exact same "how long does a just-transitioned row stay put"
-// constant as the task list (see `useTaskActions`), so the whole app agrees
-// on one retention window rather than two subtly different magic numbers.
-import { RETENTION_MS } from "./useTaskActions";
-import { useStrings } from "./strings";
-import type { Strings } from "./strings";
-import { localizedErrorMessage } from "./errorMessage";
-import { isStaleWriteConflict } from "./errorMessage";
-
-function errorMessage(err: unknown, strings: Strings): string {
-  return localizedErrorMessage(err, strings);
-}
+import { useRetainedMutations } from "./useRetainedMutations";
 
 /**
  * An optimistically transitioned story plus the transition that produced it,
@@ -24,7 +12,7 @@ function errorMessage(err: unknown, strings: Strings): string {
  */
 export interface RetainedStory {
   story: ProjectWithActions;
-  action: ProjectWorkflowAction;
+  action?: ProjectWorkflowAction;
 }
 
 /**
@@ -37,87 +25,38 @@ export interface RetainedStory {
  * `TaskRow`'s "stays visible for ~4s before the list drops it" behaviour —
  * see `useTaskActions` for why the global refresh (`bump()`) is deliberately
  * deferred until the retention window elapses rather than fired immediately.
- * Just like there, `busyId` is cleared as soon as the request resolves, so a
- * retained row becomes actionable again right away and a workflow can be
- * cycled (`abschließen → wieder öffnen → …`) without waiting.
+ * Pending state is tracked per project and cleared as soon as the request
+ * resolves, so a retained row becomes actionable again right away.
  *
  * Assigning a driver or (re)scheduling never changes a story's status, so
  * those simply patch the project and bump right away.
  */
 export function useProjectWorkflowActions() {
-  const strings = useStrings();
-  const { bump } = useRefresh();
-  const [busyId, setBusyId] = useState<number | null>(null);
-  const [retained, setRetained] = useState<Map<number, RetainedStory>>(new Map());
-  const [errors, setErrors] = useState<Record<number, string>>({});
-  const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
-
-  // Never let a retention timer fire (and call setState) after the owning
-  // component unmounted, e.g. the user navigated away mid-window.
-  useEffect(
-    () => () => {
-      timers.current.forEach((t) => clearTimeout(t));
-      timers.current.clear();
-    },
-    [],
-  );
-
-  const release = useCallback((id: number) => {
-    const t = timers.current.get(id);
-    if (t) {
-      clearTimeout(t);
-      timers.current.delete(id);
-    }
-    setRetained((prev) => {
-      if (!prev.has(id)) return prev;
-      const next = new Map(prev);
-      next.delete(id);
-      return next;
-    });
-  }, []);
-
-  const retain = useCallback(
-    (entry: RetainedStory) => {
-      const id = entry.story.id;
-      setRetained((prev) => {
-        const next = new Map(prev);
-        next.set(id, entry);
-        return next;
-      });
-      const existing = timers.current.get(id);
-      if (existing) clearTimeout(existing);
-      const timeout = setTimeout(() => {
-        release(id);
-        bump();
-      }, RETENTION_MS);
-      timers.current.set(id, timeout);
-    },
-    [release, bump],
-  );
-
-  const clearError = useCallback((id: number) => {
-    setErrors((prev) => {
-      if (!(id in prev)) return prev;
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  }, []);
+  const mutations = useRetainedMutations<RetainedStory>();
+  const { run, pendingIds, isPending, retained, errors, clearError } = mutations;
 
   const call = useCallback(
-    (id: number, action: ProjectWorkflowAction, ownerMemberId?: number | null) => {
+    (
+      story: ProjectWithActions,
+      action: ProjectWorkflowAction,
+      ownerMemberId?: number | null,
+    ) => {
+      const input = { expectedRevision: story.revision };
       switch (action) {
         case "activate":
-          return api.activateProject(id, ownerMemberId !== undefined ? { ownerMemberId } : undefined);
+          return api.activateProject(story.id, {
+            ...input,
+            ...(ownerMemberId !== undefined ? { ownerMemberId } : {}),
+          });
         case "return_to_backlog":
-          return api.returnProjectToBacklog(id);
+          return api.returnProjectToBacklog(story.id, input);
         case "complete":
-          return api.completeProject(id);
+          return api.completeProject(story.id, input);
         case "reopen":
-          return api.reopenProject(id);
+          return api.reopenProject(story.id, input);
         case "archive":
         default:
-          return api.archiveProject(id);
+          return api.archiveProject(story.id, input);
       }
     },
     [],
@@ -144,29 +83,14 @@ export function useProjectWorkflowActions() {
         // acted on again immediately, before any refetch confirms it.
         availableActions: workflowActionsByStatus[nextStatus],
       };
-      setBusyId(story.id);
-      clearError(story.id);
-      retain({ story: optimistic, action });
-      try {
-        const confirmed = await call(story.id, action, ownerMemberId);
-        // The response includes freshly computed next-action and stuck state.
-        // Replace the status-only optimistic shape before list classification
-        // can mistake a newly stuck project for a healthy parked one.
-        retain({ story: confirmed, action });
-        // No immediate `bump()` — see the hook comment and
-        // `useTaskActions.runTransition`: `retain`'s own timer bumps exactly
-        // once, when the retention window has fully elapsed.
-      } catch (err) {
-        release(story.id);
-        setErrors((prev) => ({
-          ...prev,
-          [story.id]: errorMessage(err, strings),
-        }));
-      } finally {
-        setBusyId(null);
-      }
+      return run({
+        id: story.id,
+        optimistic: { story: optimistic, action },
+        mutate: () => call(story, action, ownerMemberId),
+        confirmed: (confirmed) => ({ story: confirmed, action }),
+      });
     },
-    [call, clearError, retain, release, strings],
+    [call, run],
   );
 
   /** Right-swipe / primary-button activation, optionally assigning the driver in the same call. */
@@ -181,58 +105,58 @@ export function useProjectWorkflowActions() {
     [runAction],
   );
 
-  /** Assigns (or, where legal, clears) the driver without changing the status. */
-  const assignDriver = useCallback(
-    async (story: ProjectWithActions, ownerMemberId: number | null) => {
-      setBusyId(story.id);
-      clearError(story.id);
-      try {
-        await api.updateProject(story.id, {
-          ownerMemberId,
-          expectedRevision: story.revision,
-        });
-        bump();
-      } catch (err) {
-        if (isStaleWriteConflict(err)) bump();
-        setErrors((prev) => ({
-          ...prev,
-          [story.id]: errorMessage(err, strings),
-        }));
-        throw err;
-      } finally {
-        setBusyId(null);
-      }
-    },
-    [bump, clearError, strings],
+  const update = useCallback(
+    (
+      story: ProjectWithActions,
+      patch: UpdateProjectInput,
+      optimisticPatch: Partial<ProjectWithActions> = patch,
+      throwOnError = false,
+    ) =>
+      run({
+        id: story.id,
+        optimistic: {
+          story: {
+            ...story,
+            ...optimisticPatch,
+            revision: story.revision + 1,
+          },
+        },
+        mutate: () =>
+          api.updateProject(story.id, {
+            ...patch,
+            expectedRevision: story.revision,
+          }),
+        confirmed: (confirmed) => ({ story: confirmed }),
+        throwOnError,
+      }),
+    [run],
   );
 
-  /** Sets due/scheduled dates without changing the status. */
+  const assignDriver = useCallback(
+    (story: ProjectWithActions, ownerMemberId: number | null) =>
+      update(story, { ownerMemberId }, { ownerMemberId }, true),
+    [update],
+  );
+
   const schedule = useCallback(
-    async (
+    (
       story: ProjectWithActions,
       patch: { dueDate?: string | null; scheduledDate?: string | null },
-    ) => {
-      setBusyId(story.id);
-      clearError(story.id);
-      try {
-        await api.updateProject(story.id, {
-          ...patch,
-          expectedRevision: story.revision,
-        });
-        bump();
-      } catch (err) {
-        if (isStaleWriteConflict(err)) bump();
-        setErrors((prev) => ({
-          ...prev,
-          [story.id]: errorMessage(err, strings),
-        }));
-        throw err;
-      } finally {
-        setBusyId(null);
-      }
-    },
-    [bump, clearError, strings],
+    ) => update(story, patch, patch, true),
+    [update],
   );
 
-  return { busyId, retained, errors, clearError, runAction, activate, archive, assignDriver, schedule };
+  return {
+    pendingIds,
+    isPending,
+    retained,
+    errors,
+    clearError,
+    runAction,
+    activate,
+    archive,
+    update,
+    assignDriver,
+    schedule,
+  };
 }

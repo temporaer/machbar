@@ -9,7 +9,8 @@ import type { RefinementListItem } from "../lib/useRefinementActions";
 import type { useRefinementActions } from "../lib/useRefinementActions";
 import { nextSizeInCycle } from "../lib/useRefinementActions";
 import { useTaskDetail } from "../lib/taskDetailContext";
-import { AssignOwnerSheet } from "./AssignOwnerSheet";
+import { MemberSelectionSheet } from "./MemberSelectionSheet";
+import { useIdentity } from "../lib/identity";
 
 const SWIPE_THRESHOLD = 72;
 
@@ -28,7 +29,7 @@ export interface RefinementTaskRowProps {
  * A single open task in the refinement list: owner, story (project title),
  * current size and blocked/waiting context, with a right-swipe that cycles
  * its size and a left-swipe/kebab that reveals direct S/M/L/XL/clear
- * choices plus a targeted Zuweisen popup (`AssignOwnerSheet`, never the
+ * choices plus a targeted Zuweisen popup (never the
  * full task editor) and the shared Zum-Projekt navigation. Mirrors the same
  * "single-column grid with stacked swipe backgrounds" concept as
  * `TaskRow.tsx`/`index.css`'s `.task-row`, reimplemented in
@@ -44,13 +45,14 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
   const dragState = useRef<{ startX: number; dragging: boolean }>({ startX: 0, dragging: false });
   const navigate = useNavigate();
   const { open } = useTaskDetail();
-  const { busyId, retained, errors, clearError, setSize, cycleSize, clearSize, assignOwner } = actions;
+  const { members } = useIdentity();
+  const { isPending, retained, errors, clearError, setSize, cycleSize, clearSize, assignOwner } = actions;
 
   const retainedTask = retained.get(taskProp.id);
   const task = retainedTask ?? taskProp;
   const isRetained = Boolean(retainedTask);
   const rowError = errors[taskProp.id];
-  const busy = busyId === task.id;
+  const busy = isPending(task.id);
 
   const showCycleBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
@@ -95,8 +97,7 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
     setChipsOpen(false);
   };
 
-  // Targeted assignment popup rather than the full task editor — the same
-  // focused `AssignOwnerSheet` the `TaskRow` chip strip uses.
+  // Targeted assignment popup rather than the full task editor.
   const assign = () => {
     setChipsOpen(false);
     setAssigning(true);
@@ -213,12 +214,16 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
       ) : null}
 
       {assigning ? (
-        <AssignOwnerSheet
+        <MemberSelectionSheet
           title={`${strings.assign}: ${task.title}`}
-          groupId={`refinement-owner-${task.id}`}
-          currentOwnerId={task.effectiveOwnerId}
+          label={strings.owner}
+          idPrefix={`refinement-owner-${task.id}`}
+          members={members}
+          value={task.effectiveOwnerId}
+          valueIsExplicit={task.effectiveOwnerSource === "task"}
+          unassignedLabel={strings.shared}
           onClose={() => setAssigning(false)}
-          onAssign={async (ownerMemberId) => {
+          onSelect={async (ownerMemberId) => {
             await assignOwner(task, ownerMemberId);
           }}
         />

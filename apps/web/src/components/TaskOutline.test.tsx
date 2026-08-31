@@ -43,7 +43,12 @@ describe("TaskOutline", () => {
     await userEvent.click(screen.getByRole("button", { name: "Teilaufgaben ebenfalls erledigen" }));
 
     await waitFor(() =>
-      expect(mockedApi.completeTask).toHaveBeenCalledWith(1, "complete_children"),
+      expect(mockedApi.completeTask).toHaveBeenCalledWith(
+        1,
+        "complete_children",
+        undefined,
+        1,
+      ),
     );
   });
 
@@ -76,7 +81,14 @@ describe("TaskOutline", () => {
     await screen.findByText("Einfache Aufgabe");
     await userEvent.click(screen.getByRole("button", { name: "Erledigt" }));
 
-    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledWith(3, "leave_open"));
+    await waitFor(() =>
+      expect(mockedApi.completeTask).toHaveBeenCalledWith(
+        3,
+        "leave_open",
+        undefined,
+        1,
+      ),
+    );
   });
 
   it("explains swipe gestures in plain language and can hide the inline hint", async () => {

@@ -370,6 +370,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(withoutPolicy.json().error.details.options).toEqual([
       "leave_open",
       "complete_children",
+      "cancel_children",
     ]);
 
     // Still not completed after the rejected attempt.
@@ -441,6 +442,159 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
 
     const childReloaded = await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` });
     expect(childReloaded.json().status).toBe("cancelled");
+  });
+
+  it.each([
+    ["complete", "leave_open", "done", "actionable"],
+    ["complete", "complete_children", "done", "done"],
+    ["complete", "cancel_children", "done", "cancelled"],
+    ["cancel", "leave_open", "cancelled", "actionable"],
+    ["cancel", "complete_children", "cancelled", "done"],
+    ["cancel", "cancel_children", "cancelled", "cancelled"],
+  ] as const)(
+    "%s applies the %s descendants policy atomically",
+    async (action, descendantsPolicy, parentStatus, childStatus) => {
+      const parent = await createTask({
+        title: `${action}-${descendantsPolicy}`,
+        status: "actionable",
+      });
+      const child = (
+        await ctx.app.inject({
+          method: "POST",
+          url: `/api/tasks/${parent.id}/children`,
+          payload: { title: "Kind", status: "actionable" },
+        })
+      ).json();
+      const grandchild = (
+        await ctx.app.inject({
+          method: "POST",
+          url: `/api/tasks/${child.id}/children`,
+          payload: { title: "Enkel", status: "actionable" },
+        })
+      ).json();
+
+      const response = await ctx.app.inject({
+        method: "POST",
+        url: `/api/tasks/${parent.id}/${action}`,
+        payload: { descendantsPolicy, expectedRevision: parent.revision },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().status).toBe(parentStatus);
+      for (const descendantId of [child.id, grandchild.id]) {
+        const descendant = await ctx.app.inject({
+          method: "GET",
+          url: `/api/tasks/${descendantId}`,
+        });
+        expect(descendant.json().status).toBe(childStatus);
+      }
+    },
+  );
+
+  it("rolls back cancel-with-completion when a recurring descendant cannot be bulk-completed", async () => {
+    const parent = await createTask({
+      title: "Rollback parent",
+      status: "actionable",
+    });
+    const ordinary = (
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/tasks/${parent.id}/children`,
+        payload: { title: "Ordinary child" },
+      })
+    ).json();
+    const recurring = (
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/tasks/${parent.id}/children`,
+        payload: {
+          title: "Recurring child",
+          scheduledDate: "2026-09-01",
+          repeatAfterDays: 7,
+          allowedDeviationDays: 0,
+        },
+      })
+    ).json();
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.id}/cancel`,
+      payload: {
+        descendantsPolicy: "complete_children",
+        expectedRevision: parent.revision,
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe(
+      "recurring_descendant_completion_required",
+    );
+    for (const task of [parent, ordinary, recurring]) {
+      const current = await ctx.app.inject({
+        method: "GET",
+        url: `/api/tasks/${task.id}`,
+      });
+      expect(current.json()).toMatchObject({
+        status: "actionable",
+        revision: task.revision,
+      });
+    }
+  });
+
+  it.each([
+    ["complete", "actionable"],
+    ["cancel", "actionable"],
+    ["reopen", "done"],
+    ["clarify", "captured"],
+  ] as const)(
+    "rejects a stale revision for task %s without changing status",
+    async (action, initialStatus) => {
+      const task = await createTask({
+        title: `Stale ${action}`,
+        status: initialStatus,
+      });
+      const updated = await ctx.app.inject({
+        method: "PATCH",
+        url: `/api/tasks/${task.id}`,
+        payload: { notes: "Concurrent edit", expectedRevision: task.revision },
+      });
+      expect(updated.statusCode).toBe(200);
+
+      const response = await ctx.app.inject({
+        method: "POST",
+        url: `/api/tasks/${task.id}/${action}`,
+        payload: { expectedRevision: task.revision },
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error.code).toBe("stale_write_conflict");
+      const current = await ctx.app.inject({
+        method: "GET",
+        url: `/api/tasks/${task.id}`,
+      });
+      expect(current.json()).toMatchObject({
+        status: initialStatus,
+        notes: "Concurrent edit",
+        revision: updated.json().revision,
+      });
+    },
+  );
+
+  it("clarifies through the dedicated revision-safe command and returns the confirmed task", async () => {
+    const task = await createTask({ title: "Clarify me" });
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/clarify`,
+      payload: { expectedRevision: task.revision },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id: task.id,
+      status: "actionable",
+      needsClarification: false,
+      revision: task.revision + 1,
+    });
   });
 
   it("reopens a completed task back to actionable when it was already clarified", async () => {

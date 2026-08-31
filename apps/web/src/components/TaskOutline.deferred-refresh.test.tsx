@@ -183,7 +183,7 @@ describe("useTaskActions – deferred global refresh vs. compiled-section unmoun
     expect(screen.getByText("Fehlerhafte Aufgabe")).toBeInTheDocument();
   });
 
-  it("collapses a superseding transition (complete, then reopen before the window elapses) into exactly one eventual bump, not two", async () => {
+  it("keeps one per-task retention deadline across confirmed complete and reopen responses", async () => {
     vi.useFakeTimers();
     const task = makeTask({ id: 502, title: "Wird umentschieden", status: "actionable" });
     mockedApi.completeTask.mockResolvedValue({ ...task, status: "done" });
@@ -203,8 +203,8 @@ describe("useTaskActions – deferred global refresh vs. compiled-section unmoun
     });
     expect(versionLog).toEqual([0]);
 
-    // Reopen well before the first transition's retention window would have
-    // elapsed. This must restart (not add to) the retention timer.
+    // Reopen well before the task's retention window elapses. The shared
+    // runtime updates the same retained entry instead of adding another timer.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(RETENTION_MS - 1000);
     });
@@ -214,15 +214,14 @@ describe("useTaskActions – deferred global refresh vs. compiled-section unmoun
     });
     expect(versionLog).toEqual([0]);
 
-    // The superseded first timer's original deadline passes without ever
-    // bumping.
+    // The original per-task deadline emits one refresh for the latest
+    // confirmed response.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1500);
     });
-    expect(versionLog).toEqual([0]);
+    expect(versionLog).toEqual([0, 1]);
 
-    // Only once the *second* transition's own full window elapses does a
-    // single bump fire.
+    // There is no second timer for the reopen response.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(RETENTION_MS);
     });
