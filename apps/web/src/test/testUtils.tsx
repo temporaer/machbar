@@ -8,6 +8,7 @@ import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { LocaleProvider, type Locale } from "../lib/locale";
 import { ThemeProvider } from "../lib/theme";
 import { SwipeCoachProvider } from "../lib/swipeCoach";
+import { DeveloperModeProvider } from "../lib/developerMode";
 
 function AllProviders({
   children,
@@ -21,17 +22,19 @@ function AllProviders({
   return (
     <ThemeProvider>
       <LocaleProvider initialLocale={locale}>
-        <MemoryRouter {...(initialEntries ? { initialEntries } : {})}>
-          <IdentityProvider>
-            <RefreshProvider>
-              <SwipeSettingsProvider>
-                <SwipeCoachProvider>
-                  <TaskDetailProvider>{children}</TaskDetailProvider>
-                </SwipeCoachProvider>
-              </SwipeSettingsProvider>
-            </RefreshProvider>
-          </IdentityProvider>
-        </MemoryRouter>
+        <DeveloperModeProvider>
+          <MemoryRouter {...(initialEntries ? { initialEntries } : {})}>
+            <IdentityProvider>
+              <RefreshProvider>
+                <SwipeSettingsProvider>
+                  <SwipeCoachProvider>
+                    <TaskDetailProvider>{children}</TaskDetailProvider>
+                  </SwipeCoachProvider>
+                </SwipeSettingsProvider>
+              </RefreshProvider>
+            </IdentityProvider>
+          </MemoryRouter>
+        </DeveloperModeProvider>
       </LocaleProvider>
     </ThemeProvider>
   );

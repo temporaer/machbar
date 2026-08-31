@@ -9,12 +9,25 @@ export function LoadingState() {
   );
 }
 
-export function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+export function ErrorState({
+  message,
+  onRetry,
+  title,
+  guidance,
+}: {
+  message: string;
+  onRetry?: () => void;
+  title?: string;
+  guidance?: string;
+}) {
   const strings = useStrings();
+  const resolvedTitle = title ?? strings.error;
+  const showMessage = message.trim() !== resolvedTitle.trim();
   return (
     <div className="error-state" role="alert">
-      <p>{strings.error}</p>
-      <p className="text-muted">{message}</p>
+      <strong className="error-state-title">{resolvedTitle}</strong>
+      {showMessage ? <p>{message}</p> : null}
+      <p className="text-muted">{guidance ?? strings.errorRecoveryHint}</p>
       {onRetry ? (
         <button type="button" className="btn" onClick={onRetry}>
           {strings.retry}

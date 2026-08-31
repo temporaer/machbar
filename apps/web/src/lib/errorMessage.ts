@@ -132,5 +132,13 @@ export function localizedErrorMessage(
     }
     return strings.error;
   }
+  if (
+    error instanceof TypeError &&
+    /failed to fetch|load failed|networkerror|network request failed/i.test(
+      error.message,
+    )
+  ) {
+    return strings.networkError;
+  }
   return error instanceof Error ? error.message : String(error);
 }

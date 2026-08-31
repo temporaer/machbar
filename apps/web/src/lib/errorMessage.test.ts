@@ -24,6 +24,16 @@ describe("localizedErrorMessage", () => {
     expect(localizedErrorMessage(new Error("offline"), de)).toBe("offline");
   });
 
+  it("turns browser fetch failures into actionable connection guidance", () => {
+    expect(localizedErrorMessage(new TypeError("Failed to fetch"), en)).toBe(
+      "Machbar could not reach the server. Check your connection and try again.",
+    );
+    expect(localizedErrorMessage(new TypeError("NetworkError when attempting to fetch resource."), de))
+      .toBe(
+        "Machbar konnte den Server nicht erreichen. Prüfe deine Verbindung und versuche es erneut.",
+      );
+  });
+
   it("uses safe structured details for parameterized translations", () => {
     expect(
       localizedErrorMessage(

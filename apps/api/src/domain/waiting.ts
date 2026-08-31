@@ -2,9 +2,9 @@ import type { Graph, TaskRecord } from "./graph.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
 
 /**
- * Lists actionable blocked work once per task. Blocker details stay
- * structured on each task; callers may group by tags but never by a
- * dependency title masquerading as free-text waiting context.
+ * Lists actionable tasks with a direct external wait once per task.
+ * Dependency-only blockers remain visible in their project without
+ * duplicating the external task they eventually lead to in Waiting.
  */
 export function buildBlockedWork(
   graph: Graph,
@@ -21,7 +21,7 @@ export function buildBlockedWork(
     .filter(
       (task) =>
         task.status === "actionable" &&
-        task.blocked &&
+        task.externalWait !== null &&
         isTaskInWorkingSystem(task, projectStatusById) &&
         (actorTagId === undefined ||
           task.effectiveActorTags.some((tag) => tag.id === actorTagId)),
