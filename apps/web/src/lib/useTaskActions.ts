@@ -6,7 +6,11 @@ import type {
   ExternalWaitInput,
   UpdateTaskInput,
 } from "./api";
-import { hasOpenDescendants } from "./taskHelpers";
+import { addIsoCalendarDays, toIsoCalendarDate } from "./naturalDate";
+import {
+  hasOpenDescendants,
+  markOpenDescendantsTerminal,
+} from "./taskHelpers";
 import type { PrimarySwipeAction } from "./swipeSettings";
 import {
   ownerAssignmentPatch,
@@ -22,58 +26,6 @@ export type PendingAction = "complete" | "cancel";
 type WithoutExpectedRevision<T> = T extends unknown
   ? Omit<T, "expectedRevision">
   : never;
-
-/**
- * How long a task that just left its compiled view (completed, cancelled,
- * or otherwise transitioned to a status the current list no longer shows)
- * keeps rendering in place with its optimistic status before the retained
- * override is dropped. Kept mid-range of the "about 3-5 seconds" requirement.
- */
-function localCalendarDate(date = new Date()): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
-}
-
-function addCalendarDays(value: string, days: number): string {
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(year!, month! - 1, day! + days));
-  return [
-    date.getUTCFullYear(),
-    String(date.getUTCMonth() + 1).padStart(2, "0"),
-    String(date.getUTCDate()).padStart(2, "0"),
-  ].join("-");
-}
-
-/**
- * Recursively marks every *open* descendant with the given terminal status,
- * mirroring the backend's `openDescendants` (which walks the whole subtree,
- * not just direct children, and keeps walking past an already-closed node in
- * case a deeper descendant is still open). Without this, a parent's optimistic
- * retention snapshot would only cover the parent itself, leaving its
- * descendants frozen in their pre-mutation state (and styling) for the whole
- * retention window even though `complete_children`/`cancel_children` just
- * closed them too.
- */
-function markOpenDescendantsTerminal(children: Task[], status: Extract<TaskStatus, "done" | "cancelled">, at: string): Task[] {
-  return children.map((child) => {
-    const alreadyClosed = child.status === "done" || child.status === "cancelled";
-    return {
-      ...child,
-      ...(alreadyClosed
-        ? {}
-        : {
-            status,
-            needsClarification: false,
-            completedAt: status === "done" ? at : null,
-            cancelledAt: status === "cancelled" ? at : null,
-          }),
-      children: markOpenDescendantsTerminal(child.children, status, at),
-    };
-  });
-}
 
 /**
  * Centralises the complete/reopen/cancel/quick-status flow, including the
@@ -131,7 +83,7 @@ export function useTaskActions() {
   const complete = useCallback(
     (task: Task, policy?: ChildPolicy) => {
       const now = new Date().toISOString();
-      const completedOn = localCalendarDate();
+      const completedOn = toIsoCalendarDate(new Date());
       // Whichever policy closes the open descendants (matching or the mixed
       // "cancel children while completing the parent" case), fold that same
       // outcome into the optimistic snapshot's `children`, recursively, so
@@ -149,12 +101,12 @@ export function useTaskActions() {
               needsClarification: false,
               completedAt: null,
               cancelledAt: null,
-              scheduledDate: addCalendarDays(
+              scheduledDate: addIsoCalendarDays(
                 completedOn,
                 task.repeatAfterDays,
               ),
-              dueDate: addCalendarDays(
-                addCalendarDays(completedOn, task.repeatAfterDays),
+              dueDate: addIsoCalendarDays(
+                addIsoCalendarDays(completedOn, task.repeatAfterDays),
                 task.allowedDeviationDays,
               ),
             }

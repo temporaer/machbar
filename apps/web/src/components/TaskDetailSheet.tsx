@@ -56,14 +56,6 @@ interface TextFieldsSnapshot {
   notes: string;
 }
 
-function localCalendarDate(date = new Date()): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
-}
-
 function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
   return {
     title: task.title,

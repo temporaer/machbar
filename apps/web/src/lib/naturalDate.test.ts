@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { parseNaturalDate, toIsoCalendarDate } from "./naturalDate";
+import {
+  addIsoCalendarDays,
+  parseNaturalDate,
+  toIsoCalendarDate,
+} from "./naturalDate";
 
 const reference = new Date(2026, 7, 27, 12);
 
@@ -76,5 +80,12 @@ describe("parseNaturalDate", () => {
 describe("toIsoCalendarDate", () => {
   it("uses local calendar parts rather than UTC slicing", () => {
     expect(toIsoCalendarDate(new Date(2026, 7, 28, 0, 15))).toBe("2026-08-28");
+  });
+});
+
+describe("addIsoCalendarDays", () => {
+  it("uses calendar arithmetic across month and leap-day boundaries", () => {
+    expect(addIsoCalendarDays("2028-02-28", 1)).toBe("2028-02-29");
+    expect(addIsoCalendarDays("2028-02-29", 1)).toBe("2028-03-01");
   });
 });

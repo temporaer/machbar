@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import type { TaskSize } from "@machbar/shared";
 import { api } from "./api";
 import type { RefinementTaskRow } from "./api";
+import { nextSizeInCycle } from "./refinementHelpers";
 import {
   ownerAssignmentPatch,
   updateTask,
@@ -20,20 +21,6 @@ export type RefinementListItem = RefinementTaskRow;
  * `useTaskActions.ts` file's internal shape.
  */
 export const REFINEMENT_RETENTION_MS = RETENTION_MS;
-
-/**
- * The size cycle a right-swipe on a refinement row performs:
- * unestimated -> S -> M -> L -> XL -> unestimated (wraps back to null
- * rather than sticking at XL), so repeatedly swiping the same row cycles
- * through every bucket predictably instead of getting stuck at one end.
- */
-const SIZE_CYCLE: ReadonlyArray<TaskSize | null> = [null, "S", "M", "L", "XL"];
-
-export function nextSizeInCycle(current: TaskSize | null): TaskSize | null {
-  const index = SIZE_CYCLE.indexOf(current);
-  const nextIndex = (index + 1) % SIZE_CYCLE.length;
-  return SIZE_CYCLE[nextIndex] ?? null;
-}
 
 /**
  * Centralises refinement-row size mutations (swipe-cycle, direct

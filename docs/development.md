@@ -23,6 +23,7 @@ together. Vite proxies `/api` to the API process.
 | Command | Purpose |
 |---------|---------|
 | `npm run dev` | Start API and web development servers |
+| `npm run architecture` | Check canonical architecture boundaries and deprecated paths |
 | `npm run build` | Build shared, web, and API workspaces |
 | `npm run typecheck` | Type-check all workspaces that define the script |
 | `npm run test` | Run workspace unit tests |
@@ -30,7 +31,9 @@ together. Vite proxies `/api` to the API process.
 | `npm run db:migrate` | Apply pending Drizzle migrations |
 | `npm run db:seed` | Insert sample household data |
 
-See [Architecture](architecture.md) for package boundaries and domain design.
+Read the normative [Architecture rules](architecture-rules.md) before
+significant behavioral changes. See [Architecture](architecture.md) for package
+boundaries and detailed domain design.
 
 ## Packages
 
@@ -94,4 +97,3 @@ run casually against an established household database.
 Use only seed/demo data for public screenshots. Keep a consistent mobile
 viewport, avoid personal URLs or profile images, and store final images in
 `docs/images/` with descriptive filenames and alt text where embedded.
-

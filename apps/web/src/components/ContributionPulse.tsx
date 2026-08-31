@@ -2,6 +2,7 @@ import type { ContributionPulseLevel } from "@machbar/shared";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
+import { toIsoCalendarDate } from "../lib/naturalDate";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 
@@ -10,17 +11,9 @@ const EMPTY_PULSE: ContributionPulseLevel[] = Array.from(
   () => "none",
 );
 
-function localCalendarDate(date = new Date()): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
-}
-
 export function ContributionPulse() {
   const strings = useStrings();
-  const [calendarDay, setCalendarDay] = useState(localCalendarDate);
+  const [calendarDay, setCalendarDay] = useState(() => toIsoCalendarDate(new Date()));
   const { data, error, reload } = useAsync(
     () => api.getContributionSummary(),
     [calendarDay],
@@ -30,7 +23,7 @@ export function ContributionPulse() {
     const nextMidnight = new Date(now);
     nextMidnight.setHours(24, 0, 0, 0);
     const timeout = window.setTimeout(
-      () => setCalendarDay(localCalendarDate()),
+      () => setCalendarDay(toIsoCalendarDate(new Date())),
       nextMidnight.getTime() - now.getTime() + 100,
     );
     return () => window.clearTimeout(timeout);
@@ -38,7 +31,7 @@ export function ContributionPulse() {
   useEffect(() => {
     const refreshAfterSleep = () => {
       if (document.visibilityState === "visible") {
-        setCalendarDay(localCalendarDate());
+        setCalendarDay(toIsoCalendarDate(new Date()));
       }
     };
     document.addEventListener("visibilitychange", refreshAfterSleep);

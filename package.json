@@ -14,6 +14,7 @@
     "better-sqlite3": "12.11.1"
   },
   "scripts": {
+    "architecture": "node --test scripts/check-architecture.test.mjs && node scripts/check-architecture.mjs",
     "build": "npm run build -w @machbar/shared && npm run build -w @machbar/web && npm run build -w @machbar/api",
     "dev": "concurrently -n api,web -c blue,green \"npm run dev -w @machbar/api\" \"npm run dev -w @machbar/web\"",
     "typecheck": "npm run typecheck --workspaces --if-present",

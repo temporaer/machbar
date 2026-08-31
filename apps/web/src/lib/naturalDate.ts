@@ -27,6 +27,16 @@ export function toIsoCalendarDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+export function addIsoCalendarDays(value: string, days: number): string {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day! + days));
+  return [
+    date.getUTCFullYear(),
+    String(date.getUTCMonth() + 1).padStart(2, "0"),
+    String(date.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function parseIsoCalendarDate(input: string): string | null {
   const match = ISO_DATE_PATTERN.exec(input);
   if (!match) return null;

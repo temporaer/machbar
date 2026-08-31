@@ -11,6 +11,33 @@ export function hasOpenDescendants(task: Task): boolean {
 }
 
 /**
+ * Mirrors a parent terminal command's descendant policy in an optimistic tree.
+ * Closed nodes stay unchanged, but traversal continues because they can contain
+ * open descendants.
+ */
+export function markOpenDescendantsTerminal(
+  children: Task[],
+  status: Extract<Task["status"], "done" | "cancelled">,
+  at: string,
+): Task[] {
+  return children.map((child) => {
+    const alreadyClosed = child.status === "done" || child.status === "cancelled";
+    return {
+      ...child,
+      ...(alreadyClosed
+        ? {}
+        : {
+            status,
+            needsClarification: false,
+            completedAt: status === "done" ? at : null,
+            cancelledAt: status === "cancelled" ? at : null,
+          }),
+      children: markOpenDescendantsTerminal(child.children, status, at),
+    };
+  });
+}
+
+/**
  * Returns the highest open task on each descendant branch. Closed tasks may
  * still contain open descendants, so their branches must keep being searched.
  */
