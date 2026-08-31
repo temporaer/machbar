@@ -13,6 +13,7 @@ import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import type { ProjectWithActions } from "../lib/api";
 import { makeCriterion, makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
+import { formatExactLocalDate } from "../lib/relativeDate";
 import "../styles/index.css";
 import "./ProjectStoryRow.css";
 
@@ -787,6 +788,55 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(progress).toHaveAttribute("aria-valuetext", "2/4");
     expect(container.querySelector(".criteria-progress")).not.toBeInTheDocument();
     expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(1);
+  });
+
+  it("shows a scheduled next action with relative and exact local dates", async () => {
+    const scheduledDate = localDateAfter(10);
+    const exactDate = formatExactLocalDate(scheduledDate, "de");
+    const story = makeProject({
+      id: 60,
+      title: "Wohnzimmer wischen",
+      status: "active",
+      ownerMemberId: 1,
+      nextAction: makeTask({
+        title: "Tisch und Teppich raus",
+        scheduledDate,
+      }),
+    });
+    renderWithProviders(<Harness story={story} />);
+
+    const context = await screen.findByText(
+      "Nächster Schritt in 10 Tagen: Tisch und Teppich raus",
+    );
+    expect(context).toHaveAttribute(
+      "aria-label",
+      `Nächster Schritt in 10 Tagen (${exactDate}): Tisch und Teppich raus`,
+    );
+    expect(context).toHaveAttribute(
+      "title",
+      `Nächster Schritt in 10 Tagen (${exactDate}): Tisch und Teppich raus`,
+    );
+  });
+
+  it("keeps the plain next-action label when no schedule exists", async () => {
+    renderWithProviders(
+      <Harness
+        story={makeProject({
+          id: 61,
+          title: "Direkt weitermachen",
+          nextAction: makeTask({
+            title: "Material holen",
+            scheduledDate: null,
+          }),
+        })}
+      />,
+    );
+
+    const context = await screen.findByText(
+      "Nächster Schritt: Material holen",
+    );
+    expect(context).not.toHaveAttribute("aria-label");
+    expect(context).not.toHaveAttribute("title");
   });
 
   it("omits the progress bar when there is nothing to show", async () => {

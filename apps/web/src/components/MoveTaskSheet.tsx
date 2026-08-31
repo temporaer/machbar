@@ -9,6 +9,8 @@ import { rememberDestination } from "../lib/recentDestinations";
 import { BottomSheet } from "./BottomSheet";
 import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
 import { LoadingState, ErrorState } from "./AsyncStates";
+import { useLocale } from "../lib/locale";
+import { sortProjectDestinations } from "../lib/sortOrder";
 
 export type MoveMode = "parent" | "project" | "subtree";
 
@@ -27,6 +29,7 @@ export type MoveMode = "parent" | "project" | "subtree";
  */
 export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveMode; onClose: () => void }) {
   const strings = useStrings();
+  const { locale } = useLocale();
   const { bump } = useRefresh();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [projectTasks, setProjectTasks] = useState<Task[] | null>(null);
@@ -83,8 +86,12 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
   }, [projectTasks, excludedIds]);
 
   const projectOptions = useMemo<DestinationOption[]>(
-    () => (projects ?? []).map((p) => ({ id: p.id, title: p.title })),
-    [projects],
+    () =>
+      sortProjectDestinations(projects ?? [], locale).map((project) => ({
+        id: project.id,
+        title: project.title,
+      })),
+    [locale, projects],
   );
 
   /**

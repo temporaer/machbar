@@ -328,7 +328,7 @@ describe("RefinementTaskRow", () => {
       within(group)
         .getAllByRole("button")
         .map((b) => b.textContent),
-    ).toEqual(["Gemeinsam / offen", "Mira", "Jonas"]);
+    ).toEqual(["Gemeinsam / offen", "Jonas", "Mira"]);
     expect(within(group).getByRole("button", { name: "Gemeinsam / offen" })).toHaveAttribute(
       "aria-pressed",
       "true",

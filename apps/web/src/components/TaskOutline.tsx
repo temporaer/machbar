@@ -39,6 +39,8 @@ export interface TaskOutlineProps {
   /** Show the root tasks' scheduled date as their Wiedervorlage prompt. */
   showRevisitDate?: boolean;
   showSwipeHint?: boolean;
+  /** Preserve a compiled queue's root order instead of applying outline positions. */
+  preserveRootOrder?: boolean;
 }
 
 export function TaskOutline({
@@ -48,6 +50,7 @@ export function TaskOutline({
   waitingInteraction,
   showRevisitDate = false,
   showSwipeHint = true,
+  preserveRootOrder = false,
 }: TaskOutlineProps) {
   const strings = useStrings();
   const [movePrompt, setMovePrompt] = useState<{ taskId: number; mode: MoveMode } | null>(null);
@@ -79,11 +82,11 @@ export function TaskOutline({
   // projects) nor offer a handle of its own. Rendering it outside the
   // organize provider below achieves both without any extra prop.
   const { roots, ghosts } = useMemo(() => {
-    const sorted = sortByPosition(organize.tasks);
+    const sorted = preserveRootOrder ? organize.tasks : sortByPosition(organize.tasks);
     const presentIds = new Set(flattenTasks(sorted).map((t) => t.id));
     const stillRetained = [...taskActions.retained.values()].filter((t) => !presentIds.has(t.id));
     return { roots: sorted, ghosts: stillRetained };
-  }, [organize.tasks, taskActions.retained]);
+  }, [organize.tasks, preserveRootOrder, taskActions.retained]);
   const movePromptTask = movePrompt
     ? flattenTasks(organize.tasks).find((task) => task.id === movePrompt.taskId) ?? null
     : null;

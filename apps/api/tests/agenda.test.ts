@@ -330,6 +330,138 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Erfasst und geplant")).toEqual([]);
     expect(await bucketsContaining("Erfasst und blockiert")).toEqual([]);
   });
+
+  it("orders each task section by its public date and priority contract", async () => {
+    const ownerResponse = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: { name: "Sortiererin" },
+    });
+    const owner = ownerResponse.json();
+
+    await createTask({
+      title: "Planned today high",
+      scheduledDate: today,
+      priority: 1,
+    });
+    await createTask({
+      title: "Planned yesterday low",
+      scheduledDate: yesterday,
+      priority: 5,
+    });
+
+    const revisitToday = await createTask({
+      title: "Revisit today high",
+      scheduledDate: today,
+      priority: 1,
+    });
+    await addExternalWait(revisitToday.id);
+    const revisitYesterday = await createTask({
+      title: "Revisit yesterday low",
+      scheduledDate: yesterday,
+      priority: 5,
+    });
+    await addExternalWait(revisitYesterday.id);
+
+    await createTask({
+      title: "Overdue recent high",
+      dueDate: yesterday,
+      priority: 1,
+    });
+    await createTask({
+      title: "Overdue oldest low",
+      dueDate: addDaysIso(today, -2),
+      priority: 5,
+    });
+    await createTask({
+      title: "Soon later high",
+      dueDate: addDaysIso(today, 2),
+      priority: 1,
+    });
+    await createTask({
+      title: "Soon earliest low",
+      dueDate: tomorrow,
+      priority: 5,
+    });
+    await createTask({
+      title: "Today due low",
+      dueDate: today,
+      priority: 5,
+    });
+    await createTask({
+      title: "Today due high",
+      dueDate: today,
+      priority: 1,
+    });
+
+    await createTask({ title: "Shared low", priority: 5 });
+    await createTask({ title: "Shared Zulu", priority: 3 });
+    const sharedAlphaFirst = await createTask({
+      title: "Shared Alpha",
+      priority: 3,
+    });
+    const sharedAlphaSecond = await createTask({
+      title: "Shared Alpha",
+      priority: 3,
+    });
+    await createTask({ title: "Shared none" });
+    await createTask({
+      title: "Owned low",
+      ownerMemberId: owner.id,
+      ownerInheritanceMode: "explicit",
+      priority: 5,
+    });
+    await createTask({
+      title: "Owned high",
+      ownerMemberId: owner.id,
+      ownerInheritanceMode: "explicit",
+      priority: 1,
+    });
+
+    const agenda = await getAgenda();
+    const ids = (section: Array<{ id: number; title: string }>, prefix: string) =>
+      section.filter((task) => task.title.startsWith(prefix)).map((task) => task.id);
+    const titles = (
+      section: Array<{ title: string }>,
+      prefix: string,
+    ) => section.filter((task) => task.title.startsWith(prefix)).map((task) => task.title);
+
+    expect(titles(agenda.planned, "Planned")).toEqual([
+      "Planned yesterday low",
+      "Planned today high",
+    ]);
+    expect(titles(agenda.revisit, "Revisit")).toEqual([
+      "Revisit yesterday low",
+      "Revisit today high",
+    ]);
+    expect(titles(agenda.overdue, "Overdue")).toEqual([
+      "Overdue oldest low",
+      "Overdue recent high",
+    ]);
+    expect(titles(agenda.dueSoon, "Soon")).toEqual([
+      "Soon earliest low",
+      "Soon later high",
+    ]);
+    expect(titles(agenda.dueToday, "Today due")).toEqual([
+      "Today due high",
+      "Today due low",
+    ]);
+    expect(titles(agenda.shared, "Shared")).toEqual([
+      "Shared Alpha",
+      "Shared Alpha",
+      "Shared Zulu",
+      "Shared low",
+      "Shared none",
+    ]);
+    expect(ids(agenda.shared, "Shared Alpha")).toEqual([
+      sharedAlphaFirst.id,
+      sharedAlphaSecond.id,
+    ]);
+    expect(titles(agenda.unscheduled, "Owned")).toEqual([
+      "Owned high",
+      "Owned low",
+    ]);
+  });
 });
 
 describe("Heute agenda: filtering by selected member (effective owner)", () => {
@@ -463,6 +595,40 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     expect(
       await bucketsContaining("Bens machbare Aufgabe ohne Termin", anna.id),
     ).toEqual([]);
+  });
+
+  it("does not use sibling positions to order tasks from unrelated projects", async () => {
+    const anna = await createMember("Anna");
+    const alphaProject = await createProject({
+      title: "Alpha-Projekt",
+      status: "active",
+      ownerMemberId: anna.id,
+    });
+    const zuluProject = await createProject({
+      title: "Zulu-Projekt",
+      status: "active",
+      ownerMemberId: anna.id,
+    });
+    const alpha = await createTask({
+      title: "Alpha aus anderem Projekt",
+      projectId: alphaProject.id,
+      priority: 3,
+    });
+    const zulu = await createTask({
+      title: "Zulu aus anderem Projekt",
+      projectId: zuluProject.id,
+      priority: 3,
+    });
+    ctx.handle.sqlite
+      .prepare("UPDATE tasks SET position = CASE id WHEN ? THEN 99 ELSE 0 END WHERE id IN (?, ?)")
+      .run(alpha.id, alpha.id, zulu.id);
+
+    const agenda = (await getAgenda(anna.id)).json();
+    expect(
+      agenda.unscheduled
+        .filter((task: { id: number }) => task.id === alpha.id || task.id === zulu.id)
+        .map((task: { id: number }) => task.id),
+    ).toEqual([alpha.id, zulu.id]);
   });
 
   it("excludes another member's explicitly-owned tasks", async () => {

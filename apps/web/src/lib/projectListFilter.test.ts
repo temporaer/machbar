@@ -95,6 +95,49 @@ describe("filterAndSortProjects", () => {
     expect(result.map((p) => p.id)).toEqual([6, 5, 4, 3, 2, 1]);
   });
 
+  it("sorts future-scheduled next actions to the bottom of the active section", () => {
+    const now = new Date(2026, 7, 31, 23, 30);
+    const actionable = makeProject({
+      id: 1,
+      title: "Jetzt",
+      status: "active",
+      nextAction: makeTask({ scheduledDate: null }),
+    });
+    const stuck = makeProject({
+      id: 2,
+      title: "Blockiert",
+      status: "active",
+      nextAction: null,
+      stuckReason: "no_next_action",
+    });
+    const deferred = makeProject({
+      id: 3,
+      title: "Später",
+      status: "active",
+      nextAction: makeTask({ scheduledDate: "2026-09-10" }),
+    });
+    const waiting = makeProject({
+      id: 4,
+      title: "Wartet extern",
+      status: "active",
+      nextAction: null,
+      stuckReason: null,
+    });
+
+    const result = filterAndSortProjects(
+      [waiting, deferred, stuck, actionable],
+      {
+        query: "",
+        scope: "all",
+        currentMemberId: null,
+        now,
+      },
+    );
+
+    expect(result.map((project) => project.id)).toEqual([1, 2, 3, 4]);
+    expect(classifyProjectListItem(deferred)).toBe("active-actionable");
+  });
+
   it("breaks ties within a bucket by position, then locale title, then id", () => {
     const a = makeProject({ id: 30, title: "Zebra", status: "backlog", position: 1 });
     const b = makeProject({ id: 20, title: "Apfel", status: "backlog", position: 1 });

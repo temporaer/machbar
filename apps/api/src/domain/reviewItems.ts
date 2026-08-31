@@ -283,9 +283,18 @@ export function buildReviewItems(
   }
 
   return items.sort(
-    (a, b) =>
-      reasonOrder[a.reason] - reasonOrder[b.reason] ||
-      a.entityType.localeCompare(b.entityType) ||
-      a.entityId - b.entityId,
+    (a, b) => {
+      const reasonComparison =
+        reasonOrder[a.reason] - reasonOrder[b.reason];
+      if (reasonComparison !== 0) return reasonComparison;
+      if (a.projectTitle === null && b.projectTitle !== null) return 1;
+      if (a.projectTitle !== null && b.projectTitle === null) return -1;
+      return (
+        (a.projectTitle ?? "").localeCompare(b.projectTitle ?? "", "de") ||
+        a.entityTitle.localeCompare(b.entityTitle, "de") ||
+        a.entityType.localeCompare(b.entityType) ||
+        a.entityId - b.entityId
+      );
+    },
   );
 }

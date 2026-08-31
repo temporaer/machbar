@@ -49,6 +49,10 @@ import {
   isStaleWriteConflict,
   localizedErrorMessage,
 } from "../lib/errorMessage";
+import {
+  sortDependencies,
+  sortDependencyCandidates,
+} from "../lib/sortOrder";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -535,7 +539,11 @@ export function TaskDetailSheet() {
     }
     try {
       const results = await api.searchTasks({ text: value });
-      setDepResults(results.filter((t) => task && t.id !== task.id).slice(0, 8));
+      setDepResults(
+        task
+          ? sortDependencyCandidates(results, task, value, locale).slice(0, 8)
+          : [],
+      );
     } catch (err) {
       setDepResults([]);
       setDependencyError({
@@ -1083,7 +1091,7 @@ export function TaskDetailSheet() {
             <label>{strings.dependencies}</label>
             {task.dependencies.length === 0 ? <p className="text-muted">{strings.noDependencies}</p> : null}
             <ul className="list" style={{ padding: 0, margin: 0 }}>
-              {task.dependencies.map((dep) => (
+              {sortDependencies(task.dependencies, locale).map((dep) => (
                 <li key={dep.id} className="row-between">
                   <span>{dep.title ?? `#${dep.dependsOnTaskId}`}</span>
                   <span className="row">
@@ -1117,6 +1125,9 @@ export function TaskDetailSheet() {
                       onClick={() => void addTaskDependency(t)}
                     >
                       {strings.addDependency}: {t.title}
+                      {t.projectTitle ? (
+                        <span className="text-muted"> · {t.projectTitle}</span>
+                      ) : null}
                     </button>
                     {dependencyError?.candidateTaskId === t.id ? (
                       <div className="task-row-error" role="alert">

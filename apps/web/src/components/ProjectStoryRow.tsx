@@ -6,6 +6,7 @@ import { formatDate } from "../lib/format";
 import {
   formatCompactWaitDuration,
   formatExactLocalDate,
+  formatRelativeScheduleDate,
 } from "../lib/relativeDate";
 import { useIdentity } from "../lib/identity";
 import {
@@ -141,12 +142,29 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
   const accent = statusAccentByClassification[classification];
   const isHealthyWaiting = classification === "healthy-waiting";
   const waitingOn = story.waitingOn ?? [];
+  const now = new Date();
   const waitingDuration = story.waitingUntil
-    ? formatCompactWaitDuration(story.waitingUntil, new Date(), locale)
+    ? formatCompactWaitDuration(story.waitingUntil, now, locale)
     : null;
   const waitingUntilExact = story.waitingUntil
     ? formatExactLocalDate(story.waitingUntil, locale)
     : null;
+  const nextActionScheduleRelative = story.nextAction?.scheduledDate
+    ? formatRelativeScheduleDate(
+        story.nextAction.scheduledDate,
+        now,
+        locale,
+      )
+    : null;
+  const nextActionScheduleExact = story.nextAction?.scheduledDate
+    ? formatExactLocalDate(story.nextAction.scheduledDate, locale)
+    : null;
+  const nextActionScheduleAccessible =
+    story.nextAction &&
+    nextActionScheduleRelative &&
+    nextActionScheduleExact
+      ? `${strings.nextAction} ${nextActionScheduleRelative} (${nextActionScheduleExact}): ${story.nextAction.title}`
+      : null;
   const waitingDurationSuffix = waitingDuration
     ? ` · ${strings.remainingDuration(waitingDuration)}`
     : "";
@@ -310,13 +328,22 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
                 title={
                   isHealthyWaiting && waitingUntilExact
                     ? strings.projectRevisitOn(waitingUntilExact)
+                    : nextActionScheduleAccessible ?? undefined
+                }
+                aria-label={
+                  !isHealthyWaiting && nextActionScheduleAccessible
+                    ? nextActionScheduleAccessible
                     : undefined
                 }
               >
                 {isHealthyWaiting
                   ? waitingOnSummary
                   : story.nextAction
-                    ? `${strings.nextAction}: ${story.nextAction.title}`
+                    ? `${strings.nextAction}${
+                        nextActionScheduleRelative
+                          ? ` ${nextActionScheduleRelative}`
+                          : ""
+                      }: ${story.nextAction.title}`
                     : strings.noNextAction}
               </p>
               {totalTasks > 0 ? (

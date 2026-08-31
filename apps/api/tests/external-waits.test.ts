@@ -177,6 +177,57 @@ describe("task external waits", () => {
     );
   });
 
+  it("orders waiting work by attention, due date, title, and ID with missing dates last", async () => {
+    async function wait(
+      title: string,
+      scheduledDate?: string,
+      dueDate?: string,
+    ) {
+      const task = await createTask({ title, dueDate });
+      await ctx.app.inject({
+        method: "PUT",
+        url: `/api/tasks/${task.id}/external-wait`,
+        payload: { waitingFor: "Reply", scheduledDate },
+      });
+      return task;
+    }
+
+    const missingZulu = await wait("Missing Zulu");
+    const missingAlphaFirst = await wait("Missing Alpha");
+    const missingAlphaSecond = await wait("Missing Alpha");
+    const laterDue = await wait(
+      "Same attention, later due",
+      "2026-09-02",
+      "2026-09-05",
+    );
+    const earlierDue = await wait(
+      "Same attention, earlier due",
+      "2026-09-02",
+      "2026-09-03",
+    );
+    const earliest = await wait("Earliest attention", "2026-09-01");
+
+    ctx.handle.sqlite
+      .prepare("UPDATE tasks SET position = CASE id WHEN ? THEN 0 ELSE 99 END WHERE id IN (?, ?)")
+      .run(missingZulu.id, missingZulu.id, missingAlphaFirst.id);
+
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: "/api/waiting",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(
+      response.json().map((task: { id: number }) => task.id),
+    ).toEqual([
+      earliest.id,
+      earlierDue.id,
+      laterDue.id,
+      missingAlphaFirst.id,
+      missingAlphaSecond.id,
+      missingZulu.id,
+    ]);
+  });
+
   it("rejects stale writes and leaves the current wait intact", async () => {
     const task = await createTask({ title: "Genehmigung abwarten" });
     const first = await ctx.app.inject({

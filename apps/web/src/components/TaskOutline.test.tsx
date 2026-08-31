@@ -128,4 +128,38 @@ describe("TaskOutline", () => {
     // Genau ein sichtbarer Ziehgriff pro Zeile.
     expect(screen.getAllByRole("button", { name: /^Verschieben:/ })).toHaveLength(3);
   });
+
+  it("preserves compiled queue order without changing the default outline order", () => {
+    const firstByQueue = makeTask({ id: 8, title: "Früh fällig", position: 2 });
+    const firstByOutline = makeTask({ id: 9, title: "Erste Position", position: 1 });
+    const { rerender } = renderWithProviders(
+      <TaskOutline
+        tasks={[firstByQueue, firstByOutline]}
+        emptyMessage="Nichts da"
+        preserveRootOrder
+        showSwipeHint={false}
+      />,
+    );
+
+    expect(
+      screen.getAllByRole("listitem").map((item) => item.textContent),
+    ).toEqual([
+      expect.stringContaining("Früh fällig"),
+      expect.stringContaining("Erste Position"),
+    ]);
+
+    rerender(
+      <TaskOutline
+        tasks={[firstByQueue, firstByOutline]}
+        emptyMessage="Nichts da"
+        showSwipeHint={false}
+      />,
+    );
+    expect(
+      screen.getAllByRole("listitem").map((item) => item.textContent),
+    ).toEqual([
+      expect.stringContaining("Erste Position"),
+      expect.stringContaining("Früh fällig"),
+    ]);
+  });
 });

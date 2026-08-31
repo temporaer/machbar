@@ -1,5 +1,7 @@
 import type { Member } from "@machbar/shared";
 import { MemberAvatar } from "./MemberAvatar";
+import { useLocale } from "../lib/locale";
+import { sortMembersByName } from "../lib/sortOrder";
 
 /**
  * Tap-target picker for "who is responsible?" used by every *focused*
@@ -42,8 +44,13 @@ export function MemberChoiceGroup({
   /** Focuses the currently selected chip when the sheet opens. */
   autoFocus?: boolean;
 }) {
+  const { locale } = useLocale();
+  const orderedMembers = sortMembersByName(members, locale);
   const labelId = `${idPrefix}-label`;
-  const focusTarget = value === null && unassignedLabel === null ? members[0]?.id ?? null : value;
+  const focusTarget =
+    value === null && unassignedLabel === null
+      ? orderedMembers[0]?.id ?? null
+      : value;
 
   return (
     <div className="field">
@@ -63,7 +70,7 @@ export function MemberChoiceGroup({
             {unassignedLabel}
           </button>
         ) : null}
-        {members.map((member) => (
+        {orderedMembers.map((member) => (
           <button
             key={member.id}
             type="button"

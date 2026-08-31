@@ -108,6 +108,32 @@ describe("MoveTaskSheet", () => {
     expect(rowNames(rest)).toEqual(["Umzug nach Leipzig"]);
   });
 
+  it("orders non-recent project destinations by lifecycle and title", async () => {
+    mockedApi.getProjects.mockResolvedValue([
+      makeProject({ id: 6, title: "Zulu", status: "backlog" }),
+      makeProject({ id: 5, title: "Archiv", status: "archived" }),
+      makeProject({ id: 4, title: "Änderung", status: "active" }),
+      makeProject({ id: 7, title: "Abschluss", status: "completed" }),
+    ]);
+    renderWithProviders(
+      <MoveTaskSheet
+        task={makeTask({ id: 46, projectId: 4 })}
+        mode="project"
+        onClose={vi.fn()}
+      />,
+    );
+
+    const destinations = await screen.findByRole("group", {
+      name: "Projekt wählen",
+    });
+    expect(rowNames(destinations)).toEqual([
+      "Änderung",
+      "Zulu",
+      "Abschluss",
+      "Archiv",
+    ]);
+  });
+
   it("discards recent destinations that no longer exist", async () => {
     // 99 was archived/deleted since it was last used.
     window.localStorage.setItem("machbar:recent-destinations:project", JSON.stringify([99, 2]));

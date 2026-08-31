@@ -3,6 +3,7 @@ import {
   formatCompactWaitDuration,
   formatRelativeDueDate,
   formatRelativeScheduleDate,
+  isFutureCalendarDate,
 } from "./relativeDate";
 
 const TODAY = new Date(2026, 7, 25, 23, 30);
@@ -36,6 +37,13 @@ describe("relative calendar dates", () => {
   it("uses local calendar days across a daylight-saving boundary", () => {
     const beforeDstChange = new Date(2026, 2, 28, 23, 45);
     expect(formatRelativeDueDate("2026-03-30", beforeDstChange)).toBe("in 2 Tagen");
+  });
+
+  it("identifies only valid calendar dates after the local day", () => {
+    expect(isFutureCalendarDate("2026-08-26", TODAY)).toBe(true);
+    expect(isFutureCalendarDate("2026-08-25", TODAY)).toBe(false);
+    expect(isFutureCalendarDate("2026-08-24", TODAY)).toBe(false);
+    expect(isFutureCalendarDate("2026-02-30", TODAY)).toBe(false);
   });
 
   it("rejects invalid calendar dates", () => {

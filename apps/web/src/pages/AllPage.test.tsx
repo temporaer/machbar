@@ -54,10 +54,10 @@ describe("AllPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedApi.getProjects.mockResolvedValue([
-      makeProject({ id: 1, title: "Aktivprojekt", status: "active" }),
-      makeProject({ id: 2, title: "Wohnung streichen", status: "backlog" }),
-      makeProject({ id: 3, title: "Fertiges Projekt", status: "completed" }),
       makeProject({ id: 4, title: "Archivprojekt", status: "archived" }),
+      makeProject({ id: 3, title: "Fertiges Projekt", status: "completed" }),
+      makeProject({ id: 2, title: "Wohnung streichen", status: "backlog" }),
+      makeProject({ id: 1, title: "Aktivprojekt", status: "active" }),
     ]);
     mockedApi.searchTasks.mockImplementation(async (filters) => {
       if (filters.text === "Projektfarbe") return [nested];
@@ -78,6 +78,12 @@ describe("AllPage", () => {
     expect(screen.getByText("Verworfene Aufgabe")).toBeInTheDocument();
     expect(screen.queryByText("Projektwurzel")).not.toBeInTheDocument();
     expect(screen.queryByText("Projektfarbe auswählen")).not.toBeInTheDocument();
+    const projectRows = screen.getByRole("heading", {
+      name: "Projekte",
+    }).nextElementSibling!;
+    expect(projectRows).toHaveTextContent(
+      /Aktivprojekt.*Wohnung streichen.*Fertiges Projekt.*Archivprojekt/,
+    );
   });
 
   it("finds projects and directly matching nested tasks", async () => {

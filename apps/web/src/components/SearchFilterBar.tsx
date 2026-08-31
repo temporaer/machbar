@@ -5,6 +5,8 @@ import { useStrings } from "../lib/strings";
 import { HumanDateInput } from "./HumanDateInput";
 import { useIdentity } from "../lib/identity";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
+import { useLocale } from "../lib/locale";
+import { sortProjectsByTitle } from "../lib/sortOrder";
 
 export function SearchFilterBar({
   filters,
@@ -18,6 +20,7 @@ export function SearchFilterBar({
   tags: Tag[];
 }) {
   const strings = useStrings();
+  const { locale } = useLocale();
   const { members } = useIdentity();
   const [expanded, setExpanded] = useState(false);
 
@@ -74,7 +77,7 @@ export function SearchFilterBar({
               onChange={(e) => set("projectId", e.target.value ? Number(e.target.value) : undefined)}
             >
               <option value="">{strings.allProjects}</option>
-              {projects.map((p) => (
+              {sortProjectsByTitle(projects, locale).map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.title}
                 </option>

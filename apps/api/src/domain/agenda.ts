@@ -20,15 +20,30 @@ function addDaysIso(dateIso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function sortByDueThenPriority(a: TaskRecord, b: TaskRecord): number {
-  const dueA = a.dueDate ?? "9999-99-99";
-  const dueB = b.dueDate ?? "9999-99-99";
-  if (dueA !== dueB) return dueA < dueB ? -1 : 1;
-  const prA = a.priority ?? 0;
-  const prB = b.priority ?? 0;
-  if (prA !== prB) return prB - prA;
-  return a.position - b.position;
+function sortByPriorityTitleId(a: TaskRecord, b: TaskRecord): number {
+  const prA = a.priority ?? Number.POSITIVE_INFINITY;
+  const prB = b.priority ?? Number.POSITIVE_INFINITY;
+  if (prA !== prB) return prA - prB;
+  return a.title.localeCompare(b.title, "de") || a.id - b.id;
 }
+
+function sortByDateThenPriorityTitleId(
+  date: (task: TaskRecord) => string | null,
+): (a: TaskRecord, b: TaskRecord) => number {
+  return (a, b) => {
+    const dateA = date(a) ?? "9999-99-99";
+    const dateB = date(b) ?? "9999-99-99";
+    if (dateA !== dateB) return dateA < dateB ? -1 : 1;
+    return sortByPriorityTitleId(a, b);
+  };
+}
+
+const sortByScheduledThenPriorityTitleId = sortByDateThenPriorityTitleId(
+  (task) => task.scheduledDate,
+);
+const sortByDueThenPriorityTitleId = sortByDateThenPriorityTitleId(
+  (task) => task.dueDate,
+);
 
 /**
  * A task belongs to the requesting member's agenda when it's owned by them
@@ -114,7 +129,10 @@ export function buildAgenda(
   const isSelectedOrdinaryWork = (task: TaskRecord) =>
     task.projectId === null || selectedProjectTaskIds.has(task.id);
 
-  const take = (predicate: (t: TaskRecord) => boolean): TaskRecord[] => {
+  const take = (
+    predicate: (t: TaskRecord) => boolean,
+    compare: (a: TaskRecord, b: TaskRecord) => number,
+  ): TaskRecord[] => {
     const results = graph
       .allTasks()
       .filter(
@@ -126,7 +144,7 @@ export function buildAgenda(
           matchesSelectedOwner(t, memberId) &&
           predicate(t),
       )
-      .sort(sortByDueThenPriority);
+      .sort(compare);
     for (const t of results) seen.add(t.id);
     return results;
   };
@@ -142,18 +160,26 @@ export function buildAgenda(
         t.scheduledDate <= today &&
         matchesSelectedOwner(t, memberId),
     )
-    .sort(sortByDueThenPriority);
+    .sort(sortByScheduledThenPriorityTitleId);
   for (const task of revisit) seen.add(task.id);
   const planned = take(
     (t) =>
       t.status === "actionable" &&
       !!t.scheduledDate &&
       t.scheduledDate <= today,
+    sortByScheduledThenPriorityTitleId,
   );
-  const overdue = take((t) => !!t.dueDate && t.dueDate < today);
-  const dueToday = take((t) => t.dueDate === today);
+  const overdue = take(
+    (t) => !!t.dueDate && t.dueDate < today,
+    sortByDueThenPriorityTitleId,
+  );
+  const dueToday = take(
+    (t) => t.dueDate === today,
+    sortByDueThenPriorityTitleId,
+  );
   const dueSoon = take(
     (t) => !!t.dueDate && t.dueDate > today && t.dueDate <= soonLimit,
+    sortByDueThenPriorityTitleId,
   );
   const shared = take(
     (t) =>
@@ -161,6 +187,7 @@ export function buildAgenda(
       t.effectiveOwnerId === null &&
       !t.scheduledDate &&
       isSelectedOrdinaryWork(t),
+    sortByPriorityTitleId,
   );
   const unscheduled = take(
     (t) =>
@@ -168,6 +195,7 @@ export function buildAgenda(
       t.effectiveOwnerId !== null &&
       !t.scheduledDate &&
       isSelectedOrdinaryWork(t),
+    sortByPriorityTitleId,
   );
 
   const projectDueLimit = addDaysIso(today, 7);
@@ -219,7 +247,11 @@ export function buildAgenda(
           ? b.project.scheduledDate
           : b.project.dueDate;
       if (aDate !== bDate) return (aDate ?? "").localeCompare(bDate ?? "");
-      return a.project.position - b.project.position;
+      return (
+        a.project.position - b.project.position ||
+        a.project.title.localeCompare(b.project.title, "de") ||
+        a.project.id - b.project.id
+      );
     });
 
   return {
