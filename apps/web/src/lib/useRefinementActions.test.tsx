@@ -3,7 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { RefreshProvider, useRefresh } from "../lib/refresh";
 import { api } from "./api";
-import { REFINEMENT_RETENTION_MS, nextSizeInCycle, useRefinementActions } from "./useRefinementActions";
+import { REFINEMENT_RETENTION_MS, useRefinementActions } from "./useRefinementActions";
 import type { RefinementListItem } from "./useRefinementActions";
 
 vi.mock("./api", () => ({
@@ -41,16 +41,6 @@ function makeItem(overrides: Partial<RefinementListItem> = {}): RefinementListIt
 function wrapper({ children }: { children: ReactNode }) {
   return <RefreshProvider>{children}</RefreshProvider>;
 }
-
-describe("nextSizeInCycle", () => {
-  it("cycles null -> S -> M -> L -> XL -> null, so XL wraps back to unestimated rather than sticking", () => {
-    expect(nextSizeInCycle(null)).toBe("S");
-    expect(nextSizeInCycle("S")).toBe("M");
-    expect(nextSizeInCycle("M")).toBe("L");
-    expect(nextSizeInCycle("L")).toBe("XL");
-    expect(nextSizeInCycle("XL")).toBe(null);
-  });
-});
 
 describe("useRefinementActions", () => {
   beforeEach(() => {

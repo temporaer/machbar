@@ -5,6 +5,10 @@ concepts, start with the [household workflow](workflow.md). For operating the
 application, see [deployment](deployment.md) and
 [status and limitations](status-and-limitations.md).
 
+For normative contributor and coding-agent rules, canonical implementation
+paths, and required architecture checks, see
+[Architecture rules](architecture-rules.md).
+
 ## 1. Package Boundaries
 
 ```
@@ -468,7 +472,8 @@ The owner × effort matrix remains collapsed as a secondary view, backed by
 
 `RefinementTaskRow` supports:
 
-- **Effort** — swipe or tap cycles `S → M → L → XL → (none)` via
+- **Effort** — `lib/refinementHelpers.ts` defines the pure
+  `S → M → L → XL → (none)` cycle; swipe and tap execute it through
   `useRefinementActions.cycleSize`/`setSize`/`clearSize`. `XL` with no open
   child produces `too_large_without_children` and suggests adding a child.
 - **Assignment** — the *Zuweisen* chip opens `MemberSelectionSheet`, **not** the full task detail sheet. `useRefinementActions.assignOwner` optimistically retains the row and rethrows on failure so the still-open sheet renders the error.

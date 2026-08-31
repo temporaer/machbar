@@ -6,7 +6,7 @@ import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import type { RefinementListItem } from "../lib/useRefinementActions";
 import type { useRefinementActions } from "../lib/useRefinementActions";
-import { nextSizeInCycle } from "../lib/useRefinementActions";
+import { nextSizeInCycle } from "../lib/refinementHelpers";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { useIdentity } from "../lib/identity";
