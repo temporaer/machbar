@@ -8,7 +8,6 @@ import {
   createProject,
   createTask,
   getOrCreateTag,
-  moveSubtreeToProject,
   moveTask,
   updateTask,
 } from "../src/domain/mutations.js";
@@ -955,7 +954,11 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       const level2 = createTask(handle.db, { parentTaskId: level1.id, title: "Ebene 2" });
       const level3 = createTask(handle.db, { parentTaskId: level2.id, title: "Ebene 3" });
 
-      moveSubtreeToProject(handle.db, root.id, target.id);
+      moveTask(handle.db, root.id, {
+        parentTaskId: null,
+        projectId: target.id,
+        expectedRevision: root.revision,
+      });
 
       const rows = handle.db
         .select()
@@ -973,7 +976,12 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       const child = createTask(handle.db, { parentTaskId: root.id, title: "Kind" });
       const grandchild = createTask(handle.db, { parentTaskId: child.id, title: "Enkelkind" });
 
-      expect(() => moveTask(handle.db, root.id, { parentTaskId: grandchild.id })).toThrow();
+      expect(() =>
+        moveTask(handle.db, root.id, {
+          parentTaskId: grandchild.id,
+          expectedRevision: root.revision,
+        }),
+      ).toThrow();
 
       const reloaded = handle.db
         .select()
@@ -985,7 +993,12 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
 
     it("rejects a task becoming its own parent, at the mutation layer", () => {
       const task = createTask(handle.db, { title: "Selbst" });
-      expect(() => moveTask(handle.db, task.id, { parentTaskId: task.id })).toThrow();
+      expect(() =>
+        moveTask(handle.db, task.id, {
+          parentTaskId: task.id,
+          expectedRevision: task.revision,
+        }),
+      ).toThrow();
     });
   });
 });

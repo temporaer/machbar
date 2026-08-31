@@ -77,6 +77,7 @@ describe("ProjectEditSheet", () => {
       title: "Umzug organisieren",
       notes: "Alte Notiz",
     });
+
     renderWithProviders(<ProjectEditSheet project={project} onClose={vi.fn()} />);
 
     const titleInput = await screen.findByDisplayValue("Umzug organisieren");
@@ -93,6 +94,24 @@ describe("ProjectEditSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Abbrechen: Notizen" }));
     expect(notesInput).toHaveValue("Alte Notiz");
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
+  });
+
+  it("öffnet fokussierte Notizen als explizite Bearbeitung und fokussiert den Editor", async () => {
+    const project = makeProjectDetail({ id: 42, notes: "Alte Notiz" });
+
+    renderWithProviders(
+      <ProjectEditSheet
+        project={project}
+        focusField="notes"
+        onClose={vi.fn()}
+      />,
+    );
+
+    const notesInput = await screen.findByLabelText("Notizen");
+    await waitFor(() => expect(notesInput).toHaveFocus());
+    expect(notesInput).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Speichern: Notizen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Abbrechen: Notizen" })).toBeInTheDocument();
   });
 
   it("behält einen fehlgeschlagenen Notiz-Entwurf zum erneuten Speichern", async () => {

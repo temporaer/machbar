@@ -1,25 +1,27 @@
 import { useCallback, useState } from "react";
-import type { InheritanceMode, Task, TaskStatus } from "@machbar/shared";
+import type { Task, TaskStatus } from "@machbar/shared";
 import { api } from "./api";
-import type { UpdateTaskInput } from "./api";
+import type {
+  ExternalWaitFollowUpInput,
+  ExternalWaitInput,
+  UpdateTaskInput,
+} from "./api";
 import { hasOpenDescendants } from "./taskHelpers";
 import type { PrimarySwipeAction } from "./swipeSettings";
+import {
+  ownerAssignmentPatch,
+  updateTask,
+} from "./taskMutations";
 import { useRetainedMutations } from "./useRetainedMutations";
 export { RETENTION_MS } from "./useRetainedMutations";
+export { ownerAssignmentPatch } from "./taskMutations";
 
 /** The three choices offered by the mandatory open-descendant policy prompt. */
 export type ChildPolicy = "leave_open" | "complete_children" | "cancel_children";
 export type PendingAction = "complete" | "cancel";
-
-export function ownerAssignmentPatch(ownerMemberId: number | null): {
-  ownerMemberId: number | null;
-  ownerInheritanceMode: InheritanceMode;
-} {
-  return {
-    ownerMemberId,
-    ownerInheritanceMode: ownerMemberId === null ? "none" : "explicit",
-  };
-}
+type WithoutExpectedRevision<T> = T extends unknown
+  ? Omit<T, "expectedRevision">
+  : never;
 
 /**
  * How long a task that just left its compiled view (completed, cancelled,
@@ -78,14 +80,8 @@ function markOpenDescendantsTerminal(children: Task[], status: Extract<TaskStatu
  * mandatory open-descendant policy prompt and the "recently mutated tasks
  * stay put" retention behaviour required for mobile swipe actions.
  *
- * The real backend (`apps/api/src/domain/mutations.ts`) only lets a single
- * `descendantsPolicy` accompany the *matching* action — `complete_children`
- * for `POST /tasks/:id/complete`, `cancel_children` for
- * `POST /tasks/:id/cancel`. The prompt still offers all three documented
- * choices (leave open / complete children / cancel children) regardless of
- * which action triggered it, so picking the "other" policy is composed from
- * two calls: first apply that policy to the highest open task on every
- * descendant branch, then apply `leave_open` to the parent itself.
+ * Complete and cancel accept every descendant policy and apply the parent
+ * transition plus descendant outcomes in one backend transaction.
  *
  * Retention: every mutation here is optimistic. The instant it starts, the
  * mutated task is snapshotted (with its *new* status/timestamps) into
@@ -255,7 +251,7 @@ export function useTaskActions() {
         cancelledAt: null,
       };
       return runTransition(task, optimistic, () =>
-        api.updateTask(task.id, { status, expectedRevision: task.revision }),
+        updateTask(task, { status }),
       );
     },
     [runTransition],
@@ -300,10 +296,7 @@ export function useTaskActions() {
         task,
         optimistic,
         () =>
-          api.updateTask(task.id, {
-            ...patch,
-            expectedRevision: task.revision,
-          }),
+          updateTask(task, patch),
         throwOnError,
       );
     },
@@ -325,6 +318,52 @@ export function useTaskActions() {
       );
     },
     [update],
+  );
+
+  const runExternalWaitCommand = useCallback(
+    (
+      task: Pick<Task, "id">,
+      mutate: () => Promise<Task>,
+    ) =>
+      run({
+        id: task.id,
+        mutate,
+        retain: false,
+      }),
+    [run],
+  );
+
+  const setExternalWait = useCallback(
+    (task: Pick<Task, "id" | "revision">, input: Omit<ExternalWaitInput, "expectedRevision">) =>
+      runExternalWaitCommand(task, () =>
+        api.setExternalWait(task.id, {
+          ...input,
+          expectedRevision: task.revision,
+        }),
+      ),
+    [runExternalWaitCommand],
+  );
+
+  const resolveExternalWait = useCallback(
+    (task: Pick<Task, "id" | "revision">) =>
+      runExternalWaitCommand(task, () =>
+        api.resolveExternalWait(task.id, task.revision),
+      ),
+    [runExternalWaitCommand],
+  );
+
+  const followUpExternalWait = useCallback(
+    (
+      task: Task,
+      input: WithoutExpectedRevision<ExternalWaitFollowUpInput>,
+    ) =>
+      runExternalWaitCommand(task, () =>
+        api.followUpExternalWait(task.id, {
+          ...input,
+          expectedRevision: task.revision,
+        }),
+      ),
+    [runExternalWaitCommand],
   );
 
   /** Toggle from a checkbox: asks first when there are open children. */
@@ -414,6 +453,9 @@ export function useTaskActions() {
     clarify,
     update,
     assignOwner,
+    setExternalWait,
+    resolveExternalWait,
+    followUpExternalWait,
     resolvePolicy,
     cancelPrompt,
     complete,

@@ -34,8 +34,8 @@ import { MemberAvatar } from "./MemberAvatar";
 import { useLocale } from "../lib/locale";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
+import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 
-const SWIPE_THRESHOLD = 72;
 const LONG_PRESS_MS = 480;
 
 /** Arrow keys on the focused drag handle are the pointer-free equivalent of dragging. */
@@ -103,7 +103,6 @@ export function TaskRow({
   const strings = useStrings();
   const { locale } = useLocale();
   const [collapsed, setCollapsed] = useState(false);
-  const [dragX, setDragX] = useState(0);
   const [chipsOpen, setChipsOpen] = useState(false);
   const [quickAction, setQuickAction] = useState<TaskQuickAction | null>(null);
   const [childComposerOpen, setChildComposerOpen] = useState(false);
@@ -119,21 +118,12 @@ export function TaskRow({
   // child), which also re-opens the chip strip if pressed again.
   const kebabButtonRef = useRef<HTMLButtonElement>(null);
   const mainButtonRef = useRef<HTMLButtonElement>(null);
-  const dragState = useRef<{ startX: number; dragging: boolean; pointerId: number | null; captured: boolean }>({
-    startX: 0,
-    dragging: false,
-    pointerId: null,
-    captured: false,
-  });
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // A long press turns into a structural drag, but the browser still
   // synthesises a click on whatever the finger came down on when it is
-  // lifted — which would open the detail sheet right after the move. Same
-  // one-shot idea as `ProjectStoryRow`'s `swallowNextClick`, reset by the
-  // next `pointerdown` so ordinary taps are never affected. (The swipe
-  // gesture doesn't need it: it takes pointer capture past the 8 px slop,
-  // which retargets the compatibility mouse events to the container.)
-  const swallowNextClick = useRef(false);
+  // lifted — which would open the detail sheet right after the move. Reset
+  // this one-shot guard on the next pointerdown so ordinary taps are safe.
+  const swallowLongPressClick = useRef(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const { members, currentMemberId } = useIdentity();
   const { primarySwipeAction } = useSwipeSettings();
@@ -152,7 +142,8 @@ export function TaskRow({
     errors,
     clearError,
   } = taskActions;
-  const busy = isPending(taskProp.id);
+  const outlineRefreshing = organize?.pendingId !== null;
+  const busy = isPending(taskProp.id) || outlineRefreshing;
 
   // A row that just transitioned keeps rendering with its optimistic status
   // (crossed out / muted) for a few seconds even once the compiled view
@@ -187,6 +178,14 @@ export function TaskRow({
     return () => registerRow(taskProp.id, row, null);
   }, [registerRow, taskProp.id, parentTaskId, depth]);
 
+  useEffect(() => {
+    if (!outlineRefreshing) return;
+    setQuickAction(null);
+    setAssignProjectOpen(false);
+    setChildComposerOpen(false);
+    setSuccessorComposerOpen(false);
+  }, [outlineRefreshing]);
+
   // A task dropped into this row while it was collapsed would be invisible
   // right after the move, so the outline asks the destination parent to
   // reveal its children (collapse state is per row and lives here).
@@ -194,18 +193,6 @@ export function TaskRow({
   useEffect(() => {
     if (expandRequest?.taskId === taskProp.id) setCollapsed(false);
   }, [expandRequest, taskProp.id]);
-
-  // Only one swipe background may be visible at a time — mid-drag it
-  // follows the live direction, and once a left-swipe has opened the chip
-  // strip the red "more actions" background stays shown (matching the
-  // "remains open after drag reset" requirement) until the chips close.
-  const showCompleteBg = dragX > 0;
-  const showCancelBg = dragX < 0 || chipsOpen;
-  const primarySwipeLabel = primaryActionBgLabel(task, primarySwipeAction, strings);
-  const swipeCoach = useSwipeCoach(
-    `task:${task.id}`,
-    !busy && !isRetained && !chipsOpen,
-  );
 
   const children = sortByPosition(task.children);
   const isDone = task.status === "done";
@@ -237,18 +224,38 @@ export function TaskRow({
       ? formatExactLocalDate(task.nextBlockerAttentionDate, locale)
       : null;
 
-  const clearLongPress = () => {
+  const clearLongPress = useCallback(() => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
-  };
+  }, []);
+
+  const {
+    dragX,
+    handlers: swipeHandlers,
+    cancel: cancelSwipe,
+  } = useHorizontalSwipe<HTMLDivElement>({
+    disabled: busy || organize?.activeId != null,
+    onPrimary: () => requestPrimarySwipe(task, primarySwipeAction),
+    onSecondary: () => setChipsOpen(true),
+    onRealDrag: clearLongPress,
+  });
+  // Only one swipe background may be visible at a time — mid-drag it
+  // follows the live direction, and once a left-swipe has opened the chip
+  // strip the red "more actions" background stays shown until the chips close.
+  const showCompleteBg = dragX > 0;
+  const showCancelBg = dragX < 0 || chipsOpen;
+  const primarySwipeLabel = primaryActionBgLabel(task, primarySwipeAction, strings);
+  const swipeCoach = useSwipeCoach(
+    `task:${task.id}`,
+    !busy && !isRetained && !chipsOpen,
+  );
 
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (busy || organize?.activeId != null) return;
-      swallowNextClick.current = false;
-      dragState.current = { startX: e.clientX, dragging: true, pointerId: e.pointerId, captured: false };
+      swallowLongPressClick.current = false;
       // Long press is the touch shortcut into the same drag the visible
       // handle starts; the coordinates of the press become the drag origin.
       // Without structural editing there is nothing for it to start, and
@@ -256,46 +263,13 @@ export function TaskRow({
       if (!organizeEnabled) return;
       const { clientX, clientY } = e;
       longPressTimer.current = setTimeout(() => {
-        dragState.current.dragging = false;
-        setDragX(0);
-        swallowNextClick.current = true;
+        cancelSwipe();
+        swallowLongPressClick.current = true;
         organize?.beginLongPressDrag(task.id, clientX, clientY);
       }, LONG_PRESS_MS);
     },
-    [busy, task.id, organize, organizeEnabled],
+    [busy, task.id, organize, organizeEnabled, cancelSwipe],
   );
-
-  const handlePointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dragState.current.dragging) return;
-    const delta = e.clientX - dragState.current.startX;
-    if (Math.abs(delta) > 8) clearLongPress();
-    // Capture the pointer only once this is a real drag: a captured pointer
-    // also retargets the compatibility mouse events of the row's buttons and
-    // links to this container, which would swallow plain clicks. Not every
-    // environment implements pointer capture (e.g. jsdom in tests), so the
-    // call stays guarded.
-    if (!dragState.current.captured && Math.abs(delta) > 8) {
-      dragState.current.captured = true;
-      const target = e.currentTarget;
-      if (typeof target.setPointerCapture === "function") {
-        target.setPointerCapture(e.pointerId);
-      }
-    }
-    setDragX(Math.max(-140, Math.min(140, delta)));
-  }, []);
-
-  const finishDrag = useCallback(() => {
-    clearLongPress();
-    if (!dragState.current.dragging) return;
-    dragState.current.dragging = false;
-    if (dragX > SWIPE_THRESHOLD) {
-      requestPrimarySwipe(task, primarySwipeAction);
-    } else if (dragX < -SWIPE_THRESHOLD) {
-      // The opposite direction reveals the touch-chip row instead of acting.
-      setChipsOpen(true);
-    }
-    setDragX(0);
-  }, [dragX, requestPrimarySwipe, task, primarySwipeAction]);
 
   const openQuickAction = (action: TaskQuickAction) => {
     setQuickAction(action);
@@ -417,18 +391,22 @@ export function TaskRow({
           if (swipeCoach.active && event.pointerType === "touch") {
             swipeCoach.dismiss();
           }
+          swipeHandlers.onPointerDown(event);
           handlePointerDown(event);
         }}
-        onPointerMove={handlePointerMove}
-        onPointerUp={finishDrag}
+        onPointerMove={swipeHandlers.onPointerMove}
+        onPointerUp={(event) => {
+          clearLongPress();
+          swipeHandlers.onPointerUp(event);
+        }}
         onPointerCancel={() => {
           clearLongPress();
-          dragState.current.dragging = false;
-          setDragX(0);
+          cancelSwipe();
         }}
         onClickCapture={(e) => {
-          if (!swallowNextClick.current) return;
-          swallowNextClick.current = false;
+          swipeHandlers.onClickCapture(e);
+          if (!swallowLongPressClick.current) return;
+          swallowLongPressClick.current = false;
           e.preventDefault();
           e.stopPropagation();
         }}
@@ -445,6 +423,7 @@ export function TaskRow({
             title={strings.moveTask}
             aria-pressed={isSelectedForOrganize}
             aria-busy={isMoving}
+            disabled={outlineRefreshing}
             onPointerDown={(e) => {
               e.stopPropagation();
               organize?.beginDrag(taskProp.id, e.clientX, e.clientY);
@@ -500,6 +479,7 @@ export function TaskRow({
             className="task-row-main"
             ref={mainButtonRef}
             aria-label={task.title}
+            disabled={outlineRefreshing}
             onClick={() => onOpenDetail(task.id)}
           >
             <div className="task-row-header">
@@ -588,9 +568,9 @@ export function TaskRow({
 
       {chipsOpen ? (
         <div className="task-row-chips" role="group" aria-label={strings.moreActions}>
-          <IconActionButton kind="owner" label={strings.assign} onClick={() => openQuickAction("owner")} />
-          <IconActionButton kind="schedule" label={strings.schedule} onClick={() => openQuickAction("schedule")} />
-          <IconActionButton kind="notes" label={strings.notes} onClick={() => openQuickAction("notes")} />
+          <IconActionButton kind="owner" label={strings.assign} disabled={busy} onClick={() => openQuickAction("owner")} />
+          <IconActionButton kind="schedule" label={strings.schedule} disabled={busy} onClick={() => openQuickAction("schedule")} />
+          <IconActionButton kind="notes" label={strings.notes} disabled={busy} onClick={() => openQuickAction("notes")} />
           <IconActionButton
             kind="child"
             label={strings.addChild}
@@ -606,15 +586,16 @@ export function TaskRow({
           <IconActionButton
             kind="project"
             label={task.projectId ? strings.toProject : strings.assignProject}
+            disabled={busy}
             onClick={goToProjectChip}
           />
           {isDone || isCancelled ? (
-            <IconActionButton kind="reopen" label={strings.reopen} onClick={reopenChip} />
+            <IconActionButton kind="reopen" label={strings.reopen} disabled={busy} onClick={reopenChip} />
           ) : null}
           {waitingInteraction && task.externalWait ? (
-            <IconActionButton kind="followUp" label={strings.followUp} onClick={followUpChip} />
+            <IconActionButton kind="followUp" label={strings.followUp} disabled={busy} onClick={followUpChip} />
           ) : null}
-          <IconActionButton kind="more" label={strings.more} onClick={() => onOpenDetail(task.id)} />
+          <IconActionButton kind="more" label={strings.more} disabled={outlineRefreshing} onClick={() => onOpenDetail(task.id)} />
           <IconActionButton kind="close" label={strings.close} onClick={closeChips} />
         </div>
       ) : null}

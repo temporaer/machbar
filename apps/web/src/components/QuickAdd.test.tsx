@@ -12,7 +12,7 @@ vi.mock("../lib/api", () => ({
     createTask: vi.fn(),
     createProject: vi.fn(),
     getProjects: vi.fn(),
-    moveSubtree: vi.fn(),
+    moveTask: vi.fn(),
     deleteTask: vi.fn(),
     updateTask: vi.fn(),
     addCriterion: vi.fn(),
@@ -68,7 +68,7 @@ describe("QuickAdd", () => {
       makeTask({ id: 12, title: "Angebot senden", ownerMemberId: 1, ownerInheritanceMode: "explicit" }),
     );
     mockedApi.getProjects.mockResolvedValue([makeProject({ id: 7, title: "Umzug" })]);
-    mockedApi.moveSubtree.mockResolvedValue(makeTask({ id: 12, projectId: 7 }) as never);
+    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 12, projectId: 7 }) as never);
     mockedApi.updateTask.mockResolvedValue(
       makeTask({ id: 12, ownerMemberId: 2, ownerInheritanceMode: "explicit" }) as never,
     );
@@ -100,7 +100,13 @@ describe("QuickAdd", () => {
     await waitFor(() => expect(mockedApi.getProjects).toHaveBeenCalled());
     await userEvent.click(screen.getByRole("button", { name: "Umzug" }));
     await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
-    await waitFor(() => expect(mockedApi.moveSubtree).toHaveBeenCalledWith(12, 7));
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenCalledWith(12, {
+        parentTaskId: null,
+        projectId: 7,
+        expectedRevision: 1,
+      }),
+    );
     expect(screen.getByText("In Heute hinzugefügt")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Zuständig ändern" }));

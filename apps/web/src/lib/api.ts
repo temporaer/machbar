@@ -146,6 +146,7 @@ export interface MoveTaskInput {
   parentTaskId?: number | null;
   projectId?: number | null;
   position?: number;
+  expectedRevision: number;
 }
 
 export interface CreateTaskInput {
@@ -633,25 +634,6 @@ export const api = {
 
   moveTask: (id: number, input: MoveTaskInput) =>
     request<Task>(`/tasks/${id}/move`, { method: "POST", body: JSON.stringify(input) }),
-  reorderTask: (id: number, position: number) =>
-    request<Task>(`/tasks/${id}/reorder`, {
-      method: "POST",
-      body: JSON.stringify({ position }),
-    }),
-  indentTask: (id: number) => request<Task>(`/tasks/${id}/indent`, { method: "POST" }),
-  outdentTask: (id: number) => request<Task>(`/tasks/${id}/outdent`, { method: "POST" }),
-  changeParent: (id: number, parentTaskId: number | null, projectId?: number | null) =>
-    request<Task>(`/tasks/${id}/parent`, {
-      method: "POST",
-      body: JSON.stringify(
-        projectId !== undefined ? { parentTaskId, projectId } : { parentTaskId },
-      ),
-    }),
-  moveSubtree: (id: number, projectId: number | null) =>
-    request<Task>(`/tasks/${id}/move-subtree`, {
-      method: "POST",
-      body: JSON.stringify({ projectId }),
-    }),
 
   addDependency: (taskId: number, dependsOnTaskId: number) =>
     request<Task>(`/tasks/${taskId}/dependencies`, {

@@ -4,11 +4,11 @@ import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
 import {
   cancelTask,
-  changeTaskParent,
   completeTask,
   createProject,
   createTask,
   deleteTask,
+  moveTask,
   updateTask,
 } from "../src/domain/mutations.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
@@ -177,10 +177,18 @@ describe("atomic activity recording", () => {
     const before = events().length;
 
     updateTask(ctx.handle.db, first.id, { title: "A", notes: "" });
+    const current = (
+      await ctx.app.inject({ method: "GET", url: `/api/tasks/${first.id}` })
+    ).json();
     const reorder = await ctx.app.inject({
       method: "POST",
-      url: `/api/tasks/${first.id}/reorder`,
-      payload: { position: 1 },
+      url: `/api/tasks/${first.id}/move`,
+      payload: {
+        parentTaskId: null,
+        projectId: null,
+        position: 1,
+        expectedRevision: current.revision,
+      },
     });
 
     expect(reorder.statusCode).toBe(200);
@@ -265,7 +273,10 @@ describe("atomic activity recording", () => {
       parentTaskId: oldParent.id,
     });
 
-    changeTaskParent(ctx.handle.db, child.id, newParent.id);
+    moveTask(ctx.handle.db, child.id, {
+      parentTaskId: newParent.id,
+      expectedRevision: child.revision,
+    });
 
     expect(events().at(-1)).toMatchObject({
       kind: "task_moved",

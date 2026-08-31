@@ -3233,13 +3233,14 @@ export function clarifyTask(
 }
 
 // ---------------------------------------------------------------------------
-// Hierarchy: move / reorder / indent / outdent / change parent / move subtree
+// Hierarchy
 // ---------------------------------------------------------------------------
 
 export interface MoveTaskInput {
   parentTaskId?: number | null;
   projectId?: number | null;
   position?: number;
+  expectedRevision: number;
 }
 
 function reindexGroup(
@@ -3252,7 +3253,6 @@ function reindexGroup(
     tx.update(schema.tasks)
       .set({
         position: index,
-        revision: sql`${schema.tasks.revision} + 1`,
         updatedAt: nowIso(),
       })
       .where(eq(schema.tasks.id, taskId))
@@ -3298,11 +3298,9 @@ function cascadeProjectId(tx: Db, rootId: number, newProjectId: number | null) {
 }
 
 /**
- * Core, transactional move used by reorder/indent/outdent/change-parent/
- * move-subtree. Detects hierarchy cycles, keeps a task's whole subtree in
- * the same project as its new parent, and renormalizes sibling positions
- * in both the source and destination groups so there are never gaps or
- * duplicate positions.
+ * Canonical transactional hierarchy mutation. UI gestures calculate a
+ * concrete destination; this command validates concurrency and hierarchy
+ * invariants, moves the whole subtree, and normalizes both sibling groups.
  */
 export function moveTask(
   db: Db,
@@ -3313,6 +3311,12 @@ export function moveTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertExpectedRevision(
+      "task",
+      taskId,
+      task.revision,
+      input.expectedRevision,
+    );
 
     const newParentTaskId =
       "parentTaskId" in input ? input.parentTaskId ?? null : task.parentTaskId;
@@ -3506,80 +3510,6 @@ export function moveTask(
     }
     return updated;
   });
-}
-
-export function reorderTask(
-  db: Db,
-  taskId: number,
-  position: number,
-  context?: MutationContext,
-) {
-  return moveTask(db, taskId, { position }, context);
-}
-
-export function changeTaskParent(
-  db: Db,
-  taskId: number,
-  parentTaskId: number | null,
-  projectId?: number | null,
-  context?: MutationContext,
-) {
-  const input: MoveTaskInput = { parentTaskId };
-  if (parentTaskId === null && projectId !== undefined) {
-    input.projectId = projectId;
-  }
-  return moveTask(db, taskId, input, context);
-}
-
-export function moveSubtreeToProject(
-  db: Db,
-  taskId: number,
-  targetProjectId: number | null,
-  context?: MutationContext,
-) {
-  return moveTask(
-    db,
-    taskId,
-    { parentTaskId: null, projectId: targetProjectId },
-    context,
-  );
-}
-
-export function indentTask(db: Db, taskId: number, context?: MutationContext) {
-  const task = getTaskOrThrow(db, taskId);
-  const siblings = siblingsOf(db, task.parentTaskId, task.projectId, -1)
-    .concat()
-    .sort((a, b) => a.position - b.position);
-  const currentIndex = siblings.findIndex((t) => t.id === taskId);
-  if (currentIndex <= 0) {
-    throw AppError.badRequest(
-      "task_indent_unavailable",
-      "There is no previous sibling under which this task can be indented.",
-      { taskId },
-    );
-  }
-  const previousSibling = siblings[currentIndex - 1]!;
-  return moveTask(db, taskId, { parentTaskId: previousSibling.id }, context);
-}
-
-export function outdentTask(db: Db, taskId: number, context?: MutationContext) {
-  const task = getTaskOrThrow(db, taskId);
-  if (task.parentTaskId === null) {
-    throw AppError.badRequest(
-      "task_already_root",
-      "This task is already at the root level.",
-      { taskId },
-    );
-  }
-  const parent = getTaskOrThrow(db, task.parentTaskId);
-  const input: MoveTaskInput = {
-    parentTaskId: parent.parentTaskId,
-    position: parent.position + 1,
-  };
-  if (parent.parentTaskId === null) {
-    input.projectId = parent.projectId;
-  }
-  return moveTask(db, taskId, input, context);
 }
 
 // ---------------------------------------------------------------------------

@@ -158,19 +158,7 @@ export const moveTaskSchema = z.object({
   parentTaskId: z.number().int().nullable().optional(),
   projectId: z.number().int().nullable().optional(),
   position: z.number().int().min(0).optional(),
-});
-
-export const reorderTaskSchema = z.object({
-  position: z.number().int().min(0),
-});
-
-export const changeParentSchema = z.object({
-  parentTaskId: z.number().int().nullable(),
-  projectId: z.number().int().nullable().optional(),
-});
-
-export const moveSubtreeSchema = z.object({
-  projectId: z.number().int().nullable(),
+  expectedRevision: z.number().int().positive(),
 });
 
 export const dependencySchema = z.object({

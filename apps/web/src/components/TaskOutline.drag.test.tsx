@@ -6,6 +6,7 @@ import type { Task } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
+import { useRefresh } from "../lib/refresh";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { makeMember, makeTask } from "../test/fixtures";
 
@@ -17,10 +18,6 @@ vi.mock("../lib/api", () => ({
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
     updateTask: vi.fn(),
-    reorderTask: vi.fn(),
-    indentTask: vi.fn(),
-    outdentTask: vi.fn(),
-    changeParent: vi.fn(),
     moveTask: vi.fn(),
   },
 }));
@@ -28,6 +25,11 @@ vi.mock("../lib/api", () => ({
 const mockedApi = vi.mocked(api, true);
 
 const ROW_HEIGHT = 40;
+
+function RefreshVersion() {
+  const { version } = useRefresh();
+  return <output data-testid="refresh-version">{version}</output>;
+}
 
 /** Flushes the microtask queue (mutation `await`s) without depending on real timers. */
 async function flushMicrotasks(times = 3) {
@@ -111,34 +113,75 @@ describe("TaskOutline Ziehen und Umbauen", () => {
   });
 
   it("sortiert Geschwister durch senkrechtes Ziehen um", async () => {
-    mockedApi.reorderTask.mockResolvedValue(makeTask({ id: 1 }));
+    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 1 }));
     renderWithProviders(<TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />);
     await screen.findByText("Alpha");
 
     // Alpha bis unter Gamma ziehen.
     drag("Alpha", { toY: centreOf(2, 5) });
 
-    await waitFor(() => expect(mockedApi.reorderTask).toHaveBeenCalledWith(1, 2));
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenCalledWith(1, {
+        parentTaskId: null,
+        projectId: 5,
+        position: 2,
+        expectedRevision: 1,
+      }),
+    );
     // Die Liste zeigt das Ergebnis sofort, ohne auf einen Refresh zu warten.
     expect(renderedOrder()).toEqual(["Beta", "Gamma", "Alpha"]);
   });
 
+  it("ignoriert eine ältere überlappende Aktualisierung nach einem erfolgreichen Zug", async () => {
+    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 1, revision: 2 }));
+    const rendered = renderWithProviders(
+      <TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />,
+    );
+    await screen.findByText("Alpha");
+
+    drag("Alpha", { toY: centreOf(2, 5) });
+    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledTimes(1));
+    expect(renderedOrder()).toEqual(["Beta", "Gamma", "Alpha"]);
+
+    // A request started before the move may still return a new array carrying
+    // the old revision and order. It must not replace the accepted override.
+    rendered.rerender(
+      <TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />,
+    );
+    expect(renderedOrder()).toEqual(["Beta", "Gamma", "Alpha"]);
+
+    drag("Alpha", { toY: -10 });
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenLastCalledWith(1, {
+        parentTaskId: null,
+        projectId: 5,
+        position: 0,
+        expectedRevision: 2,
+      }),
+    );
+  });
+
   it("rückt beim Ziehen nach rechts unter die vorangehende Aufgabe ein", async () => {
-    mockedApi.indentTask.mockResolvedValue(makeTask({ id: 2 }));
+    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 2 }));
     renderWithProviders(<TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />);
     await screen.findByText("Beta");
 
     // Beta an seinem Platz lassen, aber eine Stufe nach rechts.
     drag("Beta", { toY: centreOf(1, -5), offsetX: 32 });
 
-    await waitFor(() => expect(mockedApi.indentTask).toHaveBeenCalledWith(2));
-    expect(mockedApi.reorderTask).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenCalledWith(2, {
+        parentTaskId: 1,
+        position: 0,
+        expectedRevision: 1,
+      }),
+    );
     // Beta hängt jetzt unter Alpha.
     expect(document.querySelectorAll(".task-row-children .task-row-title")[0]?.textContent).toBe("Beta");
   });
 
   it("rückt beim Ziehen nach links wieder eine Stufe aus", async () => {
-    mockedApi.outdentTask.mockResolvedValue(makeTask({ id: 3 }));
+    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 3 }));
     const child = makeTask({ id: 3, title: "Gamma", parentTaskId: 2, position: 0, projectId: 5 });
     const tasks = [
       makeTask({ id: 1, title: "Alpha", position: 0, projectId: 5 }),
@@ -149,13 +192,20 @@ describe("TaskOutline Ziehen und Umbauen", () => {
 
     drag("Gamma", { toY: centreOf(2, 5), offsetX: -32 });
 
-    await waitFor(() => expect(mockedApi.outdentTask).toHaveBeenCalledWith(3));
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenCalledWith(3, {
+        parentTaskId: null,
+        projectId: 5,
+        position: 2,
+        expectedRevision: 1,
+      }),
+    );
     expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]);
     expect(document.querySelectorAll(".task-row-children").length).toBe(0);
   });
 
   it("stellt die Reihenfolge wieder her und meldet einen abgelehnten Zug an der Zeile", async () => {
-    mockedApi.reorderTask.mockRejectedValue(new Error("Kreis in der Aufgabenhierarchie"));
+    mockedApi.moveTask.mockRejectedValue(new Error("Kreis in der Aufgabenhierarchie"));
     renderWithProviders(<TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />);
     await screen.findByText("Alpha");
 
@@ -167,6 +217,69 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     await waitFor(() => expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]));
   });
 
+  it("refreshes after a stale move and blocks the stale snapshot from retrying", async () => {
+    const stale = Object.assign(new Error("Veraltete Revision"), {
+      name: "ApiError",
+      code: "stale_write_conflict",
+    });
+    mockedApi.moveTask.mockRejectedValue(stale);
+    const rendered = renderWithProviders(
+      <>
+        <RefreshVersion />
+        <TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />
+      </>,
+    );
+    await screen.findByText("Alpha");
+
+    drag("Alpha", { toY: centreOf(2, 5) });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Dieser Eintrag wurde auf einem anderen Gerät geändert",
+    );
+    await waitFor(() => expect(screen.getByTestId("refresh-version")).toHaveTextContent("1"));
+    expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]);
+
+    drag("Alpha", { toY: centreOf(2, 5) });
+    await flushMicrotasks();
+    expect(mockedApi.moveTask).toHaveBeenCalledTimes(1);
+
+    // A new array alone is not proof of freshness.
+    rendered.rerender(
+      <>
+        <RefreshVersion />
+        <TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />
+      </>,
+    );
+    drag("Alpha", { toY: centreOf(2, 5) });
+    await flushMicrotasks();
+    expect(mockedApi.moveTask).toHaveBeenCalledTimes(1);
+
+    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 1, revision: 3 }));
+    rendered.rerender(
+      <>
+        <RefreshVersion />
+        <TaskOutline
+          tasks={[
+            makeTask({ id: 1, title: "Alpha", position: 0, projectId: 5, revision: 2 }),
+            makeTask({ id: 2, title: "Beta", position: 1, projectId: 5 }),
+            makeTask({ id: 3, title: "Gamma", position: 2, projectId: 5 }),
+          ]}
+          emptyMessage="Nichts da"
+          organizable
+        />
+      </>,
+    );
+    drag("Alpha", { toY: centreOf(2, 5) });
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenLastCalledWith(1, {
+        parentTaskId: null,
+        projectId: 5,
+        position: 2,
+        expectedRevision: 2,
+      }),
+    );
+  });
+
   it("ändert bei abgebrochenem Zeigerkontakt nichts", async () => {
     renderWithProviders(<TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />);
     await screen.findByText("Alpha");
@@ -174,9 +287,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     drag("Alpha", { toY: centreOf(2, 5), cancel: true });
 
     await waitFor(() => expect(screen.queryByTestId("task-drop-indicator")).toBeNull());
-    expect(mockedApi.reorderTask).not.toHaveBeenCalled();
     expect(mockedApi.moveTask).not.toHaveBeenCalled();
-    expect(mockedApi.indentTask).not.toHaveBeenCalled();
     expect(renderedOrder()).toEqual(["Alpha", "Beta", "Gamma"]);
   });
 
@@ -196,11 +307,11 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     // Abbruch per Escape lässt alles unverändert.
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => expect(screen.queryByTestId("task-drop-indicator")).toBeNull());
-    expect(mockedApi.reorderTask).not.toHaveBeenCalled();
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
   });
 
   it("bietet eine einzige Werkzeugleiste für die ausgewählte Aufgabe statt Bedienfelder je Zeile", async () => {
-    mockedApi.reorderTask.mockResolvedValue(makeTask({ id: 2 }));
+    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 2 }));
     renderWithProviders(<TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />);
     await screen.findByText("Beta");
 
@@ -212,25 +323,48 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     expect(screen.getByRole("button", { name: "Ablegen" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Nach oben" }));
-    await waitFor(() => expect(mockedApi.reorderTask).toHaveBeenCalledWith(2, 0));
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenCalledWith(2, {
+        parentTaskId: null,
+        projectId: 5,
+        position: 0,
+        expectedRevision: 1,
+      }),
+    );
     expect(renderedOrder()).toEqual(["Beta", "Alpha", "Gamma"]);
   });
 
   it("verschiebt per Tastatur direkt am Ziehgriff", async () => {
-    mockedApi.indentTask.mockResolvedValue(makeTask({ id: 2 }));
-    mockedApi.outdentTask.mockResolvedValue(makeTask({ id: 2 }));
-    renderWithProviders(<TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />);
+    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 2, revision: 2 }));
+    renderWithProviders(
+      <TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />,
+    );
     await screen.findByText("Beta");
 
     handleFor("Beta").focus();
     await userEvent.keyboard("{ArrowRight}");
-    await waitFor(() => expect(mockedApi.indentTask).toHaveBeenCalledWith(2));
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenCalledWith(2, {
+        parentTaskId: 1,
+        position: 0,
+        expectedRevision: 1,
+      }),
+    );
     expect(document.querySelectorAll(".task-row-children .task-row-title")[0]?.textContent).toBe("Beta");
-    // Der Tastaturfokus wandert mit der Zeile mit, obwohl React sie neu einhängt.
-    await waitFor(() => expect(document.activeElement).toBe(handleFor("Beta")));
 
+    // The optimistic tree carries the exact next revision, so a second move
+    // does not wait for a project refresh.
+    await waitFor(() => expect(document.activeElement).toBe(handleFor("Beta")));
+    handleFor("Beta").focus();
     await userEvent.keyboard("{ArrowLeft}");
-    await waitFor(() => expect(mockedApi.outdentTask).toHaveBeenCalledWith(2));
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenLastCalledWith(2, {
+        parentTaskId: null,
+        projectId: 5,
+        position: 1,
+        expectedRevision: 2,
+      }),
+    );
     expect(document.querySelectorAll(".task-row-children").length).toBe(0);
   });
 
@@ -276,7 +410,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
       undefined,
       1,
     );
-    expect(mockedApi.reorderTask).not.toHaveBeenCalled();
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
   });
 
   it("öffnet nach einem Ziehen per langem Drücken nicht die Detailansicht", async () => {
@@ -284,8 +418,8 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     // auf dem der Finger aufsetzte – hier die Zeilenschaltfläche. Ohne
     // Unterdrückung ginge direkt nach dem Verschieben das Detailfenster auf.
     vi.useFakeTimers();
-    mockedApi.reorderTask.mockResolvedValue(makeTask({ id: 1 }));
-    renderWithProviders(
+    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 1 }));
+    const rendered = renderWithProviders(
       <>
         <TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />
         <OpenProbe />
@@ -312,13 +446,33 @@ describe("TaskOutline Ziehen und Umbauen", () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.reorderTask).toHaveBeenCalledWith(1, 2);
+    expect(mockedApi.moveTask).toHaveBeenCalledWith(1, {
+      parentTaskId: null,
+      projectId: 5,
+      position: 2,
+      expectedRevision: 1,
+    });
     expect(screen.getByTestId("offene-details")).toHaveTextContent("keine");
 
-    // Genau ein Klick wird geschluckt: der nächste öffnet wieder normal.
-    fireEvent.pointerDown(main, { clientX: 0, clientY: centreOf(0), pointerId: 8 });
-    fireEvent.pointerUp(main, { pointerId: 8 });
-    fireEvent.click(main);
+    rendered.rerender(
+      <>
+        <TaskOutline
+          tasks={[
+            makeTask({ id: 2, title: "Beta", position: 0, projectId: 5, revision: 2 }),
+            makeTask({ id: 3, title: "Gamma", position: 1, projectId: 5, revision: 2 }),
+            makeTask({ id: 1, title: "Alpha", position: 2, projectId: 5, revision: 3 }),
+          ]}
+          emptyMessage="Nichts da"
+          organizable
+        />
+        <OpenProbe />
+      </>,
+    );
+    // After authoritative refresh, the next tap opens normally.
+    const refreshedMain = screen.getByRole("button", { name: "Alpha" });
+    fireEvent.pointerDown(refreshedMain, { clientX: 0, clientY: centreOf(2), pointerId: 8 });
+    fireEvent.pointerUp(refreshedMain, { pointerId: 8 });
+    fireEvent.click(refreshedMain);
     expect(screen.getByTestId("offene-details")).toHaveTextContent("1");
   });
 
@@ -344,7 +498,13 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     // Gamma direkt unter das eingeklappte Alpha ziehen (eine Ebene tiefer).
     drag("Gamma", { toY: centreOf(0, 5), offsetX: 32 });
 
-    await waitFor(() => expect(mockedApi.moveTask).toHaveBeenCalledWith(3, { parentTaskId: 1, position: 0 }));
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenCalledWith(3, {
+        parentTaskId: 1,
+        position: 0,
+        expectedRevision: 1,
+      }),
+    );
     // Die verschobene Zeile darf nicht im eingeklappten Zweig verschwinden.
     await waitFor(() => expect(screen.getByText("Gamma")).toBeInTheDocument());
     expect(screen.getByText("Kind")).toBeInTheDocument();
@@ -355,7 +515,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     // ein. Ein „unmounted“-Merker, der dabei nicht zurückgesetzt wird, würde
     // jeden Zug ohne Refresh, ohne Rückabwicklung und dauerhaft „beschäftigt“
     // enden lassen.
-    mockedApi.reorderTask.mockResolvedValue(makeTask({ id: 1 }));
+    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 1, revision: 2 }));
     renderWithProviders(
       <StrictMode>
         <TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />
@@ -365,12 +525,27 @@ describe("TaskOutline Ziehen und Umbauen", () => {
 
     drag("Alpha", { toY: centreOf(2, 5) });
 
-    await waitFor(() => expect(mockedApi.reorderTask).toHaveBeenCalledWith(1, 2));
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenCalledWith(1, {
+        parentTaskId: null,
+        projectId: 5,
+        position: 2,
+        expectedRevision: 1,
+      }),
+    );
     expect(renderedOrder()).toEqual(["Beta", "Gamma", "Alpha"]);
-    // Nicht dauerhaft blockiert: ein zweiter Zug wird weiterhin ausgeführt.
+    // Position normalization does not stale the sibling snapshots, and the
+    // moved row already has its deterministic next revision.
     await waitFor(() => expect(handleFor("Alpha")).not.toHaveAttribute("aria-busy", "true"));
     drag("Alpha", { toY: -10 });
-    await waitFor(() => expect(mockedApi.reorderTask).toHaveBeenCalledWith(1, 0));
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenLastCalledWith(1, {
+        parentTaskId: null,
+        projectId: 5,
+        position: 0,
+        expectedRevision: 2,
+      }),
+    );
   });
 
   it("gibt zurückgehaltenen Geisterzeilen keinen Ziehgriff", async () => {
@@ -423,7 +598,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
         1,
       ),
     );
-    expect(mockedApi.reorderTask).not.toHaveBeenCalled();
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
 
     // Ein gewöhnlicher Klick öffnet weiterhin die Aktionen der Zeile …
     const gammaRow = screen.getByText("Gamma").closest(".task-row") as HTMLElement;
@@ -435,7 +610,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
   });
 
   it("bewältigt tiefe Bäume", async () => {
-    mockedApi.reorderTask.mockResolvedValue(makeTask({ id: 1 }));
+    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 1 }));
     const depth = 30;
     let node = makeTask({ id: 100 + depth, title: `Ebene ${depth}`, parentTaskId: 100 + depth - 1, projectId: 5 });
     for (let level = depth - 1; level >= 1; level -= 1) {
@@ -458,7 +633,14 @@ describe("TaskOutline Ziehen und Umbauen", () => {
       drag("Letzte", { toY: -10 });
     });
 
-    await waitFor(() => expect(mockedApi.reorderTask).toHaveBeenCalledWith(900, 0));
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenCalledWith(900, {
+        parentTaskId: null,
+        projectId: 5,
+        position: 0,
+        expectedRevision: 1,
+      }),
+    );
     expect(renderedOrder()[0]).toBe("Letzte");
   });
 });

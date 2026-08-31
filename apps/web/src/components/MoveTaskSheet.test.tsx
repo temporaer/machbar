@@ -16,8 +16,6 @@ vi.mock("../lib/api", async (importOriginal) => {
       getProjects: vi.fn(),
       getProject: vi.fn(),
       moveTask: vi.fn(),
-      moveSubtree: vi.fn(),
-      changeParent: vi.fn(),
     },
   };
 });
@@ -41,9 +39,7 @@ describe("MoveTaskSheet", () => {
     mockedApi.getMembers.mockResolvedValue([]);
     mockedApi.getProjects.mockResolvedValue([umzug, garten, steuer]);
     mockedApi.getProject.mockResolvedValue({ ...umzug, tasks: [] });
-    mockedApi.moveSubtree.mockResolvedValue(makeTask() as never);
     mockedApi.moveTask.mockResolvedValue(makeTask() as never);
-    mockedApi.changeParent.mockResolvedValue(makeTask() as never);
   });
 
   const rowNames = (group: HTMLElement) =>
@@ -88,7 +84,13 @@ describe("MoveTaskSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
 
-    await waitFor(() => expect(mockedApi.moveSubtree).toHaveBeenCalledWith(42, 2));
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenCalledWith(42, {
+        parentTaskId: null,
+        projectId: 2,
+        expectedRevision: 1,
+      }),
+    );
     expect(onClose).toHaveBeenCalled();
     expect(window.localStorage.getItem("machbar:recent-destinations:project")).toBe("[2]");
   });
@@ -171,7 +173,12 @@ describe("MoveTaskSheet", () => {
       await userEvent.click(screen.getByRole("button", { name: /Möbelwagen mieten/ }));
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
 
-      await waitFor(() => expect(mockedApi.changeParent).toHaveBeenCalledWith(50, 60));
+      await waitFor(() =>
+        expect(mockedApi.moveTask).toHaveBeenCalledWith(50, {
+          parentTaskId: 60,
+          expectedRevision: 1,
+        }),
+      );
       expect(window.localStorage.getItem("machbar:recent-destinations:parent")).toBe("[60]");
     });
 
@@ -195,6 +202,7 @@ describe("MoveTaskSheet", () => {
           // Switching project resets the parent — a parent from the old
           // project would be an illegal destination in the new one.
           parentTaskId: null,
+          expectedRevision: 1,
         }),
       );
       expect(window.localStorage.getItem("machbar:recent-destinations:project")).toBe("[2]");

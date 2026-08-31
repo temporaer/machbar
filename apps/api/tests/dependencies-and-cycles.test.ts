@@ -100,8 +100,11 @@ describe("dependency blocking and cycle prevention", () => {
 
     const res = await ctx.app.inject({
       method: "POST",
-      url: `/api/tasks/${grandparent.id}/parent`,
-      payload: { parentTaskId: child.id },
+      url: `/api/tasks/${grandparent.id}/move`,
+      payload: {
+        parentTaskId: child.id,
+        expectedRevision: grandparent.revision,
+      },
     });
     expect(res.statusCode).toBe(409);
     expect(res.json().error).toMatchObject({
@@ -114,8 +117,11 @@ describe("dependency blocking and cycle prevention", () => {
     const task = await createTask({ title: "Selbst" });
     const res = await ctx.app.inject({
       method: "POST",
-      url: `/api/tasks/${task.id}/parent`,
-      payload: { parentTaskId: task.id },
+      url: `/api/tasks/${task.id}/move`,
+      payload: {
+        parentTaskId: task.id,
+        expectedRevision: task.revision,
+      },
     });
     expect(res.statusCode).toBe(409);
   });

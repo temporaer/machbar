@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
-describe("hierarchy moves: reorder, indent, outdent, change parent, move subtree", () => {
+describe("canonical hierarchy moves", () => {
   let ctx: TestContext;
 
   beforeEach(() => {
@@ -24,24 +24,42 @@ describe("hierarchy moves: reorder, indent, outdent, change parent, move subtree
 
   async function getProjectTasks(projectId: number) {
     const res = await ctx.app.inject({ method: "GET", url: `/api/projects/${projectId}` });
-    return res.json().tasks as Array<{ id: number; title: string; position: number }>;
+    return res.json().tasks as Array<{
+      id: number;
+      title: string;
+      position: number;
+      revision: number;
+    }>;
+  }
+
+  async function getTask(taskId: number) {
+    const res = await ctx.app.inject({ method: "GET", url: `/api/tasks/${taskId}` });
+    return res.json();
   }
 
   it("reorders siblings and renormalizes positions", async () => {
     const project = await createProject("Reorder-Projekt");
-    await createTask({ projectId: project.id, title: "A" });
-    await createTask({ projectId: project.id, title: "B" });
+    const a = await createTask({ projectId: project.id, title: "A" });
+    const b = await createTask({ projectId: project.id, title: "B" });
     const c = await createTask({ projectId: project.id, title: "C" });
 
     await ctx.app.inject({
       method: "POST",
-      url: `/api/tasks/${c.id}/reorder`,
-      payload: { position: 0 },
+      url: `/api/tasks/${c.id}/move`,
+      payload: {
+        parentTaskId: null,
+        projectId: project.id,
+        position: 0,
+        expectedRevision: c.revision,
+      },
     });
 
     const tasks = await getProjectTasks(project.id);
     expect(tasks.map((t) => t.title)).toEqual(["C", "A", "B"]);
     expect(tasks.map((t) => t.position)).toEqual([0, 1, 2]);
+    expect(tasks.find((t) => t.id === c.id)?.revision).toBe(c.revision + 1);
+    expect(tasks.find((t) => t.id === a.id)?.revision).toBe(a.revision);
+    expect(tasks.find((t) => t.id === b.id)?.revision).toBe(b.revision);
   });
 
   it("indents a task under its previous sibling", async () => {
@@ -49,26 +67,21 @@ describe("hierarchy moves: reorder, indent, outdent, change parent, move subtree
     const first = await createTask({ projectId: project.id, title: "Erste" });
     const second = await createTask({ projectId: project.id, title: "Zweite" });
 
-    const indentRes = await ctx.app.inject({
+    const moveRes = await ctx.app.inject({
       method: "POST",
-      url: `/api/tasks/${second.id}/indent`,
+      url: `/api/tasks/${second.id}/move`,
+      payload: {
+        parentTaskId: first.id,
+        position: 0,
+        expectedRevision: second.revision,
+      },
     });
-    expect(indentRes.json().parentTaskId).toBe(first.id);
+    expect(moveRes.json().parentTaskId).toBe(first.id);
 
     const tasks = await getProjectTasks(project.id);
     expect(tasks).toHaveLength(1);
     expect(tasks[0]!.title).toBe("Erste");
     expect(tasks[0]).toHaveProperty("children");
-  });
-
-  it("rejects indenting the first sibling (no previous sibling to attach to)", async () => {
-    const project = await createProject("Indent-Fehler");
-    const first = await createTask({ projectId: project.id, title: "Einzige" });
-    const res = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${first.id}/indent`,
-    });
-    expect(res.statusCode).toBe(400);
   });
 
   it("outdents a nested task back to the project root, after its former parent", async () => {
@@ -84,7 +97,13 @@ describe("hierarchy moves: reorder, indent, outdent, change parent, move subtree
 
     const outdentRes = await ctx.app.inject({
       method: "POST",
-      url: `/api/tasks/${child.id}/outdent`,
+      url: `/api/tasks/${child.id}/move`,
+      payload: {
+        parentTaskId: null,
+        projectId: project.id,
+        position: 1,
+        expectedRevision: child.revision,
+      },
     });
     expect(outdentRes.json().parentTaskId).toBeNull();
     expect(outdentRes.json().projectId).toBe(project.id);
@@ -93,27 +112,24 @@ describe("hierarchy moves: reorder, indent, outdent, change parent, move subtree
     expect(tasks.map((t) => t.title)).toEqual(["Eltern", "Kind", "Geschwister"]);
   });
 
-  it("rejects outdenting an already top-level task", async () => {
-    const project = await createProject("Outdent-Fehler");
-    const task = await createTask({ projectId: project.id, title: "Oberste Ebene" });
-    const res = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/outdent` });
-    expect(res.statusCode).toBe(400);
-  });
-
-  it("changes a task's parent explicitly via /parent", async () => {
+  it("changes a task's parent explicitly", async () => {
     const project = await createProject("Change-Parent-Projekt");
     const newParent = await createTask({ projectId: project.id, title: "Neues Elternteil" });
     const task = await createTask({ projectId: project.id, title: "Wandert" });
 
     const res = await ctx.app.inject({
       method: "POST",
-      url: `/api/tasks/${task.id}/parent`,
-      payload: { parentTaskId: newParent.id },
+      url: `/api/tasks/${task.id}/move`,
+      payload: {
+        parentTaskId: newParent.id,
+        position: 0,
+        expectedRevision: task.revision,
+      },
     });
     expect(res.json().parentTaskId).toBe(newParent.id);
   });
 
-  it("moves an entire subtree to a different project via move-subtree, cascading the project id", async () => {
+  it("moves an entire subtree to a different project, cascading the project id", async () => {
     const projectA = await createProject("Projekt A");
     const projectB = await createProject("Projekt B");
     const root = await createTask({ projectId: projectA.id, title: "Wurzel" });
@@ -127,8 +143,12 @@ describe("hierarchy moves: reorder, indent, outdent, change parent, move subtree
 
     const moveRes = await ctx.app.inject({
       method: "POST",
-      url: `/api/tasks/${root.id}/move-subtree`,
-      payload: { projectId: projectB.id },
+      url: `/api/tasks/${root.id}/move`,
+      payload: {
+        parentTaskId: null,
+        projectId: projectB.id,
+        expectedRevision: root.revision,
+      },
     });
     expect(moveRes.json().projectId).toBe(projectB.id);
 
@@ -139,17 +159,79 @@ describe("hierarchy moves: reorder, indent, outdent, change parent, move subtree
     expect(projectATasks).toHaveLength(0);
   });
 
-  it("supports the generic /move endpoint for reparenting and repositioning at once", async () => {
+  it("reparents and repositions at once", async () => {
     const project = await createProject("Move-Projekt");
     const a = await createTask({ projectId: project.id, title: "A" });
     const b = await createTask({ projectId: project.id, title: "B" });
 
+    const currentA = await getTask(a.id);
     const moveRes = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${a.id}/move`,
-      payload: { parentTaskId: b.id, position: 0 },
+      payload: {
+        parentTaskId: b.id,
+        position: 0,
+        expectedRevision: currentA.revision,
+      },
     });
     expect(moveRes.json().parentTaskId).toBe(b.id);
     expect(moveRes.json().position).toBe(0);
+  });
+
+  it("rejects moving a task under its own descendant", async () => {
+    const project = await createProject("Zyklus-Projekt");
+    const root = await createTask({ projectId: project.id, title: "Wurzel" });
+    const childRes = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${root.id}/children`,
+      payload: { title: "Kind" },
+    });
+    const child = childRes.json();
+
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${root.id}/move`,
+      payload: {
+        parentTaskId: child.id,
+        position: 0,
+        expectedRevision: root.revision,
+      },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe("task_hierarchy_cycle");
+  });
+
+  it("rejects a stale structural move without changing the hierarchy", async () => {
+    const project = await createProject("Konflikt-Projekt");
+    const first = await createTask({ projectId: project.id, title: "A" });
+    const second = await createTask({ projectId: project.id, title: "B" });
+    const currentFirst = await getTask(first.id);
+
+    const accepted = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${first.id}/move`,
+      payload: {
+        parentTaskId: null,
+        projectId: project.id,
+        position: 1,
+        expectedRevision: currentFirst.revision,
+      },
+    });
+    expect(accepted.statusCode).toBe(200);
+
+    const stale = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${first.id}/move`,
+      payload: {
+        parentTaskId: second.id,
+        position: 0,
+        expectedRevision: currentFirst.revision,
+      },
+    });
+
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error.code).toBe("stale_write_conflict");
+    expect((await getTask(first.id)).parentTaskId).toBeNull();
   });
 });

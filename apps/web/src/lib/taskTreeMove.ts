@@ -35,19 +35,16 @@ export interface DropProjection {
   beforeTaskId: number | null;
 }
 
-/**
- * Which existing hierarchy endpoint expresses a requested move. The
- * dedicated verbs are preferred whenever the move matches them exactly, so
- * the server keeps applying its own indent/outdent semantics (and its
- * cycle/consistency checks) instead of us re-deriving them here.
- */
 export type MovePlan =
   | { kind: "none" }
-  | { kind: "reorder"; taskId: number; position: number }
-  | { kind: "indent"; taskId: number }
-  | { kind: "outdent"; taskId: number }
-  | { kind: "changeParent"; taskId: number; parentTaskId: number | null; projectId: number | null }
-  | { kind: "move"; taskId: number; parentTaskId: number | null; position: number };
+  | {
+      kind: "move";
+      taskId: number;
+      parentTaskId: number | null;
+      projectId?: number | null;
+      position: number;
+      expectedRevision: number;
+    };
 
 export interface TaskLocation {
   task: Task;
@@ -210,10 +207,9 @@ export function isDescendantOf(
 }
 
 /**
- * Maps a requested destination onto the narrowest existing endpoint.
- * `targetIndex` is always an index inside the destination sibling group
- * *excluding* the moved task, which is exactly what the backend's
- * `moveTask` expects.
+ * Converts a projected destination into the canonical structural command.
+ * `targetIndex` is counted inside the destination group without the moved
+ * task, matching the backend move contract.
  */
 export function planMove(params: {
   roots: Task[];
@@ -227,31 +223,19 @@ export function planMove(params: {
   const current = locateTask(roots, taskId, rootParentId);
   if (!current) return { kind: "none" };
 
-  if (targetParentId === current.parentId) {
-    const bounded = clamp(targetIndex, 0, current.siblings.length - 1);
-    if (bounded === current.index) return { kind: "none" };
-    return { kind: "reorder", taskId, position: bounded };
-  }
-
   const destination = childrenOf(roots, targetParentId, rootParentId).filter((t) => t.id !== taskId);
-  const atEnd = targetIndex >= destination.length;
-
-  const previousSibling = current.index > 0 ? current.siblings[current.index - 1] : undefined;
-  if (previousSibling && targetParentId === previousSibling.id && atEnd) {
-    return { kind: "indent", taskId };
+  const position = clamp(targetIndex, 0, destination.length);
+  if (targetParentId === current.parentId && position === current.index) {
+    return { kind: "none" };
   }
-
-  if (current.parentId !== null && current.parentId !== rootParentId) {
-    const parent = locateTask(roots, current.parentId, rootParentId);
-    if (parent && targetParentId === parent.parentId && targetIndex === parent.index + 1) {
-      return { kind: "outdent", taskId };
-    }
-  }
-
-  if (atEnd) {
-    return { kind: "changeParent", taskId, parentTaskId: targetParentId, projectId: rootProjectId };
-  }
-  return { kind: "move", taskId, parentTaskId: targetParentId, position: targetIndex };
+  return {
+    kind: "move",
+    taskId,
+    parentTaskId: targetParentId,
+    ...(targetParentId === null ? { projectId: rootProjectId } : {}),
+    position,
+    expectedRevision: current.task.revision,
+  };
 }
 
 /**
@@ -326,7 +310,14 @@ export function applyMove(
   if (targetParentId === taskId || isDescendantOf(roots, taskId, targetParentId, rootParentId)) {
     return roots;
   }
-  const moved: Task = { ...located.task, parentTaskId: targetParentId };
+  // Position normalization is bookkeeping for the sibling group. The backend
+  // advances only the explicitly moved task's revision, so the optimistic
+  // tree can carry the exact revision required by a subsequent move.
+  const moved: Task = {
+    ...located.task,
+    parentTaskId: targetParentId,
+    revision: located.task.revision + 1,
+  };
 
   const edit = (group: Task[], parentId: number | null): Task[] => {
     const isSource = group.some((t) => t.id === taskId);

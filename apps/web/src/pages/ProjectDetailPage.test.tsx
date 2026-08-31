@@ -17,6 +17,7 @@ vi.mock("../lib/api", () => ({
     getTags: vi.fn(),
     getTask: vi.fn(),
     updateTask: vi.fn(),
+    updateProject: vi.fn(),
     getActivity: vi.fn(),
   },
 }));
@@ -205,11 +206,61 @@ describe("ProjectDetailPage task explanations", () => {
 
     await userEvent.click(notesEdit);
 
-    expect(screen.queryByRole("dialog", { name: strings.editProject })).not.toBeInTheDocument();
-    expect(within(notesSection).getByRole("textbox")).toBeInTheDocument();
-    expect(within(notesSection).getByRole("textbox")).toHaveFocus();
-    expect(within(notesSection).getByRole("button", { name: "Abbrechen" })).toBeInTheDocument();
-    expect(within(notesSection).getByRole("button", { name: "Notizen speichern" })).toBeInTheDocument();
+    const notesEditor = screen.getByRole("dialog", { name: strings.editProject });
+    const notesInput = within(notesEditor).getByLabelText(strings.notes);
+    await waitFor(() => expect(notesInput).toHaveFocus());
+    expect(notesInput).toBeEnabled();
+    expect(
+      within(notesEditor).getByRole("button", {
+        name: `${strings.save}: ${strings.notes}`,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(notesEditor).getByRole("button", {
+        name: `${strings.cancel}: ${strings.notes}`,
+      }),
+    ).toBeInTheDocument();
+    expect(within(notesSection).queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("keeps confirmed project metadata after the editor closes while refresh is stale", async () => {
+    mockedApi.updateProject.mockResolvedValue({
+      ...makeProject({
+        id: 42,
+        title: "Sommerfest planen",
+        ownerMemberId: 1,
+        notes: "Neue Notiz",
+        revision: 2,
+      }),
+    });
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByText("Ort reservieren");
+
+    const notesSection = screen.getByRole("heading", { name: "Notizen" }).closest("section")!;
+    await userEvent.click(within(notesSection).getByRole("button", { name: "Bearbeiten" }));
+    const editor = screen.getByRole("dialog", { name: strings.editProject });
+    const notesInput = within(editor).getByLabelText(strings.notes);
+    await userEvent.type(notesInput, "Neue Notiz");
+    await userEvent.click(
+      within(editor).getByRole("button", {
+        name: `${strings.save}: ${strings.notes}`,
+      }),
+    );
+    await waitFor(() =>
+      expect(mockedApi.updateProject).toHaveBeenCalledWith(42, {
+        notes: "Neue Notiz",
+        expectedRevision: 1,
+      }),
+    );
+    await userEvent.click(within(editor).getByRole("button", { name: strings.close }));
+
+    expect(await screen.findByText("Neue Notiz")).toBeInTheDocument();
+    await userEvent.click(within(notesSection).getByRole("button", { name: "Bearbeiten" }));
+    expect(
+      within(screen.getByRole("dialog", { name: strings.editProject })).getByLabelText(
+        strings.notes,
+      ),
+    ).toHaveValue("Neue Notiz");
   });
 
   it("shows Calendar export beside Share only for a dated Project", async () => {

@@ -9,7 +9,6 @@ import {
   addTaskTag,
   appendTaskNotes,
   cancelTask,
-  changeTaskParent,
   clarifyTask,
   completeTask,
   createChildTask,
@@ -17,33 +16,26 @@ import {
   createTask,
   deleteTask,
   followUpExternalWait,
-  indentTask,
-  moveSubtreeToProject,
   moveTask,
-  outdentTask,
   promoteTaskToProject,
   removeDependency,
   removeExcludedTag,
   removeTaskTag,
   resolveExternalWait,
   reopenTask,
-  reorderTask,
   upsertExternalWait,
   updateTask,
 } from "../domain/mutations.js";
 import {
   appendNotesSchema,
   cancelTaskSchema,
-  changeParentSchema,
   completeTaskSchema,
   createChildTaskSchema,
   createTaskSchema,
   dependencySchema,
   externalWaitFollowUpSchema,
-  moveSubtreeSchema,
   moveTaskSchema,
   promoteTaskToProjectSchema,
-  reorderTaskSchema,
   tagRefSchema,
   taskLifecycleSchema,
   transitionTaskStatusSchema,
@@ -283,58 +275,6 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     });
     return taskOrThrow(db, id);
   });
-
-  app.post<{ Params: { id: string } }>(
-    "/api/tasks/:id/reorder",
-    async (request) => {
-      const id = parseId(request.params.id);
-      const body = parseOrThrow(reorderTaskSchema, request.body);
-      reorderTask(db, id, body.position, {
-        actorMemberId: request.activityActor?.id ?? null,
-      });
-      return taskOrThrow(db, id);
-    },
-  );
-
-  app.post<{ Params: { id: string } }>("/api/tasks/:id/indent", async (request) => {
-    const id = parseId(request.params.id);
-    indentTask(db, id, {
-      actorMemberId: request.activityActor?.id ?? null,
-    });
-    return taskOrThrow(db, id);
-  });
-
-  app.post<{ Params: { id: string } }>(
-    "/api/tasks/:id/outdent",
-    async (request) => {
-      const id = parseId(request.params.id);
-      outdentTask(db, id, {
-        actorMemberId: request.activityActor?.id ?? null,
-      });
-      return taskOrThrow(db, id);
-    },
-  );
-
-  app.post<{ Params: { id: string } }>("/api/tasks/:id/parent", async (request) => {
-    const id = parseId(request.params.id);
-    const body = parseOrThrow(changeParentSchema, request.body);
-    changeTaskParent(db, id, body.parentTaskId, body.projectId, {
-      actorMemberId: request.activityActor?.id ?? null,
-    });
-    return taskOrThrow(db, id);
-  });
-
-  app.post<{ Params: { id: string } }>(
-    "/api/tasks/:id/move-subtree",
-    async (request) => {
-      const id = parseId(request.params.id);
-      const body = parseOrThrow(moveSubtreeSchema, request.body);
-      moveSubtreeToProject(db, id, body.projectId, {
-        actorMemberId: request.activityActor?.id ?? null,
-      });
-      return taskOrThrow(db, id);
-    },
-  );
 
   app.post<{ Params: { id: string } }>(
     "/api/tasks/:id/dependencies",

@@ -581,43 +581,27 @@ export function TaskDetailSheet() {
   const saveExternalWait = async () => {
     if (!task || !externalWaitDateValid) return;
     setSaveError(null);
-    try {
-      const updated = await api.setExternalWait(task.id, {
-        waitingFor: externalWaitDraft.trim(),
-        scheduledDate: externalWaitDateDraft || null,
-        expectedRevision: revisionRef.current ?? task.revision,
-      });
-      revisionRef.current = updated.revision;
-      bump();
-      reload();
-    } catch (err) {
-      if (isStaleWriteConflict(err)) {
-        bump();
-        reload();
-      }
-      setSaveError(localizedErrorMessage(err, strings));
-    }
+    const updated = await taskActions.setExternalWait({
+      id: task.id,
+      revision: revisionRef.current ?? task.revision,
+    }, {
+      waitingFor: externalWaitDraft.trim(),
+      scheduledDate: externalWaitDateDraft || null,
+    });
+    if (updated) revisionRef.current = updated.revision;
   };
 
   const resolveExternalWait = async () => {
     if (!task) return;
     setSaveError(null);
-    try {
-      const updated = await api.resolveExternalWait(
-        task.id,
-        revisionRef.current ?? task.revision,
-      );
+    const updated = await taskActions.resolveExternalWait({
+      id: task.id,
+      revision: revisionRef.current ?? task.revision,
+    });
+    if (updated) {
       revisionRef.current = updated.revision;
       setExternalWaitDraft("");
       setExternalWaitDateDraft("");
-      bump();
-      reload();
-    } catch (err) {
-      if (isStaleWriteConflict(err)) {
-        bump();
-        reload();
-      }
-      setSaveError(localizedErrorMessage(err, strings));
     }
   };
 
@@ -1090,7 +1074,7 @@ export function TaskDetailSheet() {
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
-                  disabled={!externalWaitDraft.trim() || !externalWaitDateValid}
+                  disabled={!externalWaitDraft.trim() || !externalWaitDateValid || taskMutationPending}
                   onClick={() => void saveExternalWait()}
                 >
                   {task.externalWait ? strings.updateExternalWait : strings.addExternalWait}
@@ -1099,6 +1083,7 @@ export function TaskDetailSheet() {
                   <button
                     type="button"
                     className="btn btn-sm"
+                    disabled={taskMutationPending}
                     onClick={() => void resolveExternalWait()}
                   >
                     {strings.resolveExternalWait}

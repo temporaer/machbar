@@ -13,9 +13,6 @@ vi.mock("../lib/api", () => ({
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
     updateTask: vi.fn(),
-    reorderTask: vi.fn(),
-    indentTask: vi.fn(),
-    outdentTask: vi.fn(),
     moveTask: vi.fn(),
   },
 }));

@@ -154,7 +154,12 @@ become task dates.
 ## 4. Transaction Rules
 
 - Every write that touches more than one table (e.g. creating a task + adding tags) uses an explicit SQLite transaction.
-- Hierarchy moves, dependency changes, and multi-table metadata writes are performed inside the same transaction as the originating write.
+- Every structural task change uses revision-safe
+  `POST /api/tasks/:id/move`. Reordering, indenting, outdenting, reparenting,
+  and cross-project subtree moves are client-side destination calculations,
+  not separate domain commands. The transaction validates the rendered
+  revision, prevents cycles and recurring parents, cascades project changes
+  through descendants, and normalizes both affected sibling groups.
 - `POST /api/tasks/:id/promote-to-project` atomically classifies a root
   `captured` task as an active or backlog project. It copies project-compatible
   metadata, promotes direct children to project roots, preserves deeper
@@ -165,6 +170,9 @@ become task dates.
   `DELETE /api/tasks/:id/external-wait` resources. Starting/updating a wait can
   change its description and the task's revisit date atomically; resolving it
   deletes the relation and clears that date in the same transaction.
+- `POST /api/tasks/:id/external-wait/follow-up` atomically appends the
+  attributed note and either continues or resolves the wait; the UI never
+  composes that workflow from multiple requests.
 - SQLite's WAL mode is enabled (`PRAGMA journal_mode=WAL`) so reads do not block concurrent writes.
 - Tasks and projects carry monotonic revisions. Metadata PATCHes compare the client's rendered revision inside the write transaction and reject stale saves with HTTP 409.
 - The database file lives in `DATA_DIR` (default `/data`). The path is `${DATA_DIR}/${DATABASE_FILE}`.
@@ -368,20 +376,21 @@ guidance, not a wizard or a second workflow state.
 
 Lists technically `backlog` projects as **Später / noch nicht aktiv**
 (`BacklogReviewPage` → `ProjectStoryRow`, compact variant). Every mutation
-flows through `useProjectWorkflowActions`, preserving optimistic retention.
+flows through `useProjectActions`, preserving revision, error, refresh, and
+optimistic-retention behavior for both metadata and lifecycle changes.
 
 Row gestures/chips open **targeted popups** rather than navigating away:
 
 | Chip | Opens |
 |------|-------|
-| Verantwortlich | `AssignDriverSheet` |
+| Verantwortlich | `MemberSelectionSheet` |
 | Erledigt, wenn … | `StoryCriteriaSheet` (wraps `AcceptanceCriteriaEditor`) |
 | Planen | `PlanDatesSheet` |
-| Bearbeiten | Full project detail page (deliberately the only navigation) |
+| Bearbeiten | Full project detail page |
 | Archivieren | Direct action |
 
-**Aktiv machen** (`api.activateProject`) surfaces the responsible-person
-requirement inline.
+**Aktiv machen** surfaces the responsible-person requirement inline and then
+runs through `useProjectActions`.
 
 ### Projects tab — `/projects`
 
@@ -392,7 +401,7 @@ without opening a separate planning screen.
 - **Right swipe / primary button** runs the status-appropriate next step: `backlog → aktivieren`, `active → abschließen`, `completed → wieder öffnen`, `archived → aktivieren`. The button (`.story-row-primary`, `aria-label` = the action) is the explicit non-gesture equivalent and stays available on touch.
 - **Left swipe / ⋯** reveals the chip strip: the targeted popups above plus every *remaining* legal transition from the row's `availableActions` (e.g. `In Backlog zurücklegen`, `Archivieren`).
 - The candidate action is always intersected with `availableActions`; `lib/projectWorkflow.ts` mirrors the backend's `workflowActionsByStatus` map (and is reused by the test fixtures) so the UI never offers an illegal step.
-- Activating a story without a driver opens `AssignDriverSheet` first and then activates **atomically** via `activateProject(id, { ownerMemberId })`.
+- Activating a story without a driver opens `MemberSelectionSheet` first and then activates **atomically** via `activateProject(id, { ownerMemberId })`.
 - Every row shows its status; inside the retention window the same badge shows what just happened (`Aktiviert`, `Abgeschlossen`, `Wieder geöffnet`, `Zurück im Backlog`, `Archiviert`).
 
 #### Filtering and ordering the list
@@ -421,13 +430,23 @@ The row shows **one** progress bar — task completion, marked up as a real `rol
 
 No surface offers the project status as a `<select>`. `ProjectStoryRow`, `ProjectDetailPage` and `ProjectEditSheet` all render the status as a read-only badge (`projectStatusLabels`, plus an `.sr-only` "Status:" prefix on the row) and expose the change itself as thumb-sized, explicitly named buttons for exactly the transitions in `availableActions` — the sheet groups them in a `role="group"` labelled by its status field. Tests assert the absence of a status combobox, so a dropdown cannot creep back in.
 
-### Pointer capture only after a real drag
+### One headless horizontal-swipe primitive
 
-`ProjectStoryRow` and `TaskRow` call `setPointerCapture` from `pointermove`, once the drag passes the 8 px slop — never from `pointerdown`. A captured container also receives the *compatibility mouse events* of everything inside it, which silently swallowed mouse clicks on the row buttons and the detail link (touch taps were unaffected). A drag additionally sets a one-shot `swallowNextClick` flag, reset on the next `pointerdown`, so the click the browser synthesises after a swipe never navigates while a later tap still does.
+`useHorizontalSwipe` owns drag distance, the 8 px slop, delayed pointer
+capture, clamping, thresholds, cancellation, and one-shot click suppression
+for `TaskRow`, `ProjectStoryRow`, and `RefinementTaskRow`. It captures from
+`pointermove` only after a real drag, never from `pointerdown`, so ordinary taps
+and mouse clicks inside rows remain reliable. Labels, backgrounds, actions,
+and swipe-coach policy stay local to each row.
 
-The outline's structural drag is a *separate* gesture and deliberately uses window-level listeners instead of pointer capture (the pointer leaves the handle immediately), with `touch-action: none` on the handle so the browser does not claim the vertical component. The handle's `pointerdown` stops propagation, so a structural drag and a swipe can never run at once; and the row's long-press timer is only armed where structural editing is actually offered, so a long press in a compiled view no longer cancels the swipe it belongs to.
+The outline's structural drag is a *separate* gesture and deliberately uses
+window-level listeners instead of pointer capture. The handle's `pointerdown`
+stops propagation, and TaskRow cancels horizontal swipe when its hierarchy
+long press becomes real, so the two mechanics never run at once.
 
-Because that drag takes no pointer capture, the click the browser synthesises on release is *not* retargeted. A long press therefore arms `TaskRow`'s `swallowNextClick` too, so finishing a move on the row it started on does not also open the detail sheet; the flag is one-shot and cleared by the next `pointerdown`. The mirror-image case lives in `useOutlineOrganize`: it swallows the handle's own post-drag click only when the session actually started on a handle (`DragSession.fromHandle`), otherwise a long-press drag would eat the user's next, unrelated tap on some handle.
+`useOutlineOrganize` separately suppresses the handle click synthesized after a
+real structural drag. Both suppression paths are one-shot and reset for the
+next independent pointer sequence.
 
 ### Task clarification — `/more/refinement`
 
@@ -452,17 +471,59 @@ The owner × effort matrix remains collapsed as a secondary view, backed by
 - **Effort** — swipe or tap cycles `S → M → L → XL → (none)` via
   `useRefinementActions.cycleSize`/`setSize`/`clearSize`. `XL` with no open
   child produces `too_large_without_children` and suggests adding a child.
-- **Assignment** — the *Zuweisen* chip opens `AssignOwnerSheet` (a focused popup), **not** the full task detail sheet. `useRefinementActions.assignOwner` optimistically retains the row and rethrows on failure so the still-open sheet renders the error.
+- **Assignment** — the *Zuweisen* chip opens `MemberSelectionSheet`, **not** the full task detail sheet. `useRefinementActions.assignOwner` optimistically retains the row and rethrows on failure so the still-open sheet renders the error.
 
-`useRefinementActions` deliberately defines its own `REFINEMENT_RETENTION_MS` instead of depending on `useTaskActions` internals.
+Task metadata execution and owner-assignment semantics live in the non-React
+`lib/taskMutations.ts`. `useTaskActions` and `useRefinementActions` both use
+that revision-safe executor, but deliberately keep separate optimistic
+projections: normal task lists retain a `Task`, while Refinement retains its
+owner × effort row so regrouping waits until the retention window elapses.
 
 ---
 
 ## 8. Web Interaction Patterns
 
+### Three editing contracts
+
+Editing surfaces follow three explicit contracts:
+
+1. **Discrete properties** such as owner, tags, dates, and lifecycle transitions
+   save immediately after one deliberate choice.
+2. **Authored content** such as titles and notes uses an explicit edit state
+   with Save/Cancel; drafts are never persisted by closing a sheet.
+3. **Compound workflows** such as external-wait follow-up and task hierarchy
+   movement map to one atomic backend command.
+
+Focused sheets may own drafts and user intent, but not a second mutation
+implementation. Task metadata and external-wait execution flow through
+`useTaskActions`; project metadata and lifecycle changes flow through
+`useProjectActions`. `ProjectEditSheet` is the sole project-notes editor,
+including the notes-focused entry from `ProjectDetailPage`.
+
+### One canonical mutation path
+
+Shared domain semantics live in small explicit modules rather than a generic
+repository or command bus. `taskMutations.ts` owns revision-safe task metadata
+execution and owner assignment semantics. React action hooks add the optimistic
+projection appropriate to their view. `useRetainedMutations` supplies common
+per-entity pending state, localized errors, stale-conflict refresh, confirmed
+result handling, and optional retention.
+
+Presentation components call those paths instead of rebuilding revision,
+refresh, and error handling. Unique workflows such as SharePage's append/date
+conflict behavior stay local because they do not duplicate an established
+action contract.
+
 ### Optimistic retention
 
-`useTaskActions.runTransition` sets `busyId` before a mutation and clears it in `finally`. `retain()` keeps the optimistic snapshot for `RETENTION_MS` (4 s) and defers the global `bump()` until the window elapses — an immediate bump would unmount the very `TaskOutline` holding the retained state.
+`useRetainedMutations` tracks in-flight entity IDs. Retained mutations keep an
+optimistic snapshot for `RETENTION_MS` (4 s) and defer the global `bump()` until
+the window elapses — an immediate bump could unmount the list holding the
+retained state. Project metadata instead bumps immediately and keeps its
+confirmed overlay without a timer until the authoritative project collection
+reaches that revision; a slow or failed refresh therefore cannot expose stale
+controls. Non-retained external-wait commands bump when the confirmed result
+arrives.
 
 Consequence, and it is intentional: **a retained row is disabled only while the request is in flight, and becomes fully actionable again as soon as the request resolves** — while still displayed crossed-out inside its retention window. That lets a user immediately swipe the just-completed row again to reopen it (`erledigt → wieder offen`).
 
@@ -472,19 +533,17 @@ Interactions target one field at a time instead of opening the full detail sheet
 
 | Component | Purpose |
 |-----------|---------|
-| `TaskQuickActionSheet` | Dispatches a single task field (owner, dates, tags, …); its `owner` branch delegates to `AssignOwnerSheet` and it exports the shared `ownerAssignmentPatch()` helper |
-| `AssignOwnerSheet` | Reusable owner picker (`Zuständig`, incl. `Gemeinsam / offen`); shared by `TaskQuickActionSheet` and `RefinementTaskRow` |
-| `AssignDriverSheet` | Project driver picker (`Verantwortlich`) for any story row: assign-only, assign-and-activate, or reassign. `allowUnassigned` mirrors the backend invariant — only a `backlog` story may be left without a driver |
-| `MemberChoiceGroup` | The tap-chip picker both assignment sheets render (see below) |
+| `TaskQuickActionSheet` | Focused task schedule or notes editing; execution is supplied by `useTaskActions` |
+| `MemberSelectionSheet` | Reusable task-owner/project-driver picker, including assign-and-activate intent |
+| `MemberChoiceGroup` | The tap-chip choice group rendered by assignment surfaces |
 | `AcceptanceCriteriaEditor` | Reusable ordered criteria editor; shared by `ProjectEditSheet` and `StoryCriteriaSheet` |
 | `StoryCriteriaSheet` | Targeted criteria popup for a story row |
 | `PlanDatesSheet` | Due/scheduled dates only |
-| `WaitingFollowUpSheet` | Append-only follow-up log, revisit editor, and external-wait resolution for blocked tasks |
+| `WaitingFollowUpSheet` | Owns follow-up drafts; delegates the atomic command, pending state, errors, and refresh to `useTaskActions` |
 | `DestinationPicker` | Searchable refile destination list with recents (see below) |
 
-`AssignOwnerSheet` reads members from `useIdentity`, so any test mounting it (directly or via `TaskQuickActionSheet`/`RefinementTaskRow`) must wrap in `IdentityProvider` and mock `api.getMembers`.
-
-`TaskQuickActionSheet` and `WaitingFollowUpSheet` are independent surfaces: the quick sheet patches a field, the follow-up sheet appends notes. They coexist on the same row without sharing state.
+Assignment surfaces read members from `useIdentity`, so tests mounting them
+must wrap in `IdentityProvider` and mock `api.getMembers`.
 
 ### Assignment pickers are tap chips, not selects
 
@@ -492,7 +551,7 @@ A household has at most ~5 members, so every focused assignment popup renders th
 
 - No native `<select>` overlay stacked on top of a bottom sheet, and one tap instead of open-scroll-confirm.
 - A `role="group"` labelled via `aria-labelledby` (`Zuständig` / `Verantwortlich`), with each chip reporting `aria-pressed` — selection is never conveyed by colour alone.
-- An explicit "nobody" chip (`Gemeinsam / offen` for tasks, `Niemand zugewiesen` for stories) where clearing is legal. `AssignDriverSheet` omits it in activate mode, because the API rejects activating without a driver.
+- An explicit "nobody" chip (`Gemeinsam / offen` for tasks, `Niemand zugewiesen` for stories) where clearing is legal. Driver activation omits it because the API rejects activating without a driver.
 - Chips keep a ~44 px touch target (`.choice-chip`) and wrap rather than scroll.
 
 The **full** editors (`TaskDetailSheet`, `ProjectEditSheet`) keep their selects:
@@ -517,9 +576,14 @@ The old global "Sortiermodus" and its seven-button panel under *every* row are g
 
 **Projection.** Rows register themselves (`registerRow`) so the rendered — i.e. currently *visible*, non-collapsed — tree becomes a flat ordered list. The list and its rects are snapshotted once when the drag starts (rows do not move while dragging). `projectDrop` bounds the target depth by the neighbours: at most one level deeper than the row above, never shallower than the row below. All traversals in `taskTreeMove.ts` are iterative and identity-preserving, so a 30-level outline neither blows the stack nor re-renders untouched branches.
 
-**Endpoint mapping.** `planMove` picks the *narrowest* existing endpoint — `reorder`, `indent`, `outdent`, `changeParent`, or the general `move` — so the server keeps applying its own indent/outdent semantics and its cycle checks (`moveTask` in `apps/api/src/domain/mutations.ts` remains the single authority). `targetIndex` is always an index inside the destination sibling group *excluding* the moved task, which is exactly what the backend expects.
+**Command mapping.** `planMove` returns either no-op or one concrete
+destination (`parentTaskId`, optional root `projectId`, `position`, and the
+rendered `expectedRevision`). `useOutlineOrganize` always sends that destination
+to `POST /api/tasks/:id/move`; indent/outdent are geometry, not API operations.
+`targetIndex` is always counted inside the destination sibling group excluding
+the moved task, matching the backend contract.
 
-**Optimism and rollback.** The optimistic tree is keyed on the **identity** of the `tasks` prop: while the caller hands back the same array the locally moved tree is rendered, and the moment fresh server data arrives the override drops itself. `applyMove` renumbers `position` in both affected groups the same way the server's `reindexGroup` does, otherwise the position-sorted render would snap straight back. A rejected move restores the previous tree **in place** — no global `bump()`, which would also tear down unrelated retention state — and shows `Verschieben fehlgeschlagen` plus the server message on that row. A success bumps once so every view converges.
+**Optimism and rollback.** `applyMove` renumbers `position` in both affected groups the same way the server's `reindexGroup` does, otherwise the position-sorted render would snap straight back. Position normalization is group bookkeeping and does not advance sibling revisions; the explicitly moved task advances exactly once, so the optimistic tree can carry its deterministic next revision and safely accept another move immediately. The override survives unrelated older refresh responses and drops only when authoritative data reaches that revision. A rejected move restores the previous tree **in place** and shows `Verschieben fehlgeschlagen` plus the server message on that row. A stale rejection refreshes authoritative data and blocks only that stale task until its revision advances; other hierarchy edits remain available.
 
 **Where it is offered.** `TaskOutline` takes an explicit `organizable` prop and only `ProjectDetailPage` passes it: `GET /api/projects/:id` returns `graph.rootsByProject`, the complete stored sibling group. Compiled views (`TodayPage`, `InboxPage`, `SearchPage`) show a filtered slice of tasks from unrelated groups, where a position read off the screen would be applied to the *full* group on the server and silently shuffle rows the user never saw. `outlineRootGroup` is then applied on top as a structural second guard (all roots must share `parentTaskId` **and** `projectId`). Retention ghosts are rendered outside the organize provider, so they get no handle and never shift a drop index.
 
@@ -545,7 +609,11 @@ The old global "Sortiermodus" and its seven-button panel under *every* row are g
 - Recents are stored in `localStorage` under `machbar:recent-destinations:{project,parent}` — separate lists, most-recent-first, de-duplicated, capped at `MAX_RECENT_DESTINATIONS` (5). They are written only after a move the API **accepted**, and a corrupt/unavailable entry degrades to "no recents" rather than failing.
 - `pickRecent()` filters recents against the *current* candidate list at read time instead of pruning storage, because a destination can be unavailable in one picker (excluded as the moved task's own subtree) yet perfectly valid in the next.
 
-The picker only selects. Move modes and their API calls are unchanged (`changeParent`, `moveSubtree`, `moveTask`), the moved task's own subtree is still excluded from parent candidates client-side, and **hierarchy/cycle validation stays server-side** (`wouldCreateHierarchyCycle` / `wouldCreateDependencyCycle` in `apps/api/src/repo/treeRepo.ts` and `dependencyRepo.ts`).
+The picker only selects. All modes send a concrete destination to `moveTask`;
+the moved task's own subtree is still excluded from parent candidates
+client-side, and hierarchy/cycle validation stays server-side
+(`wouldCreateHierarchyCycle` / `wouldCreateDependencyCycle` in
+`apps/api/src/repo/treeRepo.ts` and `dependencyRepo.ts`).
 
 ### Waiting follow-up notes
 
@@ -559,7 +627,8 @@ The picker only selects. Move modes and their API calls are unchanged (`changePa
 produced by `followUpEntryHeader()`, so the log stays readable and attributable
 in plain text. The same sheet updates the task's `scheduledDate`
 (*Wiedervorlage*) and can explicitly end its external wait. Ending the wait
-clears both the external-wait row and its revisit date.
+clears both the external-wait row and its revisit date. The sheet owns only
+these drafts and delegates execution to `useTaskActions.followUpExternalWait`.
 
 ---
 

@@ -121,8 +121,12 @@ describe("effective owner and typed-tag inheritance", () => {
     const refiled = (
       await ctx.app.inject({
         method: "POST",
-        url: `/api/tasks/${captured.id}/move-subtree`,
-        payload: { projectId: project.id },
+        url: `/api/tasks/${captured.id}/move`,
+        payload: {
+          parentTaskId: null,
+          projectId: project.id,
+          expectedRevision: captured.revision,
+        },
       })
     ).json();
 

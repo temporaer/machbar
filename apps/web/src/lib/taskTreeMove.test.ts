@@ -176,11 +176,14 @@ describe("planMove", () => {
   ];
   const base = { roots, rootParentId: null, rootProjectId: 7 } as const;
 
-  it("nutzt reorder für Geschwister-Umsortierung", () => {
+  it("plant Geschwister-Umsortierung als kanonischen Zug", () => {
     expect(planMove({ ...base, taskId: 1, targetParentId: null, targetIndex: 1 })).toEqual({
-      kind: "reorder",
+      kind: "move",
       taskId: 1,
+      parentTaskId: null,
+      projectId: 7,
       position: 1,
+      expectedRevision: 1,
     });
   });
 
@@ -193,30 +196,47 @@ describe("planMove", () => {
     });
   });
 
-  it("nutzt indent für den Zug unter die direkt vorangehende Geschwisteraufgabe", () => {
+  it("plant Einrücken als kanonischen Zug", () => {
     expect(planMove({ ...base, taskId: 2, targetParentId: 1, targetIndex: 2 })).toEqual({
-      kind: "indent",
+      kind: "move",
       taskId: 2,
+      parentTaskId: 1,
+      position: 2,
+      expectedRevision: 1,
     });
   });
 
-  it("nutzt outdent für den Zug direkt hinter die Elternaufgabe", () => {
+  it("plant Ausrücken als kanonischen Zug", () => {
     expect(planMove({ ...base, taskId: 3, targetParentId: null, targetIndex: 1 })).toEqual({
-      kind: "outdent",
+      kind: "move",
       taskId: 3,
+      parentTaskId: null,
+      projectId: 7,
+      position: 1,
+      expectedRevision: 1,
     });
   });
 
-  it("nutzt changeParent am Ende einer fremden Gruppe und move sonst", () => {
+  it("plant Umhängen an jeder Position gleich", () => {
     const wide = [tree(1, 0, null), tree(2, 1, null, [tree(5, 0, 2), tree(6, 1, 2)]), tree(3, 2, null)];
-    // Aufgabe 1 hat keine vorangehende Geschwisteraufgabe, also ist der Zug
-    // unter Aufgabe 2 kein Einrücken.
     expect(
       planMove({ roots: wide, rootParentId: null, rootProjectId: 7, taskId: 1, targetParentId: 2, targetIndex: 2 }),
-    ).toEqual({ kind: "changeParent", taskId: 1, parentTaskId: 2, projectId: 7 });
+    ).toEqual({
+      kind: "move",
+      taskId: 1,
+      parentTaskId: 2,
+      position: 2,
+      expectedRevision: 1,
+    });
     expect(
       planMove({ roots: wide, rootParentId: null, rootProjectId: 7, taskId: 1, targetParentId: 2, targetIndex: 1 }),
-    ).toEqual({ kind: "move", taskId: 1, parentTaskId: 2, position: 1 });
+    ).toEqual({
+      kind: "move",
+      taskId: 1,
+      parentTaskId: 2,
+      position: 1,
+      expectedRevision: 1,
+    });
   });
 });
 
@@ -226,6 +246,9 @@ describe("applyMove", () => {
     const next = applyMove(roots, 1, null, 2, null);
     expect(ids(next)).toEqual([2, 3, 1]);
     expect(positions(next)).toEqual([0, 1, 2]);
+    expect(next[2]!.revision).toBe(2);
+    expect(next[0]!.revision).toBe(1);
+    expect(next[1]!.revision).toBe(1);
     // Das Original bleibt unangetastet (Rollback-fähig).
     expect(ids(roots)).toEqual([1, 2, 3]);
   });

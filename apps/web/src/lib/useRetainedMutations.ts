@@ -11,6 +11,8 @@ interface RetainedMutation<TStored, TResult> {
   mutate: () => Promise<TResult>;
   confirmed?: (result: TResult) => TStored;
   retain?: boolean;
+  retainUntilRefresh?: boolean;
+  refreshImmediately?: boolean;
   throwOnError?: boolean;
 }
 
@@ -46,13 +48,21 @@ export function useRetainedMutations<TStored>() {
     if (refresh) bump();
   }, [bump]);
 
-  const retain = useCallback((id: number, value: TStored) => {
+  const retain = useCallback((id: number, value: TStored, untilRefresh = false) => {
     setRetained((current) => {
       const next = new Map(current);
       next.set(id, value);
       return next;
     });
-    if (timers.current.has(id)) return;
+    const existingTimer = timers.current.get(id);
+    if (untilRefresh) {
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        timers.current.delete(id);
+      }
+      return;
+    }
+    if (existingTimer) return;
     const timer = setTimeout(() => {
       timers.current.delete(id);
       setRetained((current) => {
@@ -82,6 +92,8 @@ export function useRetainedMutations<TStored>() {
       mutate,
       confirmed,
       retain: shouldRetain = optimistic !== undefined,
+      retainUntilRefresh = false,
+      refreshImmediately = false,
       throwOnError = false,
     }: RetainedMutation<TStored, TResult>): Promise<TResult | undefined> => {
       if (inFlight.current.has(id)) {
@@ -96,12 +108,13 @@ export function useRetainedMutations<TStored>() {
       inFlight.current.add(id);
       setPendingIds((current) => new Set(current).add(id));
       clearError(id);
-      if (optimistic !== undefined) retain(id, optimistic);
+      if (optimistic !== undefined) retain(id, optimistic, retainUntilRefresh);
 
       try {
         const result = await mutate();
         if (shouldRetain) {
-          if (confirmed) retain(id, confirmed(result));
+          if (confirmed) retain(id, confirmed(result), retainUntilRefresh);
+          if (refreshImmediately) bump();
         } else {
           release(id);
           bump();

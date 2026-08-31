@@ -16,9 +16,6 @@ vi.mock("../lib/api", () => ({
     updateTask: vi.fn(),
     setExternalWait: vi.fn(),
     resolveExternalWait: vi.fn(),
-    reorderTask: vi.fn(),
-    indentTask: vi.fn(),
-    outdentTask: vi.fn(),
   },
 }));
 

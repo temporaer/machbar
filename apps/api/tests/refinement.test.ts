@@ -7,8 +7,8 @@ import {
   addDependency,
   createProject,
   createTask,
+  moveTask,
   updateTask,
-  moveSubtreeToProject,
 } from "../src/domain/mutations.js";
 import {
   getRefinementOwnerSizeCounts,
@@ -849,7 +849,11 @@ describe("refinementRepo", () => {
     ]);
     expect(countsFor(alice.id, getRefinementOwnerSizeCounts(handle.db)).total).toBe(1);
 
-    moveSubtreeToProject(handle.db, task.id, projectB.id);
+    moveTask(handle.db, task.id, {
+      parentTaskId: null,
+      projectId: projectB.id,
+      expectedRevision: task.revision,
+    });
 
     expect(getRefinementTasks(handle.db, { projectId: projectA.id })).toEqual([]);
     expect(getRefinementTasks(handle.db, { projectId: projectB.id }).map((r) => r.id)).toEqual([
