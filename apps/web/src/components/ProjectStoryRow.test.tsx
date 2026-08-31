@@ -8,7 +8,7 @@ import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectStoryRow } from "./ProjectStoryRow";
-import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
+import { useProjectActions } from "../lib/useProjectActions";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import type { ProjectWithActions } from "../lib/api";
@@ -62,7 +62,7 @@ function Harness({
   story: ProjectWithActions;
   variant?: "compact" | "card";
 }) {
-  const actions = useProjectWorkflowActions();
+  const actions = useProjectActions();
   return (
     <ul>
       <ProjectStoryRow story={story} actions={actions} variant={variant} />
@@ -665,6 +665,22 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     // with its own pointerdown, which resets the swallow flag).
     await userEvent.click(container.querySelector(".story-row-main") as HTMLElement);
     expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 58");
+  });
+
+  it("cancels an in-progress swipe without acting and keeps the row tappable", async () => {
+    const story = makeProject({ id: 59, title: "Abgebrochene Geste", status: "active", ownerMemberId: 1 });
+    const { container } = renderWithProjectRoute(<Harness story={story} />);
+    await screen.findByText("Abgebrochene Geste");
+    const content = container.querySelector(".story-row-content") as HTMLElement;
+
+    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerCancel(content, { pointerId: 1 });
+
+    expect(content.style.transform).toBe("");
+    expect(mockedApi.completeProject).not.toHaveBeenCalled();
+    fireEvent.click(container.querySelector(".story-row-main") as HTMLElement);
+    expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 59");
   });
 
   it("shows criteria and task progress on the card variant, and no free-text description", async () => {

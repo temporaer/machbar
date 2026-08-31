@@ -1,5 +1,4 @@
-import { useCallback, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { TaskSize } from "@machbar/shared";
 import { taskSizes } from "@machbar/shared";
@@ -11,8 +10,7 @@ import { nextSizeInCycle } from "../lib/useRefinementActions";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { useIdentity } from "../lib/identity";
-
-const SWIPE_THRESHOLD = 72;
+import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 
 /** Short label for a task's current size, or the "unestimated" placeholder. */
 function sizeLabel(size: TaskSize | null, strings: Strings): string {
@@ -39,10 +37,8 @@ export interface RefinementTaskRowProps {
  */
 export function RefinementTaskRow({ task: taskProp, ownerName, actions }: RefinementTaskRowProps) {
   const strings = useStrings();
-  const [dragX, setDragX] = useState(0);
   const [chipsOpen, setChipsOpen] = useState(false);
   const [assigning, setAssigning] = useState(false);
-  const dragState = useRef<{ startX: number; dragging: boolean }>({ startX: 0, dragging: false });
   const navigate = useNavigate();
   const { open } = useTaskDetail();
   const { members } = useIdentity();
@@ -53,39 +49,16 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
   const isRetained = Boolean(retainedTask);
   const rowError = errors[taskProp.id];
   const busy = isPending(task.id);
+  const swipe = useHorizontalSwipe<HTMLDivElement>({
+    disabled: isRetained,
+    onPrimary: () => cycleSize(task),
+    onSecondary: () => setChipsOpen(true),
+  });
+  const { dragX } = swipe;
 
   const showCycleBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
   const upcomingSize = nextSizeInCycle(task.size);
-
-  const handlePointerDown = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (isRetained) return;
-      dragState.current = { startX: e.clientX, dragging: true };
-      const target = e.currentTarget;
-      if (typeof target.setPointerCapture === "function") {
-        target.setPointerCapture(e.pointerId);
-      }
-    },
-    [isRetained],
-  );
-
-  const handlePointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dragState.current.dragging) return;
-    const delta = e.clientX - dragState.current.startX;
-    setDragX(Math.max(-140, Math.min(140, delta)));
-  }, []);
-
-  const finishDrag = useCallback(() => {
-    if (!dragState.current.dragging) return;
-    dragState.current.dragging = false;
-    if (dragX > SWIPE_THRESHOLD) {
-      cycleSize(task);
-    } else if (dragX < -SWIPE_THRESHOLD) {
-      setChipsOpen(true);
-    }
-    setDragX(0);
-  }, [dragX, cycleSize, task]);
 
   const chooseSize = (size: TaskSize) => {
     void setSize(task, size);
@@ -120,13 +93,7 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
       <div
         className={`refinement-row-content${isRetained ? " retained" : ""}`}
         style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={finishDrag}
-        onPointerCancel={() => {
-          dragState.current.dragging = false;
-          setDragX(0);
-        }}
+        {...swipe.handlers}
       >
         {/*
           Non-gesture equivalent of the right-swipe cycle (mouse/keyboard/

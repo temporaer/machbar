@@ -1,6 +1,6 @@
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
+import { useProjectActions } from "../lib/useProjectActions";
 import { useStrings } from "../lib/strings";
 import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
@@ -16,7 +16,7 @@ import "./BacklogReviewPage.css";
 export function BacklogReviewPage() {
   const strings = useStrings();
   const { data: projects, loading, error, reload } = useAsync(() => api.getProjects(), []);
-  const actions = useProjectWorkflowActions();
+  const actions = useProjectActions(projects ?? []);
 
   const backlogStories = (projects ?? []).filter((p) => p.status === "backlog");
   // A story that just got optimistically activated/archived (and is still

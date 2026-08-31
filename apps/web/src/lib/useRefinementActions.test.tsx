@@ -135,4 +135,28 @@ describe("useRefinementActions", () => {
     });
     expect(result.current.retained.get(12)?.size).toBe(null);
   });
+
+  it("shares revision-safe owner semantics while retaining the matrix projection", async () => {
+    const task = makeItem({ id: 13, revision: 4 });
+    mockedApi.updateTask.mockResolvedValue({
+      ...task,
+      ownerMemberId: 7,
+      ownerInheritanceMode: "explicit",
+    } as never);
+
+    const { result } = renderHook(() => useRefinementActions(), { wrapper });
+    await act(async () => {
+      await result.current.assignOwner(task, 7);
+    });
+
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(13, {
+      ownerMemberId: 7,
+      ownerInheritanceMode: "explicit",
+      expectedRevision: 4,
+    });
+    expect(result.current.retained.get(13)).toMatchObject({
+      effectiveOwnerId: 7,
+      effectiveOwnerSource: "task",
+    });
+  });
 });

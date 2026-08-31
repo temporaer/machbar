@@ -8,6 +8,7 @@ import { api } from "../lib/api";
 import { makeMember, makeTag, makeTask } from "../test/fixtures";
 import { resolveScheduleShortcut } from "./ScheduleShortcuts";
 import { SWIPE_COACH_STORAGE_KEY } from "../lib/swipeCoach";
+import { useTaskDetail } from "../lib/taskDetailContext";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -20,9 +21,6 @@ vi.mock("../lib/api", () => ({
     clarifyTask: vi.fn(),
     updateTask: vi.fn(),
     createTaskSuccessor: vi.fn(),
-    reorderTask: vi.fn(),
-    indentTask: vi.fn(),
-    outdentTask: vi.fn(),
   },
 }));
 
@@ -52,6 +50,11 @@ function swipe(container: HTMLElement, deltaX: number) {
   fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
   fireEvent.pointerMove(content, { clientX: deltaX, pointerId: 1 });
   fireEvent.pointerUp(content, { clientX: deltaX, pointerId: 1 });
+}
+
+function OpenTaskProbe() {
+  const { openTaskId } = useTaskDetail();
+  return <span data-testid="open-task">{openTaskId ?? "none"}</span>;
 }
 
 describe("TaskRow – one-time swipe coach", () => {
@@ -138,6 +141,44 @@ describe("TaskRow – primary swipe direction mapping", () => {
         1,
       ),
     );
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("suppresses the click after a real swipe, then lets the next tap open details", async () => {
+    const task = makeTask({ id: 16, title: "Wischen statt öffnen", status: "actionable" });
+    const { container } = renderWithProviders(
+      <>
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+        <OpenTaskProbe />
+      </>,
+    );
+    await screen.findByText("Wischen statt öffnen");
+    const content = container.querySelector(".task-row-content") as HTMLElement;
+    const main = container.querySelector(".task-row-main") as HTMLElement;
+
+    swipe(container, -100);
+    fireEvent.click(main);
+    expect(screen.getByTestId("open-task")).toHaveTextContent("none");
+
+    fireEvent.pointerDown(content, { clientX: 20, pointerId: 2 });
+    fireEvent.pointerUp(content, { clientX: 20, pointerId: 2 });
+    fireEvent.click(main);
+    expect(screen.getByTestId("open-task")).toHaveTextContent("16");
+  });
+
+  it("cancels an in-progress swipe without running either action", async () => {
+    const task = makeTask({ id: 17, title: "Abgebrochene Geste", status: "actionable" });
+    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Abgebrochene Geste");
+    const content = container.querySelector(".task-row-content") as HTMLElement;
+
+    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerCancel(content, { pointerId: 1 });
+
+    expect(content.style.transform).toBe("");
+    expect(mockedApi.completeTask).not.toHaveBeenCalled();
+    expect(mockedApi.cancelTask).not.toHaveBeenCalled();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 

@@ -130,6 +130,50 @@ describe("RefinementTaskRow", () => {
     expect(screen.getByText("M")).toBeInTheDocument();
   });
 
+  it("does not capture a tap and still opens task details", async () => {
+    const task = makeItem({ id: 18, title: "Antippen statt wischen" });
+    const capture = vi.fn();
+    const original = Object.getOwnPropertyDescriptor(Element.prototype, "setPointerCapture");
+    Object.defineProperty(Element.prototype, "setPointerCapture", { value: capture, configurable: true });
+    try {
+      const { container, onOpen } = renderRow(task);
+      await screen.findByText("Antippen statt wischen");
+      const main = container.querySelector(".refinement-row-main") as HTMLElement;
+
+      fireEvent.pointerDown(main, { clientX: 40, pointerId: 1 });
+      fireEvent.pointerUp(main, { clientX: 40, pointerId: 1 });
+      fireEvent.click(main);
+
+      expect(capture).not.toHaveBeenCalled();
+      expect(onOpen).toHaveBeenCalledWith(18, undefined);
+    } finally {
+      if (original) Object.defineProperty(Element.prototype, "setPointerCapture", original);
+      else Reflect.deleteProperty(Element.prototype, "setPointerCapture");
+    }
+  });
+
+  it("suppresses a real swipe click and cancels without cycling the size", async () => {
+    const task = makeItem({ id: 19, title: "Geste unterscheiden" });
+    const { container, onOpen } = renderRow(task);
+    await screen.findByText("Geste unterscheiden");
+    const content = container.querySelector(".refinement-row-content") as HTMLElement;
+    const main = container.querySelector(".refinement-row-main") as HTMLElement;
+
+    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: 100, pointerId: 1 });
+    fireEvent.pointerCancel(content, { pointerId: 1 });
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+
+    swipe(container, -100);
+    fireEvent.click(main);
+    expect(onOpen).not.toHaveBeenCalled();
+
+    fireEvent.pointerDown(content, { clientX: 20, pointerId: 2 });
+    fireEvent.pointerUp(content, { clientX: 20, pointerId: 2 });
+    fireEvent.click(main);
+    expect(onOpen).toHaveBeenCalledWith(19, undefined);
+  });
+
   it("shows blocked and waiting-for context when present", async () => {
     const task = makeItem({
       externalWait: { waitingFor: "Antwort vom Handwerker" },

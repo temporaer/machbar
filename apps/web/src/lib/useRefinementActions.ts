@@ -2,8 +2,11 @@ import { useCallback } from "react";
 import type { TaskSize } from "@machbar/shared";
 import { api } from "./api";
 import type { RefinementTaskRow } from "./api";
+import {
+  ownerAssignmentPatch,
+  updateTask,
+} from "./taskMutations";
 import { RETENTION_MS, useRetainedMutations } from "./useRetainedMutations";
-import { ownerAssignmentPatch } from "./useTaskActions";
 
 export type RefinementListItem = RefinementTaskRow;
 
@@ -53,8 +56,7 @@ export function useRefinementActions() {
       return run({
         id: task.id,
         optimistic,
-        mutate: () =>
-          api.updateTask(task.id, { size, expectedRevision: task.revision }),
+        mutate: () => updateTask(task, { size }),
         confirmed: (confirmed) => ({ ...task, ...confirmed, size }),
       });
     },
@@ -87,10 +89,7 @@ export function useRefinementActions() {
         id: task.id,
         optimistic,
         mutate: () =>
-          api.updateTask(task.id, {
-            ...ownerAssignmentPatch(ownerMemberId),
-            expectedRevision: task.revision,
-          }),
+          updateTask(task, ownerAssignmentPatch(ownerMemberId)),
         confirmed: (confirmed) => ({
           ...task,
           ...confirmed,

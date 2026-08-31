@@ -339,7 +339,10 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     const moveRes = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${task.id}/move`,
-      payload: { projectId: projectRes.json().id },
+      payload: {
+        projectId: projectRes.json().id,
+        expectedRevision: metadataRes.json().revision,
+      },
     });
     expect(moveRes.statusCode).toBe(409);
     expect(moveRes.json().error.code).toBe("task_promotion_invalid");

@@ -77,7 +77,12 @@ export function QuickAdd({
     setMoving(true);
     setProjectPickerError(null);
     try {
-      await api.moveSubtree(createdTask.id, selectedProjectId);
+      const moved = await api.moveTask(createdTask.id, {
+        parentTaskId: null,
+        projectId: selectedProjectId,
+        expectedRevision: createdTask.revision,
+      });
+      setCreatedTask(moved);
       bump();
       setProjectPickerOpen(false);
     } catch (err) {

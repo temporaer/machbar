@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import type {
@@ -13,7 +13,7 @@ import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
-import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
+import { useProjectActions } from "../lib/useProjectActions";
 import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { BottomSheet } from "./BottomSheet";
 import { TagPicker } from "./TagPicker";
@@ -25,7 +25,7 @@ function errorMessage(err: unknown, strings: Strings): string {
   return localizedErrorMessage(err, strings);
 }
 
-export type ProjectEditFocusField = "driver" | "completion";
+export type ProjectEditFocusField = "driver" | "completion" | "notes";
 
 /**
  * Mobile bottom-sheet editor for a project/story: metadata (title, driver,
@@ -45,11 +45,13 @@ export function ProjectEditSheet({
   project,
   onClose,
   onDeleted,
+  onProjectConfirmed,
   focusField,
 }: {
   project: ProjectDetail;
   onClose: () => void;
   onDeleted?: (() => void) | undefined;
+  onProjectConfirmed?: ((project: ProjectWithActions) => void) | undefined;
   focusField?: ProjectEditFocusField | undefined;
 }) {
   const strings = useStrings();
@@ -64,6 +66,7 @@ export function ProjectEditSheet({
   const { bump } = useRefresh();
   const navigate = useNavigate();
   const { data: tags } = useAsync(() => api.getTags(), []);
+  const authoritativeProjects = useMemo(() => [project], [project]);
   const {
     isPending,
     retained,
@@ -74,7 +77,7 @@ export function ProjectEditSheet({
     update,
     assignDriver,
     schedule,
-  } = useProjectWorkflowActions();
+  } = useProjectActions(authoritativeProjects);
 
   const [titleDraft, setTitleDraft] = useState(project.title);
   const [notesDraft, setNotesDraft] = useState(project.notes);
@@ -91,6 +94,7 @@ export function ProjectEditSheet({
   const confirmedProjectRef = useRef<ProjectWithActions>(project);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const notesInputRef = useRef<HTMLTextAreaElement>(null);
+  const notesFieldRef = useRef<HTMLDivElement>(null);
   const driverFieldRef = useRef<HTMLDivElement>(null);
   const lifecycleFieldRef = useRef<HTMLDivElement>(null);
   const appliedFocusRef = useRef<string | null>(null);
@@ -122,6 +126,16 @@ export function ProjectEditSheet({
   useEffect(() => {
     const focusKey = focusField ? `${project.id}:${focusField}` : null;
     if (!focusField || appliedFocusRef.current === focusKey) return;
+    if (focusField === "notes") {
+      setNotesDraft(confirmedProjectRef.current.notes);
+      setEditingNotes(true);
+      notesFieldRef.current?.scrollIntoView?.({
+        block: "center",
+        behavior: "smooth",
+      });
+      appliedFocusRef.current = focusKey;
+      return;
+    }
     const container =
       focusField === "driver"
         ? driverFieldRef.current
@@ -160,6 +174,11 @@ export function ProjectEditSheet({
     operationRef.current = false;
   };
 
+  const keepConfirmedProject = (confirmed: ProjectWithActions) => {
+    confirmedProjectRef.current = confirmed;
+    onProjectConfirmed?.(confirmed);
+  };
+
   const saveTextField = async (field: "title" | "notes") => {
     const value = field === "title" ? titleDraft.trim() : notesDraft;
     if ((field === "title" && !value) || !beginOperation()) return;
@@ -172,7 +191,7 @@ export function ProjectEditSheet({
         true,
       );
       if (!confirmed) return;
-      confirmedProjectRef.current = confirmed;
+      keepConfirmedProject(confirmed);
       if (field === "title") {
         setTitleDraft(confirmed.title);
         setEditingTitle(false);
@@ -215,7 +234,7 @@ export function ProjectEditSheet({
           true,
         );
       }
-      if (confirmed) confirmedProjectRef.current = confirmed;
+      if (confirmed) keepConfirmedProject(confirmed);
     } catch {
       // The workflow hook owns localized mutation errors.
     } finally {
@@ -241,7 +260,7 @@ export function ProjectEditSheet({
     setBusyAction(action);
     try {
       const confirmed = await runAction(confirmedProjectRef.current, action);
-      if (confirmed) confirmedProjectRef.current = confirmed;
+      if (confirmed) keepConfirmedProject(confirmed);
     } finally {
       setBusyAction(null);
       finishOperation();
@@ -261,7 +280,7 @@ export function ProjectEditSheet({
         ownerMemberId,
       );
       if (confirmed) {
-        confirmedProjectRef.current = confirmed;
+        keepConfirmedProject(confirmed);
         setActivationNeedsDriver(false);
       }
     } finally {
@@ -322,7 +341,7 @@ export function ProjectEditSheet({
           </p>
         ) : null}
 
-        <div className="field">
+        <div className="field" ref={notesFieldRef}>
           <label htmlFor="project-notes">{strings.notes}</label>
           <MarkdownEditor
             ref={notesInputRef}

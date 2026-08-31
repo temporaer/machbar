@@ -4,7 +4,7 @@ import { useAsync } from "../lib/useAsync";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
-import { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
+import { useProjectActions } from "../lib/useProjectActions";
 import {
   classifyProjectListItem,
   filterAndSortProjects,
@@ -31,7 +31,7 @@ import { IconActionGlyph } from "../components/IconActionButton";
  * left swipe or ⋯ reveals the targeted chips plus the remaining legal
  * transitions.
  * See `components/ProjectStoryRow.tsx` for the gesture behaviour and
- * `lib/useProjectWorkflowActions.ts` for the optimistic retention.
+ * `lib/useProjectActions.ts` for the optimistic retention.
  */
 export function ProjectsPage() {
   const strings = useStrings();
@@ -39,7 +39,7 @@ export function ProjectsPage() {
   const { data: projects, loading, error, reload } = useAsync(() => api.getProjects(), []);
   const { bump } = useRefresh();
   const { currentMemberId } = useIdentity();
-  const actions = useProjectWorkflowActions();
+  const actions = useProjectActions(projects ?? []);
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);

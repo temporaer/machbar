@@ -50,7 +50,7 @@ export function TaskOutline({
   showSwipeHint = true,
 }: TaskOutlineProps) {
   const strings = useStrings();
-  const [movePrompt, setMovePrompt] = useState<{ task: Task; mode: MoveMode } | null>(null);
+  const [movePrompt, setMovePrompt] = useState<{ taskId: number; mode: MoveMode } | null>(null);
   const taskActions = useTaskActions();
   const { open } = useTaskDetail();
   const { primarySwipeAction } = useSwipeSettings();
@@ -84,6 +84,9 @@ export function TaskOutline({
     const stillRetained = [...taskActions.retained.values()].filter((t) => !presentIds.has(t.id));
     return { roots: sorted, ghosts: stillRetained };
   }, [organize.tasks, taskActions.retained]);
+  const movePromptTask = movePrompt
+    ? flattenTasks(organize.tasks).find((task) => task.id === movePrompt.taskId) ?? null
+    : null;
 
   if (roots.length === 0 && ghosts.length === 0) return <EmptyState message={emptyMessage} />;
 
@@ -155,7 +158,7 @@ export function TaskOutline({
           canOutdent={organize.selected.canOutdent}
           busy={organize.pendingId !== null}
           onMove={(direction) => organize.moveBy(organize.selected!.task.id, direction)}
-          onRefile={() => setMovePrompt({ task: organize.selected!.task, mode: "subtree" })}
+          onRefile={() => setMovePrompt({ taskId: organize.selected!.task.id, mode: "subtree" })}
           onClose={() => organize.select(null)}
         />
       ) : null}
@@ -167,8 +170,8 @@ export function TaskOutline({
           onClose={taskActions.cancelPrompt}
         />
       ) : null}
-      {movePrompt ? (
-        <MoveTaskSheet task={movePrompt.task} mode={movePrompt.mode} onClose={() => setMovePrompt(null)} />
+      {movePrompt && movePromptTask ? (
+        <MoveTaskSheet task={movePromptTask} mode={movePrompt.mode} onClose={() => setMovePrompt(null)} />
       ) : null}
     </div>
   );

@@ -20,12 +20,9 @@ vi.mock("../lib/api", () => ({
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
     updateTask: vi.fn(),
-    reorderTask: vi.fn(),
-    indentTask: vi.fn(),
-    outdentTask: vi.fn(),
     getProjects: vi.fn(),
     getProject: vi.fn(),
-    moveSubtree: vi.fn(),
+    moveTask: vi.fn(),
   },
 }));
 
@@ -148,7 +145,7 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
     });
 
     it("assigns the picked project on save, refreshes the list, and returns focus near the row", async () => {
-      mockedApi.moveSubtree.mockResolvedValue(makeTask({ id: 54, projectId: 78 }));
+      mockedApi.moveTask.mockResolvedValue(makeTask({ id: 54, projectId: 78 }));
       const task = makeTask({ id: 54, title: "Wäsche waschen", status: "actionable", projectId: null });
       renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
       await screen.findByText("Wäsche waschen");
@@ -160,7 +157,13 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
       await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
 
-      await waitFor(() => expect(mockedApi.moveSubtree).toHaveBeenCalledWith(54, 78));
+      await waitFor(() =>
+        expect(mockedApi.moveTask).toHaveBeenCalledWith(54, {
+          parentTaskId: null,
+          projectId: 78,
+          expectedRevision: 1,
+        }),
+      );
       // The sheet closes on a successful save.
       expect(screen.queryByRole("heading", { name: "In anderes Projekt verschieben" })).not.toBeInTheDocument();
       // Focus returns to (the vicinity of) the row that opened the picker.
@@ -180,12 +183,12 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
       await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
 
       expect(screen.queryByRole("heading", { name: "In anderes Projekt verschieben" })).not.toBeInTheDocument();
-      expect(mockedApi.moveSubtree).not.toHaveBeenCalled();
+      expect(mockedApi.moveTask).not.toHaveBeenCalled();
       await waitFor(() => expect(kebab).toHaveFocus());
     });
 
     it("keeps the picker open and reports the error when the assignment fails", async () => {
-      mockedApi.moveSubtree.mockRejectedValue(new Error("Netzwerkfehler"));
+      mockedApi.moveTask.mockRejectedValue(new Error("Netzwerkfehler"));
       const task = makeTask({ id: 56, title: "Wäsche waschen", status: "actionable", projectId: null });
       renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
       await screen.findByText("Wäsche waschen");
@@ -201,7 +204,7 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
     });
 
     it("moves a projectless task's whole subtree coherently in a single call", async () => {
-      mockedApi.moveSubtree.mockResolvedValue(makeTask({ id: 57, projectId: 78 }));
+      mockedApi.moveTask.mockResolvedValue(makeTask({ id: 57, projectId: 78 }));
       const child = makeTask({ id: 58, title: "Wäsche sortieren", status: "actionable", projectId: null, parentTaskId: 57 });
       const parent = makeTask({
         id: 57,
@@ -223,11 +226,17 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
 
       // A single subtree-preserving call for the parent — the API/server
-      // side (`moveSubtreeToProject` → `cascadeProjectId`) takes care of
+      // side (`moveTask` → `cascadeProjectId`) takes care of
       // reassigning every descendant, so the child is never moved on its
       // own from here.
-      await waitFor(() => expect(mockedApi.moveSubtree).toHaveBeenCalledWith(57, 78));
-      expect(mockedApi.moveSubtree).toHaveBeenCalledTimes(1);
+      await waitFor(() =>
+        expect(mockedApi.moveTask).toHaveBeenCalledWith(57, {
+          parentTaskId: null,
+          projectId: 78,
+          expectedRevision: 1,
+        }),
+      );
+      expect(mockedApi.moveTask).toHaveBeenCalledTimes(1);
       expect(screen.getByText("Wäsche sortieren")).toBeInTheDocument();
     });
   });

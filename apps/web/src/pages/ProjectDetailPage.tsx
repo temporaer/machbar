@@ -13,18 +13,17 @@ import { LoadingState, ErrorState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { ProjectEditSheet } from "../components/ProjectEditSheet";
+import type { ProjectEditFocusField } from "../components/ProjectEditSheet";
 import { countTasks, flattenTasks } from "../lib/taskHelpers";
 import { useIdentity } from "../lib/identity";
 import { formatDate } from "../lib/format";
 import { ProjectStuckNotice } from "../components/ProjectStuckNotice";
 import { TaskSequenceSheet } from "../components/TaskSequenceSheet";
-import { MarkdownEditor } from "../components/MarkdownEditor";
 import { MarkdownNotes } from "../components/MarkdownNotes";
 import { NativeShareButton } from "../components/NativeShareButton";
 import { CalendarExportButton } from "../components/CalendarExportButton";
 import { serializeProjectForShare } from "../lib/shareText";
 import { buildProjectShareUrl } from "../lib/shareUrls";
-import { useRefresh } from "../lib/refresh";
 import { PageHeader } from "../components/PageHeader";
 import { MemberLabel } from "../components/MemberAvatar";
 import { useSwipeSettings } from "../lib/swipeSettings";
@@ -33,10 +32,7 @@ import { StoryCriteriaSheet } from "../components/StoryCriteriaSheet";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { RecentActivity } from "../components/RecentActivity";
 import { useLocale } from "../lib/locale";
-import {
-  isStaleWriteConflict,
-  localizedErrorMessage,
-} from "../lib/errorMessage";
+import type { ProjectWithActions } from "../lib/api";
 
 export function ProjectDetailPage() {
   const strings = useStrings();
@@ -49,15 +45,15 @@ export function ProjectDetailPage() {
   const focus = searchParams.get("focus");
   const { members } = useIdentity();
   const [editing, setEditing] = useState(false);
+  const [editFocusField, setEditFocusField] = useState<
+    ProjectEditFocusField | undefined
+  >();
   const [addingSequence, setAddingSequence] = useState(false);
-  const [notesEditing, setNotesEditing] = useState(false);
-  const [notesDraft, setNotesDraft] = useState("");
-  const [notesSaving, setNotesSaving] = useState(false);
-  const [notesError, setNotesError] = useState<string | null>(null);
+  const [confirmedProject, setConfirmedProject] =
+    useState<ProjectWithActions | null>(null);
   const planningTaskRef = useRef<number | null>(null);
   const planningOwnsSheetRef = useRef(false);
   const planningSheetOpenedRef = useRef(false);
-  const { bump } = useRefresh();
   const { openTaskId, open: openTaskDetail, close: closeTaskDetail } = useTaskDetail();
   const openTaskIdRef = useRef(openTaskId);
   const closeTaskDetailRef = useRef(closeTaskDetail);
@@ -65,11 +61,24 @@ export function ProjectDetailPage() {
   closeTaskDetailRef.current = closeTaskDetail;
   const { primarySwipeAction } = useSwipeSettings();
   const {
-    data: project,
+    data: loadedProject,
     loading: projectLoading,
     error: projectError,
     reload: reloadProject,
   } = useAsync(() => api.getProject(projectId), [projectId]);
+  useEffect(() => {
+    setConfirmedProject((current) => {
+      if (!current || current.id !== loadedProject?.id) return null;
+      if (loadedProject.revision >= current.revision) return null;
+      return current;
+    });
+  }, [loadedProject]);
+  const project =
+    loadedProject &&
+    confirmedProject?.id === loadedProject.id &&
+    confirmedProject.revision > loadedProject.revision
+      ? { ...loadedProject, ...confirmedProject, tasks: loadedProject.tasks }
+      : loadedProject;
 
   const owner = project ? members.find((m) => m.id === project.ownerMemberId) : undefined;
   const taskCounts = project ? countTasks(project.tasks) : { open: 0, done: 0 };
@@ -145,33 +154,6 @@ export function ProjectDetailPage() {
     }
   }, [planningFocusActive, openTaskId, clearRouteFocus]);
 
-  useEffect(() => {
-    if (project && !notesEditing) setNotesDraft(project.notes);
-  }, [project, notesEditing]);
-
-  const saveNotes = async () => {
-    if (!project || notesSaving) return;
-    setNotesSaving(true);
-    setNotesError(null);
-    try {
-      await api.updateProject(project.id, {
-        notes: notesDraft,
-        expectedRevision: project.revision,
-      });
-      setNotesEditing(false);
-      bump();
-      reloadProject();
-    } catch (cause) {
-      if (isStaleWriteConflict(cause)) {
-        bump();
-        reloadProject();
-      }
-      setNotesError(localizedErrorMessage(cause, strings));
-    } finally {
-      setNotesSaving(false);
-    }
-  };
-
   return (
     <div>
       <Link
@@ -206,7 +188,10 @@ export function ProjectDetailPage() {
                 <IconActionButton
                   kind="edit"
                   label={strings.edit}
-                  onClick={() => setEditing(true)}
+                  onClick={() => {
+                    setEditFocusField(undefined);
+                    setEditing(true);
+                  }}
                 />
               </div>
             </div>
@@ -247,49 +232,17 @@ export function ProjectDetailPage() {
           <section className="section project-notes-section">
             <div className="row-between">
               <h2 className="section-title">{strings.notes}</h2>
-              {!notesEditing ? (
-                <IconActionButton
-                  kind="edit"
-                  label={strings.edit}
-                  onClick={() => setNotesEditing(true)}
-                />
-              ) : null}
+              <IconActionButton
+                kind="edit"
+                label={strings.edit}
+                onClick={() => {
+                  setEditFocusField("notes");
+                  setEditing(true);
+                }}
+              />
             </div>
-            {notesEditing ? (
-              <div className="stack">
-                <MarkdownEditor
-                  value={notesDraft}
-                  onChange={setNotesDraft}
-                  toolbarLabel={strings.markdownToolbar}
-                  rows={7}
-                  autoFocus
-                />
-                <div className="row">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={notesSaving}
-                    onClick={() => {
-                      setNotesDraft(project.notes);
-                      setNotesError(null);
-                      setNotesEditing(false);
-                    }}
-                  >
-                    {strings.cancel}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
-                    disabled={notesSaving}
-                    onClick={() => void saveNotes()}
-                  >
-                    {strings.saveNotes}
-                  </button>
-                </div>
-                {notesError ? <p className="capture-error" role="alert">{notesError}</p> : null}
-              </div>
-            ) : notesDraft.trim() ? (
-              <MarkdownNotes value={notesDraft} />
+            {project.notes.trim() ? (
+              <MarkdownNotes value={project.notes} />
             ) : (
               <p className="text-muted">{strings.noNotes}</p>
             )}
@@ -341,15 +294,17 @@ export function ProjectDetailPage() {
       {(editing || focus === "driver" || focus === "completion") && project ? (
         <ProjectEditSheet
           project={project}
+          onProjectConfirmed={setConfirmedProject}
           focusField={
             focus === "driver"
               ? "driver"
               : focus === "completion"
                 ? "completion"
-                : undefined
+                : editFocusField
           }
           onClose={() => {
             setEditing(false);
+            setEditFocusField(undefined);
             if (focus === "driver" || focus === "completion") clearRouteFocus();
           }}
           onDeleted={

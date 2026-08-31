@@ -1,14 +1,9 @@
 import { useState } from "react";
 import type { Task } from "@machbar/shared";
-import { api } from "../lib/api";
-import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
+import { useTaskActions } from "../lib/useTaskActions";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
-import {
-  isStaleWriteConflict,
-  localizedErrorMessage,
-} from "../lib/errorMessage";
 
 export function WaitingFollowUpSheet({
   task,
@@ -18,45 +13,34 @@ export function WaitingFollowUpSheet({
   onClose: () => void;
 }) {
   const strings = useStrings();
-  const { bump } = useRefresh();
+  const taskActions = useTaskActions();
   const [content, setContent] = useState("");
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [resolveWait, setResolveWait] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [scheduledDateValid, setScheduledDateValid] = useState(true);
+  const saving = taskActions.isPending(task.id);
+  const error = taskActions.errors[task.id] ?? null;
   const closeIfIdle = () => {
     if (!saving) onClose();
   };
 
   const save = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      await api.followUpExternalWait(
-        task.id,
-        resolveWait
-          ? {
-              action: "resolve",
-              content: content.trim(),
-              expectedRevision: task.revision,
-            }
-          : {
-              action: "continue",
-              content: content.trim(),
-              waitingFor: task.externalWait?.waitingFor ?? null,
-              scheduledDate: scheduledDate || null,
-              expectedRevision: task.revision,
-            },
-      );
-      bump();
-      onClose();
-    } catch (err) {
-      if (isStaleWriteConflict(err)) bump();
-      setError(localizedErrorMessage(err, strings));
-    } finally {
-      setSaving(false);
-    }
+    taskActions.clearError(task.id);
+    const updated = await taskActions.followUpExternalWait(
+      task,
+      resolveWait
+        ? {
+            action: "resolve",
+            content: content.trim(),
+          }
+        : {
+            action: "continue",
+            content: content.trim(),
+            waitingFor: task.externalWait?.waitingFor ?? null,
+            scheduledDate: scheduledDate || null,
+          },
+    );
+    if (updated) onClose();
   };
 
   return (

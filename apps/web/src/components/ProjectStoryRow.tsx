@@ -1,5 +1,4 @@
-import { useCallback, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
 import { useStrings } from "../lib/strings";
@@ -22,7 +21,7 @@ import {
   projectWorkflowLabel,
   secondaryWorkflowActions,
 } from "../lib/projectWorkflow";
-import type { useProjectWorkflowActions } from "../lib/useProjectWorkflowActions";
+import type { useProjectActions } from "../lib/useProjectActions";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
@@ -34,10 +33,7 @@ import "./ProjectStoryRow.css";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
 import { MemberSelectionSheet } from "./MemberSelectionSheet";
-
-const SWIPE_THRESHOLD = 72;
-/** Beyond this the pointer sequence counts as a drag, not a tap. */
-const DRAG_SLOP = 8;
+import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 
 /**
  * Semantic accent driving the row's status badge, left-edge stripe, primary
@@ -58,7 +54,7 @@ const statusAccentByClassification: Record<ProjectListClassification, StatusAcce
 
 export interface ProjectStoryRowProps {
   story: ProjectWithActions;
-  actions: ReturnType<typeof useProjectWorkflowActions>;
+  actions: ReturnType<typeof useProjectActions>;
   /**
    * `compact` — the Backlog-Review meta line (criteria, driver, dates, tasks).
    * `card` — the Projekte tab: same meta plus next action and the task /
@@ -98,17 +94,8 @@ type Sheet =
 export function ProjectStoryRow({ story: storyProp, actions, variant = "compact" }: ProjectStoryRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
-  const [dragX, setDragX] = useState(0);
   const [chipsOpen, setChipsOpen] = useState(false);
   const [sheet, setSheet] = useState<Sheet>(null);
-  const dragState = useRef<{ startX: number; dragging: boolean; captured: boolean }>({
-    startX: 0,
-    dragging: false,
-    captured: false,
-  });
-  // Set when a pointer sequence turned into a real drag, so the click the
-  // browser synthesises afterwards does not navigate to the detail page.
-  const swallowNextClick = useRef(false);
   const { members } = useIdentity();
   const navigate = useNavigate();
   const {
@@ -177,13 +164,6 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
         ? `${strings.criteria}: ${nextOpenCriterion.text}`
         : strings.resultComplete;
 
-  const showPrimaryBg = dragX > 0;
-  const showChipsBg = dragX < 0 || chipsOpen;
-  const swipeCoach = useSwipeCoach(
-    `project:${story.id}`,
-    !busy && !isRetained && !chipsOpen && primaryAction !== null,
-  );
-
   const doPrimary = useCallback(() => {
     if (busy || !primaryAction) return;
     if (needsDriverBeforeAction(story, primaryAction)) {
@@ -192,6 +172,18 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
     }
     void runAction(story, primaryAction);
   }, [busy, primaryAction, runAction, story]);
+  const swipe = useHorizontalSwipe<HTMLDivElement>({
+    disabled: busy,
+    onPrimary: doPrimary,
+    onSecondary: () => setChipsOpen(true),
+  });
+  const { dragX } = swipe;
+  const showPrimaryBg = dragX > 0;
+  const showChipsBg = dragX < 0 || chipsOpen;
+  const swipeCoach = useSwipeCoach(
+    `project:${story.id}`,
+    !busy && !isRetained && !chipsOpen && primaryAction !== null,
+  );
 
   const openSheet = (next: Exclude<Sheet, null>) => {
     setChipsOpen(false);
@@ -207,59 +199,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
     void runAction(story, action);
   };
 
-  const handlePointerDown = useCallback(
-    (e: ReactPointerEvent<HTMLDivElement>) => {
-      if (busy) return;
-      dragState.current = { startX: e.clientX, dragging: true, captured: false };
-      swallowNextClick.current = false;
-    },
-    [busy],
-  );
-
-  const handlePointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
-    if (!dragState.current.dragging) return;
-    const delta = e.clientX - dragState.current.startX;
-    // Capture only once this really is a drag: a pointer captured by this
-    // container also receives the compatibility mouse events of everything
-    // inside it, which would swallow plain clicks on the buttons and the
-    // detail link. Not every environment implements capture (jsdom), so the
-    // call stays guarded.
-    if (!dragState.current.captured && Math.abs(delta) > DRAG_SLOP) {
-      dragState.current.captured = true;
-      const target = e.currentTarget;
-      if (typeof target.setPointerCapture === "function") {
-        target.setPointerCapture(e.pointerId);
-      }
-    }
-    setDragX(Math.max(-140, Math.min(140, delta)));
-  }, []);
-
-  const finishDrag = useCallback(() => {
-    if (!dragState.current.dragging) return;
-    dragState.current.dragging = false;
-    if (Math.abs(dragX) > DRAG_SLOP) swallowNextClick.current = true;
-    if (dragX > SWIPE_THRESHOLD) {
-      doPrimary();
-    } else if (dragX < -SWIPE_THRESHOLD) {
-      setChipsOpen(true);
-    }
-    setDragX(0);
-  }, [dragX, doPrimary]);
-
-  const cancelDrag = useCallback(() => {
-    dragState.current.dragging = false;
-    setDragX(0);
-  }, []);
-
-  // Tapping the row still opens the story detail (a real link, so it keeps
-  // href semantics) — but a swipe must never navigate, so the click the
-  // browser emits at the end of a drag is swallowed once.
-  const handleMainClick = (e: ReactMouseEvent<HTMLAnchorElement>) => {
-    if (swallowNextClick.current) {
-      swallowNextClick.current = false;
-      e.preventDefault();
-      return;
-    }
+  const handleMainClick = () => {
     setChipsOpen(false);
   };
 
@@ -283,11 +223,12 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
           if (swipeCoach.active && event.pointerType === "touch") {
             swipeCoach.dismiss();
           }
-          handlePointerDown(event);
+          swipe.handlers.onPointerDown(event);
         }}
-        onPointerMove={handlePointerMove}
-        onPointerUp={finishDrag}
-        onPointerCancel={cancelDrag}
+        onPointerMove={swipe.handlers.onPointerMove}
+        onPointerUp={swipe.handlers.onPointerUp}
+        onPointerCancel={swipe.handlers.onPointerCancel}
+        onClickCapture={swipe.handlers.onClickCapture}
       >
         <button
           type="button"

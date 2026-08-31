@@ -183,7 +183,7 @@ describe("fixed-day recurring tasks", () => {
     ).toEqual([]);
   });
 
-  it("rejects move and indent paths under a recurring parent", async () => {
+  it("rejects moving a task under a recurring parent", async () => {
     const parent = recurring();
     const candidate = createTask(ctx.handle.db, {
       title: "Candidate",
@@ -193,17 +193,13 @@ describe("fixed-day recurring tasks", () => {
     const moved = await ctx.app.inject({
       method: "POST",
       url: `/api/tasks/${candidate.id}/move`,
-      payload: { parentTaskId: parent.id },
+      payload: {
+        parentTaskId: parent.id,
+        expectedRevision: candidate.revision,
+      },
     });
     expect(moved.statusCode).toBe(409);
     expect(moved.json().error.code).toBe("recurring_parent_forbidden");
-
-    const indented = await ctx.app.inject({
-      method: "POST",
-      url: `/api/tasks/${candidate.id}/indent`,
-    });
-    expect(indented.statusCode).toBe(409);
-    expect(indented.json().error.code).toBe("recurring_parent_forbidden");
   });
 
   it("requires completedOn and prevents direct status completion from bypassing recurrence", async () => {

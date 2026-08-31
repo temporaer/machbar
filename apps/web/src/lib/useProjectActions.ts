@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { api } from "./api";
 import type { ProjectWithActions, ProjectWorkflowAction, UpdateProjectInput } from "./api";
 import { statusAfterAction, workflowActionsByStatus } from "./projectWorkflow";
@@ -18,8 +18,8 @@ export interface RetainedStory {
 /**
  * Project/story counterpart of `useTaskActions`: centralises **every**
  * lifecycle transition (activate / return to backlog / complete / reopen /
- * archive) plus the driver-assignment and scheduling edits, for both the
- * Projekte tab and Backlog Review.
+ * archive) plus project metadata edits (title, notes, driver, tags, and
+ * scheduling), for the project editor, Projekte tab, and Backlog Review.
  *
  * Transitions are optimistic and retained for `RETENTION_MS`, mirroring
  * `TaskRow`'s "stays visible for ~4s before the list drops it" behaviour —
@@ -28,12 +28,32 @@ export interface RetainedStory {
  * Pending state is tracked per project and cleared as soon as the request
  * resolves, so a retained row becomes actionable again right away.
  *
- * Assigning a driver or (re)scheduling never changes a story's status, so
- * those simply patch the project and bump right away.
+ * Metadata changes refresh immediately but keep their confirmed overlay until
+ * the caller's authoritative project collection reaches the same revision.
  */
-export function useProjectWorkflowActions() {
+export function useProjectActions(
+  authoritativeProjects: readonly ProjectWithActions[] = [],
+) {
   const mutations = useRetainedMutations<RetainedStory>();
-  const { run, pendingIds, isPending, retained, errors, clearError } = mutations;
+  const {
+    run,
+    release,
+    pendingIds,
+    isPending,
+    retained,
+    errors,
+    clearError,
+  } = mutations;
+
+  useEffect(() => {
+    for (const [id, entry] of retained) {
+      if (entry.action !== undefined) continue;
+      const authoritative = authoritativeProjects.find((project) => project.id === id);
+      if (authoritative && authoritative.revision >= entry.story.revision) {
+        release(id);
+      }
+    }
+  }, [authoritativeProjects, release, retained]);
 
   const call = useCallback(
     (
@@ -127,7 +147,9 @@ export function useProjectWorkflowActions() {
             expectedRevision: story.revision,
           }),
         confirmed: (confirmed) => ({ story: confirmed }),
-        throwOnError,
+          retainUntilRefresh: true,
+          refreshImmediately: true,
+          throwOnError,
       }),
     [run],
   );

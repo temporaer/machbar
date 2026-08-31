@@ -143,6 +143,39 @@ describe("useRetainedMutations", () => {
     expect(result.current.refresh.version).toBe(version + 1);
   });
 
+  it("retains confirmed state until an authoritative refresh is reconciled", async () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(
+      () => ({
+        mutations: useRetainedMutations<string>(),
+        refresh: useRefresh(),
+      }),
+      { wrapper },
+    );
+
+    const version = result.current.refresh.version;
+    await act(async () => {
+      await result.current.mutations.run({
+        id: 1,
+        optimistic: "optimistic",
+        mutate: async () => "confirmed",
+        confirmed: (value) => value,
+        retainUntilRefresh: true,
+        refreshImmediately: true,
+      });
+    });
+
+    expect(result.current.mutations.retained.get(1)).toBe("confirmed");
+    expect(result.current.refresh.version).toBe(version + 1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RETENTION_MS * 2);
+    });
+    expect(result.current.mutations.retained.get(1)).toBe("confirmed");
+
+    act(() => result.current.mutations.release(1));
+    expect(result.current.mutations.retained.has(1)).toBe(false);
+  });
+
   it("rolls back optimistic state and retains an actionable error", async () => {
     const { result } = renderHook(() => useRetainedMutations<string>(), {
       wrapper,

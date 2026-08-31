@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Project, Task } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useStrings } from "../lib/strings";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { useRefresh } from "../lib/refresh";
 import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
 import { rememberDestination } from "../lib/recentDestinations";
@@ -107,17 +107,22 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
     setSubmitError(null);
     try {
       if (mode === "parent") {
-        if (selectedParentId === null) {
-          await api.changeParent(task.id, null, task.projectId);
-        } else {
-          await api.changeParent(task.id, selectedParentId);
-        }
+        await api.moveTask(task.id, {
+          parentTaskId: selectedParentId,
+          ...(selectedParentId === null ? { projectId: task.projectId } : {}),
+          expectedRevision: task.revision,
+        });
       } else if (mode === "project") {
-        await api.moveSubtree(task.id, selectedProjectId);
+        await api.moveTask(task.id, {
+          parentTaskId: null,
+          projectId: selectedProjectId,
+          expectedRevision: task.revision,
+        });
       } else {
         await api.moveTask(task.id, {
           projectId: selectedProjectId,
           parentTaskId: selectedParentId,
+          expectedRevision: task.revision,
         });
       }
       // Only a move the server accepted is worth offering as a shortcut.
@@ -126,6 +131,7 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
       bump();
       onClose();
     } catch (err) {
+      if (isStaleWriteConflict(err)) bump();
       setSubmitError(localizedErrorMessage(err, strings));
     } finally {
       setSaving(false);
