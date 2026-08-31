@@ -816,6 +816,8 @@ const extra = {
   refinementInspectTarget: (title: string) => `${title} prüfen`,
 
   apiErrorMessages: {
+    contribution_query_invalid:
+      "Die Zeitzone für den Punkteverlauf ist ungültig.",
     acceptance_criteria_order_invalid:
       "Die Reihenfolge der Ergebniskriterien ist ungültig.",
     acceptance_criterion_not_found:

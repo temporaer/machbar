@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ContributionPulseLevel,
   ContributionSummary,
@@ -23,15 +23,15 @@ const mockedGetContributionSummary = vi.mocked(api.getContributionSummary);
 
 function summary(levels: ContributionPulseLevel[]): ContributionSummary {
   return {
-    windowStartedAt: "2026-08-21T10:00:00.000Z",
+    windowStartedAt: "2026-08-22T00:00:00.000Z",
     windowEndedAt: "2026-08-28T10:00:00.000Z",
     sharedTotal: 0,
     sharedOnlyTotal: 0,
     sharedCategories: { completion: 0, planning: 0 },
     members: [],
     pulse: levels.map((level, index) => ({
-      startedAt: new Date(Date.UTC(2026, 7, 21 + index, 10)).toISOString(),
-      endedAt: new Date(Date.UTC(2026, 7, 22 + index, 10)).toISOString(),
+      startedAt: new Date(Date.UTC(2026, 7, 22 + index)).toISOString(),
+      endedAt: new Date(Date.UTC(2026, 7, 23 + index)).toISOString(),
       level,
     })),
   };
@@ -58,6 +58,10 @@ function renderPulse() {
 describe("ContributionPulse", () => {
   beforeEach(() => {
     mockedGetContributionSummary.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("keeps seven neutral segments at zero and refreshes their intensity", async () => {
@@ -101,5 +105,22 @@ describe("ContributionPulse", () => {
     await waitFor(() =>
       expect(container.querySelectorAll(".contribution-pulse-low")).toHaveLength(7),
     );
+  });
+
+  it("reloads fixed day buckets when local midnight passes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 28, 23, 59, 59, 900));
+    mockedGetContributionSummary.mockResolvedValue(
+      summary(Array(7).fill("none")),
+    );
+    renderPulse();
+    await act(async () => Promise.resolve());
+    expect(mockedGetContributionSummary).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+
+    expect(mockedGetContributionSummary).toHaveBeenCalledTimes(2);
   });
 });

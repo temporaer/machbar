@@ -205,6 +205,25 @@ describe("api.getAgenda memberId scoping", () => {
     vi.useRealTimers();
   });
 
+  describe("api.getContributionSummary", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("sends the browser timezone for fixed local-day buckets", async () => {
+      const fetchMock = mockFetchOnce({
+        text: async () => JSON.stringify({ pulse: [] }),
+      });
+
+      await api.getContributionSummary();
+
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      expect((fetchMock.mock.calls[0] as [string])[0]).toBe(
+        `/api/contributions/summary?timezone=${encodeURIComponent(timezone)}`,
+      );
+    });
+  });
+
   describe("api.getActivity pagination and filters", () => {
     afterEach(() => {
       vi.unstubAllGlobals();

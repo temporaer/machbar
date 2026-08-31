@@ -8,6 +8,7 @@ import type {
 import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
+import { addCalendarDays } from "../domain/calendarDate.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WINDOW_MS = 7 * DAY_MS;
@@ -68,6 +69,51 @@ export interface NeutralizeEntityContributionsInput {
 
 function cutoff(now: Date, durationMs: number): string {
   return new Date(now.getTime() - durationMs).toISOString();
+}
+
+function calendarDateFormatter(timeZone: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function calendarDateInTimeZone(
+  date: Date,
+  formatter: Intl.DateTimeFormat,
+): string {
+  const parts = formatter.formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+function startOfCalendarDay(
+  calendarDate: string,
+  formatter: Intl.DateTimeFormat,
+): Date {
+  const [year, month, day] = calendarDate.split("-").map(Number);
+  const target = Date.UTC(year!, month! - 1, day!);
+  let lower = target - 36 * 60 * 60 * 1000;
+  let upper = target + 36 * 60 * 60 * 1000;
+
+  // Find the first instant whose local date is the requested date. Unlike
+  // offset arithmetic, this also handles zones that advance their clocks at
+  // midnight, where 00:00 itself does not exist.
+  while (lower < upper) {
+    const midpoint = Math.floor((lower + upper) / 2);
+    if (
+      calendarDateInTimeZone(new Date(midpoint), formatter) < calendarDate
+    ) {
+      lower = midpoint + 1;
+    } else {
+      upper = midpoint;
+    }
+  }
+
+  return new Date(lower);
 }
 
 function pulseLevel(points: number): ContributionPulseLevel {
@@ -230,8 +276,14 @@ export function neutralizeEntityContributions(
 export function getContributionSummary(
   db: Db,
   now = new Date(),
+  timeZone = "UTC",
 ): ContributionSummary {
-  const windowStartedAt = cutoff(now, WINDOW_MS);
+  const formatter = calendarDateFormatter(timeZone);
+  const today = calendarDateInTimeZone(now, formatter);
+  const dayBoundaries = Array.from({ length: 8 }, (_, index) =>
+    startOfCalendarDay(addCalendarDays(today, index - 6), formatter),
+  );
+  const windowStartedAt = dayBoundaries[0]!.toISOString();
   const rows = db
     .select({
       actorMemberId: schema.contributionEvents.actorMemberId,
@@ -266,13 +318,15 @@ export function getContributionSummary(
 
   const sharedCategories = { completion: 0, planning: 0 };
   const pulsePoints = Array.from({ length: 7 }, () => 0);
-  const windowStartedAtMs = Date.parse(windowStartedAt);
   let personalTotal = 0;
   for (const row of rows) {
     sharedCategories[row.category] += row.sharedPoints;
-    const bucketIndex = Math.min(
-      6,
-      Math.floor((Date.parse(row.createdAt) - windowStartedAtMs) / DAY_MS),
+    const createdAt = Date.parse(row.createdAt);
+    const bucketIndex = dayBoundaries.findIndex(
+      (boundary, index) =>
+        index < 7 &&
+        createdAt >= boundary.getTime() &&
+        createdAt < dayBoundaries[index + 1]!.getTime(),
     );
     if (bucketIndex >= 0) {
       pulsePoints[bucketIndex] =
@@ -302,8 +356,8 @@ export function getContributionSummary(
       };
     }),
     pulse: pulsePoints.map((points, index) => ({
-      startedAt: new Date(windowStartedAtMs + index * DAY_MS).toISOString(),
-      endedAt: new Date(windowStartedAtMs + (index + 1) * DAY_MS).toISOString(),
+      startedAt: dayBoundaries[index]!.toISOString(),
+      endedAt: dayBoundaries[index + 1]!.toISOString(),
       level: pulseLevel(points),
     })),
   };

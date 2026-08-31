@@ -94,6 +94,7 @@ export type ApiErrorCode =
   | "activity_cursor_invalid"
   | "activity_query_invalid"
   | "agenda_query_invalid"
+  | "contribution_query_invalid"
   | "authentication_required"
   | "auth_return_target_invalid"
   | "auth_query_invalid"
