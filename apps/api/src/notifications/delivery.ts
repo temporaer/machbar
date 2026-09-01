@@ -108,7 +108,24 @@ export function buildNotificationPayload(
   };
 }
 
-function statusCode(error: unknown): number | null {
+export function buildTestNotificationPayload(
+  recipientMemberId: number,
+  locale: typeof schema.pushSubscriptions.$inferSelect.locale,
+): PushNotificationPayload {
+  const copy = notificationCatalog(locale).test;
+  return {
+    version: 1,
+    kind: "test",
+    title: copy.title,
+    body: copy.body,
+    tag: "machbar-push-test",
+    entity: null,
+    recipientMemberId,
+    actions: [],
+  };
+}
+
+export function webPushStatusCode(error: unknown): number | null {
   if (
     typeof error === "object" &&
     error !== null &&
@@ -155,7 +172,7 @@ export async function dispatchNotificationEvents(
           JSON.stringify(payload),
         );
       } catch (error) {
-        const code = statusCode(error);
+        const code = webPushStatusCode(error);
         if (code === 404 || code === 410) {
           db.delete(schema.pushSubscriptions)
             .where(eq(schema.pushSubscriptions.id, subscription.id))

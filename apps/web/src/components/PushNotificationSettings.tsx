@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import type { PushConfig } from "@machbar/shared";
 import { api } from "../lib/api";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import {
+  hasApiErrorCode,
+  localizedErrorMessage,
+} from "../lib/errorMessage";
 import { useIdentity } from "../lib/identity";
 import { useLocale } from "../lib/locale";
 import {
@@ -12,6 +15,7 @@ import {
 } from "../lib/pushNotifications";
 import {
   currentServiceWorkerRegistration,
+  ensureLatestServiceWorkerRegistration,
   ensureServiceWorkerRegistration,
 } from "../lib/serviceWorker";
 import { useStrings } from "../lib/strings";
@@ -33,7 +37,9 @@ export function PushNotificationSettings() {
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<State>("loading");
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testFeedback, setTestFeedback] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!pushSupported()) {
@@ -79,6 +85,7 @@ export function PushNotificationSettings() {
     if (!config?.publicKey || currentMemberId === null) return;
     setBusy(true);
     setError(null);
+    setTestFeedback(null);
     try {
       const permission =
         Notification.permission === "granted"
@@ -129,6 +136,7 @@ export function PushNotificationSettings() {
     if (!subscription) return;
     setBusy(true);
     setError(null);
+    setTestFeedback(null);
     try {
       await api.unregisterPushSubscription(subscription.endpoint);
       await subscription.unsubscribe();
@@ -139,6 +147,27 @@ export function PushNotificationSettings() {
       await refresh();
     } finally {
       setBusy(false);
+    }
+  };
+
+  const sendTest = async () => {
+    if (!subscription) return;
+    setTesting(true);
+    setError(null);
+    setTestFeedback(null);
+    try {
+      await ensureLatestServiceWorkerRegistration();
+      await api.sendTestPushNotification(subscription.endpoint);
+      setTestFeedback(strings.pushTestSent);
+    } catch (cause) {
+      if (hasApiErrorCode(cause, "push_subscription_missing")) {
+        await subscription.unsubscribe();
+        setSubscription(null);
+        setState("disabled");
+      }
+      setError(localizedErrorMessage(cause, strings));
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -156,26 +185,42 @@ export function PushNotificationSettings() {
     <div className="card push-settings">
       <h3>{strings.pushTitle}</h3>
       <p className="text-muted">{strings.pushDeviceHint}</p>
-    <p className="push-settings-state" role="status">{stateText}</p>
-    {state === "disabled" || state === "permission-pending" ? (
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={busy || currentMemberId === null}
-          onClick={() => void enable()}
-        >
-          {strings.pushEnable}
-        </button>
+      <p className="push-settings-state" role="status">{stateText}</p>
+      {state === "disabled" ||
+      state === "permission-pending" ||
+      state === "enabled" ? (
+        <div className="row push-settings-actions">
+          {state === "enabled" ? (
+            <button
+              type="button"
+              className="btn"
+              disabled={busy || testing}
+              onClick={() => void disable()}
+            >
+              {strings.pushDisable}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy || testing || currentMemberId === null}
+              onClick={() => void enable()}
+            >
+              {strings.pushEnable}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn"
+            disabled={state !== "enabled" || busy || testing}
+            onClick={() => void sendTest()}
+          >
+            {testing ? strings.pushTestSending : strings.pushTest}
+          </button>
+        </div>
       ) : null}
-      {state === "enabled" ? (
-        <button
-          type="button"
-          className="btn"
-          disabled={busy}
-          onClick={() => void disable()}
-        >
-          {strings.pushDisable}
-        </button>
+      {testFeedback ? (
+        <p className="text-muted" role="status">{testFeedback}</p>
       ) : null}
       {error ? <p role="alert" className="text-muted">{error}</p> : null}
     </div>

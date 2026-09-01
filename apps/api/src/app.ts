@@ -14,7 +14,10 @@ import {
 import {
   registerNotificationRunner,
 } from "./notifications/runner.js";
-import type { PushTransport } from "./notifications/delivery.js";
+import {
+  createWebPushTransport,
+  type PushTransport,
+} from "./notifications/delivery.js";
 
 export interface BuildAppOptions {
   db: Db;
@@ -36,6 +39,9 @@ export function buildApp({
   pushTransport,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger });
+  const notificationTransport =
+    pushTransport ??
+    (env.push ? createWebPushTransport(env.push) : undefined);
 
   app.setErrorHandler<FastifyError | AppError>((error, request, reply) => {
     if (error instanceof AppError) {
@@ -82,8 +88,8 @@ export function buildApp({
   registerAuthentication(app, db, env, { provider: oidcProvider });
   registerActivityActorResolution(app, db, env);
   registerChangeNotifications(app, changeNotifier ?? new ChangeNotifier());
-  registerRoutes(app, db, env);
-  registerNotificationRunner(app, db, env.push, pushTransport);
+  registerRoutes(app, db, env, notificationTransport);
+  registerNotificationRunner(app, db, env.push, notificationTransport);
   registerStatic(app, env);
 
   return app;

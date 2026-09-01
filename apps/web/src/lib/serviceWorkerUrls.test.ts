@@ -11,6 +11,7 @@ const {
 
 const payload = {
   version: 1,
+  kind: "task_reminder",
   title: "Jetzt machbar",
   body: "Erinnerung: Paket abholen",
   tag: "task:1:reminder:now",
@@ -58,6 +59,31 @@ describe("service worker notification URLs", () => {
 
     expect(clientManager.openWindow).toHaveBeenCalledWith(
       "https://machbar.example/household/#/tasks/42",
+    );
+  });
+
+  it("opens Today for a test notification body click", async () => {
+    const clientManager = {
+      matchAll: vi.fn(async () => []),
+      openWindow: vi.fn(async () => null),
+    };
+    const testPayload = {
+      ...payload,
+      kind: "test",
+      entity: null,
+      body: "Benachrichtigungen funktionieren auf diesem Gerät.",
+    };
+
+    expect(validPayload(testPayload)).toBe(true);
+    await handleNotificationClick(
+      testPayload,
+      "",
+      "https://machbar.example/household/",
+      clientManager,
+    );
+
+    expect(clientManager.openWindow).toHaveBeenCalledWith(
+      "https://machbar.example/household/#/today",
     );
   });
 

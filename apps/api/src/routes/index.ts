@@ -12,8 +12,14 @@ import { registerViewRoutes } from "./views.js";
 import { registerDebugRoutes } from "./debug.js";
 import { registerPushRoutes } from "./push.js";
 import type { Env } from "../env.js";
+import type { PushTransport } from "../notifications/delivery.js";
 
-export function registerRoutes(app: FastifyInstance, db: Db, env: Env) {
+export function registerRoutes(
+  app: FastifyInstance,
+  db: Db,
+  env: Env,
+  pushTransport?: PushTransport,
+) {
   registerActivityRoutes(app, db);
   registerContributionRoutes(app, db);
   registerMemberRoutes(app, db);
@@ -24,5 +30,5 @@ export function registerRoutes(app: FastifyInstance, db: Db, env: Env) {
   registerSearchRoutes(app, db);
   registerRefinementRoutes(app, db);
   registerDebugRoutes(app, db);
-  registerPushRoutes(app, db, env);
+  registerPushRoutes(app, db, env, pushTransport);
 }

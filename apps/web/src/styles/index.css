@@ -380,6 +380,10 @@ details[open] > .disclosure-summary::after {
   font-weight: 600;
 }
 
+.push-settings-actions {
+  flex-wrap: wrap;
+}
+
 .contribution-card {
   display: grid;
   gap: 12px;

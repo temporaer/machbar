@@ -117,6 +117,93 @@ describe("Push subscription API", () => {
     ).toEqual([desktop.endpoint, phone.endpoint].sort());
   });
 
+  it("sends a localized test notification only to the requesting browser", async () => {
+    await closeTestContext(ctx);
+    const send = vi.fn<PushTransport["send"]>().mockResolvedValue(undefined);
+    ctx = createTestContext({
+      push: {
+        publicKey: "public",
+        privateKey: "private",
+        subject: "https://machbar.example",
+      },
+      pushTransport: { send },
+    });
+    const hannes = addMember(ctx, "Hannes");
+    ctx.handle.db
+      .insert(schema.pushSubscriptions)
+      .values([
+        {
+          ...payload,
+          endpoint: "https://push.example/phone",
+          memberId: hannes.id,
+        },
+        {
+          ...payload,
+          endpoint: "https://push.example/desktop",
+          memberId: hannes.id,
+        },
+      ])
+      .run();
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/push/test",
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(hannes.id) },
+      payload: { endpoint: "https://push.example/desktop" },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: "https://push.example/desktop" }),
+      expect.any(String),
+    );
+    expect(JSON.parse(send.mock.calls[0]![1])).toEqual(
+      expect.objectContaining({
+        kind: "test",
+        title: "Machbar",
+        body: "Benachrichtigungen funktionieren auf diesem Gerät.",
+        entity: null,
+        recipientMemberId: hannes.id,
+        actions: [],
+      }),
+    );
+  });
+
+  it("removes an expired subscription when a test delivery rejects it", async () => {
+    await closeTestContext(ctx);
+    const send = vi
+      .fn<PushTransport["send"]>()
+      .mockRejectedValue({ statusCode: 410 });
+    ctx = createTestContext({
+      push: {
+        publicKey: "public",
+        privateKey: "private",
+        subject: "https://machbar.example",
+      },
+      pushTransport: { send },
+    });
+    const hannes = addMember(ctx, "Hannes");
+    ctx.handle.db
+      .insert(schema.pushSubscriptions)
+      .values({
+        ...payload,
+        memberId: hannes.id,
+      })
+      .run();
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/push/test",
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(hannes.id) },
+      payload: { endpoint: payload.endpoint },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("push_subscription_missing");
+    expect(ctx.handle.db.select().from(schema.pushSubscriptions).all()).toEqual([]);
+  });
+
   it("requires a resolvable current member", async () => {
     const response = await ctx.app.inject({
       method: "PUT",

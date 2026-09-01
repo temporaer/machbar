@@ -354,6 +354,11 @@ export const api = {
       method: "DELETE",
       body: JSON.stringify({ endpoint }),
     }),
+  sendTestPushNotification: (endpoint: string) =>
+    request<void>("/push/test", {
+      method: "POST",
+      body: JSON.stringify({ endpoint }),
+    }),
 
   getMembers: () => request<Member[]>("/members"),
   createMember: (input: CreateMemberInput) =>

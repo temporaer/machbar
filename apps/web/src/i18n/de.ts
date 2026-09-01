@@ -641,6 +641,9 @@ const extra = {
   pushEnabled: "Auf diesem Gerät aktiviert.",
   pushEnable: "Aktivieren",
   pushDisable: "Deaktivieren",
+  pushTest: "Test senden",
+  pushTestSending: "Wird gesendet …",
+  pushTestSent: "Testbenachrichtigung gesendet.",
   theme: "Design",
   themeLabels: {
     system: "System",
@@ -836,6 +839,10 @@ const extra = {
       "Dieser Projektstatus kann so nicht geändert werden.",
     push_member_required:
       "Wähle zuerst eine Person für Push-Benachrichtigungen aus.",
+    push_not_configured:
+      "Push-Benachrichtigungen sind auf dem Server nicht eingerichtet.",
+    push_subscription_missing:
+      "Die Anmeldung dieses Browsers ist abgelaufen. Aktiviere Benachrichtigungen erneut.",
     refinement_filters_invalid: "Die Klärungsfilter sind ungültig.",
     request_body_invalid: "Die eingegebenen Daten sind ungültig.",
     request_origin_forbidden: "Diese Anfrage ist nicht erlaubt.",

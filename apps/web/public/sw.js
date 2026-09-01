@@ -2,7 +2,9 @@ const ACTOR_HEADER = "x-machbar-actor-member-id";
 
 export function notificationDocumentUrl(scope, entity) {
   const url = new URL(scope);
-  url.hash = `#/${entity.type === "task" ? "tasks" : "projects"}/${entity.id}`;
+  url.hash = entity
+    ? `#/${entity.type === "task" ? "tasks" : "projects"}/${entity.id}`
+    : "#/today";
   return url.href;
 }
 
@@ -20,11 +22,11 @@ export function validPayload(value) {
     typeof value.tag === "string" &&
     Number.isSafeInteger(value.recipientMemberId) &&
     value.recipientMemberId > 0 &&
-    value.entity !== null &&
-    typeof value.entity === "object" &&
-    (value.entity.type === "task" || value.entity.type === "project") &&
-    Number.isSafeInteger(value.entity.id) &&
-    value.entity.id > 0 &&
+    (value.entity === null ||
+      (typeof value.entity === "object" &&
+        (value.entity.type === "task" || value.entity.type === "project") &&
+        Number.isSafeInteger(value.entity.id) &&
+        value.entity.id > 0)) &&
     Array.isArray(value.actions) &&
     value.actions.every(
       (item) =>
@@ -131,6 +133,14 @@ export async function handleNotificationClick(
 }
 
 if (typeof self !== "undefined" && "addEventListener" in self) {
+  self.addEventListener("install", (event) => {
+    event.waitUntil(self.skipWaiting());
+  });
+
+  self.addEventListener("activate", (event) => {
+    event.waitUntil(self.clients.claim());
+  });
+
   self.addEventListener("fetch", () => {
     // A fetch handler enables PWA installation; uncaught requests continue.
   });
