@@ -644,6 +644,22 @@ const en = {
   markdownTaskList: "Checkbox",
   markdownBold: "Bold",
   markdownLink: "Insert link",
+  markdownAttachment: "Insert attachment",
+  paperlessAttachmentTitle: "Attachment",
+  takePhoto: "Take photo",
+  chooseImage: "Choose image",
+  chooseFile: "Choose file",
+  fromPaperless: "From Paperless…",
+  paperlessSearchPlaceholder: "Search documents in Paperless",
+  paperlessSearch: "Search",
+  paperlessSearchEmpty: "No matching documents found.",
+  paperlessUploading: "Uploading…",
+  paperlessSearching: "Searching Paperless…",
+  paperlessImageUnavailable: "Image unavailable — open document",
+  sharedAttachments: (count: number) =>
+    count === 1 ? "1 shared attachment" : `${count} shared attachments`,
+  sharedContentUnavailable:
+    "The shared content could not be staged on this device.",
   editNotes: "Edit notes",
   noNotes: "No notes yet.",
 
@@ -841,6 +857,24 @@ const en = {
     oidc_provider_error: "Pocket ID could not complete the sign-in.",
     oidc_username_ambiguous:
       "The username cannot be matched to one unique person.",
+    paperless_authentication_failed:
+      "Paperless rejected the credentials. Check the API token.",
+    paperless_document_not_found:
+      "The Paperless document could not be found.",
+    paperless_file_too_large:
+      "The file is larger than the 25 MB limit.",
+    paperless_not_configured:
+      "Paperless is not configured on the server.",
+    paperless_processing_timeout:
+      "Paperless is still processing the file. Try again later.",
+    paperless_query_invalid:
+      "Enter a Paperless search term.",
+    paperless_response_invalid:
+      "Paperless returned an unexpected response.",
+    paperless_unavailable:
+      "Paperless is currently unavailable.",
+    paperless_upload_rejected:
+      "Paperless could not accept the file.",
     project_driver_locked:
       "The project lead cannot be removed in this project status.",
     project_driver_required: "The project needs a lead first.",

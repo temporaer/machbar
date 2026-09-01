@@ -1,0 +1,369 @@
+openapi: 3.0.3
+info:
+  title: Paperless-ngx REST API (Machbar subset)
+  version: "10"
+  description: >-
+    Hand-curated subset of the Paperless-ngx REST API, covering only the
+    operations the Machbar `PaperlessClient` uses: uploading a document,
+    polling its consumption task, fetching a single document's metadata,
+    searching documents, and fetching a document's thumbnail, preview, or
+    original file.
+
+    Field names, endpoint paths, and response shapes are taken from the
+    upstream Paperless-ngx source at
+    https://github.com/paperless-ngx/paperless-ngx (`dev` branch):
+      - `src/documents/views.py` (`PostDocumentView`, `DocumentViewSet.thumb`,
+        `.preview`, `.download`, `TasksViewSet`)
+      - `src/documents/serialisers.py` (`DocumentSerializer`,
+        `TaskSerializerV10`)
+      - `src/documents/models.py` (`PaperlessTask.Status`, `.TaskType`,
+        `.TriggerSource`)
+      - `src/paperless/settings/__init__.py` (`REST_FRAMEWORK`, confirming API
+        version 10 is the current default) and `src/paperless/views.py`
+        (`StandardPagination`).
+
+    This is not the full generated `drf-spectacular` schema (Paperless-ngx
+    does not publish one as a static file); it is a real, source-verified
+    projection restricted to the endpoints Machbar depends on. Regenerate
+    types from this file with `npm run generate:paperless-types -w
+    @machbar/api` after editing it.
+servers:
+  - url: "{paperlessUrl}"
+    variables:
+      paperlessUrl:
+        default: https://paperless.example
+security:
+  - tokenAuth: []
+paths:
+  /api/documents/post_document/:
+    post:
+      operationId: postDocument
+      summary: Upload a document for consumption.
+      description: >-
+        Accepts a multipart form with the file to consume plus optional
+        metadata overrides. Consumption happens asynchronously; the response
+        body is the UUID of the created Paperless task, to be polled via
+        `GET /api/tasks/?task_id={uuid}`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - document
+              properties:
+                document:
+                  type: string
+                  format: binary
+                title:
+                  type: string
+                created:
+                  type: string
+                correspondent:
+                  type: integer
+                document_type:
+                  type: integer
+                storage_path:
+                  type: integer
+                tags:
+                  type: array
+                  items:
+                    type: integer
+                archive_serial_number:
+                  type: integer
+      responses:
+        "200":
+          description: Consumption task created.
+          content:
+            application/json:
+              schema:
+                type: string
+                format: uuid
+                description: The Celery/Paperless task UUID.
+        "400":
+          description: The upload was rejected (unsupported or invalid file).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+        "403":
+          description: The authenticated user may not add documents.
+  /api/tasks/:
+    get:
+      operationId: listTasks
+      summary: List (or look up by task_id) Paperless background tasks.
+      parameters:
+        - name: task_id
+          in: query
+          description: Filter to the task with this Celery task UUID.
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Paginated task list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedTaskList"
+  /api/documents/:
+    get:
+      operationId: listDocuments
+      summary: Search or list documents.
+      parameters:
+        - name: query
+          in: query
+          description: Full text query (see Paperless-ngx search syntax).
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Paginated document list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedDocumentList"
+  /api/documents/{id}/:
+    get:
+      operationId: getDocument
+      summary: Fetch a single document's metadata.
+      description: >-
+        The standard DRF `ModelViewSet` retrieve action for `DocumentViewSet`
+        (`documents/views.py`); returns the same `DocumentSerializer` shape as
+        a single item of `/api/documents/`'s paginated results. Machbar uses
+        this to project a freshly uploaded document into a
+        `PaperlessDocumentSummary` once its consumption task has finished.
+      parameters:
+        - $ref: "#/components/parameters/documentId"
+      responses:
+        "200":
+          description: The document.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaperlessDocument"
+        "404":
+          description: The document does not exist.
+  /api/documents/{id}/thumb/:
+    get:
+      operationId: getDocumentThumbnail
+      summary: Fetch a document's thumbnail image.
+      parameters:
+        - $ref: "#/components/parameters/documentId"
+      responses:
+        "200":
+          description: Thumbnail image, always `image/webp`.
+          content:
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: The document does not exist or has no thumbnail file.
+  /api/documents/{id}/preview/:
+    get:
+      operationId: getDocumentPreview
+      summary: Fetch a document's inline preview rendition.
+      description: >-
+        Serves the archived PDF when available, otherwise the original file,
+        with a `Content-Disposition: inline` header. The actual media type
+        depends on the stored document and is not statically knowable.
+      parameters:
+        - $ref: "#/components/parameters/documentId"
+      responses:
+        "200":
+          description: Document preview file.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: The document does not exist or has no file.
+  /api/documents/{id}/download/:
+    get:
+      operationId: getDocumentDownload
+      summary: Fetch a document's original file for download.
+      description: >-
+        Same file resolution as `/preview/`, but with a `Content-Disposition:
+        attachment` header.
+      parameters:
+        - $ref: "#/components/parameters/documentId"
+      responses:
+        "200":
+          description: Document file.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: The document does not exist or has no file.
+components:
+  securitySchemes:
+    tokenAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: 'Format: `Token <api-token>`.'
+  parameters:
+    documentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+  schemas:
+    ValidationError:
+      type: object
+      description: >-
+        DRF's default validation error shape: a map from field name (or
+        `non_field_errors`) to a list of human-readable messages.
+      additionalProperties:
+        type: array
+        items:
+          type: string
+    PaperlessTaskStatus:
+      type: string
+      description: Mirrors `PaperlessTask.Status` (`documents/models.py`).
+      enum:
+        - pending
+        - started
+        - success
+        - failure
+        - revoked
+    PaperlessTask:
+      type: object
+      description: >-
+        `TaskSerializerV10` fields (API version 10, the current default; see
+        `documents/serialisers.py`).
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: string
+          format: uuid
+        task_type:
+          type: string
+        task_type_display:
+          type: string
+        trigger_source:
+          type: string
+        trigger_source_display:
+          type: string
+        status:
+          $ref: "#/components/schemas/PaperlessTaskStatus"
+        status_display:
+          type: string
+        date_created:
+          type: string
+          format: date-time
+          nullable: true
+        date_started:
+          type: string
+          format: date-time
+          nullable: true
+        date_done:
+          type: string
+          format: date-time
+          nullable: true
+        duration_seconds:
+          type: number
+          nullable: true
+        wait_time_seconds:
+          type: number
+          nullable: true
+        input_data:
+          type: object
+          nullable: true
+          additionalProperties: true
+        result_data:
+          type: object
+          nullable: true
+          additionalProperties: true
+        related_document_ids:
+          type: array
+          items:
+            type: integer
+        acknowledged:
+          type: boolean
+        owner:
+          type: integer
+          nullable: true
+      required:
+        - id
+        - task_id
+        - status
+        - related_document_ids
+        - acknowledged
+    PaginatedTaskList:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaperlessTask"
+      required:
+        - count
+        - results
+    PaperlessDocument:
+      type: object
+      description: >-
+        Subset of `DocumentSerializer` fields (`documents/serialisers.py`)
+        that Machbar's search results project.
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        original_file_name:
+          type: string
+          nullable: true
+        mime_type:
+          type: string
+          nullable: true
+      required:
+        - id
+        - title
+    PaginatedDocumentList:
+      type: object
+      properties:
+        count:
+          type: integer
+        next:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaperlessDocument"
+      required:
+        - count
+        - results

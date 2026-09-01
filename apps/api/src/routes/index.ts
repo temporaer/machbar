@@ -11,14 +11,17 @@ import { registerTaskRoutes } from "./tasks.js";
 import { registerViewRoutes } from "./views.js";
 import { registerDebugRoutes } from "./debug.js";
 import { registerPushRoutes } from "./push.js";
+import { registerPaperlessRoutes } from "./paperless.js";
 import type { Env } from "../env.js";
 import type { PushTransport } from "../notifications/delivery.js";
+import type { PaperlessClient } from "../paperless/client.js";
 
 export function registerRoutes(
   app: FastifyInstance,
   db: Db,
   env: Env,
   pushTransport?: PushTransport,
+  paperlessClient?: PaperlessClient,
 ) {
   registerActivityRoutes(app, db);
   registerContributionRoutes(app, db);
@@ -31,4 +34,5 @@ export function registerRoutes(
   registerRefinementRoutes(app, db);
   registerDebugRoutes(app, db);
   registerPushRoutes(app, db, env, pushTransport);
+  registerPaperlessRoutes(app, env, paperlessClient);
 }

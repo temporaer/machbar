@@ -113,4 +113,53 @@ describe("OIDC environment configuration", () => {
       loadEnv({ ...valid, OIDC_SESSION_TTL_DAYS: "0" }),
     ).toThrow(/between 1 and 365/);
   });
+
+  describe("Paperless environment configuration", () => {
+    const unauthenticated = { ALLOW_UNAUTHENTICATED: "true" };
+
+    it("keeps Paperless disabled when neither variable is present", () => {
+      expect(loadEnv(unauthenticated).paperless).toBeNull();
+    });
+
+    it("rejects partial Paperless configuration (URL only)", () => {
+      expect(() =>
+        loadEnv({
+          ...unauthenticated,
+          PAPERLESS_URL: "https://paperless.example",
+        }),
+      ).toThrow(/Paperless configuration is incomplete/);
+    });
+
+    it("rejects partial Paperless configuration (token only)", () => {
+      expect(() =>
+        loadEnv({
+          ...unauthenticated,
+          PAPERLESS_API_TOKEN: "secret-token",
+        }),
+      ).toThrow(/Paperless configuration is incomplete/);
+    });
+
+    it("loads a complete Paperless configuration and normalizes the HTTPS URL", () => {
+      expect(
+        loadEnv({
+          ...unauthenticated,
+          PAPERLESS_URL: "https://paperless.example/",
+          PAPERLESS_API_TOKEN: "secret-token",
+        }).paperless,
+      ).toEqual({
+        baseUrl: "https://paperless.example",
+        apiToken: "secret-token",
+      });
+    });
+
+    it("rejects an insecure non-HTTPS Paperless URL", () => {
+      expect(() =>
+        loadEnv({
+          ...unauthenticated,
+          PAPERLESS_URL: "http://paperless.example",
+          PAPERLESS_API_TOKEN: "secret-token",
+        }),
+      ).toThrow(/HTTPS/);
+    });
+  });
 });

@@ -1,18 +1,33 @@
 import type { Components } from "react-markdown";
+import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import type { Link, Parent, PhrasingContent, Root, Text } from "mdast";
+import {
+  paperlessDocumentDownloadUrl,
+  paperlessDocumentPreviewUrl,
+  paperlessDocumentThumbnailUrl,
+} from "../lib/api";
+import { useStrings } from "../lib/strings";
 import "./MarkdownNotes.css";
 
 /**
  * Schemes intentionally supported in Markdown links. Add a future attachment
  * scheme here only after its destination and access controls are defined.
  */
-export const markdownUrlSchemes = ["http", "https", "mailto", "tel", "sms"] as const;
+export const markdownUrlSchemes = [
+  "http",
+  "https",
+  "mailto",
+  "tel",
+  "sms",
+  "paperless",
+] as const;
 
 const allowedMarkdownUrlSchemes = new Set<string>(markdownUrlSchemes);
 const schemePattern = /^([a-z][a-z\d+.-]*):/i;
+const paperlessReferencePattern = /^paperless:([1-9]\d*)$/;
 const unsafeCharacterPattern = /[\u0000-\u001f\u007f\s]/;
 const actionableTokenPattern =
   /(?:tel:|sms:)\s*\+?\d[\d ()/-]{5,}\d|mailto:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d ()/-]{5,}\d/gi;
@@ -31,12 +46,57 @@ export function transformMarkdownUrl(url: string): string {
   const match = url.match(schemePattern);
   if (!match) return url;
 
-  const scheme = match[1];
+  const scheme = match[1]?.toLowerCase();
+  if (scheme === "paperless") {
+    return paperlessDocumentId(url) !== null ? url : "";
+  }
   return scheme && allowedMarkdownUrlSchemes.has(scheme.toLowerCase()) ? url : "";
 }
 
 function isExternalWebLink(href: string | undefined): boolean {
   return href !== undefined && /^https?:/i.test(href);
+}
+
+function paperlessDocumentId(url: string | undefined): number | null {
+  const match = url?.match(paperlessReferencePattern);
+  if (!match?.[1]) return null;
+  const id = Number(match[1]);
+  return Number.isSafeInteger(id) ? id : null;
+}
+
+function PaperlessImage({ id, alt }: { id: number; alt: string }) {
+  const strings = useStrings();
+  const [failed, setFailed] = useState(false);
+  const previewUrl = paperlessDocumentPreviewUrl(id);
+
+  if (failed) {
+    return (
+      <a
+        className="paperless-attachment-fallback"
+        href={previewUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {alt || strings.paperlessImageUnavailable}
+      </a>
+    );
+  }
+
+  return (
+    <a
+      className="paperless-image-link"
+      href={previewUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      <img
+        className="paperless-image"
+        src={paperlessDocumentThumbnailUrl(id)}
+        alt={alt}
+        onError={() => setFailed(true)}
+      />
+    </a>
+  );
 }
 
 function actionableLink(raw: string, source: string, start: number): { href: string; label: string } | null {
@@ -107,6 +167,18 @@ function remarkActionableLinks() {
 
 const markdownComponents: Components = {
   a({ href, children, node: _node, ...props }) {
+    const paperlessId = paperlessDocumentId(href);
+    if (paperlessId !== null) {
+      return (
+        <a
+          {...props}
+          className="paperless-document-link"
+          href={paperlessDocumentDownloadUrl(paperlessId)}
+        >
+          {children}
+        </a>
+      );
+    }
     return (
       <a
         {...props}
@@ -118,6 +190,14 @@ const markdownComponents: Components = {
         {children}
       </a>
     );
+  },
+  img({ src, alt = "" }) {
+    const paperlessId = paperlessDocumentId(src);
+    if (paperlessId !== null) {
+      return <PaperlessImage id={paperlessId} alt={alt} />;
+    }
+    if (!src) return <span>{alt}</span>;
+    return <img src={src} alt={alt} />;
   },
 };
 

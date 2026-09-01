@@ -131,6 +131,9 @@ behavior.
 | Acceptance criteria editing | `apps/web/src/components/AcceptanceCriteriaEditor.tsx` |
 | Destination selection | `apps/web/src/components/DestinationPicker.tsx` |
 | Horizontal row swipe | `apps/web/src/lib/useHorizontalSwipe.ts` |
+| Paperless document access | `apps/api/src/integrations/paperless/` and `apps/api/src/routes/paperless.ts` |
+| Markdown attachment references | `apps/web/src/lib/paperlessAttachments.ts` and `apps/web/src/components/MarkdownEditor.tsx` |
+| Incoming file-share staging | `apps/web/public/sw.js` and `apps/web/src/lib/pendingShareTarget.ts` |
 
 Before introducing another primitive for one of these needs, update this table
 and explain why the existing primitive is insufficient.

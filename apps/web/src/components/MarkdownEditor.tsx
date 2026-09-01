@@ -2,12 +2,14 @@ import {
   forwardRef,
   useCallback,
   useRef,
+  useState,
   type ChangeEvent,
   type ComponentPropsWithoutRef,
   type ForwardedRef,
 } from "react";
 import "./MarkdownNotes.css";
 import { useStrings } from "../lib/strings";
+import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
 
 export type MarkdownToolbarAction = "bullet" | "checkbox" | "bold" | "link";
 
@@ -15,6 +17,22 @@ export interface MarkdownTextTransform {
   value: string;
   selectionStart: number;
   selectionEnd: number;
+}
+
+export function insertMarkdownAtSelection(
+  value: string,
+  start: number,
+  end: number,
+  markdown: string,
+): MarkdownTextTransform {
+  const selectionStart = clampSelection(value, Math.min(start, end));
+  const selectionEnd = clampSelection(value, Math.max(start, end));
+  const nextPosition = selectionStart + markdown.length;
+  return {
+    value: `${value.slice(0, selectionStart)}${markdown}${value.slice(selectionEnd)}`,
+    selectionStart: nextPosition,
+    selectionEnd: nextPosition,
+  };
 }
 
 function clampSelection(value: string, position: number): number {
@@ -131,6 +149,8 @@ export const MarkdownEditor = forwardRef<HTMLTextAreaElement, MarkdownEditorProp
     const strings = useStrings();
     const resolvedToolbarLabel = toolbarLabel ?? strings.markdownToolbar;
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const attachmentSelectionRef = useRef({ start: 0, end: 0 });
+    const [attachmentOpen, setAttachmentOpen] = useState(false);
     const setTextareaRef = useCallback(
       (element: HTMLTextAreaElement | null) => {
         textareaRef.current = element;
@@ -161,6 +181,30 @@ export const MarkdownEditor = forwardRef<HTMLTextAreaElement, MarkdownEditorProp
         textarea.selectionEnd,
       );
       onChange(transform.value);
+      restoreSelection(transform);
+    };
+
+    const openAttachments = () => {
+      const textarea = textareaRef.current;
+      if (!textarea || disabled) return;
+      attachmentSelectionRef.current = {
+        start: textarea.selectionStart,
+        end: textarea.selectionEnd,
+      };
+      setAttachmentOpen(true);
+    };
+
+    const insertAttachment = (markdown: string) => {
+      const selection = attachmentSelectionRef.current;
+      const currentValue = textareaRef.current?.value ?? value;
+      const transform = insertMarkdownAtSelection(
+        currentValue,
+        selection.start,
+        selection.end,
+        markdown,
+      );
+      onChange(transform.value);
+      setAttachmentOpen(false);
       restoreSelection(transform);
     };
 
@@ -219,6 +263,17 @@ export const MarkdownEditor = forwardRef<HTMLTextAreaElement, MarkdownEditorProp
           >
             <span aria-hidden="true">↗</span>
           </button>
+          <button
+            type="button"
+            className="markdown-editor-action"
+            aria-label={strings.markdownAttachment}
+            title={strings.markdownAttachment}
+            disabled={disabled}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={openAttachments}
+          >
+            <span aria-hidden="true">📎</span>
+          </button>
         </div>
         <textarea
           {...textareaProps}
@@ -228,6 +283,12 @@ export const MarkdownEditor = forwardRef<HTMLTextAreaElement, MarkdownEditorProp
           value={value}
           onChange={onTextareaChange}
         />
+        {attachmentOpen ? (
+          <MarkdownAttachmentSheet
+            onInsert={insertAttachment}
+            onClose={() => setAttachmentOpen(false)}
+          />
+        ) : null}
       </div>
     );
   },

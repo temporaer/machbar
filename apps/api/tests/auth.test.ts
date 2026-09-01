@@ -353,14 +353,17 @@ describe("Pocket ID authentication", () => {
   });
 
   it("preserves Web Share Target parameters through login", async () => {
-    const returnTo =
-      "/?title=Farmladen&url=https%3A%2F%2Fmaps.example%2Ffarm#/share";
-    const callback = await login(returnTo);
+    for (const returnTo of [
+      "/?title=Farmladen&url=https%3A%2F%2Fmaps.example%2Ffarm#/share",
+      "/?shareId=pending-1#/share",
+    ]) {
+      const callback = await login(returnTo);
 
-    expect(callback.statusCode).toBe(302);
-    expect(callback.headers.location).toBe(
-      `https://machbar.example${returnTo}`,
-    );
+      expect(callback.statusCode).toBe(302);
+      expect(callback.headers.location).toBe(
+        `https://machbar.example${returnTo}`,
+      );
+    }
   });
 
   it("accepts only local hash routes beneath the configured base path", () => {

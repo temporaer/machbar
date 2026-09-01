@@ -623,6 +623,22 @@ const extra = {
   markdownTaskList: "Checkbox",
   markdownBold: "Fett",
   markdownLink: "Link einfügen",
+  markdownAttachment: "Anhang einfügen",
+  paperlessAttachmentTitle: "Anhang",
+  takePhoto: "Foto aufnehmen",
+  chooseImage: "Bild auswählen",
+  chooseFile: "Datei auswählen",
+  fromPaperless: "Aus Paperless …",
+  paperlessSearchPlaceholder: "Dokumente in Paperless suchen",
+  paperlessSearch: "Suchen",
+  paperlessSearchEmpty: "Keine passenden Dokumente gefunden.",
+  paperlessUploading: "Wird hochgeladen …",
+  paperlessSearching: "Paperless wird durchsucht …",
+  paperlessImageUnavailable: "Bild nicht verfügbar – Dokument öffnen",
+  sharedAttachments: (count: number) =>
+    count === 1 ? "1 geteilter Anhang" : `${count} geteilte Anhänge`,
+  sharedContentUnavailable:
+    "Der geteilte Inhalt konnte auf diesem Gerät nicht zwischengespeichert werden.",
   editNotes: "Notizen bearbeiten",
   noNotes: "Noch keine Notizen.",
 
@@ -825,6 +841,24 @@ const extra = {
     oidc_provider_error: "Pocket ID konnte die Anmeldung nicht abschließen.",
     oidc_username_ambiguous:
       "Der Benutzername kann keiner eindeutigen Person zugeordnet werden.",
+    paperless_authentication_failed:
+      "Paperless hat die Anmeldung abgelehnt. Prüfe das API-Token.",
+    paperless_document_not_found:
+      "Das Paperless-Dokument wurde nicht gefunden.",
+    paperless_file_too_large:
+      "Die Datei ist größer als das erlaubte Limit von 25 MB.",
+    paperless_not_configured:
+      "Paperless ist auf dem Server nicht eingerichtet.",
+    paperless_processing_timeout:
+      "Paperless verarbeitet die Datei noch. Versuche es später erneut.",
+    paperless_query_invalid:
+      "Gib einen Suchbegriff für Paperless ein.",
+    paperless_response_invalid:
+      "Paperless hat eine unerwartete Antwort gesendet.",
+    paperless_unavailable:
+      "Paperless ist derzeit nicht erreichbar.",
+    paperless_upload_rejected:
+      "Paperless konnte die Datei nicht übernehmen.",
     project_driver_locked:
       "Die verantwortliche Person kann in diesem Projektstatus nicht entfernt werden.",
     project_driver_required:

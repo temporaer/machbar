@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { MarkdownNotes, transformMarkdownUrl } from "./MarkdownNotes";
 
@@ -65,6 +65,39 @@ www.example.com
     expect(phoneLinks[0]).toHaveAttribute("href", "tel:01604844887");
     expect(phoneLinks[1]).toHaveAttribute("href", "sms:01604844887");
   });
+
+  it("renders valid Paperless images and document links through Machbar", () => {
+    render(
+      <MarkdownNotes
+        value="![receipt](paperless:4711) [manual.pdf](paperless:4712)"
+      />,
+    );
+
+    const image = screen.getByRole("img", { name: "receipt" });
+    expect(image).toHaveAttribute(
+      "src",
+      "/api/integrations/paperless/documents/4711/thumbnail",
+    );
+    expect(image.closest("a")).toHaveAttribute(
+      "href",
+      "/api/integrations/paperless/documents/4711/preview",
+    );
+    expect(screen.getByRole("link", { name: "manual.pdf" })).toHaveAttribute(
+      "href",
+      "/api/integrations/paperless/documents/4712/download",
+    );
+  });
+
+  it("shows a usable Paperless fallback when an image no longer loads", () => {
+    render(<MarkdownNotes value="![missing scan](paperless:9)" />);
+
+    fireEvent.error(screen.getByRole("img", { name: "missing scan" }));
+
+    expect(screen.getByRole("link", { name: "missing scan" })).toHaveAttribute(
+      "href",
+      "/api/integrations/paperless/documents/9/preview",
+    );
+  });
 });
 
 describe("transformMarkdownUrl", () => {
@@ -81,6 +114,12 @@ describe("transformMarkdownUrl", () => {
     ["data:text/html,test", ""],
     ["file:///etc/passwd", ""],
     ["attachment:12", ""],
+    ["paperless:12", "paperless:12"],
+    ["paperless:0", ""],
+    ["paperless:-1", ""],
+    ["paperless:1/path", ""],
+    ["paperless:not-a-number", ""],
+    ["paperless:999999999999999999999", ""],
     ["//example.com", ""],
     ["\\\\example.com", ""],
     ["java\nscript:alert(1)", ""],

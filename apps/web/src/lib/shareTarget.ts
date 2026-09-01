@@ -7,6 +7,7 @@ export interface WebShareTarget {
   title: string;
   text: string;
   url: string;
+  files: File[];
 }
 
 export interface CaptureShareDraft {
@@ -24,6 +25,7 @@ export function parseWebShareTarget(params: URLSearchParams | string): WebShareT
     title: normalizeInline(search.get("title") ?? ""),
     text: normalizeBlock(search.get("text") ?? ""),
     url: normalizeInline(search.get("url") ?? ""),
+    files: [],
   };
 }
 
@@ -44,6 +46,7 @@ export function shareTargetToCaptureDraft(
     target.title ||
     (shortText ? normalizeInline(target.text) : deriveTitle(target.text)) ||
     target.url ||
+    target.files[0]?.name ||
     getCatalog(locale).sharedContent;
 
   const noteParts: string[] = [];

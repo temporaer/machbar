@@ -11,7 +11,8 @@ behavior from possible future work.
 - nested tasks, dependencies, responsibility inheritance, typed tags, dates,
   follow-ups, Markdown notes, acceptance criteria, and task effort;
 - stuck-project and refinement guidance;
-- installable PWA behavior and Android text/URL share target;
+- installable PWA behavior and Android text/URL/file share target;
+- optional Paperless-ngx-backed Markdown image and document references;
 - standards-based Web Push for supported desktop and mobile browsers/PWAs;
 - outbound Web Share with clipboard fallback;
 - single-process/container deployment with SQLite;
@@ -74,9 +75,10 @@ on HTTPS, service-worker support, and the browser/operating system.
 
 ### Sharing
 
-The incoming PWA share target accepts text and URLs. File and attachment
-sharing is not supported. Web Share and PWA share-target availability depend
-on browser and operating-system support.
+The incoming PWA share target accepts text, URLs, images, and files. File
+storage requires the optional Paperless-ngx integration and has a 25 MB
+per-file upload limit. Web Share, file capture, and PWA share-target
+availability depend on browser and operating-system support.
 
 ### Authentication
 
@@ -106,7 +108,6 @@ Potential directions include:
 - live client updates;
 - offline caching and synchronization;
 - broader reminder schedules and notification preferences;
-- file share targets;
 - a published Home Assistant add-on and a supported native integration;
 - conversion between a captured task and a multi-step project.
 

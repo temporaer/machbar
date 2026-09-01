@@ -18,6 +18,10 @@ import {
   createWebPushTransport,
   type PushTransport,
 } from "./notifications/delivery.js";
+import {
+  createPaperlessClient,
+  type PaperlessClient,
+} from "./paperless/client.js";
 
 export interface BuildAppOptions {
   db: Db;
@@ -26,6 +30,7 @@ export interface BuildAppOptions {
   oidcProvider?: OidcProvider;
   changeNotifier?: ChangeNotifier;
   pushTransport?: PushTransport;
+  paperlessClient?: PaperlessClient;
 }
 
 /** Builds a fully configured Fastify instance. Used by both the production
@@ -37,11 +42,15 @@ export function buildApp({
   oidcProvider,
   changeNotifier,
   pushTransport,
+  paperlessClient,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger });
   const notificationTransport =
     pushTransport ??
     (env.push ? createWebPushTransport(env.push) : undefined);
+  const paperless =
+    paperlessClient ??
+    (env.paperless ? createPaperlessClient(env.paperless) : undefined);
 
   app.setErrorHandler<FastifyError | AppError>((error, request, reply) => {
     if (error instanceof AppError) {
@@ -88,7 +97,7 @@ export function buildApp({
   registerAuthentication(app, db, env, { provider: oidcProvider });
   registerActivityActorResolution(app, db, env);
   registerChangeNotifications(app, changeNotifier ?? new ChangeNotifier());
-  registerRoutes(app, db, env, notificationTransport);
+  registerRoutes(app, db, env, notificationTransport, paperless);
   registerNotificationRunner(app, db, env.push, notificationTransport);
   registerStatic(app, env);
 
