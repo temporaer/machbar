@@ -695,6 +695,12 @@ Global material capture starts in `QuickAdd` but keeps the selected browser
 `File` local. `CaptureForm.prepareNotes` uploads immediately before its existing
 task/project create call, so abandoning capture before commit creates no
 Paperless document. Successful uploads are retained across create retries.
+New camera images can optionally pass through the shared `ImageCropSheet`
+before that upload. Cropping is explicitly requested rather than automatic:
+the sheet decodes a width-bounded bitmap, renders a smaller preview canvas, and
+releases both bitmap and canvas surfaces when it closes. This keeps crop memory
+bounded on phones and leaves the original file untouched when the user chooses
+not to crop.
 
 The installed PWA's POST share target is deliberately separate from API upload.
 `apps/web/public/sw.js` stages title, text, URL, and files in IndexedDB, then

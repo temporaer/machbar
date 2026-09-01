@@ -19,6 +19,7 @@ import {
   type UploadedPaperlessAttachment,
 } from "../lib/paperlessAttachments";
 import { IconActionGlyph } from "./IconActionButton";
+import { ImageCropSheet } from "./ImageCropSheet";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -44,6 +45,7 @@ export function QuickAdd({
     autoOpen ? "form" : "choose",
   );
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadedAttachmentRef =
@@ -73,6 +75,7 @@ export function QuickAdd({
     setOpen(false);
     setCaptureStep("choose");
     setPendingFile(null);
+    setCropFile(null);
     uploadedAttachmentRef.current = null;
     setError(null);
     if (autoOpen) onAutoOpenClose?.();
@@ -227,6 +230,7 @@ export function QuickAdd({
               projectId={projectId ?? null}
               parentTaskId={parentTaskId ?? null}
               pendingFiles={pendingFile ? [pendingFile] : []}
+              onCropPendingFile={(file) => setCropFile(file)}
               {...(pendingFile ? { prepareNotes: prepareMaterialNotes } : {})}
               onCancel={close}
               onCaptured={(result) => {
@@ -244,6 +248,18 @@ export function QuickAdd({
             />
           )}
         </BottomSheet>
+      ) : null}
+      {cropFile ? (
+        <ImageCropSheet
+          file={cropFile}
+          onClose={() => setCropFile(null)}
+          onUseOriginal={() => setCropFile(null)}
+          onApply={(croppedFile) => {
+            setPendingFile(croppedFile);
+            uploadedAttachmentRef.current = null;
+            setCropFile(null);
+          }}
+        />
       ) : null}
       {createdTask ? (
         <section className="capture-correction-toast" role="status" aria-live="polite">

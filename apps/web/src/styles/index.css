@@ -2322,6 +2322,78 @@ details[open] > .disclosure-summary::after {
   color: var(--color-text-muted);
 }
 
+.pending-material-crop {
+  justify-self: start;
+  margin-top: 2px;
+}
+
+.image-crop-sheet {
+  min-height: 0;
+}
+
+.image-crop-preview {
+  position: relative;
+  display: grid;
+  min-height: 180px;
+  max-height: 48vh;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: #15181b;
+}
+
+.image-crop-canvas-frame {
+  position: relative;
+  display: block;
+  overflow: hidden;
+}
+
+.image-crop-preview canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.image-crop-selection {
+  position: absolute;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 999px rgb(0 0 0 / 52%);
+  pointer-events: none;
+}
+
+.image-crop-loading {
+  position: absolute;
+  color: #fff;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.image-crop-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.image-crop-controls label {
+  display: grid;
+  gap: 4px;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.image-crop-controls input {
+  width: 100%;
+  min-height: 28px;
+  accent-color: var(--color-primary);
+}
+
+@media (max-width: 520px) {
+  .image-crop-controls {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
 .paperless-attachment-strip {
   display: flex;
   gap: 8px;

@@ -50,4 +50,36 @@ describe("MarkdownAttachmentSheet", () => {
     expect(onInsert).toHaveBeenLastCalledWith("![receipt.jpg](paperless:42)");
     expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledTimes(1);
   });
+
+  it("offers cropping before uploading a newly captured photo", async () => {
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 43,
+      title: "Photo",
+      originalFileName: "photo.jpg",
+      mimeType: "image/jpeg",
+    });
+    const onInsert = vi.fn().mockResolvedValue(undefined);
+    render(<MarkdownAttachmentSheet onInsert={onInsert} onClose={vi.fn()} />);
+
+    await userEvent.upload(
+      screen.getByLabelText("Foto aufnehmen"),
+      new File(["image"], "photo.jpg", { type: "image/jpeg" }),
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "Foto zuschneiden" }),
+    ).toBeInTheDocument();
+    expect(mockedApi.uploadPaperlessDocument).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Foto zuschneiden" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Foto zuschneiden" }),
+    ).toBeInTheDocument();
+    expect(mockedApi.uploadPaperlessDocument).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Original verwenden" }));
+    await waitFor(() =>
+      expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledTimes(1),
+    );
+  });
 });
