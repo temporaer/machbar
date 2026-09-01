@@ -401,6 +401,7 @@ export interface Task {
   reviewedAt: string | null;
   effectiveOwnerId: number | null;
   effectiveOwnerSource: "task" | "parent" | "project" | "none";
+  inheritedOwnerId: number | null;
   effectiveTags: Tag[];
   effectiveAreaTags: Tag[];
   effectiveActorTags: Tag[];

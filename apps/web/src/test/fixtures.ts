@@ -63,6 +63,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     reviewedAt: null,
     effectiveOwnerId: null,
     effectiveOwnerSource: "none",
+    inheritedOwnerId: null,
     effectiveTags: [],
     effectiveAreaTags: [],
     effectiveActorTags: [],

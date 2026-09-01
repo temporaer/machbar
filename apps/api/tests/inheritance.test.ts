@@ -54,6 +54,7 @@ describe("effective owner and typed-tag inheritance", () => {
 
     expect(parentTask.effectiveOwnerId).toBe(owner.id);
     expect(parentTask.effectiveOwnerSource).toBe("project");
+    expect(parentTask.inheritedOwnerId).toBe(owner.id);
     expect(parentTask.effectiveTags.map((t: { id: number }) => t.id)).toContain(tag.id);
     expect(parentTask.effectiveContextTags.map((t: { id: number }) => t.id)).toContain(tag.id);
 
@@ -67,6 +68,7 @@ describe("effective owner and typed-tag inheritance", () => {
 
     expect(childTask.projectId).toBe(project.id);
     expect(childTask.effectiveOwnerId).toBe(owner.id);
+    expect(childTask.inheritedOwnerId).toBe(owner.id);
     // Still labelled "project" because nothing in the parent chain overrides ownership.
     expect(childTask.effectiveOwnerSource).toBe("project");
     expect(childTask.effectiveTags.map((t: { id: number }) => t.id)).toContain(tag.id);
@@ -130,12 +132,14 @@ describe("effective owner and typed-tag inheritance", () => {
       })
     ).json();
 
+    expect(captured.inheritedOwnerId).toBeNull();
     for (const task of [direct, child, successor, ...sequence, refiled]) {
       expect(task).toMatchObject({
         ownerMemberId: null,
         ownerInheritanceMode: "inherit",
         effectiveOwnerId: owner.id,
         effectiveOwnerSource: "project",
+        inheritedOwnerId: owner.id,
         projectOwnerMemberId: owner.id,
       });
     }
@@ -175,6 +179,8 @@ describe("effective owner and typed-tag inheritance", () => {
 
     expect(childTask.effectiveOwnerId).toBe(parentOwner.id);
     expect(childTask.effectiveOwnerSource).toBe("parent");
+    expect(parentTask.inheritedOwnerId).toBe(projectOwner.id);
+    expect(childTask.inheritedOwnerId).toBe(parentOwner.id);
   });
 
   it("lets a task override inheritance explicitly or opt out with 'none'", async () => {
@@ -202,6 +208,7 @@ describe("effective owner and typed-tag inheritance", () => {
     ).json();
     expect(explicitTask.effectiveOwnerId).toBe(otherOwner.id);
     expect(explicitTask.effectiveOwnerSource).toBe("task");
+    expect(explicitTask.inheritedOwnerId).toBe(owner.id);
 
     const noneTask = (
       await ctx.app.inject({
@@ -216,6 +223,7 @@ describe("effective owner and typed-tag inheritance", () => {
     ).json();
     expect(noneTask.effectiveOwnerId).toBeNull();
     expect(noneTask.effectiveOwnerSource).toBe("none");
+    expect(noneTask.inheritedOwnerId).toBe(owner.id);
   });
 
   it("excludes a specific inherited tag while keeping the task's own explicit tags", async () => {

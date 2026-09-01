@@ -535,8 +535,12 @@ describe("TaskDetailSheet", () => {
     }
   });
 
-  it("zeigt geerbte Tags mit Ausschluss-Option und erlaubt das Umschalten des Zuständigkeits-Vererbungsmodus", async () => {
+  it("zeigt Projektkontext und flache Zuständigkeitsauswahl mit atomarer Personenzuweisung", async () => {
     const inheritedTag = makeTag({ id: 11, name: "eilig" });
+    mockedApi.getMembers.mockResolvedValue([
+      makeMember({ id: 1, name: "Mira" }),
+      makeMember({ id: 2, name: "Jonas" }),
+    ]);
     const task = makeTask({
       id: 42,
       title: "Bericht schreiben",
@@ -546,6 +550,7 @@ describe("TaskDetailSheet", () => {
       ownerInheritanceMode: "inherit",
       effectiveOwnerId: 1,
       effectiveOwnerSource: "project",
+      inheritedOwnerId: 1,
       effectiveTags: [inheritedTag],
       explicitTags: [],
       excludedTagIds: [],
@@ -554,6 +559,7 @@ describe("TaskDetailSheet", () => {
     mockedApi.updateTask.mockResolvedValue({
       ...task,
       revision: 2,
+      ownerMemberId: 2,
       ownerInheritanceMode: "explicit",
     });
 
@@ -567,21 +573,29 @@ describe("TaskDetailSheet", () => {
     const ownerSection = screen
       .getByRole("heading", { name: "Zuständig", level: 3 })
       .closest("section")!;
-    expect(within(ownerSection).getByText("Mira")).toBeInTheDocument();
-    expect(
-      within(ownerSection).getByText("Von Projekt geerbt"),
-    ).toBeInTheDocument();
+    const ownerChoices = within(ownerSection).getByRole("group", {
+      name: "Zuständig",
+    });
     const projectContext = screen
       .getByRole("link", { name: "Jahresbericht" })
       .closest<HTMLElement>(".task-project-context")!;
     expect(within(projectContext).getByText("Mira")).toBeInTheDocument();
     expect(screen.getByText("eilig")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Übergeordnet" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Aufgabenspezifisch" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Gemeinsam" })).toHaveAttribute("aria-pressed", "false");
+    expect(
+      within(ownerChoices).getByRole("button", { name: "Vom Projekt: Mira" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      within(ownerChoices).getByRole("button", { name: "Gemeinsam" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(
+      within(ownerChoices).getByRole("button", { name: "Mira" }),
+    ).toHaveAttribute("aria-pressed", "false");
 
-    await userEvent.click(screen.getByRole("button", { name: "Aufgabenspezifisch" }));
+    await userEvent.click(
+      within(ownerChoices).getByRole("button", { name: "Jonas" }),
+    );
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
+      ownerMemberId: 2,
       ownerInheritanceMode: "explicit",
       expectedRevision: 1,
     }));
@@ -592,7 +606,7 @@ describe("TaskDetailSheet", () => {
     );
   });
 
-  it("zeigt die aufgabenspezifische Person ohne eine zweite Option für gemeinsam", async () => {
+  it("zeigt bei eigenständigen Aufgaben nur gemeinsam und Personen", async () => {
     const task = makeTask({
       id: 57,
       title: "Verantwortung klären",
@@ -607,17 +621,61 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Verantwortung klären");
 
-    const ownerChoices = screen.getByRole("group", { name: "Person" });
+    const ownerChoices = screen.getByRole("group", { name: "Zuständig" });
     expect(within(ownerChoices).queryByRole("combobox")).not.toBeInTheDocument();
     expect(within(ownerChoices).getByRole("button", { name: "Mira" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
     expect(
-      within(ownerChoices).queryByRole("button", {
-        name: "Niemand zugewiesen",
-      }),
+      within(ownerChoices).queryByRole("button", { name: /Vom|Von Aufgabe/ }),
     ).not.toBeInTheDocument();
+    await userEvent.click(
+      within(ownerChoices).getByRole("button", { name: "Gemeinsam" }),
+    );
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(57, {
+        ownerMemberId: null,
+        ownerInheritanceMode: "none",
+        expectedRevision: 1,
+      }),
+    );
+  });
+
+  it("zeigt bei Teilaufgaben die geerbte Person und übernimmt sie atomar", async () => {
+    mockedApi.getMembers.mockResolvedValue([
+      makeMember({ id: 1, name: "Mira" }),
+      makeMember({ id: 2, name: "Jonas" }),
+    ]);
+    const task = makeTask({
+      id: 58,
+      title: "Unterlagen sammeln",
+      projectId: 7,
+      parentTaskId: 8,
+      ownerInheritanceMode: "explicit",
+      ownerMemberId: 1,
+      effectiveOwnerId: 1,
+      effectiveOwnerSource: "task",
+      inheritedOwnerId: 2,
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(58);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Unterlagen sammeln");
+
+    const inheritChoice = screen.getByRole("button", {
+      name: "Von Aufgabe: Jonas",
+    });
+    expect(inheritChoice).toHaveAttribute("aria-pressed", "false");
+    await userEvent.click(inheritChoice);
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(58, {
+        ownerMemberId: null,
+        ownerInheritanceMode: "inherit",
+        expectedRevision: 1,
+      }),
+    );
   });
 
   it("zeigt keinen manuellen Heute-Umschalter/-Haken mehr an", async () => {
