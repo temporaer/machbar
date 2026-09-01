@@ -414,6 +414,7 @@ export interface Task {
   dependencies: Dependency[];
   children: Task[];
   projectTitle?: string | null;
+  projectOwnerMemberId?: number | null;
   projectDueDate?: string | null;
 }
 

@@ -7,6 +7,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { Link } from "react-router-dom";
 import type { InheritanceMode, Task } from "@machbar/shared";
 import { inheritanceModes, taskStatuses } from "@machbar/shared";
 import { api } from "../lib/api";
@@ -101,10 +102,12 @@ function InheritanceControl({
 
 function TaskDetailSection({
   title,
+  summary,
   children,
   className = "",
 }: {
   title: string;
+  summary?: ReactNode;
   children: ReactNode;
   className?: string;
 }) {
@@ -114,9 +117,14 @@ function TaskDetailSection({
       className={`task-detail-section${className ? ` ${className}` : ""}`}
       aria-labelledby={headingId}
     >
-      <h3 id={headingId} className="task-detail-section-title">
-        {title}
-      </h3>
+      <div className="task-detail-section-heading">
+        <h3 id={headingId} className="task-detail-section-title">
+          {title}
+        </h3>
+        {summary ? (
+          <div className="task-detail-section-heading-summary">{summary}</div>
+        ) : null}
+      </div>
       <div className="task-detail-section-body">{children}</div>
     </section>
   );
@@ -642,7 +650,7 @@ export function TaskDetailSheet() {
   const planningSummary = task
     ? [
         task.scheduledDate
-          ? `${strings.scheduled}: ${
+          ? `${strings.taskPlanFor}: ${
               formatExactLocalDate(task.scheduledDate, locale) ??
               task.scheduledDate
             }`
@@ -679,6 +687,20 @@ export function TaskDetailSheet() {
         .filter((value): value is string => value !== null)
         .join(" · ")
     : "";
+  const projectOwner = task
+    ? members.find((member) => member.id === task.projectOwnerMemberId)
+    : undefined;
+  const effectiveOwner = task
+    ? members.find((member) => member.id === task.effectiveOwnerId)
+    : undefined;
+  const effectiveOwnerSource = task
+    ? {
+        task: strings.ownerInheritanceTaskSpecific,
+        parent: strings.inheritedParent,
+        project: strings.inheritedProject,
+        none: null,
+      }[task.effectiveOwnerSource]
+    : null;
 
   return (
     <>
@@ -741,6 +763,35 @@ export function TaskDetailSheet() {
           ) : null}
 
           <TaskDetailSection title={strings.taskSection}>
+            {task.projectId !== null && task.projectTitle ? (
+              <div className="task-project-context">
+                <div className="task-project-context-item">
+                  <span className="task-project-context-label">
+                    {strings.project}
+                  </span>
+                  <Link
+                    className="task-project-context-link"
+                    to={`/projects/${task.projectId}`}
+                    onClick={close}
+                  >
+                    {task.projectTitle}
+                  </Link>
+                </div>
+                <div className="task-project-context-item">
+                  <span className="task-project-context-label">
+                    {strings.driver}
+                  </span>
+                  {projectOwner ? (
+                    <MemberLabel member={projectOwner} size="sm" />
+                  ) : task.projectOwnerMemberId === null ? (
+                    <span>{strings.noDriver}</span>
+                  ) : (
+                    <span className="text-muted">{strings.loading}</span>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
             <div className="field" ref={titleFieldRef}>
               <div className="row-between">
                 <label className="field-label" htmlFor="task-title">
@@ -812,8 +863,29 @@ export function TaskDetailSheet() {
               </select>
             </div> : null}
 
-            <div className="field" ref={ownerFieldRef}>
-              {task.ownerInheritanceMode !== "explicit" ? <label>{strings.owner}</label> : null}
+          </TaskDetailSection>
+
+          <TaskDetailSection
+            title={strings.owner}
+            className="task-owner-section"
+            summary={
+              <span className="task-owner-summary">
+                {effectiveOwner ? (
+                  <MemberLabel member={effectiveOwner} size="sm" />
+                ) : (
+                  <span>
+                    {task.ownerInheritanceMode === "none"
+                      ? strings.sharedOwner
+                      : strings.unassigned}
+                  </span>
+                )}
+                {effectiveOwnerSource ? (
+                  <span className="text-muted">{effectiveOwnerSource}</span>
+                ) : null}
+              </span>
+            }
+          >
+            <div className="task-owner-controls" ref={ownerFieldRef}>
               <InheritanceControl
                 focusRef={ownerInputRef}
                 mode={task.ownerInheritanceMode}
@@ -821,27 +893,13 @@ export function TaskDetailSheet() {
               />
               {task.ownerInheritanceMode === "explicit" ? (
                 <MemberChoiceGroup
-                  label={strings.owner}
+                  label={strings.member}
                   idPrefix={`task-owner-${task.id}`}
                   members={members}
                   value={task.ownerMemberId}
                   onChange={(ownerMemberId) => void patch({ ownerMemberId })}
-                  unassignedLabel={strings.unassigned}
                 />
-              ) : (
-                <p className="text-muted">
-                  {(() => {
-                    const owner = members.find(
-                      (member) => member.id === task.effectiveOwnerId,
-                    );
-                    return owner ? (
-                      <MemberLabel member={owner} size="sm" />
-                    ) : (
-                      strings.unassigned
-                    );
-                  })()}
-                </p>
-              )}
+              ) : null}
             </div>
           </TaskDetailSection>
 
@@ -884,31 +942,17 @@ export function TaskDetailSheet() {
             </TaskDetailSection>
           ) : null}
 
+          <div className="task-timing-sections">
           <TaskDetailDisclosure
             title={strings.taskPlanningSection}
             summary={planningSummary || strings.taskPlanningEmpty}
-            defaultOpen={Boolean(planningSummary)}
+            defaultOpen={Boolean(planningSummary || task.externalWait)}
             forceOpen={focusField === "schedule"}
             resetKey={task.id}
           >
             <div className="row task-detail-date-row">
-            <div className="field" style={{ flex: 1 }}>
-              <label htmlFor="task-due">{strings.due}</label>
-              <HumanDateInput
-                id="task-due"
-                value={task.dueDate ?? ""}
-                onChange={(dueDate) => void patch({ dueDate })}
-                onValidityChange={setDueDateValid}
-                disabled={task.repeatAfterDays !== null}
-              />
-              {task.repeatAfterDays !== null ? (
-                <span className="text-muted recurrence-derived-hint">
-                  {strings.recurrenceDeadlineLocked}
-                </span>
-              ) : null}
-            </div>
               <div className="field" style={{ flex: 1 }} ref={scheduleFieldRef}>
-                <label htmlFor="task-scheduled">{strings.scheduled}</label>
+                <label htmlFor="task-scheduled">{strings.taskPlanFor}</label>
                 <HumanDateInput
                   inputRef={scheduleInputRef}
                   id="task-scheduled"
@@ -916,6 +960,24 @@ export function TaskDetailSheet() {
                   onChange={(scheduledDate) => void patch({ scheduledDate })}
                   onValidityChange={setScheduledDateValid}
                 />
+                <span className="text-muted task-detail-field-hint">
+                  {strings.taskPlanForGuidance}
+                </span>
+              </div>
+              <div className="field" style={{ flex: 1 }}>
+                <label htmlFor="task-due">{strings.due}</label>
+                <HumanDateInput
+                  id="task-due"
+                  value={task.dueDate ?? ""}
+                  onChange={(dueDate) => void patch({ dueDate })}
+                  onValidityChange={setDueDateValid}
+                  disabled={task.repeatAfterDays !== null}
+                />
+                {task.repeatAfterDays !== null ? (
+                  <span className="text-muted recurrence-derived-hint">
+                    {strings.recurrenceDeadlineLocked}
+                  </span>
+                ) : null}
               </div>
             </div>
           {task.repeatAfterDays === null ? (
@@ -943,190 +1005,6 @@ export function TaskDetailSheet() {
           </TaskDetailDisclosure>
 
           <TaskDetailDisclosure
-            title={strings.recurrence}
-            defaultOpen={task.repeatAfterDays !== null}
-            resetKey={task.id}
-            className="task-detail-recurrence"
-          >
-            <div className="recurrence-editor">
-            <div className="row-between">
-              <p className="text-muted">{strings.recurrenceHint}</p>
-              <label className="recurrence-toggle">
-                <input
-                  type="checkbox"
-                  checked={task.repeatAfterDays !== null}
-                  onChange={(event) => {
-                    if (!event.target.checked) {
-                      void patch({
-                        repeatAfterDays: null,
-                        allowedDeviationDays: null,
-                      });
-                      return;
-                    }
-                    if (!task.scheduledDate) {
-                      setSaveError(strings.recurrenceScheduleRequired);
-                      return;
-                    }
-                    setSaveError(null);
-                    void patch({
-                      repeatAfterDays: 7,
-                      allowedDeviationDays: 0,
-                    });
-                  }}
-                />
-                <span>{strings.recurrenceEnabled}</span>
-              </label>
-            </div>
-            {task.repeatAfterDays !== null &&
-            task.allowedDeviationDays !== null ? (
-              <>
-                <div className="recurrence-number-grid">
-                  <label className="field">
-                    <span>{strings.repeatAfterDays}</span>
-                    <input
-                      key={`repeat-${task.id}-${task.repeatAfterDays}`}
-                      type="number"
-                      inputMode="numeric"
-                      min={1}
-                      step={1}
-                      defaultValue={task.repeatAfterDays}
-                      onBlur={(event) => {
-                        const value = Number(event.target.value);
-                        if (Number.isInteger(value) && value >= 1) {
-                          void patch({ repeatAfterDays: value });
-                        }
-                      }}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{strings.allowedDeviationDays}</span>
-                    <input
-                      key={`deviation-${task.id}-${task.allowedDeviationDays}`}
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      step={1}
-                      defaultValue={task.allowedDeviationDays}
-                      onBlur={(event) => {
-                        const value = Number(event.target.value);
-                        if (Number.isInteger(value) && value >= 0) {
-                          void patch({ allowedDeviationDays: value });
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-                <p className="recurrence-preview">
-                  {strings.recurrenceDeadlinePreview(
-                    formatExactLocalDate(task.dueDate ?? "", locale) ??
-                      task.dueDate ??
-                      "–",
-                  )}
-                </p>
-              </>
-            ) : null}
-            </div>
-          </TaskDetailDisclosure>
-
-          <TaskDetailDisclosure
-            title={strings.taskContentSection}
-            summary={contentSummary || strings.taskContentEmpty}
-            defaultOpen={Boolean(contentSummary)}
-            forceOpen={focusField === "notes"}
-            resetKey={task.id}
-          >
-            <div className="field">
-            <label>{strings.effectiveTags}</label>
-            <div className="row" style={{ flexWrap: "wrap" }}>
-              {task.explicitTags.length === 0 && inheritedTags.length === 0 ? (
-                <span className="text-muted">{strings.noTags}</span>
-              ) : null}
-              {inheritedTags.map((tag) => {
-                const excluded = task.excludedTagIds.includes(tag.id);
-                return (
-                  <TagChip
-                    key={tag.id}
-                    tag={tag}
-                    excluded={excluded}
-                    onToggleExclude={() =>
-                      void patch({
-                        excludedTagIds: excluded
-                          ? task.excludedTagIds.filter((id) => id !== tag.id)
-                          : [...task.excludedTagIds, tag.id],
-                      })
-                    }
-                  />
-                );
-              })}
-            </div>
-            <TagPicker
-              tags={tags ?? []}
-              selectedIds={task.explicitTags.map((tag) => tag.id)}
-              hiddenIds={inheritedTags.map((tag) => tag.id)}
-              onChange={(tagIds) => patch({ tagIds })}
-            />
-          </div>
-
-          <div className="field task-notes-field">
-            <div className="row-between">
-              <label className="field-label" htmlFor="task-notes">{strings.notes}</label>
-              {!notesEditing ? (
-                <IconActionButton
-                  kind="edit"
-                  label={strings.edit}
-                  onClick={() => setNotesEditing(true)}
-                />
-              ) : null}
-            </div>
-            {notesEditing ? (
-              <>
-                <MarkdownEditor
-                  id="task-notes"
-                  ref={notesRef}
-                  value={notesDraft}
-                  onChange={setNotesDraft}
-                  toolbarLabel={strings.markdownToolbar}
-                  rows={6}
-                />
-                <div className="row">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={savingTextFields}
-                    onClick={cancelNotesEdit}
-                  >
-                    {strings.cancel}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
-                    disabled={!notesDirty || savingTextFields}
-                    onClick={() =>
-                      void saveContentField("notes").then((saved) => {
-                        if (saved) setNotesEditing(false);
-                      })
-                    }
-                  >
-                    {strings.saveNotes}
-                  </button>
-                </div>
-              </>
-            ) : notesDraft.trim() ? (
-              <MarkdownNotes value={notesDraft} />
-            ) : (
-              <p className="text-muted">{strings.noNotes}</p>
-            )}
-          </div>
-
-          {saveError ?? taskActions.errors[task.id] ? (
-            <div className="task-row-error" role="alert">
-              <span>{strings.error}</span>
-              <span className="text-muted">{saveError ?? taskActions.errors[task.id]}</span>
-            </div>
-          ) : null}
-          </TaskDetailDisclosure>
-
-          <TaskDetailDisclosure
             title={strings.taskWaitingSection}
             summary={blockerSummary || strings.taskNotBlocked}
             defaultOpen={Boolean(task.externalWait || task.dependencies.length)}
@@ -1134,6 +1012,7 @@ export function TaskDetailSheet() {
               focusField === "waiting" || focusField === "dependencies"
             }
             resetKey={task.id}
+            className="task-detail-waiting"
           >
             <div className="stack blocker-control" ref={dependenciesFieldRef}>
               <div className="task-external-wait-editor">
@@ -1305,6 +1184,192 @@ export function TaskDetailSheet() {
                 )}
               </div>
             </div>
+          </TaskDetailDisclosure>
+          </div>
+
+          <TaskDetailDisclosure
+            title={strings.recurrence}
+            defaultOpen={task.repeatAfterDays !== null}
+            resetKey={task.id}
+            className="task-detail-recurrence"
+          >
+            <div className="recurrence-editor">
+            <div className="row-between">
+              <p className="text-muted">{strings.recurrenceHint}</p>
+              <label className="recurrence-toggle">
+                <input
+                  type="checkbox"
+                  checked={task.repeatAfterDays !== null}
+                  onChange={(event) => {
+                    if (!event.target.checked) {
+                      void patch({
+                        repeatAfterDays: null,
+                        allowedDeviationDays: null,
+                      });
+                      return;
+                    }
+                    if (!task.scheduledDate) {
+                      setSaveError(strings.recurrenceScheduleRequired);
+                      return;
+                    }
+                    setSaveError(null);
+                    void patch({
+                      repeatAfterDays: 7,
+                      allowedDeviationDays: 0,
+                    });
+                  }}
+                />
+                <span>{strings.recurrenceEnabled}</span>
+              </label>
+            </div>
+            {task.repeatAfterDays !== null &&
+            task.allowedDeviationDays !== null ? (
+              <>
+                <div className="recurrence-number-grid">
+                  <label className="field">
+                    <span>{strings.repeatAfterDays}</span>
+                    <input
+                      key={`repeat-${task.id}-${task.repeatAfterDays}`}
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      step={1}
+                      defaultValue={task.repeatAfterDays}
+                      onBlur={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isInteger(value) && value >= 1) {
+                          void patch({ repeatAfterDays: value });
+                        }
+                      }}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>{strings.allowedDeviationDays}</span>
+                    <input
+                      key={`deviation-${task.id}-${task.allowedDeviationDays}`}
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      step={1}
+                      defaultValue={task.allowedDeviationDays}
+                      onBlur={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isInteger(value) && value >= 0) {
+                          void patch({ allowedDeviationDays: value });
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                <p className="recurrence-preview">
+                  {strings.recurrenceDeadlinePreview(
+                    formatExactLocalDate(task.dueDate ?? "", locale) ??
+                      task.dueDate ??
+                      "–",
+                  )}
+                </p>
+              </>
+            ) : null}
+            </div>
+          </TaskDetailDisclosure>
+
+          <TaskDetailDisclosure
+            title={strings.taskContentSection}
+            summary={contentSummary || strings.taskContentEmpty}
+            defaultOpen={Boolean(contentSummary)}
+            forceOpen={focusField === "notes"}
+            resetKey={task.id}
+            className="task-detail-content-fields"
+          >
+            <div className="field">
+            <label>{strings.effectiveTags}</label>
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              {task.explicitTags.length === 0 && inheritedTags.length === 0 ? (
+                <span className="text-muted">{strings.noTags}</span>
+              ) : null}
+              {inheritedTags.map((tag) => {
+                const excluded = task.excludedTagIds.includes(tag.id);
+                return (
+                  <TagChip
+                    key={tag.id}
+                    tag={tag}
+                    excluded={excluded}
+                    onToggleExclude={() =>
+                      void patch({
+                        excludedTagIds: excluded
+                          ? task.excludedTagIds.filter((id) => id !== tag.id)
+                          : [...task.excludedTagIds, tag.id],
+                      })
+                    }
+                  />
+                );
+              })}
+            </div>
+            <TagPicker
+              tags={tags ?? []}
+              selectedIds={task.explicitTags.map((tag) => tag.id)}
+              hiddenIds={inheritedTags.map((tag) => tag.id)}
+              onChange={(tagIds) => patch({ tagIds })}
+            />
+          </div>
+
+          <div className="field task-notes-field">
+            <div className="row-between">
+              <label className="field-label" htmlFor="task-notes">{strings.notes}</label>
+              {!notesEditing ? (
+                <IconActionButton
+                  kind="edit"
+                  label={strings.edit}
+                  onClick={() => setNotesEditing(true)}
+                />
+              ) : null}
+            </div>
+            {notesEditing ? (
+              <>
+                <MarkdownEditor
+                  id="task-notes"
+                  ref={notesRef}
+                  value={notesDraft}
+                  onChange={setNotesDraft}
+                  toolbarLabel={strings.markdownToolbar}
+                  rows={6}
+                />
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={savingTextFields}
+                    onClick={cancelNotesEdit}
+                  >
+                    {strings.cancel}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={!notesDirty || savingTextFields}
+                    onClick={() =>
+                      void saveContentField("notes").then((saved) => {
+                        if (saved) setNotesEditing(false);
+                      })
+                    }
+                  >
+                    {strings.saveNotes}
+                  </button>
+                </div>
+              </>
+            ) : notesDraft.trim() ? (
+              <MarkdownNotes value={notesDraft} />
+            ) : (
+              <p className="text-muted">{strings.noNotes}</p>
+            )}
+          </div>
+
+          {saveError ?? taskActions.errors[task.id] ? (
+            <div className="task-row-error" role="alert">
+              <span>{strings.error}</span>
+              <span className="text-muted">{saveError ?? taskActions.errors[task.id]}</span>
+            </div>
+          ) : null}
           </TaskDetailDisclosure>
 
           <TaskDetailDisclosure

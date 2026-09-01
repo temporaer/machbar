@@ -449,6 +449,7 @@ export class Graph {
         dependencies,
         children: [],
         projectTitle: project?.title ?? null,
+        projectOwnerMemberId: project?.ownerMemberId ?? null,
         projectDueDate: project?.dueDate ?? null,
       };
     };

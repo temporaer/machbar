@@ -248,6 +248,9 @@ const extra = {
   taskSection: "Aufgabe",
   taskPlanningSection: "Planung",
   taskPlanningEmpty: "Keine Termine oder Priorität",
+  taskPlanFor: "Einplanen für",
+  taskPlanForGuidance:
+    "Zeigt die machbare Aufgabe ab diesem Tag in Heute.",
   taskContentSection: "Inhalt",
   taskContentEmpty: "Keine Notizen oder Tags",
   taskWaitingSection: "Wartet diese Aufgabe auf etwas?",
@@ -255,9 +258,9 @@ const extra = {
   externalWaitGuidance:
     "Nutze dies, wenn du erst nach einer Rückmeldung, Lieferung oder einem Ereignis weitermachen kannst.",
   externalWaitReasonLabel: "Worauf wartet die Aufgabe?",
-  revisitDateRecommended: "Wieder ansehen am (empfohlen)",
+  revisitDateRecommended: "Wiedervorlage am (empfohlen)",
   revisitDateGuidance:
-    "Bringt die blockierte Aufgabe an diesem Tag zurück nach Heute – nicht als geplanten Arbeitstermin. Ohne Datum erinnert dich der Review an die Klärung.",
+    "Zeigt die blockierte Aufgabe ab diesem Tag zur Prüfung in Heute. Ohne Datum erinnert dich der Review an die Klärung.",
   dependencyPrompt: "Muss vorher eine andere Aufgabe erledigt werden?",
   dependencyGuidance:
     "Verknüpfe nur Aufgaben, die wirklich zuerst erledigt werden müssen.",
@@ -408,7 +411,7 @@ const extra = {
   noInheritance: "Keine Vererbung",
   ownerInheritanceParent: "Übergeordnet",
   ownerInheritanceTaskSpecific: "Aufgabenspezifisch",
-  ownerInheritanceNone: "Keine",
+  ownerInheritanceNone: "Gemeinsam",
   addChildTitle: "Neue Teilaufgabe",
   addSuccessor: "Nächsten Schritt danach hinzufügen",
   successorPlaceholder: "Nächster Schritt",
