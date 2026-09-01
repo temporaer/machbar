@@ -109,11 +109,17 @@ paths:
             type: integer
       responses:
         "200":
-          description: Paginated task list.
+          description: >-
+            Task list. API v10 returns the paginated TaskSerializerV10 shape;
+            API v9 returns an unpaginated array using the legacy task fields.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PaginatedTaskList"
+                oneOf:
+                  - $ref: "#/components/schemas/PaginatedTaskList"
+                  - type: array
+                    items:
+                      $ref: "#/components/schemas/PaperlessTaskV9"
   /api/documents/:
     get:
       operationId: listDocuments
@@ -311,6 +317,56 @@ components:
         - task_id
         - status
         - related_document_ids
+        - acknowledged
+    PaperlessTaskV9:
+      type: object
+      description: >-
+        Legacy task shape returned by Paperless API v9. Unlike v10, the list is
+        unpaginated, statuses are uppercase, and the related document is a
+        singular string field.
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: string
+          format: uuid
+        task_name:
+          type: string
+        task_file_name:
+          type: string
+        date_created:
+          type: string
+          format: date-time
+          nullable: true
+        date_done:
+          type: string
+          format: date-time
+          nullable: true
+        type:
+          type: string
+        status:
+          type: string
+          enum:
+            - PENDING
+            - STARTED
+            - SUCCESS
+            - FAILURE
+            - REVOKED
+        result:
+          type: string
+          nullable: true
+        acknowledged:
+          type: boolean
+        related_document:
+          type: string
+          nullable: true
+        owner:
+          type: integer
+          nullable: true
+      required:
+        - id
+        - task_id
+        - status
         - acknowledged
     PaginatedTaskList:
       type: object
