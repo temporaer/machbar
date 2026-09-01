@@ -2290,16 +2290,11 @@ details[open] > .disclosure-summary::after {
   background: var(--color-surface-alt);
 }
 
-.pending-material-item img,
 .pending-material-file {
   width: 64px;
   height: 52px;
   border-radius: calc(var(--radius-sm) - 2px);
   background: var(--color-surface);
-}
-
-.pending-material-item img {
-  object-fit: cover;
 }
 
 .pending-material-file {
