@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../test/testUtils";
@@ -18,6 +18,24 @@ vi.mock("../lib/api", async (importOriginal) => {
 });
 
 const mockedApi = vi.mocked(api, true);
+const originalCreateObjectUrl = Object.getOwnPropertyDescriptor(
+  URL,
+  "createObjectURL",
+);
+const originalRevokeObjectUrl = Object.getOwnPropertyDescriptor(
+  URL,
+  "revokeObjectURL",
+);
+
+function stubObjectUrls() {
+  const createObjectURL = vi.fn(() => "blob:prepared");
+  const revokeObjectURL = vi.fn();
+  Object.defineProperties(URL, {
+    createObjectURL: { configurable: true, value: createObjectURL },
+    revokeObjectURL: { configurable: true, value: revokeObjectURL },
+  });
+  return { createObjectURL, revokeObjectURL };
+}
 
 const jpeg = new File(
   [
@@ -33,6 +51,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.clearAllMocks();
+  if (originalCreateObjectUrl) {
+    Object.defineProperty(URL, "createObjectURL", originalCreateObjectUrl);
+  } else {
+    Reflect.deleteProperty(URL, "createObjectURL");
+  }
+  if (originalRevokeObjectUrl) {
+    Object.defineProperty(URL, "revokeObjectURL", originalRevokeObjectUrl);
+  } else {
+    Reflect.deleteProperty(URL, "revokeObjectURL");
+  }
 });
 
 it("aborts preparation before decoding when the sheet closes", async () => {
@@ -42,8 +70,7 @@ it("aborts preparation before decoding when the sheet closes", async () => {
       resolvePreparation = resolve;
     }),
   );
-  const createImageBitmap = vi.fn();
-  vi.stubGlobal("createImageBitmap", createImageBitmap);
+  const { createObjectURL } = stubObjectUrls();
 
   const { unmount } = renderWithProviders(
     <ImageCropSheet
@@ -64,16 +91,13 @@ it("aborts preparation before decoding when the sheet closes", async () => {
   await Promise.resolve();
   await Promise.resolve();
 
-  expect(createImageBitmap).not.toHaveBeenCalled();
+  expect(createObjectURL).not.toHaveBeenCalled();
 });
 
 it("invalidates an in-flight crop when the sheet closes", async () => {
+  stubObjectUrls();
   mockedApi.preparePaperlessImageForCrop.mockResolvedValue(
     new Blob(["prepared"], { type: "image/jpeg" }),
-  );
-  vi.stubGlobal(
-    "createImageBitmap",
-    vi.fn().mockResolvedValue({ width: 1000, height: 800, close: vi.fn() }),
   );
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
     drawImage: vi.fn(),
@@ -100,6 +124,12 @@ it("invalidates an in-flight crop when the sheet closes", async () => {
   }
 
   renderWithProviders(<Harness />);
+  const image = await screen.findByAltText("Vorschau des Bildausschnitts");
+  Object.defineProperties(image, {
+    naturalWidth: { configurable: true, value: 1000 },
+    naturalHeight: { configurable: true, value: 800 },
+  });
+  fireEvent.load(image);
   const apply = await screen.findByRole("button", {
     name: "Ausschnitt verwenden",
   });

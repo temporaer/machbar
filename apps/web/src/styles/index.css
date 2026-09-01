@@ -2364,30 +2364,37 @@ details[open] > .disclosure-summary::after {
   position: relative;
   display: grid;
   min-height: 180px;
-  max-height: 48vh;
+  max-height: 52vh;
   place-items: center;
   overflow: hidden;
   border-radius: var(--radius-sm);
   background: #15181b;
 }
 
-.image-crop-canvas-frame {
-  position: relative;
-  display: block;
-  overflow: hidden;
+.image-crop-frame {
+  --rc-drag-handle-size: 14px;
+  --rc-drag-handle-mobile-size: 36px;
+  --rc-drag-handle-bg-colour: rgb(255 255 255 / 94%);
+  --rc-border-color: rgb(0 0 0 / 72%);
+  --rc-focus-color: var(--color-primary);
+  max-height: 52vh;
 }
 
-.image-crop-preview canvas {
+.image-crop-frame img {
   display: block;
-  width: 100%;
-  height: 100%;
+  max-height: 52vh;
+  object-fit: contain;
 }
 
-.image-crop-selection {
-  position: absolute;
+.image-crop-frame .ReactCrop__crop-selection {
   border: 2px solid #fff;
-  box-shadow: 0 0 0 999px rgb(0 0 0 / 52%);
-  pointer-events: none;
+  background-image: none;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 55%);
+}
+
+.image-crop-frame .ReactCrop__drag-handle {
+  border: 2px solid rgb(0 0 0 / 72%);
+  border-radius: 50%;
 }
 
 .image-crop-loading {
@@ -2395,32 +2402,6 @@ details[open] > .disclosure-summary::after {
   color: #fff;
   font-size: 0.88rem;
   font-weight: 600;
-}
-
-.image-crop-controls {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 16px;
-}
-
-.image-crop-controls label {
-  display: grid;
-  gap: 4px;
-  color: var(--color-text-muted);
-  font-size: 0.78rem;
-}
-
-.image-crop-controls input {
-  width: 100%;
-  min-height: 28px;
-  accent-color: var(--color-primary);
-}
-
-@media (max-width: 520px) {
-  .image-crop-controls {
-    grid-template-columns: 1fr;
-    gap: 6px;
-  }
 }
 
 .paperless-attachment-strip {
