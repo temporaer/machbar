@@ -253,6 +253,10 @@ describe("TodayPage", () => {
       blocked: true,
       executable: false,
       scheduledDate: today,
+      externalWait: {
+        waitingFor: "Rückmeldung der Nachbarn",
+        revisitDate: today,
+      },
       nextBlockerAttentionDate: today,
     });
     mockedApi.getAgenda.mockResolvedValue({

@@ -56,8 +56,11 @@ describe("canonical blocker analysis", () => {
   it("combines dependency and external blockers and requires both to clear", () => {
     const result = analyze([
       task(1, {
-        externalWait: { waitingFor: "IKEA" },
-        scheduledDate: "2026-09-01",
+        externalWait: {
+          waitingFor: "IKEA",
+          revisitDate: "2026-09-01",
+        },
+        scheduledDate: "2026-09-10",
         dependencies: [{ dependsOnTaskId: 2, resolved: false }],
       }),
       task(2),
@@ -82,8 +85,10 @@ describe("canonical blocker analysis", () => {
       dependencies: [{ dependsOnTaskId: 3, resolved: false }],
     });
     const c = task(3, {
-      externalWait: { waitingFor: "External event" },
-      scheduledDate: "2026-09-02",
+      externalWait: {
+        waitingFor: "External event",
+        revisitDate: "2026-09-02",
+      },
     });
     const saturday = task(4, { scheduledDate: "2026-09-05" });
     const result = analyze([a, b, c, saturday]);
@@ -96,10 +101,12 @@ describe("canonical blocker analysis", () => {
 
   it("diagnoses missing and reached external follow-ups precisely", () => {
     const result = analyze([
-      task(1, { externalWait: { waitingFor: "External event" } }),
+      task(1, {
+        externalWait: { waitingFor: "External event", revisitDate: null },
+      }),
       task(2, {
-        externalWait: { waitingFor: "Reply" },
-        scheduledDate: today,
+        externalWait: { waitingFor: "Reply", revisitDate: today },
+        scheduledDate: "2026-09-15",
       }),
     ]);
 

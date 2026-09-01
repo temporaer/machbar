@@ -176,7 +176,10 @@ describe("RefinementTaskRow", () => {
 
   it("shows blocked and waiting-for context when present", async () => {
     const task = makeItem({
-      externalWait: { waitingFor: "Antwort vom Handwerker" },
+      externalWait: {
+        waitingFor: "Antwort vom Handwerker",
+        revisitDate: null,
+      },
       blocked: true,
       executable: false,
     });
@@ -187,7 +190,7 @@ describe("RefinementTaskRow", () => {
 
   it("does not label a task as waiting when no reason exists", async () => {
     const task = makeItem({
-      externalWait: { waitingFor: null },
+      externalWait: { waitingFor: null, revisitDate: null },
       blocked: false,
       executable: true,
     });

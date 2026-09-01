@@ -137,7 +137,7 @@ describe("api request() Content-Type handling", () => {
     const putFetch = mockFetchOnce();
     await api.setExternalWait(9, {
       waitingFor: "Vermieter",
-      scheduledDate: "2026-09-05",
+      revisitDate: "2026-09-05",
       expectedRevision: 3,
     });
     expect(putFetch.mock.calls[0]?.[0]).toBe("/api/tasks/9/external-wait");
@@ -145,7 +145,7 @@ describe("api request() Content-Type handling", () => {
       method: "PUT",
       body: JSON.stringify({
         waitingFor: "Vermieter",
-        scheduledDate: "2026-09-05",
+        revisitDate: "2026-09-05",
         expectedRevision: 3,
       }),
     });
@@ -163,7 +163,7 @@ describe("api request() Content-Type handling", () => {
       action: "continue",
       content: "Noch einmal angerufen.",
       waitingFor: "Vermieter",
-      scheduledDate: "2026-09-12",
+      revisitDate: "2026-09-12",
       expectedRevision: 5,
     });
     expect(continueFetch.mock.calls[0]?.[0]).toBe(
@@ -175,7 +175,7 @@ describe("api request() Content-Type handling", () => {
         action: "continue",
         content: "Noch einmal angerufen.",
         waitingFor: "Vermieter",
-        scheduledDate: "2026-09-12",
+        revisitDate: "2026-09-12",
         expectedRevision: 5,
       }),
     });

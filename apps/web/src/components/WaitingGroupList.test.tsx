@@ -33,7 +33,7 @@ describe("WaitingGroupList", () => {
       title: "Freigabe abwarten",
       blocked: true,
       executable: false,
-      externalWait: { waitingFor: "Vermieter" },
+      externalWait: { waitingFor: "Vermieter", revisitDate: null },
       dependencies: [{
         id: 3,
         taskId: 101,
@@ -57,7 +57,7 @@ describe("WaitingGroupList", () => {
       title: "Rückruf",
       blocked: true,
       executable: false,
-      externalWait: { waitingFor: "Vermieter" },
+      externalWait: { waitingFor: "Vermieter", revisitDate: null },
       effectiveTags: [phone],
     });
     renderWithProviders(<WaitingGroupList tasks={[task]} groupBy="context" />);

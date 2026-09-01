@@ -41,6 +41,9 @@ function sortByDateThenPriorityTitleId(
 const sortByScheduledThenPriorityTitleId = sortByDateThenPriorityTitleId(
   (task) => task.scheduledDate,
 );
+const sortByRevisitThenPriorityTitleId = sortByDateThenPriorityTitleId(
+  (task) => task.externalWait?.revisitDate ?? null,
+);
 const sortByDueThenPriorityTitleId = sortByDateThenPriorityTitleId(
   (task) => task.dueDate,
 );
@@ -87,10 +90,8 @@ export interface BuildAgendaOptions {
  * bucket. Among clarified work, blocked tasks (unresolved dependencies)
  * are normally excluded from every bucket above — they aren't actionable,
  * so surfacing them in "Heute" would just be noise. The one exception is
- * `revisit`: a blocked task
- * whose own `scheduledDate` (never inherited from a project or parent) is
- * today or earlier reappears there as a reminder that it's worth checking
- * on, even though it can't be worked on directly yet.
+ * `revisit`: a task with a direct external wait whose revisit date is today
+ * or earlier reappears as a reminder to check on it.
  *
  * See {@link matchesSelectedOwner} for how `options.memberId` restricts
  * every bucket, revisit included, to the selected member's own and shared
@@ -156,11 +157,11 @@ export function buildAgenda(
         isOpen(t) &&
         isOperationalTask(t) &&
         t.blocked &&
-        !!t.scheduledDate &&
-        t.scheduledDate <= today &&
+        !!t.externalWait?.revisitDate &&
+        t.externalWait.revisitDate <= today &&
         matchesSelectedOwner(t, memberId),
     )
-    .sort(sortByScheduledThenPriorityTitleId);
+    .sort(sortByRevisitThenPriorityTitleId);
   for (const task of revisit) seen.add(task.id);
   const planned = take(
     (t) =>

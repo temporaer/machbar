@@ -134,6 +134,13 @@
       "when": 1788208996954,
       "tag": "0018_reviewed_at",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1788256311667,
+      "tag": "0019_external_wait_revisit_date",
+      "breakpoints": true
     }
   ]
 }

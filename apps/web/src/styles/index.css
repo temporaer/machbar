@@ -1355,6 +1355,62 @@ details[open] > .disclosure-summary::after {
   justify-content: space-between;
 }
 
+.task-detail-disclosure-heading {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.task-detail-disclosure-summary {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.task-external-wait-editor {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.task-dependency-editor {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.task-dependency-editor h4,
+.task-detail-guidance {
+  margin: 0;
+}
+
+.task-dependency-editor h4 {
+  font-size: 0.95rem;
+}
+
+.task-detail-guidance,
+.task-detail-field-hint {
+  max-width: 68ch;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.task-detail-command-actions {
+  flex-wrap: wrap;
+}
+
+.task-dependency-search {
+  gap: 8px;
+}
+
 .task-detail-recurrence .recurrence-editor {
   gap: 12px;
   padding: 0;

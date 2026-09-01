@@ -50,7 +50,10 @@ export function getProjectActivationReadiness(
       .all()
       .map((wait) => [
         wait.taskId,
-        { waitingFor: wait.waitingFor?.trim() || null },
+        {
+          waitingFor: wait.waitingFor?.trim() || null,
+          revisitDate: wait.revisitDate,
+        },
       ]),
   );
   const dependenciesByTask = new Map<

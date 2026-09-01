@@ -111,7 +111,7 @@ export function buildReviewItems(
     if (!isOpen(task)) continue;
     if (!isTaskInWorkingSystem(task, projectStatuses)) continue;
 
-    if (task.externalWait && !task.scheduledDate) {
+    if (task.externalWait && !task.externalWait.revisitDate) {
       items.push(
         taskItem(task, "clarification_repair", "waiting_without_followup", {
           code: "set_followup",

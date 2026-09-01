@@ -302,6 +302,7 @@ export const taskExternalWaits = sqliteTable("task_external_waits", {
     .primaryKey()
     .references(() => tasks.id, { onDelete: "cascade" }),
   waitingFor: text("waiting_for"),
+  revisitDate: text("revisit_date"),
   createdAt: text("created_at")
     .notNull()
     .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),

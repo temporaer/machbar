@@ -29,10 +29,14 @@ describe("TaskRow Wiedervorlage date", () => {
     vi.clearAllMocks();
   });
 
-  it("shows the scheduled date relatively only when the outline marks a revisit task", async () => {
+  it("shows the wait revisit relatively only when the outline requests it", async () => {
     const task = makeTask({
       title: "Lieferung erneut prüfen",
-      scheduledDate: "2026-08-22",
+      scheduledDate: "2026-09-02",
+      externalWait: {
+        waitingFor: "Lieferung",
+        revisitDate: "2026-08-22",
+      },
       nextBlockerAttentionDate: "2026-08-22",
       blocked: true,
       executable: false,
@@ -63,7 +67,11 @@ describe("TaskRow Wiedervorlage date", () => {
         tasks={[
           makeTask({
             title: "Abhängigkeit nachhalten",
-            scheduledDate: "2026-08-25",
+            scheduledDate: "2026-09-05",
+            externalWait: {
+              waitingFor: "Antwort",
+              revisitDate: "2026-08-25",
+            },
             nextBlockerAttentionDate: "2026-08-25",
             blocked: true,
             executable: false,

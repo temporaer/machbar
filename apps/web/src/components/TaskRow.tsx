@@ -68,7 +68,7 @@ export interface TaskRowProps {
   taskActions: ReturnType<typeof useTaskActions>;
   /** See `TaskRowWaitingInteraction`. Absent everywhere but the Warten page's outline. */
   waitingInteraction?: TaskRowWaitingInteraction | undefined;
-  /** Show this row's scheduled date as a Wiedervorlage prompt. */
+  /** Show this row's external-wait revisit date. */
   showRevisitDate?: boolean;
 }
 
@@ -216,12 +216,12 @@ export function TaskRow({
     ? formatExactLocalDate(task.projectDueDate, locale)
     : null;
   const revisitRelative =
-    showRevisitDate && task.nextBlockerAttentionDate
-      ? formatRelativeScheduleDate(task.nextBlockerAttentionDate, new Date(), locale)
+    showRevisitDate && task.externalWait?.revisitDate
+      ? formatRelativeScheduleDate(task.externalWait.revisitDate, new Date(), locale)
       : null;
   const revisitExact =
-    showRevisitDate && task.nextBlockerAttentionDate
-      ? formatExactLocalDate(task.nextBlockerAttentionDate, locale)
+    showRevisitDate && task.externalWait?.revisitDate
+      ? formatExactLocalDate(task.externalWait.revisitDate, locale)
       : null;
 
   const clearLongPress = useCallback(() => {
@@ -515,10 +515,10 @@ export function TaskRow({
               {revisitRelative && revisitExact ? (
                 <span
                   className="task-row-meta-item"
-                  title={`${task.executable ? strings.scheduled : strings.revisitDate}: ${revisitExact}`}
-                  aria-label={`${task.executable ? strings.scheduled : strings.revisitDate}: ${revisitRelative} (${revisitExact})`}
+                  title={`${strings.revisitDate}: ${revisitExact}`}
+                  aria-label={`${strings.revisitDate}: ${revisitRelative} (${revisitExact})`}
                 >
-                  {task.executable ? strings.scheduled : strings.revisitDate}: {revisitRelative}
+                  {strings.revisitDate}: {revisitRelative}
                 </span>
               ) : null}
               {projectDueRelative && projectDueExact ? (

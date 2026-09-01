@@ -207,7 +207,7 @@ describe("TaskDetailSheet", () => {
       "Aufgabe",
       "Planung",
       "Inhalt",
-      "Wartet auf",
+      "Wartet diese Aufgabe auf etwas?",
       "Teilaufgaben",
     ]) {
       expect(
@@ -232,6 +232,19 @@ describe("TaskDetailSheet", () => {
     expect(organization).not.toHaveAttribute("open");
     expect(activity).not.toHaveAttribute("open");
     expect(danger).not.toHaveAttribute("open");
+    for (const heading of [
+      "Planung",
+      "Inhalt",
+      "Wartet diese Aufgabe auf etwas?",
+      "Teilaufgaben",
+    ]) {
+      expect(
+        screen.getByRole("heading", { name: heading, level: 3 }).closest("details"),
+      ).not.toHaveAttribute("open");
+    }
+    expect(screen.getByText("Keine Termine oder Priorität")).toBeVisible();
+    expect(screen.getByText("Keine Notizen oder Tags")).toBeVisible();
+    expect(screen.getByText("Nicht blockiert")).toBeVisible();
     expect(
       screen.getByRole("button", { name: "Löschen", hidden: true }),
     ).not.toBeVisible();
@@ -314,6 +327,15 @@ describe("TaskDetailSheet", () => {
     renderSheet(42);
 
     await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await userEvent.click(
+      screen.getByRole("heading", {
+        name: "Wartet diese Aufgabe auf etwas?",
+        level: 3,
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Abhängigkeit hinzufügen" }),
+    );
     await userEvent.type(
       await screen.findByLabelText("Aufgabe suchen …"),
       "Freigabe",
@@ -386,6 +408,9 @@ describe("TaskDetailSheet", () => {
     renderSheet(42);
 
     await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Abhängigkeit hinzufügen" }),
+    );
     await userEvent.type(
       await screen.findByLabelText("Aufgabe suchen …"),
       "Freigabe",
@@ -406,10 +431,13 @@ describe("TaskDetailSheet", () => {
     const task = makeTask({
       id: 42,
       title: "Freigabe",
-      externalWait: { waitingFor: "Vermieter" },
+      externalWait: {
+        waitingFor: "Vermieter",
+        revisitDate: "2026-09-05",
+      },
       blocked: true,
       executable: false,
-      scheduledDate: "2026-09-05",
+      scheduledDate: "2026-09-10",
       nextBlockerAttentionDate: "2026-09-05",
     });
     mockedApi.getTask.mockResolvedValue(task);
@@ -419,16 +447,25 @@ describe("TaskDetailSheet", () => {
 
     const status = await screen.findByLabelText("Status");
     expect(within(status).queryByRole("option", { name: "Wartet" })).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Externer Wartegrund")).toHaveValue("Vermieter");
-    expect(screen.getAllByText("Wiedervorlage").length).toBeGreaterThan(0);
+    expect(
+      screen.getByLabelText("Worauf wartet die Aufgabe?"),
+    ).toHaveValue("Vermieter");
+    expect(
+      screen.getByText(/nicht als geplanten Arbeitstermin/),
+    ).toBeInTheDocument();
 
-    await userEvent.clear(screen.getByLabelText("Externer Wartegrund"));
-    await userEvent.type(screen.getByLabelText("Externer Wartegrund"), "Hausverwaltung");
-    await userEvent.click(screen.getByRole("button", { name: "Wartepunkt aktualisieren" }));
+    await userEvent.clear(screen.getByLabelText("Worauf wartet die Aufgabe?"));
+    await userEvent.type(
+      screen.getByLabelText("Worauf wartet die Aufgabe?"),
+      "Hausverwaltung",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Warten aktualisieren" }),
+    );
     await waitFor(() =>
       expect(mockedApi.setExternalWait).toHaveBeenCalledWith(42, {
         waitingFor: "Hausverwaltung",
-        scheduledDate: "2026-09-05",
+        revisitDate: "2026-09-05",
         expectedRevision: 1,
       }),
     );
@@ -440,9 +477,15 @@ describe("TaskDetailSheet", () => {
     );
     renderSheet(42);
     await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await userEvent.click(
+      screen.getByRole("heading", {
+        name: "Wartet diese Aufgabe auf etwas?",
+        level: 3,
+      }),
+    );
 
     expect(
-      await screen.findByRole("button", { name: "Wartepunkt hinzufügen" }),
+      await screen.findByRole("button", { name: "Als wartend markieren" }),
     ).toBeDisabled();
     expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
   });

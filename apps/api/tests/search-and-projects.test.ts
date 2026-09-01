@@ -19,8 +19,15 @@ describe("search/filter and project CRUD/archive", () => {
     await closeTestContext(ctx);
   });
 
-  function addExternalWaitRow(taskId: number, waitingFor = "External event") {
-    ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId, waitingFor }).run();
+  function addExternalWaitRow(
+    taskId: number,
+    waitingFor = "External event",
+    revisitDate: string | null = null,
+  ) {
+    ctx.handle.db
+      .insert(schema.taskExternalWaits)
+      .values({ taskId, waitingFor, revisitDate })
+      .run();
   }
 
   function createProject(
@@ -54,7 +61,7 @@ describe("search/filter and project CRUD/archive", () => {
     expect(results).toContainEqual(expect.objectContaining({
       title: "Nebenkostenabrechnung klären",
       status: "actionable",
-      externalWait: { waitingFor: "Vermieter" },
+      externalWait: expect.objectContaining({ waitingFor: "Vermieter" }),
     }));
     expect(results.every((task) => task.externalWait !== null)).toBe(true);
   });
@@ -297,7 +304,10 @@ describe("search/filter and project CRUD/archive", () => {
     const detail = (await ctx.app
       .inject({ method: "GET", url: `/api/projects/${waitingProject.id}` })
       .then((r) => r.json())) as {
-      tasks: Array<{ id: number; externalWait: { waitingFor: string | null } | null }>;
+      tasks: Array<{
+        id: number;
+        externalWait: { waitingFor: string | null; revisitDate: string | null } | null;
+      }>;
     };
     const waitingTasks = detail.tasks.filter((task) => task.externalWait !== null);
     for (const waitingTask of waitingTasks) {
@@ -310,9 +320,12 @@ describe("search/filter and project CRUD/archive", () => {
     }
     for (const waitingTask of waitingTasks) {
       const scheduled = await ctx.app.inject({
-        method: "PATCH",
-        url: `/api/tasks/${waitingTask.id}`,
-        payload: { scheduledDate: "2099-10-01" },
+        method: "PUT",
+        url: `/api/tasks/${waitingTask.id}/external-wait`,
+        payload: {
+          waitingFor: waitingTask.externalWait!.waitingFor,
+          revisitDate: "2099-10-01",
+        },
       });
 
       expect(scheduled.statusCode).toBe(200);
@@ -328,9 +341,12 @@ describe("search/filter and project CRUD/archive", () => {
 
     for (const waitingTask of waitingTasks) {
       await ctx.app.inject({
-        method: "PATCH",
-        url: `/api/tasks/${waitingTask.id}`,
-        payload: { scheduledDate: null },
+        method: "PUT",
+        url: `/api/tasks/${waitingTask.id}/external-wait`,
+        payload: {
+          waitingFor: waitingTask.externalWait!.waitingFor,
+          revisitDate: null,
+        },
       });
     }
 
@@ -362,23 +378,27 @@ describe("search/filter and project CRUD/archive", () => {
       {
         title: "Fenster bestellen",
         waitingFor: "Angebot der Schreinerei",
-        scheduledDate: "2099-10-03",
+        plannedDate: "2099-11-03",
+        revisitDate: "2099-10-03",
       },
       {
         title: "Arbeitsplatte bestellen",
         waitingFor: "Angebot der Schreinerei",
-        scheduledDate: "2099-10-01",
+        plannedDate: "2099-11-01",
+        revisitDate: "2099-10-01",
       },
       {
         title: "Lieferung verfolgen",
         waitingFor: "Liefertermin",
-        scheduledDate: "2099-10-02",
+        plannedDate: "2099-11-02",
+        revisitDate: "2099-10-02",
       },
       {
         title: "Nicht mehr relevant",
         waitingFor: "Diese Rückmeldung ist erledigt",
         status: "done",
-        scheduledDate: "2099-09-01",
+        plannedDate: "2099-09-01",
+        revisitDate: "2099-08-01",
       },
     ]) {
       const waitingFor = payload.waitingFor;
@@ -389,14 +409,14 @@ describe("search/filter and project CRUD/archive", () => {
           projectId: project.id,
           status: "actionable",
           title: payload.title,
-          scheduledDate: payload.scheduledDate,
+          scheduledDate: payload.plannedDate,
         },
       })).json();
       if (payload.status !== "done") {
         const wait = await ctx.app.inject({
           method: "PUT",
           url: `/api/tasks/${created.id}/external-wait`,
-          payload: { waitingFor },
+          payload: { waitingFor, revisitDate: payload.revisitDate },
         });
         expect(wait.statusCode).toBe(200);
       } else {
@@ -428,7 +448,7 @@ describe("search/filter and project CRUD/archive", () => {
     expect(waitingTasks).toContainEqual(
       expect.objectContaining({
         title: "Lieferung verfolgen",
-        externalWait: { waitingFor: "Liefertermin" },
+        externalWait: expect.objectContaining({ waitingFor: "Liefertermin" }),
       }),
     );
   });
@@ -449,7 +469,7 @@ describe("search/filter and project CRUD/archive", () => {
       ownerMemberId: owner.id,
       ownerInheritanceMode: "explicit",
     });
-    addExternalWaitRow(waiting.id, "Rückmeldung der Werkstatt");
+    addExternalWaitRow(waiting.id, "Rückmeldung der Werkstatt", today);
 
     const projects = (
       await ctx.app.inject({ method: "GET", url: "/api/projects" })
@@ -503,7 +523,7 @@ describe("search/filter and project CRUD/archive", () => {
       status: "actionable",
       scheduledDate: "2026-11-01",
     });
-    addExternalWaitRow(blocker.id);
+    addExternalWaitRow(blocker.id, "External event", "2026-11-01");
     const action = createTask(ctx.handle.db, {
       projectId: parked.id,
       title: "API blockierte Aktion",

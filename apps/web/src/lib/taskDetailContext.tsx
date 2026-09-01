@@ -12,6 +12,7 @@ export type TaskDetailFocusField =
   | "owner"
   | "schedule"
   | "notes"
+  | "waiting"
   | "dependencies"
   | "subtasks";
 

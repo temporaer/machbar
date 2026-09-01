@@ -21,13 +21,16 @@ describe("WaitingFollowUpSheet", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
-  it("sends only the authored content and the task's own scheduled date in one continue command", async () => {
+  it("sends authored content and the wait's revisit date in one continue command", async () => {
     const task = makeTask({
       id: 9,
       notes: "Erste Anfrage.",
       revision: 3,
-      externalWait: { waitingFor: "Vermieter" },
-      scheduledDate: "2026-09-05",
+      externalWait: {
+        waitingFor: "Vermieter",
+        revisitDate: "2026-09-05",
+      },
+      scheduledDate: "2026-09-10",
       nextBlockerAttentionDate: "2026-08-31",
       blocked: true,
       executable: false,
@@ -51,7 +54,7 @@ describe("WaitingFollowUpSheet", () => {
         action: "continue",
         content: "Erneut angerufen.",
         waitingFor: "Vermieter",
-        scheduledDate: "2026-09-05",
+        revisitDate: "2026-09-05",
         expectedRevision: 3,
       }),
     );
@@ -64,14 +67,16 @@ describe("WaitingFollowUpSheet", () => {
       id: 10,
       notes: "Erste Anfrage.",
       revision: 7,
-      externalWait: { waitingFor: "Vermieter" },
+      externalWait: {
+        waitingFor: "Vermieter",
+        revisitDate: "2026-09-05",
+      },
       scheduledDate: "2026-09-05",
     });
     mockedApi.followUpExternalWait.mockResolvedValue({
       ...task,
       revision: 8,
       externalWait: null,
-      scheduledDate: null,
     });
     renderWithProviders(
       <WaitingFollowUpSheet task={task} onClose={vi.fn()} />,
@@ -82,7 +87,7 @@ describe("WaitingFollowUpSheet", () => {
       "Antwort erhalten.",
     );
     await userEvent.click(
-      screen.getByRole("checkbox", { name: "Wartepunkt auflösen" }),
+      screen.getByRole("checkbox", { name: "Warten beenden" }),
     );
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -100,7 +105,7 @@ describe("WaitingFollowUpSheet", () => {
     const task = makeTask({
       id: 11,
       revision: 2,
-      externalWait: { waitingFor: "Lieferant" },
+      externalWait: { waitingFor: "Lieferant", revisitDate: null },
     });
     mockedApi.followUpExternalWait.mockRejectedValue(new Error("Save failed"));
     const onClose = vi.fn();
@@ -121,7 +126,7 @@ describe("WaitingFollowUpSheet", () => {
     const task = makeTask({
       id: 12,
       revision: 4,
-      externalWait: { waitingFor: "Amt" },
+      externalWait: { waitingFor: "Amt", revisitDate: null },
     });
     let resolveRequest!: (task: ReturnType<typeof makeTask>) => void;
     mockedApi.followUpExternalWait.mockReturnValue(

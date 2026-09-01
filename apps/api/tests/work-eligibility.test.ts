@@ -58,7 +58,7 @@ describe("working-system task eligibility", () => {
     const waitResponse = await ctx.app.inject({
       method: "PUT",
       url: `/api/tasks/${waiting.id}/external-wait`,
-      payload: { waitingFor: "Rückmeldung" },
+      payload: { waitingFor: "Rückmeldung", revisitDate: today },
     });
     expect(waitResponse.statusCode).toBe(200);
     const captured = await createTask({

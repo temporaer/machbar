@@ -274,7 +274,7 @@ export interface RefinementTaskRow {
   updatedAt: string;
   blocked: boolean;
   executable: boolean;
-  externalWait: { waitingFor: string | null } | null;
+  externalWait: Task["externalWait"];
   nextBlockerAttentionDate: string | null;
   blockers: Task["blockers"];
   dependencies: Task["dependencies"];
@@ -283,7 +283,7 @@ export interface RefinementTaskRow {
 
 export interface ExternalWaitInput {
   waitingFor?: string | null;
-  scheduledDate?: string | null;
+  revisitDate?: string | null;
   expectedRevision?: number;
 }
 
@@ -297,7 +297,7 @@ export type ExternalWaitFollowUpInput =
       action: "continue";
       content: string;
       waitingFor?: string | null;
-      scheduledDate?: string | null;
+      revisitDate?: string | null;
       expectedRevision: number;
     };
 
@@ -332,19 +332,7 @@ export interface CreateMemberInput {
 
 export type UpdateMemberInput = Partial<CreateMemberInput>;
 
-/**
- * `@machbar/shared`'s `Agenda` type now declares a `revisit` bucket for
- * blocked tasks whose `scheduledDate` has arrived (see
- * `apps/api/src/domain/agenda.ts` / the shared `Agenda` interface), but the
- * compiled `@machbar/shared` artifact this app builds against may still lag
- * behind that source change depending on build order. Extending the type
- * locally with an optional `revisit` keeps the frontend typechecking and
- * rendering correctly either way — before the field exists, while it's
- * being wired up, and once it's guaranteed present — with no further
- * frontend change needed once every build is in sync.
- */
-export type AgendaResponse = Omit<Agenda, "followUp"> & {
-  revisit?: Task[];
+export type AgendaResponse = Agenda & {
   followUp?: Task[];
 };
 
