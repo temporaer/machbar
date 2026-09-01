@@ -34,7 +34,10 @@ import type { MoveMode } from "./MoveTaskSheet";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { MemberLabel } from "./MemberAvatar";
 import { TaskOwnerChoiceGroup } from "./TaskOwnerChoiceGroup";
-import { MarkdownEditor } from "./MarkdownEditor";
+import {
+  insertMarkdownAtSelection,
+  MarkdownEditor,
+} from "./MarkdownEditor";
 import { MarkdownNotes } from "./MarkdownNotes";
 import { NativeShareButton } from "./NativeShareButton";
 import { CalendarExportButton } from "./CalendarExportButton";
@@ -53,6 +56,14 @@ import {
   sortDependencies,
   sortDependencyCandidates,
 } from "../lib/sortOrder";
+import {
+  containsPaperlessReference,
+  extractPaperlessReferences,
+  markdownWithoutPaperlessReferences,
+} from "../lib/paperlessAttachments";
+import { appendTextBlock } from "../lib/shareTarget";
+import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
+import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -162,6 +173,7 @@ export function TaskDetailSheet() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [titleEditing, setTitleEditing] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
+  const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [addingChild, setAddingChild] = useState(false);
   const [addingDependency, setAddingDependency] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -240,6 +252,7 @@ export function TaskDetailSheet() {
       setSaveError(null);
       setTitleEditing(false);
       setNotesEditing(false);
+      setAttachmentOpen(false);
       setAddingChild(false);
       setAddingDependency(false);
       setDeleting(false);
@@ -300,6 +313,11 @@ export function TaskDetailSheet() {
       setNotesEditing(true);
       return;
     }
+    if (focusField === "attachment") {
+      setAttachmentOpen(true);
+      clearFocusField();
+      return;
+    }
     if (focusField === "dependencies" && !addingDependency) {
       setAddingDependency(true);
       return;
@@ -309,6 +327,7 @@ export function TaskDetailSheet() {
       owner: ownerFieldRef.current,
       schedule: scheduleFieldRef.current,
       notes: notesRef.current,
+      attachment: null,
       waiting: dependenciesFieldRef.current,
       dependencies: dependenciesFieldRef.current,
       subtasks: subtasksFieldRef.current,
@@ -318,6 +337,7 @@ export function TaskDetailSheet() {
       owner: ownerInputRef.current,
       schedule: scheduleInputRef.current,
       notes: notesRef.current,
+      attachment: null,
       waiting: externalWaitInputRef.current,
       dependencies: dependencyInputRef.current,
       subtasks: null,
@@ -620,12 +640,16 @@ export function TaskDetailSheet() {
         .filter((value): value is string => value !== null)
         .join(" · ")
     : "";
+  const attachments = extractPaperlessReferences(notesDraft);
   const contentSummary = task
     ? [
         task.effectiveTags.length > 0
           ? `${task.effectiveTags.length} ${strings.tags}`
           : null,
-        task.notes?.trim() ? strings.notes : null,
+        markdownWithoutPaperlessReferences(notesDraft) ? strings.notes : null,
+        attachments.length > 0
+          ? strings.attachmentCount(attachments.length)
+          : null,
       ]
         .filter((value): value is string => value !== null)
         .join(" · ")
@@ -682,6 +706,12 @@ export function TaskDetailSheet() {
               showStatus={false}
               onStatusChange={setShareStatus}
             />
+            <IconActionButton
+              kind="attachment"
+              label={strings.attach}
+              disabled={taskMutationPending}
+              onClick={() => setAttachmentOpen(true)}
+            />
           </>
         ) : null
       }
@@ -705,6 +735,7 @@ export function TaskDetailSheet() {
           {task.blocked && blockerSummary ? (
             <div className="badge badge-status-waiting">{blockerSummary}</div>
           ) : null}
+          <PaperlessAttachmentStrip attachments={attachments} />
 
           <TaskDetailSection title={strings.taskSection}>
             {task.projectId !== null && task.projectTitle ? (
@@ -1538,6 +1569,51 @@ export function TaskDetailSheet() {
         />
       ) : null}
     </BottomSheet>
+    {attachmentOpen && task ? (
+      <MarkdownAttachmentSheet
+        onClose={() => setAttachmentOpen(false)}
+        onInsert={async (markdown) => {
+          if (notesEditing) {
+            const current = notesRef.current;
+            const transform = insertMarkdownAtSelection(
+              current?.value ?? notesDraft,
+              current?.selectionStart ?? notesDraft.length,
+              current?.selectionEnd ?? notesDraft.length,
+              markdown,
+            );
+            setNotesDraft(transform.value);
+            queueMicrotask(() => {
+              notesRef.current?.focus();
+              notesRef.current?.setSelectionRange(
+                transform.selectionStart,
+                transform.selectionEnd,
+              );
+            });
+            return;
+          }
+          if (containsPaperlessReference(task.notes, markdown)) return;
+          const nextNotes = appendTextBlock(task.notes, markdown);
+          setSaveError(null);
+          try {
+            const updated = await taskActions.update(
+              task,
+              { notes: nextNotes },
+              { notes: nextNotes },
+              true,
+            );
+            if (updated) {
+              revisionRef.current = updated.revision;
+              setNotesDraft(updated.notes);
+              setTextFieldsBaseline(textFieldsSnapshot(updated));
+            }
+          } catch (cause) {
+            if (isStaleWriteConflict(cause)) reload();
+            setSaveError(localizedErrorMessage(cause, strings));
+            throw cause;
+          }
+        }}
+      />
+    ) : null}
     {promotedProject ? (
       <CapturedProjectHandoff
         project={promotedProject}

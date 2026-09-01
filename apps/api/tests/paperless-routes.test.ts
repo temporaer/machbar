@@ -311,6 +311,7 @@ describe("Paperless integration routes", () => {
       expect(response.statusCode).toBe(200);
       expect(response.headers["content-type"]).toBe("image/webp");
       expect(response.headers["content-length"]).toBe(String(bytes.length));
+      expect(response.headers["cache-control"]).toBe("private, max-age=300");
       expect(response.rawPayload).toEqual(bytes);
       expect(thumbnail).toHaveBeenCalledWith(42);
     });

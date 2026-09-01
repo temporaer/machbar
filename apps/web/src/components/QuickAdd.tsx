@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { ProjectWithActions } from "../lib/api";
 import { useRefresh } from "../lib/refresh";
 import { api } from "../lib/api";
@@ -13,6 +13,12 @@ import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
 import { useIdentity } from "../lib/identity";
 import { useLocale } from "../lib/locale";
 import { sortProjectDestinations } from "../lib/sortOrder";
+import { appendTextBlock } from "../lib/shareTarget";
+import {
+  uploadPaperlessFile,
+  type UploadedPaperlessAttachment,
+} from "../lib/paperlessAttachments";
+import { IconActionGlyph } from "./IconActionButton";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -34,6 +40,14 @@ export function QuickAdd({
   const strings = useStrings();
   const { locale } = useLocale();
   const [open, setOpen] = useState(autoOpen);
+  const [captureStep, setCaptureStep] = useState<"choose" | "form">(
+    autoOpen ? "form" : "choose",
+  );
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const uploadedAttachmentRef =
+    useRef<Promise<UploadedPaperlessAttachment> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [createdTask, setCreatedTask] = useState<Awaited<ReturnType<typeof api.createTask>> | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -49,13 +63,44 @@ export function QuickAdd({
   const taskActions = useTaskActions();
 
   useEffect(() => {
-    if (autoOpen) setOpen(true);
+    if (autoOpen) {
+      setCaptureStep("form");
+      setOpen(true);
+    }
   }, [autoOpen]);
 
   const close = () => {
     setOpen(false);
+    setCaptureStep("choose");
+    setPendingFile(null);
+    uploadedAttachmentRef.current = null;
     setError(null);
     if (autoOpen) onAutoOpenClose?.();
+  };
+
+  const selectMaterial = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setPendingFile(file);
+    uploadedAttachmentRef.current = null;
+    setCaptureStep("form");
+  };
+
+  const prepareMaterialNotes = async (notes: string) => {
+    if (!pendingFile) return notes;
+    if (!uploadedAttachmentRef.current) {
+      const upload = uploadPaperlessFile(pendingFile);
+      uploadedAttachmentRef.current = upload;
+      void upload.catch(() => {
+        if (uploadedAttachmentRef.current === upload) {
+          uploadedAttachmentRef.current = null;
+        }
+      });
+    }
+    const attachment = await uploadedAttachmentRef.current;
+    if (!attachment) return notes;
+    return appendTextBlock(notes, attachment.markdown);
   };
 
   const loadProjects = () => {
@@ -125,6 +170,7 @@ export function QuickAdd({
         className="quick-add-fab"
         onClick={() => {
           setCaptureNotice(null);
+          setCaptureStep("choose");
           setOpen(true);
         }}
         aria-label={strings.quickAdd}
@@ -133,23 +179,70 @@ export function QuickAdd({
       </button>
       {open ? (
         <BottomSheet title={strings.quickAdd} onClose={close} labelledBy="quick-add-title">
-          <CaptureForm
-            projectId={projectId ?? null}
-            parentTaskId={parentTaskId ?? null}
-            onCancel={close}
-            onCaptured={(result) => {
-              bump();
-              close();
-              if (result.kind === "project") {
-                setCreatedProject(result.project);
-              } else if (result.needsClarification) {
-                setCaptureNotice(strings.filedInInbox);
-              } else {
-                setCaptureNotice(null);
-                setCreatedTask(result.task);
-              }
-            }}
-          />
+          {captureStep === "choose" ? (
+            <div className="stack quick-capture-choices">
+              <input
+                ref={cameraRef}
+                className="visually-hidden"
+                type="file"
+                accept="image/*"
+                capture="environment"
+                aria-label={strings.takePhoto}
+                onChange={selectMaterial}
+              />
+              <input
+                ref={fileRef}
+                className="visually-hidden"
+                type="file"
+                aria-label={strings.chooseFile}
+                onChange={selectMaterial}
+              />
+              <button
+                type="button"
+                className="btn btn-primary btn-block quick-capture-choice"
+                onClick={() => setCaptureStep("form")}
+              >
+                <span aria-hidden="true">+</span>
+                <strong>{strings.captureTask}</strong>
+              </button>
+              <button
+                type="button"
+                className="btn btn-block quick-capture-choice"
+                onClick={() => cameraRef.current?.click()}
+              >
+                <span aria-hidden="true"><IconActionGlyph kind="camera" /></span>
+                <strong>{strings.capturePhoto}</strong>
+              </button>
+              <button
+                type="button"
+                className="btn btn-block quick-capture-choice"
+                onClick={() => fileRef.current?.click()}
+              >
+                <span aria-hidden="true"><IconActionGlyph kind="upload" /></span>
+                <strong>{strings.captureFile}</strong>
+              </button>
+            </div>
+          ) : (
+            <CaptureForm
+              projectId={projectId ?? null}
+              parentTaskId={parentTaskId ?? null}
+              pendingFiles={pendingFile ? [pendingFile] : []}
+              {...(pendingFile ? { prepareNotes: prepareMaterialNotes } : {})}
+              onCancel={close}
+              onCaptured={(result) => {
+                bump();
+                close();
+                if (result.kind === "project") {
+                  setCreatedProject(result.project);
+                } else if (result.needsClarification) {
+                  setCaptureNotice(strings.filedInInbox);
+                } else {
+                  setCaptureNotice(null);
+                  setCreatedTask(result.task);
+                }
+              }}
+            />
+          )}
         </BottomSheet>
       ) : null}
       {createdTask ? (

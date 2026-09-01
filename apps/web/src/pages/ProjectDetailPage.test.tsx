@@ -11,6 +11,12 @@ import { useTaskDetail } from "../lib/taskDetailContext";
 import { TaskDetailSheet } from "../components/TaskDetailSheet";
 
 vi.mock("../lib/api", () => ({
+  paperlessDocumentDownloadUrl: (id: number) =>
+    `/api/integrations/paperless/documents/${id}/download`,
+  paperlessDocumentPreviewUrl: (id: number) =>
+    `/api/integrations/paperless/documents/${id}/preview`,
+  paperlessDocumentThumbnailUrl: (id: number) =>
+    `/api/integrations/paperless/documents/${id}/thumbnail`,
   api: {
     getMembers: vi.fn(),
     getProject: vi.fn(),
@@ -19,6 +25,8 @@ vi.mock("../lib/api", () => ({
     updateTask: vi.fn(),
     updateProject: vi.fn(),
     getActivity: vi.fn(),
+    uploadPaperlessDocument: vi.fn(),
+    searchPaperlessDocuments: vi.fn(),
   },
 }));
 
@@ -132,6 +140,12 @@ describe("ProjectDetailPage task explanations", () => {
       makeTask({ id, projectId: 42, ...input }),
     );
     mockedApi.getActivity.mockResolvedValue({ items: [], nextCursor: null });
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 73,
+      title: "plan",
+      originalFileName: "plan.pdf",
+      mimeType: "application/pdf",
+    });
   });
 
   it("loads project and recorded task activity only after opening the disclosure", async () => {
@@ -288,6 +302,43 @@ describe("ProjectDetailPage task explanations", () => {
     expect(
       screen.queryByRole("button", { name: "In Kalender" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("appends attachments through canonical project actions", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({
+        id: 42,
+        title: "Sommerfest planen",
+        ownerMemberId: 1,
+        notes: "Bestehende Notiz",
+      }),
+      tasks: [],
+    });
+    mockedApi.updateProject.mockResolvedValue(
+      makeProject({
+        id: 42,
+        title: "Sommerfest planen",
+        ownerMemberId: 1,
+        notes: "Bestehende Notiz\n\n[plan.pdf](paperless:73)",
+        revision: 2,
+      }),
+    );
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByText("Sommerfest planen");
+
+    await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
+    await userEvent.upload(
+      screen.getByLabelText("Datei auswählen"),
+      new File(["pdf"], "plan.pdf", { type: "application/pdf" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.updateProject).toHaveBeenCalledWith(42, {
+        notes: "Bestehende Notiz\n\n[plan.pdf](paperless:73)",
+        expectedRevision: 1,
+      }),
+    );
+    expect(await screen.findByLabelText("1 Anhang")).toBeInTheDocument();
   });
 
   it("returns full project details to the originating Review item", async () => {

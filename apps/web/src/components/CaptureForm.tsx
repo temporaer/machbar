@@ -7,6 +7,7 @@ import { localizedErrorMessage } from "../lib/errorMessage";
 import { ownerAssignmentPatch } from "../lib/taskMutations";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { HumanDateInput } from "./HumanDateInput";
+import { PendingMaterialPreview } from "./PendingMaterialPreview";
 
 export type CaptureResult =
   | {
@@ -29,6 +30,7 @@ export interface CaptureFormProps {
   showDueDate?: boolean;
   autoFocus?: boolean;
   prepareNotes?: (notes: string) => Promise<string>;
+  pendingFiles?: readonly File[];
   onCancel: () => void;
   onCaptured: (result: CaptureResult) => void;
 }
@@ -44,6 +46,7 @@ export function CaptureForm({
   showDueDate = false,
   autoFocus = true,
   prepareNotes,
+  pendingFiles = [],
   onCancel,
   onCaptured,
 }: CaptureFormProps) {
@@ -119,6 +122,7 @@ export function CaptureForm({
         void createTask(canDeferClassification);
       }}
     >
+      <PendingMaterialPreview files={pendingFiles} />
       <div className="field">
         <label htmlFor="capture-title">{strings.titleEnough}</label>
         <input

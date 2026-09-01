@@ -494,6 +494,7 @@ function SharePageContent({
             initialDueDate={calendarDueDate}
             showNotes
             showDueDate={calendarDueDate !== null}
+            pendingFiles={incoming.files}
             prepareNotes={async (notes) =>
               appendTextBlock(notes, await resolveAttachmentBlock())
             }

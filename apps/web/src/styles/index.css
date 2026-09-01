@@ -2248,6 +2248,180 @@ details[open] > .disclosure-summary::after {
   height: 19px;
 }
 
+.quick-capture-choices {
+  gap: 8px;
+}
+
+.quick-capture-choice {
+  min-height: 52px;
+  justify-content: flex-start;
+  gap: 12px;
+  padding-inline: 16px;
+  text-align: left;
+}
+
+.quick-capture-choice > span {
+  width: 24px;
+  color: currentColor;
+  font-size: 1.25rem;
+  text-align: center;
+}
+
+.quick-capture-choice svg {
+  width: 22px;
+  height: 22px;
+}
+
+.pending-material-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.pending-material-item {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.pending-material-item img,
+.pending-material-file {
+  width: 64px;
+  height: 52px;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: var(--color-surface);
+}
+
+.pending-material-item img {
+  object-fit: cover;
+}
+
+.pending-material-file {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.pending-material-item figcaption {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.pending-material-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pending-material-item small {
+  color: var(--color-text-muted);
+}
+
+.paperless-attachment-strip {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+
+.paperless-attachment-tile {
+  width: 112px;
+  flex: 0 0 112px;
+  display: grid;
+  grid-template-rows: 72px auto;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.paperless-attachment-tile:hover {
+  border-color: var(--color-primary);
+}
+
+.paperless-attachment-tile img,
+.paperless-attachment-document-icon {
+  width: 100%;
+  height: 72px;
+  background: var(--color-surface);
+}
+
+.paperless-attachment-tile img {
+  object-fit: cover;
+}
+
+.paperless-attachment-document-icon {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.paperless-attachment-tile > span:last-child {
+  padding: 6px 7px;
+  overflow: hidden;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-row-attachment-preview {
+  position: relative;
+  display: block;
+  height: 104px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.task-row-attachment-preview::after {
+  position: absolute;
+  inset: 52% 0 0;
+  background: linear-gradient(to bottom, transparent, var(--task-row-surface));
+  content: "";
+}
+
+.task-row-attachment-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.55) contrast(0.9);
+  opacity: 0.78;
+}
+
+.task-row-attachment-count {
+  position: absolute;
+  z-index: 1;
+  right: 7px;
+  top: 7px;
+  min-width: 26px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--task-row-surface) 88%, transparent);
+  color: var(--color-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+
 /*
  * Auto-flows into its own grid row of `.task-row`, exactly like
  * `.task-row-chips` above — rendered directly beneath the task instead of

@@ -16,7 +16,7 @@ export function MarkdownAttachmentSheet({
   onInsert,
   onClose,
 }: {
-  onInsert: (markdown: string) => void;
+  onInsert: (markdown: string) => void | Promise<void>;
   onClose: () => void;
 }) {
   const strings = useStrings();
@@ -24,22 +24,39 @@ export function MarkdownAttachmentSheet({
   const imageRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [delivering, setDelivering] = useState(false);
+  const [resolvedMarkdown, setResolvedMarkdown] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PaperlessDocumentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const deliver = async (markdown: string) => {
+    setResolvedMarkdown(markdown);
+    setDelivering(true);
+    setError(null);
+    try {
+      await onInsert(markdown);
+      onClose();
+    } catch (cause) {
+      setError(localizedErrorMessage(cause, strings));
+    } finally {
+      setDelivering(false);
+    }
+  };
+
   const selectFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file || uploading) return;
 
+    setResolvedMarkdown(null);
     setUploading(true);
     setError(null);
     try {
       const attachment = await uploadPaperlessFile(file);
-      onInsert(attachment.markdown);
+      await deliver(attachment.markdown);
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
     } finally {
@@ -52,6 +69,7 @@ export function MarkdownAttachmentSheet({
     const normalized = query.trim();
     if (!normalized || searching) return;
     setSearching(true);
+    setResolvedMarkdown(null);
     setError(null);
     try {
       setResults(await api.searchPaperlessDocuments(normalized));
@@ -62,11 +80,11 @@ export function MarkdownAttachmentSheet({
     }
   };
 
-  const chooseDocument = (document: PaperlessDocumentSummary) => {
-    onInsert(paperlessMarkdownReference(document));
+  const chooseDocument = async (document: PaperlessDocumentSummary) => {
+    await deliver(paperlessMarkdownReference(document));
   };
 
-  const busy = uploading || searching;
+  const busy = uploading || searching || delivering;
 
   return (
     <BottomSheet
@@ -74,7 +92,13 @@ export function MarkdownAttachmentSheet({
       onClose={() => {
         if (!busy) onClose();
       }}
-      headerStatus={uploading ? strings.paperlessUploading : undefined}
+      headerStatus={
+        uploading
+          ? strings.paperlessUploading
+          : delivering
+            ? strings.save
+            : undefined
+      }
     >
       <div className="stack markdown-attachment-sheet">
         <input
@@ -106,7 +130,7 @@ export function MarkdownAttachmentSheet({
           <button
             type="button"
             className="btn btn-block"
-            disabled={uploading}
+            disabled={busy}
             onClick={() => cameraRef.current?.click()}
           >
             {strings.takePhoto}
@@ -114,7 +138,7 @@ export function MarkdownAttachmentSheet({
           <button
             type="button"
             className="btn btn-block"
-            disabled={uploading}
+            disabled={busy}
             onClick={() => imageRef.current?.click()}
           >
             {strings.chooseImage}
@@ -122,7 +146,7 @@ export function MarkdownAttachmentSheet({
           <button
             type="button"
             className="btn btn-block"
-            disabled={uploading}
+            disabled={busy}
             onClick={() => fileRef.current?.click()}
           >
             {strings.chooseFile}
@@ -130,7 +154,7 @@ export function MarkdownAttachmentSheet({
           <button
             type="button"
             className="btn btn-block"
-            disabled={uploading}
+            disabled={busy}
             onClick={() => {
               setSearchOpen(true);
               setError(null);
@@ -171,7 +195,8 @@ export function MarkdownAttachmentSheet({
                 key={document.id}
                 type="button"
                 className="paperless-search-result"
-                onClick={() => chooseDocument(document)}
+                disabled={busy}
+                onClick={() => void chooseDocument(document)}
               >
                 <img
                   src={paperlessDocumentThumbnailUrl(document.id)}
@@ -186,7 +211,21 @@ export function MarkdownAttachmentSheet({
             ))}
           </div>
         ) : null}
-        {error ? <p className="capture-error" role="alert">{error}</p> : null}
+        {error ? (
+          <div className="stack">
+            <p className="capture-error" role="alert">{error}</p>
+            {resolvedMarkdown ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={busy}
+                onClick={() => void deliver(resolvedMarkdown)}
+              >
+                {strings.retry}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </BottomSheet>
   );

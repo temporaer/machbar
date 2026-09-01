@@ -38,6 +38,15 @@ const base = {
   addTask: "Aufgabe hinzufügen",
   addSubtask: "Teilaufgabe hinzufügen",
   quickAdd: "Schnell hinzufügen",
+  captureTask: "Aufgabe erfassen",
+  capturePhoto: "Foto erfassen",
+  captureFile: "Datei erfassen",
+  pendingAttachments: (count: number) =>
+    count === 1 ? "1 Anhang zum Erfassen" : `${count} Anhänge zum Erfassen`,
+  pendingUpload: "Wird erst beim Erfassen hochgeladen",
+  attach: "Anhang hinzufügen",
+  attachmentCount: (count: number) =>
+    count === 1 ? "1 Anhang" : `${count} Anhänge`,
   titleEnough: "Nur Titel reicht",
   save: "Speichern",
   cancel: "Abbrechen",

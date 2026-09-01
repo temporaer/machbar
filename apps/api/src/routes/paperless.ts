@@ -127,6 +127,7 @@ export function registerPaperlessRoutes(
         const paperless = requireClient(env, client);
         const id = parseDocumentId(request.params.id);
         const binary = await paperless.thumbnail(id);
+        reply.header("cache-control", "private, max-age=300");
         return sendBinary(reply, binary, "inline");
       },
     );

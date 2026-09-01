@@ -16,6 +16,9 @@ export type IconActionKind =
   | "reopen"
   | "followUp"
   | "share"
+  | "attachment"
+  | "camera"
+  | "upload"
   | "edit"
   | "close"
   | "more";
@@ -89,6 +92,17 @@ export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
           <circle cx="6" cy="12" r="2.5" {...common} />
           <circle cx="18" cy="19" r="2.5" {...common} />
           <path d="M8.2 10.8l7.6-4.5M8.2 13.2l7.6 4.5" {...common} />
+        </>
+      ) : kind === "attachment" ? (
+        <path d="M8.5 12.5l6.8-6.8a3.2 3.2 0 014.5 4.5l-9.2 9.2a5 5 0 01-7.1-7.1l8.8-8.8M6.4 14.4l8.8-8.8a1.4 1.4 0 012 2l-8.8 8.8a2.2 2.2 0 01-3.1-3.1l7.8-7.8" {...common} />
+      ) : kind === "camera" ? (
+        <>
+          <path d="M4 7.5h3l1.5-2h7l1.5 2h3v11H4z" {...common} />
+          <circle cx="12" cy="13" r="3.2" {...common} />
+        </>
+      ) : kind === "upload" ? (
+        <>
+          <path d="M12 15V4M8 8l4-4 4 4M5 14v5h14v-5" {...common} />
         </>
       ) : kind === "edit" ? (
         <>

@@ -32,6 +32,18 @@ import { useTaskDetail } from "../lib/taskDetailContext";
 import { RecentActivity } from "../components/RecentActivity";
 import { useLocale } from "../lib/locale";
 import type { ProjectWithActions } from "../lib/api";
+import { useProjectActions } from "../lib/useProjectActions";
+import { appendTextBlock } from "../lib/shareTarget";
+import {
+  containsPaperlessReference,
+  extractPaperlessReferences,
+} from "../lib/paperlessAttachments";
+import { MarkdownAttachmentSheet } from "../components/MarkdownAttachmentSheet";
+import { PaperlessAttachmentStrip } from "../components/PaperlessAttachmentStrip";
+import {
+  isStaleWriteConflict,
+  localizedErrorMessage,
+} from "../lib/errorMessage";
 
 export function ProjectDetailPage() {
   const strings = useStrings();
@@ -50,6 +62,8 @@ export function ProjectDetailPage() {
   const [addingSequence, setAddingSequence] = useState(false);
   const [confirmedProject, setConfirmedProject] =
     useState<ProjectWithActions | null>(null);
+  const [attachmentOpen, setAttachmentOpen] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const planningTaskRef = useRef<number | null>(null);
   const planningOwnsSheetRef = useRef(false);
   const planningSheetOpenedRef = useRef(false);
@@ -77,6 +91,10 @@ export function ProjectDetailPage() {
     confirmedProject.revision > loadedProject.revision
       ? { ...loadedProject, ...confirmedProject, tasks: loadedProject.tasks }
       : loadedProject;
+  const projectActions = useProjectActions(loadedProject ? [loadedProject] : []);
+  const attachments = project
+    ? extractPaperlessReferences(project.notes)
+    : [];
 
   const owner = project ? members.find((m) => m.id === project.ownerMemberId) : undefined;
   const taskCounts = project ? countTasks(project.tasks) : { open: 0, done: 0 };
@@ -184,6 +202,15 @@ export function ProjectDetailPage() {
                   }}
                 />
                 <IconActionButton
+                  kind="attachment"
+                  label={strings.attach}
+                  disabled={projectActions.isPending(project.id)}
+                  onClick={() => {
+                    setAttachmentError(null);
+                    setAttachmentOpen(true);
+                  }}
+                />
+                <IconActionButton
                   kind="edit"
                   label={strings.edit}
                   onClick={() => {
@@ -226,6 +253,10 @@ export function ProjectDetailPage() {
               </div>
             ) : null}
           </div>
+          <PaperlessAttachmentStrip attachments={attachments} />
+          {attachmentError ? (
+            <p className="capture-error" role="alert">{attachmentError}</p>
+          ) : null}
           {project.stuckReason ? <ProjectStuckNotice reason={project.stuckReason} /> : null}
           <section className="section project-notes-section">
             <div className="row-between">
@@ -312,6 +343,29 @@ export function ProjectDetailPage() {
         <TaskSequenceSheet
           projectId={projectId}
           onClose={() => setAddingSequence(false)}
+        />
+      ) : null}
+      {attachmentOpen && project ? (
+        <MarkdownAttachmentSheet
+          onClose={() => setAttachmentOpen(false)}
+          onInsert={async (markdown) => {
+            if (containsPaperlessReference(project.notes, markdown)) return;
+            const nextNotes = appendTextBlock(project.notes, markdown);
+            setAttachmentError(null);
+            try {
+              const updated = await projectActions.update(
+                project,
+                { notes: nextNotes },
+                { notes: nextNotes },
+                true,
+              );
+              if (updated) setConfirmedProject(updated);
+            } catch (cause) {
+              if (isStaleWriteConflict(cause)) reloadProject();
+              setAttachmentError(localizedErrorMessage(cause, strings));
+              throw cause;
+            }
+          }}
         />
       ) : null}
     </div>

@@ -63,6 +63,15 @@ const en = {
   addTask: "Add task",
   addSubtask: "Add subtask",
   quickAdd: "Quick add",
+  captureTask: "Capture task",
+  capturePhoto: "Capture photo",
+  captureFile: "Capture file",
+  pendingAttachments: (count: number) =>
+    count === 1 ? "1 attachment to capture" : `${count} attachments to capture`,
+  pendingUpload: "Uploads only when captured",
+  attach: "Add attachment",
+  attachmentCount: (count: number) =>
+    count === 1 ? "1 attachment" : `${count} attachments`,
   titleEnough: "A title is enough",
   save: "Save",
   cancel: "Cancel",

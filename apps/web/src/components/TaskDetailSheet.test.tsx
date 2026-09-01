@@ -16,6 +16,12 @@ import { makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
 import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({
+  paperlessDocumentDownloadUrl: (id: number) =>
+    `/api/integrations/paperless/documents/${id}/download`,
+  paperlessDocumentPreviewUrl: (id: number) =>
+    `/api/integrations/paperless/documents/${id}/preview`,
+  paperlessDocumentThumbnailUrl: (id: number) =>
+    `/api/integrations/paperless/documents/${id}/thumbnail`,
   api: {
     getMembers: vi.fn(),
     getTags: vi.fn(),
@@ -37,6 +43,8 @@ vi.mock("../lib/api", () => ({
     searchTasks: vi.fn(),
     addDependency: vi.fn(),
     getActivity: vi.fn(),
+    uploadPaperlessDocument: vi.fn(),
+    searchPaperlessDocuments: vi.fn(),
   },
 }));
 
@@ -159,6 +167,12 @@ describe("TaskDetailSheet", () => {
       summary: { hitCount: 0, missCount: 0, totalCount: 0, hitRate: null },
       occurrences: [],
     });
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 91,
+      title: "receipt",
+      originalFileName: "receipt.pdf",
+      mimeType: "application/pdf",
+    });
   });
 
   it("shows Calendar export beside Share only for a dated Task", async () => {
@@ -193,6 +207,54 @@ describe("TaskDetailSheet", () => {
     expect(
       screen.queryByRole("button", { name: "In Kalender" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("appends a direct attachment through the revision-safe task action", async () => {
+    const task = makeTask({ id: 42, title: "Beleg prüfen", notes: "Vorhanden" });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.updateTask.mockResolvedValue({
+      ...task,
+      notes: "Vorhanden\n\n[receipt.pdf](paperless:91)",
+      revision: 2,
+    });
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Beleg prüfen");
+
+    await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
+    await userEvent.upload(
+      screen.getByLabelText("Datei auswählen"),
+      new File(["pdf"], "receipt.pdf", { type: "application/pdf" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
+        notes: "Vorhanden\n\n[receipt.pdf](paperless:91)",
+        expectedRevision: 1,
+      }),
+    );
+    expect(screen.queryByRole("dialog", { name: "Anhang" })).not.toBeInTheDocument();
+  });
+
+  it("inserts a header attachment at the active notes cursor without saving", async () => {
+    const task = makeTask({ id: 42, title: "Beleg prüfen", notes: "Vorher Nachher" });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Beleg prüfen");
+    const notes = await openNotesEditor();
+    notes.setSelectionRange(7, 7);
+
+    await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
+    await userEvent.upload(
+      screen.getByLabelText("Datei auswählen"),
+      new File(["pdf"], "receipt.pdf", { type: "application/pdf" }),
+    );
+
+    await waitFor(() =>
+      expect(notes).toHaveValue("Vorher [receipt.pdf](paperless:91)Nachher"),
+    );
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
   it("groups common fields and collapses rare task controls", async () => {
