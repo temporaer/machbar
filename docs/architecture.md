@@ -703,8 +703,9 @@ remains only as a fallback when direct camera access is unavailable. Cropping
 is explicitly requested rather than automatic:
 an authenticated, no-store preparation endpoint uses Sharp to rotate and
 resize the image within 1280 × 1280 before the phone decodes it. The sheet
-renders only that bounded source and releases both bitmap and canvas surfaces
-when it closes. Applying a crop creates a local JPEG that follows the normal
+renders only that bounded source through `react-image-crop`, providing
+touch-native draggable edges and corners plus keyboard resizing. Applying a
+crop creates a local JPEG that follows the normal
 deferred Paperless upload path; choosing the original leaves the source file
 untouched. The API serializes image preparation and rejects inputs above 64
 megapixels so concurrent or pathological decodes cannot multiply server memory

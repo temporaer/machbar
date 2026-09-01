@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { QuickAdd } from "./QuickAdd";
@@ -23,6 +23,14 @@ vi.mock("../lib/api", () => ({
 }));
 
 const mockedApi = vi.mocked(api, true);
+const originalCreateObjectUrl = Object.getOwnPropertyDescriptor(
+  URL,
+  "createObjectURL",
+);
+const originalRevokeObjectUrl = Object.getOwnPropertyDescriptor(
+  URL,
+  "revokeObjectURL",
+);
 
 async function openCapture() {
   await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
@@ -40,6 +48,16 @@ describe("QuickAdd", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    if (originalCreateObjectUrl) {
+      Object.defineProperty(URL, "createObjectURL", originalCreateObjectUrl);
+    } else {
+      Reflect.deleteProperty(URL, "createObjectURL");
+    }
+    if (originalRevokeObjectUrl) {
+      Object.defineProperty(URL, "revokeObjectURL", originalRevokeObjectUrl);
+    } else {
+      Reflect.deleteProperty(URL, "revokeObjectURL");
+    }
   });
 
   it("erfasst Enter als später zu klärende Aufgabe ohne generisches Speichern", async () => {
@@ -254,11 +272,13 @@ describe("QuickAdd", () => {
   });
 
   it("crops a captured photo before its deferred upload", async () => {
-    const close = vi.fn();
-    const createImageBitmap = vi
-      .fn()
-      .mockResolvedValue({ width: 1000, height: 800, close });
-    vi.stubGlobal("createImageBitmap", createImageBitmap);
+    Object.defineProperties(URL, {
+      createObjectURL: {
+        configurable: true,
+        value: vi.fn(() => "blob:prepared"),
+      },
+      revokeObjectURL: { configurable: true, value: vi.fn() },
+    });
     mockedApi.preparePaperlessImageForCrop.mockResolvedValue(
       new Blob(["prepared"], { type: "image/jpeg" }),
     );
@@ -294,12 +314,16 @@ describe("QuickAdd", () => {
     expect(
       await screen.findByRole("dialog", { name: "Foto zuschneiden" }),
     ).toBeInTheDocument();
+    const image = await screen.findByAltText("Vorschau des Bildausschnitts");
+    Object.defineProperties(image, {
+      naturalWidth: { configurable: true, value: 1000 },
+      naturalHeight: { configurable: true, value: 800 },
+    });
+    fireEvent.load(image);
     expect(mockedApi.preparePaperlessImageForCrop).toHaveBeenCalledWith(
       expect.objectContaining({ name: "photo.jpg" }),
       expect.any(AbortSignal),
     );
-    expect(createImageBitmap).toHaveBeenCalledWith(expect.any(Blob));
-
     await userEvent.click(screen.getByRole("button", { name: "Ausschnitt verwenden" }));
     expect(await screen.findByText("photo-cropped.jpg")).toBeInTheDocument();
 
@@ -309,7 +333,6 @@ describe("QuickAdd", () => {
     const uploadedFile = mockedApi.uploadPaperlessDocument.mock.calls[0]?.[0];
     expect(uploadedFile).toBeInstanceOf(File);
     expect(uploadedFile?.name).toBe("photo-cropped.jpg");
-    expect(close).toHaveBeenCalled();
   });
 
   it("opens the bounded in-app camera instead of the file capture intent", async () => {

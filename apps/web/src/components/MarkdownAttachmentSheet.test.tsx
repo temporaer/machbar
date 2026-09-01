@@ -53,6 +53,9 @@ describe("MarkdownAttachmentSheet", () => {
   });
 
   it("offers cropping before uploading a newly captured photo", async () => {
+    mockedApi.preparePaperlessImageForCrop.mockReturnValue(
+      new Promise(() => undefined),
+    );
     mockedApi.uploadPaperlessDocument.mockResolvedValue({
       id: 43,
       title: "Photo",
