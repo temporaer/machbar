@@ -36,7 +36,7 @@ export interface TaskOutlineProps {
    * completely unchanged.
    */
   waitingInteraction?: TaskRowWaitingInteraction | undefined;
-  /** Show the root tasks' scheduled date as their Wiedervorlage prompt. */
+  /** Show the root tasks' external-wait revisit date as their follow-up prompt. */
   showRevisitDate?: boolean;
   showSwipeHint?: boolean;
   /** Preserve a compiled queue's root order instead of applying outline positions. */

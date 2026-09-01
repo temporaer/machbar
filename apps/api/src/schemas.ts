@@ -169,7 +169,7 @@ export const dependencySchema = z.object({
 
 export const upsertExternalWaitSchema = z.object({
   waitingFor: z.string().nullable().optional(),
-  scheduledDate: isoDate.nullable().optional(),
+  revisitDate: isoDate.nullable().optional(),
   expectedRevision: z.number().int().positive().optional(),
 });
 
@@ -189,7 +189,7 @@ export const externalWaitFollowUpSchema = z.discriminatedUnion("action", [
   externalWaitFollowUpBaseSchema.extend({
     action: z.literal("continue"),
     waitingFor: z.string().nullable().optional(),
-    scheduledDate: isoDate.nullable().optional(),
+    revisitDate: isoDate.nullable().optional(),
   }),
 ]);
 

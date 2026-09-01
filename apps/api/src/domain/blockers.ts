@@ -16,7 +16,10 @@ export interface BlockerTaskInput {
   status: TaskStatus;
   projectId: number | null;
   scheduledDate: string | null;
-  externalWait: { waitingFor: string | null } | null;
+  externalWait: {
+    waitingFor: string | null;
+    revisitDate: string | null;
+  } | null;
   dependencies: Array<{
     dependsOnTaskId: number;
     resolved: boolean;
@@ -143,7 +146,7 @@ export function analyzeTaskBlockers(
 
     const branchResults: PathAnalysis[] = [];
     if (task.externalWait) {
-      if (!task.scheduledDate) {
+      if (!task.externalWait.revisitDate) {
         branchResults.push({
           healthy: false,
           attentionDate: null,
@@ -155,10 +158,10 @@ export function analyzeTaskBlockers(
             },
           ],
         });
-      } else if (task.scheduledDate <= today) {
+      } else if (task.externalWait.revisitDate <= today) {
         branchResults.push({
           healthy: false,
-          attentionDate: task.scheduledDate,
+          attentionDate: task.externalWait.revisitDate,
           diagnoses: [
             {
               reason: "followup_due",
@@ -170,7 +173,7 @@ export function analyzeTaskBlockers(
       } else {
         branchResults.push({
           healthy: true,
-          attentionDate: task.scheduledDate,
+          attentionDate: task.externalWait.revisitDate,
           diagnoses: [],
         });
       }

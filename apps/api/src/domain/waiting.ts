@@ -28,9 +28,13 @@ export function buildBlockedWork(
     )
     .sort((a, b) => {
       const attentionA =
-        a.scheduledDate ?? a.nextBlockerAttentionDate ?? "9999-99-99";
+        a.externalWait?.revisitDate ??
+        a.nextBlockerAttentionDate ??
+        "9999-99-99";
       const attentionB =
-        b.scheduledDate ?? b.nextBlockerAttentionDate ?? "9999-99-99";
+        b.externalWait?.revisitDate ??
+        b.nextBlockerAttentionDate ??
+        "9999-99-99";
       if (attentionA !== attentionB) {
         return attentionA.localeCompare(attentionB);
       }

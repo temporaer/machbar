@@ -72,8 +72,15 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
     return { ...project, status: "active" };
   }
 
-  function addExternalWait(taskId: number, waitingFor = "External event") {
-    handle.db.insert(schema.taskExternalWaits).values({ taskId, waitingFor }).run();
+  function addExternalWait(
+    taskId: number,
+    waitingFor = "External event",
+    revisitDate: string | null = null,
+  ) {
+    handle.db
+      .insert(schema.taskExternalWaits)
+      .values({ taskId, waitingFor, revisitDate })
+      .run();
   }
 
   describe("descendants and ancestors", () => {
@@ -479,7 +486,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         ownerMemberId: owner.id,
         ownerInheritanceMode: "explicit",
       });
-      addExternalWait(scheduledWait.id);
+      addExternalWait(scheduledWait.id, "External event", "2026-09-01");
       const unscheduledWait = createTask(handle.db, {
         projectId: withRevisit.id,
         title: "Wartet ohne Termin",
@@ -511,7 +518,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
           ownerMemberId: owner.id,
           ownerInheritanceMode: "explicit",
         });
-        addExternalWait(waiting.id);
+        addExternalWait(waiting.id, "External event", scheduledDate);
         return project.id;
       });
 
@@ -537,7 +544,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         ownerMemberId: owner.id,
         ownerInheritanceMode: "explicit",
       });
-      addExternalWait(waiting.id);
+      addExternalWait(waiting.id, "External event", today);
       const capturedBlocker = createTask(handle.db, {
         projectId: project.id,
         title: "Ungeklärte Voraussetzung",
@@ -591,9 +598,9 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       });
       addExternalWait(blankTask.id);
       handle.db
-        .update(schema.tasks)
-        .set({ scheduledDate: "" })
-        .where(eq(schema.tasks.id, blankTask.id))
+        .update(schema.taskExternalWaits)
+        .set({ revisitDate: "" })
+        .where(eq(schema.taskExternalWaits.taskId, blankTask.id))
         .run();
 
       const reasons = getStuckReasonsByProject(handle.db);
@@ -619,7 +626,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         ownerMemberId: owner.id,
         ownerInheritanceMode: "explicit",
       });
-      addExternalWait(somedayWait.id);
+      addExternalWait(somedayWait.id, "External event", "2026-09-01");
       createTask(handle.db, {
         projectId: mixedSomeday.id,
         title: "Irgendwann",
@@ -642,7 +649,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         ownerMemberId: owner.id,
         ownerInheritanceMode: "explicit",
       });
-      addExternalWait(unassignedWait.id);
+      addExternalWait(unassignedWait.id, "External event", "2026-09-01");
       createTask(handle.db, {
         projectId: mixedUnassigned.id,
         title: "Offen ohne Zuständige",
@@ -668,7 +675,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         status: "actionable",
         scheduledDate: "2026-10-15",
       });
-      addExternalWait(scheduled.id);
+      addExternalWait(scheduled.id, "External event", "2026-10-15");
       const intermediate = createTask(handle.db, {
         projectId: project.id,
         title: "Zwischenschritt",
@@ -730,7 +737,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         status: "actionable",
         scheduledDate: "2026-10-15",
       });
-      addExternalWait(scheduled.id);
+      addExternalWait(scheduled.id, "External event", "2026-10-15");
       const mixedAction = makeAction(mixedProject.id, "Blockiert");
       addDependency(handle.db, mixedAction.id, scheduled.id);
       createTask(handle.db, {
@@ -746,7 +753,11 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         status: "actionable",
         scheduledDate: "2026-10-15",
       });
-      addExternalWait(assignedScheduled.id);
+      addExternalWait(
+        assignedScheduled.id,
+        "External event",
+        "2026-10-15",
+      );
       const unassignedAction = createTask(handle.db, {
         projectId: unassignedProject.id,
         title: "Unzugewiesen blockiert",
@@ -783,7 +794,11 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
           status: "actionable",
           scheduledDate: "2026-10-15",
         });
-        addExternalWait(scheduledWaiting.id);
+        addExternalWait(
+          scheduledWaiting.id,
+          "External event",
+          "2026-10-15",
+        );
         const externalProject = createProject(handle.db, {
           title: `${title} externe Abhängigkeit`,
           status: "active",
@@ -837,7 +852,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         status: "actionable",
         scheduledDate: "2026-10-20",
       });
-      addExternalWait(validBranch.id);
+      addExternalWait(validBranch.id, "External event", "2026-10-20");
       addDependency(handle.db, branched.scheduledWaiting.id, validBranch.id);
 
       const reasons = getStuckReasonsByProject(handle.db);
@@ -867,7 +882,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         ownerMemberId: owner.id,
         ownerInheritanceMode: "explicit",
       });
-      addExternalWait(waitingTask.id);
+      addExternalWait(waitingTask.id, "External event", "2026-09-01");
 
       expect(getStuckReasonsByProject(handle.db).has(project.id)).toBe(false);
 

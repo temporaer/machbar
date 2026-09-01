@@ -215,7 +215,10 @@ export class Graph {
         .filter((row) => Boolean(row.waitingFor?.trim()))
         .map((row) => [
           row.taskId,
-          { waitingFor: row.waitingFor?.trim() ?? null },
+          {
+            waitingFor: row.waitingFor?.trim() ?? null,
+            revisitDate: row.revisitDate,
+          },
         ]),
     );
 
@@ -606,8 +609,8 @@ export class Graph {
     ];
     const waitingUntil =
       tasks
-          .filter((task) => task.externalWait && task.scheduledDate)
-          .map((task) => task.scheduledDate!)
+          .map((task) => task.externalWait?.revisitDate ?? null)
+          .filter((date): date is string => date !== null)
           .sort()[0] ?? null;
     const effectiveTags = dedupeTags([
       ...project.tags,

@@ -2356,11 +2356,7 @@ export function updateTask(
       patch.completedAt = nextStatus === "done" ? nowIso() : null;
       patch.cancelledAt = nextStatus === "cancelled" ? nowIso() : null;
       if (removingExternalWait) {
-        patch.scheduledDate = null;
         changedFields.push("externalWait");
-        if (currentTask.scheduledDate !== null) {
-          changedFields.push("scheduledDate");
-        }
       }
     }
     if (
@@ -2390,7 +2386,6 @@ export function updateTask(
       changedFields.push("dueDate");
     }
     if (
-      !removingExternalWait &&
       input.scheduledDate !== undefined &&
       input.scheduledDate !== currentTask.scheduledDate
     ) {
@@ -2702,20 +2697,6 @@ export function updateTask(
           personalEligible: true,
         });
       } else if (
-        currentExternalWait &&
-        currentTask.scheduledDate === null &&
-        updated.scheduledDate !== null
-      ) {
-        recordContribution(txDb, {
-          activityEventId,
-          actorMemberId: actor(context),
-          category: "planning",
-          reason: "waiting_followup_added",
-          entityType: "task",
-          entityId: id,
-          personalEligible: true,
-        });
-      } else if (
         currentTask.dueDate === null &&
         currentTask.scheduledDate === null &&
         (updated.dueDate !== null || updated.scheduledDate !== null) &&
@@ -2773,17 +2754,6 @@ export function updateTask(
         neutralizeContribution(txDb, {
           activityEventId,
           reason: "task_estimated",
-          entityType: "task",
-          entityId: id,
-        });
-      }
-      if (
-        currentTask.scheduledDate !== null &&
-        updated.scheduledDate === null
-      ) {
-        neutralizeContribution(txDb, {
-          activityEventId,
-          reason: "waiting_followup_added",
           entityType: "task",
           entityId: id,
         });
@@ -3002,13 +2972,6 @@ export function completeTask(
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
     assertExpectedRevision("task", id, task.revision, expectedRevision);
-    const taskHasExternalWait = Boolean(
-      tx
-        .select({ taskId: schema.taskExternalWaits.taskId })
-        .from(schema.taskExternalWaits)
-        .where(eq(schema.taskExternalWaits.taskId, id))
-        .get(),
-    );
     const openChildren = openDescendants(txDb, id);
     const descendantsOnly =
       task.status === "done" &&
@@ -3057,7 +3020,6 @@ export function completeTask(
           status: "done",
           needsClarification: false,
           completedAt: now,
-          scheduledDate: taskHasExternalWait ? null : task.scheduledDate,
           revision: sql`${schema.tasks.revision} + 1`,
           updatedAt: now,
         })
@@ -3081,13 +3043,6 @@ export function completeTask(
             needsClarification: false,
             completedAt: descendantStatus === "done" ? now : null,
             cancelledAt: descendantStatus === "cancelled" ? now : null,
-            scheduledDate: tx
-              .select({ taskId: schema.taskExternalWaits.taskId })
-              .from(schema.taskExternalWaits)
-              .where(eq(schema.taskExternalWaits.taskId, child.id))
-              .get()
-              ? null
-              : child.scheduledDate,
             revision: sql`${schema.tasks.revision} + 1`,
             updatedAt: now,
           })
@@ -3150,13 +3105,6 @@ export function cancelTask(
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
     assertExpectedRevision("task", id, task.revision, expectedRevision);
-    const taskHasExternalWait = Boolean(
-      tx
-        .select({ taskId: schema.taskExternalWaits.taskId })
-        .from(schema.taskExternalWaits)
-        .where(eq(schema.taskExternalWaits.taskId, id))
-        .get(),
-    );
     const projectHadNextAction =
       task.projectId === null ? true : projectHasNextAction(txDb, task.projectId);
     const projectHadTaskPlan =
@@ -3209,7 +3157,6 @@ export function cancelTask(
           status: "cancelled",
           needsClarification: false,
           cancelledAt: now,
-          scheduledDate: taskHasExternalWait ? null : task.scheduledDate,
           revision: sql`${schema.tasks.revision} + 1`,
           updatedAt: now,
         })
@@ -3233,13 +3180,6 @@ export function cancelTask(
             needsClarification: false,
             completedAt: descendantStatus === "done" ? now : null,
             cancelledAt: descendantStatus === "cancelled" ? now : null,
-            scheduledDate: tx
-              .select({ taskId: schema.taskExternalWaits.taskId })
-              .from(schema.taskExternalWaits)
-              .where(eq(schema.taskExternalWaits.taskId, child.id))
-              .get()
-              ? null
-              : child.scheduledDate,
             revision: sql`${schema.tasks.revision} + 1`,
             updatedAt: now,
           })
@@ -3657,7 +3597,7 @@ export function moveTask(
 
 export interface UpsertExternalWaitInput {
   waitingFor?: string | null;
-  scheduledDate?: string | null;
+  revisitDate?: string | null;
   expectedRevision?: number;
 }
 
@@ -3671,7 +3611,7 @@ export type ExternalWaitFollowUpInput =
       action: "continue";
       content: string;
       waitingFor?: string | null;
-      scheduledDate?: string | null;
+      revisitDate?: string | null;
       expectedRevision?: number;
     };
 
@@ -3750,12 +3690,12 @@ export function followUpExternalWait(
         { taskId },
       );
     }
-    const scheduledDate =
+    const revisitDate =
       input.action === "resolve"
         ? null
-        : input.scheduledDate === undefined
-          ? task.scheduledDate
-          : input.scheduledDate;
+        : input.revisitDate === undefined
+          ? existing.revisitDate
+          : input.revisitDate;
     const projectHadNextAction =
       task.projectId === null
         ? true
@@ -3772,7 +3712,7 @@ export function followUpExternalWait(
         .run();
     } else {
       tx.update(schema.taskExternalWaits)
-        .set({ waitingFor, updatedAt: now })
+        .set({ waitingFor, revisitDate, updatedAt: now })
         .where(eq(schema.taskExternalWaits.taskId, taskId))
         .run();
     }
@@ -3780,7 +3720,6 @@ export function followUpExternalWait(
       .update(schema.tasks)
       .set({
         notes,
-        scheduledDate,
         revision: sql`${schema.tasks.revision} + 1`,
         updatedAt: now,
       })
@@ -3789,7 +3728,7 @@ export function followUpExternalWait(
       .get();
     const waitChanged =
       input.action === "resolve" || waitingFor !== existing.waitingFor;
-    const scheduleChanged = scheduledDate !== task.scheduledDate;
+    const revisitChanged = revisitDate !== existing.revisitDate;
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind:
@@ -3804,7 +3743,7 @@ export function followUpExternalWait(
         changedFields: [
           "notesAppended",
           ...(waitChanged ? ["externalWait"] : []),
-          ...(scheduleChanged ? ["scheduledDate"] : []),
+          ...(revisitChanged ? ["revisitDate"] : []),
         ],
       },
     });
@@ -3830,7 +3769,7 @@ export function followUpExternalWait(
           personalEligible: true,
         });
       }
-    } else if (task.scheduledDate === null && scheduledDate !== null) {
+    } else if (existing.revisitDate === null && revisitDate !== null) {
       recordContribution(txDb, {
         activityEventId,
         actorMemberId: actor(context),
@@ -3839,6 +3778,13 @@ export function followUpExternalWait(
         entityType: "task",
         entityId: taskId,
         personalEligible: true,
+      });
+    } else if (existing.revisitDate !== null && revisitDate === null) {
+      neutralizeContribution(txDb, {
+        activityEventId,
+        reason: "waiting_followup_added",
+        entityType: "task",
+        entityId: taskId,
       });
     }
     return updated;
@@ -3895,18 +3841,18 @@ export function upsertExternalWait(
         { taskId },
       );
     }
-    const scheduledDate =
-      input.scheduledDate === undefined
-        ? task.scheduledDate
-        : input.scheduledDate;
+    const revisitDate =
+      input.revisitDate === undefined
+        ? existing?.revisitDate ?? null
+        : input.revisitDate;
     const waitChanged = !existing || existing.waitingFor !== waitingFor;
-    const scheduleChanged = scheduledDate !== task.scheduledDate;
-    if (!waitChanged && !scheduleChanged) return existing;
+    const revisitChanged = !existing || existing.revisitDate !== revisitDate;
+    if (!waitChanged && !revisitChanged) return existing;
 
     const now = nowIso();
     if (existing) {
       tx.update(schema.taskExternalWaits)
-        .set({ waitingFor, updatedAt: now })
+        .set({ waitingFor, revisitDate, updatedAt: now })
         .where(eq(schema.taskExternalWaits.taskId, taskId))
         .run();
     } else {
@@ -3914,15 +3860,10 @@ export function upsertExternalWait(
         .values({
           taskId,
           waitingFor,
+          revisitDate,
           createdAt: now,
           updatedAt: now,
         })
-        .run();
-    }
-    if (scheduleChanged) {
-      tx.update(schema.tasks)
-        .set({ scheduledDate })
-        .where(eq(schema.tasks.id, taskId))
         .run();
     }
     touchTask(txDb, taskId);
@@ -3936,14 +3877,11 @@ export function upsertExternalWait(
       metadata: {
         changedFields: [
           ...(waitChanged ? ["externalWait"] : []),
-          ...(scheduleChanged ? ["scheduledDate"] : []),
+          ...(revisitChanged ? ["revisitDate"] : []),
         ],
       },
     });
-    if (
-      task.scheduledDate === null &&
-      scheduledDate !== null
-    ) {
+    if ((existing?.revisitDate ?? null) === null && revisitDate !== null) {
       recordContribution(txDb, {
         activityEventId,
         actorMemberId: actor(context),
@@ -3952,6 +3890,13 @@ export function upsertExternalWait(
         entityType: "task",
         entityId: taskId,
         personalEligible: true,
+      });
+    } else if (existing?.revisitDate != null && revisitDate === null) {
+      neutralizeContribution(txDb, {
+        activityEventId,
+        reason: "waiting_followup_added",
+        entityType: "task",
+        entityId: taskId,
       });
     }
     if (
@@ -4003,10 +3948,6 @@ export function resolveExternalWait(
     tx.delete(schema.taskExternalWaits)
       .where(eq(schema.taskExternalWaits.taskId, taskId))
       .run();
-    tx.update(schema.tasks)
-      .set({ scheduledDate: null })
-      .where(eq(schema.tasks.id, taskId))
-      .run();
     touchTask(txDb, taskId);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
@@ -4016,7 +3957,10 @@ export function resolveExternalWait(
       taskId,
       projectId: task.projectId,
       metadata: {
-        changedFields: ["externalWait", "scheduledDate"],
+        changedFields: [
+          "externalWait",
+          ...(existing.revisitDate !== null ? ["revisitDate"] : []),
+        ],
       },
     });
     neutralizeContribution(txDb, {

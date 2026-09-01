@@ -81,10 +81,9 @@ const en = {
   dependencies: "Dependencies",
   subtasks: "Subtasks",
   waitingFor: "Waiting for",
-  externalWait: "External wait",
-  addExternalWait: "Add wait",
-  updateExternalWait: "Update wait",
-  resolveExternalWait: "Resolve wait",
+  markAsWaiting: "Mark as waiting",
+  updateWaiting: "Update waiting",
+  endWaiting: "End waiting",
   inherited: "Inherited",
   inheritedProject: "Inherited from project",
   inheritedParent: "Inherited from parent task",
@@ -265,7 +264,25 @@ const en = {
   taskDetails: "Details",
   taskSection: "Task",
   taskPlanningSection: "Planning",
+  taskPlanningEmpty: "No dates or priority",
   taskContentSection: "Content",
+  taskContentEmpty: "No notes or tags",
+  taskWaitingSection: "Is this task waiting for something?",
+  taskNotBlocked: "Not blocked",
+  externalWaitGuidance:
+    "Use this when you cannot continue until a reply, delivery, or event happens.",
+  externalWaitReasonLabel: "What is the task waiting for?",
+  revisitDateRecommended: "Look again on (recommended)",
+  revisitDateGuidance:
+    "Returns the blocked task to Today on this date – not as a planned work date. Without a date, Review will ask you to clarify it.",
+  dependencyPrompt: "Does another task need to be completed first?",
+  dependencyGuidance:
+    "Only link tasks that genuinely need to be completed first.",
+  dependencySummary: (count: number) =>
+    `${count} open ${count === 1 ? "dependency" : "dependencies"}`,
+  subtaskSummary: (count: number) =>
+    `${count} ${count === 1 ? "subtask" : "subtasks"}`,
+  noSubtasks: "No subtasks",
   taskOrganizationSection: "Organization",
   taskDangerSection: "Danger zone",
   created: "Created",
@@ -310,8 +327,6 @@ const en = {
   nextStepQuestion: "What is the next step?",
   addNextAction: "Add next step",
   addStep: "Add step",
-  waitingItem: "Waiting item",
-  addWaitingItem: "Add waiting item",
   saveNotes: "Save notes",
   finishLater: "Finish later",
   clarifyNow: "Clarify now",
@@ -388,8 +403,6 @@ const en = {
   recentDestinations: "Recently used",
   allDestinations: "All destinations",
   destinationSearchEmpty: "No destination matches this search.",
-  blockedHint:
-    "This task can only start after all its dependencies are complete.",
   effectiveTags: "Effective tags",
   taskTags: "Tags",
   moreTaskTags: (count: number) =>

@@ -202,14 +202,16 @@ describe("project workflow (HTTP routes)", () => {
           payload: {
             projectId: project.id,
             title: "Wait for reply",
-            scheduledDate: "2099-01-01",
           },
         })
       ).json();
       await ctx.app.inject({
         method: "PUT",
         url: `/api/tasks/${task.id}/external-wait`,
-        payload: { waitingFor: "Reply" },
+        payload: {
+          waitingFor: "Reply",
+          revisitDate: "2099-01-01",
+        },
       });
 
       const activation = await ctx.app.inject({

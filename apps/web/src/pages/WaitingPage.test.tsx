@@ -70,7 +70,7 @@ describe("WaitingPage grouping controls", () => {
             title: "Freigabe abwarten",
             blocked: true,
             executable: false,
-            externalWait: { waitingFor: "Freigabe" },
+            externalWait: { waitingFor: "Freigabe", revisitDate: null },
           }),
     ]);
 
@@ -99,7 +99,10 @@ describe("WaitingPage grouping controls", () => {
             title: "Rückruf abwarten",
             blocked: true,
             executable: false,
-            externalWait: { waitingFor: "Rückruf" },
+            externalWait: {
+              waitingFor: "Rückruf",
+              revisitDate: localToday(),
+            },
             effectiveTags: [phone],
             nextBlockerAttentionDate: localToday(),
           }),
@@ -108,7 +111,7 @@ describe("WaitingPage grouping controls", () => {
             title: "Antwort abwarten",
             blocked: true,
             executable: false,
-            externalWait: { waitingFor: "Antwort" },
+            externalWait: { waitingFor: "Antwort", revisitDate: null },
           }),
     ]);
 

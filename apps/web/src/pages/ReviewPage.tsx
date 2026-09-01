@@ -10,7 +10,10 @@ import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useTaskActions } from "../lib/useTaskActions";
-import { useTaskDetail } from "../lib/taskDetailContext";
+import {
+  useTaskDetail,
+  type TaskDetailFocusField,
+} from "../lib/taskDetailContext";
 import { useStrings } from "../lib/strings";
 import { ErrorState, EmptyState, LoadingState } from "../components/AsyncStates";
 import { PageHeader } from "../components/PageHeader";
@@ -176,7 +179,7 @@ export function ReviewPage() {
     taskId: number,
     item: ReviewItem,
     issueIndex: number,
-    focus?: "owner" | "schedule" | "dependencies" | "subtasks",
+    focus?: TaskDetailFocusField,
   ) => {
     setTaskReturn({ issueKey: reviewItemKey(item), issueIndex });
     setTaskSheetOpened(false);
@@ -213,6 +216,8 @@ export function ReviewPage() {
         openTask(targetId, item, issueIndex, "schedule");
         return;
       case "set_followup":
+        openTask(targetId, item, issueIndex, "waiting");
+        return;
       case "resolve_blocker":
         openTask(targetId, item, issueIndex, "dependencies");
         return;

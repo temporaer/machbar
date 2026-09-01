@@ -22,7 +22,10 @@ interface SeedTaskInput {
   ownerInheritanceMode?: (typeof schema.tasks.$inferInsert)["ownerInheritanceMode"];
   dueDate?: string | null;
   scheduledDate?: string | null;
-  externalWait?: { waitingFor: string | null } | null;
+  externalWait?: {
+    waitingFor: string | null;
+    revisitDate?: string | null;
+  } | null;
   priority?: number | null;
   size?: (typeof schema.tasks.$inferInsert)["size"];
   tagNames?: string[];
@@ -147,6 +150,7 @@ export function seedDatabase(db: Db): void {
             .values({
               taskId: row.id,
               waitingFor: input.externalWait.waitingFor,
+              revisitDate: input.externalWait.revisitDate ?? null,
             })
             .run();
         }
@@ -499,14 +503,15 @@ export function seedDatabase(db: Db): void {
           status: "actionable",
           dueDate: todayIso(0),
         },
-        // Blocked (depends on the still-open "Nachbarn wegen Leiter fragen"
-        // above) but scheduled for today: demonstrates the "Heute" revisit
-        // reminder — normally-excluded blocked tasks reappear when their
-        // own scheduledDate is today or earlier.
+        // A direct external wait whose revisit is due today demonstrates the
+        // separate attention signal in "Heute".
         {
           title: "Leiter zurückbringen",
           status: "actionable",
-          scheduledDate: todayIso(0),
+          externalWait: {
+            waitingFor: "Rückmeldung der Nachbarn",
+            revisitDate: todayIso(0),
+          },
           dependsOn: ["Nachbarn wegen Leiter fragen"],
         },
       ],

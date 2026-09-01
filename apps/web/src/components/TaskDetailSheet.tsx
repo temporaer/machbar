@@ -124,14 +124,18 @@ function TaskDetailSection({
 
 function TaskDetailDisclosure({
   title,
+  summary,
   children,
   defaultOpen = false,
+  forceOpen = false,
   resetKey,
   className = "",
 }: {
   title: string;
+  summary?: ReactNode;
   children: ReactNode;
   defaultOpen?: boolean;
+  forceOpen?: boolean;
   resetKey: number;
   className?: string;
 }) {
@@ -144,12 +148,17 @@ function TaskDetailDisclosure({
   return (
     <details
       className={`task-detail-section task-detail-disclosure${className ? ` ${className}` : ""}`}
-      open={open}
+      open={open || forceOpen}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary className="task-detail-section-title disclosure-summary">
-        <span role="heading" aria-level={3}>
-          {title}
+        <span className="task-detail-disclosure-heading">
+          <span role="heading" aria-level={3}>
+            {title}
+          </span>
+          {summary ? (
+            <span className="task-detail-disclosure-summary">{summary}</span>
+          ) : null}
         </span>
       </summary>
       <div className="task-detail-section-body">{children}</div>
@@ -191,6 +200,7 @@ export function TaskDetailSheet() {
   const [titleEditing, setTitleEditing] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
   const [addingChild, setAddingChild] = useState(false);
+  const [addingDependency, setAddingDependency] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [dueDateValid, setDueDateValid] = useState(true);
@@ -208,6 +218,7 @@ export function TaskDetailSheet() {
   const scheduleInputRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
+  const externalWaitInputRef = useRef<HTMLInputElement>(null);
   const dependencyInputRef = useRef<HTMLInputElement>(null);
   const subtasksFieldRef = useRef<HTMLDivElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
@@ -267,6 +278,7 @@ export function TaskDetailSheet() {
       setTitleEditing(false);
       setNotesEditing(false);
       setAddingChild(false);
+      setAddingDependency(false);
       setDeleting(false);
       setShareStatus(null);
       setDueDateValid(true);
@@ -275,7 +287,7 @@ export function TaskDetailSheet() {
       setStatusDraft(loadedTask.status);
       setExternalWaitDraft(loadedTask.externalWait?.waitingFor ?? "");
       setExternalWaitDateDraft(
-        loadedTask.externalWait ? loadedTask.scheduledDate ?? "" : "",
+        loadedTask.externalWait?.revisitDate ?? "",
       );
       setDependencyError(null);
       setAddingDependencyId(null);
@@ -325,11 +337,16 @@ export function TaskDetailSheet() {
       setNotesEditing(true);
       return;
     }
+    if (focusField === "dependencies" && !addingDependency) {
+      setAddingDependency(true);
+      return;
+    }
     const scrollTargets: Record<TaskDetailFocusField, HTMLElement | null> = {
       title: titleFieldRef.current,
       owner: ownerFieldRef.current,
       schedule: scheduleFieldRef.current,
       notes: notesRef.current,
+      waiting: dependenciesFieldRef.current,
       dependencies: dependenciesFieldRef.current,
       subtasks: subtasksFieldRef.current,
     };
@@ -338,6 +355,7 @@ export function TaskDetailSheet() {
       owner: ownerInputRef.current,
       schedule: scheduleInputRef.current,
       notes: notesRef.current,
+      waiting: externalWaitInputRef.current,
       dependencies: dependencyInputRef.current,
       subtasks: null,
     };
@@ -350,7 +368,14 @@ export function TaskDetailSheet() {
       focusTarget?.focus();
     }
     clearFocusField();
-  }, [task, focusField, clearFocusField, notesEditing, titleEditing]);
+  }, [
+    task,
+    focusField,
+    clearFocusField,
+    notesEditing,
+    titleEditing,
+    addingDependency,
+  ]);
 
   const inheritedTags = useMemo(() => {
     if (!task) return [];
@@ -561,6 +586,7 @@ export function TaskDetailSheet() {
       await api.addDependency(task.id, dependsOnTask.id);
       setDepQuery("");
       setDepResults([]);
+      setAddingDependency(false);
       bump();
       reload();
     } catch (err) {
@@ -583,9 +609,12 @@ export function TaskDetailSheet() {
       revision: revisionRef.current ?? task.revision,
     }, {
       waitingFor: externalWaitDraft.trim(),
-      scheduledDate: externalWaitDateDraft || null,
+      revisitDate: externalWaitDateDraft || null,
     });
-    if (updated) revisionRef.current = updated.revision;
+    if (updated) {
+      revisionRef.current = updated.revision;
+      reload();
+    }
   };
 
   const resolveExternalWait = async () => {
@@ -599,6 +628,7 @@ export function TaskDetailSheet() {
       revisionRef.current = updated.revision;
       setExternalWaitDraft("");
       setExternalWaitDateDraft("");
+      reload();
     }
   };
 
@@ -607,6 +637,48 @@ export function TaskDetailSheet() {
     task.projectId === null &&
     task.parentTaskId === null;
   const taskMutationPending = task ? taskActions.isPending(task.id) : false;
+  const unresolvedDependencyCount =
+    task?.dependencies.filter((dependency) => !dependency.resolved).length ?? 0;
+  const planningSummary = task
+    ? [
+        task.scheduledDate
+          ? `${strings.scheduled}: ${
+              formatExactLocalDate(task.scheduledDate, locale) ??
+              task.scheduledDate
+            }`
+          : null,
+        task.dueDate
+          ? `${strings.due}: ${
+              formatExactLocalDate(task.dueDate, locale) ?? task.dueDate
+            }`
+          : null,
+        task.priority !== null ? `${strings.priority}: ${task.priority}` : null,
+      ]
+        .filter((value): value is string => value !== null)
+        .join(" · ")
+    : "";
+  const contentSummary = task
+    ? [
+        task.effectiveTags.length > 0
+          ? `${task.effectiveTags.length} ${strings.tags}`
+          : null,
+        task.notes?.trim() ? strings.notes : null,
+      ]
+        .filter((value): value is string => value !== null)
+        .join(" · ")
+    : "";
+  const blockerSummary = task
+    ? [
+        task.externalWait?.waitingFor?.trim()
+          ? `${strings.waitingFor}: ${task.externalWait.waitingFor.trim()}`
+          : null,
+        unresolvedDependencyCount > 0
+          ? strings.dependencySummary(unresolvedDependencyCount)
+          : null,
+      ]
+        .filter((value): value is string => value !== null)
+        .join(" · ")
+    : "";
 
   return (
     <>
@@ -664,7 +736,9 @@ export function TaskDetailSheet() {
           aria-busy={taskMutationPending}
           style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}
         >
-          {task.blocked ? <div className="badge badge-status-waiting">{strings.blockedHint}</div> : null}
+          {task.blocked && blockerSummary ? (
+            <div className="badge badge-status-waiting">{blockerSummary}</div>
+          ) : null}
 
           <TaskDetailSection title={strings.taskSection}>
             <div className="field" ref={titleFieldRef}>
@@ -810,7 +884,13 @@ export function TaskDetailSheet() {
             </TaskDetailSection>
           ) : null}
 
-          <TaskDetailSection title={strings.taskPlanningSection}>
+          <TaskDetailDisclosure
+            title={strings.taskPlanningSection}
+            summary={planningSummary || strings.taskPlanningEmpty}
+            defaultOpen={Boolean(planningSummary)}
+            forceOpen={focusField === "schedule"}
+            resetKey={task.id}
+          >
             <div className="row task-detail-date-row">
             <div className="field" style={{ flex: 1 }}>
               <label htmlFor="task-due">{strings.due}</label>
@@ -827,11 +907,8 @@ export function TaskDetailSheet() {
                 </span>
               ) : null}
             </div>
-            {!task.externalWait ? (
               <div className="field" style={{ flex: 1 }} ref={scheduleFieldRef}>
-                <label htmlFor="task-scheduled">
-                  {task.blocked ? strings.revisitDate : strings.scheduled}
-                </label>
+                <label htmlFor="task-scheduled">{strings.scheduled}</label>
                 <HumanDateInput
                   inputRef={scheduleInputRef}
                   id="task-scheduled"
@@ -840,9 +917,8 @@ export function TaskDetailSheet() {
                   onValidityChange={setScheduledDateValid}
                 />
               </div>
-            ) : null}
             </div>
-          {task.repeatAfterDays === null && !task.externalWait ? (
+          {task.repeatAfterDays === null ? (
             <ScheduleShortcuts
               value={task.scheduledDate}
               onChange={(scheduledDate) => void patch({ scheduledDate })}
@@ -864,7 +940,7 @@ export function TaskDetailSheet() {
               <option value="5">5 – {strings.priorityLowest}</option>
             </select>
           </div>
-          </TaskDetailSection>
+          </TaskDetailDisclosure>
 
           <TaskDetailDisclosure
             title={strings.recurrence}
@@ -952,7 +1028,13 @@ export function TaskDetailSheet() {
             </div>
           </TaskDetailDisclosure>
 
-          <TaskDetailSection title={strings.taskContentSection}>
+          <TaskDetailDisclosure
+            title={strings.taskContentSection}
+            summary={contentSummary || strings.taskContentEmpty}
+            defaultOpen={Boolean(contentSummary)}
+            forceOpen={focusField === "notes"}
+            resetKey={task.id}
+          >
             <div className="field">
             <label>{strings.effectiveTags}</label>
             <div className="row" style={{ flexWrap: "wrap" }}>
@@ -1042,115 +1124,204 @@ export function TaskDetailSheet() {
               <span className="text-muted">{saveError ?? taskActions.errors[task.id]}</span>
             </div>
           ) : null}
-          </TaskDetailSection>
+          </TaskDetailDisclosure>
 
-          <TaskDetailSection title={strings.waitingFor}>
-            <div className="field" ref={dependenciesFieldRef}>
-            <div className="stack blocker-control">
-              <div className="field">
-                <label htmlFor="task-external-wait">{strings.externalWait}</label>
-                <input
-                  id="task-external-wait"
-                  value={externalWaitDraft}
-                  placeholder={strings.waitingForPlaceholder}
-                  onChange={(event) => setExternalWaitDraft(event.target.value)}
-                />
+          <TaskDetailDisclosure
+            title={strings.taskWaitingSection}
+            summary={blockerSummary || strings.taskNotBlocked}
+            defaultOpen={Boolean(task.externalWait || task.dependencies.length)}
+            forceOpen={
+              focusField === "waiting" || focusField === "dependencies"
+            }
+            resetKey={task.id}
+          >
+            <div className="stack blocker-control" ref={dependenciesFieldRef}>
+              <div className="task-external-wait-editor">
+                <p className="task-detail-guidance">
+                  {strings.externalWaitGuidance}
+                </p>
+                <div className="field">
+                  <label htmlFor="task-external-wait">
+                    {strings.externalWaitReasonLabel}
+                  </label>
+                  <input
+                    ref={externalWaitInputRef}
+                    id="task-external-wait"
+                    value={externalWaitDraft}
+                    placeholder={strings.waitingForPlaceholder}
+                    onChange={(event) =>
+                      setExternalWaitDraft(event.target.value)
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor="task-external-wait-date">
+                    {strings.revisitDateRecommended}
+                  </label>
+                  <HumanDateInput
+                    id="task-external-wait-date"
+                    value={externalWaitDateDraft}
+                    onChange={(date) =>
+                      setExternalWaitDateDraft(date ?? "")
+                    }
+                    onValidityChange={setExternalWaitDateValid}
+                  />
+                  <span className="text-muted task-detail-field-hint">
+                    {strings.revisitDateGuidance}
+                  </span>
+                </div>
+                <div className="row task-detail-command-actions">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={
+                      !externalWaitDraft.trim() ||
+                      !externalWaitDateValid ||
+                      taskMutationPending
+                    }
+                    onClick={() => void saveExternalWait()}
+                  >
+                    {task.externalWait
+                      ? strings.updateWaiting
+                      : strings.markAsWaiting}
+                  </button>
+                  {task.externalWait ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={taskMutationPending}
+                      onClick={() => void resolveExternalWait()}
+                    >
+                      {strings.endWaiting}
+                    </button>
+                  ) : null}
+                </div>
               </div>
-              <div className="field">
-                <label htmlFor="task-external-wait-date">
-                  {strings.revisitDate}
-                </label>
-                <HumanDateInput
-                  id="task-external-wait-date"
-                  value={externalWaitDateDraft}
-                  onChange={(date) => setExternalWaitDateDraft(date ?? "")}
-                  onValidityChange={setExternalWaitDateValid}
-                />
-              </div>
-              <div className="row">
-                <button
-                  type="button"
-                  className="btn btn-sm btn-primary"
-                  disabled={!externalWaitDraft.trim() || !externalWaitDateValid || taskMutationPending}
-                  onClick={() => void saveExternalWait()}
-                >
-                  {task.externalWait ? strings.updateExternalWait : strings.addExternalWait}
-                </button>
-                {task.externalWait ? (
+
+              <div className="task-dependency-editor">
+                <h4>{strings.dependencyPrompt}</h4>
+                <p className="task-detail-guidance">
+                  {strings.dependencyGuidance}
+                </p>
+                <ul className="list" style={{ padding: 0, margin: 0 }}>
+                  {sortDependencies(task.dependencies, locale).map((dep) => (
+                    <li key={dep.id} className="row-between">
+                      <span>{dep.title ?? `#${dep.dependsOnTaskId}`}</span>
+                      <span className="row">
+                        <span className="text-muted">
+                          {dep.resolved ? strings.resolved : strings.unresolved}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          onClick={() =>
+                            void api
+                              .removeDependency(task.id, dep.dependsOnTaskId)
+                              .then(() => {
+                                bump();
+                                reload();
+                              })
+                          }
+                        >
+                          {strings.removeDependency}
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {addingDependency ? (
+                  <div className="stack task-dependency-search">
+                    <input
+                      ref={dependencyInputRef}
+                      aria-label={strings.searchDependency}
+                      placeholder={strings.searchDependency}
+                      value={depQuery}
+                      onChange={(event) =>
+                        void runDependencySearch(event.target.value)
+                      }
+                    />
+                    {depResults.length > 0 ? (
+                      <ul className="list" style={{ padding: 0, margin: 0 }}>
+                        {depResults.map((candidate) => (
+                          <li key={candidate.id} className="stack">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-block"
+                              disabled={addingDependencyId !== null}
+                              onClick={() =>
+                                void addTaskDependency(candidate)
+                              }
+                            >
+                              {strings.addDependency}: {candidate.title}
+                              {candidate.projectTitle ? (
+                                <span className="text-muted">
+                                  {" "}
+                                  · {candidate.projectTitle}
+                                </span>
+                              ) : null}
+                            </button>
+                            {dependencyError?.candidateTaskId ===
+                            candidate.id ? (
+                              <div className="task-row-error" role="alert">
+                                <span>{strings.error}</span>
+                                <span className="text-muted">
+                                  {dependencyError.message}
+                                </span>
+                              </div>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                    {dependencyError?.candidateTaskId === null ? (
+                      <div className="task-row-error" role="alert">
+                        <span>{strings.error}</span>
+                        <span className="text-muted">
+                          {dependencyError.message}
+                        </span>
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => {
+                        setAddingDependency(false);
+                        setDepQuery("");
+                        setDepResults([]);
+                        setDependencyError(null);
+                      }}
+                    >
+                      {strings.cancel}
+                    </button>
+                  </div>
+                ) : (
                   <button
                     type="button"
                     className="btn btn-sm"
-                    disabled={taskMutationPending}
-                    onClick={() => void resolveExternalWait()}
+                    onClick={() => setAddingDependency(true)}
                   >
-                    {strings.resolveExternalWait}
+                    {strings.addDependency}
                   </button>
-                ) : null}
+                )}
               </div>
             </div>
-            <label>{strings.dependencies}</label>
-            {task.dependencies.length === 0 ? <p className="text-muted">{strings.noDependencies}</p> : null}
-            <ul className="list" style={{ padding: 0, margin: 0 }}>
-              {sortDependencies(task.dependencies, locale).map((dep) => (
-                <li key={dep.id} className="row-between">
-                  <span>{dep.title ?? `#${dep.dependsOnTaskId}`}</span>
-                  <span className="row">
-                    <span className="text-muted">{dep.resolved ? strings.resolved : strings.unresolved}</span>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-ghost"
-                      onClick={() => void api.removeDependency(task.id, dep.dependsOnTaskId).then(() => { bump(); reload(); })}
-                    >
-                      {strings.removeDependency}
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <input
-              ref={dependencyInputRef}
-              aria-label={strings.searchDependency}
-              placeholder={strings.searchDependency}
-              value={depQuery}
-              onChange={(e) => void runDependencySearch(e.target.value)}
-            />
-            {depResults.length > 0 ? (
-              <ul className="list" style={{ padding: 0, margin: 0 }}>
-                {depResults.map((t) => (
-                  <li key={t.id} className="stack">
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-block"
-                      disabled={addingDependencyId !== null}
-                      onClick={() => void addTaskDependency(t)}
-                    >
-                      {strings.addDependency}: {t.title}
-                      {t.projectTitle ? (
-                        <span className="text-muted"> · {t.projectTitle}</span>
-                      ) : null}
-                    </button>
-                    {dependencyError?.candidateTaskId === t.id ? (
-                      <div className="task-row-error" role="alert">
-                        <span>{strings.error}</span>
-                        <span className="text-muted">{dependencyError.message}</span>
-                      </div>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {dependencyError?.candidateTaskId === null ? (
-              <div className="task-row-error" role="alert">
-                <span>{strings.error}</span>
-                <span className="text-muted">{dependencyError.message}</span>
-              </div>
-            ) : null}
-            </div>
-          </TaskDetailSection>
+          </TaskDetailDisclosure>
 
-          <TaskDetailSection title={strings.subtasks}>
+          <TaskDetailDisclosure
+            title={strings.subtasks}
+            summary={
+              task.children.length > 0
+                ? strings.subtaskSummary(task.children.length)
+                : strings.noSubtasks
+            }
+            defaultOpen={task.children.length > 0}
+            forceOpen={focusField === "subtasks"}
+            resetKey={task.id}
+          >
             <div className="field" ref={subtasksFieldRef}>
-            {task.children.length === 0 ? <p className="text-muted">{strings.noTasks}</p> : null}
+            {task.children.length === 0 ? (
+              <p className="text-muted">{strings.noSubtasks}</p>
+            ) : null}
             <ul className="list" style={{ padding: 0, margin: 0 }}>
               {sortByPosition(task.children).map((child) => (
                 <li key={child.id} className="row-between">
@@ -1197,7 +1368,7 @@ export function TaskDetailSheet() {
               <p className="text-muted">{strings.recurringTaskLeafHint}</p>
             ) : null}
             </div>
-          </TaskDetailSection>
+          </TaskDetailDisclosure>
 
           <TaskDetailDisclosure
             title={strings.taskOrganizationSection}

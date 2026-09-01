@@ -86,7 +86,7 @@ describe("seed data", () => {
     expect(tasks).toContainEqual(
       expect.objectContaining({
         title: "Nebenkostenabrechnung klären",
-        externalWait: { waitingFor: "Vermieter" },
+        externalWait: expect.objectContaining({ waitingFor: "Vermieter" }),
       }),
     );
   });

@@ -67,10 +67,11 @@ that task even when it is not the structural next action.
 Waiting is explicit blocker data, not a lifecycle status or hidden note. An
 actionable task can wait on an external person, organization, event, or
 delivery, identified by a required reason. Without a reason, the task is not
-waiting. Its existing planning date then acts as a **Wiedervorlage**: once
-reached, the blocked task returns to Today for attention. Follow-up notes
-preserve an attributed history. A reached Wiedervorlage does not make its
-project structurally stuck unless a separate project defect also exists.
+waiting. The wait has its own optional **Wiedervorlage**: once reached, the
+directly waiting task returns to Today for attention. Its planned work date
+stays independent and remains stored while the task is blocked. Follow-up
+notes preserve an attributed history. A reached Wiedervorlage does not make
+its project structurally stuck unless a separate project defect also exists.
 
 Dependencies can also block a task until prerequisite work is complete. A
 task may have both blocker types and becomes executable only after all of them

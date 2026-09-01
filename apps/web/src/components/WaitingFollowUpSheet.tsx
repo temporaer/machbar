@@ -15,9 +15,11 @@ export function WaitingFollowUpSheet({
   const strings = useStrings();
   const taskActions = useTaskActions();
   const [content, setContent] = useState("");
-  const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
+  const [revisitDate, setRevisitDate] = useState(
+    task.externalWait?.revisitDate ?? "",
+  );
   const [resolveWait, setResolveWait] = useState(false);
-  const [scheduledDateValid, setScheduledDateValid] = useState(true);
+  const [revisitDateValid, setRevisitDateValid] = useState(true);
   const saving = taskActions.isPending(task.id);
   const error = taskActions.errors[task.id] ?? null;
   const closeIfIdle = () => {
@@ -37,7 +39,7 @@ export function WaitingFollowUpSheet({
             action: "continue",
             content: content.trim(),
             waitingFor: task.externalWait?.waitingFor ?? null,
-            scheduledDate: scheduledDate || null,
+            revisitDate: revisitDate || null,
           },
     );
     if (updated) onClose();
@@ -67,9 +69,9 @@ export function WaitingFollowUpSheet({
           </label>
           <HumanDateInput
             id={`follow-up-date-${task.id}`}
-            value={scheduledDate}
-            onChange={(date) => setScheduledDate(date ?? "")}
-            onValidityChange={setScheduledDateValid}
+            value={revisitDate}
+            onChange={(date) => setRevisitDate(date ?? "")}
+            onValidityChange={setRevisitDateValid}
             disabled={saving}
           />
         </div>
@@ -81,7 +83,7 @@ export function WaitingFollowUpSheet({
             onChange={(event) => setResolveWait(event.target.checked)}
             disabled={saving}
           />
-          {strings.resolveExternalWait}
+          {strings.endWaiting}
         </label>
 
         {error ? (
@@ -98,7 +100,7 @@ export function WaitingFollowUpSheet({
             type="button"
             className="btn btn-primary"
             onClick={() => void save()}
-            disabled={saving || content.trim().length === 0 || !scheduledDateValid}
+            disabled={saving || content.trim().length === 0 || !revisitDateValid}
           >
             {strings.save}
           </button>

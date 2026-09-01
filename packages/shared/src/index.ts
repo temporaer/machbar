@@ -357,6 +357,7 @@ export interface Dependency {
 
 export interface ExternalWait {
   waitingFor: string | null;
+  revisitDate: string | null;
 }
 
 export type TaskBlockerSummary =
@@ -479,12 +480,8 @@ export interface Agenda {
   shared: Task[];
   unscheduled: Task[];
   /**
-   * Tasks that are normally excluded from "Heute" because they are
-   * `blocked` (unresolved dependencies), but whose own `scheduledDate` is
-   * today or earlier. These reappear here — and only here, never in any
-   * other bucket — as a distinct "revisit"/reminder signal so the UI can
-   * explain that the task is blocked yet due for a look today. Dates are
-   * never inherited from a project or parent task for this purpose.
+   * Tasks with a direct external wait whose `revisitDate` is today or earlier.
+   * They reappear here as an attention signal even though they remain blocked.
    */
   revisit: Task[];
 }

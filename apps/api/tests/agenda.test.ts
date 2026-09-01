@@ -45,11 +45,15 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     return res.json();
   }
 
-  async function addExternalWait(taskId: number, waitingFor = "External event") {
+  async function addExternalWait(
+    taskId: number,
+    waitingFor = "External event",
+    revisitDate?: string,
+  ) {
     const res = await ctx.app.inject({
       method: "PUT",
       url: `/api/tasks/${taskId}/external-wait`,
-      payload: { waitingFor },
+      payload: { waitingFor, revisitDate },
     });
     expect(res.statusCode).toBe(200);
     return res.json();
@@ -182,14 +186,14 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
   it("puts due external follow-ups in revisit and keeps future waits out", async () => {
     const dueWaiting = await createTask({
       title: "Heute nachhaken",
-      scheduledDate: today,
-    });
-    await addExternalWait(dueWaiting.id, "Offene Rückmeldung");
-    const futureWaiting = await createTask({
-      title: "Später nachhaken",
       scheduledDate: tomorrow,
     });
-    await addExternalWait(futureWaiting.id, "Spätere Rückmeldung");
+    await addExternalWait(dueWaiting.id, "Offene Rückmeldung", today);
+    const futureWaiting = await createTask({
+      title: "Später nachhaken",
+      scheduledDate: today,
+    });
+    await addExternalWait(futureWaiting.id, "Spätere Rückmeldung", tomorrow);
 
     expect(await bucketsContaining("Heute nachhaken")).toEqual(["revisit"]);
     expect(await bucketsContaining("Später nachhaken")).toEqual([]);
@@ -223,7 +227,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Blockiert, aber erst morgen geplant")).toEqual([]);
   });
 
-  it("surfaces a blocked task as a 'revisit' reminder when its own scheduledDate is today", async () => {
+  it("does not reinterpret a dependency-blocked task's work plan as a revisit", async () => {
     const blocker = await createTask({ title: "Blockierer 4" });
     const blocked = await createTask({
       title: "Blockiert, heute zur Wiedervorlage",
@@ -231,22 +235,17 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     });
     await addDependency(blocked.id, blocker.id);
 
-    expect(await bucketsContaining("Blockiert, heute zur Wiedervorlage")).toEqual(["revisit"]);
-
-    const agenda = await getAgenda();
-    const revisitTask = agenda.revisit.find(
-      (t: { title: string }) => t.title === "Blockiert, heute zur Wiedervorlage",
-    );
-    expect(revisitTask.blocked).toBe(true);
+    expect(
+      await bucketsContaining("Blockiert, heute zur Wiedervorlage"),
+    ).toEqual([]);
   });
 
-  it("surfaces a blocked task as 'revisit' when its own scheduledDate is in the past (overdue-scheduled)", async () => {
-    const blocker = await createTask({ title: "Blockierer 5" });
+  it("surfaces a direct external wait when its revisit date is in the past", async () => {
     const blocked = await createTask({
       title: "Blockiert, längst überfällig geplant",
-      scheduledDate: yesterday,
+      scheduledDate: tomorrow,
     });
-    await addDependency(blocked.id, blocker.id);
+    await addExternalWait(blocked.id, "Rückmeldung", yesterday);
 
     expect(await bucketsContaining("Blockiert, längst überfällig geplant")).toEqual(["revisit"]);
   });
@@ -273,29 +272,31 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     ).toEqual([]);
   });
 
-  it("moves a blocked-and-scheduled task out of revisit and into its normal bucket once unblocked", async () => {
-    const blocker = await createTask({ title: "Blockierer 7" });
+  it("moves a waiting task into its planned bucket once the wait ends", async () => {
     const blocked = await createTask({
       title: "Wird später entblockt",
       scheduledDate: today,
     });
-    await addDependency(blocked.id, blocker.id);
+    const waiting = await addExternalWait(blocked.id, "Antwort", today);
 
     expect(await bucketsContaining("Wird später entblockt")).toEqual(["revisit"]);
 
-    await ctx.app.inject({ method: "POST", url: `/api/tasks/${blocker.id}/complete` });
+    await ctx.app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${blocked.id}/external-wait`,
+      payload: { expectedRevision: waiting.revision },
+    });
 
     expect(await bucketsContaining("Wird später entblockt")).toEqual(["planned"]);
   });
 
   it("keeps every bucket, including revisit, mutually exclusive with no duplicate tasks", async () => {
-    const blockerA = await createTask({ title: "Blockierer A" });
     const revisitTask = await createTask({
       title: "Revisit-Kandidat",
       scheduledDate: today,
       dueDate: today,
     });
-    await addDependency(revisitTask.id, blockerA.id);
+    await addExternalWait(revisitTask.id, "Antwort", today);
 
     await createTask({ title: "Ganz normal geplant", scheduledDate: today });
     await createTask({ title: "Überfällig", dueDate: yesterday });
@@ -307,8 +308,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     const allIds = bucketKeys.flatMap((key) => agenda[key]).map((t: { id: number }) => t.id);
     expect(new Set(allIds).size).toBe(allIds.length);
 
-    // The blocked-and-scheduled-and-due task lands only in revisit, never
-    // also in dueToday/planned because of its matching dueDate/scheduledDate.
+    // The externally waiting, planned, and due task lands only in revisit.
     expect(await bucketsContaining("Revisit-Kandidat")).toEqual(["revisit"]);
   });
 
@@ -355,13 +355,13 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
       scheduledDate: today,
       priority: 1,
     });
-    await addExternalWait(revisitToday.id);
+    await addExternalWait(revisitToday.id, "External event", today);
     const revisitYesterday = await createTask({
       title: "Revisit yesterday low",
       scheduledDate: yesterday,
       priority: 5,
     });
-    await addExternalWait(revisitYesterday.id);
+    await addExternalWait(revisitYesterday.id, "External event", yesterday);
 
     await createTask({
       title: "Overdue recent high",
@@ -519,6 +519,16 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     });
     expect(res.statusCode).toBe(201);
     return res.json();
+  }
+
+  async function addExternalWait(taskId: number, revisitDate: string) {
+    const response = await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${taskId}/external-wait`,
+      payload: { waitingFor: "Antwort", revisitDate },
+    });
+    expect(response.statusCode).toBe(200);
+    return response.json();
   }
 
   async function getAgenda(memberId?: number) {
@@ -691,14 +701,13 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
   it("filters the 'revisit' bucket too: a blocked task owned by someone else stays hidden", async () => {
     const anna = await createMember("Anna");
     const ben = await createMember("Ben");
-    const blocker = await createTask({ title: "Blockierer (Owner-Filter)" });
     const blocked = await createTask({
       title: "Bens blockierte Wiedervorlage",
       ownerMemberId: ben.id,
       ownerInheritanceMode: "explicit",
       scheduledDate: today,
     });
-    await addDependency(blocked.id, blocker.id);
+    await addExternalWait(blocked.id, today);
 
     expect(await bucketsContaining("Bens blockierte Wiedervorlage", ben.id)).toEqual(["revisit"]);
     expect(await bucketsContaining("Bens blockierte Wiedervorlage", anna.id)).toEqual([]);
@@ -706,12 +715,11 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
 
   it("filters the 'revisit' bucket to include shared/unowned blocked tasks for any member", async () => {
     const anna = await createMember("Anna");
-    const blocker = await createTask({ title: "Blockierer (gemeinsam)" });
     const blocked = await createTask({
       title: "Gemeinsame blockierte Wiedervorlage",
       scheduledDate: today,
     });
-    await addDependency(blocked.id, blocker.id);
+    await addExternalWait(blocked.id, today);
 
     expect(await bucketsContaining("Gemeinsame blockierte Wiedervorlage", anna.id)).toEqual([
       "revisit",

@@ -207,4 +207,69 @@ describe("external-wait migrations", () => {
     expect(sqlite.pragma("foreign_key_check")).toEqual([]);
     sqlite.close();
   });
+
+  it("moves historical wait schedules to revisit dates without touching other plans", () => {
+    const sqlite = new Database(":memory:");
+    sqlite.pragma("foreign_keys = ON");
+    sqlite.exec(`
+      CREATE TABLE tasks (
+        id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
+        title text NOT NULL,
+        scheduled_date text
+      );
+      CREATE TABLE task_external_waits (
+        task_id integer PRIMARY KEY NOT NULL,
+        waiting_for text,
+        created_at text NOT NULL,
+        updated_at text NOT NULL,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE cascade
+      );
+      INSERT INTO tasks (id, title, scheduled_date) VALUES
+        (1, 'Waiting with date', '2026-09-02'),
+        (2, 'Waiting without date', NULL),
+        (3, 'Ordinary planned task', '2026-09-10');
+      INSERT INTO task_external_waits
+        (task_id, waiting_for, created_at, updated_at)
+      VALUES
+        (1, 'Reply', '2026-08-01', '2026-08-01'),
+        (2, 'Delivery', '2026-08-01', '2026-08-01');
+    `);
+
+    const migration = fs.readFileSync(
+      path.resolve(
+        __dirname,
+        "../drizzle/0019_external_wait_revisit_date.sql",
+      ),
+      "utf8",
+    );
+    for (const statement of migration.split("--> statement-breakpoint")) {
+      if (statement.trim()) sqlite.exec(statement);
+    }
+
+    expect(
+      sqlite
+        .prepare(
+          `SELECT task_id AS taskId, revisit_date AS revisitDate
+           FROM task_external_waits ORDER BY task_id`,
+        )
+        .all(),
+    ).toEqual([
+      { taskId: 1, revisitDate: "2026-09-02" },
+      { taskId: 2, revisitDate: null },
+    ]);
+    expect(
+      sqlite
+        .prepare(
+          `SELECT id, scheduled_date AS scheduledDate
+           FROM tasks ORDER BY id`,
+        )
+        .all(),
+    ).toEqual([
+      { id: 1, scheduledDate: null },
+      { id: 2, scheduledDate: null },
+      { id: 3, scheduledDate: "2026-09-10" },
+    ]);
+    expect(sqlite.pragma("foreign_key_check")).toEqual([]);
+    sqlite.close();
+  });
 });

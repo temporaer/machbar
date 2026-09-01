@@ -184,6 +184,7 @@ describe("review queue", () => {
     ctx.handle.db.insert(schema.taskExternalWaits).values({
       taskId: waiting.id,
       waitingFor: "Reply",
+      revisitDate: "2026-09-02",
     }).run();
     const projectSomeday = ctx.handle.db
       .insert(schema.tasks)
@@ -425,13 +426,13 @@ describe("review queue", () => {
       .values({
         title: "Reached followup",
         status: "actionable",
-        scheduledDate: today,
       })
       .returning()
       .get();
     ctx.handle.db.insert(schema.taskExternalWaits).values({
       taskId: dueWait.id,
       waitingFor: "Reached",
+      revisitDate: today,
     }).run();
     ctx.handle.db.insert(schema.tasks).values({
       title: "Unassigned executable",

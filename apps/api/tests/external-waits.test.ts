@@ -34,7 +34,7 @@ describe("task external waits", () => {
       url: `/api/tasks/${task.id}/external-wait`,
       payload: {
         waitingFor: null,
-        scheduledDate: "2026-09-02",
+        revisitDate: "2026-09-02",
         expectedRevision: task.revision,
       },
     });
@@ -54,14 +54,17 @@ describe("task external waits", () => {
     });
   });
 
-  it("resolves the wait and clears its revisit date by default", async () => {
-    const task = await createTask({ title: "Antwort abwarten" });
+  it("resolves the wait without clearing the independent work plan", async () => {
+    const task = await createTask({
+      title: "Antwort abwarten",
+      scheduledDate: "2026-09-10",
+    });
     const waiting = await ctx.app.inject({
       method: "PUT",
       url: `/api/tasks/${task.id}/external-wait`,
       payload: {
         waitingFor: "Sarah",
-        scheduledDate: "2026-09-02",
+        revisitDate: "2026-09-02",
         expectedRevision: task.revision,
       },
     });
@@ -76,7 +79,7 @@ describe("task external waits", () => {
     expect(resolved.statusCode).toBe(200);
     expect(resolved.json()).toMatchObject({
       externalWait: null,
-      scheduledDate: null,
+      scheduledDate: "2026-09-10",
       blocked: false,
       executable: true,
     });
@@ -108,7 +111,7 @@ describe("task external waits", () => {
     });
     expect(dependencyResolved.json()).toMatchObject({
       blocked: true,
-      externalWait: { waitingFor: "IKEA-Lieferung" },
+      externalWait: { waitingFor: "IKEA-Lieferung", revisitDate: null },
     });
 
     await ctx.app.inject({
@@ -180,14 +183,14 @@ describe("task external waits", () => {
   it("orders waiting work by attention, due date, title, and ID with missing dates last", async () => {
     async function wait(
       title: string,
-      scheduledDate?: string,
+      revisitDate?: string,
       dueDate?: string,
     ) {
       const task = await createTask({ title, dueDate });
       await ctx.app.inject({
         method: "PUT",
         url: `/api/tasks/${task.id}/external-wait`,
-        payload: { waitingFor: "Reply", scheduledDate },
+        payload: { waitingFor: "Reply", revisitDate },
       });
       return task;
     }
@@ -255,17 +258,23 @@ describe("task external waits", () => {
       method: "GET",
       url: `/api/tasks/${task.id}`,
     });
-    expect(current.json().externalWait).toEqual({ waitingFor: "Amt" });
+    expect(current.json().externalWait).toEqual({
+      waitingFor: "Amt",
+      revisitDate: null,
+    });
   });
 
-  it("removes the wait and revisit when leaving actionable", async () => {
-    const task = await createTask({ title: "Später entscheiden" });
+  it("removes the wait but keeps the work plan when leaving actionable", async () => {
+    const task = await createTask({
+      title: "Später entscheiden",
+      scheduledDate: "2026-09-12",
+    });
     const waiting = await ctx.app.inject({
       method: "PUT",
       url: `/api/tasks/${task.id}/external-wait`,
       payload: {
         waitingFor: "Rückmeldung",
-        scheduledDate: "2026-09-02",
+        revisitDate: "2026-09-02",
       },
     });
 
@@ -280,7 +289,7 @@ describe("task external waits", () => {
     expect(transitioned.json()).toMatchObject({
       status: "someday",
       externalWait: null,
-      scheduledDate: null,
+      scheduledDate: "2026-09-12",
       blocked: false,
     });
   });
@@ -328,6 +337,7 @@ describe("task external waits", () => {
     const task = await createTask({
       title: "Ask again",
       notes: "Initial request.",
+      scheduledDate: "2026-09-06",
     });
     const waiting = (
       await ctx.app.inject({
@@ -335,7 +345,7 @@ describe("task external waits", () => {
         url: `/api/tasks/${task.id}/external-wait`,
         payload: {
           waitingFor: "Landlord",
-          scheduledDate: "2026-09-02",
+          revisitDate: "2026-09-02",
           expectedRevision: task.revision,
         },
       })
@@ -349,7 +359,7 @@ describe("task external waits", () => {
         action: "continue",
         content: "Called again; awaiting the written answer.",
         waitingFor: "Property manager",
-        scheduledDate: "2026-09-09",
+        revisitDate: "2026-09-09",
         expectedRevision: waiting.revision,
       },
     });
@@ -358,8 +368,11 @@ describe("task external waits", () => {
     expect(response.json()).toMatchObject({
       id: task.id,
       status: "actionable",
-      scheduledDate: "2026-09-09",
-      externalWait: { waitingFor: "Property manager" },
+      scheduledDate: "2026-09-06",
+      externalWait: {
+        waitingFor: "Property manager",
+        revisitDate: "2026-09-09",
+      },
       revision: waiting.revision + 1,
     });
     expect(response.json().notes).toMatch(
@@ -371,6 +384,7 @@ describe("task external waits", () => {
     const task = await createTask({
       title: "Resolve after reply",
       notes: "Initial request.",
+      scheduledDate: "2026-09-11",
     });
     const waiting = (
       await ctx.app.inject({
@@ -378,7 +392,7 @@ describe("task external waits", () => {
         url: `/api/tasks/${task.id}/external-wait`,
         payload: {
           waitingFor: "Supplier",
-          scheduledDate: "2026-09-02",
+          revisitDate: "2026-09-02",
           expectedRevision: task.revision,
         },
       })
@@ -398,7 +412,7 @@ describe("task external waits", () => {
     expect(response.json()).toMatchObject({
       status: "actionable",
       externalWait: null,
-      scheduledDate: null,
+      scheduledDate: "2026-09-11",
       blocked: false,
       revision: waiting.revision + 1,
     });
@@ -411,6 +425,7 @@ describe("task external waits", () => {
     const task = await createTask({
       title: "Keep atomic",
       notes: "Original note.",
+      scheduledDate: "2026-09-06",
     });
     const waiting = (
       await ctx.app.inject({
@@ -418,7 +433,7 @@ describe("task external waits", () => {
         url: `/api/tasks/${task.id}/external-wait`,
         payload: {
           waitingFor: "Authority",
-          scheduledDate: "2026-09-02",
+          revisitDate: "2026-09-02",
           expectedRevision: task.revision,
         },
       })
@@ -442,7 +457,7 @@ describe("task external waits", () => {
         action: "continue",
         content: "Also must not be appended.",
         waitingFor: "   ",
-        scheduledDate: "2026-09-10",
+        revisitDate: "2026-09-10",
         expectedRevision: waiting.revision,
       },
     });
@@ -455,8 +470,11 @@ describe("task external waits", () => {
     });
     expect(current.json()).toMatchObject({
       notes: "Original note.",
-      scheduledDate: "2026-09-02",
-      externalWait: { waitingFor: "Authority" },
+      scheduledDate: "2026-09-06",
+      externalWait: {
+        waitingFor: "Authority",
+        revisitDate: "2026-09-02",
+      },
       revision: waiting.revision,
     });
   });

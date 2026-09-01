@@ -109,7 +109,7 @@ The API computes several derived fields before returning tasks to the client:
 | `effectiveTags` | Ancestor tag union minus excluded IDs |
 | `effectiveAreaTags` / `effectiveActorTags` / `effectiveContextTags` | Kind-filtered views of `effectiveTags` |
 | `explicitTags` | Tags directly on this task |
-| `externalWait` | Nullable unresolved external blocker with a required non-empty reason |
+| `externalWait` | Nullable unresolved external blocker with a required non-empty reason and optional independent `revisitDate` |
 | `blocked` | `true` for actionable tasks with an external wait or any unresolved dependency |
 | `executable` | `true` only for actionable, unblocked tasks |
 | `blockers` | Structured external/dependency blocker summaries |
@@ -133,7 +133,7 @@ These views are **read-only projections** — they are not stored in SQLite; the
 
 The **Heute** agenda is also query-derived. Its primary sections contain work
 explicitly scheduled for today or earlier, overdue work, work due today,
-soon-due work, and blocked tasks whose own Wiedervorlage is due.
+soon-due work, and directly externally waiting tasks whose Wiedervorlage is due.
 It is member-scoped by default (including shared/unassigned work), while the
 explicit `scope=all` query returns the same compiled buckets for the complete
 household. The frontend exposes that distinction as a session-scoped
@@ -176,8 +176,8 @@ become task dates.
   tasks before classification.
 - External waits use revision-aware `PUT /api/tasks/:id/external-wait` and
   `DELETE /api/tasks/:id/external-wait` resources. Starting/updating a wait can
-  change its description and the task's revisit date atomically; resolving it
-  deletes the relation and clears that date in the same transaction.
+  change its description and its own revisit date atomically; resolving it
+  deletes the relation while preserving the task's independent work plan.
 - `POST /api/tasks/:id/external-wait/follow-up` atomically appends the
   attributed note and either continues or resolves the wait; the UI never
   composes that workflow from multiple requests.
@@ -274,11 +274,11 @@ The Waiting API includes only actionable tasks with their own
 `task_external_waits` row. Dependency-only blockers stay visible in project
 context instead of duplicating the external wait at the end of their chain.
 
-For an executable task, `scheduledDate` is its planned work date. For a
-blocked task, the same field is its Wiedervorlage. Resolving an external wait
-clears that revisit date by default so it does not silently become a work
-schedule. Resolving a task dependency never clears the dependent task's own
-date.
+`Task.scheduledDate` is always a planned work date.
+`ExternalWait.revisitDate` is always the date on which a blocked task should
+return for attention. A task may retain both dates while waiting; only the
+revisit can surface blocked work in Today. Resolving either kind of blocker
+never clears the task's work plan.
 
 Tasks in `done` or `cancelled` are retained in the database and visible in search/history views.
 
@@ -656,10 +656,10 @@ client-side, and hierarchy/cycle validation stays server-side
 ```
 
 produced by `followUpEntryHeader()`, so the log stays readable and attributable
-in plain text. The same sheet updates the task's `scheduledDate`
-(*Wiedervorlage*) and can explicitly end its external wait. Ending the wait
-clears both the external-wait row and its revisit date. The sheet owns only
-these drafts and delegates execution to `useTaskActions.followUpExternalWait`.
+in plain text. The same sheet updates `ExternalWait.revisitDate` and can
+explicitly end the wait. Ending it removes the external-wait row and its
+revisit while preserving `Task.scheduledDate`. The sheet owns only these
+drafts and delegates execution to `useTaskActions.followUpExternalWait`.
 
 ---
 
@@ -683,3 +683,7 @@ existing waiting tasks without changing their `scheduled_date`. The following
 `0016_remove_waiting_compatibility.sql` migration removes the superseded task
 column and normalizes activity status metadata to the current lifecycle
 vocabulary.
+
+`0019_external_wait_revisit_date.sql` adds the dedicated revisit field, moves
+the historical scheduled date of each existing external wait into it, and
+clears only those tasks' overloaded planning dates.
