@@ -5,7 +5,7 @@ import { TagPicker } from "./TagPicker";
 import { makeTag } from "../test/fixtures";
 
 describe("TagPicker", () => {
-  it("zeigt alle Tags als kompakte, direkt antippbare Auswahl", async () => {
+  it("shows only non-empty tag groups and keeps them collapsed initially", async () => {
     const onChange = vi.fn();
     render(
       <TagPicker
@@ -18,7 +18,14 @@ describe("TagPicker", () => {
       />,
     );
 
+    const heading = screen.getByRole("heading", { name: "Normal (2)" });
+    expect(heading.closest("details")).not.toHaveAttribute("open");
+    expect(screen.queryByRole("heading", { name: /^Bereich/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lars" })).not.toBeVisible();
+
+    await userEvent.click(heading.closest("summary")!);
     const lars = screen.getByRole("button", { name: "Lars" });
+    expect(lars).toBeVisible();
     expect(lars).toHaveClass("tag-choice");
     expect(lars).toHaveAttribute("aria-pressed", "true");
 
@@ -29,6 +36,8 @@ describe("TagPicker", () => {
   it("offers only existing tags and no inline creation controls", () => {
     render(<TagPicker tags={[]} selectedIds={[]} onChange={vi.fn()} />);
 
+    expect(screen.getByText("Keine Tags.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Anlegen" })).not.toBeInTheDocument();
   });

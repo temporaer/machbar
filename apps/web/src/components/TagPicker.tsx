@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { tagKinds, type Tag, type TagKind } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
+import { CollapsibleGroup } from "./CollapsibleGroup";
 
 export function TagPicker({
   tags,
@@ -22,6 +23,12 @@ export function TagPicker({
   const visibleTags = tags
     .filter((tag) => !hidden.has(tag.id) && kinds.includes(tag.kind))
     .sort((a, b) => a.name.localeCompare(b.name, locale));
+  const groups = kinds
+    .map((kind) => ({
+      kind,
+      tags: visibleTags.filter((tag) => tag.kind === kind),
+    }))
+    .filter((group) => group.tags.length > 0);
 
   const toggle = (tagId: number) => {
     const next = selectedIds.includes(tagId)
@@ -32,16 +39,21 @@ export function TagPicker({
 
   return (
     <div className="tag-picker">
-      <div className="tag-choice-group" role="group" aria-label={strings.tags}>
-        {kinds.map((kind) => (
-          <section className="tag-kind-section" key={kind}>
-            <p className="text-muted tag-kind-label">{strings.tagKindLabels[kind]}</p>
+      {groups.length === 0 ? (
+        <p className="text-muted">{strings.noTags}</p>
+      ) : (
+        <div className="tag-choice-group" role="group" aria-label={strings.tags}>
+          {groups.map(({ kind, tags: kindTags }) => (
+            <CollapsibleGroup
+            key={kind}
+            title={`${strings.tagKindLabels[kind]} (${kindTags.length})`}
+            headingLevel={3}
+            defaultOpen={false}
+            >
             <div className="tag-choice-group">
-              {visibleTags
-                .filter((tag) => tag.kind === kind)
-                .map((tag) => {
-                  const selected = selectedIds.includes(tag.id);
-                  return (
+              {kindTags.map((tag) => {
+                const selected = selectedIds.includes(tag.id);
+                return (
                     <button
                       key={tag.id}
                       type="button"
@@ -55,10 +67,11 @@ export function TagPicker({
                     </button>
                   );
                 })}
-            </div>
-          </section>
-        ))}
-      </div>
+              </div>
+            </CollapsibleGroup>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

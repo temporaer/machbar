@@ -3,13 +3,15 @@ import { useState, type ReactNode } from "react";
 export function CollapsibleGroup({
   title,
   headingLevel,
+  defaultOpen = true,
   children,
 }: {
   title: string;
   headingLevel: 2 | 3;
+  defaultOpen?: boolean;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(defaultOpen);
 
   return (
     <details
