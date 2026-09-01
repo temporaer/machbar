@@ -697,10 +697,14 @@ task/project create call, so abandoning capture before commit creates no
 Paperless document. Successful uploads are retained across create retries.
 New camera images can optionally pass through the shared `ImageCropSheet`
 before that upload. Cropping is explicitly requested rather than automatic:
-the sheet decodes a width-bounded bitmap, renders a smaller preview canvas, and
-releases both bitmap and canvas surfaces when it closes. This keeps crop memory
-bounded on phones and leaves the original file untouched when the user chooses
-not to crop.
+an authenticated, no-store preparation endpoint uses Sharp to rotate and
+resize the image within 1280 × 1280 before the phone decodes it. The sheet
+renders only that bounded source and releases both bitmap and canvas surfaces
+when it closes. Applying a crop creates a local JPEG that follows the normal
+deferred Paperless upload path; choosing the original leaves the source file
+untouched. The API serializes image preparation and rejects inputs above 64
+megapixels so concurrent or pathological decodes cannot multiply server memory
+use.
 
 The installed PWA's POST share target is deliberately separate from API upload.
 `apps/web/public/sw.js` stages title, text, URL, and files in IndexedDB, then

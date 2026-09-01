@@ -1,4 +1,5 @@
 import { Readable } from "node:stream";
+import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   AuthorizationRequest,
@@ -165,6 +166,12 @@ describe("Paperless integration routes", () => {
           headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
           payload: body,
         }),
+        ctx.app.inject({
+          method: "POST",
+          url: `${BASE}/prepare-image`,
+          headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+          payload: body,
+        }),
         ctx.app.inject({ method: "GET", url: `${BASE}?query=receipt` }),
         ctx.app.inject({ method: "GET", url: `${BASE}/1/thumbnail` }),
         ctx.app.inject({ method: "GET", url: `${BASE}/1/preview` }),
@@ -237,6 +244,7 @@ describe("Paperless integration routes", () => {
         headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
         payload: body,
       });
+
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual(summary);
       expect(upload).toHaveBeenCalledWith({
@@ -246,6 +254,60 @@ describe("Paperless integration routes", () => {
       });
       expect(awaitDocumentId).toHaveBeenCalledWith("task-1");
       expect(getDocument).toHaveBeenCalledWith(55);
+    });
+
+    it("prepares a bounded no-store image without uploading it to Paperless", async () => {
+      const source = await sharp({
+        create: {
+          width: 2000,
+          height: 1000,
+          channels: 3,
+          background: "#146356",
+        },
+      })
+        .jpeg()
+        .toBuffer();
+      const { boundary, body } = multipartBody(
+        "document",
+        "photo.jpg",
+        "image/jpeg",
+        source,
+      );
+
+      const response = await ctx.app.inject({
+        method: "POST",
+        url: `${BASE}/prepare-image`,
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["content-type"]).toContain("image/jpeg");
+      expect(response.headers["cache-control"]).toBe("no-store");
+      const metadata = await sharp(response.rawPayload).metadata();
+      expect(metadata.width).toBe(1280);
+      expect(metadata.height).toBe(640);
+      expect(client.upload).not.toHaveBeenCalled();
+    });
+
+    it("rejects invalid image bytes without contacting Paperless", async () => {
+      const { boundary, body } = multipartBody(
+        "document",
+        "photo.jpg",
+        "image/jpeg",
+        Buffer.from("not-an-image"),
+      );
+
+      const response = await ctx.app.inject({
+        method: "POST",
+        url: `${BASE}/prepare-image`,
+        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe("paperless_upload_rejected");
+      expect(client.upload).not.toHaveBeenCalled();
     });
 
     it("rejects uploads larger than the 25MB cap without contacting Paperless", async () => {

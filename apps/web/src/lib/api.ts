@@ -393,6 +393,15 @@ export const api = {
       body,
     });
   },
+  preparePaperlessImageForCrop: (file: File, signal?: AbortSignal) => {
+    const body = new FormData();
+    body.append("document", file, file.name);
+    return request<Blob>(
+      `${paperlessDocumentsPath}/prepare-image`,
+      { method: "POST", body, ...(signal ? { signal } : {}) },
+      "blob",
+    );
+  },
   searchPaperlessDocuments: (search: string) =>
     request<PaperlessDocumentSummary[]>(
       `${paperlessDocumentsPath}${query({ query: search })}`,
