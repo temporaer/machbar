@@ -92,10 +92,10 @@ async function runQuickAction(payload, action) {
   throw new Error("Unsupported notification action.");
 }
 
-async function openEntity(payload) {
-  const url = notificationDocumentUrl(self.registration.scope, payload.entity);
-  const scopeUrl = new URL(self.registration.scope);
-  const windows = await clients.matchAll({
+async function openEntity(payload, scope, clientManager) {
+  const url = notificationDocumentUrl(scope, payload.entity);
+  const scopeUrl = new URL(scope);
+  const windows = await clientManager.matchAll({
     type: "window",
     includeUncontrolled: true,
   });
@@ -110,7 +110,24 @@ async function openEntity(payload) {
     if ("navigate" in existing) await existing.navigate(url);
     return existing.focus();
   }
-  return clients.openWindow(url);
+  return clientManager.openWindow(url);
+}
+
+export async function handleNotificationClick(
+  payload,
+  action,
+  scope = self.registration.scope,
+  clientManager = clients,
+) {
+  if (action && action !== "open") {
+    try {
+      await runQuickAction(payload, action);
+      return;
+    } catch {
+      // A failed quick action must leave the user in the normal UI.
+    }
+  }
+  await openEntity(payload, scope, clientManager);
 }
 
 if (typeof self !== "undefined" && "addEventListener" in self) {
@@ -141,18 +158,6 @@ if (typeof self !== "undefined" && "addEventListener" in self) {
     const payload = event.notification.data;
     event.notification.close();
     if (!validPayload(payload)) return;
-    event.waitUntil(
-      (async () => {
-        if (event.action && event.action !== "open") {
-          try {
-            await runQuickAction(payload, event.action);
-            return;
-          } catch {
-            // A failed quick action must leave the user in the normal UI.
-          }
-        }
-        await openEntity(payload);
-      })(),
-    );
+    event.waitUntil(handleNotificationClick(payload, event.action));
   });
 }

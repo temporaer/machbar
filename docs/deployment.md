@@ -136,9 +136,10 @@ error.
 
 ## Web Push notifications
 
-Web Push requires HTTPS at the browser-facing origin (localhost is the usual
-development exception) and a service-worker-capable browser. Generate a VAPID
-key pair once for an installation:
+Web Push is supported through the same standards-based service-worker flow in
+compatible desktop and mobile browsers/PWAs. It requires HTTPS at the
+browser-facing origin (localhost is the usual development exception). Generate
+a VAPID key pair once for an installation:
 
 ```bash
 npx web-push generate-vapid-keys
@@ -152,10 +153,12 @@ VAPID_PRIVATE_KEY=replace-with-generated-private-key
 VAPID_SUBJECT=https://machbar.example.com
 ```
 
-The private key never leaves the server. Each browser/PWA installation must be
-enabled separately under **More → Notifications**; a member may subscribe
-several devices, and a shared unauthenticated browser is reassociated when its
-selected Machbar identity changes.
+The private key never leaves the server. Each desktop or mobile browser/PWA
+must be enabled separately under **More → Notifications** and keeps an
+independent Push subscription. A member may subscribe several devices and
+receives each event on all of them; a shared unauthenticated browser is
+reassociated when its selected Machbar identity changes. Service-worker
+delivery does not require an open Machbar tab or window.
 
 The current version sends Push notifications only when another person assigns
 or reassigns a task/project to the member, or when an explicit task

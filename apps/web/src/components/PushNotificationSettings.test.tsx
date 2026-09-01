@@ -106,7 +106,7 @@ describe("PushNotificationSettings", () => {
     installBrowserSupport("denied");
     renderWithProviders(<PushNotificationSettings />);
     expect(
-      await screen.findByText(/Browser-Einstellungen blockiert/),
+      await screen.findByText(/Browser- bzw. Website-Einstellungen blockiert/),
     ).toBeInTheDocument();
 
     cleanup();
@@ -135,6 +135,67 @@ describe("PushNotificationSettings", () => {
         }),
       ),
     );
+    expect(screen.getByText("Auf diesem Gerät aktiviert.")).toBeInTheDocument();
+  });
+
+  it("keeps Chromium's quiet default result visible and actionable", async () => {
+    const requestPermission = installBrowserSupport("default", "default");
+    renderWithProviders(<PushNotificationSettings />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Aktivieren" }),
+    );
+
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText(/Browser wartet auf deine Freigabe/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Adressleiste bzw. Website-Einstellungen/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Aktivieren" }),
+    ).toBeInTheDocument();
+    expect(pushManager.subscribe).not.toHaveBeenCalled();
+    expect(mockedApi.registerPushSubscription).not.toHaveBeenCalled();
+  });
+
+  it("explains a denied permission result without attempting to subscribe", async () => {
+    const requestPermission = installBrowserSupport("default", "denied");
+    renderWithProviders(<PushNotificationSettings />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Aktivieren" }),
+    );
+
+    expect(requestPermission).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText(/Browser- bzw. Website-Einstellungen blockiert/),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Aktivieren" })).toBeNull();
+    expect(pushManager.subscribe).not.toHaveBeenCalled();
+    expect(mockedApi.registerPushSubscription).not.toHaveBeenCalled();
+  });
+
+  it("reuses this browser's matching subscription instead of replacing it", async () => {
+    installBrowserSupport("granted");
+    const existing = subscription();
+    pushManager.getSubscription
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existing);
+    renderWithProviders(<PushNotificationSettings />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Aktivieren" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.registerPushSubscription).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: existing.endpoint }),
+      ),
+    );
+    expect(pushManager.subscribe).not.toHaveBeenCalled();
+    expect(existing.unsubscribe).not.toHaveBeenCalled();
     expect(screen.getByText("Auf diesem Gerät aktiviert.")).toBeInTheDocument();
   });
 

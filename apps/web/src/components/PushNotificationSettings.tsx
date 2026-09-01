@@ -21,6 +21,7 @@ type State =
   | "unsupported"
   | "unconfigured"
   | "denied"
+  | "permission-pending"
   | "disabled"
   | "enabled";
 
@@ -83,8 +84,12 @@ export function PushNotificationSettings() {
         Notification.permission === "granted"
           ? "granted"
           : await Notification.requestPermission();
-      if (permission !== "granted") {
-        setState(permission === "denied" ? "denied" : "disabled");
+      if (permission === "denied") {
+        setState("denied");
+        return;
+      }
+      if (permission === "default") {
+        setState("permission-pending");
         return;
       }
       const registration = await ensureServiceWorkerRegistration();
@@ -142,6 +147,7 @@ export function PushNotificationSettings() {
     unsupported: strings.pushUnsupported,
     unconfigured: strings.pushUnconfigured,
     denied: strings.pushDenied,
+    "permission-pending": strings.pushPermissionPending,
     disabled: strings.pushDisabled,
     enabled: strings.pushEnabled,
   }[state];
@@ -150,8 +156,8 @@ export function PushNotificationSettings() {
     <div className="card push-settings">
       <h3>{strings.pushTitle}</h3>
       <p className="text-muted">{strings.pushDeviceHint}</p>
-      <p className="push-settings-state">{stateText}</p>
-      {state === "disabled" ? (
+    <p className="push-settings-state" role="status">{stateText}</p>
+    {state === "disabled" || state === "permission-pending" ? (
         <button
           type="button"
           className="btn btn-primary"

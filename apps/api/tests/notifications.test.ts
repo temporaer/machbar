@@ -91,6 +91,32 @@ describe("Push subscription API", () => {
     expect(ctx.handle.db.select().from(schema.pushSubscriptions).all()).toEqual([]);
   });
 
+  it("keeps separate browser and phone subscriptions for the same member", async () => {
+    const hannes = addMember(ctx, "Hannes");
+    const phone = { ...payload, endpoint: "https://push.example/phone" };
+    const desktop = { ...payload, endpoint: "https://push.example/desktop" };
+
+    for (const device of [phone, desktop]) {
+      const response = await ctx.app.inject({
+        method: "PUT",
+        url: "/api/push/subscription",
+        headers: { [ACTIVITY_ACTOR_HEADER]: String(hannes.id) },
+        payload: device,
+      });
+      expect(response.statusCode).toBe(204);
+    }
+
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.pushSubscriptions)
+        .where(eq(schema.pushSubscriptions.memberId, hannes.id))
+        .all()
+        .map((item) => item.endpoint)
+        .sort(),
+    ).toEqual([desktop.endpoint, phone.endpoint].sort());
+  });
+
   it("requires a resolvable current member", async () => {
     const response = await ctx.app.inject({
       method: "PUT",
@@ -429,8 +455,9 @@ describe("reminders and Push delivery", () => {
     ]);
   });
 
-  it("attempts every subscription, removes dead endpoints, and isolates failures", async () => {
+  it("fans out to every recipient subscription, removes dead endpoints, and isolates failures", async () => {
     const hannes = addMember(ctx, "Hannes");
+    const sarah = addMember(ctx, "Sarah");
     const task = createTask(ctx.handle.db, { title: "Paket abholen" });
     ctx.handle.db.insert(schema.pushSubscriptions).values([
       {
@@ -450,6 +477,13 @@ describe("reminders and Push delivery", () => {
       {
         endpoint: "https://push.example/fail",
         memberId: hannes.id,
+        p256dh: "key",
+        auth: "auth",
+        locale: "de",
+      },
+      {
+        endpoint: "https://push.example/other-member",
+        memberId: sarah.id,
         p256dh: "key",
         auth: "auth",
         locale: "de",
@@ -478,6 +512,12 @@ describe("reminders and Push delivery", () => {
       dispatchNotificationEvents(ctx.handle.db, { send }, logger),
     ).resolves.toBe(1);
     expect(send).toHaveBeenCalledTimes(3);
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: "https://push.example/other-member",
+      }),
+      expect.any(String),
+    );
     expect(logger.error).toHaveBeenCalledTimes(1);
     expect(
       ctx.handle.db

@@ -629,11 +629,14 @@ const extra = {
   appearance: "Darstellung",
   appearanceHint: "Wähle, wie Machbar auf diesem Gerät aussieht.",
   pushTitle: "Benachrichtigungen",
-  pushDeviceHint: "Push-Benachrichtigungen auf diesem Gerät",
+  pushDeviceHint: "Web Push in diesem Browser oder dieser installierten PWA",
   pushLoading: "Status wird geladen …",
   pushUnsupported: "Dieser Browser unterstützt keine Push-Benachrichtigungen.",
   pushUnconfigured: "Push-Benachrichtigungen sind auf dem Server nicht eingerichtet.",
-  pushDenied: "Benachrichtigungen sind in den Browser-Einstellungen blockiert.",
+  pushDenied:
+    "Benachrichtigungen sind in den Browser- bzw. Website-Einstellungen blockiert.",
+  pushPermissionPending:
+    "Der Browser wartet auf deine Freigabe. Erlaube Benachrichtigungen über die Adressleiste bzw. Website-Einstellungen.",
   pushDisabled: "Auf diesem Gerät nicht aktiviert.",
   pushEnabled: "Auf diesem Gerät aktiviert.",
   pushEnable: "Aktivieren",
