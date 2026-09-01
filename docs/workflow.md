@@ -21,8 +21,10 @@ Installed Android PWAs can receive text and URLs from the operating-system
 share sheet. Incoming material can create new work or be appended to an
 existing task or project.
 New camera photos can be cropped before capture or attached unchanged. The
-crop editor opens only on request so selecting a full-resolution photo does not
-decode it unnecessarily on memory-constrained phones.
+in-app camera requests a bounded stream instead of handing a full-resolution
+photo back from Android's external camera intent. The crop editor opens only on
+request so the selected photo is not decoded unnecessarily on
+memory-constrained phones.
 
 ### 2. Clarify
 

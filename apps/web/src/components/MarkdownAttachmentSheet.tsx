@@ -13,6 +13,7 @@ import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { ImageCropSheet } from "./ImageCropSheet";
 import { PendingMaterialPreview } from "./PendingMaterialPreview";
+import { CameraCaptureSheet } from "./CameraCaptureSheet";
 
 export function MarkdownAttachmentSheet({
   onInsert,
@@ -36,6 +37,7 @@ export function MarkdownAttachmentSheet({
   const [error, setError] = useState<string | null>(null);
   const [cameraFile, setCameraFile] = useState<File | null>(null);
   const [cropFile, setCropFile] = useState<File | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   const deliver = async (markdown: string) => {
     setResolvedMarkdown(markdown);
@@ -170,7 +172,7 @@ export function MarkdownAttachmentSheet({
             type="button"
             className="btn btn-block"
             disabled={busy}
-            onClick={() => cameraRef.current?.click()}
+            onClick={() => setCameraOpen(true)}
           >
             {strings.takePhoto}
           </button>
@@ -282,6 +284,19 @@ export function MarkdownAttachmentSheet({
             setCameraFile(null);
             setCropFile(null);
             void uploadFile(cropped);
+          }}
+        />
+      ) : null}
+      {cameraOpen ? (
+        <CameraCaptureSheet
+          onClose={() => setCameraOpen(false)}
+          onFallback={() => {
+            setCameraOpen(false);
+            cameraRef.current?.click();
+          }}
+          onCapture={(file) => {
+            setCameraOpen(false);
+            setCameraFile(file);
           }}
         />
       ) : null}

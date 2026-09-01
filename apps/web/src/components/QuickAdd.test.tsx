@@ -312,6 +312,21 @@ describe("QuickAdd", () => {
     expect(close).toHaveBeenCalled();
   });
 
+  it("opens the bounded in-app camera instead of the file capture intent", async () => {
+    renderWithProviders(<QuickAdd />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schnell hinzufügen" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Foto erfassen" }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: "Foto aufnehmen" }),
+    ).toBeInTheDocument();
+  });
+
   it("macht eine neue Machbar-Aufgabe rückgängig", async () => {
     mockedApi.createTask.mockResolvedValue(makeTask({ id: 67, title: "Rückgängig" }));
     mockedApi.deleteTask.mockResolvedValue(undefined);

@@ -66,6 +66,11 @@ const en = {
   captureTask: "Capture task",
   capturePhoto: "Capture photo",
   captureFile: "Capture file",
+  cameraPreview: "Camera preview",
+  cameraStarting: "Starting camera…",
+  cameraCapturing: "Capturing photo…",
+  cameraUnavailable:
+    "The camera could not be opened directly. Choose an image from this device instead.",
   pendingAttachments: (count: number) =>
     count === 1 ? "1 attachment to capture" : `${count} attachments to capture`,
   pendingUpload: "Uploads only when captured",
