@@ -136,6 +136,7 @@ describe("effective owner and typed-tag inheritance", () => {
         ownerInheritanceMode: "inherit",
         effectiveOwnerId: owner.id,
         effectiveOwnerSource: "project",
+        projectOwnerMemberId: owner.id,
       });
     }
   });

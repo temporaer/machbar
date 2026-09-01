@@ -265,6 +265,9 @@ const en = {
   taskSection: "Task",
   taskPlanningSection: "Planning",
   taskPlanningEmpty: "No dates or priority",
+  taskPlanFor: "Plan for",
+  taskPlanForGuidance:
+    "Shows the actionable task in Today from this date.",
   taskContentSection: "Content",
   taskContentEmpty: "No notes or tags",
   taskWaitingSection: "Is this task waiting for something?",
@@ -272,9 +275,9 @@ const en = {
   externalWaitGuidance:
     "Use this when you cannot continue until a reply, delivery, or event happens.",
   externalWaitReasonLabel: "What is the task waiting for?",
-  revisitDateRecommended: "Look again on (recommended)",
+  revisitDateRecommended: "Revisit on (recommended)",
   revisitDateGuidance:
-    "Returns the blocked task to Today on this date – not as a planned work date. Without a date, Review will ask you to clarify it.",
+    "Shows the blocked task in Today for review from this date. Without a date, Review will ask you to clarify it.",
   dependencyPrompt: "Does another task need to be completed first?",
   dependencyGuidance:
     "Only link tasks that genuinely need to be completed first.",
@@ -425,7 +428,7 @@ const en = {
   noInheritance: "Do not inherit",
   ownerInheritanceParent: "Parent",
   ownerInheritanceTaskSpecific: "Task-specific",
-  ownerInheritanceNone: "None",
+  ownerInheritanceNone: "Shared",
   addChildTitle: "New subtask",
   addSuccessor: "Add the next step after this",
   successorPlaceholder: "Next step",

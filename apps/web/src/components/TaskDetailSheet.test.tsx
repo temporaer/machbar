@@ -205,9 +205,10 @@ describe("TaskDetailSheet", () => {
 
     for (const heading of [
       "Aufgabe",
+      "Zuständig",
       "Planung",
-      "Inhalt",
       "Wartet diese Aufgabe auf etwas?",
+      "Inhalt",
       "Teilaufgaben",
     ]) {
       expect(
@@ -245,6 +246,18 @@ describe("TaskDetailSheet", () => {
     expect(screen.getByText("Keine Termine oder Priorität")).toBeVisible();
     expect(screen.getByText("Keine Notizen oder Tags")).toBeVisible();
     expect(screen.getByText("Nicht blockiert")).toBeVisible();
+    expect(
+      screen
+        .getByRole("heading", { name: "Planung", level: 3 })
+        .closest(".task-timing-sections"),
+    ).toBe(
+      screen
+        .getByRole("heading", {
+          name: "Wartet diese Aufgabe auf etwas?",
+          level: 3,
+        })
+        .closest(".task-timing-sections"),
+    );
     expect(
       screen.getByRole("button", { name: "Löschen", hidden: true }),
     ).not.toBeVisible();
@@ -450,8 +463,14 @@ describe("TaskDetailSheet", () => {
     expect(
       screen.getByLabelText("Worauf wartet die Aufgabe?"),
     ).toHaveValue("Vermieter");
+    expect(screen.getByLabelText("Einplanen für")).toHaveValue(
+      "10.09.2026",
+    );
+    expect(screen.getByLabelText("Wiedervorlage am (empfohlen)")).toHaveValue(
+      "05.09.2026",
+    );
     expect(
-      screen.getByText(/nicht als geplanten Arbeitstermin/),
+      screen.getByText(/blockierte Aufgabe ab diesem Tag zur Prüfung/),
     ).toBeInTheDocument();
 
     await userEvent.clear(screen.getByLabelText("Worauf wartet die Aufgabe?"));
@@ -521,35 +540,66 @@ describe("TaskDetailSheet", () => {
     const task = makeTask({
       id: 42,
       title: "Bericht schreiben",
+      projectId: 7,
+      projectTitle: "Jahresbericht",
+      projectOwnerMemberId: 1,
       ownerInheritanceMode: "inherit",
+      effectiveOwnerId: 1,
+      effectiveOwnerSource: "project",
       effectiveTags: [inheritedTag],
       explicitTags: [],
       excludedTagIds: [],
     });
     mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.updateTask.mockResolvedValue({
+      ...task,
+      revision: 2,
+      ownerInheritanceMode: "explicit",
+    });
 
     renderSheet(42);
     await userEvent.click(screen.getByText("open"));
 
     expect(await waitForTaskTitle("Bericht schreiben")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Jahresbericht" }),
+    ).toHaveAttribute("href", "/projects/7");
+    const ownerSection = screen
+      .getByRole("heading", { name: "Zuständig", level: 3 })
+      .closest("section")!;
+    expect(within(ownerSection).getByText("Mira")).toBeInTheDocument();
+    expect(
+      within(ownerSection).getByText("Von Projekt geerbt"),
+    ).toBeInTheDocument();
+    const projectContext = screen
+      .getByRole("link", { name: "Jahresbericht" })
+      .closest<HTMLElement>(".task-project-context")!;
+    expect(within(projectContext).getByText("Mira")).toBeInTheDocument();
     expect(screen.getByText("eilig")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Übergeordnet" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Aufgabenspezifisch" })).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByRole("button", { name: "Keine" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Gemeinsam" })).toHaveAttribute("aria-pressed", "false");
 
     await userEvent.click(screen.getByRole("button", { name: "Aufgabenspezifisch" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
       ownerInheritanceMode: "explicit",
       expectedRevision: 1,
     }));
+
+    await userEvent.click(screen.getByRole("link", { name: "Jahresbericht" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   });
 
-  it("wählt eine aufgabenspezifische Zuständigkeit direkt per Chip und behält die API-Patches bei", async () => {
+  it("zeigt die aufgabenspezifische Person ohne eine zweite Option für gemeinsam", async () => {
     const task = makeTask({
       id: 57,
       title: "Verantwortung klären",
       ownerInheritanceMode: "explicit",
       ownerMemberId: 1,
+      effectiveOwnerId: 1,
+      effectiveOwnerSource: "task",
     });
     mockedApi.getTask.mockResolvedValue(task);
 
@@ -557,19 +607,17 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Verantwortung klären");
 
-    const ownerChoices = screen.getByRole("group", { name: "Zuständig" });
+    const ownerChoices = screen.getByRole("group", { name: "Person" });
     expect(within(ownerChoices).queryByRole("combobox")).not.toBeInTheDocument();
     expect(within(ownerChoices).getByRole("button", { name: "Mira" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
-    expect(within(ownerChoices).getByRole("button", { name: "Niemand zugewiesen" })).toBeInTheDocument();
-
-    await userEvent.click(within(ownerChoices).getByRole("button", { name: "Niemand zugewiesen" }));
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(57, {
-      ownerMemberId: null,
-      expectedRevision: 1,
-    }));
+    expect(
+      within(ownerChoices).queryByRole("button", {
+        name: "Niemand zugewiesen",
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("zeigt keinen manuellen Heute-Umschalter/-Haken mehr an", async () => {
@@ -752,7 +800,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Termin planen");
 
-    const scheduledDate = screen.getByLabelText("Geplant");
+    const scheduledDate = screen.getByLabelText("Einplanen für");
     fireEvent.change(scheduledDate, { target: { value: "12. September 2026" } });
     fireEvent.blur(scheduledDate);
 

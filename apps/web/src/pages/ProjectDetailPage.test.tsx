@@ -348,7 +348,7 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42?focus=planning");
 
     const dialog = await screen.findByRole("dialog", { name: strings.taskDetails });
-    await waitFor(() => expect(within(dialog).getByLabelText(strings.scheduled)).toHaveFocus());
+    await waitFor(() => expect(within(dialog).getByLabelText(strings.taskPlanFor)).toHaveFocus());
     expect(
       within(dialog).getByText("Ort reservieren", { selector: "strong" }),
     ).toBeInTheDocument();
