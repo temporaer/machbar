@@ -350,6 +350,10 @@ export class Graph {
       const eff = effectiveOwners.get(raw.id);
       const effectiveOwnerId = eff?.ownerId ?? null;
       const effectiveOwnerSource = eff?.ownerSource ?? "none";
+      const inheritedOwnerId =
+        raw.parentTaskId !== null
+          ? effectiveOwners.get(raw.parentTaskId)?.ownerId ?? null
+          : project?.ownerMemberId ?? null;
 
       const explicitTags = dedupeTags(explicitTagsByTask.get(raw.id) ?? []);
       const excludedTagIds = excludedByTask.get(raw.id) ?? [];
@@ -435,6 +439,7 @@ export class Graph {
         reviewedAt: raw.reviewedAt,
         effectiveOwnerId,
         effectiveOwnerSource,
+        inheritedOwnerId,
         effectiveTags,
         effectiveAreaTags,
         effectiveActorTags,

@@ -1340,17 +1340,6 @@ details[open] > .disclosure-summary::after {
   text-transform: uppercase;
 }
 
-.task-detail-section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.task-detail-section-heading-summary {
-  min-width: 0;
-}
-
 .task-detail-section-body {
   margin-top: 12px;
 }
@@ -1416,35 +1405,6 @@ details[open] > .disclosure-summary::after {
 
 .task-project-context-link:hover {
   text-decoration: underline;
-}
-
-.task-owner-section > .task-detail-section-heading {
-  align-items: flex-start;
-}
-
-.task-owner-summary {
-  display: flex;
-  align-items: flex-end;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 0.82rem;
-}
-
-.task-owner-summary > .text-muted {
-  font-size: 0.75rem;
-}
-
-.task-owner-section > .task-detail-section-body {
-  margin-top: 8px;
-}
-
-.task-owner-controls {
-  display: grid;
-  gap: 10px;
-}
-
-.task-owner-controls > .field {
-  margin-bottom: 0;
 }
 
 .task-timing-sections {
@@ -1619,16 +1579,6 @@ details[open] > .disclosure-summary::after {
     align-items: stretch;
     flex-direction: column;
     gap: 10px;
-  }
-
-  .task-owner-section > .task-detail-section-heading {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .task-owner-summary {
-    align-items: flex-start;
   }
 
   .recurrence-editor > .row-between,

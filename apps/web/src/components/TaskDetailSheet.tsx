@@ -5,11 +5,10 @@ import {
   useRef,
   useState,
   type ReactNode,
-  type RefObject,
 } from "react";
 import { Link } from "react-router-dom";
-import type { InheritanceMode, Task } from "@machbar/shared";
-import { inheritanceModes, taskStatuses } from "@machbar/shared";
+import type { Task } from "@machbar/shared";
+import { taskStatuses } from "@machbar/shared";
 import { api } from "../lib/api";
 import type { ProjectWithActions } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -33,8 +32,8 @@ import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
-import { MemberChoiceGroup } from "./MemberChoiceGroup";
 import { MemberLabel } from "./MemberAvatar";
+import { TaskOwnerChoiceGroup } from "./TaskOwnerChoiceGroup";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MarkdownNotes } from "./MarkdownNotes";
 import { NativeShareButton } from "./NativeShareButton";
@@ -68,63 +67,19 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
   };
 }
 
-function InheritanceControl({
-  mode,
-  onChange,
-  focusRef,
-}: {
-  mode: InheritanceMode;
-  onChange: (mode: InheritanceMode) => void;
-  focusRef?: RefObject<HTMLButtonElement>;
-}) {
-  const strings = useStrings();
-  const labels: Record<InheritanceMode, string> = {
-    inherit: strings.ownerInheritanceParent,
-    explicit: strings.ownerInheritanceTaskSpecific,
-    none: strings.ownerInheritanceNone,
-  };
-  return (
-    <div className="segmented" role="group">
-      {inheritanceModes.map((m) => (
-        <button
-          key={m}
-          ref={m === inheritanceModes[0] ? focusRef : undefined}
-          type="button"
-          aria-pressed={mode === m}
-          onClick={() => onChange(m)}
-        >
-          {labels[m]}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function TaskDetailSection({
   title,
-  summary,
   children,
-  className = "",
 }: {
   title: string;
-  summary?: ReactNode;
   children: ReactNode;
-  className?: string;
 }) {
   const headingId = useId();
   return (
-    <section
-      className={`task-detail-section${className ? ` ${className}` : ""}`}
-      aria-labelledby={headingId}
-    >
-      <div className="task-detail-section-heading">
-        <h3 id={headingId} className="task-detail-section-title">
-          {title}
-        </h3>
-        {summary ? (
-          <div className="task-detail-section-heading-summary">{summary}</div>
-        ) : null}
-      </div>
+    <section className="task-detail-section" aria-labelledby={headingId}>
+      <h3 id={headingId} className="task-detail-section-title">
+        {title}
+      </h3>
       <div className="task-detail-section-body">{children}</div>
     </section>
   );
@@ -690,17 +645,6 @@ export function TaskDetailSheet() {
   const projectOwner = task
     ? members.find((member) => member.id === task.projectOwnerMemberId)
     : undefined;
-  const effectiveOwner = task
-    ? members.find((member) => member.id === task.effectiveOwnerId)
-    : undefined;
-  const effectiveOwnerSource = task
-    ? {
-        task: strings.ownerInheritanceTaskSpecific,
-        parent: strings.inheritedParent,
-        project: strings.inheritedProject,
-        none: null,
-      }[task.effectiveOwnerSource]
-    : null;
 
   return (
     <>
@@ -865,41 +809,24 @@ export function TaskDetailSheet() {
 
           </TaskDetailSection>
 
-          <TaskDetailSection
-            title={strings.owner}
-            className="task-owner-section"
-            summary={
-              <span className="task-owner-summary">
-                {effectiveOwner ? (
-                  <MemberLabel member={effectiveOwner} size="sm" />
-                ) : (
-                  <span>
-                    {task.ownerInheritanceMode === "none"
-                      ? strings.sharedOwner
-                      : strings.unassigned}
-                  </span>
-                )}
-                {effectiveOwnerSource ? (
-                  <span className="text-muted">{effectiveOwnerSource}</span>
-                ) : null}
-              </span>
-            }
-          >
-            <div className="task-owner-controls" ref={ownerFieldRef}>
-              <InheritanceControl
+          <TaskDetailSection title={strings.owner}>
+            <div ref={ownerFieldRef}>
+              <TaskOwnerChoiceGroup
+                label={strings.owner}
+                members={members}
+                ownerMemberId={task.ownerMemberId}
+                ownerInheritanceMode={task.ownerInheritanceMode}
+                inheritedOwnerId={task.inheritedOwnerId}
+                inheritanceSource={
+                  task.parentTaskId !== null
+                    ? "parent"
+                    : task.projectId !== null
+                      ? "project"
+                      : null
+                }
                 focusRef={ownerInputRef}
-                mode={task.ownerInheritanceMode}
-                onChange={(mode) => void patch({ ownerInheritanceMode: mode })}
+                onChange={(choice) => void patch(choice)}
               />
-              {task.ownerInheritanceMode === "explicit" ? (
-                <MemberChoiceGroup
-                  label={strings.member}
-                  idPrefix={`task-owner-${task.id}`}
-                  members={members}
-                  value={task.ownerMemberId}
-                  onChange={(ownerMemberId) => void patch({ ownerMemberId })}
-                />
-              ) : null}
             </div>
           </TaskDetailSection>
 
