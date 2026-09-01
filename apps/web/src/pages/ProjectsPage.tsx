@@ -89,7 +89,7 @@ export function ProjectsPage() {
     locale,
   });
   // Keep workflow meaning ahead of tag grouping: actionable and stuck work
-  // stays first, healthy waiting gets its own visible section, and terminal
+  // stays first, active waiting gets its own visible section, and terminal
   // work remains folded at the bottom. The backlog bucket can only contain a
   // retained row that just left this page.
   const classifications = new Map(
@@ -100,7 +100,7 @@ export function ProjectsPage() {
     return classification === "active-actionable" || classification === "active-stuck";
   });
   const waitingProjects = filteredProjects.filter(
-    (project) => classifications.get(project.id) === "healthy-waiting",
+    (project) => classifications.get(project.id) === "active-waiting",
   );
   const backlogProjects = filteredProjects.filter(
     (project) => classifications.get(project.id) === "backlog",

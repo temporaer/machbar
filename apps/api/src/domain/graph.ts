@@ -98,10 +98,7 @@ interface RawProject {
 
 function stuckReasonForDiagnoses(
   diagnoses: BlockerPathDiagnosis[],
-): StuckReason {
-  if (diagnoses.some((diagnosis) => diagnosis.reason === "followup_due")) {
-    return "followup_due";
-  }
+): StuckReason | null {
   if (
     diagnoses.some(
       (diagnosis) => diagnosis.reason === "waiting_without_followup",
@@ -109,7 +106,12 @@ function stuckReasonForDiagnoses(
   ) {
     return "waiting_without_followup";
   }
-  if (diagnoses.length > 0) return "blocked_without_clear_path";
+  if (
+    diagnoses.some((diagnosis) => diagnosis.reason !== "followup_due")
+  ) {
+    return "blocked_without_clear_path";
+  }
+  if (diagnoses.length > 0) return null;
   return "no_next_action";
 }
 

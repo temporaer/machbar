@@ -493,7 +493,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(reasons.has(withRevisit.id)).toBe(false);
     });
 
-    it("treats future revisits as parked and today/past revisits as due", () => {
+    it("keeps future and reached revisits out of project stuck reasons", () => {
       const owner = createMember("Termin-Zuständige");
       const today = new Date().toISOString().slice(0, 10);
 
@@ -516,9 +516,47 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       });
 
       const reasons = getStuckReasonsByProject(handle.db, today);
-      expect(reasons.get(projectIds[0]!)).toBe("followup_due");
-      expect(reasons.get(projectIds[1]!)).toBe("followup_due");
+      expect(reasons.has(projectIds[0]!)).toBe(false);
+      expect(reasons.has(projectIds[1]!)).toBe(false);
       expect(reasons.has(projectIds[2]!)).toBe(false);
+    });
+
+    it("does not let a reached revisit mask a structural blocker", () => {
+      const owner = createMember("Gemischte-Diagnose-Zuständige");
+      const today = new Date().toISOString().slice(0, 10);
+      const project = createProject(handle.db, {
+        title: "Nachhaken und Blockade",
+        status: "active",
+        ownerMemberId: owner.id,
+      });
+      const waiting = createTask(handle.db, {
+        projectId: project.id,
+        title: "Heute nachhaken",
+        status: "actionable",
+        scheduledDate: today,
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+      addExternalWait(waiting.id);
+      const capturedBlocker = createTask(handle.db, {
+        projectId: project.id,
+        title: "Ungeklärte Voraussetzung",
+        status: "captured",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+      const structurallyBlocked = createTask(handle.db, {
+        projectId: project.id,
+        title: "Kann noch nicht weiter",
+        status: "actionable",
+        ownerMemberId: owner.id,
+        ownerInheritanceMode: "explicit",
+      });
+      addDependency(handle.db, structurallyBlocked.id, capturedBlocker.id);
+
+      expect(
+        getStuckReasonsByProject(handle.db, today).get(project.id),
+      ).toBe("blocked_without_clear_path");
     });
 
     it("still flags only_waiting when the revisit date is missing or blank", () => {

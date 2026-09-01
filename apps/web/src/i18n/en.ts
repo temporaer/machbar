@@ -18,7 +18,6 @@ const taskStatusLabels: Record<TaskStatus, string> = {
 const stuckReasonLabels: Record<StuckReason, string> = {
   no_next_action: "No next step",
   waiting_without_followup: "Waiting without a follow-up date",
-  followup_due: "Follow-up due",
   blocked_without_clear_path: "Blocked without a clear path forward",
   unassigned_actionable: "Ready task with no owner",
   completion_review: "Ready to wrap up",
@@ -164,8 +163,6 @@ const en = {
       "Choose a next step: swipe an inbox task right to mark it as ready.",
     waiting_without_followup:
       "Set a follow-up date or plan a next step of your own.",
-    followup_due:
-      "Follow up now or mark a waiting task as ready again.",
     blocked_without_clear_path:
       "Check exactly what is blocking the work so a task can become ready.",
     unassigned_actionable: "Assign the open ready task to someone.",

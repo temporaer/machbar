@@ -401,7 +401,7 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     });
   });
 
-  it("sorts active-stuck stories after actionable ones and before healthy waiting", async () => {
+  it("sorts active-stuck stories after actionable ones and before active waiting", async () => {
     window.localStorage.setItem("machbar:identity-member-id", "1");
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Miras aktive Geschichte");

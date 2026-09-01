@@ -19,7 +19,7 @@ export interface ProjectListFilterOptions {
 export type ProjectListClassification =
   | "active-actionable"
   | "active-stuck"
-  | "healthy-waiting"
+  | "active-waiting"
   | "backlog"
   | "completed"
   | "archived";
@@ -57,7 +57,7 @@ function matchesScope(project: ProjectWithActions, scope: ProjectVisibilityScope
 
 /**
  * Classifies a project for the list without changing its persisted workflow
- * status. Healthy waiting is the narrow active state with neither a next
+ * status. Active waiting is the narrow active state with neither a next
  * action nor a stuck reason; any active stuck reason takes precedence.
  */
 export function classifyProjectListItem(project: ProjectWithActions): ProjectListClassification {
@@ -66,7 +66,7 @@ export function classifyProjectListItem(project: ProjectWithActions): ProjectLis
     project.nextAction == null &&
     project.stuckReason == null
   ) {
-    return "healthy-waiting";
+    return "active-waiting";
   }
   if (project.status === "active") {
     if (project.stuckReason != null) return "active-stuck";
@@ -78,7 +78,7 @@ export function classifyProjectListItem(project: ProjectWithActions): ProjectLis
 const projectListClassificationOrder: Record<ProjectListClassification, number> = {
   "active-actionable": 0,
   "active-stuck": 1,
-  "healthy-waiting": 3,
+  "active-waiting": 3,
   backlog: 4,
   completed: 5,
   archived: 6,
@@ -115,7 +115,7 @@ export function isTerminalProjectStatus(project: ProjectWithActions): boolean {
  * bucket never contains a story the current search/scope would hide.
  *
  * Sort buckets, in order: active & actionable, active & stuck, active with a
- * future-scheduled next action, healthy waiting, backlog, completed, archived.
+ * future-scheduled next action, active waiting, backlog, completed, archived.
  * Within a bucket, ties break on the backend-assigned `position`, then the
  * locale-aware title, then the id, so the order stays stable and reproducible
  * across reloads/retentions.

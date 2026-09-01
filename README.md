@@ -69,7 +69,9 @@ take you directly to a matching nested task.
 Actionable work can wait on another Machbar task or on an external person,
 organization, event, or delivery without changing its workflow status. Add a
 revisit date when useful; the **Waiting** view gathers blocked work, while
-reached revisits return to **Today**.
+reached revisits return to **Today**. The parent project remains active and
+waiting—with the reached revisit visible on **Projects**—rather than being
+misdiagnosed as stuck.
 
 ### Recurring routines that adapt to real completion
 
