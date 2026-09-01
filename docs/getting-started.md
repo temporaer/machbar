@@ -90,10 +90,14 @@ PWA installation does not make the app offline-capable. The browser must still
 reach the Machbar server.
 
 When the server has [Web Push configured](deployment.md#web-push-notifications),
-notifications can be enabled separately on each device under **More →
-Notifications**. Permission is requested only after pressing the enable
-button. Machbar currently notifies a member about assignments made by another
-person and explicit task reminders.
+notifications can be enabled separately in each supported desktop or mobile
+browser/PWA under **More → Notifications**. Each browser keeps its own
+subscription, so the same member can receive notifications on a desktop and a
+phone. Permission is requested only after pressing the enable button.
+Service-worker delivery does not require an open Machbar window; clicking a
+notification opens or focuses the relevant task or project. Machbar currently
+notifies a member about assignments made by another person and explicit task
+reminders.
 
 ## Stop or inspect the service
 

@@ -86,8 +86,10 @@ It is a good fit when:
 ## Built for everyday use
 
 Machbar is mobile-first, installable as a PWA, and available in German and
-English with light and dark modes. Supported Android browsers can capture text
-and links directly from the share sheet.
+English with light and dark modes. Supported desktop and mobile browsers can
+receive standards-based Web Push notifications on each opted-in device, even
+without an open Machbar window. Supported Android browsers can also capture
+text and links directly from the share sheet.
 
 It is private and self-hosted: one small service and one persistent SQLite
 database, with optional Pocket ID authentication. No hosted account or external

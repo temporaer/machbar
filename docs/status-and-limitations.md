@@ -12,6 +12,7 @@ behavior from possible future work.
   follow-ups, Markdown notes, acceptance criteria, and task effort;
 - stuck-project and refinement guidance;
 - installable PWA behavior and Android text/URL share target;
+- standards-based Web Push for supported desktop and mobile browsers/PWAs;
 - outbound Web Share with clipboard fallback;
 - single-process/container deployment with SQLite;
 - reverse-proxy, URL sub-path, and Home Assistant Ingress support.
@@ -60,8 +61,12 @@ Backups are file/database operations managed by the operator.
 
 Recurring task completion advances the next occurrence. Explicit task
 `reminderAt` values can produce server-triggered Web Push notifications when
-the installation has VAPID configured and the member opted in on that device.
-Assignments by another person can also produce Push notifications.
+the installation has VAPID configured and the member opted in in that browser.
+Each browser or installed PWA has an independent subscription, and delivery
+fans out to every subscription for the member. Notifications are shown by the
+service worker without requiring an open Machbar tab; clicking one opens or
+focuses the relevant task or project. Assignments by another person can also
+produce Push notifications.
 
 Machbar does not currently provide a notification inbox, comments, mentions,
 ordinary due-date notifications, or a daily digest. Push availability depends
@@ -100,7 +105,7 @@ Potential directions include:
 - additional interface languages;
 - live client updates;
 - offline caching and synchronization;
-- recurrence processing and notification delivery;
+- broader reminder schedules and notification preferences;
 - file share targets;
 - a published Home Assistant add-on and a supported native integration;
 - conversion between a captured task and a multi-step project.
