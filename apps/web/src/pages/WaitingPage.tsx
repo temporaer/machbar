@@ -19,12 +19,7 @@ export function WaitingPage() {
     <div className="waiting-page">
       <PageHeader
         title={strings.waiting}
-        hints={[
-          {
-            label: strings.taskGestures,
-            text: strings.taskGestureHint(strings.done),
-          },
-        ]}
+        hints={[{ text: strings.waitingPageHint }]}
       />
       <div className="projects-controls">
         <TagGroupingControl value={groupBy} onChange={setGroupBy} />

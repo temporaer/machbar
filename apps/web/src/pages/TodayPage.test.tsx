@@ -227,17 +227,12 @@ describe("TodayPage", () => {
     expect(screen.queryByText("Heute erledigen")).not.toBeInTheDocument();
     expect(screen.queryByText("Für heute markieren")).not.toBeInTheDocument();
     const explanation =
-      "Diese Übersicht wird automatisch aus Terminen, Fälligkeiten und dem Status berechnet – ohne manuelle Markierung.";
+      "Hier steht, was jetzt wirklich dran ist: geplante und fällige Arbeit, Wiedervorlagen und die nächsten machbaren Projektschritte.";
     expect(screen.queryByText(explanation)).not.toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
     );
     expect(screen.getByText(explanation)).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Nach rechts wischen: „Erledigen / Wieder öffnen“. Nach links wischen öffnet weitere Aktionen wie Zuweisen, Planen und Notizen. Am Desktop geht das auch über ⋯.",
-      ),
-    ).toBeInTheDocument();
     expect(container.querySelector(".task-row-surface-actionable")).toBeInTheDocument();
     expect(container.querySelector(".task-row-header")).toContainElement(
       screen.getByText("Finanzen"),

@@ -207,7 +207,7 @@ const extra = {
   manageTags: "Tags verwalten",
   manageTagsHint: "Tag-Katalog, Typen und Gruppierung bearbeiten.",
   manageTagsPageHint:
-    "Tags strukturieren Projekte und Aufgaben. Lege passende Typen fest und bestimme, welche Tags beim Gruppieren bevorzugt werden.",
+    "Tags geben Arbeit nützliche Perspektiven wie Bereich, Person oder Kontext, ohne die Projektstruktur zu ersetzen.",
   tagDeleteConfirm: (name: string) =>
     `Tag „${name}“ endgültig löschen? Er wird aus allen Projekten und Aufgaben entfernt.`,
   deleteTag: "Tag löschen",
@@ -313,6 +313,8 @@ const extra = {
   todayHouseholdScope: "Aufgaben aller Personen anzeigen",
   todayScopeHint:
     "„Alle“ zeigt die Aufgaben des ganzen Haushalts, ohne deine Identität für Änderungen zu wechseln.",
+  inboxHint:
+    "Hier landet noch ungeklärte Arbeit. Entscheide, was machbar ist, zu einem Projekt gehört oder bewusst später dran ist.",
   searchEmpty: "Keine Treffer für diese Suche.",
   moreTitle: "Mehr",
   moreMomentum: "Gemeinsam vorankommen",
@@ -419,7 +421,7 @@ const extra = {
   searchDependency: "Aufgabe suchen …",
   addTaskToProject: "Aufgabe im Projekt anlegen",
   todayExplanation:
-    "Diese Übersicht wird automatisch aus Terminen, Fälligkeiten und dem Status berechnet – ohne manuelle Markierung.",
+    "Hier steht, was jetzt wirklich dran ist: geplante und fällige Arbeit, Wiedervorlagen und die nächsten machbaren Projektschritte.",
   manageMembers: "Personen verwalten",
   manageMembersHint: "Lege Personen an, benenne sie um oder entferne sie.",
   memberName: "Name",
@@ -479,7 +481,7 @@ const extra = {
 
   reviewTitle: "Review",
   reviewHint:
-    "Entscheide bewusst, was weiter aktiv bleibt, vorbereitet, geparkt oder beendet wird.",
+    "Hier landet Arbeit, die eine bewusste Entscheidung braucht: klären, weiterführen, parken oder abschließen.",
   reviewEmpty: "Alles ist bewusst entschieden. Es gibt gerade nichts zu prüfen.",
   reviewPrimaryQueue: "Entscheidungen",
   reviewPlanningTools: "Optionale Planungswerkzeuge",
@@ -509,7 +511,7 @@ const extra = {
 
   allTitle: "Alles",
   allHint:
-    "Vollständiger Bestand aller Projekte und eigenständigen Aufgaben. Projektaufgaben liegen im jeweiligen Projekt.",
+    "Hier findest du den vollständigen Bestand, auch wenn fokussierte Ansichten etwas bewusst ausblenden.",
   allProjectsHeading: "Projekte",
   allStandaloneTasksHeading: "Eigenständige Aufgaben",
   allMatchingTasksHeading: "Passende Aufgaben",
@@ -539,8 +541,12 @@ const extra = {
   storyReturnedToBacklog: "Auf später verschoben",
 
   // --- Projects tab (Projekte) -----------------------------------------
-  projectsSwipeHint:
-    "Nach rechts wischen führt den nächsten Workflow-Schritt aus, nach links wischen oder ⋯ zeigt weitere Aktionen.",
+  projectsHint:
+    "Projekte halten ein gewünschtes Ergebnis und den Weg dorthin zusammen. Aktiv sind sie nur mit einem nächsten Schritt oder bewusstem Warten.",
+  waitingPageHint:
+    "Hier liegt Arbeit, die gerade nicht weitergeht. Sieh, worauf sie wartet und wann du wieder nachhaken solltest.",
+  projectTasksHint:
+    "Diese Liste zeigt den Weg zum Projektergebnis: vom nächsten machbaren Schritt über Abhängigkeiten bis zu späterer Arbeit.",
   projectStatus: "Status",
   workflowStep: "Workflow-Schritt",
   projectSearchPlaceholder: "Titel, Notizen oder „Erledigt, wenn …“ suchen …",

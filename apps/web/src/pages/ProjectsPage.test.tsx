@@ -103,12 +103,12 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     ]);
   });
 
-  it("omits backlog projects and reveals its swipe hint on demand", async () => {
+  it("omits backlog projects and reveals its purpose on demand", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Aktive Geschichte");
 
     const hint =
-      "Nach rechts wischen führt den nächsten Workflow-Schritt aus, nach links wischen oder ⋯ zeigt weitere Aktionen.";
+      "Projekte halten ein gewünschtes Ergebnis und den Weg dorthin zusammen. Aktiv sind sie nur mit einem nächsten Schritt oder bewusstem Warten.";
     expect(screen.queryByText(hint)).not.toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),

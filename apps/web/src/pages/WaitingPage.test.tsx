@@ -63,7 +63,7 @@ describe("WaitingPage grouping controls", () => {
     expect(buttons[0]).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("hides the waiting interaction instructions behind the established page info control", async () => {
+  it("hides the waiting view purpose behind the established page info control", async () => {
     mockedApi.getWaiting.mockResolvedValue([
           makeTask({
             id: 93,
@@ -77,7 +77,7 @@ describe("WaitingPage grouping controls", () => {
     renderWithProviders(<WaitingPage />);
     await screen.findByText("Freigabe abwarten");
 
-    const hint = strings.taskGestureHint(strings.done);
+    const hint = strings.waitingPageHint;
     const infoButton = screen.getByRole("button", {
       name: "Hinweise zu dieser Seite anzeigen",
     });
