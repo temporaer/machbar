@@ -433,6 +433,59 @@ describe("search/filter and project CRUD/archive", () => {
     );
   });
 
+  it("keeps reached external waits active while surfacing their task in Today", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const owner = ctx.handle.db.select().from(schema.members).get()!;
+    const project = createProject(ctx.handle.db, {
+      title: "Auf heutige Rückmeldung warten",
+      status: "active",
+      ownerMemberId: owner.id,
+    });
+    const waiting = createTask(ctx.handle.db, {
+      projectId: project.id,
+      title: "Heute bei der Werkstatt nachhaken",
+      status: "actionable",
+      scheduledDate: today,
+      ownerMemberId: owner.id,
+      ownerInheritanceMode: "explicit",
+    });
+    addExternalWaitRow(waiting.id, "Rückmeldung der Werkstatt");
+
+    const projects = (
+      await ctx.app.inject({ method: "GET", url: "/api/projects" })
+    ).json() as Array<{
+      id: number;
+      stuckReason: string | null;
+      waitingOn: string[];
+      waitingUntil: string | null;
+    }>;
+    expect(projects.find((item) => item.id === project.id)).toMatchObject({
+      stuckReason: null,
+      waitingOn: ["Rückmeldung der Werkstatt"],
+      waitingUntil: today,
+    });
+
+    const review = (
+      await ctx.app.inject({ method: "GET", url: "/api/review" })
+    ).json() as Array<{ projectId: number | null; reason: string }>;
+    expect(
+      review.some(
+        (item) =>
+          item.projectId === project.id && item.reason === "project_stuck",
+      ),
+    ).toBe(false);
+
+    const agenda = (
+      await ctx.app.inject({
+        method: "GET",
+        url: `/api/agenda/today?scope=all&date=${today}`,
+      })
+    ).json() as { revisit: Array<{ id: number; blocked: boolean }> };
+    expect(agenda.revisit).toContainEqual(
+      expect.objectContaining({ id: waiting.id, blocked: true }),
+    );
+  });
+
   it("omits healthy future-wait chains from Review but reports broken paths", async () => {
     const owner = ctx.handle.db
       .insert(schema.members)

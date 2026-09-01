@@ -1041,6 +1041,10 @@ describe("ProjectStoryRow – semantic status accents", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it.each<[ProjectStatus, string]>([
     ["backlog", "backlog"],
     ["active", "active"],
@@ -1062,7 +1066,7 @@ describe("ProjectStoryRow – semantic status accents", () => {
     expect(container.querySelector(".story-row-primary")).toHaveClass(`story-row-primary--${accent}`);
   });
 
-  it("marks healthy waiting as non-interactive info while keeping the active workflow actions unchanged", async () => {
+  it("marks active waiting as non-interactive info while keeping the active workflow actions unchanged", async () => {
     const waiting = makeProject({
       id: 81,
       title: "Wartet gesund",
@@ -1105,6 +1109,40 @@ describe("ProjectStoryRow – semantic status accents", () => {
       expectedRevision: 1,
     });
   });
+
+  it.each([
+    ["2026-05-11", "Wiedervorlage: heute"],
+    ["2026-05-09", "Wiedervorlage: 2 Tage überfällig"],
+  ])(
+    "shows a reached check-in on %s without stuck styling",
+    (waitingUntil, expectedTiming) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-05-11T12:00:00"));
+      const waiting = makeProject({
+        id: 88,
+        title: "Wartet auf Rückmeldung",
+        status: "active",
+        ownerMemberId: 1,
+        nextAction: null,
+        stuckReason: null,
+        waitingOn: ["Rückmeldung der Werkstatt"],
+        waitingUntil,
+      });
+      renderWithProviders(<Harness story={waiting} />);
+
+      const summary = screen.getByText(
+        new RegExp(`Wartet auf: Rückmeldung der Werkstatt.*${expectedTiming}`),
+      );
+      expect(summary).toHaveAttribute(
+        "title",
+        `Wiedervorlage am ${formatExactLocalDate(waitingUntil, "de")}`,
+      );
+      expect(summary.closest(".story-row")).toHaveClass(
+        "story-row-accent-waiting",
+      );
+      expect(screen.queryByText("Dieses Projekt ist festgefahren")).not.toBeInTheDocument();
+    },
+  );
 
   it("limits a waiting summary to two reasons plus the remaining count", async () => {
     renderWithProviders(

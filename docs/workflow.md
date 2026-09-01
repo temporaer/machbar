@@ -69,7 +69,8 @@ actionable task can wait on an external person, organization, event, or
 delivery, identified by a required reason. Without a reason, the task is not
 waiting. Its existing planning date then acts as a **Wiedervorlage**: once
 reached, the blocked task returns to Today for attention. Follow-up notes
-preserve an attributed history.
+preserve an attributed history. A reached Wiedervorlage does not make its
+project structurally stuck unless a separate project defect also exists.
 
 Dependencies can also block a task until prerequisite work is complete. A
 task may have both blocker types and becomes executable only after all of them

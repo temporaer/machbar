@@ -448,7 +448,6 @@ export interface TaskRecurrenceHistory {
 export type StuckReason =
   | "no_next_action"
   | "waiting_without_followup"
-  | "followup_due"
   | "blocked_without_clear_path"
   | "unassigned_actionable"
   // An `active` project whose tasks are all `done`/`cancelled`: it is not

@@ -6,7 +6,9 @@ import { formatDate } from "../lib/format";
 import {
   formatCompactWaitDuration,
   formatExactLocalDate,
+  formatRelativeDueDate,
   formatRelativeScheduleDate,
+  isFutureCalendarDate,
 } from "../lib/relativeDate";
 import { useIdentity } from "../lib/identity";
 import {
@@ -47,7 +49,7 @@ type StatusAccent = "backlog" | "active" | "waiting" | "stuck" | "completed" | "
 const statusAccentByClassification: Record<ProjectListClassification, StatusAccent> = {
   "active-actionable": "active",
   "active-stuck": "stuck",
-  "healthy-waiting": "waiting",
+  "active-waiting": "waiting",
   backlog: "backlog",
   completed: "completed",
   archived: "archived",
@@ -140,11 +142,14 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
     : strings.projectStatusLabels[story.status];
   const classification = classifyProjectListItem(story);
   const accent = statusAccentByClassification[classification];
-  const isHealthyWaiting = classification === "healthy-waiting";
+  const isActiveWaiting = classification === "active-waiting";
   const waitingOn = story.waitingOn ?? [];
   const now = new Date();
   const waitingDuration = story.waitingUntil
     ? formatCompactWaitDuration(story.waitingUntil, now, locale)
+    : null;
+  const waitingRelativeDate = story.waitingUntil
+    ? formatRelativeDueDate(story.waitingUntil, now, locale)
     : null;
   const waitingUntilExact = story.waitingUntil
     ? formatExactLocalDate(story.waitingUntil, locale)
@@ -165,9 +170,14 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
     nextActionScheduleExact
       ? `${strings.nextAction} ${nextActionScheduleRelative} (${nextActionScheduleExact}): ${story.nextAction.title}`
       : null;
-  const waitingDurationSuffix = waitingDuration
-    ? ` · ${strings.remainingDuration(waitingDuration)}`
-    : "";
+  const waitingDurationSuffix =
+    story.waitingUntil && waitingRelativeDate
+      ? isFutureCalendarDate(story.waitingUntil, now)
+        ? waitingDuration
+          ? ` · ${strings.remainingDuration(waitingDuration)}`
+          : ""
+        : ` · ${strings.revisitDate}: ${waitingRelativeDate}`
+      : "";
   const waitingOnSummary =
     waitingOn.length > 0
       ? `${strings.waitingOn}: ${waitingOn.slice(0, 2).join(" · ")}${
@@ -326,17 +336,17 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
               <p
                 className="story-row-next-action"
                 title={
-                  isHealthyWaiting && waitingUntilExact
+                  isActiveWaiting && waitingUntilExact
                     ? strings.projectRevisitOn(waitingUntilExact)
                     : nextActionScheduleAccessible ?? undefined
                 }
                 aria-label={
-                  !isHealthyWaiting && nextActionScheduleAccessible
+                  !isActiveWaiting && nextActionScheduleAccessible
                     ? nextActionScheduleAccessible
                     : undefined
                 }
               >
-                {isHealthyWaiting
+                {isActiveWaiting
                   ? waitingOnSummary
                   : story.nextAction
                     ? `${strings.nextAction}${
@@ -379,7 +389,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
             <MemberAvatar member={driver} size="sm" />
           </span>
         ) : null}
-        {isHealthyWaiting ? (
+        {isActiveWaiting ? (
           <span className="story-row-waiting-qualifier" role="img" aria-label={strings.waiting}>
             <IconActionGlyph kind="waiting" />
           </span>

@@ -21,7 +21,7 @@ describe("classifyProjectListItem", () => {
           stuckReason: null,
         }),
       ),
-    ).toBe("healthy-waiting");
+    ).toBe("active-waiting");
     expect(classifyProjectListItem(makeProject({ status: "backlog" }))).toBe("backlog");
     expect(classifyProjectListItem(makeProject({ status: "completed" }))).toBe("completed");
     expect(classifyProjectListItem(makeProject({ status: "archived" }))).toBe("archived");
@@ -41,12 +41,12 @@ describe("classifyProjectListItem", () => {
     expect(classifyProjectListItem(project)).toBe("active-stuck");
   });
 
-  it("only classifies an active project with no next action and no stuck reason as healthy waiting", () => {
+  it("only classifies an active project with no next action and no stuck reason as active waiting", () => {
     const waiting = makeProject({ status: "active", nextAction: null, stuckReason: null });
     const actionable = makeProject({ status: "active", nextAction: makeTask(), stuckReason: null });
     const backlogWithoutAction = makeProject({ status: "backlog", nextAction: null, stuckReason: null });
 
-    expect(classifyProjectListItem(waiting)).toBe("healthy-waiting");
+    expect(classifyProjectListItem(waiting)).toBe("active-waiting");
     expect(classifyProjectListItem(actionable)).toBe("active-actionable");
     expect(classifyProjectListItem(backlogWithoutAction)).toBe("backlog");
   });

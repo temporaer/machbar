@@ -142,8 +142,6 @@ const extra = {
       "Lege einen nächsten Schritt fest: Wische eine Aufgabe im Eingang nach rechts, um sie als Machbar zu markieren.",
     waiting_without_followup:
       "Setze eine Wiedervorlage oder plane einen eigenen nächsten Schritt.",
-    followup_due:
-      "Hake jetzt nach oder markiere eine wartende Aufgabe wieder als machbar.",
     blocked_without_clear_path:
       "Prüfe die konkret blockierenden Voraussetzungen, damit eine Aufgabe machbar wird.",
     unassigned_actionable: "Weise die offene machbare Aufgabe einer Person zu.",
@@ -896,7 +894,6 @@ const taskStatusLabels: Record<TaskStatus, string> = {
 const stuckReasonLabels: Record<StuckReason, string> = {
   no_next_action: "Kein nächster Schritt",
   waiting_without_followup: "Wartet ohne Wiedervorlage",
-  followup_due: "Nachhaken fällig",
   blocked_without_clear_path: "Blockiert ohne klaren Fortsetzungsweg",
   unassigned_actionable: "Offene Aufgabe ohne Zuständigkeit",
   completion_review: "Bereit zum Abschließen",
