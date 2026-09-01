@@ -3,7 +3,21 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../test/testUtils";
+import { api } from "../lib/api";
 import { ImageCropSheet } from "./ImageCropSheet";
+
+vi.mock("../lib/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/api")>();
+  return {
+    ...original,
+    api: {
+      ...original.api,
+      preparePaperlessImageForCrop: vi.fn(),
+    },
+  };
+});
+
+const mockedApi = vi.mocked(api, true);
 
 const jpeg = new File(
   [
@@ -18,9 +32,45 @@ const jpeg = new File(
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  vi.clearAllMocks();
+});
+
+it("aborts preparation before decoding when the sheet closes", async () => {
+  let resolvePreparation!: (blob: Blob) => void;
+  mockedApi.preparePaperlessImageForCrop.mockReturnValue(
+    new Promise((resolve) => {
+      resolvePreparation = resolve;
+    }),
+  );
+  const createImageBitmap = vi.fn();
+  vi.stubGlobal("createImageBitmap", createImageBitmap);
+
+  const { unmount } = renderWithProviders(
+    <ImageCropSheet
+      file={jpeg}
+      onApply={vi.fn()}
+      onUseOriginal={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
+  await waitFor(() =>
+    expect(mockedApi.preparePaperlessImageForCrop).toHaveBeenCalled(),
+  );
+  const signal = mockedApi.preparePaperlessImageForCrop.mock.calls[0]?.[1];
+
+  unmount();
+  expect(signal?.aborted).toBe(true);
+  resolvePreparation(new Blob(["prepared"], { type: "image/jpeg" }));
+  await Promise.resolve();
+  await Promise.resolve();
+
+  expect(createImageBitmap).not.toHaveBeenCalled();
 });
 
 it("invalidates an in-flight crop when the sheet closes", async () => {
+  mockedApi.preparePaperlessImageForCrop.mockResolvedValue(
+    new Blob(["prepared"], { type: "image/jpeg" }),
+  );
   vi.stubGlobal(
     "createImageBitmap",
     vi.fn().mockResolvedValue({ width: 1000, height: 800, close: vi.fn() }),

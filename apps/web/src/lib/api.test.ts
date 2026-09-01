@@ -144,6 +144,7 @@ describe("api request() Content-Type handling", () => {
           mimeType: "image/jpeg",
         }),
     });
+
     const file = new File(["photo"], "photo.jpg", { type: "image/jpeg" });
 
     await api.uploadPaperlessDocument(file);
@@ -151,6 +152,28 @@ describe("api request() Content-Type handling", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.body).toBeInstanceOf(FormData);
     expect((init.body as FormData).get("document")).toEqual(file);
+    expect(init.signal).toBeUndefined();
+    expect(headersOf(fetchMock)).not.toHaveProperty("Content-Type");
+  });
+
+  it("requests a bounded crop source without setting the multipart boundary", async () => {
+    const blob = new Blob(["prepared"], { type: "image/jpeg" });
+    const fetchMock = mockFetchOnce({
+      status: 200,
+      blob: async () => blob,
+    });
+    const file = new File(["photo"], "photo.jpg", { type: "image/jpeg" });
+
+    const controller = new AbortController();
+    await expect(
+      api.preparePaperlessImageForCrop(file, controller.signal),
+    ).resolves.toBe(blob);
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/api/integrations/paperless/documents/prepare-image");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("document")).toEqual(file);
+    expect(init.signal).toBe(controller.signal);
     expect(headersOf(fetchMock)).not.toHaveProperty("Content-Type");
   });
 

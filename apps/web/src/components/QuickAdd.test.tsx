@@ -18,6 +18,7 @@ vi.mock("../lib/api", () => ({
     addCriterion: vi.fn(),
     updateProject: vi.fn(),
     uploadPaperlessDocument: vi.fn(),
+    preparePaperlessImageForCrop: vi.fn(),
   },
 }));
 
@@ -258,6 +259,9 @@ describe("QuickAdd", () => {
       .fn()
       .mockResolvedValue({ width: 1000, height: 800, close });
     vi.stubGlobal("createImageBitmap", createImageBitmap);
+    mockedApi.preparePaperlessImageForCrop.mockResolvedValue(
+      new Blob(["prepared"], { type: "image/jpeg" }),
+    );
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
       drawImage: vi.fn(),
     } as unknown as CanvasRenderingContext2D);
@@ -290,10 +294,11 @@ describe("QuickAdd", () => {
     expect(
       await screen.findByRole("dialog", { name: "Foto zuschneiden" }),
     ).toBeInTheDocument();
-    expect(createImageBitmap).toHaveBeenCalledWith(
-      expect.any(File),
-      expect.objectContaining({ resizeWidth: 1000, resizeHeight: 800 }),
+    expect(mockedApi.preparePaperlessImageForCrop).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "photo.jpg" }),
+      expect.any(AbortSignal),
     );
+    expect(createImageBitmap).toHaveBeenCalledWith(expect.any(Blob));
 
     await userEvent.click(screen.getByRole("button", { name: "Ausschnitt verwenden" }));
     expect(await screen.findByText("photo-cropped.jpg")).toBeInTheDocument();

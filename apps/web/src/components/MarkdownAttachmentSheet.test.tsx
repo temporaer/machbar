@@ -11,6 +11,7 @@ vi.mock("../lib/api", async (importOriginal) => {
     api: {
       ...original.api,
       uploadPaperlessDocument: vi.fn(),
+      preparePaperlessImageForCrop: vi.fn(),
     },
   };
 });
