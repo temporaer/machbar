@@ -145,33 +145,29 @@ describe("ProjectDetailPage task explanations", () => {
     );
   });
 
-  it("opens and closes the project task hints with the shared info control", async () => {
+  it("opens and closes the project task purpose with the shared info control", async () => {
     renderWithProviders(<ProjectDetailPage />);
 
     expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();
-    const gestureHint =
-      "Nach rechts wischen: „Erledigen / Wieder öffnen“. Nach links wischen öffnet weitere Aktionen wie Zuweisen, Planen und Notizen. Am Desktop geht das auch über ⋯.";
-    const dragHint = "Griff ziehen oder lange drücken: Aufgabe verschieben";
+    const purpose =
+      "Diese Liste zeigt den Weg zum Projektergebnis: vom nächsten machbaren Schritt über Abhängigkeiten bis zu späterer Arbeit.";
     const button = screen.getByRole("button", {
       name: "Hinweise zu dieser Seite anzeigen",
     });
 
     expect(button).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText(gestureHint)).not.toBeInTheDocument();
-    expect(screen.queryByText(dragHint)).not.toBeInTheDocument();
+    expect(screen.queryByText(purpose)).not.toBeInTheDocument();
 
     await userEvent.click(button);
 
     expect(button).toHaveAttribute("aria-expanded", "true");
     expect(button).toHaveAccessibleName("Hinweise zu dieser Seite ausblenden");
-    expect(screen.getByText(gestureHint)).toBeInTheDocument();
-    expect(screen.getByText(dragHint)).toBeInTheDocument();
+    expect(screen.getByText(purpose)).toBeInTheDocument();
 
     await userEvent.click(button);
 
     expect(button).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByText(gestureHint)).not.toBeInTheDocument();
-    expect(screen.queryByText(dragHint)).not.toBeInTheDocument();
+    expect(screen.queryByText(purpose)).not.toBeInTheDocument();
   });
 
   it("uses distinct icon-only actions for the project header and notes editors", async () => {

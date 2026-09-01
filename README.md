@@ -2,128 +2,96 @@
 
 > **Das ist machbar.**
 
-Machbar is a private, self-hosted command center for household work. It turns
-requests, plans, routines, and half-finished conversations into clear next
-actions that somebody can actually move forward.
+Machbar is a lightweight, multi-user task system for households and other small
+groups, built around one central question: **what can actually be done next?**
+Tasks and projects can be shared, owned, delegated, or simply visible to
+everyone without turning everyday coordination into project management.
 
-Use it to:
-
-- see what matters today—for you or for the whole household;
-- turn shared commitments into owned, concrete actions;
-- keep multi-step projects moving when work is delegated, blocked, or waiting;
-- run recurring household routines without a calendar-rule editor;
-- replace scattered chat messages and overloaded shared checklists with one
-  dependable system.
+It combines frictionless capture with explicit refinement of larger projects, a
+focused Today view, waiting and dependency handling, and just enough structure
+for context, areas, deadlines, and responsibility. The goal is to turn the messy
+stream of household obligations, errands, ideas, and multi-step projects into a
+small set of clear next actions—while keeping individual work and shared
+responsibilities visible without constant manual grooming.
 
 ![Machbar's mobile Today view](docs/images/today-mobile.png)
 
-## Household work is more than a checklist
+## More than a shared checklist
 
 A shopping item is easy. Organizing a holiday, repairing a room, handling an
-insurance claim, or keeping up with recurring maintenance is not. Real
-household work has unclear requests, several steps, hand-offs, dependencies,
-deadlines, and things that cannot continue until somebody else responds.
+insurance claim, or keeping up with recurring maintenance is not. Real life has
+unclear requests, hand-offs, dependencies, deadlines, and things that cannot
+continue until somebody else responds.
 
-Machbar gives that work enough structure to stay visible without turning home
-life into corporate project management.
+Machbar does not ask you to keep rearranging one giant list. It understands the
+difference between captured work, something actionable, a project with several
+steps, and work that is intentionally waiting.
 
-## What Machbar does differently
+### Capture now, clarify when ready
 
-### A Today view that does the sorting
+Get an obligation out of your head before deciding exactly what it means. The
+Inbox is a short refinement queue: turn a capture into a concrete action, place
+it in a project, delegate it, or set it aside deliberately.
 
-Machbar builds personal and household-wide Today views from planning dates,
-deadlines, follow-ups, responsibility, and task state. Standalone work remains
-available, while projects contribute only their canonical next useful action
-instead of dumping every open step into Today. A future-scheduled next action
-stays visibly deferred on Projects and remains out of Today until its date is
-reached. Household mode preserves independent owner lanes.
+### See what is genuinely actionable
 
-### Projects with an outcome, not just a pile of tasks
+Today brings together planned and due work, reached follow-ups, and the next
+useful step from active projects. Personal and household-wide views keep
+individual focus without hiding shared responsibilities.
 
-Keep possible household projects in the backlog without prematurely planning
-them. Starting one requires a visible driver and either a concrete progress path
-or intentional future waiting. Observable “done when…” criteria are optional;
-when you add them, they become a real commitment and must be checked or removed
-before completion. Individual tasks can still be delegated while one person
-keeps hold of the overall outcome.
+### Give projects direction
 
-### Review without a weekly-review ritual
+A project connects a desired outcome with the path toward it. Keep possible
+projects in the backlog, define what “done” means when that helps, and start
+only when there is a real next step or an intentional wait.
 
-**Review** gathers only work that needs a deliberate maintenance decision:
-broken progress or waiting paths, finished projects awaiting completion, and
-active, backlog, or Someday work that has genuinely gone stale. Valid shared
-tasks, Inbox captures, and ordinary work already surfaced by Today do not become
-fake review debt. Keeping something active, parked, or for later explicitly
-resets its lightweight review lease.
+### Treat waiting as part of the work
 
-### Alles means everything stays findable
+Tasks can wait on another task, a person, a company, an event, or a delivery.
+Add a revisit date and Machbar brings the item back when attention is useful,
+instead of leaving it to disappear in a note or clutter Today too early.
 
-Derived views can hide work on purpose; **Alles** never does. It combines
-first-class project inventory with standalone tasks, search, and useful filters
-across active, parked, captured, waiting, completed, and archived work. Project
-details retain full outlines, while search favors relevant open results and can
-take you directly to a matching nested task.
+### Review decisions, not everything
 
-### Waiting that remains actionable
+Review contains work that needs judgment: clarify it, continue it, park it, or
+finish it. Healthy work stays out of the way, while **All** keeps the complete
+inventory searchable whenever you need it.
 
-Actionable work can wait on another Machbar task or on an external person,
-organization, event, or delivery without changing its workflow status. Add a
-revisit date when useful; the **Waiting** view gathers blocked work, while
-reached revisits return to **Today**. The parent project remains active and
-waiting—with the reached revisit visible on **Projects**—rather than being
-misdiagnosed as stuck.
+### Keep useful structure lightweight
 
-### Recurring routines that adapt to real completion
+Use owners, areas, contexts, tags, deadlines, dependencies, and completion
+criteria where they improve a decision. Recurring tasks can schedule their next
+occurrence from actual completion, which works well for maintenance that never
+happens on a perfect calendar.
 
-For maintenance and other repeating work, schedule the next occurrence a fixed
-number of days after the task is actually completed. Add an allowed deviation
-to create a deadline, then see the routine's hit/miss history over time.
+## For people who enjoy systems—but do not want to manage one
 
-### Shared responsibility without losing individual focus
+Machbar borrows practical ideas from GTD, org-mode, and lightweight agile
+planning: capture, next actions, explicit waiting, project outcomes, and regular
+reconsideration. It turns those ideas into a few everyday views rather than a
+methodology your household has to learn.
 
-Assign projects and tasks where ownership is clear, leave work shared where it
-is not, and switch between **Mine** and **Everyone** without changing the
-person currently acting in the app.
+It is a good fit when:
 
-### Gentle momentum, not a leaderboard
-
-Machbar recognizes completions and useful planning work with lightweight
-household contribution points. Recurring routines completed after their
-deadline subtract a point. The goal is a shared sense of momentum, not ranking
-people against each other.
-
-### Capture from where the work appears
-
-Capture first and clarify later. On supported Android browsers, the installable
-PWA can receive text and URLs from the system share sheet and turn them into
-new work or append them to an existing task or project.
-
-## Built for everyday use
-
-Machbar is mobile-first, with touch-sized controls, swipe shortcuts, native
-sharing, and an installable PWA. The interface is available in German and
-English and supports system, light, and dark appearance modes.
+- shared lists have become noisy but full project-management software feels
+  absurd;
+- household projects often have several steps, unclear ownership, or external
+  dependencies;
+- you want a trusted Today view instead of repeatedly scanning every list;
+- most interaction happens from a phone;
+- privacy and control of the data matter.
 
 ![Machbar's mobile Projects view in dark mode](docs/images/projects-mobile.png)
 
-Its workflow borrows useful ideas from GTD, org-mode, and lightweight Scrum,
-but exposes them as practical views—**Today**, **Inbox**, **Projects**,
-**Waiting**, **Review**, and **Alles**—rather than ceremonies your household has
-to learn.
+## Built for everyday use
 
-## Is Machbar a good fit?
+Machbar is mobile-first, installable as a PWA, and available in German and
+English with light and dark modes. Supported Android browsers can capture text
+and links directly from the share sheet.
 
-Machbar is built for households that have outgrown chat reminders and flat
-shared lists, especially when:
-
-- household projects have several steps or unclear ownership;
-- work frequently pauses for another person, company, event, or delivery;
-- recurring maintenance should adapt to when it was actually completed;
-- most daily interaction happens from a phone;
-- privacy, local control, and durable data matter more than a hosted ecosystem.
-
-It is intentionally not a general team collaboration platform, personal
-knowledge base, or enterprise project tracker.
+It is private and self-hosted: one small service and one persistent SQLite
+database, with optional Pocket ID authentication. No hosted account or external
+database is required.
 
 ## Run it yourself in minutes
 
@@ -136,39 +104,11 @@ docker compose up --build -d
 ```
 
 Open `http://localhost:3000`, create the first household member, and start
-capturing work. Your SQLite database lives in the persistent `machbar-data`
-volume and survives container restarts.
+capturing work. Data lives in the persistent `machbar-data` volume.
 
-See [Getting started](docs/getting-started.md) for first-use orientation and
-[Deployment](docs/deployment.md) for upgrades, backups, reverse proxies,
-configuration, and Pocket ID.
-
-## Simple self-hosting
-
-- One Docker container or standalone Node.js process
-- React/Vite frontend and Fastify API served together
-- One persistent SQLite database; no separate database server
-- Optional Pocket ID authentication through OpenID Connect
-- Reverse-proxy, sub-path, and Home Assistant Ingress support
-- Automatic database migrations on startup
-
-## Current status
-
-Machbar is usable software, but it remains a young, opinionated project:
-
-- connected clients receive live invalidation updates through server-sent
-  events, with focus/reconnect refresh and a disconnected polling fallback;
-- the app requires network access to the Machbar server; installing the PWA
-  does not provide offline task access;
-- fixed-day-after-completion recurrence is supported, but calendar patterns
-  such as “every second Monday” and notification delivery are not;
-- SQLite is intended for one running Machbar instance, which is a good fit for
-  a home deployment but not a horizontally scaled service;
-- the Home Assistant add-on files are currently development packaging, not a
-  published one-click add-on repository.
-
-Read [Status and limitations](docs/status-and-limitations.md) before relying on
-Machbar for a particular deployment.
+Machbar is young, opinionated software. Read
+[Status and limitations](docs/status-and-limitations.md) before relying on it
+for a particular deployment.
 
 ## Documentation
 

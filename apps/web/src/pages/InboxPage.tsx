@@ -6,13 +6,11 @@ import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { PageHeader } from "../components/PageHeader";
-import { useSwipeSettings } from "../lib/swipeSettings";
 
 export function InboxPage() {
   const strings = useStrings();
   const { data: tasks, loading, error, reload } = useAsync(() => api.getInbox(), []);
   const { openQueue } = useTaskDetail();
-  const { primarySwipeAction } = useSwipeSettings();
 
   return (
     <div className="inbox-page">
@@ -23,18 +21,7 @@ export function InboxPage() {
             {strings.clarifyNow}
           </button>
         ) : null}
-        hints={[
-          {
-            label: strings.refile,
-            text: `${strings.changeParent} · ${strings.moveProject}`,
-          },
-          {
-            label: strings.taskGestures,
-            text: strings.taskGestureHint(
-              strings.primarySwipeActionLabels[primarySwipeAction],
-            ),
-          },
-        ]}
+        hints={[{ text: strings.inboxHint }]}
       />
       {loading ? <LoadingState /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}

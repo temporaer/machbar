@@ -26,7 +26,6 @@ import { serializeProjectForShare } from "../lib/shareText";
 import { buildProjectShareUrl } from "../lib/shareUrls";
 import { PageHeader } from "../components/PageHeader";
 import { MemberLabel } from "../components/MemberAvatar";
-import { useSwipeSettings } from "../lib/swipeSettings";
 import { IconActionButton } from "../components/IconActionButton";
 import { StoryCriteriaSheet } from "../components/StoryCriteriaSheet";
 import { useTaskDetail } from "../lib/taskDetailContext";
@@ -59,7 +58,6 @@ export function ProjectDetailPage() {
   const closeTaskDetailRef = useRef(closeTaskDetail);
   openTaskIdRef.current = openTaskId;
   closeTaskDetailRef.current = closeTaskDetail;
-  const { primarySwipeAction } = useSwipeSettings();
   const {
     data: loadedProject,
     loading: projectLoading,
@@ -260,17 +258,7 @@ export function ProjectDetailPage() {
                   {strings.addSequence}
                 </button>
               }
-              hints={[
-                {
-                  label: strings.taskGestures,
-                  text: [
-                    strings.taskGestureHint(
-                      strings.primarySwipeActionLabels[primarySwipeAction],
-                    ),
-                    strings.dragHint,
-                  ],
-                },
-              ]}
+              hints={[{ text: strings.projectTasksHint }]}
             />
             <TaskOutline
               tasks={project.tasks}

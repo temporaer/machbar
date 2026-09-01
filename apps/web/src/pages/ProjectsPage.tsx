@@ -164,7 +164,7 @@ export function ProjectsPage() {
             <IconActionGlyph kind="household" />
           </button>
         }
-        hints={[{ text: strings.projectsSwipeHint }]}
+        hints={[{ text: strings.projectsHint }]}
       />
       <div className="stack projects-controls">
         <input

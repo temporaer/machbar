@@ -8,7 +8,6 @@ import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaCard } from "../components/ProjectAgendaCard";
 import { PageHeader, type PageHint } from "../components/PageHeader";
-import { useSwipeSettings } from "../lib/swipeSettings";
 import { ContributionPulse } from "../components/ContributionPulse";
 import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 import { IconActionGlyph } from "../components/IconActionButton";
@@ -33,7 +32,6 @@ export function TodayPage() {
   // another member's tasks. Re-fetching whenever `currentMemberId` changes
   // ensures switching identities always shows that member's own agenda.
   const { currentMemberId, members } = useIdentity();
-  const { primarySwipeAction } = useSwipeSettings();
   const agendaSelectionKey = `${scope}:${currentMemberId ?? "none"}`;
   const { data: loadedAgenda, loading, error, reload } = useAsync(
     async () => ({
@@ -56,12 +54,6 @@ export function TodayPage() {
   const pageHints: PageHint[] = [
     { text: strings.todayExplanation },
     { text: strings.todayScopeHint },
-    {
-      label: strings.taskGestures,
-      text: strings.taskGestureHint(
-        strings.primarySwipeActionLabels[primarySwipeAction],
-      ),
-    },
     ...(revisitTasks.length > 0
       ? [{ label: strings.revisit, text: strings.revisitHint }]
       : []),

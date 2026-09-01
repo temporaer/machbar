@@ -229,7 +229,7 @@ const en = {
   manageTags: "Manage tags",
   manageTagsHint: "Edit the tag catalog, types, and grouping.",
   manageTagsPageHint:
-    "Tags organize projects and tasks. Choose suitable types and which tags should be preferred for grouping.",
+    "Tags add useful perspectives such as area, person, or context without replacing the project structure.",
   tagDeleteConfirm: (name: string) =>
     `Permanently delete the tag “${name}”? It will be removed from every project and task.`,
   deleteTag: "Delete tag",
@@ -327,6 +327,8 @@ const en = {
   todayHouseholdScope: "Show everyone's tasks",
   todayScopeHint:
     "“Everyone” shows the whole household's tasks without changing your identity for edits.",
+  inboxHint:
+    "Unclarified work lands here. Decide what is actionable, belongs to a project, or should deliberately wait until later.",
   searchEmpty: "No results for this search.",
   moreTitle: "More",
   moreMomentum: "Household momentum",
@@ -437,7 +439,7 @@ const en = {
   searchDependency: "Search tasks…",
   addTaskToProject: "Add task to project",
   todayExplanation:
-    "This view is built automatically from dates, deadlines, and status—no manual flag needed.",
+    "See what truly needs attention now: planned and due work, reached follow-ups, and each project's next actionable step.",
   manageMembers: "Manage people",
   manageMembersHint: "Add, rename, or remove people.",
   memberName: "Name",
@@ -502,7 +504,7 @@ const en = {
 
   reviewTitle: "Review",
   reviewHint:
-    "Make an intentional decision about what stays active, gets prepared, remains parked, or ends.",
+    "Work that needs a deliberate decision lands here: clarify it, continue it, park it, or finish it.",
   reviewEmpty: "Everything is intentional. There is nothing to review right now.",
   reviewPrimaryQueue: "Decisions",
   reviewPlanningTools: "Optional planning tools",
@@ -532,7 +534,7 @@ const en = {
 
   allTitle: "All",
   allHint:
-    "Complete inventory of projects and standalone tasks. Project tasks live inside their project.",
+    "Find the complete inventory here, including work that focused views deliberately leave out.",
   allProjectsHeading: "Projects",
   allStandaloneTasksHeading: "Standalone tasks",
   allMatchingTasksHeading: "Matching tasks",
@@ -561,8 +563,12 @@ const en = {
   storyReopened: "Reopened",
   storyReturnedToBacklog: "Moved to later",
 
-  projectsSwipeHint:
-    "Swipe right for the next step, or swipe left or tap ⋯ for more actions.",
+  projectsHint:
+    "Projects connect a desired outcome with the path toward it. Active projects always show a next step or intentional waiting.",
+  waitingPageHint:
+    "Work that cannot move yet lives here. See what it is waiting on and when it needs another look.",
+  projectTasksHint:
+    "This list shows the path to the project outcome, from the next actionable step through dependencies and later work.",
   projectStatus: "Status",
   workflowStep: "Next step",
   projectSearchPlaceholder: "Search title, notes, or “Done when…”",
