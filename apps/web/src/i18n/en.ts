@@ -661,6 +661,9 @@ const en = {
   pushEnabled: "Enabled on this device.",
   pushEnable: "Enable",
   pushDisable: "Disable",
+  pushTest: "Send test",
+  pushTestSending: "Sending…",
+  pushTestSent: "Test notification sent.",
   theme: "Theme",
   themeLabels: {
     system: "System",
@@ -851,6 +854,10 @@ const en = {
       "The project cannot move to that status from here.",
     push_member_required:
       "Choose a person before enabling Push notifications.",
+    push_not_configured:
+      "Push notifications are not configured on the server.",
+    push_subscription_missing:
+      "This browser subscription has expired. Enable notifications again.",
     refinement_filters_invalid: "The task-review filters are invalid.",
     request_body_invalid: "The submitted data is invalid.",
     request_origin_forbidden: "This request is not allowed.",

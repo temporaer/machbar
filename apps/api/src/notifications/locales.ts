@@ -11,6 +11,10 @@ interface NotificationCopy {
 
 interface NotificationCatalog {
   notifications: Record<NotificationKind, NotificationCopy>;
+  test: {
+    title: string;
+    body: string;
+  };
   actions: Record<PushNotificationAction, string>;
 }
 
@@ -35,6 +39,10 @@ const catalogs: Record<PushLocale, NotificationCatalog> = {
         title: "Jetzt machbar",
         body: (_actor, title) => `Erinnerung: ${title}`,
       },
+    },
+    test: {
+      title: "Machbar",
+      body: "Benachrichtigungen funktionieren auf diesem Gerät.",
     },
     actions: {
       today: "Heute",
@@ -62,6 +70,10 @@ const catalogs: Record<PushLocale, NotificationCatalog> = {
         title: "Ready to do",
         body: (_actor, title) => `Reminder: ${title}`,
       },
+    },
+    test: {
+      title: "Machbar",
+      body: "Notifications are working on this device.",
     },
     actions: {
       today: "Today",

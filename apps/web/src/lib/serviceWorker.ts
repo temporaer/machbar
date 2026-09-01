@@ -11,6 +11,31 @@ export function ensureServiceWorkerRegistration(): Promise<ServiceWorkerRegistra
   return registrationPromise;
 }
 
+function waitForActivation(worker: ServiceWorker): Promise<void> {
+  if (worker.state === "activated") return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const onStateChange = () => {
+      if (worker.state === "activated") {
+        worker.removeEventListener("statechange", onStateChange);
+        resolve();
+      } else if (worker.state === "redundant") {
+        worker.removeEventListener("statechange", onStateChange);
+        reject(new Error("The updated service worker could not be activated."));
+      }
+    };
+    worker.addEventListener("statechange", onStateChange);
+    onStateChange();
+  });
+}
+
+export async function ensureLatestServiceWorkerRegistration(): Promise<ServiceWorkerRegistration> {
+  const registration = await ensureServiceWorkerRegistration();
+  await registration.update();
+  const updatedWorker = registration.installing ?? registration.waiting;
+  if (updatedWorker) await waitForActivation(updatedWorker);
+  return registration;
+}
+
 export async function currentServiceWorkerRegistration(): Promise<ServiceWorkerRegistration | null> {
   if (!("serviceWorker" in navigator)) return null;
   return (await navigator.serviceWorker.getRegistration()) ?? null;

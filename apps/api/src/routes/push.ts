@@ -6,6 +6,11 @@ import * as schema from "../db/schema.js";
 import type { Env } from "../env.js";
 import { AppError } from "../errors.js";
 import {
+  buildTestNotificationPayload,
+  type PushTransport,
+  webPushStatusCode,
+} from "../notifications/delivery.js";
+import {
   pushSubscriptionRemovalSchema,
   pushSubscriptionSchema,
 } from "../schemas.js";
@@ -25,6 +30,7 @@ export function registerPushRoutes(
   app: FastifyInstance,
   db: Db,
   env: Env,
+  transport?: PushTransport,
 ): void {
   app.get("/api/push/config", async (): Promise<PushConfig> => ({
     enabled: env.push !== null,
@@ -69,6 +75,63 @@ export function registerPushRoutes(
         ),
       )
       .run();
+    reply.status(204);
+    return null;
+  });
+
+  app.post("/api/push/test", async (request, reply) => {
+    const memberId = currentMemberId(request);
+    if (!env.push || !transport) {
+      throw AppError.badRequest(
+        "push_not_configured",
+        "Push notifications are not configured.",
+      );
+    }
+    const body = parseOrThrow(pushSubscriptionRemovalSchema, request.body);
+    const subscription = db
+      .select()
+      .from(schema.pushSubscriptions)
+      .where(
+        and(
+          eq(schema.pushSubscriptions.endpoint, body.endpoint),
+          eq(schema.pushSubscriptions.memberId, memberId),
+        ),
+      )
+      .get();
+    if (!subscription) {
+      throw AppError.conflict(
+        "push_subscription_missing",
+        "This browser subscription is no longer registered.",
+      );
+    }
+
+    try {
+      await transport.send(
+        {
+          endpoint: subscription.endpoint,
+          keys: {
+            p256dh: subscription.p256dh,
+            auth: subscription.auth,
+          },
+        },
+        JSON.stringify(
+          buildTestNotificationPayload(memberId, subscription.locale),
+        ),
+      );
+    } catch (error) {
+      const code = webPushStatusCode(error);
+      if (code === 404 || code === 410) {
+        db.delete(schema.pushSubscriptions)
+          .where(eq(schema.pushSubscriptions.id, subscription.id))
+          .run();
+        throw AppError.conflict(
+          "push_subscription_missing",
+          "This browser subscription has expired.",
+        );
+      }
+      throw error;
+    }
+
     reply.status(204);
     return null;
   });

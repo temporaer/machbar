@@ -127,6 +127,8 @@ export type ApiErrorCode =
   | "project_title_required"
   | "project_transition_invalid"
   | "push_member_required"
+  | "push_not_configured"
+  | "push_subscription_missing"
   | "refinement_filters_invalid"
   | "request_body_invalid"
   | "request_origin_forbidden"
@@ -278,14 +280,14 @@ export type PushNotificationAction = "today" | "open" | "complete";
 
 export interface PushNotificationPayload {
   version: 1;
-  kind: NotificationKind;
+  kind: NotificationKind | "test";
   title: string;
   body: string;
   tag: string;
   entity: {
     type: NotificationEntityType;
     id: number;
-  };
+  } | null;
   recipientMemberId: number;
   actions: Array<{
     action: PushNotificationAction;

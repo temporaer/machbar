@@ -3,7 +3,7 @@ import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { PushNotificationSettings } from "./PushNotificationSettings";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 
 const pushManager = {
   getSubscription: vi.fn(),
@@ -13,18 +13,24 @@ const registration = { pushManager } as unknown as ServiceWorkerRegistration;
 
 vi.mock("../lib/serviceWorker", () => ({
   currentServiceWorkerRegistration: vi.fn(async () => registration),
+  ensureLatestServiceWorkerRegistration: vi.fn(async () => registration),
   ensureServiceWorkerRegistration: vi.fn(async () => registration),
 }));
 
-vi.mock("../lib/api", () => ({
-  api: {
-    getAuthStatus: vi.fn(),
-    getMembers: vi.fn(),
-    getPushConfig: vi.fn(),
-    registerPushSubscription: vi.fn(),
-    unregisterPushSubscription: vi.fn(),
-  },
-}));
+vi.mock("../lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/api")>();
+  return {
+    ...actual,
+    api: {
+      getAuthStatus: vi.fn(),
+      getMembers: vi.fn(),
+      getPushConfig: vi.fn(),
+      registerPushSubscription: vi.fn(),
+      unregisterPushSubscription: vi.fn(),
+      sendTestPushNotification: vi.fn(),
+    },
+  };
+});
 
 const mockedApi = vi.mocked(api);
 
@@ -75,6 +81,7 @@ describe("PushNotificationSettings", () => {
     });
     mockedApi.registerPushSubscription.mockResolvedValue(undefined);
     mockedApi.unregisterPushSubscription.mockResolvedValue(undefined);
+    mockedApi.sendTestPushNotification.mockResolvedValue(undefined);
     pushManager.getSubscription.mockResolvedValue(null);
     pushManager.subscribe.mockReset();
   });
@@ -116,6 +123,7 @@ describe("PushNotificationSettings", () => {
     expect(
       await screen.findByText("Auf diesem Gerät nicht aktiviert."),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Test senden" })).toBeDisabled();
   });
 
   it("requests permission from the enable action and registers the device", async () => {
@@ -213,6 +221,50 @@ describe("PushNotificationSettings", () => {
     expect(existing.unsubscribe).toHaveBeenCalled();
     expect(
       screen.getByText("Auf diesem Gerät nicht aktiviert."),
+    ).toBeInTheDocument();
+  });
+
+  it("sends a test through this browser's active subscription", async () => {
+    installBrowserSupport("granted");
+    const existing = subscription();
+    pushManager.getSubscription.mockResolvedValue(existing);
+    renderWithProviders(<PushNotificationSettings />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Test senden" }),
+    );
+
+    expect(mockedApi.sendTestPushNotification).toHaveBeenCalledWith(
+      existing.endpoint,
+    );
+    expect(
+      await screen.findByText("Testbenachrichtigung gesendet."),
+    ).toBeInTheDocument();
+  });
+
+  it("returns an expired browser subscription to the disabled state", async () => {
+    installBrowserSupport("granted");
+    const existing = subscription();
+    pushManager.getSubscription.mockResolvedValue(existing);
+    mockedApi.sendTestPushNotification.mockRejectedValue(
+      new ApiError(
+        409,
+        "Browser subscription expired.",
+        "push_subscription_missing",
+      ),
+    );
+    renderWithProviders(<PushNotificationSettings />);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Test senden" }),
+    );
+
+    expect(existing.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText("Auf diesem Gerät nicht aktiviert."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Anmeldung dieses Browsers ist abgelaufen/),
     ).toBeInTheDocument();
   });
 });
