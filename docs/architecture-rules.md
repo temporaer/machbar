@@ -133,6 +133,7 @@ behavior.
 | Horizontal row swipe | `apps/web/src/lib/useHorizontalSwipe.ts` |
 | Paperless document access | `apps/api/src/integrations/paperless/` and `apps/api/src/routes/paperless.ts` |
 | Markdown attachment references and projections | `apps/web/src/lib/paperlessAttachments.ts`, `apps/web/src/components/MarkdownAttachmentSheet.tsx`, and `apps/web/src/components/MarkdownEditor.tsx` |
+| Memory-bounded photo cropping | `apps/web/src/components/ImageCropSheet.tsx` |
 | Incoming file-share staging | `apps/web/public/sw.js` and `apps/web/src/lib/pendingShareTarget.ts` |
 
 Before introducing another primitive for one of these needs, update this table

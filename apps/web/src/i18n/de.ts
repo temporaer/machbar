@@ -44,6 +44,21 @@ const base = {
   pendingAttachments: (count: number) =>
     count === 1 ? "1 Anhang zum Erfassen" : `${count} Anhänge zum Erfassen`,
   pendingUpload: "Wird erst beim Erfassen hochgeladen",
+  cropImage: "Foto zuschneiden",
+  cropPreview: "Vorschau des Bildausschnitts",
+  cropPreparing: "Foto wird vorbereitet…",
+  cropApplying: "Ausschnitt wird erstellt…",
+  cropUnavailable:
+    "Das Foto konnte nicht zum Zuschneiden vorbereitet werden. Verwende das Original.",
+  cropReset: "Zurücksetzen",
+  applyCrop: "Ausschnitt verwenden",
+  useOriginal: "Original verwenden",
+  cropEdge: {
+    left: "Links",
+    right: "Rechts",
+    top: "Oben",
+    bottom: "Unten",
+  },
   attach: "Anhang hinzufügen",
   attachmentCount: (count: number) =>
     count === 1 ? "1 Anhang" : `${count} Anhänge`,

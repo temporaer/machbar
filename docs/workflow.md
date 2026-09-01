@@ -20,6 +20,9 @@ project.
 Installed Android PWAs can receive text and URLs from the operating-system
 share sheet. Incoming material can create new work or be appended to an
 existing task or project.
+New camera photos can be cropped before capture or attached unchanged. The
+crop editor opens only on request so selecting a full-resolution photo does not
+decode it unnecessarily on memory-constrained phones.
 
 ### 2. Clarify
 

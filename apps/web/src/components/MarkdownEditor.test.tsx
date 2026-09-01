@@ -137,6 +137,11 @@ describe("MarkdownEditor", () => {
       fireEvent.change(screen.getByLabelText(inputLabel), {
         target: { files: [file] },
       });
+      if (inputLabel === "Foto aufnehmen") {
+        fireEvent.click(
+          await screen.findByRole("button", { name: "Original verwenden" }),
+        );
+      }
 
       await waitFor(() => {
         expect(textarea).toHaveValue(`before ${markdown}after`);

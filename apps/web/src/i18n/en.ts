@@ -69,6 +69,21 @@ const en = {
   pendingAttachments: (count: number) =>
     count === 1 ? "1 attachment to capture" : `${count} attachments to capture`,
   pendingUpload: "Uploads only when captured",
+  cropImage: "Crop photo",
+  cropPreview: "Crop preview",
+  cropPreparing: "Preparing photo…",
+  cropApplying: "Creating crop…",
+  cropUnavailable:
+    "This photo could not be prepared for cropping. Use the original instead.",
+  cropReset: "Reset",
+  applyCrop: "Use crop",
+  useOriginal: "Use original",
+  cropEdge: {
+    left: "Left",
+    right: "Right",
+    top: "Top",
+    bottom: "Bottom",
+  },
   attach: "Add attachment",
   attachmentCount: (count: number) =>
     count === 1 ? "1 attachment" : `${count} attachments`,

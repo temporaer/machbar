@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
@@ -34,6 +34,11 @@ describe("QuickAdd", () => {
     vi.clearAllMocks();
     window.localStorage.setItem("machbar:identity-member-id", "1");
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("erfasst Enter als später zu klärende Aufgabe ohne generisches Speichern", async () => {
@@ -219,6 +224,7 @@ describe("QuickAdd", () => {
       originalFileName: "receipt.jpg",
       mimeType: "image/jpeg",
     });
+
     mockedApi.createTask
       .mockRejectedValueOnce(new Error("Create failed"))
       .mockResolvedValueOnce(makeTask({ id: 88, title: "Receipt" }));
@@ -244,6 +250,61 @@ describe("QuickAdd", () => {
         notes: "![receipt.jpg](paperless:88)",
       }),
     );
+  });
+
+  it("crops a captured photo before its deferred upload", async () => {
+    const close = vi.fn();
+    const createImageBitmap = vi
+      .fn()
+      .mockResolvedValue({ width: 1000, height: 800, close });
+    vi.stubGlobal("createImageBitmap", createImageBitmap);
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
+      (callback) => callback(new Blob(["cropped"], { type: "image/jpeg" })),
+    );
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 89,
+      title: "photo-cropped",
+      originalFileName: "photo-cropped.jpg",
+      mimeType: "image/jpeg",
+    });
+    mockedApi.createTask.mockResolvedValue(makeTask({ id: 89, title: "Photo" }));
+    renderWithProviders(<QuickAdd />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
+    await userEvent.upload(
+      screen.getByLabelText("Foto aufnehmen"),
+      new File(
+        [
+          new Uint8Array([
+            0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x03, 0x20, 0x03, 0xe8,
+          ]),
+        ],
+        "photo.jpg",
+        { type: "image/jpeg" },
+      ),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Foto zuschneiden" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Foto zuschneiden" }),
+    ).toBeInTheDocument();
+    expect(createImageBitmap).toHaveBeenCalledWith(
+      expect.any(File),
+      expect.objectContaining({ resizeWidth: 1000, resizeHeight: 800 }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Ausschnitt verwenden" }));
+    expect(await screen.findByText("photo-cropped.jpg")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Photo");
+    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await waitFor(() => expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalled());
+    const uploadedFile = mockedApi.uploadPaperlessDocument.mock.calls[0]?.[0];
+    expect(uploadedFile).toBeInstanceOf(File);
+    expect(uploadedFile?.name).toBe("photo-cropped.jpg");
+    expect(close).toHaveBeenCalled();
   });
 
   it("macht eine neue Machbar-Aufgabe rückgängig", async () => {

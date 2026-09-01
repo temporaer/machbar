@@ -31,6 +31,7 @@ export interface CaptureFormProps {
   autoFocus?: boolean;
   prepareNotes?: (notes: string) => Promise<string>;
   pendingFiles?: readonly File[];
+  onCropPendingFile?: ((file: File, index: number) => void) | undefined;
   onCancel: () => void;
   onCaptured: (result: CaptureResult) => void;
 }
@@ -47,6 +48,7 @@ export function CaptureForm({
   autoFocus = true,
   prepareNotes,
   pendingFiles = [],
+  onCropPendingFile,
   onCancel,
   onCaptured,
 }: CaptureFormProps) {
@@ -122,7 +124,7 @@ export function CaptureForm({
         void createTask(canDeferClassification);
       }}
     >
-      <PendingMaterialPreview files={pendingFiles} />
+      <PendingMaterialPreview files={pendingFiles} onCrop={onCropPendingFile} />
       <div className="field">
         <label htmlFor="capture-title">{strings.titleEnough}</label>
         <input

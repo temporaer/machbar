@@ -11,6 +11,8 @@ import {
 } from "../lib/paperlessAttachments";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
+import { ImageCropSheet } from "./ImageCropSheet";
+import { PendingMaterialPreview } from "./PendingMaterialPreview";
 
 export function MarkdownAttachmentSheet({
   onInsert,
@@ -23,6 +25,7 @@ export function MarkdownAttachmentSheet({
   const cameraRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const uploadingRef = useRef(false);
   const [uploading, setUploading] = useState(false);
   const [delivering, setDelivering] = useState(false);
   const [resolvedMarkdown, setResolvedMarkdown] = useState<string | null>(null);
@@ -31,6 +34,8 @@ export function MarkdownAttachmentSheet({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PaperlessDocumentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cameraFile, setCameraFile] = useState<File | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
 
   const deliver = async (markdown: string) => {
     setResolvedMarkdown(markdown);
@@ -46,11 +51,9 @@ export function MarkdownAttachmentSheet({
     }
   };
 
-  const selectFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file || uploading) return;
-
+  const uploadFile = async (file: File) => {
+    if (uploadingRef.current) return;
+    uploadingRef.current = true;
     setResolvedMarkdown(null);
     setUploading(true);
     setError(null);
@@ -60,8 +63,24 @@ export function MarkdownAttachmentSheet({
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
     } finally {
+      uploadingRef.current = false;
       setUploading(false);
     }
+  };
+
+  const selectFile = (
+    event: ChangeEvent<HTMLInputElement>,
+    offerCrop = false,
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || uploading) return;
+
+    if (offerCrop && file.type.startsWith("image/")) {
+      setCameraFile(file);
+      return;
+    }
+    void uploadFile(file);
   };
 
   const search = async (event: FormEvent) => {
@@ -87,46 +106,66 @@ export function MarkdownAttachmentSheet({
   const busy = uploading || searching || delivering;
 
   return (
-    <BottomSheet
-      title={strings.paperlessAttachmentTitle}
-      onClose={() => {
-        if (!busy) onClose();
-      }}
-      headerStatus={
-        uploading
-          ? strings.paperlessUploading
-          : delivering
-            ? strings.save
-            : undefined
-      }
-    >
-      <div className="stack markdown-attachment-sheet">
-        <input
-          ref={cameraRef}
-          className="visually-hidden"
-          type="file"
-          accept="image/*"
-          capture="environment"
-          aria-label={strings.takePhoto}
-          onChange={(event) => void selectFile(event)}
-        />
-        <input
-          ref={imageRef}
-          className="visually-hidden"
-          type="file"
-          accept="image/*"
-          aria-label={strings.chooseImage}
-          onChange={(event) => void selectFile(event)}
-        />
-        <input
-          ref={fileRef}
-          className="visually-hidden"
-          type="file"
-          aria-label={strings.chooseFile}
-          onChange={(event) => void selectFile(event)}
-        />
+    <>
+      <BottomSheet
+        title={strings.paperlessAttachmentTitle}
+        onClose={() => {
+          if (!busy) onClose();
+        }}
+        headerStatus={
+          uploading
+            ? strings.paperlessUploading
+            : delivering
+              ? strings.save
+              : undefined
+        }
+      >
+        <div className="stack markdown-attachment-sheet">
+          <input
+            ref={cameraRef}
+            className="visually-hidden"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            aria-label={strings.takePhoto}
+            onChange={(event) => selectFile(event, true)}
+          />
+          <input
+            ref={imageRef}
+            className="visually-hidden"
+            type="file"
+            accept="image/*"
+            aria-label={strings.chooseImage}
+            onChange={selectFile}
+          />
+          <input
+            ref={fileRef}
+            className="visually-hidden"
+            type="file"
+            aria-label={strings.chooseFile}
+            onChange={selectFile}
+          />
 
-        <div className="markdown-attachment-actions">
+        {cameraFile ? (
+          <div className="stack">
+            <PendingMaterialPreview
+              files={[cameraFile]}
+              onCrop={() => setCropFile(cameraFile)}
+            />
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                const original = cameraFile;
+                setCameraFile(null);
+                void uploadFile(original);
+              }}
+            >
+              {strings.useOriginal}
+            </button>
+          </div>
+        ) : (
+          <div className="markdown-attachment-actions">
           <button
             type="button"
             className="btn btn-block"
@@ -162,7 +201,8 @@ export function MarkdownAttachmentSheet({
           >
             {strings.fromPaperless}
           </button>
-        </div>
+          </div>
+        )}
 
         {searchOpen ? (
           <form className="stack" onSubmit={(event) => void search(event)}>
@@ -226,7 +266,25 @@ export function MarkdownAttachmentSheet({
             ) : null}
           </div>
         ) : null}
-      </div>
-    </BottomSheet>
+        </div>
+      </BottomSheet>
+      {cropFile ? (
+        <ImageCropSheet
+          file={cropFile}
+          onClose={() => setCropFile(null)}
+          onUseOriginal={() => {
+            const original = cameraFile ?? cropFile;
+            setCameraFile(null);
+            setCropFile(null);
+            void uploadFile(original);
+          }}
+          onApply={(cropped) => {
+            setCameraFile(null);
+            setCropFile(null);
+            void uploadFile(cropped);
+          }}
+        />
+      ) : null}
+    </>
   );
 }
