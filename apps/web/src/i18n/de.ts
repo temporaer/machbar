@@ -41,6 +41,11 @@ const base = {
   captureTask: "Aufgabe erfassen",
   capturePhoto: "Foto erfassen",
   captureFile: "Datei erfassen",
+  cameraPreview: "Kameravorschau",
+  cameraStarting: "Kamera wird gestartet…",
+  cameraCapturing: "Foto wird aufgenommen…",
+  cameraUnavailable:
+    "Die Kamera konnte nicht direkt geöffnet werden. Wähle stattdessen ein Bild vom Gerät.",
   pendingAttachments: (count: number) =>
     count === 1 ? "1 Anhang zum Erfassen" : `${count} Anhänge zum Erfassen`,
   pendingUpload: "Wird erst beim Erfassen hochgeladen",

@@ -696,7 +696,11 @@ Global material capture starts in `QuickAdd` but keeps the selected browser
 task/project create call, so abandoning capture before commit creates no
 Paperless document. Successful uploads are retained across create retries.
 New camera images can optionally pass through the shared `ImageCropSheet`
-before that upload. Cropping is explicitly requested rather than automatic:
+before that upload. Camera capture itself uses a resolution-bounded
+`getUserMedia` stream so Android does not need to return a full-resolution
+photo through its memory-intensive external camera intent. A hidden file input
+remains only as a fallback when direct camera access is unavailable. Cropping
+is explicitly requested rather than automatic:
 an authenticated, no-store preparation endpoint uses Sharp to rotate and
 resize the image within 1280 × 1280 before the phone decodes it. The sheet
 renders only that bounded source and releases both bitmap and canvas surfaces

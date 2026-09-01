@@ -83,4 +83,16 @@ describe("MarkdownAttachmentSheet", () => {
       expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledTimes(1),
     );
   });
+
+  it("opens the bounded in-app camera for a new photo", async () => {
+    render(<MarkdownAttachmentSheet onInsert={vi.fn()} onClose={vi.fn()} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Foto aufnehmen" }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: "Foto aufnehmen" }),
+    ).toBeInTheDocument();
+  });
 });

@@ -20,6 +20,7 @@ import {
 } from "../lib/paperlessAttachments";
 import { IconActionGlyph } from "./IconActionButton";
 import { ImageCropSheet } from "./ImageCropSheet";
+import { CameraCaptureSheet } from "./CameraCaptureSheet";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -46,6 +47,7 @@ export function QuickAdd({
   );
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [cropFile, setCropFile] = useState<File | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadedAttachmentRef =
@@ -76,6 +78,7 @@ export function QuickAdd({
     setCaptureStep("choose");
     setPendingFile(null);
     setCropFile(null);
+    setCameraOpen(false);
     uploadedAttachmentRef.current = null;
     setError(null);
     if (autoOpen) onAutoOpenClose?.();
@@ -211,7 +214,7 @@ export function QuickAdd({
               <button
                 type="button"
                 className="btn btn-block quick-capture-choice"
-                onClick={() => cameraRef.current?.click()}
+                onClick={() => setCameraOpen(true)}
               >
                 <span aria-hidden="true"><IconActionGlyph kind="camera" /></span>
                 <strong>{strings.capturePhoto}</strong>
@@ -258,6 +261,21 @@ export function QuickAdd({
             setPendingFile(croppedFile);
             uploadedAttachmentRef.current = null;
             setCropFile(null);
+          }}
+        />
+      ) : null}
+      {cameraOpen ? (
+        <CameraCaptureSheet
+          onClose={() => setCameraOpen(false)}
+          onFallback={() => {
+            setCameraOpen(false);
+            cameraRef.current?.click();
+          }}
+          onCapture={(file) => {
+            setCameraOpen(false);
+            setPendingFile(file);
+            uploadedAttachmentRef.current = null;
+            setCaptureStep("form");
           }}
         />
       ) : null}
