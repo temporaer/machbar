@@ -28,6 +28,7 @@ export interface CaptureFormProps {
   showNotes?: boolean;
   showDueDate?: boolean;
   autoFocus?: boolean;
+  prepareNotes?: (notes: string) => Promise<string>;
   onCancel: () => void;
   onCaptured: (result: CaptureResult) => void;
 }
@@ -42,6 +43,7 @@ export function CaptureForm({
   showNotes = false,
   showDueDate = false,
   autoFocus = true,
+  prepareNotes,
   onCancel,
   onCaptured,
 }: CaptureFormProps) {
@@ -56,9 +58,12 @@ export function CaptureForm({
   const canDeferClassification =
     (projectId ?? null) === null && (parentTaskId ?? null) === null;
 
-  const taskInput = (needsClarification: boolean): CreateTaskInput => ({
+  const taskInput = (
+    needsClarification: boolean,
+    preparedNotes: string,
+  ): CreateTaskInput => ({
     title: title.trim(),
-    ...(notes ? { notes } : {}),
+    ...(preparedNotes ? { notes: preparedNotes } : {}),
     projectId: projectId ?? null,
     parentTaskId: parentTaskId ?? null,
     createdByMemberId: currentMemberId,
@@ -73,7 +78,10 @@ export function CaptureForm({
     setSaving(true);
     setError(null);
     try {
-      const task = await api.createTask(taskInput(needsClarification));
+      const preparedNotes = prepareNotes ? await prepareNotes(notes) : notes;
+      const task = await api.createTask(
+        taskInput(needsClarification, preparedNotes),
+      );
       onCaptured({ kind: "task", task, needsClarification });
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
@@ -87,9 +95,10 @@ export function CaptureForm({
     setSaving(true);
     setError(null);
     try {
+      const preparedNotes = prepareNotes ? await prepareNotes(notes) : notes;
       const project = await api.createProject({
         title: title.trim(),
-        ...(notes ? { notes } : {}),
+        ...(preparedNotes ? { notes: preparedNotes } : {}),
         status: "backlog",
         ownerMemberId: currentMemberId,
         ...(showDueDate ? { dueDate } : {}),

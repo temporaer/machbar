@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Project, Task } from "@machbar/shared";
 import { useNavigate } from "react-router-dom";
 import { api, type ProjectWithActions } from "../lib/api";
@@ -29,6 +29,15 @@ import {
 } from "../lib/errorMessage";
 import { parseGoogleCalendarShare } from "../lib/googleCalendarShare";
 import { formatExactLocalDate } from "../lib/relativeDate";
+import {
+  deletePendingShareTarget,
+  readPendingShareTarget,
+} from "../lib/pendingShareTarget";
+import {
+  paperlessAttachmentBlock,
+  uploadPaperlessFile,
+  type UploadedPaperlessAttachment,
+} from "../lib/paperlessAttachments";
 
 interface ShareOption {
   key: string;
@@ -122,19 +131,61 @@ function TargetRows({
 export function SharePage() {
   const strings = useStrings();
   const navigate = useNavigate();
-  const [incoming] = useState(() => parseWebShareTarget(window.location.search));
-  const appendBlock = useMemo(() => shareTargetToTextBlock(incoming), [incoming]);
+  const [pendingId] = useState(
+    () => new URLSearchParams(window.location.search).get("shareId"),
+  );
+  const [shareError] = useState(
+    () => new URLSearchParams(window.location.search).get("shareError"),
+  );
+  const [incoming, setIncoming] = useState<WebShareTarget | null>(() =>
+    pendingId ? null : parseWebShareTarget(window.location.search),
+  );
+  const [pendingError, setPendingError] = useState<string | null>(() =>
+    shareError ? strings.sharedContentUnavailable : null,
+  );
 
   useEffect(() => {
+    if (pendingId) {
+      readPendingShareTarget(pendingId)
+        .then((target) => {
+          if (target) setIncoming(target);
+          else setPendingError(strings.noSharedContent);
+        })
+        .catch((cause: unknown) =>
+          setPendingError(localizedErrorMessage(cause, strings)),
+        );
+      return;
+    }
     if (!window.location.search) return;
     window.history.replaceState(
       null,
       "",
       `${window.location.pathname}${window.location.hash}`,
     );
-  }, []);
+  }, [pendingId, shareError, strings]);
 
-  if (!appendBlock) {
+  if (pendingError) {
+    return (
+      <div className="share-page stack">
+        <h1>{strings.shareWithMachbar}</h1>
+        <div className="card stack" role="alert">
+          <p>{pendingError}</p>
+          <button
+            type="button"
+            className="btn btn-primary btn-block"
+            onClick={() => navigate("/today")}
+          >
+            {strings.toMachbar}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!incoming) return <LoadingState />;
+
+  const appendBlock = shareTargetToTextBlock(incoming);
+
+  if (!appendBlock && incoming.files.length === 0) {
     return (
       <div className="share-page stack">
         <h1>{strings.shareWithMachbar}</h1>
@@ -152,10 +203,16 @@ export function SharePage() {
     );
   }
 
-  return <SharePageContent incoming={incoming} />;
+  return <SharePageContent incoming={incoming} pendingId={pendingId} />;
 }
 
-function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
+function SharePageContent({
+  incoming,
+  pendingId,
+}: {
+  incoming: WebShareTarget;
+  pendingId: string | null;
+}) {
   const strings = useStrings();
   const { locale } = useLocale();
   const navigate = useNavigate();
@@ -180,6 +237,9 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState<CompletedShare | null>(null);
   const [pendingConflict, setPendingConflict] = useState<ShareOption | null>(null);
+  const attachmentUploads = useRef(
+    new Map<number, Promise<UploadedPaperlessAttachment>>(),
+  );
 
   const projectsState = useAsync(() => api.getProjects(), []);
   const tasksState = useAsync(() => api.searchTasks({}), []);
@@ -246,7 +306,40 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
     bump();
     setCompleted({ kind: option.kind, id: option.id, title: option.title });
     setPendingConflict(null);
+    clearPendingShare();
   };
+
+  const clearPendingShare = () => {
+    if (!pendingId) return;
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.hash}`,
+    );
+    void deletePendingShareTarget(pendingId).catch((cause: unknown) => {
+      console.error("Could not remove the completed pending share.", cause);
+    });
+  };
+
+  const resolveAttachmentBlock = async () => {
+    const uploads = await Promise.all(
+      incoming.files.map((file, index) => {
+        let upload = attachmentUploads.current.get(index);
+        if (!upload) {
+          upload = uploadPaperlessFile(file).catch((cause: unknown) => {
+            attachmentUploads.current.delete(index);
+            throw cause;
+          });
+          attachmentUploads.current.set(index, upload);
+        }
+        return upload;
+      }),
+    );
+    return paperlessAttachmentBlock(uploads);
+  };
+
+  const resolveAppendBlock = async () =>
+    appendTextBlock(appendBlock, await resolveAttachmentBlock());
 
   const reloadTargets = () => {
     projectsState.reload();
@@ -258,13 +351,14 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
     option: ShareOption,
     deadlineAction: "append" | "calendar",
   ) => {
-    if (!appendBlock || busyKey) return;
+    if (busyKey) return;
     setBusyKey(option.key);
     setError(null);
     try {
+      const resolvedBlock = await resolveAppendBlock();
       if (deadlineAction === "calendar" && calendarDueDate) {
         const patch = {
-          notes: appendTextBlock(option.notes, appendBlock),
+          notes: appendTextBlock(option.notes, resolvedBlock),
           dueDate: calendarDueDate,
           expectedRevision: option.revision,
         };
@@ -274,9 +368,9 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
           await api.updateProject(option.id, patch);
         }
       } else if (option.kind === "task") {
-        await api.appendTaskNotes(option.id, appendBlock);
+        await api.appendTaskNotes(option.id, resolvedBlock);
       } else {
-        await api.appendProjectNotes(option.id, appendBlock);
+        await api.appendProjectNotes(option.id, resolvedBlock);
       }
       completeShare(option);
     } catch (cause) {
@@ -312,6 +406,7 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
         : { kind: "project", id: result.project.id, title: result.project.title },
     );
     setCaptureOpen(false);
+    clearPendingShare();
   };
 
   if (completed) {
@@ -355,6 +450,9 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
           </p>
         ) : null}
         {captureDraft.notes ? <p>{captureDraft.notes}</p> : null}
+        {incoming.files.length > 0 ? (
+          <p>{strings.sharedAttachments(incoming.files.length)}</p>
+        ) : null}
       </section>
 
       {pendingConflict && formattedCalendarDueDate ? (
@@ -396,6 +494,9 @@ function SharePageContent({ incoming }: { incoming: WebShareTarget }) {
             initialDueDate={calendarDueDate}
             showNotes
             showDueDate={calendarDueDate !== null}
+            prepareNotes={async (notes) =>
+              appendTextBlock(notes, await resolveAttachmentBlock())
+            }
             onCancel={() => setCaptureOpen(false)}
             onCaptured={completeCapture}
           />

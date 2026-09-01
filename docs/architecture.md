@@ -23,7 +23,7 @@ machbar/                         ← npm workspace root
 | Package | Role | External surface |
 |---------|------|-----------------|
 | `@machbar/shared` | Domain types, status/inheritance enums, i18n strings | Imported by both `api` and `web`; no runtime deps |
-| `@machbar/api` | REST API + static file serving + SQLite access | `PORT` / HTTP; reads `DATA_DIR` from the file system |
+| `@machbar/api` | REST API + static file serving + SQLite access | `PORT` / HTTP; reads `DATA_DIR` and optionally calls Paperless-ngx |
 | `@machbar/web` | React SPA | Built at compile time; served as static assets by the API |
 
 The API serves the compiled frontend from `apps/web/dist/` as static files, so **a single process/port handles both the API and the UI** in production.
@@ -52,6 +52,10 @@ Project ──── Task ──── SubTask (Task.parentTaskId)
   stores context, constraints, links, phone numbers, decisions, and
   background. `project_acceptance_criteria` stores structured, individually
   checkable, position-ordered completion rows. Neither replaces the other.
+- **Attachments remain notes, not database entities.** A Markdown target such
+  as `paperless:4711` is an opaque reference to a document stored by the
+  optional Paperless-ngx integration. Machbar stores no attachment bytes or
+  authenticated Paperless URL.
 - **Tasks** belong to at most one project and at most one parent task (forming
   a tree of arbitrary depth). Each task carries optional household effort
   (`S | M | L | XL`); effort guides splitting and sorting only and never
@@ -660,6 +664,29 @@ in plain text. The same sheet updates `ExternalWait.revisitDate` and can
 explicitly end the wait. Ending it removes the external-wait row and its
 revisit while preserving `Task.scheduledDate`. The sheet owns only these
 drafts and delegates execution to `useTaskActions.followUpExternalWait`.
+
+### Paperless-backed Markdown attachments
+
+`apps/api/src/integrations/paperless/` is the only code that knows Paperless
+authentication, generated OpenAPI response shapes, or upstream paths. Focused
+Fastify routes under `/api/integrations/paperless/documents` expose upload,
+search, thumbnail, preview, and download through Machbar's existing session and
+Origin protection. `PAPERLESS_URL` and `PAPERLESS_API_TOKEN` are optional as a
+pair; ordinary task/project behavior has no Paperless dependency.
+
+`apps/web/src/lib/paperlessAttachments.ts` is the canonical conversion from a
+browser `File` or existing Paperless result to Markdown. Images become
+`![name](paperless:id)` and other documents become
+`[name](paperless:id)`. `MarkdownEditor` owns the camera/file/search entry
+points; `MarkdownNotes` maps only valid positive IDs to same-origin Machbar
+binary routes and keeps its existing scheme allowlist for all other links.
+
+The installed PWA's POST share target is deliberately separate from API upload.
+`apps/web/public/sw.js` stages title, text, URL, and files in IndexedDB, then
+opens the existing `SharePage` with an opaque pending ID. The ID remains in the
+OIDC `returnTo` URL, and `pendingShareTarget.ts` removes the staged payload only
+after SharePage has created or updated its selected destination. The service
+worker never forwards the operating-system POST or bypasses API authentication.
 
 ---
 

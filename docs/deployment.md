@@ -127,12 +127,39 @@ With Compose, obtain the generated container name with `docker compose ps`.
 | `VAPID_PUBLIC_KEY` | unset | Public VAPID key exposed to browsers when Web Push is enabled |
 | `VAPID_PRIVATE_KEY` | unset | Private VAPID signing key; keep it only in deployment secrets or the uncommitted `.env` |
 | `VAPID_SUBJECT` | unset | HTTPS URL or `mailto:` contact identifying the Push sender |
+| `PAPERLESS_URL` | unset | HTTPS base URL of the optional Paperless-ngx instance |
+| `PAPERLESS_API_TOKEN` | unset | Server-only Paperless API token; configure together with `PAPERLESS_URL` |
 
 The application treats a partial OIDC configuration as a startup error.
 Production refuses to start when OIDC is completely unset unless
 `ALLOW_UNAUTHENTICATED=true` explicitly enables unauthenticated mode.
 Web Push is optional, but a partial VAPID configuration is also a startup
-error.
+error. Paperless is optional as well; setting only its URL or only its token is
+a startup error.
+
+## Paperless-ngx attachments
+
+Configure both values to enable image and document attachments:
+
+```dotenv
+PAPERLESS_URL=https://paperless.example.com
+PAPERLESS_API_TOKEN=replace-with-a-dedicated-api-token
+```
+
+The token is used only by the Machbar server. Browsers upload through
+authenticated same-origin Machbar routes and never receive the token or an
+authenticated Paperless URL. Paperless physically stores and processes every
+file; task and project notes contain only stable `paperless:<document-id>`
+Markdown references.
+
+Machbar requests Paperless API version 10 explicitly and automatically retries
+with the compatible version 9 contract when an older server rejects version 10.
+
+Once configured, every Markdown notes editor can capture a photo with the
+device's native camera flow, choose an image/file, or search existing Paperless
+documents. Installed Android PWAs can also receive files through the system
+share sheet. Incoming files are staged locally until sign-in and destination
+selection complete, then uploaded with a 25 MB per-file limit.
 
 ## Web Push notifications
 

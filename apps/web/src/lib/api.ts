@@ -10,6 +10,7 @@ import type {
   InheritanceMode,
   Member,
   MoreCounts,
+  PaperlessDocumentSummary,
   Project,
   ProjectActivationReadiness,
   ProjectAgendaEntry,
@@ -87,12 +88,22 @@ export class ApiError extends Error {
  * explicitly supplied by the caller (via `init.headers`) still wins, since it
  * is spread in after this default.
  */
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export type ApiResponseType = "json" | "blob";
+
+export async function request<T>(
+  path: string,
+  init?: RequestInit,
+  responseType: ApiResponseType = "json",
+): Promise<T> {
   const url = `${API_ROOT}${path}`;
+  const isFormData =
+    typeof FormData !== "undefined" && init?.body instanceof FormData;
   const res = await fetch(url, {
     ...init,
     headers: {
-      ...(init?.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(init?.body !== undefined && !isFormData
+        ? { "Content-Type": "application/json" }
+        : {}),
       ...selectedActorHeader(init?.method),
       ...clientHeader(init?.method),
       ...(init?.headers ?? {}),
@@ -116,6 +127,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(res.status, message || "Request failed", code, details);
   }
   if (res.status === 204) return undefined as T;
+  if (responseType === "blob") return (await res.blob()) as T;
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
 }
@@ -340,6 +352,20 @@ export type AgendaScope = "mine" | "all";
 
 export type { ProjectAgendaEntry };
 
+const paperlessDocumentsPath = "/integrations/paperless/documents";
+
+export function paperlessDocumentThumbnailUrl(id: number): string {
+  return `${API_ROOT}${paperlessDocumentsPath}/${id}/thumbnail`;
+}
+
+export function paperlessDocumentPreviewUrl(id: number): string {
+  return `${API_ROOT}${paperlessDocumentsPath}/${id}/preview`;
+}
+
+export function paperlessDocumentDownloadUrl(id: number): string {
+  return `${API_ROOT}${paperlessDocumentsPath}/${id}/download`;
+}
+
 export const api = {
   getAuthStatus: () => request<AuthStatus>("/auth/status"),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
@@ -359,6 +385,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ endpoint }),
     }),
+  uploadPaperlessDocument: (file: File) => {
+    const body = new FormData();
+    body.append("document", file, file.name);
+    return request<PaperlessDocumentSummary>(paperlessDocumentsPath, {
+      method: "POST",
+      body,
+    });
+  },
+  searchPaperlessDocuments: (search: string) =>
+    request<PaperlessDocumentSummary[]>(
+      `${paperlessDocumentsPath}${query({ query: search })}`,
+    ),
+  getPaperlessDocumentPreview: (id: number) =>
+    request<Blob>(`${paperlessDocumentsPath}/${id}/preview`, undefined, "blob"),
 
   getMembers: () => request<Member[]>("/members"),
   createMember: (input: CreateMemberInput) =>

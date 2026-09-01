@@ -188,10 +188,16 @@ available through visible buttons, sheets, and keyboard-accessible controls.
 
 Machbar participates in both directions:
 
-- **Share into Machbar:** receive a title, text, and URL; create a task or
-  project, or append the material to existing notes.
+- **Share into Machbar:** receive a title, text, URL, images, and files; create
+  a task or project, or append the material to existing notes. File shares use
+  the same destination choices as text shares and survive sign-in.
 - **Share from Machbar:** send readable task/project text and a deep link
   through Web Share, with a clipboard fallback.
 
 Deep-link recipients still need network and authentication access to the same
 Machbar deployment.
+
+When the optional Paperless-ngx integration is configured, the Markdown editor
+can capture a phone photo, choose an image or file, or reference an existing
+Paperless document. Paperless stores the bytes; Machbar notes contain only
+stable `paperless:<id>` references.

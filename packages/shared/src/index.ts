@@ -119,6 +119,15 @@ export type ApiErrorCode =
   | "oidc_not_configured"
   | "oidc_provider_error"
   | "oidc_username_ambiguous"
+  | "paperless_authentication_failed"
+  | "paperless_document_not_found"
+  | "paperless_file_too_large"
+  | "paperless_not_configured"
+  | "paperless_processing_timeout"
+  | "paperless_query_invalid"
+  | "paperless_response_invalid"
+  | "paperless_unavailable"
+  | "paperless_upload_rejected"
   | "project_driver_locked"
   | "project_driver_required"
   | "project_activation_not_ready"
@@ -169,6 +178,13 @@ export interface ApiErrorPayload {
 
 export interface ApiErrorResponse {
   error: ApiErrorPayload;
+}
+
+export interface PaperlessDocumentSummary {
+  id: number;
+  title: string;
+  originalFileName: string;
+  mimeType: string | null;
 }
 
 export interface ActivityEventMetadata {

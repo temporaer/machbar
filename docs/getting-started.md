@@ -84,7 +84,8 @@ prior knowledge of GTD, org-mode, or Scrum.
 
 Use the browser’s install action to add Machbar to the home screen. In a
 supported Android browser, installed Machbar is also available as a target in
-the system share sheet for incoming text and URLs.
+the system share sheet for incoming text, URLs, images, and files. File sharing
+requires the optional [Paperless-ngx configuration](deployment.md#paperless-ngx-attachments).
 
 PWA installation does not make the app offline-capable. The browser must still
 reach the Machbar server.

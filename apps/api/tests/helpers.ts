@@ -11,6 +11,8 @@ import type { OidcProvider } from "../src/auth/oidcClient.js";
 import type { ChangeNotifier } from "../src/changeNotifier.js";
 import type { VapidConfig } from "../src/env.js";
 import type { PushTransport } from "../src/notifications/delivery.js";
+import type { PaperlessConfig } from "../src/env.js";
+import type { PaperlessClient } from "../src/paperless/client.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -28,6 +30,8 @@ export function createTestContext(options?: {
   changeNotifier?: ChangeNotifier;
   push?: VapidConfig;
   pushTransport?: PushTransport;
+  paperless?: PaperlessConfig;
+  paperlessClient?: PaperlessClient;
 }): TestContext {
   const handle = openDb(":memory:");
   runMigrations(handle.db);
@@ -45,6 +49,7 @@ export function createTestContext(options?: {
     webDistDir: path.join(__dirname, "__no_web_dist__"),
     oidc: options?.oidc ?? null,
     push: options?.push ?? null,
+    paperless: options?.paperless ?? null,
   };
   const app = buildApp({
     db: handle.db,
@@ -53,6 +58,7 @@ export function createTestContext(options?: {
     oidcProvider: options?.oidcProvider,
     changeNotifier: options?.changeNotifier,
     pushTransport: options?.pushTransport,
+    paperlessClient: options?.paperlessClient,
   });
   return { app, handle };
 }

@@ -30,7 +30,7 @@ function dateCandidates(line: string): string[] {
 }
 
 export function parseGoogleCalendarShare(
-  target: WebShareTarget,
+  target: Pick<WebShareTarget, "title" | "text" | "url">,
   options: {
     locale?: Locale;
     referenceDate?: Date;

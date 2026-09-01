@@ -133,6 +133,53 @@ describe("api request() Content-Type handling", () => {
     expect(headersOf(fetchMock)).toMatchObject({ "Content-Type": "application/json" });
   });
 
+  it("lets the browser set the multipart boundary for Paperless uploads", async () => {
+    const fetchMock = mockFetchOnce({
+      status: 201,
+      text: async () =>
+        JSON.stringify({
+          id: 17,
+          title: "Photo",
+          originalFileName: "photo.jpg",
+          mimeType: "image/jpeg",
+        }),
+    });
+    const file = new File(["photo"], "photo.jpg", { type: "image/jpeg" });
+
+    await api.uploadPaperlessDocument(file);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("document")).toEqual(file);
+    expect(headersOf(fetchMock)).not.toHaveProperty("Content-Type");
+  });
+
+  it("uses the Paperless document collection route for search", async () => {
+    const fetchMock = mockFetchOnce({
+      status: 200,
+      text: async () => "[]",
+    });
+
+    await api.searchPaperlessDocuments("rent & utilities");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/integrations/paperless/documents?query=rent+%26+utilities",
+    );
+  });
+
+  it("can return a binary Paperless response", async () => {
+    const blob = new Blob(["preview"], { type: "application/pdf" });
+    const fetchMock = mockFetchOnce({
+      status: 200,
+      blob: async () => blob,
+    });
+
+    await expect(api.getPaperlessDocumentPreview(17)).resolves.toBe(blob);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/api/integrations/paperless/documents/17/preview",
+    );
+  });
+
   it("uses dedicated external-wait endpoints with revision-safe JSON bodies", async () => {
     const putFetch = mockFetchOnce();
     await api.setExternalWait(9, {

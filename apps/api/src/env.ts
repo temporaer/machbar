@@ -11,6 +11,7 @@ export interface Env {
   webDistDir: string;
   oidc: OidcConfig | null;
   push: VapidConfig | null;
+  paperless: PaperlessConfig | null;
 }
 
 export interface OidcConfig {
@@ -25,6 +26,11 @@ export interface VapidConfig {
   publicKey: string;
   privateKey: string;
   subject: string;
+}
+
+export interface PaperlessConfig {
+  baseUrl: string;
+  apiToken: string;
 }
 
 function normalizeBasePath(input: string | undefined): string {
@@ -109,6 +115,21 @@ function loadVapidConfig(source: NodeJS.ProcessEnv): VapidConfig | null {
   };
 }
 
+function loadPaperlessConfig(source: NodeJS.ProcessEnv): PaperlessConfig | null {
+  const required = ["PAPERLESS_URL", "PAPERLESS_API_TOKEN"] as const;
+  const configured = required.filter((key) => source[key]?.trim());
+  if (configured.length === 0) return null;
+  if (configured.length !== required.length) {
+    const missing = required.filter((key) => !source[key]?.trim()).join(", ");
+    throw new Error(`Paperless configuration is incomplete. Missing: ${missing}.`);
+  }
+
+  return {
+    baseUrl: parseHttpsUrl("PAPERLESS_URL", source.PAPERLESS_URL!),
+    apiToken: source.PAPERLESS_API_TOKEN!.trim(),
+  };
+}
+
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const port = Number.parseInt(source.PORT ?? "3000", 10);
   const host = source.HOST ?? "0.0.0.0";
@@ -122,6 +143,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   );
   const oidc = loadOidcConfig(source);
   const push = loadVapidConfig(source);
+  const paperless = loadPaperlessConfig(source);
   if (
     (source.NODE_ENV ?? "development") === "production" &&
     oidc === null &&
@@ -143,5 +165,6 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     webDistDir,
     oidc,
     push,
+    paperless,
   };
 }

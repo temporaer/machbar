@@ -6,6 +6,10 @@ import { SharePage } from "./SharePage";
 import { api } from "../lib/api";
 import { RefreshProvider } from "../lib/refresh";
 import { makeProject, makeTask } from "../test/fixtures";
+import {
+  deletePendingShareTarget,
+  readPendingShareTarget,
+} from "../lib/pendingShareTarget";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -18,7 +22,15 @@ vi.mock("../lib/api", () => ({
     updateProject: vi.fn(),
     createTask: vi.fn(),
     createProject: vi.fn(),
+    uploadPaperlessDocument: vi.fn(),
   },
+  paperlessDocumentThumbnailUrl: (id: number) =>
+    `/api/integrations/paperless/documents/${id}/thumbnail`,
+}));
+
+vi.mock("../lib/pendingShareTarget", () => ({
+  readPendingShareTarget: vi.fn(),
+  deletePendingShareTarget: vi.fn(),
 }));
 
 vi.mock("../lib/identity", () => ({
@@ -26,6 +38,8 @@ vi.mock("../lib/identity", () => ({
 }));
 
 const mockedApi = vi.mocked(api, true);
+const mockedReadPendingShareTarget = vi.mocked(readPendingShareTarget);
+const mockedDeletePendingShareTarget = vi.mocked(deletePendingShareTarget);
 
 const emptyAgenda = {
   projects: [],
@@ -55,6 +69,7 @@ describe("SharePage", () => {
     mockedApi.getProjects.mockResolvedValue([]);
     mockedApi.searchTasks.mockResolvedValue([]);
     mockedApi.getAgenda.mockResolvedValue(emptyAgenda);
+    mockedDeletePendingShareTarget.mockResolvedValue();
     window.history.replaceState(null, "", "/");
   });
 
@@ -82,6 +97,22 @@ describe("SharePage", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Zu Machbar" })).toBeInTheDocument();
     expect(screen.queryByText("+ Neue Aufgabe")).not.toBeInTheDocument();
+  });
+
+  it("shows a recoverable message when the service worker could not stage files", () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/?shareError=storage#/share",
+    );
+    renderPage();
+
+    expect(
+      screen.getByText(
+        "Der geteilte Inhalt konnte auf diesem Gerät nicht zwischengespeichert werden.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Zu Machbar" })).toBeInTheDocument();
   });
 
   it("searches tasks and appends the incoming block immediately", async () => {
@@ -325,5 +356,130 @@ describe("SharePage", () => {
       expect(mockedApi.searchTasks).toHaveBeenCalledTimes(2);
       expect(mockedApi.getAgenda).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("loads a mixed multi-file POST share and appends all references to an existing task", async () => {
+    const task = makeTask({ id: 8, title: "Belege" });
+    const files = [
+      new File(["image"], "receipt.jpg", { type: "image/jpeg" }),
+      new File(["pdf"], "manual.pdf", { type: "application/pdf" }),
+    ];
+    mockedReadPendingShareTarget.mockResolvedValue({
+      title: "Unterlagen",
+      text: "Bitte ablegen",
+      url: "",
+      files,
+    });
+    mockedApi.searchTasks.mockResolvedValue([task]);
+    mockedApi.uploadPaperlessDocument
+      .mockResolvedValueOnce({
+        id: 41,
+        title: "receipt",
+        originalFileName: "receipt.jpg",
+        mimeType: "image/jpeg",
+      })
+      .mockResolvedValueOnce({
+        id: 42,
+        title: "manual",
+        originalFileName: "manual.pdf",
+        mimeType: "application/pdf",
+      });
+    mockedApi.appendTaskNotes.mockResolvedValue(task);
+    window.history.replaceState(null, "", "/?shareId=pending-1#/share");
+    renderPage();
+
+    expect(await screen.findByText("2 geteilte Anhänge")).toBeInTheDocument();
+    await userEvent.type(
+      screen.getByLabelText("Aufgaben und Projekte durchsuchen"),
+      "Belege",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /Belege/ }));
+
+    await waitFor(() =>
+      expect(mockedApi.appendTaskNotes).toHaveBeenCalledWith(
+        8,
+        "Unterlagen\n\nBitte ablegen\n\n![receipt.jpg](paperless:41)\n\n[manual.pdf](paperless:42)",
+      ),
+    );
+    expect(mockedDeletePendingShareTarget).toHaveBeenCalledWith("pending-1");
+    expect(window.location.search).toBe("");
+  });
+
+  it("uploads pending files before the reused CaptureForm creates a task", async () => {
+    const file = new File(["pdf"], "receipt.pdf", {
+      type: "application/pdf",
+    });
+    mockedReadPendingShareTarget.mockResolvedValue({
+      title: "Beleg",
+      text: "",
+      url: "",
+      files: [file],
+    });
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 51,
+      title: "receipt",
+      originalFileName: "receipt.pdf",
+      mimeType: "application/pdf",
+    });
+    const createdTask = makeTask({ id: 51, title: "Beleg" });
+    mockedApi.createTask.mockResolvedValue(createdTask);
+    window.history.replaceState(null, "", "/?shareId=pending-2#/share");
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "+ Neue Aufgabe" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Beleg",
+          notes: "[receipt.pdf](paperless:51)",
+        }),
+      ),
+    );
+    expect(mockedDeletePendingShareTarget).toHaveBeenCalledWith("pending-2");
+  });
+
+  it("reuses successful uploads when appending is retried", async () => {
+    const task = makeTask({ id: 8, title: "Belege" });
+    const file = new File(["pdf"], "receipt.pdf", {
+      type: "application/pdf",
+    });
+    mockedReadPendingShareTarget.mockResolvedValue({
+      title: "",
+      text: "",
+      url: "",
+      files: [file],
+    });
+    mockedApi.searchTasks.mockResolvedValue([task]);
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 61,
+      title: "receipt",
+      originalFileName: "receipt.pdf",
+      mimeType: "application/pdf",
+    });
+    mockedApi.appendTaskNotes
+      .mockRejectedValueOnce(new Error("Temporary append failure"))
+      .mockResolvedValueOnce(task);
+    window.history.replaceState(null, "", "/?shareId=pending-3#/share");
+    renderPage();
+
+    await userEvent.type(
+      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
+      "Belege",
+    );
+    const destination = screen.getByRole("button", { name: /Belege/ });
+    await userEvent.click(destination);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Temporary append failure",
+    );
+    await userEvent.click(destination);
+
+    await waitFor(() =>
+      expect(mockedApi.appendTaskNotes).toHaveBeenCalledTimes(2),
+    );
+    expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledTimes(1);
   });
 });
