@@ -158,6 +158,117 @@ describe("PaperlessClient", () => {
       expect(calls).toBe(3);
     });
 
+    it("normalizes an API v9 task array after version fallback", async () => {
+      const acceptedVersions: string[] = [];
+      const client = createPaperlessClient(config, {
+        fetch: fakeFetch((request) => {
+          const accept = request.headers.get("accept") ?? "";
+          acceptedVersions.push(accept);
+          if (accept.endsWith("version=10")) {
+            return jsonResponse(406, {
+              detail: "Invalid version in Accept header.",
+            });
+          }
+          return jsonResponse(200, [
+            {
+              id: 1,
+              task_id: "unrelated-task",
+              status: "SUCCESS",
+              acknowledged: false,
+              related_document: "12",
+            },
+            {
+              id: 2,
+              task_id: "task-1",
+              status: "SUCCESS",
+              acknowledged: false,
+              related_document: "263",
+              result: "Success. New document id 263 created",
+            },
+          ]);
+        }),
+      });
+
+      await expect(client.awaitDocumentId("task-1")).resolves.toBe(263);
+      expect(acceptedVersions).toEqual([
+        "application/json; version=10",
+        "application/json; version=9",
+      ]);
+    });
+
+    it("keeps polling a pending API v9 task", async () => {
+      let calls = 0;
+      const client = createPaperlessClient(config, {
+        fetch: fakeFetch(() => {
+          calls += 1;
+          return jsonResponse(200, [
+            {
+              id: 1,
+              task_id: "task-1",
+              status: calls === 1 ? "STARTED" : "SUCCESS",
+              acknowledged: false,
+              related_document: calls === 1 ? null : "42",
+            },
+          ]);
+        }),
+        sleep: async () => {},
+      });
+
+      await expect(client.awaitDocumentId("task-1")).resolves.toBe(42);
+      expect(calls).toBe(2);
+    });
+
+    it("maps an API v9 failure without waiting for timeout", async () => {
+      const client = createPaperlessClient(config, {
+        fetch: fakeFetch(() =>
+          jsonResponse(200, [
+            {
+              id: 1,
+              task_id: "task-1",
+              status: "FAILURE",
+              acknowledged: false,
+              related_document: null,
+              result: "The document is a duplicate.",
+            },
+          ]),
+        ),
+      });
+
+      await expect(client.awaitDocumentId("task-1")).rejects.toMatchObject({
+        code: "paperless_upload_rejected",
+        details: {
+          status: "failure",
+          result: "The document is a duplicate.",
+        },
+      });
+    });
+
+    it("rejects malformed task list and status responses", async () => {
+      const malformedList = createPaperlessClient(config, {
+        fetch: fakeFetch(() => jsonResponse(200, { unexpected: [] })),
+      });
+      await expect(
+        malformedList.awaitDocumentId("task-1"),
+      ).rejects.toMatchObject({ code: "paperless_response_invalid" });
+
+      const malformedStatus = createPaperlessClient(config, {
+        fetch: fakeFetch(() =>
+          jsonResponse(200, [
+            {
+              id: 1,
+              task_id: "task-1",
+              status: "DONE",
+              acknowledged: false,
+              related_document: "42",
+            },
+          ]),
+        ),
+      });
+      await expect(
+        malformedStatus.awaitDocumentId("task-1"),
+      ).rejects.toMatchObject({ code: "paperless_response_invalid" });
+    });
+
     it("throws paperless_upload_rejected when the task fails", async () => {
       const client = createPaperlessClient(config, {
         fetch: fakeFetch(() =>

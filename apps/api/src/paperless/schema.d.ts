@@ -172,6 +172,25 @@ export interface components {
             acknowledged: boolean;
             owner?: number | null;
         };
+        /** @description Legacy task shape returned by Paperless API v9. Unlike v10, the list is unpaginated, statuses are uppercase, and the related document is a singular string field. */
+        PaperlessTaskV9: {
+            id: number;
+            /** Format: uuid */
+            task_id: string;
+            task_name?: string;
+            task_file_name?: string;
+            /** Format: date-time */
+            date_created?: string | null;
+            /** Format: date-time */
+            date_done?: string | null;
+            type?: string;
+            /** @enum {string} */
+            status: "PENDING" | "STARTED" | "SUCCESS" | "FAILURE" | "REVOKED";
+            result?: string | null;
+            acknowledged: boolean;
+            related_document?: string | null;
+            owner?: number | null;
+        };
         PaginatedTaskList: {
             count: number;
             next?: string | null;
@@ -266,13 +285,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Paginated task list. */
+            /** @description Task list. API v10 returns the paginated TaskSerializerV10 shape; API v9 returns an unpaginated array using the legacy task fields. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedTaskList"];
+                    "application/json": components["schemas"]["PaginatedTaskList"] | components["schemas"]["PaperlessTaskV9"][];
                 };
             };
         };

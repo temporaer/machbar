@@ -74,6 +74,19 @@ export interface PaperlessClientOptions {
   now?: () => number;
 }
 
+type PaperlessTaskStatus =
+  | "pending"
+  | "started"
+  | "success"
+  | "failure"
+  | "revoked";
+
+interface NormalizedPaperlessTask {
+  status: PaperlessTaskStatus;
+  documentId: number | null;
+  result: unknown;
+}
+
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -97,6 +110,63 @@ function authenticationFailed(): AppError {
 
 function responseInvalid(message: string): AppError {
   return new AppError(502, "paperless_response_invalid", message);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function taskRows(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (isRecord(value) && Array.isArray(value.results)) return value.results;
+  throw responseInvalid("Paperless returned an unexpected task list.");
+}
+
+function taskStatus(value: unknown): PaperlessTaskStatus {
+  if (typeof value !== "string") {
+    throw responseInvalid("Paperless returned a task without a valid status.");
+  }
+  const normalized = value.toLowerCase();
+  if (
+    normalized === "pending" ||
+    normalized === "started" ||
+    normalized === "success" ||
+    normalized === "failure" ||
+    normalized === "revoked"
+  ) {
+    return normalized;
+  }
+  throw responseInvalid("Paperless returned a task without a valid status.");
+}
+
+function documentId(value: unknown): number | null {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : Number.NaN;
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeTask(
+  value: unknown,
+  requestedTaskId: string,
+): NormalizedPaperlessTask | null {
+  const matching = taskRows(value).find(
+    (candidate) =>
+      isRecord(candidate) && candidate.task_id === requestedTaskId,
+  );
+  if (!isRecord(matching)) return null;
+
+  const v10DocumentIds = matching.related_document_ids;
+  return {
+    status: taskStatus(matching.status),
+    documentId: Array.isArray(v10DocumentIds)
+      ? documentId(v10DocumentIds[0])
+      : documentId(matching.related_document),
+    result: matching.result_data ?? matching.result ?? null,
+  };
 }
 
 /** Extracts the `filename` parameter from a `Content-Disposition` header. */
@@ -184,7 +254,7 @@ export function createPaperlessClient(
 
   async function fetchTaskByUuid(
     taskId: string,
-  ): Promise<components["schemas"]["PaperlessTask"] | null> {
+  ): Promise<NormalizedPaperlessTask | null> {
     let result;
     try {
       result = await client.GET("/api/tasks/", {
@@ -199,8 +269,7 @@ export function createPaperlessClient(
     if (!result.response.ok) {
       throw unavailable();
     }
-    const task = result.data?.results?.[0];
-    return task ?? null;
+    return normalizeTask(result.data, taskId);
   }
 
   return {
@@ -256,9 +325,8 @@ export function createPaperlessClient(
         const task = await fetchTaskByUuid(taskId);
         if (task) {
           if (task.status === "success") {
-            const documentId = task.related_document_ids[0];
-            if (typeof documentId === "number" && documentId > 0) {
-              return documentId;
+            if (task.documentId !== null) {
+              return task.documentId;
             }
             throw responseInvalid(
               "Paperless reported a successful upload without a document ID.",
@@ -268,7 +336,7 @@ export function createPaperlessClient(
             throw AppError.badRequest(
               "paperless_upload_rejected",
               "Paperless failed to process the uploaded document.",
-              { status: task.status, result: task.result_data ?? null },
+              { status: task.status, result: task.result },
             );
           }
         }
