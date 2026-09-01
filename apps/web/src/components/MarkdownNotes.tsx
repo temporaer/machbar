@@ -9,6 +9,7 @@ import {
   paperlessDocumentPreviewUrl,
   paperlessDocumentThumbnailUrl,
 } from "../lib/api";
+import { paperlessDocumentId } from "../lib/paperlessAttachments";
 import { useStrings } from "../lib/strings";
 import "./MarkdownNotes.css";
 
@@ -27,7 +28,6 @@ export const markdownUrlSchemes = [
 
 const allowedMarkdownUrlSchemes = new Set<string>(markdownUrlSchemes);
 const schemePattern = /^([a-z][a-z\d+.-]*):/i;
-const paperlessReferencePattern = /^paperless:([1-9]\d*)$/;
 const unsafeCharacterPattern = /[\u0000-\u001f\u007f\s]/;
 const actionableTokenPattern =
   /(?:tel:|sms:)\s*\+?\d[\d ()/-]{5,}\d|mailto:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|\+?\d[\d ()/-]{5,}\d/gi;
@@ -55,13 +55,6 @@ export function transformMarkdownUrl(url: string): string {
 
 function isExternalWebLink(href: string | undefined): boolean {
   return href !== undefined && /^https?:/i.test(href);
-}
-
-function paperlessDocumentId(url: string | undefined): number | null {
-  const match = url?.match(paperlessReferencePattern);
-  if (!match?.[1]) return null;
-  const id = Number(match[1]);
-  return Number.isSafeInteger(id) ? id : null;
 }
 
 function PaperlessImage({ id, alt }: { id: number; alt: string }) {

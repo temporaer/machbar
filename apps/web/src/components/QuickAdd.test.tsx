@@ -17,6 +17,7 @@ vi.mock("../lib/api", () => ({
     updateTask: vi.fn(),
     addCriterion: vi.fn(),
     updateProject: vi.fn(),
+    uploadPaperlessDocument: vi.fn(),
   },
 }));
 
@@ -24,6 +25,7 @@ const mockedApi = vi.mocked(api, true);
 
 async function openCapture() {
   await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
+  await userEvent.click(screen.getByRole("button", { name: "Aufgabe erfassen" }));
   expect(screen.getByText("Nur Titel reicht")).toBeInTheDocument();
 }
 
@@ -208,6 +210,40 @@ describe("QuickAdd", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Netzwerkfehler");
     expect(input).toHaveValue("Nicht verlieren");
+  });
+
+  it("keeps selected material local until capture and reuses a completed upload on retry", async () => {
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 88,
+      title: "receipt",
+      originalFileName: "receipt.jpg",
+      mimeType: "image/jpeg",
+    });
+    mockedApi.createTask
+      .mockRejectedValueOnce(new Error("Create failed"))
+      .mockResolvedValueOnce(makeTask({ id: 88, title: "Receipt" }));
+    renderWithProviders(<QuickAdd />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
+    await userEvent.upload(
+      screen.getByLabelText("Foto aufnehmen"),
+      new File(["image"], "receipt.jpg", { type: "image/jpeg" }),
+    );
+
+    expect(screen.getByText("receipt.jpg")).toBeInTheDocument();
+    expect(mockedApi.uploadPaperlessDocument).not.toHaveBeenCalled();
+    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Receipt");
+    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Create failed");
+    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledTimes(1);
+    expect(mockedApi.createTask).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        notes: "![receipt.jpg](paperless:88)",
+      }),
+    );
   });
 
   it("macht eine neue Machbar-Aufgabe rückgängig", async () => {

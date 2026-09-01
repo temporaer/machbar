@@ -675,11 +675,26 @@ Origin protection. `PAPERLESS_URL` and `PAPERLESS_API_TOKEN` are optional as a
 pair; ordinary task/project behavior has no Paperless dependency.
 
 `apps/web/src/lib/paperlessAttachments.ts` is the canonical conversion from a
-browser `File` or existing Paperless result to Markdown. Images become
-`![name](paperless:id)` and other documents become
-`[name](paperless:id)`. `MarkdownEditor` owns the camera/file/search entry
-points; `MarkdownNotes` maps only valid positive IDs to same-origin Machbar
-binary routes and keeps its existing scheme allowlist for all other links.
+browser `File` or existing Paperless result to Markdown and the canonical
+projection back from Markdown into ordered attachment references. Images become
+`![name](paperless:id)` and other documents become `[name](paperless:id)`.
+The same projection feeds detail attachment strips, attachment-aware notes
+summaries, and the single subdued thumbnail shown by shared task rows. No
+attachment metadata is persisted outside notes.
+
+`MarkdownAttachmentSheet` owns camera/file/search resolution and supports both
+cursor insertion in an authored notes draft and immediate append through
+`useTaskActions`/`useProjectActions`. Once a file upload resolves, a failed
+notes mutation retries the resolved Markdown reference rather than uploading
+the bytes again. `MarkdownNotes` maps only valid positive IDs to same-origin
+Machbar binary routes and keeps its existing scheme allowlist for all other
+links. Thumbnail responses use a short private browser cache; previews and
+downloads remain mediated authenticated routes.
+
+Global material capture starts in `QuickAdd` but keeps the selected browser
+`File` local. `CaptureForm.prepareNotes` uploads immediately before its existing
+task/project create call, so abandoning capture before commit creates no
+Paperless document. Successful uploads are retained across create retries.
 
 The installed PWA's POST share target is deliberately separate from API upload.
 `apps/web/public/sw.js` stages title, text, URL, and files in IndexedDB, then

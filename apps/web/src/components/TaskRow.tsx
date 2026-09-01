@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Task } from "@machbar/shared";
@@ -35,6 +35,11 @@ import { useLocale } from "../lib/locale";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
+import {
+  extractPaperlessReferences,
+  markdownWithoutPaperlessReferences,
+} from "../lib/paperlessAttachments";
+import { TaskRowAttachmentPreview } from "./TaskRowAttachmentPreview";
 
 const LONG_PRESS_MS = 480;
 
@@ -153,6 +158,14 @@ export function TaskRow({
   // state cycle (for example erledigt -> wieder offen).
   const retainedTask = retained.get(taskProp.id);
   const task = retainedTask ?? taskProp;
+  const attachments = useMemo(
+    () => extractPaperlessReferences(task.notes),
+    [task.notes],
+  );
+  const notesWithoutAttachments = useMemo(
+    () => markdownWithoutPaperlessReferences(task.notes),
+    [task.notes],
+  );
   const isRetained = Boolean(retainedTask);
   const statusError = errors[taskProp.id];
   const organizeError = organize?.errors[taskProp.id];
@@ -536,9 +549,16 @@ export function TaskRow({
                 </span>
               ) : null}
             </div>
+            {attachments[0] ? (
+              <TaskRowAttachmentPreview
+                key={attachments[0].id}
+                attachment={attachments[0]}
+                count={attachments.length}
+              />
+            ) : null}
           </button>
-          {task.notes.trim() ? (
-            <MarkdownNotes value={task.notes} className="task-row-notes" />
+          {notesWithoutAttachments ? (
+            <MarkdownNotes value={notesWithoutAttachments} className="task-row-notes" />
           ) : null}
         </div>
         {ownerMember ? (

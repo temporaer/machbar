@@ -201,3 +201,9 @@ When the optional Paperless-ngx integration is configured, the Markdown editor
 can capture a phone photo, choose an image or file, or reference an existing
 Paperless document. Paperless stores the bytes; Machbar notes contain only
 stable `paperless:<id>` references.
+
+The global `+` action also accepts a photo or file before a task/project exists.
+The material remains on the device until the user commits the Capture form.
+Existing tasks and projects expose a paperclip action that appends material
+without first opening notes editing. Detail views show all referenced material
+compactly; task lists show at most the first thumbnail plus an overflow count.
