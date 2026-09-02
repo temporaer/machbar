@@ -5,6 +5,7 @@ import { renderWithProviders } from "../test/testUtils";
 import { QuickAdd } from "./QuickAdd";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
+import { useTaskDetail } from "../lib/taskDetailContext";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -13,7 +14,6 @@ vi.mock("../lib/api", () => ({
     createProject: vi.fn(),
     getProjects: vi.fn(),
     moveTask: vi.fn(),
-    deleteTask: vi.fn(),
     updateTask: vi.fn(),
     addCriterion: vi.fn(),
     updateProject: vi.fn(),
@@ -36,6 +36,11 @@ async function openCapture() {
   await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
   await userEvent.click(screen.getByRole("button", { name: "Aufgabe erfassen" }));
   expect(screen.getByText("Nur Titel reicht")).toBeInTheDocument();
+}
+
+function OpenTaskProbe() {
+  const { openTaskId } = useTaskDetail();
+  return <output data-testid="open-task-id">{openTaskId ?? "none"}</output>;
 }
 
 describe("QuickAdd", () => {
@@ -350,18 +355,24 @@ describe("QuickAdd", () => {
     ).toBeInTheDocument();
   });
 
-  it("macht eine neue Machbar-Aufgabe rückgängig", async () => {
-    mockedApi.createTask.mockResolvedValue(makeTask({ id: 67, title: "Rückgängig" }));
-    mockedApi.deleteTask.mockResolvedValue(undefined);
-    renderWithProviders(<QuickAdd />);
+  it("öffnet die Details der neu angelegten Machbar-Aufgabe", async () => {
+    mockedApi.createTask.mockResolvedValue(makeTask({ id: 67, title: "Details" }));
+    renderWithProviders(
+      <>
+        <QuickAdd />
+        <OpenTaskProbe />
+      </>,
+    );
     await openCapture();
 
-    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Rückgängig");
+    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Details");
     await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
     await screen.findByText("In Heute hinzugefügt");
-    await userEvent.click(screen.getByRole("button", { name: "Rückgängig" }));
+    expect(screen.queryByRole("button", { name: "Rückgängig" })).not.toBeInTheDocument();
 
-    await waitFor(() => expect(mockedApi.deleteTask).toHaveBeenCalledWith(67));
+    await userEvent.click(screen.getByRole("button", { name: "Details öffnen" }));
+
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("67");
     expect(screen.queryByText("In Heute hinzugefügt")).not.toBeInTheDocument();
   });
 });
