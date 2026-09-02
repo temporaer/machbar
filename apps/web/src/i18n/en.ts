@@ -354,7 +354,7 @@ const en = {
   filedInInbox: "Added to Inbox",
   addedToToday: "Added to Today",
   changeOwner: "Change owner",
-  undo: "Undo",
+  openTaskDetails: "Open details",
   projectBreakdownTitle: "Plan the project",
   nextStepQuestion: "What is the next step?",
   addNextAction: "Add next step",

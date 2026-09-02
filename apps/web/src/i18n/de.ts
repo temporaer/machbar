@@ -340,7 +340,7 @@ const extra = {
   filedInInbox: "In Eingang abgelegt",
   addedToToday: "In Heute hinzugefügt",
   changeOwner: "Zuständig ändern",
-  undo: "Rückgängig",
+  openTaskDetails: "Details öffnen",
   projectBreakdownTitle: "Projekt weiterdenken",
   nextStepQuestion: "Was ist der nächste Schritt?",
   addNextAction: "Nächsten Schritt hinzufügen",

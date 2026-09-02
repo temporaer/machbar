@@ -21,6 +21,7 @@ import {
 import { IconActionGlyph } from "./IconActionButton";
 import { ImageCropSheet } from "./ImageCropSheet";
 import { CameraCaptureSheet } from "./CameraCaptureSheet";
+import { useTaskDetail } from "../lib/taskDetailContext";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -52,7 +53,6 @@ export function QuickAdd({
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadedAttachmentRef =
     useRef<Promise<UploadedPaperlessAttachment> | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [createdTask, setCreatedTask] = useState<Awaited<ReturnType<typeof api.createTask>> | null>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [projects, setProjects] = useState<ProjectWithActions[] | null>(null);
@@ -65,6 +65,7 @@ export function QuickAdd({
   const { bump } = useRefresh();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
+  const { open: openTaskDetail } = useTaskDetail();
 
   useEffect(() => {
     if (autoOpen) {
@@ -80,7 +81,6 @@ export function QuickAdd({
     setCropFile(null);
     setCameraOpen(false);
     uploadedAttachmentRef.current = null;
-    setError(null);
     if (autoOpen) onAutoOpenClose?.();
   };
 
@@ -146,19 +146,11 @@ export function QuickAdd({
     }
   };
 
-  const undo = async () => {
-    if (!createdTask || moving) return;
-    setMoving(true);
-    setError(null);
-    try {
-      await api.deleteTask(createdTask.id);
-      bump();
-      setCreatedTask(null);
-    } catch (err) {
-      setError(localizedErrorMessage(err, strings));
-    } finally {
-      setMoving(false);
-    }
+  const openCreatedTaskDetails = () => {
+    if (!createdTask || assigning || moving) return;
+    const taskId = createdTask.id;
+    setCreatedTask(null);
+    openTaskDetail(taskId);
   };
 
   const projectOptions: DestinationOption[] = sortProjectDestinations(
@@ -282,7 +274,6 @@ export function QuickAdd({
       {createdTask ? (
         <section className="capture-correction-toast" role="status" aria-live="polite">
           <strong>{strings.addedToToday}</strong>
-          {error ? <p className="capture-error" role="alert">{error}</p> : null}
           <div className="capture-correction-actions">
             <button type="button" className="btn btn-sm" disabled={assigning || moving} onClick={() => setAssigning(true)}>
               {strings.changeOwner}
@@ -290,8 +281,8 @@ export function QuickAdd({
             <button type="button" className="btn btn-sm" disabled={assigning || moving} onClick={openProjectPicker}>
               {strings.selectProject}
             </button>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={assigning || moving} onClick={() => void undo()}>
-              {strings.undo}
+            <button type="button" className="btn btn-sm btn-ghost" disabled={assigning || moving} onClick={openCreatedTaskDetails}>
+              {strings.openTaskDetails}
             </button>
             <button type="button" className="btn btn-sm btn-ghost" disabled={assigning || moving} onClick={() => setCreatedTask(null)}>
               {strings.close}
