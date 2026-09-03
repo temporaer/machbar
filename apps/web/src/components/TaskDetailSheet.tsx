@@ -64,6 +64,7 @@ import {
 import { appendTextBlock } from "../lib/shareTarget";
 import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
 import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
+import { PhysicalContextPicker } from "./PhysicalContextPicker";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -231,6 +232,13 @@ export function TaskDetailSheet() {
     [openTaskId, task?.revision],
   );
   const { data: tags } = useAsync(() => api.getTags(), []);
+  const { data: homeAssistant } = useAsync(
+    () =>
+      typeof api.getHomeAssistantStatus === "function"
+        ? api.getHomeAssistantStatus()
+        : Promise.resolve(null),
+    [],
+  );
 
   // Resets the drafts (and the dirty-check baseline) whenever a *different*
   // task is opened, or whenever this task's data arrives from the server and
@@ -1239,6 +1247,21 @@ export function TaskDetailSheet() {
             resetKey={task.id}
             className="task-detail-content-fields"
           >
+            {task.effectiveContexts.length > 0 ||
+            homeAssistant?.contexts.some((context) => context.active) ? (
+              <div className="field">
+                <label>{strings.physicalContexts}</label>
+                <PhysicalContextPicker
+                  contexts={homeAssistant?.contexts ?? []}
+                  selected={task.explicitContexts}
+                  inherited={task.inheritedContexts}
+                  mode={task.contextInheritanceMode}
+                  onChange={(mode, contextIds) => {
+                    if (mode) void taskActions.setContexts(task, mode, contextIds);
+                  }}
+                />
+              </div>
+            ) : null}
             <div className="field">
             <label>{strings.effectiveTags}</label>
             <div className="row" style={{ flexWrap: "wrap" }}>

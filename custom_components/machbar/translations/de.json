@@ -1,0 +1,25 @@
+{
+  "title": "Machbar",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit Machbar verbinden",
+        "description": "Gib die öffentliche Adresse deines Machbar-Servers und einen Kopplungscode ein.",
+        "data": {
+          "origin": "Machbar-Ursprungs-URL",
+          "pairing_code": "Kopplungscode"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Gib eine gültige HTTP- oder HTTPS-Ursprungs-URL ohne Pfad ein.",
+      "cannot_connect": "Verbindung zu Machbar fehlgeschlagen.",
+      "invalid_auth": "Machbar hat die Zugangsdaten abgelehnt.",
+      "invalid_pairing": "Der Kopplungscode ist ungültig oder abgelaufen.",
+      "unsupported_version": "Dieser Machbar-Server unterstützt die Protokollversion der Integration nicht."
+    },
+    "abort": {
+      "already_configured": "Diese Machbar-Instanz ist bereits konfiguriert."
+    }
+  }
+}

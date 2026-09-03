@@ -14,7 +14,7 @@ export const projectStatuses = [
 ] as const;
 export const inheritanceModes = ["inherit", "explicit", "none"] as const;
 export const taskSizes = ["S", "M", "L", "XL"] as const;
-export const tagKinds = ["area", "actor", "context", "plain"] as const;
+export const tagKinds = ["area", "actor", "plain"] as const;
 export const tagGroupingModes = ["auto", "pinned", "hidden"] as const;
 export const activityEventKinds = [
   "task_created",
@@ -28,11 +28,13 @@ export const activityEventKinds = [
   "task_external_wait_updated",
   "task_external_wait_resolved",
   "task_tags_changed",
+  "task_contexts_changed",
   "project_created",
   "project_updated",
   "project_deleted",
   "project_status_changed",
   "project_tags_changed",
+  "project_contexts_changed",
   "project_acceptance_criterion_added",
   "project_acceptance_criterion_updated",
   "project_acceptance_criterion_checked",
@@ -102,6 +104,8 @@ export type ApiErrorCode =
   | "external_wait_recurring_forbidden"
   | "external_wait_status_invalid"
   | "internal_error"
+  | "integration_authentication_required"
+  | "integration_token_revoked"
   | "identifier_invalid"
   | "malformed_request"
   | "member_active_projects_conflict"
@@ -128,6 +132,10 @@ export type ApiErrorCode =
   | "paperless_response_invalid"
   | "paperless_unavailable"
   | "paperless_upload_rejected"
+  | "pairing_code_expired"
+  | "pairing_code_invalid"
+  | "pairing_code_used"
+  | "physical_context_not_found"
   | "project_driver_locked"
   | "project_driver_required"
   | "project_activation_not_ready"
@@ -166,7 +174,8 @@ export type ApiErrorCode =
   | "task_sequence_too_short"
   | "task_title_required"
   | "external_wait_reason_required"
-  | "waiting_query_invalid";
+  | "waiting_query_invalid"
+  | "unsupported_protocol_version";
 
 export interface ApiErrorPayload {
   code: ApiErrorCode;
@@ -322,6 +331,26 @@ export interface Tag {
   sortPosition: number | null;
 }
 
+export interface PhysicalContext {
+  id: number;
+  source: "home_assistant";
+  externalId: string;
+  name: string;
+  active: boolean;
+  updatedAt: string;
+}
+
+export type ContextAvailabilityStatus =
+  | "available"
+  | "unavailable"
+  | "unknown";
+
+export interface ContextAvailability {
+  status: ContextAvailabilityStatus;
+  availableNow: boolean;
+  missingContexts: PhysicalContext[];
+}
+
 export interface AcceptanceCriterion {
   id: number;
   projectId: number;
@@ -353,6 +382,7 @@ export interface Project {
   updatedAt: string;
   reviewedAt: string | null;
   tags: Tag[];
+  contexts: PhysicalContext[];
   effectiveTags: Tag[];
   effectiveAreaTags: Tag[];
   primaryAreaTag: Tag | null;
@@ -402,6 +432,7 @@ export interface Task {
   needsClarification: boolean;
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
+  contextInheritanceMode: InheritanceMode;
   createdByMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
@@ -423,9 +454,11 @@ export interface Task {
   effectiveTags: Tag[];
   effectiveAreaTags: Tag[];
   effectiveActorTags: Tag[];
-  effectiveContextTags: Tag[];
   explicitTags: Tag[];
   excludedTagIds: number[];
+  explicitContexts: PhysicalContext[];
+  inheritedContexts: PhysicalContext[];
+  effectiveContexts: PhysicalContext[];
   blocked: boolean;
   executable: boolean;
   nextBlockerAttentionDate: string | null;
@@ -486,9 +519,72 @@ export interface ProjectAgendaEntry {
   project: Project;
   qualification: ProjectAgendaQualification;
   nextAction: Task | null;
+  nextActionContextAvailability: ContextAvailability | null;
   stuck: {
     reason: StuckReason;
   } | null;
+}
+
+export type WaitingReason =
+  | {
+      type: "external";
+      waitingFor: string | null;
+      revisitDate: string | null;
+    }
+  | {
+      type: "context";
+      contexts: PhysicalContext[];
+    };
+
+export interface WaitingEntry {
+  task: Task;
+  reasons: WaitingReason[];
+}
+
+export interface HomeAssistantPerson {
+  externalId: string;
+  name: string;
+  state: "known" | "unknown";
+  contexts: PhysicalContext[];
+  mappedMemberId: number | null;
+  observedAt: string;
+}
+
+export interface HomeAssistantIntegrationStatus {
+  connected: boolean;
+  instanceId: string | null;
+  protocolVersion: number | null;
+  connectedAt: string | null;
+  lastUpdateAt: string | null;
+  stale: boolean;
+  contexts: PhysicalContext[];
+  people: HomeAssistantPerson[];
+}
+
+export interface HomeAssistantPairingCode {
+  code: string;
+  expiresAt: string;
+}
+
+export interface HomeAssistantPairingResponse {
+  token: string;
+  instanceId: string;
+  protocolVersion: 1;
+}
+
+export interface HomeAssistantContextSnapshot {
+  protocolVersion: 1;
+  observedAt: string;
+  contexts: Array<{
+    externalId: string;
+    name: string;
+  }>;
+  people: Array<{
+    externalId: string;
+    name: string;
+    state: "known" | "unknown";
+    contexts: string[];
+  }>;
 }
 
 export interface Agenda {

@@ -1,0 +1,25 @@
+{
+  "title": "Machbar",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Machbar",
+        "description": "Enter the public origin of your Machbar server and a pairing code.",
+        "data": {
+          "origin": "Machbar origin URL",
+          "pairing_code": "Pairing code"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Enter a valid HTTP or HTTPS origin URL without a path.",
+      "cannot_connect": "Unable to connect to Machbar.",
+      "invalid_auth": "Machbar rejected the credentials.",
+      "invalid_pairing": "The pairing code is invalid or expired.",
+      "unsupported_version": "This Machbar server does not support the integration protocol version."
+    },
+    "abort": {
+      "already_configured": "This Machbar instance is already configured."
+    }
+  }
+}

@@ -31,11 +31,13 @@ const activityEventKinds = [
   "task_external_wait_updated",
   "task_external_wait_resolved",
   "task_tags_changed",
+  "task_contexts_changed",
   "project_created",
   "project_updated",
   "project_deleted",
   "project_status_changed",
   "project_tags_changed",
+  "project_contexts_changed",
   "project_acceptance_criterion_added",
   "project_acceptance_criterion_updated",
   "project_acceptance_criterion_checked",
@@ -150,6 +152,32 @@ export const authSessions = sqliteTable(
   (t) => [index("auth_sessions_member_idx").on(t.memberId)],
 );
 
+export const homeAssistantPairingCodes = sqliteTable("home_assistant_pairing_codes", {
+  codeHash: text("code_hash").primaryKey(),
+  expiresAt: text("expires_at").notNull(),
+  consumedAt: text("consumed_at"),
+  createdByMemberId: integer("created_by_member_id").references(() => members.id, {
+    onDelete: "set null",
+  }),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+});
+
+export const homeAssistantIntegrations = sqliteTable(
+  "home_assistant_integrations",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    instanceId: text("instance_id").notNull().unique(),
+    tokenHash: text("token_hash").notNull().unique(),
+    protocolVersion: integer("protocol_version").notNull(),
+    connectedAt: text("connected_at").notNull(),
+    lastUpdateAt: text("last_update_at"),
+    revokedAt: text("revoked_at"),
+  },
+  (t) => [index("home_assistant_integrations_active_idx").on(t.revokedAt)],
+);
+
 export const pushSubscriptions = sqliteTable(
   "push_subscriptions",
   {
@@ -180,6 +208,26 @@ export const tags = sqliteTable("tags", {
   groupingMode: text("grouping_mode").notNull().default("auto"),
   sortPosition: integer("sort_position"),
 });
+
+export const physicalContexts = sqliteTable(
+  "physical_contexts",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    source: text("source", { enum: ["home_assistant"] }).notNull(),
+    externalId: text("external_id").notNull(),
+    name: text("name").notNull(),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (t) => [
+    unique("physical_contexts_source_external_unique").on(
+      t.source,
+      t.externalId,
+    ),
+  ],
+);
 
 export const projects = sqliteTable("projects", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -240,6 +288,19 @@ export const projectTags = sqliteTable(
   (t) => [primaryKey({ columns: [t.projectId, t.tagId] })],
 );
 
+export const projectPhysicalContexts = sqliteTable(
+  "project_physical_contexts",
+  {
+    projectId: integer("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    contextId: integer("context_id")
+      .notNull()
+      .references(() => physicalContexts.id, { onDelete: "restrict" }),
+  },
+  (t) => [primaryKey({ columns: [t.projectId, t.contextId] })],
+);
+
 export const tasks = sqliteTable(
   "tasks",
   {
@@ -263,6 +324,9 @@ export const tasks = sqliteTable(
       onDelete: "set null",
     }),
     ownerInheritanceMode: text("owner_inheritance_mode")
+      .notNull()
+      .default("inherit"), // inherit | explicit | none
+    physicalContextInheritanceMode: text("physical_context_inheritance_mode")
       .notNull()
       .default("inherit"), // inherit | explicit | none
     createdByMemberId: integer("created_by_member_id").references(
@@ -295,6 +359,19 @@ export const tasks = sqliteTable(
     index("tasks_size_idx").on(t.size),
     index("tasks_reminder_idx").on(t.reminderAt, t.status),
   ],
+);
+
+export const taskPhysicalContexts = sqliteTable(
+  "task_physical_contexts",
+  {
+    taskId: integer("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    contextId: integer("context_id")
+      .notNull()
+      .references(() => physicalContexts.id, { onDelete: "restrict" }),
+  },
+  (t) => [primaryKey({ columns: [t.taskId, t.contextId] })],
 );
 
 export const taskExternalWaits = sqliteTable("task_external_waits", {
@@ -472,6 +549,52 @@ export const taskExcludedTags = sqliteTable(
       .references(() => tags.id, { onDelete: "cascade" }),
   },
   (t) => [primaryKey({ columns: [t.taskId, t.tagId] })],
+);
+
+export const homeAssistantPeople = sqliteTable(
+  "home_assistant_people",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    integrationId: integer("integration_id")
+      .notNull()
+      .references(() => homeAssistantIntegrations.id, { onDelete: "cascade" }),
+    externalId: text("external_id").notNull(),
+    name: text("name").notNull(),
+    state: text("state", { enum: ["known", "unknown"] }).notNull(),
+    observedAt: text("observed_at").notNull(),
+  },
+  (t) => [
+    unique("home_assistant_people_integration_external_unique").on(
+      t.integrationId,
+      t.externalId,
+    ),
+  ],
+);
+
+export const homeAssistantPersonContexts = sqliteTable(
+  "home_assistant_person_contexts",
+  {
+    personId: integer("person_id")
+      .notNull()
+      .references(() => homeAssistantPeople.id, { onDelete: "cascade" }),
+    contextId: integer("context_id")
+      .notNull()
+      .references(() => physicalContexts.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.personId, t.contextId] })],
+);
+
+export const homeAssistantMemberMappings = sqliteTable(
+  "home_assistant_member_mappings",
+  {
+    memberId: integer("member_id")
+      .primaryKey()
+      .references(() => members.id, { onDelete: "cascade" }),
+    personId: integer("person_id")
+      .notNull()
+      .unique()
+      .references(() => homeAssistantPeople.id, { onDelete: "cascade" }),
+  },
 );
 
 export const taskDependencies = sqliteTable(

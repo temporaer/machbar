@@ -129,3 +129,53 @@ export function getEffectiveTagIds(db: Db): Map<number, number[]> {
   }
   return result;
 }
+
+export function getEffectivePhysicalContextIds(
+  db: Db,
+): Map<number, number[]> {
+  const rows = db.all<{ task_id: number; effective_json: string }>(sql`
+      WITH RECURSIVE context_state(task_id, effective_json) AS (
+        SELECT
+          t.id,
+          CASE t.physical_context_inheritance_mode
+            WHEN 'none' THEN json('[]')
+            WHEN 'explicit' THEN (
+              SELECT json_group_array(context_id)
+              FROM task_physical_contexts
+              WHERE task_id = t.id
+            )
+            ELSE (
+              SELECT json_group_array(context_id)
+              FROM project_physical_contexts
+              WHERE project_id = t.project_id
+            )
+          END
+        FROM tasks t
+        WHERE t.parent_task_id IS NULL
+
+        UNION ALL
+
+        SELECT
+          t.id,
+          CASE t.physical_context_inheritance_mode
+            WHEN 'none' THEN json('[]')
+            WHEN 'explicit' THEN (
+              SELECT json_group_array(context_id)
+              FROM task_physical_contexts
+              WHERE task_id = t.id
+            )
+            ELSE parent.effective_json
+          END
+        FROM tasks t
+        JOIN context_state parent ON t.parent_task_id = parent.task_id
+      )
+      SELECT task_id, effective_json FROM context_state
+  `);
+
+  return new Map(
+    rows.map((row) => [
+      row.task_id,
+      JSON.parse(row.effective_json) as number[],
+    ]),
+  );
+}

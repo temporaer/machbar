@@ -25,6 +25,7 @@ describe("ProjectAgendaCard", () => {
             }),
             qualification: "both",
             nextAction: makeTask({ title: "Catering anrufen" }),
+            nextActionContextAvailability: null,
             stuck: {
               reason: "blocked_without_clear_path",
             },
@@ -56,6 +57,7 @@ describe("ProjectAgendaCard", () => {
             project: makeProject({ scheduledDate: "2026-08-22" }),
             qualification: "scheduled",
             nextAction: null,
+            nextActionContextAvailability: null,
             stuck: null,
           }}
         />
@@ -73,6 +75,7 @@ describe("ProjectAgendaCard", () => {
       project: makeProject({ ownerMemberId: owner.id }),
       qualification: "due" as const,
       nextAction: null,
+      nextActionContextAvailability: null,
       stuck: null,
     };
     const { rerender } = render(

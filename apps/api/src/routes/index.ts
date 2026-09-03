@@ -15,6 +15,7 @@ import { registerPaperlessRoutes } from "./paperless.js";
 import type { Env } from "../env.js";
 import type { PushTransport } from "../notifications/delivery.js";
 import type { PaperlessClient } from "../paperless/client.js";
+import { registerHomeAssistantRoutes } from "./homeAssistant.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -35,4 +36,5 @@ export function registerRoutes(
   registerDebugRoutes(app, db);
   registerPushRoutes(app, db, env, pushTransport);
   registerPaperlessRoutes(app, env, paperlessClient);
+  registerHomeAssistantRoutes(app, db);
 }

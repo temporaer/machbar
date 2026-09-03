@@ -1,5 +1,6 @@
 import type {
   Agenda,
+  ContextAvailability,
   ProjectAgendaEntry,
 } from "@machbar/shared";
 import type { Graph } from "./graph.js";
@@ -75,6 +76,10 @@ export interface BuildAgendaOptions {
    */
   memberId?: number;
   scope?: "mine" | "all";
+  contextAvailability?: (
+    task: TaskRecord,
+    target: number | "household",
+  ) => ContextAvailability;
 }
 
 /**
@@ -103,6 +108,22 @@ export function buildAgenda(
 ): Agenda {
   const { dueSoonDays = 3, memberId, today = todayIso() } = options;
   const scope = options.scope ?? (memberId === undefined ? "all" : "mine");
+  const contextAvailability = (
+    task: TaskRecord,
+  ): ContextAvailability => {
+    const target =
+      task.effectiveOwnerId ??
+      (scope === "mine" && memberId !== undefined ? memberId : "household");
+    return (
+      options.contextAvailability?.(task, target) ?? {
+        status: "available",
+        availableNow: true,
+        missingContexts: [],
+      }
+    );
+  };
+  const isContextAvailable = (task: TaskRecord) =>
+    contextAvailability(task).status !== "unavailable";
   const soonLimit = addDaysIso(today, dueSoonDays);
   const seen = new Set<number>();
   const projectStatusById = new Map(
@@ -123,6 +144,7 @@ export function buildAgenda(
             scope === "mine" && memberId !== undefined
               ? { scope: "mine", memberId }
               : { scope: "all" },
+            isContextAvailable,
           )
           .map((task) => task.id),
       ),
@@ -141,6 +163,7 @@ export function buildAgenda(
           isOpen(t) &&
           isOperationalTask(t) &&
           t.executable &&
+          isContextAvailable(t) &&
           !seen.has(t.id) &&
           matchesSelectedOwner(t, memberId) &&
           predicate(t),
@@ -221,8 +244,18 @@ export function buildAgenda(
 
       const computed = graph.projectWithComputed(project.id);
       if (!computed) return [];
-      const nextAction = graph.nextActionFor(project.id);
-      const stuckProject = nextAction
+      const selection =
+        scope === "mine" && memberId !== undefined
+         ? ({ scope: "mine", memberId } as const)
+         : ({ scope: "all" } as const);
+      const availableNextAction = graph.todayNextActionsFor(
+        project.id,
+        selection,
+        isContextAvailable,
+      )[0] ?? null;
+      const canonicalNextAction = graph.nextActionFor(project.id);
+      const nextAction = availableNextAction ?? canonicalNextAction;
+      const stuckProject = canonicalNextAction
         ? undefined
         : stuckByProject.get(project.id);
       return [
@@ -230,6 +263,9 @@ export function buildAgenda(
           project: computed,
           qualification: due && scheduled ? "both" : due ? "due" : "scheduled",
           nextAction,
+          nextActionContextAvailability: nextAction
+            ? contextAvailability(nextAction)
+            : null,
           stuck: stuckProject
             ? {
                 reason: stuckProject.stuckReason,

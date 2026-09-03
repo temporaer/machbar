@@ -40,7 +40,7 @@ describe("TagManager", () => {
 
   it("filters tags by a diacritic-insensitive name search", async () => {
     mockedApi.getTags.mockResolvedValue([
-      makeTag({ id: 21, name: "Café", kind: "context" }),
+      makeTag({ id: 21, name: "Café", kind: "plain" }),
       makeTag({ id: 22, name: "Garten", kind: "area" }),
     ]);
     renderWithProviders(<TagManager />);

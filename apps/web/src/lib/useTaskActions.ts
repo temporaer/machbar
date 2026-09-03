@@ -272,6 +272,21 @@ export function useTaskActions() {
     [update],
   );
 
+  const setContexts = useCallback(
+    (
+      task: Task,
+      contextInheritanceMode: Task["contextInheritanceMode"],
+      contextIds: number[],
+    ) =>
+      update(
+        task,
+        { contextInheritanceMode, contextIds },
+        { contextInheritanceMode },
+        true,
+      ),
+    [update],
+  );
+
   const acknowledgeReview = useCallback(
     (task: Task) => {
       const now = new Date().toISOString();
@@ -422,6 +437,7 @@ export function useTaskActions() {
     clarify,
     update,
     assignOwner,
+    setContexts,
     acknowledgeReview,
     setExternalWait,
     resolveExternalWait,

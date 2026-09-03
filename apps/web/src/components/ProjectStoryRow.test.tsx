@@ -509,9 +509,9 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
   });
 
   it("edits explicit project tags in a focused sheet without leaving the list", async () => {
-    const explicitTag = makeTag({ id: 10, name: "Zuhause", kind: "context" });
+    const explicitTag = makeTag({ id: 10, name: "Zuhause", kind: "plain" });
     const inheritedTag = makeTag({ id: 11, name: "Vererbt", kind: "area" });
-    const newTag = makeTag({ id: 12, name: "Telefon", kind: "context" });
+    const newTag = makeTag({ id: 12, name: "Telefon", kind: "plain" });
     const story = makeProject({
       id: 47,
       title: "Tags bearbeiten",
@@ -544,7 +544,7 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
   });
 
   it("closes the tag sheet without a second mutation after an immediate toggle", async () => {
-    const tag = makeTag({ id: 13, name: "Unterwegs", kind: "context" });
+    const tag = makeTag({ id: 13, name: "Unterwegs", kind: "plain" });
     const story = makeProject({ id: 48, title: "Tags abbrechen", tags: [] });
     mockedApi.getTags.mockResolvedValue([tag]);
     mockedApi.updateProject.mockResolvedValue({ ...story, tags: [tag] });

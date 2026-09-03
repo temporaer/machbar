@@ -5,8 +5,7 @@ import { useLocale, type Locale } from "../lib/locale";
 
 const kindPriority: Record<Exclude<TagKind, "actor">, number> = {
   area: 0,
-  context: 1,
-  plain: 2,
+  plain: 1,
 };
 
 function displayKindPriority(kind: TagKind): number {

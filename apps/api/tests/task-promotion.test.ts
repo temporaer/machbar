@@ -22,7 +22,7 @@ describe("captured task promotion", () => {
       await post("/api/members", { name: "Mira" })
     ).json();
     const tag = (
-      await post("/api/tags", { name: "zuhause", kind: "context" })
+      await post("/api/tags", { name: "zuhause", kind: "plain" })
     ).json();
     const root = (
       await post("/api/tasks", {

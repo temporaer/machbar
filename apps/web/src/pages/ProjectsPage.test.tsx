@@ -211,7 +211,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
   });
 
   it("offers tag types instead of tag values and groups stories by the selected type", async () => {
-    const phone = makeTag({ id: 91, name: "Telefon", kind: "context" });
+    const phone = makeTag({ id: 91, name: "Telefon", kind: "area" });
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 90,
@@ -251,18 +251,17 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(groupingTrigger).toHaveAttribute("aria-expanded", "true");
     expect(visibleListOptionLabels(controls)).toEqual([
       "Keine",
-      "Kontext",
       "Person",
       "Bereich",
     ]);
     expect(screen.queryByRole("button", { name: "Telefon" })).not.toBeInTheDocument();
 
-    fireEvent.click(within(grouping).getByRole("button", { name: "Kontext" }));
+    fireEvent.click(within(grouping).getByRole("button", { name: "Bereich" }));
     expect(groupingTrigger).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("group", { name: "Gruppieren nach" })).not.toBeInTheDocument();
     expect(groupingTrigger).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Telefon" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Ohne Kontext" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ohne Bereich" })).toBeInTheDocument();
   });
 });
 
@@ -540,7 +539,7 @@ describe("ProjectsPage – workflow sections", () => {
   });
 
   it("groups by tag separately inside active, waiting, and terminal sections", async () => {
-    const phone = makeTag({ id: 91, name: "Telefon", kind: "context" });
+    const phone = makeTag({ id: 91, name: "Telefon", kind: "area" });
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 1,
@@ -579,7 +578,7 @@ describe("ProjectsPage – workflow sections", () => {
     await screen.findByText("Aktiver Anruf");
     fireEvent.click(screen.getByRole("button", { name: /Gruppierung.*Keine/ }));
     fireEvent.click(within(screen.getByRole("group", { name: "Gruppieren nach" }))
-      .getByRole("button", { name: "Kontext" }));
+      .getByRole("button", { name: "Bereich" }));
 
     expect(screen.getAllByRole("heading", { name: "Telefon" })).toHaveLength(3);
     for (const sectionName of ["active", "waiting", "terminal"]) {

@@ -22,6 +22,7 @@ import { HumanDateInput } from "./HumanDateInput";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
 import { QuickAdd } from "./QuickAdd";
 import { isProjectReadyToStart } from "../lib/projectCommitments";
+import { PhysicalContextPicker } from "./PhysicalContextPicker";
 
 function errorMessage(err: unknown, strings: Strings): string {
   return localizedErrorMessage(err, strings);
@@ -68,6 +69,13 @@ export function ProjectEditSheet({
   const { bump } = useRefresh();
   const navigate = useNavigate();
   const { data: tags } = useAsync(() => api.getTags(), []);
+  const { data: homeAssistant } = useAsync(
+    () =>
+      typeof api.getHomeAssistantStatus === "function"
+        ? api.getHomeAssistantStatus()
+        : Promise.resolve(null),
+    [],
+  );
   const authoritativeProjects = useMemo(() => [project], [project]);
   const {
     isPending,
@@ -78,6 +86,7 @@ export function ProjectEditSheet({
     update,
     assignDriver,
     schedule,
+    setContexts,
   } = useProjectActions(authoritativeProjects);
 
   const [titleDraft, setTitleDraft] = useState(project.title);
@@ -575,6 +584,33 @@ export function ProjectEditSheet({
             />
           </fieldset>
         </div>
+
+        {displayedProject.contexts.length > 0 ||
+        homeAssistant?.contexts.some((context) => context.active) ? (
+          <div className="field">
+            <label>{strings.physicalContexts}</label>
+            <PhysicalContextPicker
+              contexts={homeAssistant?.contexts ?? []}
+              selected={displayedProject.contexts}
+              disabled={projectBusy}
+              onChange={(_mode, contextIds) => {
+                if (!beginOperation()) return;
+                setSavingProperty(true);
+                void setContexts(confirmedProjectRef.current, contextIds)
+                  .then((confirmed) => {
+                    if (confirmed) keepConfirmedProject(confirmed);
+                  })
+                  .catch((cause: unknown) => {
+                    setActionError(localizedErrorMessage(cause, strings));
+                  })
+                  .finally(() => {
+                    setSavingProperty(false);
+                    finishOperation();
+                  });
+              }}
+            />
+          </div>
+        ) : null}
 
         <div ref={criteriaFieldRef}>
           {completionNeedsCriteria ? (
