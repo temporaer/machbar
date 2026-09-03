@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from homeassistant.components.person.const import PersonEntityStateAttribute
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
 
 from .const import PROTOCOL_VERSION
+
+_ATTR_IN_ZONES = "in_zones"
 
 
 def _name(state: State) -> str:
@@ -35,7 +36,7 @@ def build_snapshot(hass: HomeAssistant) -> dict[str, Any]:
         hass.states.async_all("person"), key=lambda state: state.entity_id
     ):
         known = person.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE)
-        zone_ids = person.attributes.get(PersonEntityStateAttribute.IN_ZONES, [])
+        zone_ids = person.attributes.get(_ATTR_IN_ZONES, [])
         people.append(
             {
                 "externalId": person.entity_id,

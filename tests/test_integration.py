@@ -139,7 +139,7 @@ async def test_unload_cleans_up_listener_and_pending_push(hass):
     push.assert_awaited_once()
 
 
-async @pytest.mark.parametrize(
+@pytest.mark.parametrize(
     ("state", "in_zones", "expected_state", "expected_contexts"),
     [
         ("home", ["zone.home"], "known", ["zone.home"]),
