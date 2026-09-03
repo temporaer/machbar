@@ -77,13 +77,26 @@ describe("Home Assistant physical contexts", () => {
       expect.objectContaining({ id: context.id }),
     ]);
 
+    const explicit = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${child.id}`,
+      payload: {
+        contextInheritanceMode: "explicit",
+        contextIds: [context.id],
+        expectedRevision: child.revision,
+      },
+    });
+    expect(explicit.json().explicitContexts).toEqual([
+      expect.objectContaining({ id: context.id }),
+    ]);
+
     const cleared = await ctx.app.inject({
       method: "PATCH",
       url: `/api/tasks/${child.id}`,
       payload: {
         contextInheritanceMode: "none",
         contextIds: [],
-        expectedRevision: child.revision,
+        expectedRevision: explicit.json().revision,
       },
     });
     expect(cleared.json().effectiveContexts).toEqual([]);
