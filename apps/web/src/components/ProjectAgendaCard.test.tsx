@@ -45,13 +45,23 @@ describe("ProjectAgendaCard", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("Projekt prüfen & fällig")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Sommerfest vorbereiten" })).toHaveAttribute(
+    const prompt = screen.getByText("Projekt prüfen & fällig");
+    const projectLink = screen.getByRole("link", {
+      name: "Sommerfest vorbereiten",
+    });
+    expect(prompt.closest(".project-agenda-meta")).toBeInTheDocument();
+    expect(
+      projectLink.compareDocumentPosition(prompt) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(projectLink).toHaveAttribute(
       "href",
       "/projects/42",
     );
     expect(screen.getByText(/Catering anrufen/)).toBeInTheDocument();
-    expect(screen.getByText("Seligenstadt")).toHaveClass("task-card-tag");
+    const contextTag = screen.getByText("Seligenstadt");
+    expect(contextTag).toHaveClass("task-card-tag");
+    expect(contextTag.closest(".project-agenda-meta")).toBeInTheDocument();
     expect(
       screen.getByText(/Prüfe die konkret blockierenden Voraussetzungen/),
     ).toBeInTheDocument();

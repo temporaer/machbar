@@ -658,12 +658,19 @@ details[open] > .disclosure-summary::after {
   box-shadow: none;
 }
 
-.project-agenda-heading,
+.project-agenda-meta,
 .project-agenda-dates {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
+}
+
+.project-agenda-meta .task-card-tags {
+  float: none;
+  max-width: 100%;
+  margin: 0;
+  justify-content: flex-start;
 }
 
 .project-agenda-owner {

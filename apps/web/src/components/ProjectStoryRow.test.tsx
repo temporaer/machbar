@@ -793,7 +793,9 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(screen.queryByText(/Aufgaben:/)).not.toBeInTheDocument();
     expect(screen.getByText("Nächster Schritt: Kartons kaufen")).toBeInTheDocument();
     expect(screen.getByLabelText("Verantwortlich: Mira")).toBeInTheDocument();
-    expect(screen.getByText("Seligenstadt")).toHaveClass("task-card-tag");
+    const contextTag = screen.getByText("Seligenstadt");
+    expect(contextTag).toHaveClass("task-card-tag");
+    expect(contextTag.closest(".story-row-meta")).toBeInTheDocument();
     expect(screen.queryByText("Mira")).not.toBeInTheDocument();
     const progress = container.querySelector(".project-card-progress");
     expect(progress).toBeInTheDocument();

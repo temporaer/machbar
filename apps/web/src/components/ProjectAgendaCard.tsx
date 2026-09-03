@@ -58,7 +58,10 @@ export function ProjectAgendaCard({
 
   return (
     <article className="card project-agenda-card">
-      <div className="project-agenda-heading">
+      <Link className="project-agenda-link" to={`/projects/${project.id}`}>
+        {project.title}
+      </Link>
+      <div className="project-agenda-meta">
         <span className="badge">{heading}</span>
         {stuck ? <span className="badge badge-stuck">{strings.stuckReasonLabels[stuck.reason]}</span> : null}
         <TaskCardTags tags={[]} contexts={project.contexts} />
@@ -72,9 +75,6 @@ export function ProjectAgendaCard({
           </span>
         ) : null}
       </div>
-      <Link className="project-agenda-link" to={`/projects/${project.id}`}>
-        {project.title}
-      </Link>
       <div className="project-agenda-dates">
         {qualification !== "due" ? (
           <DatePrompt label={strings.review} date={project.scheduledDate} scheduled />
