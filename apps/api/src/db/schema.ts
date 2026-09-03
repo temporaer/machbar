@@ -201,6 +201,27 @@ export const pushSubscriptions = sqliteTable(
   (t) => [index("push_subscriptions_member_idx").on(t.memberId)],
 );
 
+export const pushNotificationPreferences = sqliteTable(
+  "push_notification_preferences",
+  {
+    memberId: integer("member_id")
+      .primaryKey()
+      .references(() => members.id, { onDelete: "cascade" }),
+    projectAssigned: integer("project_assigned", { mode: "boolean" })
+      .notNull()
+      .default(true),
+    taskReminder: integer("task_reminder", { mode: "boolean" })
+      .notNull()
+      .default(true),
+    contextEntered: integer("context_entered", { mode: "boolean" })
+      .notNull()
+      .default(true),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+);
+
 export const tags = sqliteTable("tags", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull().unique(),

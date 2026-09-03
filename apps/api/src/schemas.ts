@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   inheritanceModes,
+  pushNotificationPreferenceKinds,
   pushLocales,
   projectStatuses,
   tagGroupingModes,
@@ -210,6 +211,12 @@ export const pushSubscriptionSchema = z.object({
 export const pushSubscriptionRemovalSchema = z.object({
   endpoint: z.string().url(),
 });
+
+export const pushNotificationPreferencesSchema = z.object(
+  Object.fromEntries(
+    pushNotificationPreferenceKinds.map((kind) => [kind, z.boolean()]),
+  ) as Record<(typeof pushNotificationPreferenceKinds)[number], z.ZodBoolean>,
+);
 
 export const tagRefSchema = z.object({
   tagId: z.number().int(),

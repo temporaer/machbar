@@ -117,6 +117,53 @@ describe("Push subscription API", () => {
     ).toEqual([desktop.endpoint, phone.endpoint].sort());
   });
 
+  it("stores notification preferences per member with enabled defaults", async () => {
+    const hannes = addMember(ctx, "Hannes");
+    const sarah = addMember(ctx, "Sarah");
+
+    const defaults = await ctx.app.inject({
+      method: "GET",
+      url: "/api/push/preferences",
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(hannes.id) },
+    });
+    expect(defaults.json()).toEqual({
+      project_assigned: true,
+      task_reminder: true,
+      context_entered: true,
+    });
+
+    const preferences = {
+      project_assigned: false,
+      task_reminder: true,
+      context_entered: false,
+    };
+    const updated = await ctx.app.inject({
+      method: "PUT",
+      url: "/api/push/preferences",
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(hannes.id) },
+      payload: preferences,
+    });
+    expect(updated.json()).toEqual(preferences);
+
+    const reread = await ctx.app.inject({
+      method: "GET",
+      url: "/api/push/preferences",
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(hannes.id) },
+    });
+    expect(reread.json()).toEqual(preferences);
+
+    const otherMember = await ctx.app.inject({
+      method: "GET",
+      url: "/api/push/preferences",
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(sarah.id) },
+    });
+    expect(otherMember.json()).toEqual({
+      project_assigned: true,
+      task_reminder: true,
+      context_entered: true,
+    });
+  });
+
   it("sends a localized test notification only to the requesting browser", async () => {
     await closeTestContext(ctx);
     const send = vi.fn<PushTransport["send"]>().mockResolvedValue(undefined);
@@ -495,6 +542,59 @@ describe("reminders and Push delivery", () => {
         .where(eq(schema.pushSubscriptions.endpoint, "https://push.example/dead"))
         .get(),
     ).toBeUndefined();
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.notificationEvents)
+        .where(isNull(schema.notificationEvents.processedAt))
+        .all(),
+    ).toEqual([]);
+  });
+
+  it("suppresses disabled notification types without affecting other types", async () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, { title: "Paket abholen" });
+    ctx.handle.db.insert(schema.pushSubscriptions).values({
+      endpoint: "https://push.example/device",
+      memberId: hannes.id,
+      p256dh: "key",
+      auth: "auth",
+      locale: "de",
+    }).run();
+    ctx.handle.db.insert(schema.pushNotificationPreferences).values({
+      memberId: hannes.id,
+      contextEntered: false,
+    }).run();
+    enqueueNotification(ctx.handle.db, {
+      kind: "context_entered",
+      recipientMemberId: hannes.id,
+      actorMemberId: null,
+      entityType: "task",
+      entityId: task.id,
+      entityTitle: task.title,
+      sourceKey: "disabled-context",
+    });
+    enqueueNotification(ctx.handle.db, {
+      kind: "task_reminder",
+      recipientMemberId: hannes.id,
+      actorMemberId: null,
+      entityType: "task",
+      entityId: task.id,
+      entityTitle: task.title,
+      sourceKey: "enabled-reminder",
+    });
+    const send = vi.fn<PushTransport["send"]>().mockResolvedValue(undefined);
+
+    await dispatchNotificationEvents(
+      ctx.handle.db,
+      { send },
+      { error: vi.fn() },
+    );
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(send.mock.calls[0]![1])).toEqual(
+      expect.objectContaining({ kind: "task_reminder" }),
+    );
     expect(
       ctx.handle.db
         .select()

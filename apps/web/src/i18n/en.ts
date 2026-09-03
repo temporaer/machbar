@@ -301,13 +301,13 @@ const en = {
   taskContentEmpty: "No notes or tags",
   taskWaitingSection: "Is this task waiting for something?",
   taskNotBlocked: "Not blocked",
+  externalWaitSection: "External wait",
   externalWaitGuidance:
     "Use this when you cannot continue until a reply, delivery, or event happens.",
   externalWaitReasonLabel: "What is the task waiting for?",
   revisitDateRecommended: "Revisit on (recommended)",
   revisitDateGuidance:
     "Shows the blocked task in Today for review from this date. Without a date, Review will ask you to clarify it.",
-  dependencyPrompt: "Does another task need to be completed first?",
   dependencyGuidance:
     "Only link tasks that genuinely need to be completed first.",
   dependencySummary: (count: number) =>
@@ -383,6 +383,8 @@ const en = {
   morePreferences: "Preferences",
   moreHousehold: "Household",
   moreSystem: "System",
+  moreAdministration: "Administration",
+  moreAdministrationHint: "Integrations and diagnostics",
   about: "About Machbar",
   developerMode: "Developer mode",
   developerModeHint: "Show internal diagnostics on this device.",
@@ -439,6 +441,9 @@ const en = {
   taskTags: "Tags",
   moreTaskTags: (count: number) =>
     `${count} more ${count === 1 ? "tag" : "tags"}`,
+  cardLabels: "Tags and physical contexts",
+  moreCardLabels: (count: number) =>
+    `${count} more ${count === 1 ? "label" : "labels"}`,
   ownTags: "Own tags",
   saveChanges: "Save changes",
   saveNext: "Save & continue",
@@ -740,6 +745,17 @@ const en = {
   pushTest: "Send test",
   pushTestSending: "Sending…",
   pushTestSent: "Test notification sent.",
+  pushTypesTitle: "Types",
+  pushTypesHint:
+    "Applies to every device where you have enabled notifications.",
+  pushProjectAssignments: "Project assignments",
+  pushProjectAssignmentsHint:
+    "When someone else makes you responsible for a project.",
+  pushTaskReminders: "Task reminders",
+  pushTaskRemindersHint: "When a scheduled reminder becomes due.",
+  pushContextEntered: "Place-based tasks",
+  pushContextEnteredHint:
+    "When you enter a place where matching tasks can be done.",
   theme: "Theme",
   themeLabels: {
     system: "System",

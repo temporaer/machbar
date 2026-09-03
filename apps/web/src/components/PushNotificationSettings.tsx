@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import type { PushConfig } from "@machbar/shared";
+import type {
+  PushConfig,
+  PushNotificationPreferenceKind,
+  PushNotificationPreferences,
+} from "@machbar/shared";
 import { api } from "../lib/api";
 import {
   hasApiErrorCode,
@@ -34,10 +38,14 @@ export function PushNotificationSettings() {
   const { locale } = useLocale();
   const { currentMemberId } = useIdentity();
   const [config, setConfig] = useState<PushConfig | null>(null);
+  const [preferences, setPreferences] =
+    useState<PushNotificationPreferences | null>(null);
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [state, setState] = useState<State>("loading");
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [busyPreference, setBusyPreference] =
+    useState<PushNotificationPreferenceKind | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [testFeedback, setTestFeedback] = useState<string | null>(null);
 
@@ -69,6 +77,27 @@ export function PushNotificationSettings() {
       setState("disabled");
     });
   }, [refresh, strings]);
+
+  useEffect(() => {
+    let active = true;
+    if (currentMemberId === null) {
+      setPreferences(null);
+      return () => {
+        active = false;
+      };
+    }
+    void api
+      .getPushNotificationPreferences()
+      .then((nextPreferences) => {
+        if (active) setPreferences(nextPreferences);
+      })
+      .catch((cause: unknown) => {
+        if (active) setError(localizedErrorMessage(cause, strings));
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentMemberId, strings]);
 
   useEffect(() => {
     if (!subscription || currentMemberId === null) return;
@@ -171,6 +200,26 @@ export function PushNotificationSettings() {
     }
   };
 
+  const updatePreference = async (
+    kind: PushNotificationPreferenceKind,
+    enabled: boolean,
+  ) => {
+    if (!preferences) return;
+    const previous = preferences;
+    const next = { ...preferences, [kind]: enabled };
+    setPreferences(next);
+    setBusyPreference(kind);
+    setError(null);
+    try {
+      setPreferences(await api.updatePushNotificationPreferences(next));
+    } catch (cause) {
+      setPreferences(previous);
+      setError(localizedErrorMessage(cause, strings));
+    } finally {
+      setBusyPreference(null);
+    }
+  };
+
   const stateText = {
     loading: strings.pushLoading,
     unsupported: strings.pushUnsupported,
@@ -221,6 +270,51 @@ export function PushNotificationSettings() {
       ) : null}
       {testFeedback ? (
         <p className="text-muted" role="status">{testFeedback}</p>
+      ) : null}
+      {preferences ? (
+        <div className="push-preferences">
+          <div>
+            <h4>{strings.pushTypesTitle}</h4>
+            <p className="text-muted">{strings.pushTypesHint}</p>
+          </div>
+          <div className="push-preference-list">
+            {(
+              [
+                {
+                  kind: "project_assigned",
+                  label: strings.pushProjectAssignments,
+                  hint: strings.pushProjectAssignmentsHint,
+                },
+                {
+                  kind: "task_reminder",
+                  label: strings.pushTaskReminders,
+                  hint: strings.pushTaskRemindersHint,
+                },
+                {
+                  kind: "context_entered",
+                  label: strings.pushContextEntered,
+                  hint: strings.pushContextEnteredHint,
+                },
+              ] as const
+            ).map(({ kind, label, hint }) => (
+              <label className="setting-switch" key={kind}>
+                <span>
+                  <strong>{label}</strong>
+                  <small>{hint}</small>
+                </span>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={preferences[kind]}
+                  disabled={busyPreference !== null}
+                  onChange={(event) =>
+                    void updatePreference(kind, event.target.checked)
+                  }
+                />
+              </label>
+            ))}
+          </div>
+        </div>
       ) : null}
       {error ? <p role="alert" className="text-muted">{error}</p> : null}
     </div>

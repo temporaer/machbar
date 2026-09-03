@@ -18,6 +18,7 @@ import type {
   ProjectAgendaEntry,
   ProjectStatus,
   PushConfig,
+  PushNotificationPreferences,
   PushSubscriptionRegistration,
   ReviewItem,
   SearchFilters,
@@ -376,6 +377,13 @@ export const api = {
   getAuthStatus: () => request<AuthStatus>("/auth/status"),
   logout: () => request<void>("/auth/logout", { method: "POST" }),
   getPushConfig: () => request<PushConfig>("/push/config"),
+  getPushNotificationPreferences: () =>
+    request<PushNotificationPreferences>("/push/preferences"),
+  updatePushNotificationPreferences: (input: PushNotificationPreferences) =>
+    request<PushNotificationPreferences>("/push/preferences", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
   registerPushSubscription: (input: PushSubscriptionRegistration) =>
     request<void>("/push/subscription", {
       method: "PUT",

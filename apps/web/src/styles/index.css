@@ -372,7 +372,15 @@ details[open] > .disclosure-summary::after {
   margin-top: 10px;
 }
 
-.push-settings h3 {
+.push-settings {
+  display: grid;
+  gap: 10px;
+}
+
+.push-settings > h3,
+.push-settings > p,
+.push-preferences h4,
+.push-preferences p {
   margin: 0;
 }
 
@@ -382,6 +390,26 @@ details[open] > .disclosure-summary::after {
 
 .push-settings-actions {
   flex-wrap: wrap;
+}
+
+.push-preferences {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.push-preferences > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.push-preference-list {
+  display: grid;
+}
+
+.push-preference-list .setting-switch + .setting-switch {
+  border-top: 1px solid var(--color-border);
 }
 
 .contribution-card {
@@ -1212,6 +1240,44 @@ details[open] > .disclosure-summary::after {
   flex: 1 1 10rem;
 }
 
+.more-admin-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.more-admin-summary > span {
+  display: grid;
+  gap: 4px;
+}
+
+.more-admin-summary small {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.more-admin-body {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+}
+
+.more-admin-group {
+  display: grid;
+  gap: 10px;
+}
+
+.more-admin-group > h3,
+.more-admin-group > p {
+  margin: 0;
+}
+
+.more-admin-group + .more-link-group {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
 .setting-switch {
   min-height: 44px;
   display: flex;
@@ -1437,27 +1503,22 @@ details[open] > .disclosure-summary::after {
   margin-bottom: 0;
 }
 
-.task-external-wait-editor {
-  display: grid;
-  gap: 12px;
-  padding: 12px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-alt);
-}
-
-.task-dependency-editor {
+.task-waiting-group {
   display: grid;
   gap: 10px;
+}
+
+.task-waiting-group + .task-waiting-group {
   padding-top: 14px;
   border-top: 1px solid var(--color-border);
 }
 
-.task-dependency-editor h4,
+.task-waiting-group h4,
 .task-detail-guidance {
   margin: 0;
 }
 
-.task-dependency-editor h4 {
+.task-waiting-group h4 {
   font-size: 0.95rem;
 }
 

@@ -156,12 +156,29 @@ export async function dispatchNotificationEvents(
     .all();
 
   for (const event of events) {
+    const preferences = db
+      .select()
+      .from(schema.pushNotificationPreferences)
+      .where(
+        eq(
+          schema.pushNotificationPreferences.memberId,
+          event.recipientMemberId,
+        ),
+      )
+      .get();
+    const disabled =
+      (event.kind === "project_assigned" &&
+        preferences?.projectAssigned === false) ||
+      (event.kind === "task_reminder" &&
+        preferences?.taskReminder === false) ||
+      (event.kind === "context_entered" &&
+        preferences?.contextEntered === false);
     const subscriptions = db
       .select()
       .from(schema.pushSubscriptions)
       .where(eq(schema.pushSubscriptions.memberId, event.recipientMemberId))
       .all();
-    for (const subscription of subscriptions) {
+    for (const subscription of disabled ? [] : subscriptions) {
       const payload = buildNotificationPayload(db, event, subscription.locale);
       try {
         await transport.send(
