@@ -612,10 +612,7 @@ export const homeAssistantMemberMappings = sqliteTable(
     memberId: integer("member_id")
       .primaryKey()
       .references(() => members.id, { onDelete: "cascade" }),
-    personId: integer("person_id")
-      .notNull()
-      .unique()
-      .references(() => homeAssistantPeople.id, { onDelete: "cascade" }),
+    externalPersonId: text("external_person_id").notNull().unique(),
   },
 );
 

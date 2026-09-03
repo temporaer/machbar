@@ -10,6 +10,8 @@ from homeassistant.core import HomeAssistant, State
 
 from .const import PROTOCOL_VERSION
 
+_ATTR_IN_ZONES = "in_zones"
+
 
 def _name(state: State) -> str:
     return str(state.attributes.get("friendly_name") or state.name)
@@ -33,17 +35,18 @@ def build_snapshot(hass: HomeAssistant) -> dict[str, Any]:
     for person in sorted(
         hass.states.async_all("person"), key=lambda state: state.entity_id
     ):
-        context_external_id = f"zone.{person.state}"
-        known = (
-            person.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE, "not_home")
-            and context_external_id in context_ids
-        )
+        known = person.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE)
+        zone_ids = person.attributes.get(_ATTR_IN_ZONES, [])
         people.append(
             {
                 "externalId": person.entity_id,
                 "name": _name(person),
                 "state": "known" if known else "unknown",
-                "contexts": [context_external_id] if known else [],
+                "contexts": [
+                    zone_id for zone_id in zone_ids if zone_id in context_ids
+                ]
+                if known
+                else [],
             }
         )
 
