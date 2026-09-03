@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import {
   HOME_ASSISTANT_STALE_MS,
@@ -118,13 +119,17 @@ describe("Home Assistant physical contexts", () => {
       ).statusCode,
     ).toBe(401);
 
+    let snapshotSequence = 0;
     const snapshot = (contexts: string[]) =>
       post(
         "/api/integrations/home-assistant/context",
         {
           protocolVersion: 1,
-          observedAt: new Date().toISOString(),
-          contexts: [{ externalId: "zone.home", name: "Zuhause" }],
+          observedAt: new Date(Date.now() + snapshotSequence++).toISOString(),
+          contexts: [
+            { externalId: "zone.home", name: "Zuhause" },
+            { externalId: "zone.shop", name: "Laden" },
+          ],
           people: [
             {
               externalId: "person.mira",
@@ -145,6 +150,7 @@ describe("Home Assistant physical contexts", () => {
     const context = ctx.handle.db
       .select()
       .from(schema.physicalContexts)
+      .where(eq(schema.physicalContexts.externalId, "zone.shop"))
       .get()!;
     const task = (
       await post("/api/tasks", {
@@ -176,7 +182,7 @@ describe("Home Assistant physical contexts", () => {
       reasons: [{ type: "context" }],
     });
 
-    await snapshot(["zone.home"]);
+    await snapshot(["zone.shop"]);
     const availableAgenda = (
       await ctx.app.inject({
         method: "GET",
@@ -200,6 +206,31 @@ describe("Home Assistant physical contexts", () => {
       member.id,
     );
     expect(available.status).toBe("available");
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([
+      expect.objectContaining({
+        kind: "context_entered",
+        recipientMemberId: member.id,
+        entityId: task.id,
+        entityTitle: "Laden: Keller aufräumen",
+      }),
+    ]);
+    const homeContext = ctx.handle.db
+      .select()
+      .from(schema.physicalContexts)
+      .where(eq(schema.physicalContexts.externalId, "zone.home"))
+      .get()!;
+    await post("/api/tasks", {
+      title: "Zuhause erledigen",
+      status: "actionable",
+      ownerMemberId: member.id,
+      ownerInheritanceMode: "explicit",
+      contextInheritanceMode: "explicit",
+      contextIds: [homeContext.id],
+    });
+    await snapshot(["zone.home"]);
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toHaveLength(1);
+    await snapshot(["zone.shop"]);
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toHaveLength(2);
     expect(
       contextAvailabilityForMember(
         ctx.handle.db,

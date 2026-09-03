@@ -33,25 +33,6 @@ function actor(context?: MutationContext): number | null {
   return context?.actorMemberId ?? null;
 }
 
-function enqueueTaskAssignment(
-  db: Db,
-  task: { id: number; title: string },
-  activityEventId: number,
-  context?: MutationContext,
-): void {
-  const recipientMemberId = effectiveOwnerId(db, task.id);
-  if (recipientMemberId === null) return;
-  enqueueNotification(db, {
-    kind: "task_assigned",
-    recipientMemberId,
-    actorMemberId: actor(context),
-    entityType: "task",
-    entityId: task.id,
-    entityTitle: task.title,
-    sourceKey: `task:${task.id}:assigned:event:${activityEventId}`,
-  });
-}
-
 function enqueueProjectAssignment(
   db: Db,
   project: { id: number; title: string; ownerMemberId: number | null },
@@ -1738,7 +1719,6 @@ export function createTask(
       projectId: task.projectId,
       metadata: {},
     });
-    enqueueTaskAssignment(txDb, task, activityEventId, context);
     if (
       task.projectId !== null &&
       !hadNextAction &&
@@ -1813,7 +1793,6 @@ export function createChildTask(
       projectId: task.projectId,
       metadata: {},
     });
-    enqueueTaskAssignment(txDb, task, activityEventId, context);
     if (
       parent.size === "XL" &&
       !hadOpenChild &&
@@ -1923,9 +1902,6 @@ export function createProjectTaskSequence(
         relatedTaskTitles: created.map((task) => task.title),
       },
     });
-    for (const task of created) {
-      enqueueTaskAssignment(txDb, task, activityEventId, context);
-    }
     if (!hadNextAction && projectHasNextAction(txDb, projectId)) {
       recordContribution(txDb, {
         activityEventId,
@@ -2003,7 +1979,6 @@ export function createTaskSuccessor(
         relatedTaskTitles: [predecessor.title],
       },
     });
-    enqueueTaskAssignment(txDb, successor, activityEventId, context);
     if (
       successor.projectId !== null &&
       !hadNextAction &&
@@ -2625,19 +2600,6 @@ export function updateTask(
       ...(excludedTagsChanged ? ["excludedTags"] : []),
       ...(contextsChanged ? ["contexts"] : []),
     ];
-    const ownAssignmentChanged =
-      changedFields.includes("ownerMemberId") ||
-      changedFields.includes("ownerInheritanceMode");
-    const maybeEnqueueAssignment = (activityEventId: number) => {
-      if (!ownAssignmentChanged) return;
-      const effectiveOwnerAfter = effectiveOwnerId(txDb, id);
-      if (
-        effectiveOwnerAfter !== null &&
-        effectiveOwnerAfter !== effectiveOwnerBefore
-      ) {
-        enqueueTaskAssignment(txDb, updated, activityEventId, context);
-      }
-    };
     if (recurringCompletion && occurrence) {
       const updatedScheduledDate = updated.scheduledDate!;
       const updatedDueDate = updated.dueDate!;
@@ -2663,7 +2625,6 @@ export function updateTask(
             : {}),
         },
       });
-      maybeEnqueueAssignment(activityEventId);
       recordContribution(txDb, {
         activityEventId,
         actorMemberId: actor(context),
@@ -2702,7 +2663,6 @@ export function updateTask(
             : {}),
         },
       });
-      maybeEnqueueAssignment(activityEventId);
       if (updated.status === "done") {
         recordContribution(txDb, {
           activityEventId,
@@ -2781,7 +2741,6 @@ export function updateTask(
         metadata: { changedFields: coalescedChangedFields },
       });
       const effectiveOwnerAfter = effectiveOwnerId(txDb, id);
-      maybeEnqueueAssignment(activityEventId);
       if (
         effectiveOwnerBefore === null &&
         effectiveOwnerAfter !== null &&

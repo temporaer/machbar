@@ -62,6 +62,7 @@ export const notificationKinds = [
   "task_assigned",
   "project_assigned",
   "task_reminder",
+  "context_entered",
 ] as const;
 export const notificationEntityTypes = ["task", "project"] as const;
 export const pushLocales = ["de", "en"] as const;

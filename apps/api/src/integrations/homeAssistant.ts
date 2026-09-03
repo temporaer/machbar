@@ -15,7 +15,9 @@ import type {
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
+import { Graph } from "../domain/graph.js";
 import { AppError } from "../errors.js";
+import { enqueueNotification } from "../notifications/outbox.js";
 
 export const HOME_ASSISTANT_PROTOCOL_VERSION = 1 as const;
 export const HOME_ASSISTANT_STALE_MS = 30 * 60 * 1_000;
@@ -228,6 +230,29 @@ export function applyHomeAssistantSnapshot(
       .from(schema.homeAssistantPeople)
       .where(eq(schema.homeAssistantPeople.integrationId, integrationId))
       .all();
+    const existingPersonContexts =
+      existingPeople.length === 0
+        ? []
+        : tx
+            .select()
+            .from(schema.homeAssistantPersonContexts)
+            .where(
+              inArray(
+                schema.homeAssistantPersonContexts.personId,
+                existingPeople.map((person) => person.id),
+              ),
+            )
+            .all();
+    const previousContextIdsByPerson = new Map(
+      existingPeople.map((person) => [
+        person.externalId,
+        new Set(
+          existingPersonContexts
+            .filter((row) => row.personId === person.id)
+            .map((row) => row.contextId),
+        ),
+      ]),
+    );
     if (existingPeople.length > 0) {
       tx.delete(schema.homeAssistantPersonContexts)
         .where(
@@ -253,6 +278,10 @@ export function applyHomeAssistantSnapshot(
         .all()
         .map((context) => [context.externalId, context]),
     );
+    const enteredContexts: Array<{
+      memberId: number;
+      context: PhysicalContext;
+    }> = [];
     for (const person of snapshot.people) {
       tx.insert(schema.homeAssistantPeople)
         .values({
@@ -284,6 +313,11 @@ export function applyHomeAssistantSnapshot(
           ),
         )
         .get()!;
+      const mapping = tx
+        .select()
+        .from(schema.homeAssistantMemberMappings)
+        .where(eq(schema.homeAssistantMemberMappings.personId, stored.id))
+        .get();
       if (person.state === "known") {
         for (const externalId of new Set(person.contexts)) {
           const context = contextsByExternalId.get(externalId);
@@ -292,14 +326,59 @@ export function applyHomeAssistantSnapshot(
               .values({ personId: stored.id, contextId: context.id })
               .onConflictDoNothing()
               .run();
+            const previousContextIds = previousContextIdsByPerson.get(
+              person.externalId,
+            );
+            if (
+              previousContextIds !== undefined &&
+              !previousContextIds.has(context.id) &&
+              context.externalId !== "zone.home" &&
+              mapping
+            ) {
+              enteredContexts.push({
+                memberId: mapping.memberId,
+                context,
+              });
+            }
           }
         }
       }
     }
+    const txDb = tx as unknown as Db;
     tx.update(schema.homeAssistantIntegrations)
       .set({ lastUpdateAt: nowIso() })
       .where(eq(schema.homeAssistantIntegrations.id, integrationId))
       .run();
+    if (enteredContexts.length > 0) {
+      const graph = Graph.load(txDb);
+      for (const { memberId, context } of enteredContexts) {
+        for (const task of graph.tasksById.values()) {
+          if (
+            task.status !== "actionable" ||
+            !task.executable ||
+            (task.effectiveOwnerId !== null &&
+              task.effectiveOwnerId !== memberId) ||
+            !task.effectiveContexts.some((item) => item.id === context.id) ||
+            contextAvailabilityForMember(
+              txDb,
+              task.effectiveContexts,
+              memberId,
+            ).status !== "available"
+          ) {
+            continue;
+          }
+          enqueueNotification(txDb, {
+            kind: "context_entered",
+            recipientMemberId: memberId,
+            actorMemberId: null,
+            entityType: "task",
+            entityId: task.id,
+            entityTitle: `${context.name}: ${task.title}`,
+            sourceKey: `context:${context.id}:member:${memberId}:task:${task.id}:entered:${snapshot.observedAt}`,
+          });
+        }
+      }
+    }
   });
 }
 

@@ -80,6 +80,7 @@ const notificationKinds = [
   "task_assigned",
   "project_assigned",
   "task_reminder",
+  "context_entered",
 ] as const satisfies readonly NotificationKind[];
 
 const notificationEntityTypes = [

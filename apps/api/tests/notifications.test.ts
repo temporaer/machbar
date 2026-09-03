@@ -269,7 +269,7 @@ describe("notification event creation", () => {
     await closeTestContext(ctx);
   });
 
-  it("emits task assignment events only for explicit owner changes by another member", () => {
+  it("does not notify when another member assigns a task", () => {
     const hannes = addMember(ctx, "Hannes");
     const sarah = addMember(ctx, "Sarah");
     const task = createTask(
@@ -277,73 +277,12 @@ describe("notification event creation", () => {
       { title: "Paket abholen" },
       { actorMemberId: sarah.id },
     );
-
     updateTask(
       ctx.handle.db,
       task.id,
       { ownerMemberId: hannes.id, ownerInheritanceMode: "explicit" },
       { actorMemberId: sarah.id },
     );
-    expect(
-      ctx.handle.db.select().from(schema.notificationEvents).all(),
-    ).toEqual([
-      expect.objectContaining({
-        kind: "task_assigned",
-        recipientMemberId: hannes.id,
-        actorMemberId: sarah.id,
-        entityTitle: "Paket abholen",
-      }),
-    ]);
-
-    updateTask(
-      ctx.handle.db,
-      task.id,
-      { ownerMemberId: hannes.id, ownerInheritanceMode: "explicit" },
-      { actorMemberId: sarah.id },
-    );
-    updateTask(
-      ctx.handle.db,
-      task.id,
-      { notes: "Nur eine Notiz" },
-      { actorMemberId: sarah.id },
-    );
-    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toHaveLength(1);
-  });
-
-  it("emits reassignment but suppresses self-assignment", () => {
-    const hannes = addMember(ctx, "Hannes");
-    const sarah = addMember(ctx, "Sarah");
-    const task = createTask(ctx.handle.db, {
-      title: "Paket abholen",
-      ownerMemberId: sarah.id,
-      ownerInheritanceMode: "explicit",
-    });
-
-    ctx.handle.db.delete(schema.notificationEvents).run();
-
-    updateTask(
-      ctx.handle.db,
-      task.id,
-      { ownerMemberId: hannes.id },
-      { actorMemberId: sarah.id },
-    );
-    updateTask(
-      ctx.handle.db,
-      task.id,
-      { ownerMemberId: sarah.id },
-      { actorMemberId: sarah.id },
-    );
-    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([
-      expect.objectContaining({
-        recipientMemberId: hannes.id,
-        actorMemberId: sarah.id,
-      }),
-    ]);
-  });
-
-  it("emits an event when another member creates a task for Hannes", () => {
-    const hannes = addMember(ctx, "Hannes");
-    const sarah = addMember(ctx, "Sarah");
     createTask(
       ctx.handle.db,
       {
@@ -353,13 +292,7 @@ describe("notification event creation", () => {
       },
       { actorMemberId: sarah.id },
     );
-    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([
-      expect.objectContaining({
-        kind: "task_assigned",
-        recipientMemberId: hannes.id,
-        actorMemberId: sarah.id,
-      }),
-    ]);
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([]);
   });
 
   it("emits one project assignment without inherited child fan-out", () => {
@@ -468,78 +401,27 @@ describe("reminders and Push delivery", () => {
     expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-02T09:00:00Z"))).toBe(0);
   });
 
-  it("localizes German assignment copy and actor-neutral fallback", () => {
+  it("localizes context-entry notifications", () => {
     const hannes = addMember(ctx, "Hannes");
-    const sarah = addMember(ctx, "Sarah");
     const task = createTask(ctx.handle.db, { title: "Paket abholen" });
     enqueueNotification(ctx.handle.db, {
-      kind: "task_assigned",
-      recipientMemberId: hannes.id,
-      actorMemberId: sarah.id,
-      entityType: "task",
-      entityId: task.id,
-      entityTitle: task.title,
-      sourceKey: "copy-with-actor",
-    });
-
-    enqueueNotification(ctx.handle.db, {
-      kind: "task_assigned",
+      kind: "context_entered",
       recipientMemberId: hannes.id,
       actorMemberId: null,
       entityType: "task",
       entityId: task.id,
-      entityTitle: task.title,
-      sourceKey: "copy-without-actor",
+      entityTitle: `Post: ${task.title}`,
+      sourceKey: "context-entry",
     });
-    const [withActor, withoutActor] = ctx.handle.db
-      .select()
-      .from(schema.notificationEvents)
-      .all();
-
-    expect(buildNotificationPayload(ctx.handle.db, withActor!, "de")).toEqual(
+    const event = ctx.handle.db.select().from(schema.notificationEvents).get()!;
+    expect(buildNotificationPayload(ctx.handle.db, event, "de")).toEqual(
       expect.objectContaining({
-        title: "Jetzt machbar",
-        body: "Sarah hat dir „Paket abholen“ zugewiesen.",
-        recurringTask: false,
-        actions: [
-          { action: "today", title: "Heute" },
-          { action: "open", title: "Öffnen" },
-        ],
+        kind: "context_entered",
+        title: "Hier machbar",
+        body: "Post: Paket abholen",
+        actions: [{ action: "open", title: "Öffnen" }],
       }),
     );
-    expect(buildNotificationPayload(ctx.handle.db, withoutActor!, "de")).toEqual(
-      expect.objectContaining({
-        body: "Dir wurde „Paket abholen“ zugewiesen.",
-      }),
-    );
-  });
-
-  it("omits the Today action for recurring task assignments", () => {
-    const hannes = addMember(ctx, "Hannes");
-    const task = createTask(ctx.handle.db, {
-      title: "Pflanzen gießen",
-      status: "actionable",
-      scheduledDate: "2026-08-30",
-      repeatAfterDays: 7,
-      allowedDeviationDays: 0,
-    });
-    enqueueNotification(ctx.handle.db, {
-      kind: "task_assigned",
-      recipientMemberId: hannes.id,
-      actorMemberId: null,
-      entityType: "task",
-      entityId: task.id,
-      entityTitle: task.title,
-      sourceKey: "recurring-assignment",
-    });
-    const event = ctx.handle.db
-      .select()
-      .from(schema.notificationEvents)
-      .where(eq(schema.notificationEvents.sourceKey, "recurring-assignment"))
-      .get()!;
-    expect(buildNotificationPayload(ctx.handle.db, event, "de").actions).toEqual([
-      { action: "open", title: "Öffnen" },
-    ]);
   });
 
   it("fans out to every recipient subscription, removes dead endpoints, and isolates failures", async () => {
@@ -577,7 +459,7 @@ describe("reminders and Push delivery", () => {
       },
     ]).run();
     enqueueNotification(ctx.handle.db, {
-      kind: "task_assigned",
+      kind: "context_entered",
       recipientMemberId: hannes.id,
       actorMemberId: null,
       entityType: "task",

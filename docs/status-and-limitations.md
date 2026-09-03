@@ -67,8 +67,9 @@ the installation has VAPID configured and the member opted in in that browser.
 Each browser or installed PWA has an independent subscription, and delivery
 fans out to every subscription for the member. Notifications are shown by the
 service worker without requiring an open Machbar tab; clicking one opens or
-focuses the relevant task or project. Assignments by another person can also
-produce Push notifications.
+focuses the relevant task or project. Entering a non-home Home Assistant zone
+also produces notifications for actionable tasks that become available there.
+Task assignments do not produce notifications.
 
 Machbar does not currently provide a notification inbox, comments, mentions,
 ordinary due-date notifications, or a daily digest. Push availability depends
