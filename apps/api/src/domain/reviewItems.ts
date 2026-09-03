@@ -168,6 +168,11 @@ export function buildReviewItems(
           analysis.healthyProgressPath
         );
       });
+      const hasIntentionalWait = openTasks.some(
+        (task) => task.externalWait?.revisitDate !== null &&
+          task.externalWait?.revisitDate !== undefined,
+      );
+      const hasViablePath = hasHealthyProgressPath || hasIntentionalWait;
       if (project.ownerMemberId === null) {
         items.push(
           projectItem(
@@ -186,7 +191,7 @@ export function buildReviewItems(
         );
       } else if (
         canonicalCandidates.length === 0 &&
-        !hasHealthyProgressPath &&
+        !hasViablePath &&
         !projectsWithRootCause.has(project.id)
       ) {
         items.push(
@@ -200,7 +205,7 @@ export function buildReviewItems(
       }
       if (
         canonicalCandidates.length > 0 &&
-        !hasHealthyProgressPath &&
+        !hasViablePath &&
         !items.some(
           (item) =>
             item.projectId === project.id &&

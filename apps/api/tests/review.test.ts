@@ -256,6 +256,44 @@ describe("review queue", () => {
     ).toBe(false);
   });
 
+  it("leaves reached external-wait follow-ups to Today instead of Review", () => {
+    const member = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Mira", color: "#456789" })
+      .returning()
+      .get();
+    const project = ctx.handle.db
+      .insert(schema.projects)
+      .values({
+        title: "Await delivery",
+        status: "active",
+        ownerMemberId: member.id,
+      })
+      .returning()
+      .get();
+    const waiting = ctx.handle.db
+      .insert(schema.tasks)
+      .values({
+        projectId: project.id,
+        title: "Receive delivery",
+        status: "actionable",
+      })
+      .returning()
+      .get();
+    ctx.handle.db.insert(schema.taskExternalWaits).values({
+      taskId: waiting.id,
+      waitingFor: "Delivery slot",
+      revisitDate: today,
+    }).run();
+
+    expect(
+      reviewItems().some(
+        (item) =>
+          item.entityType === "project" && item.entityId === project.id,
+      ),
+    ).toBe(false);
+  });
+
   it("uses the newest project or descendant update/review as active attention", () => {
     const member = ctx.handle.db
       .insert(schema.members)
