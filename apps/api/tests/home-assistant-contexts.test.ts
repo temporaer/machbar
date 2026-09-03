@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
+import { ChangeNotifier } from "../src/changeNotifier.js";
 import {
   HOME_ASSISTANT_STALE_MS,
   contextAvailabilityForMember,
@@ -280,5 +281,105 @@ describe("Home Assistant physical contexts", () => {
         )
       ).statusCode,
     ).toBe(204);
+  });
+
+  it("reports known empty person context and retains mappings after reconnect", async () => {
+    const member = (
+      await post("/api/members", { name: "Hannes" })
+    ).json() as { id: number };
+    const first = await connect();
+    const snapshot = async (token: string, contexts: string[]) =>
+      await post(
+        "/api/integrations/home-assistant/context",
+        {
+          protocolVersion: 1,
+          observedAt: new Date().toISOString(),
+          contexts: [{ externalId: "zone.home", name: "Zuhause" }],
+          people: [
+            {
+              externalId: "person.hannes",
+              name: "Hannes",
+              state: "known",
+              contexts,
+            },
+          ],
+        },
+        token,
+      );
+
+    expect((await snapshot(first.token, [])).statusCode).toBe(204);
+    await ctx.app.inject({
+      method: "PUT",
+      url: "/api/integrations/home-assistant/people/person.hannes/mapping",
+      payload: { memberId: member.id },
+    });
+    expect(
+      (await ctx.app.inject({
+        method: "GET",
+        url: "/api/integrations/home-assistant/status",
+      })).json().people,
+    ).toEqual([
+      expect.objectContaining({
+        externalId: "person.hannes",
+        state: "known",
+        contexts: [],
+        mappedMemberId: member.id,
+      }),
+    ]);
+
+    const second = await connect();
+    expect((await snapshot(second.token, ["zone.home"])).statusCode).toBe(204);
+    expect(
+      (await ctx.app.inject({
+        method: "GET",
+        url: "/api/integrations/home-assistant/status",
+      })).json().people,
+    ).toEqual([
+      expect.objectContaining({
+        externalId: "person.hannes",
+        contexts: [expect.objectContaining({ externalId: "zone.home" })],
+        mappedMemberId: member.id,
+      }),
+    ]);
+  });
+
+  it("publishes successful mapping PUT mutations", async () => {
+    await closeTestContext(ctx);
+    const notifier = new ChangeNotifier();
+    const events: Array<{ id: number; originClientId: string | null }> = [];
+    notifier.subscribe((event) => events.push(event));
+    ctx = createTestContext({ changeNotifier: notifier });
+    const member = (
+      await post("/api/members", { name: "Mira" })
+    ).json() as { id: number };
+    const paired = await connect();
+    await post(
+      "/api/integrations/home-assistant/context",
+      {
+        protocolVersion: 1,
+        observedAt: new Date().toISOString(),
+        contexts: [],
+        people: [
+          {
+            externalId: "person.mira",
+            name: "Mira",
+            state: "known",
+            contexts: [],
+          },
+        ],
+      },
+      paired.token,
+    );
+    events.length = 0;
+
+    const response = await ctx.app.inject({
+      method: "PUT",
+      url: "/api/integrations/home-assistant/people/person.mira/mapping",
+      headers: { "x-machbar-client-id": "settings-tab" },
+      payload: { memberId: member.id },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(events).toEqual([{ id: expect.any(Number), originClientId: "settings-tab" }]);
   });
 });

@@ -316,7 +316,12 @@ export function applyHomeAssistantSnapshot(
       const mapping = tx
         .select()
         .from(schema.homeAssistantMemberMappings)
-        .where(eq(schema.homeAssistantMemberMappings.personId, stored.id))
+        .where(
+          eq(
+            schema.homeAssistantMemberMappings.externalPersonId,
+            stored.externalId,
+          ),
+        )
         .get();
       if (person.state === "known") {
         for (const externalId of new Set(person.contexts)) {
@@ -446,8 +451,9 @@ export function homeAssistantStatus(
         .map((row) => contexts.find((context) => context.id === row.contextId))
         .filter((context): context is PhysicalContext => context !== undefined),
       mappedMemberId:
-        mappings.find((mapping) => mapping.personId === person.id)?.memberId ??
-        null,
+        mappings.find(
+          (mapping) => mapping.externalPersonId === person.externalId,
+        )?.memberId ?? null,
       observedAt: person.observedAt,
     })),
   };
@@ -484,7 +490,12 @@ export function setHomeAssistantMemberMapping(
   }
   db.transaction((tx) => {
     tx.delete(schema.homeAssistantMemberMappings)
-      .where(eq(schema.homeAssistantMemberMappings.personId, person.id))
+      .where(
+        eq(
+          schema.homeAssistantMemberMappings.externalPersonId,
+          externalPersonId,
+        ),
+      )
       .run();
     if (memberId !== null) {
       const member = tx
@@ -503,7 +514,7 @@ export function setHomeAssistantMemberMapping(
         .where(eq(schema.homeAssistantMemberMappings.memberId, memberId))
         .run();
       tx.insert(schema.homeAssistantMemberMappings)
-        .values({ memberId, personId: person.id })
+        .values({ memberId, externalPersonId })
         .run();
     }
   });
@@ -536,7 +547,15 @@ export function contextAvailabilityForMember(
   const person = db
     .select()
     .from(schema.homeAssistantPeople)
-    .where(eq(schema.homeAssistantPeople.id, mapping.personId))
+    .where(
+      and(
+        eq(schema.homeAssistantPeople.integrationId, integration.id),
+        eq(
+          schema.homeAssistantPeople.externalId,
+          mapping.externalPersonId,
+        ),
+      ),
+    )
     .get();
   if (
     !person ||
