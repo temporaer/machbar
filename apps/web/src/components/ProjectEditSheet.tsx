@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import type {
@@ -26,6 +33,59 @@ import { PhysicalContextPicker } from "./PhysicalContextPicker";
 
 function errorMessage(err: unknown, strings: Strings): string {
   return localizedErrorMessage(err, strings);
+}
+
+function ProjectEditSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  const headingId = useId();
+  return (
+    <section
+      className="task-detail-section project-edit-section"
+      aria-labelledby={headingId}
+    >
+      <h3 id={headingId} className="task-detail-section-title">
+        {title}
+      </h3>
+      <div className="task-detail-section-body">{children}</div>
+    </section>
+  );
+}
+
+function ProjectEditDisclosure({
+  title,
+  summary,
+  children,
+  className = "",
+}: {
+  title: string;
+  summary?: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <details
+      className={`task-detail-section task-detail-disclosure project-edit-section${
+        className ? ` ${className}` : ""
+      }`}
+    >
+      <summary className="task-detail-section-title disclosure-summary">
+        <span className="task-detail-disclosure-heading">
+          <span role="heading" aria-level={3}>
+            {title}
+          </span>
+          {summary ? (
+            <span className="task-detail-disclosure-summary">{summary}</span>
+          ) : null}
+        </span>
+      </summary>
+      <div className="task-detail-section-body">{children}</div>
+    </details>
+  );
 }
 
 export type ProjectEditFocusField = "driver" | "completion" | "notes";
@@ -375,13 +435,14 @@ export function ProjectEditSheet({
         onClose={closeSheet}
         labelledBy="project-edit-title"
       >
-        <div className="stack">
+        <div className="stack project-edit-content">
         {actionError ?? workflowError ? (
           <p role="alert" style={{ color: "var(--color-danger)" }}>
             {actionError ?? workflowError}
           </p>
         ) : null}
 
+        <ProjectEditSection title={strings.projectContentSection}>
         <div className="field" ref={notesFieldRef}>
           <label htmlFor="project-notes">{strings.notes}</label>
           <MarkdownEditor
@@ -490,7 +551,9 @@ export function ProjectEditSheet({
             )}
           </div>
         </div>
+        </ProjectEditSection>
 
+        <ProjectEditSection title={strings.projectResponsibilitySection}>
         <div className="field">
           <span className="field-label" id="project-status-label">
             {strings.projectStatus}
@@ -549,8 +612,13 @@ export function ProjectEditSheet({
             disabled={projectBusy}
           />
         </div>
+        </ProjectEditSection>
 
-        <div className="row">
+        <ProjectEditDisclosure
+          title={strings.projectPlanningSection}
+          summary={strings.projectPlanningSectionSummary}
+        >
+        <div className="row project-edit-date-row">
           <div className="field" style={{ flex: 1 }}>
             <label htmlFor="project-due">{strings.due}</label>
             <HumanDateInput
@@ -611,7 +679,9 @@ export function ProjectEditSheet({
             />
           </div>
         ) : null}
+        </ProjectEditDisclosure>
 
+        <ProjectEditSection title={strings.projectOutcomeSection}>
         <div ref={criteriaFieldRef}>
           {completionNeedsCriteria ? (
             <p className="capture-error" role="alert">
@@ -624,7 +694,12 @@ export function ProjectEditSheet({
             onError={setActionError}
           />
         </div>
+        </ProjectEditSection>
 
+        <ProjectEditDisclosure
+          title={strings.projectDangerSection}
+          className="task-detail-danger"
+        >
         <button
           type="button"
           className="btn btn-danger btn-block"
@@ -633,6 +708,7 @@ export function ProjectEditSheet({
         >
           {strings.deleteProject}
         </button>
+        </ProjectEditDisclosure>
         </div>
       </BottomSheet>
       {addingNextAction ? (

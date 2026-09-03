@@ -291,6 +291,13 @@ describe("ProjectDetailPage task explanations", () => {
     expect(
       screen.getByRole("button", { name: "In Kalender" }),
     ).toBeInTheDocument();
+    const titleRow = screen
+      .getByRole("heading", { level: 1, name: "Sommerfest planen" })
+      .closest(".project-page-title-row");
+    const actions = titleRow?.querySelector(".project-page-actions");
+    expect(titleRow).toHaveClass("project-page-title-row");
+    expect(actions).toHaveClass("project-page-actions");
+    expect(within(actions as HTMLElement).getAllByRole("button")).toHaveLength(4);
   });
 
   it("does not show Calendar export for a Project without a deadline", async () => {
