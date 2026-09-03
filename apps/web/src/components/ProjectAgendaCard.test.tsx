@@ -1,7 +1,12 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { makeMember, makeProject, makeTask } from "../test/fixtures";
+import {
+  makeMember,
+  makePhysicalContext,
+  makeProject,
+  makeTask,
+} from "../test/fixtures";
 import { ProjectAgendaCard } from "./ProjectAgendaCard";
 
 describe("ProjectAgendaCard", () => {
@@ -22,6 +27,12 @@ describe("ProjectAgendaCard", () => {
               title: "Sommerfest vorbereiten",
               scheduledDate: "2026-08-25",
               dueDate: "2026-08-28",
+              contexts: [
+                makePhysicalContext({
+                  externalId: "zone.seligenstadt",
+                  name: "Seligenstadt",
+                }),
+              ],
             }),
             qualification: "both",
             nextAction: makeTask({ title: "Catering anrufen" }),
@@ -40,6 +51,7 @@ describe("ProjectAgendaCard", () => {
       "/projects/42",
     );
     expect(screen.getByText(/Catering anrufen/)).toBeInTheDocument();
+    expect(screen.getByText("Seligenstadt")).toHaveClass("task-card-tag");
     expect(
       screen.getByText(/Prüfe die konkret blockierenden Voraussetzungen/),
     ).toBeInTheDocument();

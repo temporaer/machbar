@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Tag, TagKind } from "@machbar/shared";
+import type { PhysicalContext, Tag, TagKind } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useLocale, type Locale } from "../lib/locale";
 
@@ -41,34 +41,67 @@ export function taskCardDisplayTags(
     .sort((a, b) => compareDisplayTags(a, b, locale));
 }
 
-export function TaskCardTags({ tags }: { tags: Tag[] }) {
+export function TaskCardTags({
+  tags,
+  contexts = [],
+}: {
+  tags: Tag[];
+  contexts?: PhysicalContext[];
+}) {
   const strings = useStrings();
   const { locale } = useLocale();
   const displayTags = taskCardDisplayTags(tags, locale);
-  if (displayTags.length === 0) return null;
+  const labels = [
+    ...[...contexts]
+      .sort((a, b) => a.name.localeCompare(b.name, locale))
+      .map((context) => ({
+        key: `context-${context.id}`,
+        name: context.name,
+      })),
+    ...displayTags.map((tag) => ({
+      key: `tag-${tag.id}`,
+      name: tag.name,
+      color: tag.color,
+    })),
+  ];
+  if (labels.length === 0) return null;
 
-  const visibleTags = displayTags.slice(0, 2);
-  const overflow = displayTags.length - visibleTags.length;
+  const visibleLabels = labels.slice(0, 2);
+  const overflow = labels.length - visibleLabels.length;
+  const overflowLabel =
+    contexts.length > 0
+      ? strings.moreCardLabels(overflow)
+      : strings.moreTaskTags(overflow);
 
   return (
-    <span className="task-card-tags" role="list" aria-label={strings.taskTags}>
-      {visibleTags.map((tag) => (
+    <span
+      className="task-card-tags"
+      role="list"
+      aria-label={
+        contexts.length > 0 ? strings.cardLabels : strings.taskTags
+      }
+    >
+      {visibleLabels.map((label) => (
         <span
           className="task-card-tag"
-          key={tag.id}
+          key={label.key}
           role="listitem"
-          title={tag.name}
-          style={{ "--tag-color": tag.color } as CSSProperties}
+          title={label.name}
+          style={
+            "color" in label
+              ? ({ "--tag-color": label.color } as CSSProperties)
+              : undefined
+          }
         >
-          {tag.name}
+          {label.name}
         </span>
       ))}
       {overflow > 0 ? (
         <span
           className="task-card-tag-overflow"
           role="listitem"
-          aria-label={strings.moreTaskTags(overflow)}
-          title={strings.moreTaskTags(overflow)}
+          aria-label={overflowLabel}
+          title={overflowLabel}
         >
           +{overflow}
         </span>

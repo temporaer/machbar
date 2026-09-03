@@ -12,7 +12,14 @@ import { useProjectActions } from "../lib/useProjectActions";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import type { ProjectWithActions } from "../lib/api";
-import { makeCriterion, makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
+import {
+  makeCriterion,
+  makeMember,
+  makePhysicalContext,
+  makeProject,
+  makeTag,
+  makeTask,
+} from "../test/fixtures";
 import { formatExactLocalDate } from "../lib/relativeDate";
 import "../styles/index.css";
 import "./ProjectStoryRow.css";
@@ -767,6 +774,12 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
       openCount: 2,
       doneCount: 2,
       nextAction: makeTask({ id: 500, title: "Kartons kaufen" }),
+      contexts: [
+        makePhysicalContext({
+          externalId: "zone.seligenstadt",
+          name: "Seligenstadt",
+        }),
+      ],
       acceptanceCriteria: [
         makeCriterion({ text: "Wohnung gekündigt", checked: true }),
         makeCriterion({ text: "Übergabe abgeschlossen", checked: false }),
@@ -780,6 +793,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(screen.queryByText(/Aufgaben:/)).not.toBeInTheDocument();
     expect(screen.getByText("Nächster Schritt: Kartons kaufen")).toBeInTheDocument();
     expect(screen.getByLabelText("Verantwortlich: Mira")).toBeInTheDocument();
+    expect(screen.getByText("Seligenstadt")).toHaveClass("task-card-tag");
     expect(screen.queryByText("Mira")).not.toBeInTheDocument();
     const progress = container.querySelector(".project-card-progress");
     expect(progress).toBeInTheDocument();

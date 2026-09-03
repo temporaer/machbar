@@ -175,12 +175,6 @@ export function MorePage() {
             )}
           </div>
 
-          <div className="card more-setting-card">
-            <h3>{strings.manageMembers}</h3>
-            <p className="text-muted">{strings.manageMembersHint}</p>
-            <MemberManager />
-          </div>
-
           <div className="more-link-group">
             <Link to="/more/tags" className="list-link more-list-link">
               <span>
@@ -196,20 +190,6 @@ export function MorePage() {
       <section className="more-section" aria-labelledby="more-system-heading">
         <h2 id="more-system-heading">{strings.moreSystem}</h2>
         <div className="stack">
-          <div className="more-link-group">
-            <Link
-              to="/more/integrations/home-assistant"
-              className="list-link more-list-link"
-            >
-              <span>
-                <strong>{strings.homeAssistant}</strong>
-                <small className="list-link-description">
-                  {strings.homeAssistantLinkHint}
-                </small>
-              </span>
-              <span aria-hidden="true">›</span>
-            </Link>
-          </div>
           <div className="card more-setting-card">
             <h3>{strings.about}</h3>
             <p className="text-muted">{strings.tagline}</p>
@@ -218,32 +198,63 @@ export function MorePage() {
             </p>
           </div>
 
-          <div className="card more-setting-card">
-            <label className="setting-switch">
+          <details className="card more-admin-settings">
+            <summary className="disclosure-summary more-admin-summary">
               <span>
-                <strong>{strings.developerMode}</strong>
-                <small>{strings.developerModeHint}</small>
+                <strong>{strings.moreAdministration}</strong>
+                <small>{strings.moreAdministrationHint}</small>
               </span>
-              <input
-                type="checkbox"
-                role="switch"
-                checked={developerMode}
-                onChange={(event) => setDeveloperMode(event.target.checked)}
-              />
-            </label>
-          </div>
-
-          {developerMode ? (
-            <div className="more-link-group">
-              <Link to="/more/debug" className="list-link more-list-link debug-settings-link">
+            </summary>
+            <div className="more-admin-body">
+              <div className="more-admin-group">
+                <h3>{strings.manageMembers}</h3>
+                <p className="text-muted">{strings.manageMembersHint}</p>
+                <MemberManager />
+              </div>
+              <div className="more-link-group">
+                <Link
+                  to="/more/integrations/home-assistant"
+                  className="list-link more-list-link"
+                >
+                  <span>
+                    <strong>{strings.homeAssistant}</strong>
+                    <small className="list-link-description">
+                      {strings.homeAssistantLinkHint}
+                    </small>
+                  </span>
+                  <span aria-hidden="true">›</span>
+                </Link>
+              </div>
+              <label className="setting-switch">
                 <span>
-                  <strong>{strings.debugTitle}</strong>
-                  <small className="list-link-description">{strings.debugLinkHint}</small>
+                  <strong>{strings.developerMode}</strong>
+                  <small>{strings.developerModeHint}</small>
                 </span>
-                <span aria-hidden="true">›</span>
-              </Link>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={developerMode}
+                  onChange={(event) => setDeveloperMode(event.target.checked)}
+                />
+              </label>
+              {developerMode ? (
+                <div className="more-link-group">
+                  <Link
+                    to="/more/debug"
+                    className="list-link more-list-link debug-settings-link"
+                  >
+                    <span>
+                      <strong>{strings.debugTitle}</strong>
+                      <small className="list-link-description">
+                        {strings.debugLinkHint}
+                      </small>
+                    </span>
+                    <span aria-hidden="true">›</span>
+                  </Link>
+                </div>
+              ) : null}
             </div>
-          ) : null}
+          </details>
         </div>
       </section>
     </div>

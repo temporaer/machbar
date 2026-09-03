@@ -8,6 +8,7 @@ import {
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { MemberAvatar } from "./MemberAvatar";
+import { TaskCardTags } from "./TaskCardTags";
 
 function DatePrompt({
   label,
@@ -60,6 +61,7 @@ export function ProjectAgendaCard({
       <div className="project-agenda-heading">
         <span className="badge">{heading}</span>
         {stuck ? <span className="badge badge-stuck">{strings.stuckReasonLabels[stuck.reason]}</span> : null}
+        <TaskCardTags tags={[]} contexts={project.contexts} />
         {owner ? (
           <span
             className="project-agenda-owner"

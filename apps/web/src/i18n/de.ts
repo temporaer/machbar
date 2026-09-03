@@ -284,13 +284,13 @@ const extra = {
   taskContentEmpty: "Keine Notizen oder Tags",
   taskWaitingSection: "Wartet diese Aufgabe auf etwas?",
   taskNotBlocked: "Nicht blockiert",
+  externalWaitSection: "Externes Warten",
   externalWaitGuidance:
     "Nutze dies, wenn du erst nach einer Rückmeldung, Lieferung oder einem Ereignis weitermachen kannst.",
   externalWaitReasonLabel: "Worauf wartet die Aufgabe?",
   revisitDateRecommended: "Wiedervorlage am (empfohlen)",
   revisitDateGuidance:
     "Zeigt die blockierte Aufgabe ab diesem Tag zur Prüfung in Heute. Ohne Datum erinnert dich der Review an die Klärung.",
-  dependencyPrompt: "Muss vorher eine andere Aufgabe erledigt werden?",
   dependencyGuidance:
     "Verknüpfe nur Aufgaben, die wirklich zuerst erledigt werden müssen.",
   dependencySummary: (count: number) =>
@@ -369,6 +369,8 @@ const extra = {
   morePreferences: "Einstellungen",
   moreHousehold: "Haushalt",
   moreSystem: "System",
+  moreAdministration: "Administration",
+  moreAdministrationHint: "Integrationen und Diagnose",
   about: "Über Machbar",
   developerMode: "Entwicklermodus",
   developerModeHint: "Interne Diagnosefunktionen auf diesem Gerät anzeigen.",
@@ -424,6 +426,8 @@ const extra = {
   effectiveTags: "Wirksame Tags",
   taskTags: "Tags",
   moreTaskTags: (count: number) => `${count} weitere Tags`,
+  cardLabels: "Tags und physische Kontexte",
+  moreCardLabels: (count: number) => `${count} weitere Kennzeichnungen`,
   ownTags: "Eigene Tags",
   saveChanges: "Änderungen speichern",
   saveNext: "Speichern & weiter",
@@ -720,6 +724,17 @@ const extra = {
   pushTest: "Test senden",
   pushTestSending: "Wird gesendet …",
   pushTestSent: "Testbenachrichtigung gesendet.",
+  pushTypesTitle: "Arten",
+  pushTypesHint:
+    "Gilt für alle Geräte, auf denen du Benachrichtigungen aktiviert hast.",
+  pushProjectAssignments: "Projektzuweisungen",
+  pushProjectAssignmentsHint:
+    "Wenn dir jemand anderes die Verantwortung für ein Projekt überträgt.",
+  pushTaskReminders: "Aufgabenerinnerungen",
+  pushTaskRemindersHint: "Wenn eine eingestellte Erinnerung fällig ist.",
+  pushContextEntered: "Ortsaufgaben",
+  pushContextEnteredHint:
+    "Wenn du einen Ort betrittst, an dem passende Aufgaben machbar sind.",
   theme: "Design",
   themeLabels: {
     system: "System",

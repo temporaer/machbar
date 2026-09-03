@@ -64,6 +64,11 @@ export const notificationKinds = [
   "task_reminder",
   "context_entered",
 ] as const;
+export const pushNotificationPreferenceKinds = [
+  "project_assigned",
+  "task_reminder",
+  "context_entered",
+] as const;
 export const notificationEntityTypes = ["task", "project"] as const;
 export const pushLocales = ["de", "en"] as const;
 
@@ -79,6 +84,8 @@ export type ContributionEntityType = ActivityEntityType | "task_occurrence";
 export type ContributionCategory = (typeof contributionCategories)[number];
 export type ContributionReason = (typeof contributionReasons)[number];
 export type NotificationKind = (typeof notificationKinds)[number];
+export type PushNotificationPreferenceKind =
+  (typeof pushNotificationPreferenceKinds)[number];
 export type NotificationEntityType = (typeof notificationEntityTypes)[number];
 export type PushLocale = (typeof pushLocales)[number];
 export type ContributionPulseLevel =
@@ -289,6 +296,11 @@ export interface PushConfig {
   enabled: boolean;
   publicKey: string | null;
 }
+
+export type PushNotificationPreferences = Record<
+  PushNotificationPreferenceKind,
+  boolean
+>;
 
 export interface PushSubscriptionRegistration {
   endpoint: string;

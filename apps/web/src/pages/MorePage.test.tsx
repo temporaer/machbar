@@ -16,6 +16,11 @@ vi.mock("../lib/api", () => ({
       enabled: false,
       publicKey: null,
     }),
+    getPushNotificationPreferences: vi.fn().mockResolvedValue({
+      project_assigned: true,
+      task_reminder: true,
+      context_entered: true,
+    }),
     getContributionSummary: vi.fn().mockResolvedValue({
       windowStartedAt: "2026-08-21T10:00:00.000Z",
       windowEndedAt: "2026-08-28T10:00:00.000Z",
@@ -87,6 +92,17 @@ describe("MorePage", () => {
     renderWithProviders(<MorePage />);
 
     expect(screen.queryByRole("link", { name: /Debug/ })).not.toBeInTheDocument();
+    const administration = screen
+      .getByText("Administration")
+      .closest("details");
+    expect(administration).not.toHaveAttribute("open");
+    expect(administration).toContainElement(
+      screen.getByRole("heading", { name: "Personen verwalten" }),
+    );
+    await userEvent.click(screen.getByText("Administration"));
+    expect(
+      screen.getByRole("heading", { name: "Personen verwalten" }),
+    ).toBeInTheDocument();
     const toggle = screen.getByRole("switch", { name: /Entwicklermodus/ });
     await userEvent.click(toggle);
     const link = screen.getByRole("link", { name: /Debug/ });
@@ -124,6 +140,8 @@ describe("MorePage", () => {
     expect(screen.getByRole("heading", { name: "Preferences" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Household" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "System" })).toBeInTheDocument();
+    expect(screen.getByText("Administration").closest("details"))
+      .not.toHaveAttribute("open");
   });
 
   it("renders English and switches locale immediately on this device", async () => {

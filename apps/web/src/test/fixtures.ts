@@ -1,4 +1,10 @@
-import type { AcceptanceCriterion, Member, Tag, Task } from "@machbar/shared";
+import type {
+  AcceptanceCriterion,
+  Member,
+  PhysicalContext,
+  Tag,
+  Task,
+} from "@machbar/shared";
 import type { ProjectWithActions, StuckProjectWithActions } from "../lib/api";
 import { workflowActionsByStatus } from "../lib/projectWorkflow";
 
@@ -14,6 +20,20 @@ export function makeMember(overrides: Partial<Member> = {}): Member {
     name: "Alex",
     color: "#146356",
     pictureUrl: null,
+    ...overrides,
+  };
+}
+
+export function makePhysicalContext(
+  overrides: Partial<PhysicalContext> = {},
+): PhysicalContext {
+  return {
+    id: nextId(),
+    source: "home_assistant",
+    externalId: "zone.home",
+    name: "Zuhause",
+    active: true,
+    updatedAt: new Date("2026-01-01T09:00:00Z").toISOString(),
     ...overrides,
   };
 }
