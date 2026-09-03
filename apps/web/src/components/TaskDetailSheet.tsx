@@ -1150,6 +1150,21 @@ export function TaskDetailSheet() {
                 )}
               </div>
             </div>
+            {task.effectiveContexts.length > 0 ||
+            homeAssistant?.contexts.some((context) => context.active) ? (
+              <div className="field">
+                <label>{strings.physicalContexts}</label>
+                <PhysicalContextPicker
+                  contexts={homeAssistant?.contexts ?? []}
+                  selected={task.explicitContexts}
+                  inherited={task.inheritedContexts}
+                  mode={task.contextInheritanceMode}
+                  onChange={(mode, contextIds) => {
+                    if (mode) void taskActions.setContexts(task, mode, contextIds);
+                  }}
+                />
+              </div>
+            ) : null}
           </TaskDetailDisclosure>
           </div>
 
@@ -1247,21 +1262,6 @@ export function TaskDetailSheet() {
             resetKey={task.id}
             className="task-detail-content-fields"
           >
-            {task.effectiveContexts.length > 0 ||
-            homeAssistant?.contexts.some((context) => context.active) ? (
-              <div className="field">
-                <label>{strings.physicalContexts}</label>
-                <PhysicalContextPicker
-                  contexts={homeAssistant?.contexts ?? []}
-                  selected={task.explicitContexts}
-                  inherited={task.inheritedContexts}
-                  mode={task.contextInheritanceMode}
-                  onChange={(mode, contextIds) => {
-                    if (mode) void taskActions.setContexts(task, mode, contextIds);
-                  }}
-                />
-              </div>
-            ) : null}
             <div className="field">
             <label>{strings.effectiveTags}</label>
             <div className="row" style={{ flexWrap: "wrap" }}>

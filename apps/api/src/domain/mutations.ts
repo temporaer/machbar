@@ -2574,15 +2574,15 @@ export function updateTask(
       for (const tagId of nextExcludedTagIds) {
         tx.insert(schema.taskExcludedTags).values({ taskId: id, tagId }).run();
       }
-      if (contextsChanged) {
-        tx.delete(schema.taskPhysicalContexts)
-          .where(eq(schema.taskPhysicalContexts.taskId, id))
+    }
+    if (contextsChanged) {
+      tx.delete(schema.taskPhysicalContexts)
+        .where(eq(schema.taskPhysicalContexts.taskId, id))
+        .run();
+      for (const contextId of nextContextIds) {
+        tx.insert(schema.taskPhysicalContexts)
+          .values({ taskId: id, contextId })
           .run();
-        for (const contextId of nextContextIds) {
-          tx.insert(schema.taskPhysicalContexts)
-            .values({ taskId: id, contextId })
-            .run();
-        }
       }
     }
     if (
