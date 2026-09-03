@@ -6,9 +6,16 @@ never exposes the Machbar UI through Home Assistant.
 
 ## Install with HACS
 
-Add this repository as a custom **Integration** repository in HACS, install
-Machbar, and restart Home Assistant. Until tagged releases are published, this
-is a development installation.
+1. Open **HACS → Custom repositories**.
+2. Add `https://github.com/temporaer/machbar` with category **Integration**.
+3. Return to HACS and open **Machbar**.
+4. Press **Download** / **Install**, then restart Home Assistant when prompted.
+5. Open **Settings → Devices & services → Add integration → Machbar**.
+6. Complete the pairing flow below.
+
+Adding the custom repository only makes Machbar discoverable in HACS; it does
+not install the integration. Until tagged releases are published, HACS installs
+the development version from the default branch.
 
 ## Pair
 

@@ -36,6 +36,9 @@ function tagFor(
   if (event.kind === "task_reminder") {
     return event.sourceKey;
   }
+  if (event.kind === "context_entered") {
+    return `task:${event.entityId}:context`;
+  }
   return `${event.entityType}:${event.entityId}:assigned`;
 }
 
