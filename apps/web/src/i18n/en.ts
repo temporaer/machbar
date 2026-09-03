@@ -574,6 +574,8 @@ const en = {
   reviewCategoryWaiting: "Clarify waiting",
   reviewReasonMissingDriver: "The active project has no project lead.",
   reviewReasonNoProgressPath: "The project has no executable next step or healthy waiting path.",
+  reviewReasonXlWithoutChildren:
+    "This XL task has not yet been broken into smaller steps.",
   reviewReasonCompletion: "All steps are finished; the outcome needs an explicit completion decision.",
   reviewReasonWaiting: "The waiting path needs a future revisit.",
   reviewReasonBlocked: "The blockage has no clear path forward.",
@@ -644,8 +646,15 @@ const en = {
   homeAssistantPairingHint:
     "Enter this one-time code in the Machbar integration in Home Assistant. It expires after about ten minutes.",
   homeAssistantPeople: "Map people",
+  homeAssistantPeopleLocations: "Last reported places",
   homeAssistantPeopleHint:
-    "Map Home Assistant people to household members in Machbar.",
+    "Map Home Assistant people to household members and check their last reported place.",
+  homeAssistantCurrentLocation: (location: string) => `Current place: ${location}`,
+  homeAssistantLastKnownLocation: (location: string) =>
+    `Last known place: ${location}`,
+  homeAssistantLocationUnknown: "Place unknown",
+  homeAssistantNoKnownLocation: "Not at a known place",
+  homeAssistantObservedAt: (time: string) => `Updated ${time}`,
   homeAssistantUnmapped: "Not mapped",
   projectTasksHint:
     "This list shows the path to the project outcome, from the next actionable step through dependencies and later work.",

@@ -669,7 +669,6 @@ export type ReviewCategory =
 export type ReviewReason =
   | "missing_driver"
   | "no_viable_progress_path"
-  | "due_without_credible_plan"
   | "waiting_without_followup"
   | "broken_blocker_path"
   | "xl_without_children"
@@ -682,7 +681,6 @@ export type ReviewReason =
 export type ReviewActionCode =
   | "assign_driver"
   | "add_next_action"
-  | "plan_task"
   | "set_followup"
   | "resolve_blocker"
   | "add_child"

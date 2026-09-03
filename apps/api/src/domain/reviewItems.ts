@@ -76,15 +76,14 @@ function taskItem(
 const reasonOrder: Record<ReviewReason, number> = {
   missing_driver: 0,
   no_viable_progress_path: 1,
-  due_without_credible_plan: 2,
-  waiting_without_followup: 3,
-  broken_blocker_path: 4,
-  xl_without_children: 5,
-  completion_review: 6,
-  active_stale: 7,
-  backlog_due: 8,
-  backlog_stale: 9,
-  standalone_someday_stale: 10,
+  waiting_without_followup: 2,
+  broken_blocker_path: 3,
+  xl_without_children: 4,
+  completion_review: 5,
+  active_stale: 6,
+  backlog_due: 7,
+  backlog_stale: 8,
+  standalone_someday_stale: 9,
 };
 
 export interface BuildReviewItemsOptions {
@@ -198,27 +197,6 @@ export function buildReviewItems(
             "clarification_repair",
             "no_viable_progress_path",
             { code: "add_next_action" },
-          ),
-        );
-      }
-      if (
-        project.dueDate !== null &&
-        openTasks.length > 0 &&
-        !openTasks.some(
-          (task) => task.dueDate !== null || task.scheduledDate !== null,
-        )
-      ) {
-        const planningTarget = canonicalCandidates[0] ?? openTasks[0]!;
-        items.push(
-          projectItem(
-            project,
-            "clarification_repair",
-            "due_without_credible_plan",
-            {
-              code: "plan_task",
-              targetEntityType: "task",
-              targetEntityId: planningTarget.id,
-            },
           ),
         );
       }
