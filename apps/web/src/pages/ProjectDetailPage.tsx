@@ -183,10 +183,10 @@ export function ProjectDetailPage() {
       {projectError ? <ErrorState message={projectError} onRetry={reloadProject} /> : null}
       {project ? (
         <>
-          <div className="page-header" style={{ flexDirection: "column", alignItems: "stretch" }}>
-            <div className="row-between">
+          <div className="page-header project-page-header">
+            <div className="row-between project-page-title-row">
               <h1>{project.title}</h1>
-              <div className="row">
+              <div className="row project-page-actions">
                 <NativeShareButton
                   title={project.title}
                   text={serializeProjectForShare(project, locale)}

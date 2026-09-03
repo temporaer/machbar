@@ -662,6 +662,12 @@ const en = {
 
   openProject: "Open project",
   editProject: "Edit project",
+  projectContentSection: "Content",
+  projectResponsibilitySection: "Status & responsibility",
+  projectPlanningSection: "Planning & classification",
+  projectPlanningSectionSummary: "Dates, tags, and physical contexts",
+  projectOutcomeSection: "Outcome",
+  projectDangerSection: "Delete project",
   returnToBacklogStory: "Move to later",
   completeStory: "Complete",
   lifecycleActions: "Project actions",

@@ -640,6 +640,12 @@ const extra = {
   // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---
   openProject: "Projekt öffnen",
   editProject: "Projekt bearbeiten",
+  projectContentSection: "Inhalt",
+  projectResponsibilitySection: "Status & Verantwortung",
+  projectPlanningSection: "Planung & Einordnung",
+  projectPlanningSectionSummary: "Termine, Tags und physische Kontexte",
+  projectOutcomeSection: "Ergebnis",
+  projectDangerSection: "Projekt löschen",
   returnToBacklogStory: "Auf später verschieben",
   completeStory: "Abschließen",
   lifecycleActions: "Workflow-Aktionen",

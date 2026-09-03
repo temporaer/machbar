@@ -45,6 +45,41 @@ describe("ProjectEditSheet", () => {
     mockedApi.getTags.mockResolvedValue([makeTag({ id: 10, name: "büro" })]);
   });
 
+  it("groups project details into clear sections with secondary controls collapsed", async () => {
+    renderWithProviders(
+      <ProjectEditSheet
+        project={makeProjectDetail({ id: 42 })}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Projekt bearbeiten" });
+    expect(
+      within(dialog).getByRole("heading", { level: 3, name: "Inhalt" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("heading", {
+        level: 3,
+        name: "Status & Verantwortung",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("heading", { level: 3, name: "Ergebnis" }),
+    ).toBeInTheDocument();
+
+    const planning = within(dialog)
+      .getByText("Planung & Einordnung")
+      .closest("details");
+    const danger = within(dialog)
+      .getByRole("heading", { level: 3, name: "Projekt löschen" })
+      .closest("details");
+    expect(planning).not.toHaveAttribute("open");
+    expect(danger).not.toHaveAttribute("open");
+
+    await userEvent.click(within(dialog).getByText("Planung & Einordnung"));
+    expect(planning).toHaveAttribute("open");
+  });
+
   it("routes incomplete project completion to the existing criteria editor", async () => {
     const project = makeProjectDetail({
       id: 42,
