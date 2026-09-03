@@ -304,9 +304,11 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
             {story.stuckReason ? (
               <span className="badge badge-stuck">{strings.stuckReasonLabels[story.stuckReason]}</span>
             ) : null}
-            <TaskCardTags tags={[]} contexts={story.contexts} />
           </div>
-          {variant !== "card" || dueLabel || scheduledLabel ? (
+          {variant !== "card" ||
+          dueLabel ||
+          scheduledLabel ||
+          story.contexts.length > 0 ? (
             <div className="story-row-meta">
               {variant !== "card" ? (
                 <span>
@@ -328,6 +330,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
                   {strings.taskSummary}: {totalTasks > 0 ? `${doneCount}/${totalTasks}` : strings.taskSummaryNone}
                 </span>
               ) : null}
+              <TaskCardTags tags={[]} contexts={story.contexts} />
             </div>
           ) : null}
           {variant === "card" ? (
