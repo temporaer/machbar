@@ -196,6 +196,20 @@ export function MorePage() {
       <section className="more-section" aria-labelledby="more-system-heading">
         <h2 id="more-system-heading">{strings.moreSystem}</h2>
         <div className="stack">
+          <div className="more-link-group">
+            <Link
+              to="/more/integrations/home-assistant"
+              className="list-link more-list-link"
+            >
+              <span>
+                <strong>{strings.homeAssistant}</strong>
+                <small className="list-link-description">
+                  {strings.homeAssistantLinkHint}
+                </small>
+              </span>
+              <span aria-hidden="true">›</span>
+            </Link>
+          </div>
           <div className="card more-setting-card">
             <h3>{strings.about}</h3>
             <p className="text-muted">{strings.tagline}</p>

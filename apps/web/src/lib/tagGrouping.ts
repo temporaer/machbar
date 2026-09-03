@@ -1,7 +1,7 @@
 import type { Tag, TagKind } from "@machbar/shared";
 import type { Locale } from "../i18n/catalog";
 
-export const groupableTagKinds = ["context", "actor", "area"] as const;
+export const groupableTagKinds = ["actor", "area"] as const;
 export type GroupableTagKind = (typeof groupableTagKinds)[number];
 
 export interface TagGroup<T> {

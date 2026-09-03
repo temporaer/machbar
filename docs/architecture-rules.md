@@ -117,6 +117,9 @@ behavior.
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |
 | Task metadata and lifecycle actions | `apps/web/src/lib/useTaskActions.ts` |
 | External-wait actions | `apps/web/src/lib/useTaskActions.ts` |
+| Physical-context actions | `apps/web/src/lib/useTaskActions.ts` and `apps/web/src/lib/useProjectActions.ts` |
+| Physical-context availability | `apps/api/src/integrations/homeAssistant.ts`, projected only by Today and Waiting |
+| Home Assistant machine authentication | `apps/api/src/auth/routes.ts` route policy |
 | Project next-action selection | `apps/api/src/repo/nextActionRepo.ts` and `Graph` |
 | Derived review diagnosis | `apps/api/src/domain/reviewItems.ts` |
 | Review decisions | `apps/web/src/lib/useProjectActions.ts` and `apps/web/src/lib/useTaskActions.ts` |

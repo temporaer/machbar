@@ -100,7 +100,7 @@ describe("working-system task eligibility", () => {
         })
       )
         .json()
-        .map((task: { id: number }) => task.id),
+        .map((entry: { task: { id: number } }) => entry.task.id),
     ).toEqual([]);
 
     const detail = (
@@ -148,7 +148,7 @@ describe("working-system task eligibility", () => {
         await ctx.app.inject({ method: "GET", url: "/api/waiting" })
       )
         .json()
-        .map((task: { id: number }) => task.id),
+        .map((entry: { task: { id: number } }) => entry.task.id),
     ).toContain(waiting.id);
     expect(
       (

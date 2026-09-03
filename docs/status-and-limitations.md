@@ -16,7 +16,8 @@ behavior from possible future work.
 - standards-based Web Push for supported desktop and mobile browsers/PWAs;
 - outbound Web Share with clipboard fallback;
 - single-process/container deployment with SQLite;
-- reverse-proxy, URL sub-path, and Home Assistant Ingress support.
+- reverse-proxy and URL sub-path support;
+- a push-only HACS Home Assistant integration for physical contexts.
 
 ## Current limitations
 
@@ -86,18 +87,18 @@ Without Pocket ID, selecting a household member is not authentication. Anyone
 who can reach the instance can choose a local identity.
 
 With Pocket ID enabled, authentication applies to Machbar’s configured direct
-origin. Home Assistant Ingress is a different origin and cannot reuse the
-same cookie.
+origin. Home Assistant uses a separate revocable machine credential.
 
 ### Home Assistant
 
-The repository contains add-on development files, but no published and tested
-one-click add-on repository or native Home Assistant integration.
+The custom integration is installable as a HACS custom repository but does not
+yet have published tagged releases. Unknown or stale presence intentionally
+fails open.
 
 ### Browser coverage
 
 Most automated coverage is unit/component level. The repository has a
-Playwright configuration, but broad phone-viewport, reverse-proxy, Ingress,
+Playwright configuration, but broad phone-viewport, reverse-proxy,
 and browser-specific PWA coverage is not yet established.
 
 ## Possible future work
@@ -108,7 +109,7 @@ Potential directions include:
 - live client updates;
 - offline caching and synchronization;
 - broader reminder schedules and notification preferences;
-- a published Home Assistant add-on and a supported native integration;
+- published releases for the Home Assistant integration;
 - conversion between a captured task and a multi-step project.
 
 These are directions, not release commitments.

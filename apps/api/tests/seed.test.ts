@@ -80,13 +80,17 @@ describe("seed data", () => {
   it("lists externally blocked work with structured wait context", async () => {
     const res = await ctx.app.inject({ method: "GET", url: "/api/waiting" });
     const tasks = res.json() as Array<{
-      title: string;
-      externalWait: { waitingFor: string | null } | null;
+      task: {
+        title: string;
+        externalWait: { waitingFor: string | null } | null;
+      };
     }>;
     expect(tasks).toContainEqual(
       expect.objectContaining({
-        title: "Nebenkostenabrechnung klären",
-        externalWait: expect.objectContaining({ waitingFor: "Vermieter" }),
+        task: expect.objectContaining({
+          title: "Nebenkostenabrechnung klären",
+          externalWait: expect.objectContaining({ waitingFor: "Vermieter" }),
+        }),
       }),
     );
   });

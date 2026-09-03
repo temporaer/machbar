@@ -227,8 +227,7 @@ BASE_PATH=/tasks
 ```
 
 The frontend uses relative assets and hash routing, so changing the prefix
-does not require a frontend rebuild. Home Assistant Ingress strips its dynamic
-prefix before forwarding requests and should keep `BASE_PATH=/`.
+does not require a frontend rebuild. Browser API requests remain at `/api`.
 
 ## Pocket ID OpenID Connect
 
@@ -263,8 +262,7 @@ Restrict the Pocket ID client to the intended household users. The local
 identity selector is convenient on a trusted network but is not an access
 control boundary.
 
-OIDC cookies belong to the configured direct origin. A separate Home Assistant
-Ingress origin cannot share that session.
+OIDC cookies belong to the configured direct origin.
 
 ## Backups
 

@@ -3,12 +3,16 @@ import { z } from "zod";
 import type { Db } from "../db/client.js";
 import { Graph } from "../domain/graph.js";
 import { buildAgenda } from "../domain/agenda.js";
-import { buildBlockedWork } from "../domain/waiting.js";
+import { buildWaitingEntries } from "../domain/waiting.js";
 import { getMemberOrThrow } from "../domain/mutations.js";
 import { AppError } from "../errors.js";
 import { validationDetails } from "../validation.js";
 import { isTaskInWorkingSystem } from "../domain/workEligibility.js";
 import { buildReviewItems } from "../domain/reviewItems.js";
+import {
+  contextAvailabilityForHousehold,
+  contextAvailabilityForMember,
+} from "../integrations/homeAssistant.js";
 
 const agendaQuerySchema = z.object({
   memberId: z.coerce.number().int().positive().optional(),
@@ -29,7 +33,8 @@ const agendaQuerySchema = z.object({
 });
 
 const waitingQuerySchema = z.object({
-  actorTagId: z.coerce.number().int().positive().optional(),
+  memberId: z.coerce.number().int().positive().optional(),
+  scope: z.enum(["mine", "all"]).optional(),
 });
 
 /**
@@ -81,6 +86,10 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       memberId,
       today: date,
       scope: scope === "all" || memberId === undefined ? "all" : "mine",
+      contextAvailability: (task, target) =>
+        target === "household"
+          ? contextAvailabilityForHousehold(db, task.effectiveContexts)
+          : contextAvailabilityForMember(db, task.effectiveContexts, target),
     });
   });
 
@@ -125,7 +134,20 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
         validationDetails(parsed.error),
       );
     }
-    const graph = Graph.load(db);
-    return buildBlockedWork(graph, parsed.data.actorTagId);
+    const memberId =
+      parsed.data.scope === "all"
+        ? undefined
+        : request.authMember?.id ?? parsed.data.memberId;
+    if (memberId !== undefined) getMemberOrThrow(db, memberId);
+    const scope =
+      parsed.data.scope === "all" || memberId === undefined ? "all" : "mine";
+    return buildWaitingEntries(Graph.load(db), {
+      memberId,
+      scope,
+      contextAvailability: (task, target) =>
+        target === "household"
+          ? contextAvailabilityForHousehold(db, task.effectiveContexts)
+          : contextAvailabilityForMember(db, task.effectiveContexts, target),
+    });
   });
 }

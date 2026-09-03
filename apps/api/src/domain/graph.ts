@@ -2,6 +2,7 @@ import type {
   AcceptanceCriterion,
   Dependency,
   InheritanceMode,
+  PhysicalContext,
   Project as SharedProject,
   ProjectActivationReadiness,
   ProjectStatus,
@@ -19,6 +20,7 @@ import {
 } from "./mutations.js";
 import {
   getEffectiveOwners,
+  getEffectivePhysicalContextIds,
   getEffectiveTagIds,
 } from "../repo/effectiveRepo.js";
 import { getNextActionTaskIdsByProject } from "../repo/nextActionRepo.js";
@@ -65,6 +67,7 @@ interface RawTask {
   needsClarification: boolean;
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
+  physicalContextInheritanceMode: InheritanceMode;
   createdByMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
@@ -162,6 +165,7 @@ export class Graph {
     // --- SQL/CTE-computed derivations (repo layer) ---------------------
     const effectiveOwners = getEffectiveOwners(db);
     const effectiveTagIdsByTask = getEffectiveTagIds(db);
+    const effectiveContextIdsByTask = getEffectivePhysicalContextIds(db);
     const nextActionIdsByProject = getNextActionTaskIdsByProject(db);
     const graph = new Graph(new Map(), nextActionIdsByProject);
 
@@ -170,6 +174,11 @@ export class Graph {
     const rawTasks = db.select().from(schema.tasks).all() as RawTask[];
     const allTags = db.select().from(schema.tags).all() as Tag[];
     const tagsById = new Map(allTags.map((t) => [t.id, t]));
+    const allContexts = db
+      .select()
+      .from(schema.physicalContexts)
+      .all() as PhysicalContext[];
+    const contextsById = new Map(allContexts.map((context) => [context.id, context]));
 
     const projectTagRows = db.select().from(schema.projectTags).all();
     const projectTagsByProject = new Map<number, Tag[]>();
@@ -179,6 +188,28 @@ export class Graph {
       const list = projectTagsByProject.get(row.projectId) ?? [];
       list.push(tag);
       projectTagsByProject.set(row.projectId, list);
+    }
+
+    const projectContextRows = db
+      .select()
+      .from(schema.projectPhysicalContexts)
+      .all();
+    const contextIdsByProject = new Map<number, number[]>();
+    for (const row of projectContextRows) {
+      const list = contextIdsByProject.get(row.projectId) ?? [];
+      list.push(row.contextId);
+      contextIdsByProject.set(row.projectId, list);
+    }
+
+    const taskContextRows = db
+      .select()
+      .from(schema.taskPhysicalContexts)
+      .all();
+    const contextIdsByTask = new Map<number, number[]>();
+    for (const row of taskContextRows) {
+      const list = contextIdsByTask.get(row.taskId) ?? [];
+      list.push(row.contextId);
+      contextIdsByTask.set(row.taskId, list);
     }
 
     const taskTagRows = db.select().from(schema.taskTags).all();
@@ -318,6 +349,9 @@ export class Graph {
         updatedAt: p.updatedAt,
         reviewedAt: p.reviewedAt,
         tags: dedupeTags(projectTagsByProject.get(p.id) ?? []),
+        contexts: (contextIdsByProject.get(p.id) ?? [])
+          .map((id) => contextsById.get(id))
+          .filter((context): context is PhysicalContext => context !== undefined),
         effectiveTags: dedupeTags(projectTagsByProject.get(p.id) ?? []),
         effectiveAreaTags: dedupeTags(
           projectTagsByProject
@@ -369,9 +403,19 @@ export class Graph {
       const effectiveActorTags = effectiveTags.filter(
         (tag) => tag.kind === "actor",
       );
-      const effectiveContextTags = effectiveTags.filter(
-        (tag) => tag.kind === "context",
-      );
+      const explicitContexts = (contextIdsByTask.get(raw.id) ?? [])
+        .map((id) => contextsById.get(id))
+        .filter((context): context is PhysicalContext => context !== undefined);
+      const inheritedContextIds =
+        raw.parentTaskId !== null
+          ? effectiveContextIdsByTask.get(raw.parentTaskId) ?? []
+          : contextIdsByProject.get(raw.projectId ?? -1) ?? [];
+      const inheritedContexts = inheritedContextIds
+        .map((id) => contextsById.get(id))
+        .filter((context): context is PhysicalContext => context !== undefined);
+      const effectiveContexts = (effectiveContextIdsByTask.get(raw.id) ?? [])
+        .map((id) => contextsById.get(id))
+        .filter((context): context is PhysicalContext => context !== undefined);
 
       const depRefs = dependenciesByTask.get(raw.id) ?? [];
       const dependencies: Dependency[] = depRefs.map((d) => {
@@ -422,6 +466,7 @@ export class Graph {
         needsClarification: raw.status === "captured",
         ownerMemberId: raw.ownerMemberId,
         ownerInheritanceMode: raw.ownerInheritanceMode,
+        contextInheritanceMode: raw.physicalContextInheritanceMode,
         createdByMemberId: raw.createdByMemberId,
         dueDate: raw.dueDate,
         scheduledDate: raw.scheduledDate,
@@ -443,9 +488,11 @@ export class Graph {
         effectiveTags,
         effectiveAreaTags,
         effectiveActorTags,
-        effectiveContextTags,
         explicitTags,
         excludedTagIds,
+        explicitContexts,
+        inheritedContexts,
+        effectiveContexts,
         blocked: execution?.blocked ?? false,
         executable: execution?.executable ?? false,
         nextBlockerAttentionDate:
@@ -562,19 +609,22 @@ export class Graph {
     selection:
       | { scope: "mine"; memberId: number }
       | { scope: "all" },
+    isAvailable: (task: TaskRecord) => boolean = () => true,
   ): TaskRecord[] {
     const candidates = this.nextActionCandidatesFor(projectId);
     if (selection.scope === "mine") {
       const selected = candidates.find(
         (task) =>
-          task.effectiveOwnerId === selection.memberId ||
-          task.effectiveOwnerId === null,
+          (task.effectiveOwnerId === selection.memberId ||
+            task.effectiveOwnerId === null) &&
+          isAvailable(task),
       );
       return selected ? [selected] : [];
     }
 
     const seenLanes = new Set<number | null>();
     return candidates.filter((task) => {
+      if (!isAvailable(task)) return false;
       if (seenLanes.has(task.effectiveOwnerId)) return false;
       seenLanes.add(task.effectiveOwnerId);
       return true;

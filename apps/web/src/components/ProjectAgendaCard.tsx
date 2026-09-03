@@ -41,7 +41,13 @@ export function ProjectAgendaCard({
   owner?: Member | null;
 }) {
   const strings = useStrings();
-  const { project, qualification, nextAction, stuck } = entry;
+  const {
+    project,
+    qualification,
+    nextAction,
+    nextActionContextAvailability,
+    stuck,
+  } = entry;
   const heading =
     qualification === "due"
       ? strings.projectDue
@@ -78,6 +84,9 @@ export function ProjectAgendaCard({
       {nextAction ? (
         <p className="project-agenda-context">
           <strong>{strings.nextAction}:</strong> {nextAction.title}
+          {nextActionContextAvailability?.status === "unavailable"
+            ? ` · ${strings.contextUnavailableNow}`
+            : ""}
         </p>
       ) : null}
       {stuck ? (

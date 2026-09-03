@@ -320,6 +320,7 @@ describe("TodayPage", () => {
           }),
           qualification: "due",
           nextAction: makeTask({ title: "Transporter reservieren" }),
+          nextActionContextAvailability: null,
           stuck: null,
         },
       ],

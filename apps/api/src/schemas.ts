@@ -28,6 +28,7 @@ export const createProjectSchema = z.object({
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
+  contextIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const updateProjectSchema = z.object({
@@ -38,6 +39,7 @@ export const updateProjectSchema = z.object({
   scheduledDate: isoDate.nullable().optional(),
   position: z.number().int().optional(),
   tagIds: z.array(z.number().int()).optional(),
+  contextIds: z.array(z.number().int().positive()).optional(),
   expectedRevision: z.number().int().positive().optional(),
 });
 
@@ -81,6 +83,7 @@ export const createTaskSchema = z.object({
   needsClarification: z.boolean().optional(),
   ownerMemberId: z.number().int().nullable().optional(),
   ownerInheritanceMode: z.enum(inheritanceModes).optional(),
+  contextInheritanceMode: z.enum(inheritanceModes).optional(),
   createdByMemberId: z.number().int().nullable().optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
@@ -90,6 +93,7 @@ export const createTaskSchema = z.object({
   allowedDeviationDays: z.number().int().min(0).nullable().optional(),
   reminderAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
+  contextIds: z.array(z.number().int().positive()).optional(),
 });
 
 export const createChildTaskSchema = createTaskSchema.omit({
@@ -111,6 +115,7 @@ export const updateTaskSchema = z.object({
   needsClarification: z.boolean().optional(),
   ownerMemberId: z.number().int().nullable().optional(),
   ownerInheritanceMode: z.enum(inheritanceModes).optional(),
+  contextInheritanceMode: z.enum(inheritanceModes).optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   priority: z.number().int().nullable().optional(),
@@ -120,6 +125,7 @@ export const updateTaskSchema = z.object({
   reminderAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
   excludedTagIds: z.array(z.number().int()).optional(),
+  contextIds: z.array(z.number().int().positive()).optional(),
   expectedRevision: z.number().int().positive().optional(),
   completedOn: isoDate.optional(),
 });
@@ -219,6 +225,34 @@ export const updateTagSchema = z.object({
   kind: z.enum(tagKinds).optional(),
   groupingMode: z.enum(tagGroupingModes).optional(),
   sortPosition: z.number().int().nullable().optional(),
+});
+
+export const homeAssistantPairSchema = z.object({
+  pairingCode: z.string().min(1),
+  protocolVersion: z.number().int(),
+});
+
+export const homeAssistantSnapshotSchema = z.object({
+  protocolVersion: z.literal(1),
+  observedAt: isoDateTime,
+  contexts: z.array(
+    z.object({
+      externalId: z.string().trim().min(1).max(255),
+      name: z.string().trim().min(1).max(255),
+    }),
+  ),
+  people: z.array(
+    z.object({
+      externalId: z.string().trim().min(1).max(255),
+      name: z.string().trim().min(1).max(255),
+      state: z.enum(["known", "unknown"]),
+      contexts: z.array(z.string().trim().min(1).max(255)),
+    }),
+  ),
+});
+
+export const homeAssistantMappingSchema = z.object({
+  memberId: z.number().int().positive().nullable(),
 });
 
 export const createMemberSchema = z.object({

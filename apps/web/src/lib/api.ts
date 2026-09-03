@@ -7,6 +7,8 @@ import type {
   AuthStatus,
   ContributionSummary,
   DebugMetrics,
+  HomeAssistantIntegrationStatus,
+  HomeAssistantPairingCode,
   InheritanceMode,
   Member,
   MoreCounts,
@@ -27,6 +29,7 @@ import type {
   TaskRecurrenceHistory,
   TaskSize,
   TaskStatus,
+  WaitingEntry,
 } from "@machbar/shared";
 import { readRequestActorMemberId } from "./identityStorage";
 import { getClientId } from "./clientId";
@@ -179,6 +182,8 @@ export interface CreateTaskInput {
   allowedDeviationDays?: number | null;
   reminderAt?: string | null;
   tagIds?: number[];
+  contextIds?: number[];
+  contextInheritanceMode?: InheritanceMode;
 }
 
 /** Body for `POST /api/tasks/:id/children` (no `projectId`/`parentTaskId`, both implied). */
@@ -214,6 +219,7 @@ export interface CreateProjectInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   tagIds?: number[];
+  contextIds?: number[];
 }
 
 export type UpdateProjectInput = Partial<CreateProjectInput> & {
@@ -553,8 +559,34 @@ export const api = {
     );
   },
   getInbox: () => request<Task[]>("/inbox"),
-  getWaiting: (actorTagId?: number) =>
-    request<Task[]>(`/waiting${query({ actorTagId })}`),
+  getWaiting: (memberId?: number | null, scope: AgendaScope = "mine") =>
+    request<WaitingEntry[]>(
+      `/waiting${query({
+        memberId: scope === "mine" ? memberId : undefined,
+        scope,
+      })}`,
+    ),
+  getHomeAssistantStatus: () =>
+    request<HomeAssistantIntegrationStatus>(
+      "/integrations/home-assistant/status",
+    ),
+  createHomeAssistantPairingCode: () =>
+    request<HomeAssistantPairingCode>(
+      "/integrations/home-assistant/pairing-code",
+      { method: "POST" },
+    ),
+  revokeHomeAssistant: () =>
+    request<void>("/integrations/home-assistant/connection", {
+      method: "DELETE",
+    }),
+  setHomeAssistantMemberMapping: (
+    externalId: string,
+    memberId: number | null,
+  ) =>
+    request<void>(
+      `/integrations/home-assistant/people/${encodeURIComponent(externalId)}/mapping`,
+      { method: "PUT", body: JSON.stringify({ memberId }) },
+    ),
   searchTasks: (filters: SearchFilters) =>
     request<Task[]>(
       `/search${query({

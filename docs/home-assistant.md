@@ -1,78 +1,33 @@
 # Home Assistant
 
-The repository contains development packaging for running Machbar as a Home
-Assistant add-on. It is not currently a published, one-click add-on
-repository.
+Machbar ships a push-only Home Assistant custom integration. Machbar remains a
+standalone service; the integration sends zone and `person.*` state to it and
+never exposes the Machbar UI through Home Assistant.
 
-## What the add-on packaging does
+## Install with HACS
 
-- builds Machbar for supported Home Assistant architectures;
-- stores the SQLite database in the add-on’s persistent `/data` directory;
-- exposes the UI through Home Assistant Ingress;
-- optionally exposes port 3000 for direct access;
-- supports a `seed_database` development option.
+Add this repository as a custom **Integration** repository in HACS, install
+Machbar, and restart Home Assistant. Until tagged releases are published, this
+is a development installation.
 
-The relevant files live in `home-assistant/`.
+## Pair
 
-## Local development installation
+1. In Machbar, open **More → Home Assistant** and start pairing.
+2. In Home Assistant, add the **Machbar** integration.
+3. Enter Machbar's HTTP(S) origin and the one-time pairing code.
+4. Back in Machbar, map each synchronized Home Assistant person to a household
+   member.
 
-Build the image from the repository root:
+The code expires after about ten minutes and can be used once. Re-pairing
+rotates the integration token; disconnecting revokes it immediately.
 
-```bash
-docker build -f home-assistant/Dockerfile -t local/machbar .
-```
+## Data and behavior
 
-For a local add-on checkout, copy or link the add-on files into a directory
-under Home Assistant’s local add-ons path, then set the add-on configuration’s
-image to:
+Home Assistant sends complete snapshots of zone names and person-to-zone
+presence. Coordinates are never sent. Machbar uses this transient state only
+to filter Today and populate the context section in Waiting.
 
-```yaml
-image: "local/machbar"
-```
-
-The exact local add-on workflow depends on the Home Assistant installation and
-is intended for development rather than end-user distribution.
-
-## Ingress
-
-The add-on declares Ingress on port 3000. Home Assistant strips its generated
-Ingress prefix before forwarding traffic, so Machbar should run with:
-
-```dotenv
-BASE_PATH=/
-```
-
-The add-on appears as a Machbar side-panel entry when installed.
-
-## Options
-
-| Option | Type | Default | Purpose |
-|--------|------|---------|---------|
-| `seed_database` | boolean | `false` | Insert sample data for a fresh development/demo installation |
-
-## Direct port
-
-The add-on configuration leaves `3000/tcp` disabled by default. Enable a host
-port in the Home Assistant add-on configuration only when direct access is
-needed.
-
-Direct access and Ingress use different browser origins. Pocket ID sessions
-configured for a direct HTTPS origin cannot be shared with the Home Assistant
-Ingress origin.
-
-## Distribution status
-
-Publishing a supported add-on requires more than making this repository
-public. Before advertising repository installation, the project still needs
-to verify the expected add-on repository layout, publish architecture-specific
-images, pin and update base images, define an image/version release process,
-and test installation and upgrades on supported Home Assistant systems.
-
-## Native integration ideas
-
-A future Home Assistant integration could expose selected Machbar state,
-services, notifications, or automation triggers. Those ideas are not a
-supported public API today. Example REST sensors and service calls have
-therefore been removed from the main documentation rather than presented as
-working integrations.
-
+Context requirements do not change blockers, executability, dependencies,
+project activation readiness, canonical next actions, or stuck diagnosis.
+Disconnected, unmapped, unknown, inactive, and data older than 30 minutes all
+fail open.

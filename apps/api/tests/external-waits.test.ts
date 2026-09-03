@@ -161,17 +161,18 @@ describe("task external waits", () => {
     });
     expect(response.statusCode).toBe(200);
     const rows = response.json();
-    expect(rows.map((row: { title: string }) => row.title)).not.toContain(
+    expect(rows.map((row: { task: { title: string } }) => row.task.title)).not.toContain(
       "Dependency only",
     );
-    expect(rows.map((row: { title: string }) => row.title)).toEqual(
+    expect(rows.map((row: { task: { title: string } }) => row.task.title)).toEqual(
       expect.arrayContaining(["External only", "Both"]),
     );
     expect(
-      rows.filter((row: { id: number }) => row.id === both.id),
+      rows.filter((row: { task: { id: number } }) => row.task.id === both.id),
     ).toHaveLength(1);
     expect(
-      rows.find((row: { id: number }) => row.id === both.id).blockers,
+      rows.find((row: { task: { id: number; blockers: unknown[] } }) => row.task.id === both.id)
+        .task.blockers,
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "dependency" }),
@@ -220,7 +221,7 @@ describe("task external waits", () => {
     });
     expect(response.statusCode).toBe(200);
     expect(
-      response.json().map((task: { id: number }) => task.id),
+      response.json().map((entry: { task: { id: number } }) => entry.task.id),
     ).toEqual([
       earliest.id,
       earlierDue.id,

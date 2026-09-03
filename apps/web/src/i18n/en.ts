@@ -611,6 +611,37 @@ const en = {
     "Projects connect a desired outcome with the path toward it. Active projects always show a next step or intentional waiting.",
   waitingPageHint:
     "Work that cannot move yet lives here. See what it is waiting on and when it needs another look.",
+  waitingExternal: "External",
+  waitingContext: "Context",
+  waitingContextHint:
+    "These tasks return automatically when Home Assistant reports a matching place.",
+  contextUnavailableNow: "not available at the current place",
+  physicalContexts: "Physical contexts",
+  noPhysicalContexts: "No places have been synchronized from Home Assistant yet.",
+  contextInheritedFrom: "Inherited",
+  contextModeLabels: {
+    inherit: "Inherit",
+    explicit: "Own selection",
+    none: "None",
+  },
+  inactive: "inactive",
+  homeAssistant: "Home Assistant",
+  homeAssistantLinkHint: "Connect places and people for physical contexts",
+  homeAssistantConnection: "Connection",
+  homeAssistantConnected: "Connected",
+  homeAssistantDisconnected: "Not connected",
+  homeAssistantStale: "Connected, but the data is stale",
+  homeAssistantLastUpdate: "Last update",
+  homeAssistantProtocol: "Protocol version",
+  homeAssistantPair: "Start pairing",
+  homeAssistantReconnect: "Pair again",
+  homeAssistantDisconnect: "Disconnect",
+  homeAssistantPairingHint:
+    "Enter this one-time code in the Machbar integration in Home Assistant. It expires after about ten minutes.",
+  homeAssistantPeople: "Map people",
+  homeAssistantPeopleHint:
+    "Map Home Assistant people to household members in Machbar.",
+  homeAssistantUnmapped: "Not mapped",
   projectTasksHint:
     "This list shows the path to the project outcome, from the next actionable step through dependencies and later work.",
   projectStatus: "Status",
@@ -837,6 +868,8 @@ const en = {
     dependenciesChanged: "changed dependencies",
     taskTagsChanged: "changed the task tags",
     projectTagsChanged: "changed the project tags",
+    taskContextsChanged: "changed the task's physical contexts",
+    projectContextsChanged: "changed the project's physical contexts",
     criterionAdded: "added an acceptance criterion",
     criterionUpdated: "updated an acceptance criterion",
     criterionReopened: "reopened an acceptance criterion",
@@ -845,6 +878,15 @@ const en = {
   },
 
   apiErrorMessages: {
+    integration_authentication_required:
+      "Home Assistant must authenticate with a valid token.",
+    integration_token_revoked: "The Home Assistant connection was revoked.",
+    pairing_code_expired: "The pairing code has expired.",
+    pairing_code_invalid: "The pairing code is invalid.",
+    pairing_code_used: "The pairing code has already been used.",
+    physical_context_not_found: "The selected physical context was not found.",
+    unsupported_protocol_version:
+      "This Home Assistant integration version is not supported.",
     contribution_query_invalid:
       "The timezone for contribution history is invalid.",
     acceptance_criteria_order_invalid:
