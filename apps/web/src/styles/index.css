@@ -1322,6 +1322,34 @@ details[open] > .disclosure-summary::after {
   border-top: 1px solid var(--color-border);
 }
 
+.more-admin-locations {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.home-assistant-location-list {
+  display: grid;
+  gap: 8px;
+}
+
+.home-assistant-location-row {
+  display: grid;
+  gap: 2px;
+}
+
+.home-assistant-person {
+  gap: 8px;
+}
+
+.home-assistant-person-heading {
+  display: grid;
+  gap: 2px;
+}
+
+.home-assistant-person-heading small {
+  line-height: 1.4;
+}
+
 .setting-switch {
   min-height: 44px;
   display: flex;

@@ -124,9 +124,9 @@ export function ReviewPage() {
       case "missing_driver":
         return strings.reviewReasonMissingDriver;
       case "no_viable_progress_path":
-      case "due_without_credible_plan":
-      case "xl_without_children":
         return strings.reviewReasonNoProgressPath;
+      case "xl_without_children":
+        return strings.reviewReasonXlWithoutChildren;
       case "waiting_without_followup":
         return strings.reviewReasonWaiting;
       case "broken_blocker_path":
@@ -159,8 +159,6 @@ export function ReviewPage() {
         return strings.assignDriver;
       case "add_next_action":
         return strings.addNextAction;
-      case "plan_task":
-        return strings.planDates;
       case "set_followup":
         return strings.reviewActionSetFollowup;
       case "resolve_blocker":
@@ -203,18 +201,6 @@ export function ReviewPage() {
           state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
         });
         return;
-      case "plan_task":
-        if (
-          item.entityType === "project" &&
-          item.suggestedAction.targetEntityId === undefined
-        ) {
-          navigate(`/projects/${item.projectId ?? item.entityId}?focus=planning`, {
-            state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
-          });
-          return;
-        }
-        openTask(targetId, item, issueIndex, "schedule");
-        return;
       case "set_followup":
         openTask(targetId, item, issueIndex, "waiting");
         return;
@@ -233,6 +219,15 @@ export function ReviewPage() {
           state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
         });
     }
+  };
+  const openDetails = (item: ReviewItem, issueIndex: number) => {
+    if (item.entityType === "task") {
+      openTask(item.entityId, item, issueIndex);
+      return;
+    }
+    navigate(`/projects/${item.entityId}`, {
+      state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
+    });
   };
 
   const projectDecisionButtons = (item: ReviewItem) => {
@@ -428,6 +423,13 @@ export function ReviewPage() {
                     </div>
                     <p>{reasonText(item.reason)}</p>
                     <div className="review-item-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => openDetails(item, issueIndex)}
+                      >
+                        {strings.reviewOpenDetails}
+                      </button>
                       <button
                         type="button"
                         className="btn btn-sm"

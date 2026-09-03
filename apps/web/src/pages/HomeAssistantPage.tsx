@@ -8,6 +8,7 @@ import { useStrings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { PageHeader } from "../components/PageHeader";
 import { LoadingState, ErrorState } from "../components/AsyncStates";
+import { HomeAssistantPersonLocation } from "../components/HomeAssistantPersonLocation";
 
 export function HomeAssistantPage() {
   const strings = useStrings();
@@ -121,8 +122,15 @@ export function HomeAssistantPage() {
             <h2>{strings.homeAssistantPeople}</h2>
             <p className="text-muted">{strings.homeAssistantPeopleHint}</p>
             {status.people.map((person) => (
-              <label key={person.externalId} className="field">
-                <span>{person.name}</span>
+              <label key={person.externalId} className="field home-assistant-person">
+                <span className="home-assistant-person-heading">
+                  <strong>{person.name}</strong>
+                  <HomeAssistantPersonLocation
+                    person={person}
+                    stale={status.stale}
+                    showObservedAt
+                  />
+                </span>
                 <select
                   value={person.mappedMemberId ?? ""}
                   disabled={busy}

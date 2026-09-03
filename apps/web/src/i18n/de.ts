@@ -551,6 +551,8 @@ const extra = {
   reviewCategoryWaiting: "Warten klären",
   reviewReasonMissingDriver: "Dem aktiven Projekt fehlt eine verantwortliche Person.",
   reviewReasonNoProgressPath: "Das Projekt hat keinen ausführbaren nächsten Schritt oder gesunden Wartepfad.",
+  reviewReasonXlWithoutChildren:
+    "Diese XL-Aufgabe ist noch nicht in kleinere Schritte zerlegt.",
   reviewReasonCompletion: "Alle Schritte sind beendet; das Ergebnis braucht eine bewusste Abschlussentscheidung.",
   reviewReasonWaiting: "Der Wartepfad braucht eine künftige Wiedervorlage.",
   reviewReasonBlocked: "Die Blockierung hat keinen erkennbaren Weg nach vorn.",
@@ -622,8 +624,15 @@ const extra = {
   homeAssistantPairingHint:
     "Diesen einmaligen Code in der Machbar-Integration von Home Assistant eingeben. Er läuft nach etwa zehn Minuten ab.",
   homeAssistantPeople: "Personen zuordnen",
+  homeAssistantPeopleLocations: "Zuletzt gemeldete Orte",
   homeAssistantPeopleHint:
-    "Ordne Home-Assistant-Personen den Haushaltsmitgliedern in Machbar zu.",
+    "Ordne Home-Assistant-Personen den Haushaltsmitgliedern in Machbar zu und prüfe ihren zuletzt gemeldeten Ort.",
+  homeAssistantCurrentLocation: (location: string) => `Aktueller Ort: ${location}`,
+  homeAssistantLastKnownLocation: (location: string) =>
+    `Letzter bekannter Ort: ${location}`,
+  homeAssistantLocationUnknown: "Ort unbekannt",
+  homeAssistantNoKnownLocation: "An keinem bekannten Ort",
+  homeAssistantObservedAt: (time: string) => `Stand ${time}`,
   homeAssistantUnmapped: "Nicht zugeordnet",
   projectTasksHint:
     "Diese Liste zeigt den Weg zum Projektergebnis: vom nächsten machbaren Schritt über Abhängigkeiten bis zu späterer Arbeit.",

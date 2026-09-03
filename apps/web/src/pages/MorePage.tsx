@@ -14,6 +14,7 @@ import { PushNotificationSettings } from "../components/PushNotificationSettings
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useDeveloperMode } from "../lib/developerMode";
+import { HomeAssistantPersonLocation } from "../components/HomeAssistantPersonLocation";
 
 export function MorePage() {
   const strings = useStrings();
@@ -25,6 +26,10 @@ export function MorePage() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const { data: counts } = useAsync(() => api.getMoreCounts(), []);
+  const { data: homeAssistant } = useAsync(
+    () => api.getHomeAssistantStatus(),
+    [],
+  );
 
   return (
     <div className="more-page">
@@ -211,6 +216,25 @@ export function MorePage() {
                 <p className="text-muted">{strings.manageMembersHint}</p>
                 <MemberManager />
               </div>
+              {homeAssistant?.connected && homeAssistant.people.length > 0 ? (
+                <div className="more-admin-group more-admin-locations">
+                  <h3>{strings.homeAssistantPeopleLocations}</h3>
+                  <div className="home-assistant-location-list">
+                    {homeAssistant.people.map((person) => (
+                      <div
+                        className="home-assistant-location-row"
+                        key={person.externalId}
+                      >
+                        <strong>{person.name}</strong>
+                        <HomeAssistantPersonLocation
+                          person={person}
+                          stale={homeAssistant.stale}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className="more-link-group">
                 <Link
                   to="/more/integrations/home-assistant"

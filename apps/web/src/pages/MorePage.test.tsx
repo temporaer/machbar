@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { MorePage } from "./MorePage";
@@ -47,6 +47,34 @@ vi.mock("../lib/api", () => ({
     }),
     getMoreCounts: vi.fn().mockResolvedValue({
       review: 7,
+    }),
+    getHomeAssistantStatus: vi.fn().mockResolvedValue({
+      connected: true,
+      instanceId: "ha-1",
+      protocolVersion: 1,
+      connectedAt: "2026-09-03T10:00:00.000Z",
+      lastUpdateAt: "2026-09-03T12:00:00.000Z",
+      stale: false,
+      contexts: [],
+      people: [
+        {
+          externalId: "person.mira",
+          name: "Mira",
+          state: "known",
+          contexts: [
+            {
+              id: 1,
+              source: "home_assistant",
+              externalId: "zone.seligenstadt",
+              name: "Seligenstadt",
+              active: true,
+              updatedAt: "2026-09-03T12:00:00.000Z",
+            },
+          ],
+          mappedMemberId: 1,
+          observedAt: "2026-09-03T12:00:00.000Z",
+        },
+      ],
     }),
   },
 }));
@@ -110,6 +138,17 @@ describe("MorePage", () => {
     expect(window.localStorage.getItem("machbar:developer-mode")).toBe("true");
   });
 
+  it("shows Home Assistant's current person locations in administration", async () => {
+    renderWithProviders(<MorePage />);
+
+    await userEvent.click(screen.getByText("Administration"));
+
+    expect(screen.getByRole("heading", { name: "Zuletzt gemeldete Orte" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Aktueller Ort: Seligenstadt"))
+      .toBeInTheDocument();
+  });
+
   it("shows a shared-first unranked contribution summary", async () => {
     renderWithProviders(<MorePage />);
 
@@ -123,7 +162,7 @@ describe("MorePage", () => {
     expect(personalBreakdown).not.toHaveAttribute("open");
     await userEvent.click(screen.getByText("Persönliche Aufteilung"));
     expect(personalBreakdown).toHaveAttribute("open");
-    expect(screen.getByText("Mira")).toBeInTheDocument();
+    expect(within(personalBreakdown!).getByText("Mira")).toBeInTheDocument();
     expect(screen.getByText("+4 erledigt · +1 geplant")).toBeInTheDocument();
     expect(
       screen.getByText("Gemeinsamer Beitrag ohne persönliche Zuordnung"),

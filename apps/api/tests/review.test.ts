@@ -440,32 +440,11 @@ describe("review queue", () => {
     }).run();
 
     const items = reviewItems();
-    expect(items).toContainEqual(
-      expect.objectContaining({
-        projectId: project.id,
-        reason: "due_without_credible_plan",
-        suggestedAction: {
-          code: "plan_task",
-          targetEntityType: "task",
-          targetEntityId: large.id,
-        },
-      }),
-    );
     expect(
-      ctx.handle.db
-        .select({ id: schema.tasks.id })
-        .from(schema.tasks)
-        .all()
-        .some(
-          (task) =>
-            task.id ===
-            items.find(
-              (item) =>
-                item.projectId === project.id &&
-                item.reason === "due_without_credible_plan",
-            )?.suggestedAction.targetEntityId,
-        ),
-    ).toBe(true);
+      items.filter(
+        (item) => item.entityType === "project" && item.entityId === project.id,
+      ),
+    ).toEqual([]);
     expect(items).toContainEqual(
       expect.objectContaining({
         entityTitle: "Large work",

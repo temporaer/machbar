@@ -222,19 +222,7 @@ describe("ReviewPage", () => {
     );
   });
 
-  it("routes a project plan repair without a task target to project planning", async () => {
-    mockedApi.getReviewItems.mockResolvedValue([
-      {
-        entityType: "project",
-        entityId: 4,
-        entityTitle: project.title,
-        projectId: 4,
-        projectTitle: project.title,
-        category: "clarification_repair",
-        reason: "due_without_credible_plan",
-        suggestedAction: { code: "plan_task" },
-      },
-    ]);
+  it("opens the underlying project independently of its suggested repair", async () => {
     renderWithProviders(
       <Routes>
         <Route path="/more/review" element={<ReviewPage />} />
@@ -242,11 +230,15 @@ describe("ReviewPage", () => {
       </Routes>,
       { initialEntries: ["/more/review"] },
     );
+    const card = (await screen.findByText(project.title)).closest("article")!;
 
-    await userEvent.click(await screen.findByRole("button", { name: "Planen" }));
+    await userEvent.click(
+      within(card).getByRole("button", { name: "Details öffnen" }),
+    );
 
     expect(screen.getByLabelText("repair-location")).toHaveTextContent(
-      "/projects/4?focus=planning",
+      "/projects/4",
     );
   });
+
 });
