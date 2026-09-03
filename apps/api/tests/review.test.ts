@@ -210,6 +210,52 @@ describe("review queue", () => {
     ).toBe(false);
   });
 
+  it("accepts an executable cross-project dependency as a healthy progress path", () => {
+    const member = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Lea", color: "#345678" })
+      .returning()
+      .get();
+    const project = ctx.handle.db
+      .insert(schema.projects)
+      .values({
+        title: "Room setup",
+        status: "active",
+        ownerMemberId: member.id,
+      })
+      .returning()
+      .get();
+    const prerequisite = ctx.handle.db
+      .insert(schema.tasks)
+      .values({
+        title: "Place order",
+        status: "actionable",
+        scheduledDate: today,
+      })
+      .returning()
+      .get();
+    const blocked = ctx.handle.db
+      .insert(schema.tasks)
+      .values({
+        projectId: project.id,
+        title: "Build wardrobe",
+        status: "actionable",
+      })
+      .returning()
+      .get();
+    ctx.handle.db.insert(schema.taskDependencies).values({
+      taskId: blocked.id,
+      dependsOnTaskId: prerequisite.id,
+    }).run();
+
+    expect(
+      reviewItems().some(
+        (item) =>
+          item.entityType === "project" && item.entityId === project.id,
+      ),
+    ).toBe(false);
+  });
+
   it("uses the newest project or descendant update/review as active attention", () => {
     const member = ctx.handle.db
       .insert(schema.members)

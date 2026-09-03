@@ -161,13 +161,11 @@ export function buildReviewItems(
     if (project.status === "active") {
       const openTasks = tasks.filter(isOpen);
       const canonicalCandidates = graph.nextActionCandidatesFor(project.id);
-      const hasHealthyFutureWaiting = openTasks.some((task) => {
+      const hasHealthyProgressPath = openTasks.some((task) => {
         const analysis = graph.blockerAnalysisFor(task.id);
         return (
           analysis?.blocked === true &&
-          analysis.healthyProgressPath &&
-          analysis.nextBlockerAttentionDate !== null &&
-          analysis.nextBlockerAttentionDate > today
+          analysis.healthyProgressPath
         );
       });
       if (project.ownerMemberId === null) {
@@ -188,7 +186,7 @@ export function buildReviewItems(
         );
       } else if (
         canonicalCandidates.length === 0 &&
-        !hasHealthyFutureWaiting &&
+        !hasHealthyProgressPath &&
         !projectsWithRootCause.has(project.id)
       ) {
         items.push(
@@ -202,7 +200,7 @@ export function buildReviewItems(
       }
       if (
         canonicalCandidates.length > 0 &&
-        !hasHealthyFutureWaiting &&
+        !hasHealthyProgressPath &&
         !items.some(
           (item) =>
             item.projectId === project.id &&
