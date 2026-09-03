@@ -42,7 +42,11 @@ async def test_setup_and_reload_push_initial_snapshot(hass):
         "1",
         {"friendly_name": "Home", "latitude": 1.2, "longitude": 3.4},
     )
-    hass.states.async_set("person.alex", "home", {"friendly_name": "Alex"})
+    hass.states.async_set(
+        "person.alex",
+        "home",
+        {"friendly_name": "Alex", "in_zones": ["zone.home"]},
+    )
     entry = _entry()
     entry.add_to_hass(hass)
 
@@ -90,7 +94,11 @@ async def test_state_change_pushes_complete_snapshot(hass):
         ),
     ):
         await publisher.async_start()
-        hass.states.async_set("person.alex", "home", {"friendly_name": "Alex"})
+        hass.states.async_set(
+            "person.alex",
+            "home",
+            {"friendly_name": "Alex", "in_zones": ["zone.home"]},
+        )
         hass.states.async_set("zone.home", "1", {"friendly_name": "Home"})
         await asyncio.sleep(0.01)
         await hass.async_block_till_done()
@@ -131,16 +139,41 @@ async def test_unload_cleans_up_listener_and_pending_push(hass):
     push.assert_awaited_once()
 
 
-async def test_unknown_person_has_no_context(hass):
-    """Unknown and out-of-zone people never expose location detail."""
-    hass.states.async_set("zone.home", "0")
+async @pytest.mark.parametrize(
+    ("state", "in_zones", "expected_state", "expected_contexts"),
+    [
+        ("home", ["zone.home"], "known", ["zone.home"]),
+        ("Büro", ["zone.microsoft"], "known", ["zone.microsoft"]),
+        ("not_home", [], "known", []),
+        ("unknown", ["zone.home"], "unknown", []),
+        ("unavailable", ["zone.home"], "unknown", []),
+        (
+            "home",
+            ["zone.home", "zone.garden"],
+            "known",
+            ["zone.home", "zone.garden"],
+        ),
+        ("home", ["zone.home", "zone.unsynchronized"], "known", ["zone.home"]),
+    ],
+)
+def test_person_snapshot_uses_actual_zone_memberships(
+    hass, state, in_zones, expected_state, expected_contexts
+):
+    """Snapshots preserve known empty states and filter zone memberships."""
+    for zone_id in ("zone.home", "zone.microsoft", "zone.garden"):
+        hass.states.async_set(zone_id, "0")
     hass.states.async_set(
         "person.alex",
-        "not_home",
-        {"latitude": 1.2, "longitude": 3.4, "gps_accuracy": 10},
+        state,
+        {
+            "in_zones": in_zones,
+            "latitude": 1.2,
+            "longitude": 3.4,
+            "gps_accuracy": 10,
+        },
     )
 
     person = build_snapshot(hass)["people"][0]
-    assert person["state"] == "unknown"
-    assert person["contexts"] == []
+    assert person["state"] == expected_state
+    assert person["contexts"] == expected_contexts
     assert set(person) == {"externalId", "name", "state", "contexts"}
