@@ -28,7 +28,7 @@ describe("effective owner and typed-tag inheritance", () => {
       await ctx.app.inject({
         method: "POST",
         url: "/api/tags",
-        payload: { name: "Zuhause", kind: "context" },
+        payload: { name: "Zuhause", kind: "area" },
       })
     ).json();
 
@@ -56,7 +56,6 @@ describe("effective owner and typed-tag inheritance", () => {
     expect(parentTask.effectiveOwnerSource).toBe("project");
     expect(parentTask.inheritedOwnerId).toBe(owner.id);
     expect(parentTask.effectiveTags.map((t: { id: number }) => t.id)).toContain(tag.id);
-    expect(parentTask.effectiveContextTags.map((t: { id: number }) => t.id)).toContain(tag.id);
 
     const childTask = (
       await ctx.app.inject({
@@ -72,7 +71,6 @@ describe("effective owner and typed-tag inheritance", () => {
     // Still labelled "project" because nothing in the parent chain overrides ownership.
     expect(childTask.effectiveOwnerSource).toBe("project");
     expect(childTask.effectiveTags.map((t: { id: number }) => t.id)).toContain(tag.id);
-    expect(childTask.effectiveContextTags.map((t: { id: number }) => t.id)).toContain(tag.id);
   });
 
   it("keeps every project task creation and refile path in owner inheritance by default", async () => {

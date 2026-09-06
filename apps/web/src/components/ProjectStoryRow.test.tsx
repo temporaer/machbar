@@ -12,7 +12,14 @@ import { useProjectActions } from "../lib/useProjectActions";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import type { ProjectWithActions } from "../lib/api";
-import { makeCriterion, makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
+import {
+  makeCriterion,
+  makeMember,
+  makePhysicalContext,
+  makeProject,
+  makeTag,
+  makeTask,
+} from "../test/fixtures";
 import { formatExactLocalDate } from "../lib/relativeDate";
 import "../styles/index.css";
 import "./ProjectStoryRow.css";
@@ -509,9 +516,9 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
   });
 
   it("edits explicit project tags in a focused sheet without leaving the list", async () => {
-    const explicitTag = makeTag({ id: 10, name: "Zuhause", kind: "context" });
+    const explicitTag = makeTag({ id: 10, name: "Zuhause", kind: "plain" });
     const inheritedTag = makeTag({ id: 11, name: "Vererbt", kind: "area" });
-    const newTag = makeTag({ id: 12, name: "Telefon", kind: "context" });
+    const newTag = makeTag({ id: 12, name: "Telefon", kind: "plain" });
     const story = makeProject({
       id: 47,
       title: "Tags bearbeiten",
@@ -544,7 +551,7 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
   });
 
   it("closes the tag sheet without a second mutation after an immediate toggle", async () => {
-    const tag = makeTag({ id: 13, name: "Unterwegs", kind: "context" });
+    const tag = makeTag({ id: 13, name: "Unterwegs", kind: "plain" });
     const story = makeProject({ id: 48, title: "Tags abbrechen", tags: [] });
     mockedApi.getTags.mockResolvedValue([tag]);
     mockedApi.updateProject.mockResolvedValue({ ...story, tags: [tag] });
@@ -767,6 +774,12 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
       openCount: 2,
       doneCount: 2,
       nextAction: makeTask({ id: 500, title: "Kartons kaufen" }),
+      contexts: [
+        makePhysicalContext({
+          externalId: "zone.seligenstadt",
+          name: "Seligenstadt",
+        }),
+      ],
       acceptanceCriteria: [
         makeCriterion({ text: "Wohnung gekündigt", checked: true }),
         makeCriterion({ text: "Übergabe abgeschlossen", checked: false }),
@@ -780,6 +793,9 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(screen.queryByText(/Aufgaben:/)).not.toBeInTheDocument();
     expect(screen.getByText("Nächster Schritt: Kartons kaufen")).toBeInTheDocument();
     expect(screen.getByLabelText("Verantwortlich: Mira")).toBeInTheDocument();
+    const contextTag = screen.getByText("Seligenstadt");
+    expect(contextTag).toHaveClass("task-card-tag");
+    expect(contextTag.closest(".story-row-meta")).toBeInTheDocument();
     expect(screen.queryByText("Mira")).not.toBeInTheDocument();
     const progress = container.querySelector(".project-card-progress");
     expect(progress).toBeInTheDocument();

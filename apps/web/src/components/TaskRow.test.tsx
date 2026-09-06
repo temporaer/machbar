@@ -5,7 +5,12 @@ import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { api } from "../lib/api";
-import { makeMember, makeTag, makeTask } from "../test/fixtures";
+import {
+  makeMember,
+  makePhysicalContext,
+  makeTag,
+  makeTask,
+} from "../test/fixtures";
 import { resolveScheduleShortcut } from "./ScheduleShortcuts";
 import { SWIPE_COACH_STORAGE_KEY } from "../lib/swipeCoach";
 import { useTaskDetail } from "../lib/taskDetailContext";
@@ -468,7 +473,7 @@ describe("TaskRow – calm shared card presentation", () => {
       status: "actionable",
       effectiveTags: [
         makeTag({ id: 1, name: "Anna", kind: "actor" }),
-        makeTag({ id: 2, name: "Telefon", kind: "context" }),
+        makeTag({ id: 2, name: "Telefon", kind: "plain" }),
         makeTag({ id: 3, name: "Garten", kind: "area" }),
         makeTag({ id: 4, name: "Draußen", kind: "plain" }),
       ],
@@ -492,10 +497,30 @@ describe("TaskRow – calm shared card presentation", () => {
 
     const tags = screen.getByRole("list", { name: "Tags" });
     expect(within(tags).getByText("Garten")).toBeInTheDocument();
-    expect(within(tags).getByText("Telefon")).toBeInTheDocument();
+    expect(within(tags).getByText("Draußen")).toBeInTheDocument();
     expect(within(tags).getByLabelText("1 weitere Tags")).toHaveTextContent("+1");
     expect(within(tags).queryByText("Anna")).not.toBeInTheDocument();
-    expect(within(tags).queryByText("Draußen")).not.toBeInTheDocument();
+    expect(within(tags).queryByText("Telefon")).not.toBeInTheDocument();
+  });
+
+  it("shows effective physical contexts as compact card labels", async () => {
+    const task = makeTask({
+      title: "Paket abholen",
+      effectiveContexts: [
+        makePhysicalContext({
+          externalId: "zone.seligenstadt",
+          name: "Seligenstadt",
+        }),
+      ],
+    });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+
+    const labels = await screen.findByRole("list", {
+      name: "Tags und physische Kontexte",
+    });
+    expect(within(labels).getByText("Seligenstadt")).toHaveClass(
+      "task-card-tag",
+    );
   });
 
   it.each([
@@ -555,7 +580,7 @@ describe("TaskRow – calm shared card presentation", () => {
       title,
       effectiveTags: [
         makeTag({ id: 31, name: "Haushalt", kind: "area" }),
-        makeTag({ id: 32, name: "Unterwegs", kind: "context" }),
+        makeTag({ id: 32, name: "Unterwegs", kind: "plain" }),
       ],
     });
     const { container } = renderWithProviders(

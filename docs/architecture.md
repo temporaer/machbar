@@ -72,6 +72,7 @@ Two kinds of values cascade down the task tree:
 |-------|--------------------------|
 | `ownerMemberId` | First non-null value walking up: task → parent task → … → project |
 | tags | Union of ancestor tags minus any `excludedTagIds` on the task |
+| physical contexts | Nearest explicit task set, otherwise parent/project set |
 
 `inheritanceMode` (values: `inherit` | `explicit` | `none`) overrides the cascade:
 
@@ -79,15 +80,13 @@ Two kinds of values cascade down the task tree:
 - `explicit` — override with the task's own value and stop propagation
 - `none` — explicitly clear the value (no further upward lookup)
 
-The resolved values are exposed as `effectiveOwnerId` and `effectiveTags` on
-the `Task` type in `@machbar/shared`. Typed projections
-`effectiveAreaTags`, `effectiveActorTags`, and `effectiveContextTags` are
-filtered from the same inherited tag set; they do not implement separate
-inheritance rules.
+The resolved values are exposed as `effectiveOwnerId`, `effectiveTags`, and
+`effectiveContexts` on `Task`. Physical contexts are Home Assistant-owned
+entities rather than a tag kind.
 
 Tag selection is a reusable compact chip picker in both task and project
 editors. Every flexible, non-exclusive tag has one primary kind: Bereich,
-Person, Kontext, or Normal. The picker creates a missing tag with the
+Person, or Normal. The picker creates a missing tag with the
 kind of its active section and selects it immediately. Inherited task tags
 remain separately excludable rather than being converted into explicit task
 tags. `TagManager` exposes kind and grouping metadata under **Mehr**;
@@ -111,7 +110,8 @@ The API computes several derived fields before returning tasks to the client:
 |-------|-------------|
 | `effectiveOwnerId` / `effectiveOwnerSource` | Walk parent chain; source ∈ `{task, parent, project, none}` |
 | `effectiveTags` | Ancestor tag union minus excluded IDs |
-| `effectiveAreaTags` / `effectiveActorTags` / `effectiveContextTags` | Kind-filtered views of `effectiveTags` |
+| `effectiveAreaTags` / `effectiveActorTags` | Kind-filtered views of `effectiveTags` |
+| `explicitContexts` / `inheritedContexts` / `effectiveContexts` | Stable physical-context requirements |
 | `explicitTags` | Tags directly on this task |
 | `externalWait` | Nullable unresolved external blocker with a required non-empty reason and optional independent `revisitDate` |
 | `blocked` | `true` for actionable tasks with an external wait or any unresolved dependency |
@@ -203,14 +203,14 @@ the supported single-process deployment model.
 
 ---
 
-## 5. Base Path and Ingress
+## 5. Base Path and integrations
 
 The `BASE_PATH` environment variable (default `/`) tells the server where static UI routes are mounted:
 
-- The **API** remains at relative `api/...` URLs so Home Assistant Ingress can proxy it.
-- The **frontend** uses relative assets and API URLs so the same build works behind a non-root proxy path.
+- The **API** remains at absolute `/api/...` browser URLs.
+- The **frontend** uses relative assets and hash routing so the same build works behind a non-root proxy path.
 
-No frontend rebuild is required for a Home Assistant Ingress path.
+No frontend rebuild is required for a proxy sub-path.
 
 ### OIDC authentication
 
@@ -246,9 +246,14 @@ identity fields. An explicit `scope=all` may broaden the Today read projection,
 but never changes mutation attribution. Normal household owner assignment
 remains collaborative rather than becoming a per-record ACL.
 
-### Home Assistant Ingress
+### Home Assistant
 
-Home Assistant strips the dynamic Ingress prefix while proxying to the add-on. Machbar therefore listens at `/` internally and uses relative browser URLs.
+The HACS integration exchanges a short-lived pairing code for a hashed,
+revocable machine credential, then pushes versioned complete snapshots. Machine
+routes use Bearer authentication and cannot substitute for browser sessions.
+`Graph` resolves stable requirements; Today and Waiting alone evaluate
+member-specific availability. Unknown or telemetry older than 30 minutes fails
+open and never changes structural blocker or project-health derivations.
 
 ---
 

@@ -4,68 +4,81 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { WaitingGroupList } from "./WaitingGroupList";
 import { api } from "../lib/api";
-import { makeMember, makeTag, makeTask } from "../test/fixtures";
+import { makeMember, makeTask } from "../test/fixtures";
 
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
-    getTask: vi.fn(),
     completeTask: vi.fn(),
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
     updateTask: vi.fn(),
-    setExternalWait: vi.fn(),
-    resolveExternalWait: vi.fn(),
   },
 }));
 
-const mockedApi = vi.mocked(api, true);
-
 describe("WaitingGroupList", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+    vi.mocked(api.getMembers).mockResolvedValue([
+      makeMember({ id: 1, name: "Mira" }),
+    ]);
   });
 
-  it("renders every blocked task once with external and dependency reasons", async () => {
-    const task = makeTask({
-      id: 101,
-      title: "Freigabe abwarten",
-      blocked: true,
-      executable: false,
-      externalWait: { waitingFor: "Vermieter", revisitDate: null },
-      dependencies: [{
-        id: 3,
-        taskId: 101,
-        dependsOnTaskId: 99,
-        title: "Angebot prüfen",
-        resolved: false,
-      }],
-      nextBlockerAttentionDate: "2026-09-05",
-    });
-    renderWithProviders(<WaitingGroupList tasks={[task, task]} />);
+  it("separates external and physical-context reasons", async () => {
+    renderWithProviders(
+      <WaitingGroupList
+        entries={[
+          {
+            task: makeTask({
+              id: 1,
+              title: "Freigabe abwarten",
+              externalWait: { waitingFor: "Vermieter", revisitDate: null },
+            }),
+            reasons: [
+              {
+                type: "external",
+                waitingFor: "Vermieter",
+                revisitDate: null,
+              },
+            ],
+          },
+          {
+            task: makeTask({ id: 2, title: "Im Garten arbeiten" }),
+            reasons: [{ type: "context", contexts: [] }],
+          },
+        ]}
+      />,
+    );
 
-    expect(await screen.findAllByText("Freigabe abwarten")).toHaveLength(1);
-    expect(screen.getByText("Wartet auf: Vermieter")).toBeInTheDocument();
-    expect(screen.getByText("Blockiert durch: Angebot prüfen")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Extern" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Kontext" })).toBeInTheDocument();
+    expect(screen.getByText("Freigabe abwarten")).toBeInTheDocument();
+    expect(screen.getByText("Im Garten arbeiten")).toBeInTheDocument();
   });
 
-  it("retains tag grouping and opens follow-up only for external waits", async () => {
-    const phone = makeTag({ id: 2, name: "Telefon", kind: "context" });
-    const task = makeTask({
-      id: 102,
-      title: "Rückruf",
-      blocked: true,
-      executable: false,
-      externalWait: { waitingFor: "Vermieter", revisitDate: null },
-      effectiveTags: [phone],
-    });
-    renderWithProviders(<WaitingGroupList tasks={[task]} groupBy="context" />);
-    expect(await screen.findByRole("heading", { name: "Telefon" })).toBeInTheDocument();
-    expect(screen.getByText("Wartet auf: Vermieter")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Nachhaken" }));
-    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  it("offers follow-up only for an external wait", async () => {
+    renderWithProviders(
+      <WaitingGroupList
+        entries={[
+          {
+            task: makeTask({
+              id: 1,
+              title: "Rückruf",
+              externalWait: { waitingFor: "Vermieter", revisitDate: null },
+            }),
+            reasons: [
+              {
+                type: "external",
+                waitingFor: "Vermieter",
+                revisitDate: null,
+              },
+            ],
+          },
+        ]}
+      />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Weitere Aktionen" }),
+    );
+    expect(screen.getByRole("button", { name: "Nachhaken" })).toBeInTheDocument();
   });
 });

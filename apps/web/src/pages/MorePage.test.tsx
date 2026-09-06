@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { MorePage } from "./MorePage";
@@ -15,6 +15,11 @@ vi.mock("../lib/api", () => ({
     getPushConfig: vi.fn().mockResolvedValue({
       enabled: false,
       publicKey: null,
+    }),
+    getPushNotificationPreferences: vi.fn().mockResolvedValue({
+      project_assigned: true,
+      task_reminder: true,
+      context_entered: true,
     }),
     getContributionSummary: vi.fn().mockResolvedValue({
       windowStartedAt: "2026-08-21T10:00:00.000Z",
@@ -42,6 +47,34 @@ vi.mock("../lib/api", () => ({
     }),
     getMoreCounts: vi.fn().mockResolvedValue({
       review: 7,
+    }),
+    getHomeAssistantStatus: vi.fn().mockResolvedValue({
+      connected: true,
+      instanceId: "ha-1",
+      protocolVersion: 1,
+      connectedAt: "2026-09-03T10:00:00.000Z",
+      lastUpdateAt: "2026-09-03T12:00:00.000Z",
+      stale: false,
+      contexts: [],
+      people: [
+        {
+          externalId: "person.mira",
+          name: "Mira",
+          state: "known",
+          contexts: [
+            {
+              id: 1,
+              source: "home_assistant",
+              externalId: "zone.seligenstadt",
+              name: "Seligenstadt",
+              active: true,
+              updatedAt: "2026-09-03T12:00:00.000Z",
+            },
+          ],
+          mappedMemberId: 1,
+          observedAt: "2026-09-03T12:00:00.000Z",
+        },
+      ],
     }),
   },
 }));
@@ -87,11 +120,33 @@ describe("MorePage", () => {
     renderWithProviders(<MorePage />);
 
     expect(screen.queryByRole("link", { name: /Debug/ })).not.toBeInTheDocument();
+    const administration = screen
+      .getByText("Administration")
+      .closest("details");
+    expect(administration).not.toHaveAttribute("open");
+    expect(administration).toContainElement(
+      screen.getByRole("heading", { name: "Personen verwalten" }),
+    );
+    await userEvent.click(screen.getByText("Administration"));
+    expect(
+      screen.getByRole("heading", { name: "Personen verwalten" }),
+    ).toBeInTheDocument();
     const toggle = screen.getByRole("switch", { name: /Entwicklermodus/ });
     await userEvent.click(toggle);
     const link = screen.getByRole("link", { name: /Debug/ });
     expect(link).toHaveAttribute("href", "/more/debug");
     expect(window.localStorage.getItem("machbar:developer-mode")).toBe("true");
+  });
+
+  it("shows Home Assistant's current person locations in administration", async () => {
+    renderWithProviders(<MorePage />);
+
+    await userEvent.click(screen.getByText("Administration"));
+
+    expect(screen.getByRole("heading", { name: "Zuletzt gemeldete Orte" }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Aktueller Ort: Seligenstadt"))
+      .toBeInTheDocument();
   });
 
   it("shows a shared-first unranked contribution summary", async () => {
@@ -107,7 +162,7 @@ describe("MorePage", () => {
     expect(personalBreakdown).not.toHaveAttribute("open");
     await userEvent.click(screen.getByText("Persönliche Aufteilung"));
     expect(personalBreakdown).toHaveAttribute("open");
-    expect(screen.getByText("Mira")).toBeInTheDocument();
+    expect(within(personalBreakdown!).getByText("Mira")).toBeInTheDocument();
     expect(screen.getByText("+4 erledigt · +1 geplant")).toBeInTheDocument();
     expect(
       screen.getByText("Gemeinsamer Beitrag ohne persönliche Zuordnung"),
@@ -124,6 +179,8 @@ describe("MorePage", () => {
     expect(screen.getByRole("heading", { name: "Preferences" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Household" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "System" })).toBeInTheDocument();
+    expect(screen.getByText("Administration").closest("details"))
+      .not.toHaveAttribute("open");
   });
 
   it("renders English and switches locale immediately on this device", async () => {

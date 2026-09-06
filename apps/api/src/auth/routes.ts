@@ -8,6 +8,7 @@ import { AppError } from "../errors.js";
 import { parseOrThrow } from "../validation.js";
 import { PocketIdProvider, type OidcProvider } from "./oidcClient.js";
 import { AuthService } from "./service.js";
+import { authenticateHomeAssistant } from "../integrations/homeAssistant.js";
 
 export const SESSION_COOKIE = "__Host-machbar-session";
 export const OIDC_STATE_COOKIE = "__Host-machbar-oidc-state";
@@ -32,6 +33,17 @@ function isPublicApiPath(path: string): boolean {
     path === "/api/auth/login" ||
     path === "/api/auth/callback"
   );
+}
+
+type RouteAuthPolicy = "anonymous" | "human" | "home_assistant" | "pairing";
+
+export function authPolicyForRoute(path: string): RouteAuthPolicy {
+  if (isPublicApiPath(path)) return "anonymous";
+  if (path === "/api/integrations/home-assistant/pair") return "pairing";
+  if (path === "/api/integrations/home-assistant/context") {
+    return "home_assistant";
+  }
+  return "human";
 }
 
 function isUnsafeMethod(method: string): boolean {
@@ -119,6 +131,7 @@ export function registerAuthentication(
 ): void {
   app.register(cookie);
   app.decorateRequest("authMember", null);
+  app.decorateRequest("homeAssistantIntegrationId", null);
 
   const service =
     env.oidc === null
@@ -136,21 +149,27 @@ export function registerAuthentication(
   });
 
   app.addHook("preHandler", async (request) => {
-    if (!service) return;
-
     const routePath = request.routeOptions.url;
     if (!routePath?.startsWith("/api/")) return;
+    const policy = authPolicyForRoute(routePath);
+    if (policy === "anonymous" || policy === "pairing") return;
+    if (policy === "home_assistant") {
+      request.homeAssistantIntegrationId = authenticateHomeAssistant(
+        db,
+        request.headers.authorization,
+      ).id;
+      return;
+    }
+    if (!service) return;
 
-    if (
-      !isPublicApiPath(routePath) &&
-      !request.authMember
-    ) {
+    if (!request.authMember) {
       throw AppError.unauthorized(
         "authentication_required",
         "Sign in with Pocket ID before accessing this resource.",
       );
     }
     if (
+      policy === "human" &&
       isUnsafeMethod(request.method) &&
       request.headers.origin !== env.oidc!.publicUrl
     ) {

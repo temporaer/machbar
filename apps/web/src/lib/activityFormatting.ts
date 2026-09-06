@@ -136,6 +136,10 @@ export function formatActivityDescription(
       return strings.activityText.taskTagsChanged;
     case "project_tags_changed":
       return strings.activityText.projectTagsChanged;
+    case "task_contexts_changed":
+      return strings.activityText.taskContextsChanged;
+    case "project_contexts_changed":
+      return strings.activityText.projectContextsChanged;
     case "project_acceptance_criterion_added":
       return strings.activityText.criterionAdded;
     case "project_acceptance_criterion_updated":

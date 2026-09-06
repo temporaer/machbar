@@ -354,6 +354,13 @@
   color: var(--color-text-muted);
 }
 
+.story-row-meta .task-card-tags {
+  float: none;
+  max-width: 100%;
+  margin: 0;
+  justify-content: flex-start;
+}
+
 .story-row-next-action {
   margin: 6px 0 0;
   font-size: 0.8rem;

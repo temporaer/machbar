@@ -16,7 +16,8 @@ behavior from possible future work.
 - standards-based Web Push for supported desktop and mobile browsers/PWAs;
 - outbound Web Share with clipboard fallback;
 - single-process/container deployment with SQLite;
-- reverse-proxy, URL sub-path, and Home Assistant Ingress support.
+- reverse-proxy and URL sub-path support;
+- a push-only HACS Home Assistant integration for physical contexts.
 
 ## Current limitations
 
@@ -66,8 +67,11 @@ the installation has VAPID configured and the member opted in in that browser.
 Each browser or installed PWA has an independent subscription, and delivery
 fans out to every subscription for the member. Notifications are shown by the
 service worker without requiring an open Machbar tab; clicking one opens or
-focuses the relevant task or project. Assignments by another person can also
-produce Push notifications.
+focuses the relevant task or project. Entering a non-home Home Assistant zone
+also produces notifications for actionable tasks that become available there.
+Members can independently disable project-assignment, task-reminder, and
+place-entry notifications across all their subscribed devices. Task
+assignments do not produce notifications.
 
 Machbar does not currently provide a notification inbox, comments, mentions,
 ordinary due-date notifications, or a daily digest. Push availability depends
@@ -86,18 +90,18 @@ Without Pocket ID, selecting a household member is not authentication. Anyone
 who can reach the instance can choose a local identity.
 
 With Pocket ID enabled, authentication applies to Machbar’s configured direct
-origin. Home Assistant Ingress is a different origin and cannot reuse the
-same cookie.
+origin. Home Assistant uses a separate revocable machine credential.
 
 ### Home Assistant
 
-The repository contains add-on development files, but no published and tested
-one-click add-on repository or native Home Assistant integration.
+The custom integration is installable as a HACS custom repository but does not
+yet have published tagged releases. Unknown or stale presence intentionally
+fails open.
 
 ### Browser coverage
 
 Most automated coverage is unit/component level. The repository has a
-Playwright configuration, but broad phone-viewport, reverse-proxy, Ingress,
+Playwright configuration, but broad phone-viewport, reverse-proxy,
 and browser-specific PWA coverage is not yet established.
 
 ## Possible future work
@@ -107,8 +111,8 @@ Potential directions include:
 - additional interface languages;
 - live client updates;
 - offline caching and synchronization;
-- broader reminder schedules and notification preferences;
-- a published Home Assistant add-on and a supported native integration;
+- broader reminder schedules;
+- published releases for the Home Assistant integration;
 - conversion between a captured task and a multi-step project.
 
 These are directions, not release commitments.

@@ -14,6 +14,7 @@ import { PushNotificationSettings } from "../components/PushNotificationSettings
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useDeveloperMode } from "../lib/developerMode";
+import { HomeAssistantPersonLocation } from "../components/HomeAssistantPersonLocation";
 
 export function MorePage() {
   const strings = useStrings();
@@ -25,6 +26,10 @@ export function MorePage() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const { data: counts } = useAsync(() => api.getMoreCounts(), []);
+  const { data: homeAssistant } = useAsync(
+    () => api.getHomeAssistantStatus(),
+    [],
+  );
 
   return (
     <div className="more-page">
@@ -175,12 +180,6 @@ export function MorePage() {
             )}
           </div>
 
-          <div className="card more-setting-card">
-            <h3>{strings.manageMembers}</h3>
-            <p className="text-muted">{strings.manageMembersHint}</p>
-            <MemberManager />
-          </div>
-
           <div className="more-link-group">
             <Link to="/more/tags" className="list-link more-list-link">
               <span>
@@ -204,32 +203,82 @@ export function MorePage() {
             </p>
           </div>
 
-          <div className="card more-setting-card">
-            <label className="setting-switch">
+          <details className="card more-admin-settings">
+            <summary className="disclosure-summary more-admin-summary">
               <span>
-                <strong>{strings.developerMode}</strong>
-                <small>{strings.developerModeHint}</small>
+                <strong>{strings.moreAdministration}</strong>
+                <small>{strings.moreAdministrationHint}</small>
               </span>
-              <input
-                type="checkbox"
-                role="switch"
-                checked={developerMode}
-                onChange={(event) => setDeveloperMode(event.target.checked)}
-              />
-            </label>
-          </div>
-
-          {developerMode ? (
-            <div className="more-link-group">
-              <Link to="/more/debug" className="list-link more-list-link debug-settings-link">
+            </summary>
+            <div className="more-admin-body">
+              <div className="more-admin-group">
+                <h3>{strings.manageMembers}</h3>
+                <p className="text-muted">{strings.manageMembersHint}</p>
+                <MemberManager />
+              </div>
+              {homeAssistant?.connected && homeAssistant.people.length > 0 ? (
+                <div className="more-admin-group more-admin-locations">
+                  <h3>{strings.homeAssistantPeopleLocations}</h3>
+                  <div className="home-assistant-location-list">
+                    {homeAssistant.people.map((person) => (
+                      <div
+                        className="home-assistant-location-row"
+                        key={person.externalId}
+                      >
+                        <strong>{person.name}</strong>
+                        <HomeAssistantPersonLocation
+                          person={person}
+                          stale={homeAssistant.stale}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+              <div className="more-link-group">
+                <Link
+                  to="/more/integrations/home-assistant"
+                  className="list-link more-list-link"
+                >
+                  <span>
+                    <strong>{strings.homeAssistant}</strong>
+                    <small className="list-link-description">
+                      {strings.homeAssistantLinkHint}
+                    </small>
+                  </span>
+                  <span aria-hidden="true">›</span>
+                </Link>
+              </div>
+              <label className="setting-switch">
                 <span>
-                  <strong>{strings.debugTitle}</strong>
-                  <small className="list-link-description">{strings.debugLinkHint}</small>
+                  <strong>{strings.developerMode}</strong>
+                  <small>{strings.developerModeHint}</small>
                 </span>
-                <span aria-hidden="true">›</span>
-              </Link>
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={developerMode}
+                  onChange={(event) => setDeveloperMode(event.target.checked)}
+                />
+              </label>
+              {developerMode ? (
+                <div className="more-link-group">
+                  <Link
+                    to="/more/debug"
+                    className="list-link more-list-link debug-settings-link"
+                  >
+                    <span>
+                      <strong>{strings.debugTitle}</strong>
+                      <small className="list-link-description">
+                        {strings.debugLinkHint}
+                      </small>
+                    </span>
+                    <span aria-hidden="true">›</span>
+                  </Link>
+                </div>
+              ) : null}
             </div>
-          ) : null}
+          </details>
         </div>
       </section>
     </div>

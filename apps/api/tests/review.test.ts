@@ -210,6 +210,90 @@ describe("review queue", () => {
     ).toBe(false);
   });
 
+  it("accepts an executable cross-project dependency as a healthy progress path", () => {
+    const member = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Lea", color: "#345678" })
+      .returning()
+      .get();
+    const project = ctx.handle.db
+      .insert(schema.projects)
+      .values({
+        title: "Room setup",
+        status: "active",
+        ownerMemberId: member.id,
+      })
+      .returning()
+      .get();
+    const prerequisite = ctx.handle.db
+      .insert(schema.tasks)
+      .values({
+        title: "Place order",
+        status: "actionable",
+        scheduledDate: today,
+      })
+      .returning()
+      .get();
+    const blocked = ctx.handle.db
+      .insert(schema.tasks)
+      .values({
+        projectId: project.id,
+        title: "Build wardrobe",
+        status: "actionable",
+      })
+      .returning()
+      .get();
+    ctx.handle.db.insert(schema.taskDependencies).values({
+      taskId: blocked.id,
+      dependsOnTaskId: prerequisite.id,
+    }).run();
+
+    expect(
+      reviewItems().some(
+        (item) =>
+          item.entityType === "project" && item.entityId === project.id,
+      ),
+    ).toBe(false);
+  });
+
+  it("leaves reached external-wait follow-ups to Today instead of Review", () => {
+    const member = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Mira", color: "#456789" })
+      .returning()
+      .get();
+    const project = ctx.handle.db
+      .insert(schema.projects)
+      .values({
+        title: "Await delivery",
+        status: "active",
+        ownerMemberId: member.id,
+      })
+      .returning()
+      .get();
+    const waiting = ctx.handle.db
+      .insert(schema.tasks)
+      .values({
+        projectId: project.id,
+        title: "Receive delivery",
+        status: "actionable",
+      })
+      .returning()
+      .get();
+    ctx.handle.db.insert(schema.taskExternalWaits).values({
+      taskId: waiting.id,
+      waitingFor: "Delivery slot",
+      revisitDate: today,
+    }).run();
+
+    expect(
+      reviewItems().some(
+        (item) =>
+          item.entityType === "project" && item.entityId === project.id,
+      ),
+    ).toBe(false);
+  });
+
   it("uses the newest project or descendant update/review as active attention", () => {
     const member = ctx.handle.db
       .insert(schema.members)
@@ -440,32 +524,11 @@ describe("review queue", () => {
     }).run();
 
     const items = reviewItems();
-    expect(items).toContainEqual(
-      expect.objectContaining({
-        projectId: project.id,
-        reason: "due_without_credible_plan",
-        suggestedAction: {
-          code: "plan_task",
-          targetEntityType: "task",
-          targetEntityId: large.id,
-        },
-      }),
-    );
     expect(
-      ctx.handle.db
-        .select({ id: schema.tasks.id })
-        .from(schema.tasks)
-        .all()
-        .some(
-          (task) =>
-            task.id ===
-            items.find(
-              (item) =>
-                item.projectId === project.id &&
-                item.reason === "due_without_credible_plan",
-            )?.suggestedAction.targetEntityId,
-        ),
-    ).toBe(true);
+      items.filter(
+        (item) => item.entityType === "project" && item.entityId === project.id,
+      ),
+    ).toEqual([]);
     expect(items).toContainEqual(
       expect.objectContaining({
         entityTitle: "Large work",

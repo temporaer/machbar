@@ -88,7 +88,7 @@ describe("search/filter and project CRUD/archive", () => {
     const created = await ctx.app.inject({
       method: "POST",
       url: "/api/tags",
-      payload: { name: "Telefonisch", kind: "context" },
+      payload: { name: "Telefonisch", kind: "actor" },
     });
     expect(created.statusCode).toBe(201);
 
@@ -102,7 +102,7 @@ describe("search/filter and project CRUD/archive", () => {
       code: "tag_kind_conflict",
       details: {
         name: "Telefonisch",
-        existingKind: "context",
+        existingKind: "actor",
         requestedKind: "plain",
       },
     });
@@ -145,11 +145,11 @@ describe("search/filter and project CRUD/archive", () => {
     });
     expect(wait.statusCode).toBe(200);
 
-    const waiting = await ctx.app.inject({
-      method: "GET",
-      url: `/api/waiting?actorTagId=${actor.id}`,
-    });
-    expect(waiting.json()[0].effectiveActorTags[0].id).toBe(actor.id);
+    const waiting = await ctx.app.inject({ method: "GET", url: "/api/waiting" });
+    expect(
+      waiting.json().find((entry: { task: { id: number } }) => entry.task.id === task.id)
+        .task.effectiveActorTags[0].id,
+    ).toBe(actor.id);
 
     const refinement = await ctx.app.inject({
       method: "GET",
@@ -185,17 +185,19 @@ describe("search/filter and project CRUD/archive", () => {
     const response = await ctx.app.inject({ method: "GET", url: "/api/waiting" });
     expect(response.statusCode).toBe(200);
     const rows = response.json() as Array<{
-      id: number;
-      blockers: Array<{ type: "dependency" | "external" }>;
+      task: {
+        id: number;
+        blockers: Array<{ type: "dependency" | "external" }>;
+      };
     }>;
-    expect(rows.some((row) => row.id === dependencyOnly.id)).toBe(false);
+    expect(rows.some((row) => row.task.id === dependencyOnly.id)).toBe(false);
     for (const task of [externalOnly, both]) {
-      expect(rows.filter((row) => row.id === task.id)).toHaveLength(1);
+      expect(rows.filter((row) => row.task.id === task.id)).toHaveLength(1);
     }
-    expect(rows.find((row) => row.id === externalOnly.id)?.blockers).toEqual([
+    expect(rows.find((row) => row.task.id === externalOnly.id)?.task.blockers).toEqual([
       expect.objectContaining({ type: "external" }),
     ]);
-    expect(rows.find((row) => row.id === both.id)?.blockers).toEqual(
+    expect(rows.find((row) => row.task.id === both.id)?.task.blockers).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "dependency" }),
         expect.objectContaining({ type: "external" }),
@@ -444,11 +446,15 @@ describe("search/filter and project CRUD/archive", () => {
 
     const waitingTasks = (
       await ctx.app.inject({ method: "GET", url: "/api/waiting" })
-    ).json() as Array<{ title: string; externalWait: { waitingFor: string | null } | null }>;
+    ).json() as Array<{
+      task: { title: string; externalWait: { waitingFor: string | null } | null };
+    }>;
     expect(waitingTasks).toContainEqual(
       expect.objectContaining({
-        title: "Lieferung verfolgen",
-        externalWait: expect.objectContaining({ waitingFor: "Liefertermin" }),
+        task: expect.objectContaining({
+          title: "Lieferung verfolgen",
+          externalWait: expect.objectContaining({ waitingFor: "Liefertermin" }),
+        }),
       }),
     );
   });

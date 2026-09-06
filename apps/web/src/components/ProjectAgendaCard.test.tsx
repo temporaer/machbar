@@ -1,7 +1,12 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { makeMember, makeProject, makeTask } from "../test/fixtures";
+import {
+  makeMember,
+  makePhysicalContext,
+  makeProject,
+  makeTask,
+} from "../test/fixtures";
 import { ProjectAgendaCard } from "./ProjectAgendaCard";
 
 describe("ProjectAgendaCard", () => {
@@ -9,7 +14,7 @@ describe("ProjectAgendaCard", () => {
     vi.useRealTimers();
   });
 
-  it("combines review and due prompts and opens the project as its primary navigation", () => {
+  it("shows review and due dates without a duplicate qualification label", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 7, 25, 12));
 
@@ -22,9 +27,16 @@ describe("ProjectAgendaCard", () => {
               title: "Sommerfest vorbereiten",
               scheduledDate: "2026-08-25",
               dueDate: "2026-08-28",
+              contexts: [
+                makePhysicalContext({
+                  externalId: "zone.seligenstadt",
+                  name: "Seligenstadt",
+                }),
+              ],
             }),
             qualification: "both",
             nextAction: makeTask({ title: "Catering anrufen" }),
+            nextActionContextAvailability: null,
             stuck: {
               reason: "blocked_without_clear_path",
             },
@@ -33,12 +45,18 @@ describe("ProjectAgendaCard", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("Projekt prüfen & fällig")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Sommerfest vorbereiten" })).toHaveAttribute(
+    const projectLink = screen.getByRole("link", {
+      name: "Sommerfest vorbereiten",
+    });
+    expect(projectLink).toHaveAttribute(
       "href",
       "/projects/42",
     );
     expect(screen.getByText(/Catering anrufen/)).toBeInTheDocument();
+    const contextTag = screen.getByText("Seligenstadt");
+    expect(contextTag).toHaveClass("task-card-tag");
+    expect(contextTag.closest(".project-agenda-meta")).toBeInTheDocument();
+    expect(screen.queryByText("Projekt prüfen & fällig")).not.toBeInTheDocument();
     expect(
       screen.getByText(/Prüfe die konkret blockierenden Voraussetzungen/),
     ).toBeInTheDocument();
@@ -46,7 +64,7 @@ describe("ProjectAgendaCard", () => {
     expect(screen.getByLabelText("Fällig: in 3 Tagen (28.08.2026)")).toBeInTheDocument();
   });
 
-  it("labels a schedule-only prompt as project review", () => {
+  it("shows a schedule-only review date without repeating its qualification", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 7, 25, 12));
     render(
@@ -56,13 +74,14 @@ describe("ProjectAgendaCard", () => {
             project: makeProject({ scheduledDate: "2026-08-22" }),
             qualification: "scheduled",
             nextAction: null,
+            nextActionContextAvailability: null,
             stuck: null,
           }}
         />
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("Projekt prüfen")).toBeInTheDocument();
+    expect(screen.queryByText("Projekt prüfen")).not.toBeInTheDocument();
     expect(screen.getByText("Prüfen: seit 3 Tagen")).toBeInTheDocument();
     expect(screen.queryByText(/^Fällig:/)).not.toBeInTheDocument();
   });
@@ -73,6 +92,7 @@ describe("ProjectAgendaCard", () => {
       project: makeProject({ ownerMemberId: owner.id }),
       qualification: "due" as const,
       nextAction: null,
+      nextActionContextAvailability: null,
       stuck: null,
     };
     const { rerender } = render(

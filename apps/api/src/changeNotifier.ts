@@ -69,7 +69,7 @@ export function registerChangeNotifications(
 
   app.addHook("onResponse", async (request, reply) => {
     if (
-      !["POST", "PATCH", "DELETE"].includes(request.method) ||
+      !["POST", "PATCH", "PUT", "DELETE"].includes(request.method) ||
       reply.statusCode < 200 ||
       reply.statusCode >= 300
     ) {

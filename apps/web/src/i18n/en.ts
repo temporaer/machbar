@@ -299,13 +299,13 @@ const en = {
   taskContentEmpty: "No notes or tags",
   taskWaitingSection: "Is this task waiting for something?",
   taskNotBlocked: "Not blocked",
+  externalWaitSection: "External wait",
   externalWaitGuidance:
     "Use this when you cannot continue until a reply, delivery, or event happens.",
   externalWaitReasonLabel: "What is the task waiting for?",
   revisitDateRecommended: "Revisit on (recommended)",
   revisitDateGuidance:
     "Shows the blocked task in Today for review from this date. Without a date, Review will ask you to clarify it.",
-  dependencyPrompt: "Does another task need to be completed first?",
   dependencyGuidance:
     "Only link tasks that genuinely need to be completed first.",
   dependencySummary: (count: number) =>
@@ -381,6 +381,8 @@ const en = {
   morePreferences: "Preferences",
   moreHousehold: "Household",
   moreSystem: "System",
+  moreAdministration: "Administration",
+  moreAdministrationHint: "Integrations and diagnostics",
   about: "About Machbar",
   developerMode: "Developer mode",
   developerModeHint: "Show internal diagnostics on this device.",
@@ -437,6 +439,9 @@ const en = {
   taskTags: "Tags",
   moreTaskTags: (count: number) =>
     `${count} more ${count === 1 ? "tag" : "tags"}`,
+  cardLabels: "Tags and physical contexts",
+  moreCardLabels: (count: number) =>
+    `${count} more ${count === 1 ? "label" : "labels"}`,
   ownTags: "Own tags",
   saveChanges: "Save changes",
   saveNext: "Save & continue",
@@ -567,6 +572,8 @@ const en = {
   reviewCategoryWaiting: "Clarify waiting",
   reviewReasonMissingDriver: "The active project has no project lead.",
   reviewReasonNoProgressPath: "The project has no executable next step or healthy waiting path.",
+  reviewReasonXlWithoutChildren:
+    "This XL task has not yet been broken into smaller steps.",
   reviewReasonCompletion: "All steps are finished; the outcome needs an explicit completion decision.",
   reviewReasonWaiting: "The waiting path needs a future revisit.",
   reviewReasonBlocked: "The blockage has no clear path forward.",
@@ -609,6 +616,44 @@ const en = {
     "Projects connect a desired outcome with the path toward it. Active projects always show a next step or intentional waiting.",
   waitingPageHint:
     "Work that cannot move yet lives here. See what it is waiting on and when it needs another look.",
+  waitingExternal: "External",
+  waitingContext: "Context",
+  waitingContextHint:
+    "These tasks return automatically when Home Assistant reports a matching place.",
+  contextUnavailableNow: "not available at the current place",
+  physicalContexts: "Physical contexts",
+  noPhysicalContexts: "No places have been synchronized from Home Assistant yet.",
+  contextInheritedFrom: "Inherited",
+  contextModeLabels: {
+    inherit: "Inherit",
+    explicit: "Own selection",
+    none: "None",
+  },
+  inactive: "inactive",
+  homeAssistant: "Home Assistant",
+  homeAssistantLinkHint: "Connect places and people for physical contexts",
+  homeAssistantConnection: "Connection",
+  homeAssistantConnected: "Connected",
+  homeAssistantDisconnected: "Not connected",
+  homeAssistantStale: "Connected, but the data is stale",
+  homeAssistantLastUpdate: "Last update",
+  homeAssistantProtocol: "Protocol version",
+  homeAssistantPair: "Start pairing",
+  homeAssistantReconnect: "Pair again",
+  homeAssistantDisconnect: "Disconnect",
+  homeAssistantPairingHint:
+    "Enter this one-time code in the Machbar integration in Home Assistant. It expires after about ten minutes.",
+  homeAssistantPeople: "Map people",
+  homeAssistantPeopleLocations: "Last reported places",
+  homeAssistantPeopleHint:
+    "Map Home Assistant people to household members and check their last reported place.",
+  homeAssistantCurrentLocation: (location: string) => `Current place: ${location}`,
+  homeAssistantLastKnownLocation: (location: string) =>
+    `Last known place: ${location}`,
+  homeAssistantLocationUnknown: "Place unknown",
+  homeAssistantNoKnownLocation: "Not at a known place",
+  homeAssistantObservedAt: (time: string) => `Updated ${time}`,
+  homeAssistantUnmapped: "Not mapped",
   projectTasksHint:
     "This list shows the path to the project outcome, from the next actionable step through dependencies and later work.",
   projectStatus: "Status",
@@ -624,6 +669,12 @@ const en = {
 
   openProject: "Open project",
   editProject: "Edit project",
+  projectContentSection: "Content",
+  projectResponsibilitySection: "Status & responsibility",
+  projectPlanningSection: "Planning & classification",
+  projectPlanningSectionSummary: "Dates, tags, and physical contexts",
+  projectOutcomeSection: "Outcome",
+  projectDangerSection: "Delete project",
   returnToBacklogStory: "Move to later",
   completeStory: "Complete",
   lifecycleActions: "Project actions",
@@ -707,6 +758,17 @@ const en = {
   pushTest: "Send test",
   pushTestSending: "Sending…",
   pushTestSent: "Test notification sent.",
+  pushTypesTitle: "Types",
+  pushTypesHint:
+    "Applies to every device where you have enabled notifications.",
+  pushProjectAssignments: "Project assignments",
+  pushProjectAssignmentsHint:
+    "When someone else makes you responsible for a project.",
+  pushTaskReminders: "Task reminders",
+  pushTaskRemindersHint: "When a scheduled reminder becomes due.",
+  pushContextEntered: "Place-based tasks",
+  pushContextEnteredHint:
+    "When you enter a place where matching tasks can be done.",
   theme: "Theme",
   themeLabels: {
     system: "System",
@@ -835,6 +897,8 @@ const en = {
     dependenciesChanged: "changed dependencies",
     taskTagsChanged: "changed the task tags",
     projectTagsChanged: "changed the project tags",
+    taskContextsChanged: "changed the task's physical contexts",
+    projectContextsChanged: "changed the project's physical contexts",
     criterionAdded: "added an acceptance criterion",
     criterionUpdated: "updated an acceptance criterion",
     criterionReopened: "reopened an acceptance criterion",
@@ -843,6 +907,15 @@ const en = {
   },
 
   apiErrorMessages: {
+    integration_authentication_required:
+      "Home Assistant must authenticate with a valid token.",
+    integration_token_revoked: "The Home Assistant connection was revoked.",
+    pairing_code_expired: "The pairing code has expired.",
+    pairing_code_invalid: "The pairing code is invalid.",
+    pairing_code_used: "The pairing code has already been used.",
+    physical_context_not_found: "The selected physical context was not found.",
+    unsupported_protocol_version:
+      "This Home Assistant integration version is not supported.",
     contribution_query_invalid:
       "The timezone for contribution history is invalid.",
     acceptance_criteria_order_invalid:

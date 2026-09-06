@@ -48,7 +48,7 @@ An inbox item leaves clarification through one explicit classification:
   decision once it has a driver and a viable progress or future-waiting path.
 - **Backlog** promotes it to a backlog project.
 
-Promotion keeps the captured title, notes, dates, tags, and sensible ownership.
+Promotion keeps the captured title, notes, dates, tags, physical contexts, and sensible ownership.
 Existing child tasks become project-root steps while deeper task nesting stays
 intact; the temporary capture wrapper is removed.
 
@@ -60,6 +60,11 @@ available work, and the next useful action from each active project.
 
 The compact **Meine | Alle** toggle can broaden this to the whole household
 without changing who is signed in or who is recorded as making changes.
+
+Optional physical-context requirements come from Home Assistant. Fresh known
+presence can hide otherwise executable work from Today; unavailable work appears
+under **Kontext** in Waiting and returns automatically. Missing, stale, unknown,
+or unmapped presence fails open.
 
 The goal is not to display every open task. Ordinary unscheduled project work
 is pulled in canonical outline order: **Meine** selects the first action owned
@@ -158,8 +163,8 @@ create several steps where each later step waits for the preceding one.
 
 ## Tags and effort
 
-Reusable tags can represent areas, people or organizations, contexts, or
-general labels. Project tags flow into their task tree unless excluded, and
+Reusable tags can represent areas, people or organizations, or general labels.
+Project tags flow into their task tree unless excluded, and
 lists can group work by selected tag kinds.
 
 Optional S/M/L/XL effort is a household planning aid. It helps reveal work

@@ -20,6 +20,7 @@ import { SharePage } from "./pages/SharePage";
 import { TaskDeepLinkPage } from "./pages/TaskDeepLinkPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { DebugPage } from "./pages/DebugPage";
+import { HomeAssistantPage } from "./pages/HomeAssistantPage";
 import { LocaleProvider } from "./lib/locale";
 import { ThemeProvider } from "./lib/theme";
 import { SwipeCoachProvider } from "./lib/swipeCoach";
@@ -66,6 +67,10 @@ function Shell() {
             <Route path="/more/review" element={<ReviewPage />} />
             <Route path="/more/tags" element={<TagsPage />} />
             <Route path="/more/activity" element={<ActivityPage />} />
+            <Route
+              path="/more/integrations/home-assistant"
+              element={<HomeAssistantPage />}
+            />
             <Route
               path="/more/debug"
               element={

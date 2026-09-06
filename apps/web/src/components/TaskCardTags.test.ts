@@ -21,7 +21,7 @@ describe("taskCardDisplayTags", () => {
         groupingMode: "pinned",
         sortPosition: 1,
       }),
-      makeTag({ id: 3, name: "Telefon", kind: "context", groupingMode: "pinned" }),
+      makeTag({ id: 3, name: "Telefon", kind: "plain", groupingMode: "pinned" }),
       makeTag({ id: 2, name: "Draußen", kind: "plain" }),
     ];
 

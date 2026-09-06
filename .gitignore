@@ -10,3 +10,5 @@ data/
 *.db-wal
 *.tsbuildinfo
 .env
+__pycache__/
+*.py[cod]

@@ -1,6 +1,9 @@
 import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import type { PushConfig } from "@machbar/shared";
+import type {
+  PushConfig,
+  PushNotificationPreferences,
+} from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import type { Env } from "../env.js";
@@ -11,6 +14,7 @@ import {
   webPushStatusCode,
 } from "../notifications/delivery.js";
 import {
+  pushNotificationPreferencesSchema,
   pushSubscriptionRemovalSchema,
   pushSubscriptionSchema,
 } from "../schemas.js";
@@ -26,6 +30,30 @@ function currentMemberId(request: {
   );
 }
 
+const defaultPreferences: PushNotificationPreferences = {
+  project_assigned: true,
+  task_reminder: true,
+  context_entered: true,
+};
+
+function getPreferences(
+  db: Db,
+  memberId: number,
+): PushNotificationPreferences {
+  const row = db
+    .select()
+    .from(schema.pushNotificationPreferences)
+    .where(eq(schema.pushNotificationPreferences.memberId, memberId))
+    .get();
+  return row
+    ? {
+        project_assigned: row.projectAssigned,
+        task_reminder: row.taskReminder,
+        context_entered: row.contextEntered,
+      }
+    : defaultPreferences;
+}
+
 export function registerPushRoutes(
   app: FastifyInstance,
   db: Db,
@@ -36,6 +64,35 @@ export function registerPushRoutes(
     enabled: env.push !== null,
     publicKey: env.push?.publicKey ?? null,
   }));
+
+  app.get(
+    "/api/push/preferences",
+    async (request): Promise<PushNotificationPreferences> =>
+      getPreferences(db, currentMemberId(request)),
+  );
+
+  app.put("/api/push/preferences", async (request) => {
+    const memberId = currentMemberId(request);
+    const preferences = parseOrThrow(
+      pushNotificationPreferencesSchema,
+      request.body,
+    );
+    const values = {
+      memberId,
+      projectAssigned: preferences.project_assigned,
+      taskReminder: preferences.task_reminder,
+      contextEntered: preferences.context_entered,
+      updatedAt: new Date().toISOString(),
+    };
+    db.insert(schema.pushNotificationPreferences)
+      .values(values)
+      .onConflictDoUpdate({
+        target: schema.pushNotificationPreferences.memberId,
+        set: values,
+      })
+      .run();
+    return preferences;
+  });
 
   app.put("/api/push/subscription", async (request, reply) => {
     const memberId = currentMemberId(request);

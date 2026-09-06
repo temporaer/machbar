@@ -64,6 +64,7 @@ import {
 import { appendTextBlock } from "../lib/shareTarget";
 import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
 import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
+import { PhysicalContextPicker } from "./PhysicalContextPicker";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -231,6 +232,13 @@ export function TaskDetailSheet() {
     [openTaskId, task?.revision],
   );
   const { data: tags } = useAsync(() => api.getTags(), []);
+  const { data: homeAssistant } = useAsync(
+    () =>
+      typeof api.getHomeAssistantStatus === "function"
+        ? api.getHomeAssistantStatus()
+        : Promise.resolve(null),
+    [],
+  );
 
   // Resets the drafts (and the dirty-check baseline) whenever a *different*
   // task is opened, or whenever this task's data arrives from the server and
@@ -973,7 +981,8 @@ export function TaskDetailSheet() {
             className="task-detail-waiting"
           >
             <div className="stack blocker-control" ref={dependenciesFieldRef}>
-              <div className="task-external-wait-editor">
+              <section className="task-waiting-group">
+                <h4>{strings.externalWaitSection}</h4>
                 <p className="task-detail-guidance">
                   {strings.externalWaitGuidance}
                 </p>
@@ -1033,10 +1042,10 @@ export function TaskDetailSheet() {
                     </button>
                   ) : null}
                 </div>
-              </div>
+              </section>
 
-              <div className="task-dependency-editor">
-                <h4>{strings.dependencyPrompt}</h4>
+              <section className="task-waiting-group">
+                <h4>{strings.dependencies}</h4>
                 <p className="task-detail-guidance">
                   {strings.dependencyGuidance}
                 </p>
@@ -1140,7 +1149,24 @@ export function TaskDetailSheet() {
                     {strings.addDependency}
                   </button>
                 )}
-              </div>
+              </section>
+
+              {task.effectiveContexts.length > 0 ||
+              homeAssistant?.contexts.some((context) => context.active) ? (
+                <section className="task-waiting-group">
+                  <h4>{strings.physicalContexts}</h4>
+                  <PhysicalContextPicker
+                    contexts={homeAssistant?.contexts ?? []}
+                    selected={task.explicitContexts}
+                    inherited={task.inheritedContexts}
+                    mode={task.contextInheritanceMode}
+                    onChange={(mode, contextIds) => {
+                      if (mode)
+                        void taskActions.setContexts(task, mode, contextIds);
+                    }}
+                  />
+                </section>
+              ) : null}
             </div>
           </TaskDetailDisclosure>
           </div>

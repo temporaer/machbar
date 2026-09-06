@@ -37,6 +37,7 @@ import { SwipeCoachHint } from "./SwipeCoachHint";
 import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 import { hasProjectProgressPath } from "../lib/projectCommitments";
+import { TaskCardTags } from "./TaskCardTags";
 
 /**
  * Semantic accent driving the row's status badge, left-edge stripe, primary
@@ -304,7 +305,10 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
               <span className="badge badge-stuck">{strings.stuckReasonLabels[story.stuckReason]}</span>
             ) : null}
           </div>
-          {variant !== "card" || dueLabel || scheduledLabel ? (
+          {variant !== "card" ||
+          dueLabel ||
+          scheduledLabel ||
+          story.contexts.length > 0 ? (
             <div className="story-row-meta">
               {variant !== "card" ? (
                 <span>
@@ -326,6 +330,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
                   {strings.taskSummary}: {totalTasks > 0 ? `${doneCount}/${totalTasks}` : strings.taskSummaryNone}
                 </span>
               ) : null}
+              <TaskCardTags tags={[]} contexts={story.contexts} />
             </div>
           ) : null}
           {variant === "card" ? (

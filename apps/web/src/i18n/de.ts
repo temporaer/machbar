@@ -283,13 +283,13 @@ const extra = {
   taskContentEmpty: "Keine Notizen oder Tags",
   taskWaitingSection: "Wartet diese Aufgabe auf etwas?",
   taskNotBlocked: "Nicht blockiert",
+  externalWaitSection: "Externes Warten",
   externalWaitGuidance:
     "Nutze dies, wenn du erst nach einer Rückmeldung, Lieferung oder einem Ereignis weitermachen kannst.",
   externalWaitReasonLabel: "Worauf wartet die Aufgabe?",
   revisitDateRecommended: "Wiedervorlage am (empfohlen)",
   revisitDateGuidance:
     "Zeigt die blockierte Aufgabe ab diesem Tag zur Prüfung in Heute. Ohne Datum erinnert dich der Review an die Klärung.",
-  dependencyPrompt: "Muss vorher eine andere Aufgabe erledigt werden?",
   dependencyGuidance:
     "Verknüpfe nur Aufgaben, die wirklich zuerst erledigt werden müssen.",
   dependencySummary: (count: number) =>
@@ -368,6 +368,8 @@ const extra = {
   morePreferences: "Einstellungen",
   moreHousehold: "Haushalt",
   moreSystem: "System",
+  moreAdministration: "Administration",
+  moreAdministrationHint: "Integrationen und Diagnose",
   about: "Über Machbar",
   developerMode: "Entwicklermodus",
   developerModeHint: "Interne Diagnosefunktionen auf diesem Gerät anzeigen.",
@@ -423,6 +425,8 @@ const extra = {
   effectiveTags: "Wirksame Tags",
   taskTags: "Tags",
   moreTaskTags: (count: number) => `${count} weitere Tags`,
+  cardLabels: "Tags und physische Kontexte",
+  moreCardLabels: (count: number) => `${count} weitere Kennzeichnungen`,
   ownTags: "Eigene Tags",
   saveChanges: "Änderungen speichern",
   saveNext: "Speichern & weiter",
@@ -546,6 +550,8 @@ const extra = {
   reviewCategoryWaiting: "Warten klären",
   reviewReasonMissingDriver: "Dem aktiven Projekt fehlt eine verantwortliche Person.",
   reviewReasonNoProgressPath: "Das Projekt hat keinen ausführbaren nächsten Schritt oder gesunden Wartepfad.",
+  reviewReasonXlWithoutChildren:
+    "Diese XL-Aufgabe ist noch nicht in kleinere Schritte zerlegt.",
   reviewReasonCompletion: "Alle Schritte sind beendet; das Ergebnis braucht eine bewusste Abschlussentscheidung.",
   reviewReasonWaiting: "Der Wartepfad braucht eine künftige Wiedervorlage.",
   reviewReasonBlocked: "Die Blockierung hat keinen erkennbaren Weg nach vorn.",
@@ -589,6 +595,44 @@ const extra = {
     "Projekte halten ein gewünschtes Ergebnis und den Weg dorthin zusammen. Aktiv sind sie nur mit einem nächsten Schritt oder bewusstem Warten.",
   waitingPageHint:
     "Hier liegt Arbeit, die gerade nicht weitergeht. Sieh, worauf sie wartet und wann du wieder nachhaken solltest.",
+  waitingExternal: "Extern",
+  waitingContext: "Kontext",
+  waitingContextHint:
+    "Diese Aufgaben werden automatisch wieder eingeblendet, sobald Home Assistant einen passenden Ort meldet.",
+  contextUnavailableNow: "am aktuellen Ort nicht machbar",
+  physicalContexts: "Physische Kontexte",
+  noPhysicalContexts: "Noch keine Orte aus Home Assistant synchronisiert.",
+  contextInheritedFrom: "Geerbt",
+  contextModeLabels: {
+    inherit: "Erben",
+    explicit: "Eigene Auswahl",
+    none: "Keine",
+  },
+  inactive: "inaktiv",
+  homeAssistant: "Home Assistant",
+  homeAssistantLinkHint: "Orte und Personen für physische Kontexte verbinden",
+  homeAssistantConnection: "Verbindung",
+  homeAssistantConnected: "Verbunden",
+  homeAssistantDisconnected: "Nicht verbunden",
+  homeAssistantStale: "Verbunden, aber die Daten sind veraltet",
+  homeAssistantLastUpdate: "Letzte Aktualisierung",
+  homeAssistantProtocol: "Protokollversion",
+  homeAssistantPair: "Kopplung starten",
+  homeAssistantReconnect: "Neu koppeln",
+  homeAssistantDisconnect: "Trennen",
+  homeAssistantPairingHint:
+    "Diesen einmaligen Code in der Machbar-Integration von Home Assistant eingeben. Er läuft nach etwa zehn Minuten ab.",
+  homeAssistantPeople: "Personen zuordnen",
+  homeAssistantPeopleLocations: "Zuletzt gemeldete Orte",
+  homeAssistantPeopleHint:
+    "Ordne Home-Assistant-Personen den Haushaltsmitgliedern in Machbar zu und prüfe ihren zuletzt gemeldeten Ort.",
+  homeAssistantCurrentLocation: (location: string) => `Aktueller Ort: ${location}`,
+  homeAssistantLastKnownLocation: (location: string) =>
+    `Letzter bekannter Ort: ${location}`,
+  homeAssistantLocationUnknown: "Ort unbekannt",
+  homeAssistantNoKnownLocation: "An keinem bekannten Ort",
+  homeAssistantObservedAt: (time: string) => `Stand ${time}`,
+  homeAssistantUnmapped: "Nicht zugeordnet",
   projectTasksHint:
     "Diese Liste zeigt den Weg zum Projektergebnis: vom nächsten machbaren Schritt über Abhängigkeiten bis zu späterer Arbeit.",
   projectStatus: "Status",
@@ -604,6 +648,12 @@ const extra = {
   // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---
   openProject: "Projekt öffnen",
   editProject: "Projekt bearbeiten",
+  projectContentSection: "Inhalt",
+  projectResponsibilitySection: "Status & Verantwortung",
+  projectPlanningSection: "Planung & Einordnung",
+  projectPlanningSectionSummary: "Termine, Tags und physische Kontexte",
+  projectOutcomeSection: "Ergebnis",
+  projectDangerSection: "Projekt löschen",
   returnToBacklogStory: "Auf später verschieben",
   completeStory: "Abschließen",
   lifecycleActions: "Workflow-Aktionen",
@@ -688,6 +738,17 @@ const extra = {
   pushTest: "Test senden",
   pushTestSending: "Wird gesendet …",
   pushTestSent: "Testbenachrichtigung gesendet.",
+  pushTypesTitle: "Arten",
+  pushTypesHint:
+    "Gilt für alle Geräte, auf denen du Benachrichtigungen aktiviert hast.",
+  pushProjectAssignments: "Projektzuweisungen",
+  pushProjectAssignmentsHint:
+    "Wenn dir jemand anderes die Verantwortung für ein Projekt überträgt.",
+  pushTaskReminders: "Aufgabenerinnerungen",
+  pushTaskRemindersHint: "Wenn eine eingestellte Erinnerung fällig ist.",
+  pushContextEntered: "Ortsaufgaben",
+  pushContextEnteredHint:
+    "Wenn du einen Ort betrittst, an dem passende Aufgaben machbar sind.",
   theme: "Design",
   themeLabels: {
     system: "System",
@@ -818,6 +879,8 @@ const extra = {
     dependenciesChanged: "hat Abhängigkeiten geändert",
     taskTagsChanged: "hat die Tags der Aufgabe geändert",
     projectTagsChanged: "hat die Tags des Projekts geändert",
+    taskContextsChanged: "hat die physischen Kontexte der Aufgabe geändert",
+    projectContextsChanged: "hat die physischen Kontexte des Projekts geändert",
     criterionAdded: "hat ein Ergebniskriterium hinzugefügt",
     criterionUpdated: "hat ein Ergebniskriterium geändert",
     criterionReopened: "hat ein Ergebniskriterium wieder geöffnet",
@@ -826,6 +889,15 @@ const extra = {
   },
 
   apiErrorMessages: {
+    integration_authentication_required:
+      "Home Assistant muss sich mit einem gültigen Token anmelden.",
+    integration_token_revoked: "Die Home-Assistant-Verbindung wurde getrennt.",
+    pairing_code_expired: "Der Kopplungscode ist abgelaufen.",
+    pairing_code_invalid: "Der Kopplungscode ist ungültig.",
+    pairing_code_used: "Der Kopplungscode wurde bereits verwendet.",
+    physical_context_not_found: "Der ausgewählte physische Kontext fehlt.",
+    unsupported_protocol_version:
+      "Diese Version der Home-Assistant-Integration wird nicht unterstützt.",
     contribution_query_invalid:
       "Die Zeitzone für den Punkteverlauf ist ungültig.",
     acceptance_criteria_order_invalid:

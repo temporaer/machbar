@@ -39,6 +39,10 @@ const catalogs: Record<PushLocale, NotificationCatalog> = {
         title: "Jetzt machbar",
         body: (_actor, title) => `Erinnerung: ${title}`,
       },
+      context_entered: {
+        title: "Hier machbar",
+        body: (_actor, title) => title,
+      },
     },
     test: {
       title: "Machbar",
@@ -69,6 +73,10 @@ const catalogs: Record<PushLocale, NotificationCatalog> = {
       task_reminder: {
         title: "Ready to do",
         body: (_actor, title) => `Reminder: ${title}`,
+      },
+      context_entered: {
+        title: "Available here",
+        body: (_actor, title) => title,
       },
     },
     test: {

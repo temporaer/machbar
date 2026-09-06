@@ -8,6 +8,7 @@ import {
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { MemberAvatar } from "./MemberAvatar";
+import { TaskCardTags } from "./TaskCardTags";
 
 function DatePrompt({
   label,
@@ -41,32 +42,35 @@ export function ProjectAgendaCard({
   owner?: Member | null;
 }) {
   const strings = useStrings();
-  const { project, qualification, nextAction, stuck } = entry;
-  const heading =
-    qualification === "due"
-      ? strings.projectDue
-      : qualification === "scheduled"
-        ? strings.projectReview
-        : strings.projectReviewAndDue;
+  const {
+    project,
+    qualification,
+    nextAction,
+    nextActionContextAvailability,
+    stuck,
+  } = entry;
+  const hasMeta = stuck || project.contexts.length > 0 || owner;
 
   return (
     <article className="card project-agenda-card">
-      <div className="project-agenda-heading">
-        <span className="badge">{heading}</span>
-        {stuck ? <span className="badge badge-stuck">{strings.stuckReasonLabels[stuck.reason]}</span> : null}
-        {owner ? (
-          <span
-            className="project-agenda-owner"
-            aria-label={`${strings.owner}: ${owner.name}`}
-            title={owner.name}
-          >
-            <MemberAvatar member={owner} size="sm" />
-          </span>
-        ) : null}
-      </div>
       <Link className="project-agenda-link" to={`/projects/${project.id}`}>
         {project.title}
       </Link>
+      {hasMeta ? (
+        <div className="project-agenda-meta">
+          {stuck ? <span className="badge badge-stuck">{strings.stuckReasonLabels[stuck.reason]}</span> : null}
+          <TaskCardTags tags={[]} contexts={project.contexts} />
+          {owner ? (
+            <span
+              className="project-agenda-owner"
+              aria-label={`${strings.owner}: ${owner.name}`}
+              title={owner.name}
+            >
+              <MemberAvatar member={owner} size="sm" />
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       <div className="project-agenda-dates">
         {qualification !== "due" ? (
           <DatePrompt label={strings.review} date={project.scheduledDate} scheduled />
@@ -78,6 +82,9 @@ export function ProjectAgendaCard({
       {nextAction ? (
         <p className="project-agenda-context">
           <strong>{strings.nextAction}:</strong> {nextAction.title}
+          {nextActionContextAvailability?.status === "unavailable"
+            ? ` · ${strings.contextUnavailableNow}`
+            : ""}
         </p>
       ) : null}
       {stuck ? (

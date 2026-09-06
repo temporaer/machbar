@@ -25,6 +25,8 @@ vi.mock("../lib/api", async (importOriginal) => {
       getAuthStatus: vi.fn(),
       getMembers: vi.fn(),
       getPushConfig: vi.fn(),
+      getPushNotificationPreferences: vi.fn(),
+      updatePushNotificationPreferences: vi.fn(),
       registerPushSubscription: vi.fn(),
       unregisterPushSubscription: vi.fn(),
       sendTestPushNotification: vi.fn(),
@@ -79,6 +81,14 @@ describe("PushNotificationSettings", () => {
       enabled: true,
       publicKey: "AQAB",
     });
+    mockedApi.getPushNotificationPreferences.mockResolvedValue({
+      project_assigned: true,
+      task_reminder: true,
+      context_entered: true,
+    });
+    mockedApi.updatePushNotificationPreferences.mockImplementation(
+      async (preferences) => preferences,
+    );
     mockedApi.registerPushSubscription.mockResolvedValue(undefined);
     mockedApi.unregisterPushSubscription.mockResolvedValue(undefined);
     mockedApi.sendTestPushNotification.mockResolvedValue(undefined);
@@ -144,6 +154,26 @@ describe("PushNotificationSettings", () => {
       ),
     );
     expect(screen.getByText("Auf diesem Gerät aktiviert.")).toBeInTheDocument();
+  });
+
+  it("lets the current member toggle notification types independently", async () => {
+    installBrowserSupport("granted");
+    renderWithProviders(<PushNotificationSettings />);
+
+    const contextNotifications = await screen.findByRole("switch", {
+      name: /Ortsaufgaben/,
+    });
+    expect(contextNotifications).toBeChecked();
+    await userEvent.click(contextNotifications);
+
+    await waitFor(() =>
+      expect(mockedApi.updatePushNotificationPreferences).toHaveBeenCalledWith({
+        project_assigned: true,
+        task_reminder: true,
+        context_entered: false,
+      }),
+    );
+    expect(contextNotifications).not.toBeChecked();
   });
 
   it("keeps Chromium's quiet default result visible and actionable", async () => {

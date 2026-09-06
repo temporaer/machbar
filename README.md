@@ -59,7 +59,7 @@ inventory searchable whenever you need it.
 
 ### Keep useful structure lightweight
 
-Use owners, areas, contexts, tags, deadlines, dependencies, and completion
+Use owners, areas, Home Assistant physical contexts, tags, deadlines, dependencies, and completion
 criteria where they improve a decision. Recurring tasks can schedule their next
 occurrence from actual completion, which works well for maintenance that never
 happens on a perfect calendar.
@@ -95,7 +95,8 @@ It is private and self-hosted: one small service and one persistent SQLite
 database, with optional Pocket ID authentication. No hosted account or external
 database is required. An optional Paperless-ngx integration stores images and
 documents referenced from Markdown notes; Paperless owns the files and its API
-token remains on the Machbar server.
+token remains on the Machbar server. An optional push-only Home Assistant
+integration can filter Today by a household member's current zone.
 
 ## Run it yourself in minutes
 

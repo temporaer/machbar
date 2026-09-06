@@ -171,6 +171,12 @@ export function useProjectActions(
     [update],
   );
 
+  const setContexts = useCallback(
+    (story: ProjectWithActions, contextIds: number[]) =>
+      update(story, { contextIds }, undefined, true),
+    [update],
+  );
+
   const acknowledgeReview = useCallback(
     (story: ProjectWithActions) =>
       run({
@@ -205,6 +211,7 @@ export function useProjectActions(
     update,
     assignDriver,
     schedule,
+    setContexts,
     acknowledgeReview,
   };
 }

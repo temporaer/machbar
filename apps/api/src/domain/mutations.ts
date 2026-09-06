@@ -33,25 +33,6 @@ function actor(context?: MutationContext): number | null {
   return context?.actorMemberId ?? null;
 }
 
-function enqueueTaskAssignment(
-  db: Db,
-  task: { id: number; title: string },
-  activityEventId: number,
-  context?: MutationContext,
-): void {
-  const recipientMemberId = effectiveOwnerId(db, task.id);
-  if (recipientMemberId === null) return;
-  enqueueNotification(db, {
-    kind: "task_assigned",
-    recipientMemberId,
-    actorMemberId: actor(context),
-    entityType: "task",
-    entityId: task.id,
-    entityTitle: task.title,
-    sourceKey: `task:${task.id}:assigned:event:${activityEventId}`,
-  });
-}
-
 function enqueueProjectAssignment(
   db: Db,
   project: { id: number; title: string; ownerMemberId: number | null },
@@ -76,6 +57,25 @@ function sameIds(a: number[], b: number[]): boolean {
 
 function sortedIds(ids: number[]): number[] {
   return [...new Set(ids)].sort((a, b) => a - b);
+}
+
+function assertPhysicalContextsExist(db: Db, contextIds: number[]): void {
+  const ids = sortedIds(contextIds);
+  if (ids.length === 0) return;
+  const found = db
+    .select({ id: schema.physicalContexts.id })
+    .from(schema.physicalContexts)
+    .where(inArray(schema.physicalContexts.id, ids))
+    .all()
+    .map((row) => row.id);
+  const missing = ids.filter((id) => !found.includes(id));
+  if (missing.length > 0) {
+    throw AppError.notFound(
+      "physical_context_not_found",
+      "A selected physical context was not found.",
+      { contextIds: missing },
+    );
+  }
 }
 
 function nowIso(): string {
@@ -375,8 +375,7 @@ export function listTags(db: Db) {
   const kindOrder: Record<TagKind, number> = {
     area: 0,
     actor: 1,
-    context: 2,
-    plain: 3,
+    plain: 2,
   };
   return db
     .select()
@@ -536,6 +535,7 @@ export interface CreateProjectInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   tagIds?: number[];
+  contextIds?: number[];
 }
 
 export function getProjectOrThrow(db: Db, id: number) {
@@ -598,6 +598,13 @@ export function createProject(
           .run();
       }
     }
+    const contextIds = sortedIds(input.contextIds ?? []);
+    assertPhysicalContextsExist(tx as unknown as Db, contextIds);
+    for (const contextId of contextIds) {
+      tx.insert(schema.projectPhysicalContexts)
+        .values({ projectId: project.id, contextId })
+        .run();
+    }
     const txDb = tx as unknown as Db;
     if (project.status === "active") {
       assertProjectActivationReady(txDb, project.id, project.ownerMemberId);
@@ -628,6 +635,7 @@ export interface UpdateProjectInput {
   scheduledDate?: string | null;
   position?: number;
   tagIds?: number[];
+  contextIds?: number[];
   expectedRevision?: number;
 }
 
@@ -713,6 +721,20 @@ export function updateProject(
     const nextTagIds =
       input.tagIds === undefined ? existingTagIds : sortedIds(input.tagIds);
     const tagsChanged = !sameIds(existingTagIds, nextTagIds);
+    const existingContextIds = sortedIds(
+      tx
+        .select({ contextId: schema.projectPhysicalContexts.contextId })
+        .from(schema.projectPhysicalContexts)
+        .where(eq(schema.projectPhysicalContexts.projectId, id))
+        .all()
+        .map((row) => row.contextId),
+    );
+    const nextContextIds =
+      input.contextIds === undefined
+        ? existingContextIds
+        : sortedIds(input.contextIds);
+    assertPhysicalContextsExist(txDb, nextContextIds);
+    const contextsChanged = !sameIds(existingContextIds, nextContextIds);
 
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = nowIso();
@@ -727,7 +749,17 @@ export function updateProject(
         tx.insert(schema.projectTags).values({ projectId: id, tagId }).run();
       }
     }
-    if (Object.keys(patch).length > 0 || tagsChanged) {
+    if (contextsChanged) {
+      tx.delete(schema.projectPhysicalContexts)
+        .where(eq(schema.projectPhysicalContexts.projectId, id))
+        .run();
+      for (const contextId of nextContextIds) {
+        tx.insert(schema.projectPhysicalContexts)
+          .values({ projectId: id, contextId })
+          .run();
+      }
+    }
+    if (Object.keys(patch).length > 0 || tagsChanged || contextsChanged) {
       touchProject(txDb, id);
     }
     const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
@@ -739,7 +771,11 @@ export function updateProject(
         entityTitle: updated.title,
         projectId: id,
         metadata: {
-          changedFields: tagsChanged ? [...changedFields, "tags"] : changedFields,
+          changedFields: [
+            ...changedFields,
+            ...(tagsChanged ? ["tags"] : []),
+            ...(contextsChanged ? ["contexts"] : []),
+          ],
         },
       });
       if (project.ownerMemberId === null && updated.ownerMemberId !== null) {
@@ -769,10 +805,12 @@ export function updateProject(
       ) {
         enqueueProjectAssignment(txDb, updated, activityEventId, context);
       }
-    } else if (tagsChanged) {
+    } else if (tagsChanged || contextsChanged) {
       recordActivity(txDb, {
         actorMemberId: actor(context),
-        kind: "project_tags_changed",
+        kind: contextsChanged
+          ? "project_contexts_changed"
+          : "project_tags_changed",
         entityType: "project",
         entityTitle: updated.title,
         projectId: id,
@@ -1446,6 +1484,7 @@ export interface CreateTaskInput {
   needsClarification?: boolean;
   ownerMemberId?: number | null;
   ownerInheritanceMode?: InheritanceMode;
+  contextInheritanceMode?: InheritanceMode;
   createdByMemberId?: number | null;
   dueDate?: string | null;
   scheduledDate?: string | null;
@@ -1455,6 +1494,7 @@ export interface CreateTaskInput {
   allowedDeviationDays?: number | null;
   reminderAt?: string | null;
   tagIds?: number[];
+  contextIds?: number[];
 }
 
 function assertRecurrenceNumbers(
@@ -1628,6 +1668,7 @@ function insertTask(
       needsClarification: status === "captured",
       ownerMemberId: input.ownerMemberId ?? null,
       ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
+      physicalContextInheritanceMode: input.contextInheritanceMode ?? "inherit",
       createdByMemberId: input.createdByMemberId ?? null,
       dueDate: recurrence.enabled ? recurrence.dueDate : input.dueDate ?? null,
       scheduledDate,
@@ -1645,6 +1686,13 @@ function insertTask(
     for (const tagId of input.tagIds) {
       db.insert(schema.taskTags).values({ taskId: task.id, tagId }).run();
     }
+  }
+  const contextIds = sortedIds(input.contextIds ?? []);
+  assertPhysicalContextsExist(db, contextIds);
+  for (const contextId of contextIds) {
+    db.insert(schema.taskPhysicalContexts)
+      .values({ taskId: task.id, contextId })
+      .run();
   }
   return task;
 }
@@ -1671,7 +1719,6 @@ export function createTask(
       projectId: task.projectId,
       metadata: {},
     });
-    enqueueTaskAssignment(txDb, task, activityEventId, context);
     if (
       task.projectId !== null &&
       !hadNextAction &&
@@ -1746,7 +1793,6 @@ export function createChildTask(
       projectId: task.projectId,
       metadata: {},
     });
-    enqueueTaskAssignment(txDb, task, activityEventId, context);
     if (
       parent.size === "XL" &&
       !hadOpenChild &&
@@ -1856,9 +1902,6 @@ export function createProjectTaskSequence(
         relatedTaskTitles: created.map((task) => task.title),
       },
     });
-    for (const task of created) {
-      enqueueTaskAssignment(txDb, task, activityEventId, context);
-    }
     if (!hadNextAction && projectHasNextAction(txDb, projectId)) {
       recordContribution(txDb, {
         activityEventId,
@@ -1936,7 +1979,6 @@ export function createTaskSuccessor(
         relatedTaskTitles: [predecessor.title],
       },
     });
-    enqueueTaskAssignment(txDb, successor, activityEventId, context);
     if (
       successor.projectId !== null &&
       !hadNextAction &&
@@ -1977,6 +2019,7 @@ export interface UpdateTaskInput {
   needsClarification?: boolean;
   ownerMemberId?: number | null;
   ownerInheritanceMode?: InheritanceMode;
+  contextInheritanceMode?: InheritanceMode;
   dueDate?: string | null;
   scheduledDate?: string | null;
   priority?: number | null;
@@ -1987,6 +2030,7 @@ export interface UpdateTaskInput {
   reminderAt?: string | null;
   tagIds?: number[];
   excludedTagIds?: number[];
+  contextIds?: number[];
   expectedRevision?: number;
 }
 
@@ -2096,6 +2140,19 @@ export function promoteTaskToProject(
       .map((row) => row.tagId);
     for (const tagId of tagIds) {
       tx.insert(schema.projectTags).values({ projectId: project.id, tagId }).run();
+    }
+    if (task.physicalContextInheritanceMode === "explicit") {
+      const contextIds = tx
+        .select({ contextId: schema.taskPhysicalContexts.contextId })
+        .from(schema.taskPhysicalContexts)
+        .where(eq(schema.taskPhysicalContexts.taskId, taskId))
+        .all()
+        .map((row) => row.contextId);
+      for (const contextId of contextIds) {
+        tx.insert(schema.projectPhysicalContexts)
+          .values({ projectId: project.id, contextId })
+          .run();
+      }
     }
 
     const descendantIds = repoGetDescendantIds(txDb, taskId);
@@ -2373,6 +2430,13 @@ export function updateTask(
       changedFields.push("ownerInheritanceMode");
       patch.ownerInheritanceMode = input.ownerInheritanceMode;
     }
+    if (
+      input.contextInheritanceMode !== undefined &&
+      input.contextInheritanceMode !== currentTask.physicalContextInheritanceMode
+    ) {
+      changedFields.push("contextInheritanceMode");
+      patch.physicalContextInheritanceMode = input.contextInheritanceMode;
+    }
     if (recurrence.enabled) {
       if (recurrence.dueDate !== currentTask.dueDate) {
         patch.dueDate = recurrence.dueDate;
@@ -2472,6 +2536,20 @@ export function updateTask(
       existingExcludedTagIds,
       nextExcludedTagIds,
     );
+    const existingContextIds = sortedIds(
+      tx
+        .select({ contextId: schema.taskPhysicalContexts.contextId })
+        .from(schema.taskPhysicalContexts)
+        .where(eq(schema.taskPhysicalContexts.taskId, id))
+        .all()
+        .map((row) => row.contextId),
+    );
+    const nextContextIds =
+      input.contextIds === undefined
+        ? existingContextIds
+        : sortedIds(input.contextIds);
+    assertPhysicalContextsExist(txDb, nextContextIds);
+    const contextsChanged = !sameIds(existingContextIds, nextContextIds);
 
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = nowIso();
@@ -2497,10 +2575,21 @@ export function updateTask(
         tx.insert(schema.taskExcludedTags).values({ taskId: id, tagId }).run();
       }
     }
+    if (contextsChanged) {
+      tx.delete(schema.taskPhysicalContexts)
+        .where(eq(schema.taskPhysicalContexts.taskId, id))
+        .run();
+      for (const contextId of nextContextIds) {
+        tx.insert(schema.taskPhysicalContexts)
+          .values({ taskId: id, contextId })
+          .run();
+      }
+    }
     if (
       Object.keys(patch).length > 0 ||
       tagsChanged ||
-      excludedTagsChanged
+      excludedTagsChanged ||
+      contextsChanged
     ) {
       touchTask(txDb, id);
     }
@@ -2509,20 +2598,8 @@ export function updateTask(
       ...changedFields,
       ...(tagsChanged ? ["tags"] : []),
       ...(excludedTagsChanged ? ["excludedTags"] : []),
+      ...(contextsChanged ? ["contexts"] : []),
     ];
-    const ownAssignmentChanged =
-      changedFields.includes("ownerMemberId") ||
-      changedFields.includes("ownerInheritanceMode");
-    const maybeEnqueueAssignment = (activityEventId: number) => {
-      if (!ownAssignmentChanged) return;
-      const effectiveOwnerAfter = effectiveOwnerId(txDb, id);
-      if (
-        effectiveOwnerAfter !== null &&
-        effectiveOwnerAfter !== effectiveOwnerBefore
-      ) {
-        enqueueTaskAssignment(txDb, updated, activityEventId, context);
-      }
-    };
     if (recurringCompletion && occurrence) {
       const updatedScheduledDate = updated.scheduledDate!;
       const updatedDueDate = updated.dueDate!;
@@ -2548,7 +2625,6 @@ export function updateTask(
             : {}),
         },
       });
-      maybeEnqueueAssignment(activityEventId);
       recordContribution(txDb, {
         activityEventId,
         actorMemberId: actor(context),
@@ -2587,7 +2663,6 @@ export function updateTask(
             : {}),
         },
       });
-      maybeEnqueueAssignment(activityEventId);
       if (updated.status === "done") {
         recordContribution(txDb, {
           activityEventId,
@@ -2666,7 +2741,6 @@ export function updateTask(
         metadata: { changedFields: coalescedChangedFields },
       });
       const effectiveOwnerAfter = effectiveOwnerId(txDb, id);
-      maybeEnqueueAssignment(activityEventId);
       if (
         effectiveOwnerBefore === null &&
         effectiveOwnerAfter !== null &&
@@ -2795,10 +2869,10 @@ export function updateTask(
           });
         }
       }
-    } else if (tagsChanged || excludedTagsChanged) {
+    } else if (tagsChanged || excludedTagsChanged || contextsChanged) {
       recordActivity(txDb, {
         actorMemberId: actor(context),
-        kind: "task_tags_changed",
+        kind: contextsChanged ? "task_contexts_changed" : "task_tags_changed",
         entityType: "task",
         entityTitle: updated.title,
         taskId: id,

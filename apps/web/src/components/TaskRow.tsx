@@ -496,7 +496,10 @@ export function TaskRow({
             onClick={() => onOpenDetail(task.id)}
           >
             <div className="task-row-header">
-              <TaskCardTags tags={task.effectiveTags} />
+              <TaskCardTags
+                tags={task.effectiveTags}
+                contexts={task.effectiveContexts}
+              />
               <div className={`task-row-title${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}>
                 {task.title}
                 {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
