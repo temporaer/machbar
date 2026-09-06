@@ -34,7 +34,7 @@ describe("seed data", () => {
     );
   });
 
-  it("derives the consolidated Review queue without obsolete unassigned debt", async () => {
+  it("derives the consolidated Review queue", async () => {
     const res = await ctx.app.inject({ method: "GET", url: "/api/review" });
     expect(res.statusCode).toBe(200);
     const review = res.json() as Array<{
@@ -54,13 +54,6 @@ describe("seed data", () => {
         reason: "waiting_without_followup",
       }),
     );
-    expect(
-      review.some(
-        (item) =>
-          item.projectTitle === "Steuererklärung 2025" &&
-          item.reason === "unassigned_actionable",
-      ),
-    ).toBe(false);
   });
 
   it("computes a next action for healthy projects", async () => {

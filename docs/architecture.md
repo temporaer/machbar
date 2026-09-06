@@ -353,12 +353,14 @@ stories are not "stuck" — they are simply not started).
 | `completion_review` | Project has tasks but **zero open** ones — everything is `done`/`cancelled`, so the story is ready to be completed or extended |
 | `waiting_without_followup` | An external blocker path has no Wiedervorlage |
 | `blocked_without_clear_path` | A dependency path ends in captured/someday/non-operational work, a missing task, or a corrupt cycle |
-| `unassigned_actionable` | A project has a healthy actionable path but actionable work lacks an effective owner |
 | *(healthy)* | At least one meaningful path reaches executable work or an intentional external wait with a revisit |
 
 A reached external-wait revisit remains a task-level attention signal and
 returns to Today. It does not make an otherwise valid waiting project
 structurally stuck.
+
+Shared tasks without an effective owner are valid actionable work. They do not
+make their project structurally stuck.
 
 Dependency chains are deliberately **not** defects by themselves. A sequence
 such as `Angebot → Termin → Arbeit → Rechnung → Bezahlen` is healthy while

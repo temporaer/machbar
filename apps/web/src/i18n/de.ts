@@ -172,7 +172,6 @@ const extra = {
       "Setze eine Wiedervorlage oder plane einen eigenen nächsten Schritt.",
     blocked_without_clear_path:
       "Prüfe die konkret blockierenden Voraussetzungen, damit eine Aufgabe machbar wird.",
-    unassigned_actionable: "Weise die offene machbare Aufgabe einer Person zu.",
     completion_review: "Prüfe das Ergebnis und schließe das Projekt ab oder ergänze die noch fehlende Arbeit.",
   } satisfies Record<StuckReason, string>,
   openTasks: "Offen",
@@ -990,7 +989,6 @@ const stuckReasonLabels: Record<StuckReason, string> = {
   no_next_action: "Kein nächster Schritt",
   waiting_without_followup: "Wartet ohne Wiedervorlage",
   blocked_without_clear_path: "Blockiert ohne klaren Fortsetzungsweg",
-  unassigned_actionable: "Offene Aufgabe ohne Zuständigkeit",
   completion_review: "Bereit zum Abschließen",
 };
 

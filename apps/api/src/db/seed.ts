@@ -315,9 +315,8 @@ export function seedDatabase(db: Db): void {
       ],
     });
 
-    // 3. Steuererklärung 2025 — an actionable task with an explicit "none"
-    //    owner override to demonstrate the "unassigned_actionable" stuck
-    //    reason even though the project itself has an owner.
+    // 3. Steuererklärung 2025 — an actionable shared task with an explicit
+    //    "none" owner override even though the project itself has an owner.
     createProject({
       title: "Steuererklärung 2025",
       criteria: [

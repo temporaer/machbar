@@ -315,7 +315,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
   });
 
   describe("stuck-project classification", () => {
-    it("classifies unassigned, external-waiting, no-next-action, unclear-blocker, and healthy projects", () => {
+    it("classifies structural blockers while allowing shared actionable work", () => {
       const owner = createMember("Zuständige Person");
 
       const unassigned = createProject(handle.db, {
@@ -390,7 +390,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       });
 
       const reasons = getStuckReasonsByProject(handle.db);
-      expect(reasons.get(unassigned.id)).toBe("unassigned_actionable");
+      expect(reasons.has(unassigned.id)).toBe(false);
       expect(reasons.get(onlyWaiting.id)).toBe("waiting_without_followup");
       expect(reasons.get(noNextAction.id)).toBe("no_next_action");
       expect(reasons.get(blockedProject.id)).toBe("blocked_without_clear_path");
@@ -635,7 +635,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         ownerInheritanceMode: "explicit",
       });
 
-      // An unassigned actionable task keeps its higher-priority reason.
+      // Shared actionable work remains a healthy path.
       const mixedUnassigned = createProject(handle.db, {
         title: "Warten und Unzugewiesen",
         status: "active",
@@ -659,7 +659,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
 
       const reasons = getStuckReasonsByProject(handle.db);
       expect(reasons.has(mixedSomeday.id)).toBe(false);
-      expect(reasons.get(mixedUnassigned.id)).toBe("unassigned_actionable");
+      expect(reasons.has(mixedUnassigned.id)).toBe(false);
     });
 
     it("parks actionable work blocked directly or transitively only by scheduled waiting tasks", () => {
@@ -770,7 +770,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(reasons.get(unscheduledProject.id)).toBe("waiting_without_followup");
       expect(reasons.get(capturedProject.id)).toBe("blocked_without_clear_path");
       expect(reasons.has(mixedProject.id)).toBe(false);
-      expect(reasons.get(unassignedProject.id)).toBe("unassigned_actionable");
+      expect(reasons.has(unassignedProject.id)).toBe(false);
     });
 
     it("requires every branch beneath future waiting work to have a clear endpoint", () => {
@@ -978,7 +978,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       });
       createTask(handle.db, {
         projectId: backlogOpen.id,
-        title: "Wäre unassigned_actionable, wenn aktiv",
+        title: "Geteilte offene Aufgabe",
         status: "actionable",
       });
 
