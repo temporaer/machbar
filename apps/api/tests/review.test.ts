@@ -552,9 +552,6 @@ describe("review queue", () => {
     );
     expect(items.some((item) => item.entityId === captured.id)).toBe(false);
     expect(items.some((item) => item.entityId === dueWait.id)).toBe(false);
-    expect(
-      items.some((item) => item.reason === ("unassigned_actionable" as never)),
-    ).toBe(false);
   });
 
   it("acknowledges project and task review revision-safely without touching updatedAt or awarding points", async () => {

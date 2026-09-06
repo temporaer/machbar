@@ -19,7 +19,6 @@ const stuckReasonLabels: Record<StuckReason, string> = {
   no_next_action: "No next step",
   waiting_without_followup: "Waiting without a follow-up date",
   blocked_without_clear_path: "Blocked without a clear path forward",
-  unassigned_actionable: "Ready task with no owner",
   completion_review: "Ready to wrap up",
 };
 
@@ -193,7 +192,6 @@ const en = {
       "Set a follow-up date or plan a next step of your own.",
     blocked_without_clear_path:
       "Check exactly what is blocking the work so a task can become ready.",
-    unassigned_actionable: "Assign the open ready task to someone.",
     completion_review:
       "Review the result, then complete the project or add the work that is still missing.",
   },

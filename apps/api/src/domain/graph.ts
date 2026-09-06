@@ -562,13 +562,6 @@ export class Graph {
         });
         if (!hasHealthyPath) {
           reason = stuckReasonForDiagnoses(blockedDiagnoses);
-        } else if (
-          openTasks.some(
-            (task) =>
-              task.status === "actionable" && task.effectiveOwnerId === null,
-          )
-        ) {
-          reason = "unassigned_actionable";
         }
       }
       if (reason) graph.stuckReasonByProject.set(project.id, reason);

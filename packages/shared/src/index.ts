@@ -516,7 +516,6 @@ export type StuckReason =
   | "no_next_action"
   | "waiting_without_followup"
   | "blocked_without_clear_path"
-  | "unassigned_actionable"
   // An `active` project whose tasks are all `done`/`cancelled`: it is not
   // "stuck" from a next-action standpoint, but it needs a human decision
   // (complete/reopen/archive) before it can move on.
