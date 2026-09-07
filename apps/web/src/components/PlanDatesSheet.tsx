@@ -27,7 +27,6 @@ export function PlanDatesSheet({
     setError(null);
     try {
       await onSave(patch);
-      onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
     } finally {

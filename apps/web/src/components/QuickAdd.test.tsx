@@ -110,23 +110,18 @@ describe("QuickAdd", () => {
         ownerInheritanceMode: "explicit",
       }),
     );
-    expect(screen.getByText("In Eingang abgelegt")).toBeInTheDocument();
+    expect(screen.queryByText("In Eingang abgelegt")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Speichern" })).not.toBeInTheDocument();
     expect(screen.queryByText("In Heute hinzugefügt")).not.toBeInTheDocument();
   });
 
-  it("legt Machbar ohne Klärungsbedarf an und hält Korrekturen persistent bereit", async () => {
+  it("legt Machbar ohne Klärungsbedarf ohne Korrektur-Popup an", async () => {
     mockedApi.getMembers.mockResolvedValue([
       makeMember({ id: 1, name: "Mira" }),
       makeMember({ id: 2, name: "Jonas" }),
     ]);
     mockedApi.createTask.mockResolvedValue(
       makeTask({ id: 12, title: "Angebot senden", ownerMemberId: 1, ownerInheritanceMode: "explicit" }),
-    );
-    mockedApi.getProjects.mockResolvedValue([makeProject({ id: 7, title: "Umzug" })]);
-    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 12, projectId: 7 }) as never);
-    mockedApi.updateTask.mockResolvedValue(
-      makeTask({ id: 12, ownerMemberId: 2, ownerInheritanceMode: "explicit" }) as never,
     );
     renderWithProviders(<QuickAdd />);
     await openCapture();
@@ -149,32 +144,8 @@ describe("QuickAdd", () => {
         }),
       ),
     );
-    expect(screen.getByText("In Heute hinzugefügt")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Zuständig ändern" })).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Projekt wählen" }));
-    await waitFor(() => expect(mockedApi.getProjects).toHaveBeenCalled());
-    await userEvent.click(screen.getByRole("button", { name: "Umzug" }));
-    await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
-    await waitFor(() =>
-      expect(mockedApi.moveTask).toHaveBeenCalledWith(12, {
-        parentTaskId: null,
-        projectId: 7,
-        expectedRevision: 1,
-      }),
-    );
-    expect(screen.getByText("In Heute hinzugefügt")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Zuständig ändern" }));
-    await userEvent.click(screen.getByRole("button", { name: "Jonas" }));
-    await waitFor(() =>
-      expect(mockedApi.updateTask).toHaveBeenCalledWith(12, {
-        ownerMemberId: 2,
-        ownerInheritanceMode: "explicit",
-        expectedRevision: 1,
-      }),
-    );
-    expect(screen.queryByRole("group", { name: "Zuständig" })).not.toBeInTheDocument();
+    expect(screen.queryByText("In Heute hinzugefügt")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Zuständig ändern" })).not.toBeInTheDocument();
   });
 
   it("bewahrt den Projektkontext für schnelle Aufgaben", async () => {
@@ -449,13 +420,8 @@ describe("QuickAdd", () => {
 
     await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Details");
     await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
-    await screen.findByText("In Heute hinzugefügt");
-    expect(screen.queryByRole("button", { name: "Rückgängig" })).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Details öffnen" }));
-
-    expect(screen.getByTestId("open-task-id")).toHaveTextContent("67");
     expect(screen.queryByText("In Heute hinzugefügt")).not.toBeInTheDocument();
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("none");
   });
 
   it("öffnet die Erfassung per 'c'-Tastenkürzel im aktuellen Projektkontext", async () => {
