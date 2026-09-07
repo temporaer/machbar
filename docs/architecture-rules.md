@@ -118,11 +118,12 @@ behavior.
 | Task metadata and lifecycle actions | `apps/web/src/lib/useTaskActions.ts` |
 | External-wait actions | `apps/web/src/lib/useTaskActions.ts` |
 | Physical-context actions | `apps/web/src/lib/useTaskActions.ts` and `apps/web/src/lib/useProjectActions.ts` |
-| Physical-context availability | `apps/api/src/integrations/homeAssistant.ts`, projected only by Today and Waiting |
+| Physical-context availability | `apps/api/src/integrations/homeAssistant.ts`, consumed through agenda/waiting projections |
 | Home Assistant machine authentication | `apps/api/src/auth/routes.ts` route policy |
-| Project next-action selection | `apps/api/src/repo/nextActionRepo.ts` and `Graph` |
+| Project next-action selection | `apps/api/src/repo/nextActionRepo.ts` and `Graph.selectedNextActionsFor()` |
 | Derived review diagnosis | `apps/api/src/domain/reviewItems.ts` |
 | Review decisions | `apps/web/src/lib/useProjectActions.ts` and `apps/web/src/lib/useTaskActions.ts` |
+| Agenda eligibility and available work selection | `apps/api/src/domain/agendaSelection.ts` |
 | Week planning projection | `apps/api/src/domain/weekAgenda.ts`, `/api/agenda/week`, and `apps/web/src/pages/WeekPage.tsx` |
 | Exhaustive inventory filtering | `apps/web/src/lib/allInventory.ts` |
 | Refinement sizing semantics | `apps/web/src/lib/refinementHelpers.ts` |

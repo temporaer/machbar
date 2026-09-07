@@ -126,7 +126,15 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
         ? undefined
         : request.authMember?.id ?? requestedMemberId;
     if (memberId !== undefined) getMemberOrThrow(db, memberId);
-    return buildWeekAgenda(Graph.load(db, start), { start, memberId });
+    return buildWeekAgenda(Graph.load(db, start), {
+      start,
+      memberId,
+      scope: scope === "all" || memberId === undefined ? "all" : "mine",
+      contextAvailability: (task, target) =>
+        target === "household"
+          ? contextAvailabilityForHousehold(db, task.effectiveContexts)
+          : contextAvailabilityForMember(db, task.effectiveContexts, target),
+    });
   });
 
   app.get("/api/inbox", async () => {

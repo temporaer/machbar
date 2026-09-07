@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
+import { Graph } from "../src/domain/graph.js";
+import { buildWeekAgenda } from "../src/domain/weekAgenda.js";
 
 const monday = "2026-09-07";
 const tuesday = "2026-09-08";
@@ -29,6 +31,16 @@ describe("week planning agenda", () => {
     return res.json();
   }
 
+  async function createMember(name: string) {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: "/api/members",
+      payload: { name },
+    });
+    expect(res.statusCode).toBe(201);
+    return res.json();
+  }
+
   async function createProject(payload: Record<string, unknown>) {
     const res = await ctx.app.inject({
       method: "POST",
@@ -37,6 +49,12 @@ describe("week planning agenda", () => {
     });
     expect(res.statusCode).toBe(201);
     return res.json();
+  }
+
+  function activateProject(project: { id: number }) {
+    ctx.handle.sqlite
+      .prepare("UPDATE work_items SET status = 'active' WHERE id = ?")
+      .run(project.id);
   }
 
   async function setExternalWait(task: { id: number; revision: number }, payload: Record<string, unknown>) {
@@ -152,6 +170,129 @@ describe("week planning agenda", () => {
     expect(titles(week.unplanned)).toContain("Versicherung anrufen");
   });
 
+  it("derives unplanned from shared planning selection without current-context filtering", async () => {
+    const story = await createProject({ title: "Kueche renovieren" });
+    activateProject(story);
+    await createTask({ title: "Elektriker anrufen", projectId: story.id });
+    await createTask({ title: "Fliesen aussuchen", projectId: story.id });
+    await createTask({ title: "Schrank montieren", projectId: story.id });
+    await createTask({ title: "Standalone machbar" });
+    await createTask({ title: "Schon geplant", scheduledDate: friday });
+    await createTask({ title: "Someday", status: "someday" });
+    await createTask({
+      title: "Capture",
+      status: "captured",
+      needsClarification: true,
+    });
+    const waiting = await createTask({ title: "Antwort abwarten" });
+    await setExternalWait(waiting, { waitingFor: "Extern" });
+    const blocker = await createTask({ title: "Blocker" });
+    const blocked = await createTask({ title: "Blockiert" });
+    await addDependency(blocked, blocker.id);
+    await createTask({ title: "Kontext anderswo" });
+
+    const week = buildWeekAgenda(Graph.load(ctx.handle.db, monday), {
+      start: monday,
+      today: monday,
+      contextAvailability: (task) =>
+        task.title === "Kontext anderswo"
+          ? {
+              status: "unavailable",
+              availableNow: false,
+              missingContexts: [],
+            }
+          : {
+              status: "available",
+              availableNow: true,
+              missingContexts: [],
+            },
+    });
+    const unplannedTitles = titles(week.unplanned);
+
+    expect(unplannedTitles).toContain("Standalone machbar");
+    expect(unplannedTitles).toContain("Elektriker anrufen");
+    expect(unplannedTitles).toContain("Kontext anderswo");
+    expect(unplannedTitles).not.toContain("Fliesen aussuchen");
+    expect(unplannedTitles).not.toContain("Schrank montieren");
+    expect(unplannedTitles).not.toContain("Kueche renovieren");
+    expect(unplannedTitles).not.toContain("Antwort abwarten");
+    expect(unplannedTitles).not.toContain("Blockiert");
+    expect(unplannedTitles).not.toContain("Capture");
+    expect(unplannedTitles).not.toContain("Someday");
+    expect(unplannedTitles).not.toContain("Schon geplant");
+  });
+
+  it("uses the shared member lane selection for project next actions", async () => {
+    const anna = await createMember("Anna");
+    const ben = await createMember("Ben");
+    const story = await createProject({ title: "Lane story" });
+    activateProject(story);
+    await createTask({
+      title: "Ben first",
+      projectId: story.id,
+      ownerMemberId: ben.id,
+      ownerInheritanceMode: "explicit",
+    });
+    await createTask({
+      title: "Anna second",
+      projectId: story.id,
+      ownerMemberId: anna.id,
+      ownerInheritanceMode: "explicit",
+    });
+    await createTask({
+      title: "Shared third",
+      projectId: story.id,
+      ownerInheritanceMode: "none",
+    });
+
+    const week = buildWeekAgenda(Graph.load(ctx.handle.db, monday), {
+      start: monday,
+      today: monday,
+      memberId: anna.id,
+      scope: "mine",
+    });
+    const unplannedTitles = titles(week.unplanned);
+
+    expect(unplannedTitles).toContain("Anna second");
+    expect(unplannedTitles).not.toContain("Ben first");
+    expect(unplannedTitles).not.toContain("Shared third");
+  });
+
+  it("keeps one unplanned project next action per owner lane in all scope", async () => {
+    const anna = await createMember("Anna all");
+    const ben = await createMember("Ben all");
+    const story = await createProject({ title: "Parallel lanes" });
+    activateProject(story);
+    for (const [title, ownerMemberId, ownerInheritanceMode] of [
+      ["Anna 1", anna.id, "explicit"],
+      ["Anna 2", anna.id, "explicit"],
+      ["Ben 1", ben.id, "explicit"],
+      ["Shared 1", null, "none"],
+      ["Shared 2", null, "none"],
+    ] as const) {
+      await createTask({
+        title,
+        projectId: story.id,
+        ownerMemberId,
+        ownerInheritanceMode,
+      });
+    }
+
+    const week = buildWeekAgenda(Graph.load(ctx.handle.db, monday), {
+      start: monday,
+      today: monday,
+      scope: "all",
+    });
+    const unplannedTitles = titles(week.unplanned);
+
+    expect(unplannedTitles).toEqual(
+      expect.arrayContaining(["Anna 1", "Ben 1", "Shared 1"]),
+    );
+    expect(unplannedTitles).not.toEqual(
+      expect.arrayContaining(["Anna 2", "Shared 2"]),
+    );
+  });
+
   it("does not propagate a story date to descendant tasks", async () => {
     const story = await createProject({
       title: "Haus verbessern",
@@ -185,6 +326,31 @@ describe("week planning agenda", () => {
       placement: "revisit",
       externalWait: { waitingFor: "Handwerker", revisitDate: wednesday },
     });
+  });
+
+  it("uses exact dates for week placement without Today-style carry-over", async () => {
+    const scheduled = await createTask({
+      title: "Montag geplant",
+      scheduledDate: monday,
+    });
+    const revisit = await createTask({ title: "Dienstag nachhaken" });
+    await setExternalWait(revisit, {
+      waitingFor: "Antwort",
+      revisitDate: tuesday,
+    });
+    await createTask({ title: "Mittwoch faellig", dueDate: wednesday });
+    await createTask({ title: "Vorwoche faellig", dueDate: "2026-09-05" });
+
+    const week = await getWeek();
+
+    expect(titles(week.days[0].items)).toContain(scheduled.title);
+    expect(titles(week.days[1].items)).not.toContain(scheduled.title);
+    expect(titles(week.days[1].items)).toContain("Dienstag nachhaken");
+    expect(titles(week.days[2].items)).not.toContain("Dienstag nachhaken");
+    expect(titles(week.days[2].items)).toContain("Mittwoch faellig");
+    for (const day of week.days) {
+      expect(titles(day.items)).not.toContain("Vorwoche faellig");
+    }
   });
 
   it("prefers the revisit date over the due date when both fall within the week", async () => {

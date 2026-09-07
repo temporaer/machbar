@@ -1,10 +1,14 @@
 import type {
+  ContextAvailability,
   WeekAgenda,
   WeekWorkItemPlacement,
   WeekWorkItemSummary,
 } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
-import { isTaskInWorkingSystem } from "./workEligibility.js";
+import {
+  createAgendaSelection,
+  selectCurrentAvailableWork,
+} from "./agendaSelection.js";
 
 function addDaysIso(dateIso: string, days: number): string {
   const date = new Date(`${dateIso}T00:00:00.000Z`);
@@ -12,19 +16,12 @@ function addDaysIso(dateIso: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-function isOpenTask(task: TaskRecord): boolean {
-  return task.status !== "done" && task.status !== "cancelled";
-}
-
 function isOpenStory(story: ProjectRecord): boolean {
   return story.status !== "completed" && story.status !== "archived";
 }
 
-function matchesSelectedOwner(
-  ownerId: number | null,
-  memberId?: number,
-): boolean {
-  return memberId === undefined || ownerId === null || ownerId === memberId;
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function compareItems(
@@ -119,6 +116,12 @@ function storySummary(
 export interface BuildWeekAgendaOptions {
   start: string;
   memberId?: number;
+  scope?: "mine" | "all";
+  today?: string;
+  contextAvailability?: (
+    task: TaskRecord,
+    target: number | "household",
+  ) => ContextAvailability;
 }
 
 export function buildWeekAgenda(
@@ -131,43 +134,32 @@ export function buildWeekAgenda(
   }));
   const dateSet = new Set(days.map((day) => day.date));
   const dayByDate = new Map(days.map((day) => [day.date, day]));
-  const projectStatusById = new Map(
-    [...graph.projectsById.values()].map((project) => [
-      project.id,
-      project.status,
-    ]),
-  );
   const unplanned: WeekWorkItemSummary[] = [];
+  const selection = createAgendaSelection(graph, options);
+  const placedIds = new Set<number>();
 
   const place = (item: WeekWorkItemSummary) => {
     if (item.placement === "scheduled" && item.scheduledDate) {
       dayByDate.get(item.scheduledDate)?.items.push(item);
+      placedIds.add(item.id);
       return;
     }
     if (item.placement === "due" && item.dueDate) {
       dayByDate.get(item.dueDate)?.items.push(item);
+      placedIds.add(item.id);
       return;
     }
     if (item.placement === "revisit" && item.externalWait?.revisitDate) {
       dayByDate.get(item.externalWait.revisitDate)?.items.push(item);
-      return;
+      placedIds.add(item.id);
     }
-    unplanned.push(item);
   };
 
   for (const task of graph.allTasks()) {
-    if (
-      !isOpenTask(task) ||
-      task.status !== "actionable" ||
-      task.needsClarification ||
-      !isTaskInWorkingSystem(task, projectStatusById) ||
-      !matchesSelectedOwner(task.effectiveOwnerId, options.memberId)
-    ) {
-      continue;
-    }
-    if (task.externalWait) {
+    if (!selection.isAgendaTask(task)) continue;
+    if (selection.isDirectExternalWaitAttention(task)) {
       if (
-        task.externalWait.revisitDate &&
+        task.externalWait?.revisitDate &&
         dateSet.has(task.externalWait.revisitDate)
       ) {
         place(taskSummary(task, graph, "revisit"));
@@ -178,23 +170,30 @@ export function buildWeekAgenda(
       place(taskSummary(task, graph, "scheduled"));
     } else if (task.dueDate && dateSet.has(task.dueDate)) {
       place(taskSummary(task, graph, "due"));
-    } else if (!task.scheduledDate && task.executable) {
-      place(taskSummary(task, graph, "unplanned"));
     }
   }
 
   for (const story of graph.listProjectsWithComputed()) {
-    if (!isOpenStory(story) || !matchesSelectedOwner(story.ownerMemberId, options.memberId)) {
+    if (!isOpenStory(story) || !selection.matchesOwnerId(story.ownerMemberId)) {
       continue;
     }
     if (story.scheduledDate && dateSet.has(story.scheduledDate)) {
       place(storySummary(story, graph, "scheduled"));
     } else if (story.dueDate && dateSet.has(story.dueDate)) {
       place(storySummary(story, graph, "due"));
-    } else if (!story.scheduledDate) {
-      place(storySummary(story, graph, "unplanned"));
     }
   }
+
+  const available = selectCurrentAvailableWork(graph, {
+    ...options,
+    today: options.today ?? todayIso(),
+    ignoreContextAvailability: true,
+  });
+  unplanned.push(
+    ...[...available.shared, ...available.unscheduled]
+      .filter((task) => !placedIds.has(task.id))
+      .map((task) => taskSummary(task, graph, "unplanned")),
+  );
 
   for (const day of days) day.items.sort(compareItems);
   unplanned.sort(compareItems);
