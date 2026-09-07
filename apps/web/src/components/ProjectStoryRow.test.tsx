@@ -8,7 +8,10 @@ import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectStoryRow } from "./ProjectStoryRow";
-import { useProjectActions } from "../lib/useProjectActions";
+import { ProjectActionsProvider } from "../lib/useProjectActions";
+import { TaskActionsProvider } from "../lib/useTaskActions";
+import { TaskDetailProvider } from "../lib/taskDetailContext";
+import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import type { ProjectWithActions } from "../lib/api";
@@ -70,10 +73,9 @@ function Harness({
   story: ProjectWithActions;
   variant?: "compact" | "card";
 }) {
-  const actions = useProjectActions();
   return (
     <ul>
-      <ProjectStoryRow story={story} actions={actions} variant={variant} />
+      <ProjectStoryRow story={story} variant={variant} />
     </ul>
   );
 }
@@ -95,10 +97,18 @@ function renderWithProjectRoute(ui: ReactElement) {
     <MemoryRouter initialEntries={["/"]}>
       <IdentityProvider>
         <RefreshProvider>
-          <Routes>
-            <Route path="/" element={ui} />
-            <Route path="/projects/:id" element={<ProjectRouteMarker />} />
-          </Routes>
+          <SwipeSettingsProvider>
+            <TaskActionsProvider>
+              <ProjectActionsProvider>
+                <TaskDetailProvider>
+                  <Routes>
+                    <Route path="/" element={ui} />
+                    <Route path="/projects/:id" element={<ProjectRouteMarker />} />
+                  </Routes>
+                </TaskDetailProvider>
+              </ProjectActionsProvider>
+            </TaskActionsProvider>
+          </SwipeSettingsProvider>
         </RefreshProvider>
       </IdentityProvider>
     </MemoryRouter>,

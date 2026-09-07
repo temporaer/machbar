@@ -1,0 +1,1 @@
+ALTER TABLE `member_oidc_identities` ADD `picture_url` text;

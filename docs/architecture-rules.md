@@ -139,6 +139,13 @@ behavior.
 | Memory-bounded photo cropping | `apps/web/src/components/ImageCropSheet.tsx` |
 | Memory-bounded camera capture | `apps/web/src/components/CameraCaptureSheet.tsx` |
 | Incoming file-share staging | `apps/web/public/sw.js` and `apps/web/src/lib/pendingShareTarget.ts` |
+| Task/project shared identity allocation | `apps/api/src/domain/mutations.ts` (`allocateWorkItemId`) over the `work_items` table |
+| Task/story read projection (shared lifecycle vocabulary) | `apps/api/src/domain/workItem.ts` |
+| Identity-preserving role conversion | `apps/api/src/domain/mutations.ts` (`convertTaskToStory` / `convertStoryToTask`) |
+| Semantic user-intent commands (mouse/touch/keyboard dispatch a common vocabulary) | `apps/web/src/lib/commands.ts` and `apps/web/src/lib/useWorkItemCommands.ts` |
+| Logical active WorkItem, structural capability, and collapse state per navigable surface | `apps/web/src/lib/interactionScope.tsx` |
+| Keyboard navigation (`j/k/h/l`, `Alt+arrows`, `g`-prefix) | `apps/web/src/lib/useWorkItemKeyboardNav.ts` and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
+| WorkItem detail-sheet section/disclosure chrome | `apps/web/src/components/WorkItemDetailSection.tsx` |
 
 Before introducing another primitive for one of these needs, update this table
 and explain why the existing primitive is insufficient.

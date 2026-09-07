@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Task } from "@machbar/shared";
-import type { TaskDetailFocusField } from "../lib/taskDetailContext";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { formatDate, isOverdue } from "../lib/format";
 import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
+import { useInteractionScope } from "../lib/interactionScope";
 import { useSwipeSettings } from "../lib/swipeSettings";
 import type { PrimarySwipeAction } from "../lib/swipeSettings";
 import { useOutlineOrganizeRow } from "../lib/useOutlineOrganize";
@@ -69,8 +70,6 @@ export interface TaskRowProps {
   parentTask: Task | null;
   /** Nesting level, used for the outline's flat drag/drop projection. */
   depth: number;
-  onOpenDetail: (taskId: number, focusField?: TaskDetailFocusField) => void;
-  taskActions: ReturnType<typeof useTaskActions>;
   /** See `TaskRowWaitingInteraction`. Absent everywhere but the Warten page's outline. */
   waitingInteraction?: TaskRowWaitingInteraction | undefined;
   /** Show this row's external-wait revisit date. */
@@ -100,14 +99,20 @@ export function TaskRow({
   task: taskProp,
   parentTask,
   depth,
-  onOpenDetail,
-  taskActions,
   waitingInteraction,
   showRevisitDate = false,
 }: TaskRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
-  const [collapsed, setCollapsed] = useState(false);
+  // Fold state is scope-owned (see `interactionScope.tsx`), not private to
+  // this row -- `h`/`l` keyboard shortcuts and future non-row callers need
+  // to read/set it from outside whichever row happens to render this item.
+  const scope = useInteractionScope();
+  const collapsed = scope.isCollapsed(taskProp.id);
+  const setCollapsed = useCallback(
+    (value: boolean) => scope.setCollapsed(taskProp.id, value),
+    [scope, taskProp.id],
+  );
   const [chipsOpen, setChipsOpen] = useState(false);
   const [quickAction, setQuickAction] = useState<TaskQuickAction | null>(null);
   const [childComposerOpen, setChildComposerOpen] = useState(false);
@@ -137,16 +142,15 @@ export function TaskRow({
   // provided by the surrounding `TaskOutline`; it stays absent — and every
   // handle with it — in views whose row order carries no hierarchy meaning.
   const organize = useOutlineOrganizeRow();
+  const dispatch = useWorkItemCommands();
   const {
-    requestToggle,
-    requestPrimarySwipe,
     update,
     assignOwner,
     isPending,
     retained,
     errors,
     clearError,
-  } = taskActions;
+  } = useTaskActions();
   const outlineRefreshing = organize?.pendingId !== null;
   const busy = isPending(taskProp.id) || outlineRefreshing;
 
@@ -201,11 +205,11 @@ export function TaskRow({
 
   // A task dropped into this row while it was collapsed would be invisible
   // right after the move, so the outline asks the destination parent to
-  // reveal its children (collapse state is per row and lives here).
+  // reveal its children (collapse state is scope-owned, see above).
   const expandRequest = organize?.expandRequest ?? null;
   useEffect(() => {
     if (expandRequest?.taskId === taskProp.id) setCollapsed(false);
-  }, [expandRequest, taskProp.id]);
+  }, [expandRequest, taskProp.id, setCollapsed]);
 
   const children = sortByPosition(task.children);
   const isDone = task.status === "done";
@@ -250,7 +254,7 @@ export function TaskRow({
     cancel: cancelSwipe,
   } = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy || organize?.activeId != null,
-    onPrimary: () => requestPrimarySwipe(task, primarySwipeAction),
+    onPrimary: () => dispatch({ type: "task.primaryAction", task }),
     onSecondary: () => setChipsOpen(true),
     onRealDrag: clearLongPress,
   });
@@ -290,7 +294,7 @@ export function TaskRow({
   };
 
   const reopenChip = () => {
-    requestToggle(task);
+    dispatch({ type: "task.toggleDone", task });
     setChipsOpen(false);
   };
 
@@ -366,10 +370,9 @@ export function TaskRow({
     returnFocusToRow();
   };
 
-  // Collapsed state lives in this component only, so a freshly created
-  // child (nested under a possibly-collapsed row) must be made visible
-  // right here once creation succeeds — the refresh bus alone wouldn't
-  // reopen it.
+  // A freshly created child (nested under a possibly-collapsed row) must
+  // be made visible right here once creation succeeds -- the refresh bus
+  // alone wouldn't reopen it.
   const handleChildCreated = () => {
     setCollapsed(false);
     setChildComposerOpen(false);
@@ -385,6 +388,7 @@ export function TaskRow({
     <li
       className={`task-row task-row-surface-${task.status}`}
       style={{ listStyle: "none" }}
+      data-workitem-id={taskProp.id}
     >
       <div className={`task-row-swipe-bg complete${showCompleteBg ? " visible" : ""}${swipeCoach.animate ? " swipe-coach-primary" : ""}`} aria-hidden="true">
         {primarySwipeLabel}
@@ -463,7 +467,9 @@ export function TaskRow({
             className="task-row-toggle"
             aria-expanded={!collapsed}
             aria-label={collapsed ? strings.expand : strings.collapse}
-            onClick={() => setCollapsed((c) => !c)}
+            onClick={() =>
+              dispatch({ type: collapsed ? "outline.expand" : "outline.collapse", workItemId: taskProp.id })
+            }
           >
             {collapsed ? "▸" : "▾"}
           </button>
@@ -482,7 +488,7 @@ export function TaskRow({
           className={`task-row-checkbox${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}
           aria-label={isDone || isCancelled ? strings.reopen : strings.done}
           disabled={busy}
-          onClick={() => requestToggle(task)}
+          onClick={() => dispatch({ type: "task.toggleDone", task })}
         >
           {isDone ? "✓" : isCancelled ? "×" : ""}
         </button>
@@ -493,7 +499,7 @@ export function TaskRow({
             ref={mainButtonRef}
             aria-label={task.title}
             disabled={outlineRefreshing}
-            onClick={() => onOpenDetail(task.id)}
+            onClick={() => dispatch({ type: "task.open", taskId: task.id })}
           >
             <div className="task-row-header">
               <TaskCardTags
@@ -618,7 +624,7 @@ export function TaskRow({
           {waitingInteraction && task.externalWait ? (
             <IconActionButton kind="followUp" label={strings.followUp} disabled={busy} onClick={followUpChip} />
           ) : null}
-          <IconActionButton kind="more" label={strings.more} disabled={outlineRefreshing} onClick={() => onOpenDetail(task.id)} />
+          <IconActionButton kind="more" label={strings.more} disabled={outlineRefreshing} onClick={() => dispatch({ type: "task.open", taskId: task.id })} />
           <IconActionButton kind="close" label={strings.close} onClick={closeChips} />
         </div>
       ) : null}
@@ -693,8 +699,6 @@ export function TaskRow({
               task={child}
               parentTask={task}
               depth={depth + 1}
-              onOpenDetail={onOpenDetail}
-              taskActions={taskActions}
               waitingInteraction={waitingInteraction}
             />
           ))}

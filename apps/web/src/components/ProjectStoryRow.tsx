@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
+import type { WorkItemCommand } from "../lib/commands";
 import { useStrings } from "../lib/strings";
 import { formatDate } from "../lib/format";
 import {
@@ -24,7 +25,9 @@ import {
   projectWorkflowLabel,
   secondaryWorkflowActions,
 } from "../lib/projectWorkflow";
-import type { useProjectActions } from "../lib/useProjectActions";
+import { useProjectActions } from "../lib/useProjectActions";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
+import { useOptionalInteractionScope } from "../lib/interactionScope";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
@@ -58,7 +61,6 @@ const statusAccentByClassification: Record<ProjectListClassification, StatusAcce
 
 export interface ProjectStoryRowProps {
   story: ProjectWithActions;
-  actions: ReturnType<typeof useProjectActions>;
   /**
    * `compact` — the inventory/Review meta line (criteria, driver, dates, tasks).
    * `card` — the Projekte tab: same meta plus next action and the task /
@@ -75,6 +77,35 @@ type Sheet =
   | "criteria"
   | "tags"
   | null;
+
+/**
+ * Maps a legal `ProjectWorkflowAction` onto its `story.*` semantic command
+ * (see `commands.ts`) so every actual workflow transition -- primary
+ * swipe/button, chip strip, and (via `useWorkItemCommands()`) any future
+ * keyboard/palette caller -- goes through the one shared dispatch surface
+ * instead of this row calling `useProjectActions().runAction` directly.
+ */
+function storyWorkflowCommand(
+  story: ProjectWithActions,
+  action: ProjectWorkflowAction,
+  ownerMemberId?: number | null,
+): WorkItemCommand {
+  const ownerMemberIdField =
+    ownerMemberId !== undefined ? { ownerMemberId } : {};
+  switch (action) {
+    case "activate":
+      return { type: "story.activate", story, ...ownerMemberIdField };
+    case "return_to_backlog":
+      return { type: "story.returnToBacklog", story };
+    case "complete":
+      return { type: "story.complete", story };
+    case "reopen":
+      return { type: "story.reopen", story, ...ownerMemberIdField };
+    case "archive":
+    default:
+      return { type: "story.archive", story };
+  }
+}
 
 /**
  * One story row with the full mobile workflow gestures, shared by the
@@ -96,13 +127,23 @@ type Sheet =
  * straight to the list; "Projekt öffnen" navigates to the project page, and
  * tapping the row itself still opens the story detail as before.
  */
-export function ProjectStoryRow({ story: storyProp, actions, variant = "compact" }: ProjectStoryRowProps) {
+export function ProjectStoryRow({ story: storyProp, variant = "compact" }: ProjectStoryRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
   const [chipsOpen, setChipsOpen] = useState(false);
   const [sheet, setSheet] = useState<Sheet>(null);
   const { members } = useIdentity();
   const navigate = useNavigate();
+  const dispatch = useWorkItemCommands();
+  // `null` on any page that doesn't mount an `InteractionScopeProvider`
+  // (Review, Projekte) -- see `interactionScope.tsx`'s `useOptionalInteractionScope`.
+  // Not every host of this row has one yet (Phase 7 doesn't force that),
+  // so the logical-active-item updates below are best-effort.
+  const scope = useOptionalInteractionScope();
+  // Sourced from the shared `ProjectActionsProvider` instance (see
+  // `useProjectActions.tsx`); passing just this row's own `story` is enough
+  // for its retained entry to release once this prop confirms the same
+  // revision, without needing the host page's whole loaded collection.
   const {
     isPending,
     retained,
@@ -112,7 +153,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
     update,
     assignDriver,
     schedule,
-  } = actions;
+  } = useProjectActions([storyProp]);
 
   // A story that just transitioned keeps rendering here — muted, with the
   // past-tense confirmation of what happened — for `RETENTION_MS` (~4s)
@@ -214,8 +255,8 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
       );
       return;
     }
-    void runAction(story, primaryAction);
-  }, [busy, criteria, navigate, primaryAction, runAction, story]);
+    dispatch(storyWorkflowCommand(story, primaryAction));
+  }, [busy, criteria, dispatch, navigate, primaryAction, story]);
   const swipe = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy,
     onPrimary: doPrimary,
@@ -253,20 +294,26 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
       );
       return;
     }
-    void runAction(story, action);
+    dispatch(storyWorkflowCommand(story, action));
   };
 
   const handleMainClick = () => {
     setChipsOpen(false);
+    scope?.setActive(story.id);
   };
 
   const goToDetail = () => {
     setChipsOpen(false);
+    scope?.setActive(story.id);
     navigate(`/projects/${story.id}`);
   };
 
   return (
-    <li className={`story-row story-row-accent-${accent}`} style={{ listStyle: "none" }}>
+    <li
+      className={`story-row story-row-accent-${accent}`}
+      style={{ listStyle: "none" }}
+      data-workitem-id={story.id}
+    >
       <div className={`story-row-swipe-bg primary${showPrimaryBg ? " visible" : ""}${swipeCoach.animate ? " swipe-coach-primary" : ""}`} aria-hidden="true">
         {primaryLabel}
       </div>

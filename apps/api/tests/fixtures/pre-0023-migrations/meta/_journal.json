@@ -1,0 +1,167 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787608691217,
+      "tag": "0000_init",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787638053302,
+      "tag": "0001_remove_marked_today_unique_member_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787644461810,
+      "tag": "0002_project_acceptance_criteria_task_size",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787661787488,
+      "tag": "0003_colored_default_tags",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787666558280,
+      "tag": "0004_oidc_authentication",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787683038492,
+      "tag": "0005_capture_persistence",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787691657651,
+      "tag": "0006_add_project_notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1787730323744,
+      "tag": "0007_typed_tags_remove_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787837335819,
+      "tag": "0008_captured_task_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787855000719,
+      "tag": "0009_activity_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1787863949242,
+      "tag": "0010_pocket_id_avatars",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1787912220742,
+      "tag": "0011_contribution_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1787922040842,
+      "tag": "0012_add_entity_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1787951397557,
+      "tag": "0013_task_recurrence",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1788079129879,
+      "tag": "0014_web_push_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "6",
+      "when": 1788111081396,
+      "tag": "0015_external_waits",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1788116784266,
+      "tag": "0016_remove_waiting_compatibility",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1788177602979,
+      "tag": "0017_require_external_wait_reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1788208996954,
+      "tag": "0018_reviewed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1788256311667,
+      "tag": "0019_external_wait_revisit_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1788426102795,
+      "tag": "0020_physical_contexts",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1788432547602,
+      "tag": "0021_push_notification_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "6",
+      "when": 1788450087250,
+      "tag": "0022_stable_home_assistant_member_mappings",
+      "breakpoints": true
+    }
+  ]
+}

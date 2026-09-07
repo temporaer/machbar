@@ -11,6 +11,7 @@ import {
   completeProject,
   createProjectTaskSequence,
   createProject,
+  convertStoryToTask,
   deleteProject,
   removeCriterion,
   reopenProject,
@@ -28,6 +29,7 @@ import {
   checkCriterionSchema,
   createProjectSchema,
   createTaskSequenceSchema,
+  convertStoryToTaskSchema,
   projectLifecycleSchema,
   reorderCriteriaSchema,
   updateCriterionSchema,
@@ -222,6 +224,20 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       );
       const graph = Graph.load(db);
       return projectWithIssues(graph, id);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/projects/:id/convert-to-task",
+    async (request, reply) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(convertStoryToTaskSchema, request.body ?? {});
+      const task = convertStoryToTask(db, id, body, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
+      const graph = Graph.load(db);
+      reply.status(201);
+      return graph.allTasks().find((t) => t.id === task.id) ?? null;
     },
   );
 

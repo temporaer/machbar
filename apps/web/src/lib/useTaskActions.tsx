@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import type { Task, TaskStatus } from "@machbar/shared";
 import { api } from "./api";
 import type {
@@ -52,8 +52,13 @@ type WithoutExpectedRevision<T> = T extends unknown
  * entry (and cancels that pending bump) immediately, which restores the row
  * to its last known-good (pre-mutation) state, and records a message
  * consumers can surface inline — no delayed refresh is left behind.
+ *
+ * This is the underlying state/logic; it is instantiated exactly once by
+ * `TaskActionsProvider` below so every consumer (row, detail sheet, review,
+ * waiting, quick-add, …) shares one optimistic/pending/error state instead
+ * of each owning an independent copy. Call `useTaskActions()` to consume it.
  */
-export function useTaskActions() {
+function useTaskActionsState() {
   const [pending, setPending] = useState<{ task: Task; action: PendingAction } | null>(null);
   const mutations = useRetainedMutations<Task>();
   const { run, pendingIds, isPending, retained, errors, clearError } = mutations;
@@ -449,4 +454,30 @@ export function useTaskActions() {
     reopen,
     transitionStatus,
   };
+}
+
+type TaskActionsValue = ReturnType<typeof useTaskActionsState>;
+
+const TaskActionsContext = createContext<TaskActionsValue | null>(null);
+
+/**
+ * Mounts the single shared `useTaskActionsState()` instance for the whole
+ * app (see `App.tsx`) so every consumer reads and mutates the same
+ * pending/retained/error state — a swipe in `TaskOutline`, an edit in
+ * `TaskDetailSheet`, and a click in `ReviewPage` all observe each other's
+ * in-flight/retained tasks instead of keeping independent, inconsistent
+ * copies. Test files use `renderWithProviders`, which mounts this too.
+ */
+export function TaskActionsProvider({ children }: { children: ReactNode }) {
+  const value = useTaskActionsState();
+  return <TaskActionsContext.Provider value={value}>{children}</TaskActionsContext.Provider>;
+}
+
+/** Consumes the shared task action controller mounted by `TaskActionsProvider`. */
+export function useTaskActions(): TaskActionsValue {
+  const context = useContext(TaskActionsContext);
+  if (!context) {
+    throw new Error("useTaskActions must be used within a TaskActionsProvider");
+  }
+  return context;
 }

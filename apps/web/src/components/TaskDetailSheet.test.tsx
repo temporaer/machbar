@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
+import { TaskActionsProvider } from "../lib/useTaskActions";
+import { ProjectActionsProvider } from "../lib/useProjectActions";
 import {
   TaskDetailProvider,
   useTaskDetail,
@@ -28,7 +30,7 @@ vi.mock("../lib/api", () => ({
     getTask: vi.fn(),
     getTaskRecurrenceHistory: vi.fn(),
     updateTask: vi.fn(),
-    promoteTaskToProject: vi.fn(),
+    convertTaskToStory: vi.fn(),
     createTask: vi.fn(),
     setExternalWait: vi.fn(),
     addCriterion: vi.fn(),
@@ -87,11 +89,15 @@ function renderSheet(taskId: number, focusField?: TaskDetailFocusField) {
     <MemoryRouter>
       <IdentityProvider>
         <RefreshProvider>
-          <TaskDetailProvider>
-            <OpenerHarness taskId={taskId} focusField={focusField}>
-              <TaskDetailSheet />
-            </OpenerHarness>
-          </TaskDetailProvider>
+          <TaskActionsProvider>
+            <ProjectActionsProvider>
+              <TaskDetailProvider>
+                <OpenerHarness taskId={taskId} focusField={focusField}>
+                  <TaskDetailSheet />
+                </OpenerHarness>
+              </TaskDetailProvider>
+            </ProjectActionsProvider>
+          </TaskActionsProvider>
         </RefreshProvider>
       </IdentityProvider>
     </MemoryRouter>,
@@ -103,11 +109,15 @@ function renderQueueSheet(taskIds: number[]) {
     <MemoryRouter>
       <IdentityProvider>
         <RefreshProvider>
-          <TaskDetailProvider>
-            <QueueOpenerHarness taskIds={taskIds}>
-              <TaskDetailSheet />
-            </QueueOpenerHarness>
-          </TaskDetailProvider>
+          <TaskActionsProvider>
+            <ProjectActionsProvider>
+              <TaskDetailProvider>
+                <QueueOpenerHarness taskIds={taskIds}>
+                  <TaskDetailSheet />
+                </QueueOpenerHarness>
+              </TaskDetailProvider>
+            </ProjectActionsProvider>
+          </TaskActionsProvider>
         </RefreshProvider>
       </IdentityProvider>
     </MemoryRouter>,
@@ -148,7 +158,7 @@ describe("TaskDetailSheet", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getTags.mockResolvedValue([makeTag({ id: 10, name: "büro" })]);
     mockedApi.updateTask.mockResolvedValue(makeTask());
-    mockedApi.promoteTaskToProject.mockResolvedValue(
+    mockedApi.convertTaskToStory.mockResolvedValue(
       makeProject({ id: 80, title: "Projekt aus Erfassung" }),
     );
     mockedApi.createTask.mockResolvedValue(makeTask());
@@ -1357,7 +1367,7 @@ describe("TaskDetailSheet", () => {
       notes: "Farbe auswählen",
     });
     mockedApi.getTask.mockResolvedValue(task);
-    mockedApi.promoteTaskToProject.mockResolvedValue(project);
+    mockedApi.convertTaskToStory.mockResolvedValue(project);
 
     renderQueueSheet([56]);
     await userEvent.click(screen.getByText("open queue"));
@@ -1367,7 +1377,7 @@ describe("TaskDetailSheet", () => {
     );
 
     await waitFor(() =>
-      expect(mockedApi.promoteTaskToProject).toHaveBeenCalledWith(56, {
+      expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(56, {
         status: "backlog",
         expectedRevision: 1,
       }),
@@ -1394,7 +1404,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Backlog" }));
 
     await waitFor(() =>
-      expect(mockedApi.promoteTaskToProject).toHaveBeenCalledWith(57, {
+      expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(57, {
         status: "backlog",
         expectedRevision: 1,
       }),

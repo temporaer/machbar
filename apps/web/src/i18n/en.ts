@@ -867,6 +867,8 @@ const en = {
       `created a follow-up task for “${title}”`,
     taskCreated: "created the task",
     projectCreated: "created the project",
+    convertedToStory: "turned this into a project",
+    convertedToTask: "turned this into a task",
     sequenceCreated: (count: number) =>
       `created a task sequence with ${count} steps`,
     entityUpdated: (entity: "task" | "project", fields: string) =>
@@ -1028,6 +1030,8 @@ const en = {
     task_parent_self: "A task cannot be its own parent.",
     task_promotion_invalid:
       "This inbox item cannot be converted to a project in its current state.",
+    role_conversion_invalid:
+      "This item cannot be converted in its current state.",
     task_sequence_too_short: "A task sequence needs at least two steps.",
     task_title_required: "Enter a task title.",
     external_wait_reason_required: "Enter what this task is waiting for.",

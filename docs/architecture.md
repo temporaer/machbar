@@ -172,12 +172,14 @@ become task dates.
   not separate domain commands. The transaction validates the rendered
   revision, prevents cycles and recurring parents, cascades project changes
   through descendants, and normalizes both affected sibling groups.
-- `POST /api/tasks/:id/promote-to-project` atomically classifies a root
-  `captured` task as an active or backlog project. It copies project-compatible
-  metadata, promotes direct children to project roots, preserves deeper
-  descendants, and removes the temporary capture wrapper. Captured roots cannot
-  acquire task-only dependencies, waits, recurrence, reminders, or new child
-  tasks before classification.
+- `POST /api/tasks/:id/convert-to-story` and
+  `POST /api/projects/:id/convert-to-task` atomically reclassify a root
+  `captured` task as a story (or the reverse), reusing the same numeric id
+  (see §9) so activity history, tags, contexts, and notifications survive
+  untouched. Captured roots cannot acquire task-only dependencies, waits,
+  recurrence, reminders, or new child tasks before classification; reverse
+  conversion is rejected whenever the story has children or acceptance
+  criteria.
 - External waits use revision-aware `PUT /api/tasks/:id/external-wait` and
   `DELETE /api/tasks/:id/external-wait` resources. Starting/updating a wait can
   change its description and its own revisit date atomically; resolving it
@@ -727,7 +729,98 @@ worker never forwards the operating-system POST or bypasses API authentication.
 
 ---
 
-## 9. Migrations
+## 9. WorkItem projection and interaction architecture
+
+Tasks and projects/stories remain separate `tasks`/`projects` tables (see
+§2), but both now share one numeric identity space and converge above the
+schema in three layers. This is an ongoing convergence, tracked in the
+refactor's `plan.md`; the sections below describe what has already landed.
+
+**Shared identity.** `work_items(id)` (`apps/api/src/db/schema.ts`) is a
+thin parent row both `tasks.id` and `projects.id` foreign-key into.
+`allocateWorkItemId(db)` (`apps/api/src/domain/mutations.ts`) is the only
+way either table's row gets an id, which guarantees a task and a project
+can never collide on the same numeric id — a precondition for identity to
+survive role conversion.
+
+**WorkItem read projection.** `apps/api/src/domain/workItem.ts` maps a
+`TaskRecord`/`ProjectRecord` (from `graph.ts`) onto one shared shape:
+`role: "task" | "story"` and one lifecycle vocabulary
+(`captured | backlog | active | done | cancelled`), with role-specific
+label derivation (`task+active → actionable`, `task+backlog → someday`,
+`story+active → active`, `story+backlog → backlog`,
+`story+done → completed`). The underlying `tasks.status`/`projects.status`
+columns are unchanged; this is a projection-only mapping, not a schema
+merge. A story's `children` are currently its root-level tasks only —
+stories cannot yet nest under stories, so nested Scrum structure (§ product
+spec) is not yet representable at the schema level.
+
+**Identity-preserving role conversion.** `convertTaskToStory` /
+`convertStoryToTask` (`apps/api/src/domain/mutations.ts`) replace the old,
+identity-destroying `promoteTaskToProject`: converting a task to a story
+(or back) reuses the same numeric id (enabled by the shared identity
+above) and re-points `activity_events`/`notification_events`/
+`contribution_events` in place, so activity history, tags, and contexts
+survive the conversion instead of starting fresh. Reverse conversion
+(story → task) is conservative: it rejects whenever the story has any
+children or acceptance criteria (`role_conversion_invalid`), rather than
+silently discarding data. Routes:
+`POST /api/tasks/:id/convert-to-story`, `POST /api/projects/:id/convert-to-task`.
+
+**Semantic commands.** `apps/web/src/lib/commands.ts` defines a pure,
+React-free `WorkItemCommand` union (`task.*`, `story.*`, `outline.*`,
+`navigate.*`, `capture.open`) — one vocabulary of user intent that mouse
+clicks, swipes, row buttons, and keyboard shortcuts all dispatch into
+identically. `apps/web/src/lib/useWorkItemCommands.ts` is the one dispatch
+surface: it routes `task.*` into the existing `useTaskActions()`, `story.*`
+into `useProjectActions()`, `task.open` into `useTaskDetail()`, and
+`outline.collapse`/`outline.expand` into the interaction scope's collapse
+state. `outline.moveUp/moveDown/indent/outdent` are deliberately **not**
+generic here — they dispatch directly against the specific
+`useOutlineOrganize()` instance that owns the rendered sibling group (via
+the scope's registered `moveBy`), because only that instance can enforce
+the compiled-view structural-safety invariant below.
+
+**Interaction scopes and the logical active item.**
+`apps/web/src/lib/interactionScope.tsx`'s `InteractionScopeProvider` is
+mounted once per navigable surface (Today, Inbox, All, a project/story
+outline, Waiting). It holds one logical "active WorkItem" that survives
+DOM focus changes (editing a field, opening a sheet), replacing the
+outline's previous private selection state; `canReorder`/`canReparent`
+flags that only a mounted, `organizable` `TaskOutline` sets to `true` —
+compiled views (Today, Inbox, Waiting, All) never do, because their
+visible sibling set is not the complete stored sibling group (see §8's
+outline section); and per-WorkItem-id collapse state, since folding is
+now a structural interaction capability rather than private `TaskRow`
+state.
+
+**Keyboard navigation.** `apps/web/src/lib/useWorkItemKeyboardNav.ts`
+(mounted per page as `<WorkItemKeyboardNavMount />`, inside that page's
+scope) reads `[data-workitem-id]` elements in live DOM order for `j/k`
+traversal — this single mechanism naturally skips collapsed (unmounted)
+subtrees and spans multiple `TaskOutline`/`ProjectStoryRow` mounts on one
+page without a separate registry — and dispatches `outline.collapse`/
+`outline.expand` (`h`/`l`) and structural moves (`Alt`+arrows) through the
+scope's registered `moveBy`. `apps/web/src/lib/useGlobalNavigationKeys.ts`
+(mounted once, above the route table, since a page-scoped provider can't
+be read from an ancestor) handles the scope-independent `g`-prefix
+navigation sequence. Both suppress themselves via one shared
+`shouldSuppressGlobalShortcuts()` (`apps/web/src/lib/keyboardShortcuts.ts`)
+while editing text, or while a `BottomSheet`/modal is open.
+
+**Still two separate rows and detail sheets.** `TaskRow.tsx` and
+`ProjectStoryRow.tsx` render as fully separate components (they now both
+carry `data-workitem-id` and dispatch through the same command layer, but
+not a shared JSX row). `TaskDetailSheet.tsx` and `ProjectEditSheet.tsx`
+likewise remain separate sheets; they share only their section/disclosure
+chrome (`apps/web/src/components/WorkItemDetailSection.tsx`). A full
+"one universal WorkItem row"/"one unified inspector" merge is future work,
+not yet attempted, given the scale of behavioral difference (swipe
+semantics, chip strips, and field sets) between the task and story cases.
+
+---
+
+## 10. Migrations
 
 Drizzle migrations live in `apps/api/drizzle/` and are applied on every server start.
 

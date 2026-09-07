@@ -35,11 +35,11 @@ const ALLOWED_MUTATION_CALLERS = new Map([
     new Set(["updateTask"]),
   ],
   [
-    "apps/web/src/lib/useTaskActions.ts",
+    "apps/web/src/lib/useTaskActions.tsx",
     new Set(TASK_MUTATIONS),
   ],
   [
-    "apps/web/src/lib/useProjectActions.ts",
+    "apps/web/src/lib/useProjectActions.tsx",
     new Set(PROJECT_MUTATIONS),
   ],
   [

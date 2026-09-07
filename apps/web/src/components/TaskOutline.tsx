@@ -12,7 +12,6 @@ import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { EmptyState } from "./AsyncStates";
-import { useTaskDetail } from "../lib/taskDetailContext";
 
 export interface TaskOutlineProps {
   tasks: Task[];
@@ -55,7 +54,6 @@ export function TaskOutline({
   const strings = useStrings();
   const [movePrompt, setMovePrompt] = useState<{ taskId: number; mode: MoveMode } | null>(null);
   const taskActions = useTaskActions();
-  const { open } = useTaskDetail();
   const { primarySwipeAction } = useSwipeSettings();
   const rightSwipeAction = strings.primarySwipeActionLabels[primarySwipeAction];
   // Structural editing (drag gesture and the selected-task toolbar) keeps
@@ -111,8 +109,6 @@ export function TaskOutline({
               task={task}
               parentTask={null}
               depth={0}
-              onOpenDetail={open}
-              taskActions={taskActions}
               waitingInteraction={waitingInteraction}
               showRevisitDate={showRevisitDate}
             />
@@ -128,8 +124,6 @@ export function TaskOutline({
               task={task}
               parentTask={null}
               depth={0}
-              onOpenDetail={open}
-              taskActions={taskActions}
               waitingInteraction={waitingInteraction}
               showRevisitDate={showRevisitDate}
             />

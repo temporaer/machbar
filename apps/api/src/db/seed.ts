@@ -1,5 +1,5 @@
 import { loadEnv } from "../env.js";
-import { colorForTag } from "../domain/mutations.js";
+import { allocateWorkItemId, colorForTag } from "../domain/mutations.js";
 import { openDb, type Db } from "./client.js";
 import { runMigrations } from "./migrate.js";
 import * as schema from "./schema.js";
@@ -126,6 +126,7 @@ export function seedDatabase(db: Db): void {
         const row = tx
           .insert(schema.tasks)
           .values({
+            id: allocateWorkItemId(tx),
             projectId,
             parentTaskId,
             title: input.title,
@@ -197,6 +198,7 @@ export function seedDatabase(db: Db): void {
       const project = tx
         .insert(schema.projects)
         .values({
+          id: allocateWorkItemId(tx),
           title: input.title,
           status: input.status ?? "active",
           ownerMemberId: input.ownerMemberId,

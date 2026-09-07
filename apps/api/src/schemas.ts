@@ -137,8 +137,14 @@ export const transitionTaskStatusSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
 });
 
-export const promoteTaskToProjectSchema = z.object({
+export const convertTaskToStorySchema = z.object({
   status: z.enum(["active", "backlog"]),
+  title: z.string().min(1).optional(),
+  notes: z.string().optional(),
+  expectedRevision: z.number().int().positive().optional(),
+});
+
+export const convertStoryToTaskSchema = z.object({
   title: z.string().min(1).optional(),
   notes: z.string().optional(),
   expectedRevision: z.number().int().positive().optional(),
