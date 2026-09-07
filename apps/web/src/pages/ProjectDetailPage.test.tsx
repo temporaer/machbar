@@ -21,6 +21,8 @@ vi.mock("../lib/api", () => ({
     getMembers: vi.fn(),
     getProject: vi.fn(),
     getTags: vi.fn(),
+    getProjects: vi.fn(),
+    getHomeAssistantStatus: vi.fn(),
     getTask: vi.fn(),
     updateTask: vi.fn(),
     updateProject: vi.fn(),
@@ -125,6 +127,17 @@ describe("ProjectDetailPage task explanations", () => {
     window.localStorage.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getTags.mockResolvedValue([]);
+    mockedApi.getProjects.mockResolvedValue([]);
+    mockedApi.getHomeAssistantStatus.mockResolvedValue({
+      connected: false,
+      instanceId: null,
+      protocolVersion: null,
+      connectedAt: null,
+      lastUpdateAt: null,
+      stale: false,
+      people: [],
+      contexts: [],
+    });
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
       tasks: [makeTask({ id: 7, projectId: 42, title: "Ort reservieren" })],

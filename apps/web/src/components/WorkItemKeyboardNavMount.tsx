@@ -1,4 +1,5 @@
 import { useWorkItemKeyboardNav } from "../lib/useWorkItemKeyboardNav";
+import { CommandHelpSheet } from "./CommandHelpSheet";
 
 /**
  * Renders nothing; exists so each page can mount `useWorkItemKeyboardNav`
@@ -7,5 +8,5 @@ import { useWorkItemKeyboardNav } from "../lib/useWorkItemKeyboardNav";
  */
 export function WorkItemKeyboardNavMount() {
   useWorkItemKeyboardNav();
-  return null;
+  return <CommandHelpSheet />;
 }

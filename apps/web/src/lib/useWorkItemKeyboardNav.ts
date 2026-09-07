@@ -3,6 +3,7 @@ import { useInteractionScope } from "./interactionScope";
 import { useWorkItemCommands } from "./useWorkItemCommands";
 import { shouldSuppressGlobalShortcuts } from "./keyboardShortcuts";
 import type { StructuralMoveDirection } from "./interactionScope";
+import type { TaskDetailFocusField } from "./taskDetailContext";
 
 /**
  * Every `TaskRow` currently rendered by this scope's outline(s), in
@@ -21,7 +22,18 @@ function visibleWorkItemIds(): number[] {
 
 function focusRow(workItemId: number) {
   const row = document.querySelector<HTMLElement>(`[data-workitem-id="${workItemId}"]`);
-  row?.querySelector<HTMLElement>(".task-row-main, .story-row-main")?.focus();
+  row?.querySelector<HTMLElement>(".task-row-main, .story-row-main, .week-card-main")?.focus();
+}
+
+function workItemRole(workItemId: number): "task" | "story" | null {
+  const row = document.querySelector<HTMLElement>(`[data-workitem-id="${workItemId}"]`);
+  const role = row?.dataset.workitemRole;
+  return role === "task" || role === "story" ? role : null;
+}
+
+function activeTaskRow(workItemId: number): boolean {
+  const row = document.querySelector<HTMLElement>(`[data-workitem-id="${workItemId}"]`);
+  return Boolean(row?.querySelector(".task-row-main"));
 }
 
 const ALT_DIRECTIONS: Record<string, StructuralMoveDirection> = {
@@ -29,6 +41,12 @@ const ALT_DIRECTIONS: Record<string, StructuralMoveDirection> = {
   ArrowDown: "down",
   ArrowLeft: "outdent",
   ArrowRight: "indent",
+};
+
+const TASK_FOCUS_KEYS: Record<string, TaskDetailFocusField> = {
+  s: "schedule",
+  a: "owner",
+  n: "notes",
 };
 
 /**
@@ -40,9 +58,8 @@ const ALT_DIRECTIONS: Record<string, StructuralMoveDirection> = {
  * `task.open` on click), so native browser Enter-activates-focused-button
  * behavior opens it without a second, redundant implementation.
  *
- * Only `TaskRow` (tasks) is covered in this pass — `ProjectStoryRow`
- * (stories/projects) is not yet migrated to the command layer or given a
- * `data-workitem-id` marker; that is Phase 7's universal-row work.
+ * Task rows, story rows, and week cards all participate by exposing
+ * `data-workitem-id` plus role metadata and a focusable main control.
  */
 export function useWorkItemKeyboardNav() {
   const scope = useInteractionScope();
@@ -76,7 +93,7 @@ export function useWorkItemKeyboardNav() {
           }
           const nextId = ids[nextIndex];
           if (nextId === undefined) return;
-          scope.setActive(nextId);
+          scope.setActive(nextId, workItemRole(nextId));
           focusRow(nextId);
           return;
         }
@@ -90,7 +107,28 @@ export function useWorkItemKeyboardNav() {
           event.preventDefault();
           dispatch({ type: "outline.expand", workItemId: scope.activeId });
           return;
+        case "c":
+          if (!scope.captureOpen) return;
+          event.preventDefault();
+          dispatch({ type: "capture.open" });
+          return;
+        case "?":
+          if (!scope.helpOpen) return;
+          event.preventDefault();
+          scope.helpOpen();
+          return;
         default:
+          if (scope.activeId !== null) {
+            const focusField = TASK_FOCUS_KEYS[event.key];
+            if (focusField && activeTaskRow(scope.activeId)) {
+              event.preventDefault();
+              dispatch({
+                type: "task.open",
+                taskId: scope.activeId,
+                focusField,
+              });
+            }
+          }
       }
     }
 
@@ -98,4 +136,3 @@ export function useWorkItemKeyboardNav() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [scope, dispatch]);
 }
-

@@ -9,8 +9,8 @@ import { useEffect, useId, useState, type ReactNode } from "react";
  * inspector... common sections" architecture (see `docs/architecture-rules.md`).
  *
  * A full merge of the two sheets into one unified inspector component is a
- * larger, separately-scoped effort (see `plan.md`'s Phase 8 notes); this is
- * the safely-extractable shared piece that doesn't require unifying the
+ * larger, separately-scoped effort; this is the safely-extractable shared
+ * piece that doesn't require unifying the
  * rest of either sheet's task-specific/story-specific field logic.
  */
 export function WorkItemDetailSection({

@@ -23,6 +23,9 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.primaryAction":
     case "task.discard":
       return "task" in command ? command.task.id : command.taskId;
+    case "workItem.schedule":
+    case "workItem.setDeadline":
+      return command.item.id;
     case "story.activate":
     case "story.returnToBacklog":
     case "story.complete":
@@ -36,6 +39,27 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "outline.indent":
     case "outline.outdent":
       return command.workItemId;
+    default:
+      return null;
+  }
+}
+
+function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null {
+  switch (command.type) {
+    case "task.open":
+    case "task.toggleDone":
+    case "task.primaryAction":
+    case "task.discard":
+      return "task";
+    case "story.activate":
+    case "story.returnToBacklog":
+    case "story.complete":
+    case "story.reopen":
+    case "story.archive":
+      return "story";
+    case "workItem.schedule":
+    case "workItem.setDeadline":
+      return command.item.role;
     default:
       return null;
   }
@@ -57,9 +81,8 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
  * the specific `useOutlineOrganize()` instance that owns the rendered
  * sibling group, via the scope's registered `moveBy`. `outline.collapse`/
  * `outline.expand` carry no such structural-safety risk (folding is pure
- * view state), so they're handled generically here. `capture.open` is
- * not yet wired (no capture-target registry exists until the Phase 4
- * interaction scope lands); dispatching it today is a no-op.
+ * view state), so they're handled generically here. `capture.open` invokes
+ * the opener registered by the scoped `QuickAdd`.
  */
 export function useWorkItemCommands() {
   const taskActions = useTaskActions();
@@ -72,7 +95,7 @@ export function useWorkItemCommands() {
   const dispatch = useCallback(
     (command: WorkItemCommand) => {
       const workItemId = commandWorkItemId(command);
-      if (workItemId !== null) scope?.setActive(workItemId);
+      if (workItemId !== null) scope?.setActive(workItemId, commandWorkItemRole(command));
       switch (command.type) {
         case "task.open":
           taskDetail.open(command.taskId, command.focusField);
@@ -88,6 +111,30 @@ export function useWorkItemCommands() {
         case "task.discard":
           taskActions.requestCancel(command.task);
           return;
+        case "workItem.schedule":
+          if (command.item.role === "task") {
+            return taskActions.update(
+              command.item.task,
+              { scheduledDate: command.date },
+              { scheduledDate: command.date },
+              true,
+            );
+          }
+          return projectActions.schedule(command.item.project, {
+            scheduledDate: command.date,
+          });
+        case "workItem.setDeadline":
+          if (command.item.role === "task") {
+            return taskActions.update(
+              command.item.task,
+              { dueDate: command.date },
+              { dueDate: command.date },
+              true,
+            );
+          }
+          return projectActions.schedule(command.item.project, {
+            dueDate: command.date,
+          });
         case "story.activate":
           void projectActions.activate(command.story, command.ownerMemberId);
           return;
@@ -125,6 +172,8 @@ export function useWorkItemCommands() {
           navigate("/more");
           return;
         case "capture.open":
+          scope?.captureOpen?.();
+          return;
         case "outline.moveUp":
         case "outline.moveDown":
         case "outline.indent":

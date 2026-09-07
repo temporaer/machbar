@@ -618,6 +618,45 @@ export interface Agenda {
   revisit: Task[];
 }
 
+export type WeekWorkItemRole = "task" | "story";
+
+export type WeekWorkItemPlacement = "scheduled" | "due" | "unplanned";
+
+export interface WeekWorkItemSummary {
+  id: number;
+  revision: number;
+  role: WeekWorkItemRole;
+  title: string;
+  status: TaskStatus | ProjectStatus;
+  ownerMemberId: number | null;
+  scheduledDate: string | null;
+  dueDate: string | null;
+  placement: WeekWorkItemPlacement;
+  projectId: number | null;
+  projectTitle: string | null;
+  parentId: number | null;
+  parentTitle: string | null;
+  tags: Tag[];
+  contexts: PhysicalContext[];
+  blocked: boolean;
+  executable: boolean;
+  stuckReason: StuckReason | null;
+  task: Task | null;
+  project: Project | null;
+}
+
+export interface WeekAgendaDay {
+  date: string;
+  items: WeekWorkItemSummary[];
+}
+
+export interface WeekAgenda {
+  start: string;
+  end: string;
+  days: WeekAgendaDay[];
+  unplanned: WeekWorkItemSummary[];
+}
+
 export interface MoreCounts {
   review: number;
 }

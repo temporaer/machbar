@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { QuickAdd } from "./QuickAdd";
+import { WorkItemKeyboardNavMount } from "./WorkItemKeyboardNavMount";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { useTaskDetail } from "../lib/taskDetailContext";
@@ -11,6 +12,7 @@ import { InteractionScopeProvider } from "../lib/interactionScope";
 function renderQuickAddInStory(storyId: number, ui = <QuickAdd />) {
   return renderWithProviders(
     <InteractionScopeProvider captureTarget={{ kind: "story", storyId }}>
+      <WorkItemKeyboardNavMount />
       {ui}
     </InteractionScopeProvider>,
   );
@@ -21,7 +23,9 @@ vi.mock("../lib/api", () => ({
     getMembers: vi.fn(),
     createTask: vi.fn(),
     createProject: vi.fn(),
+    getTags: vi.fn(),
     getProjects: vi.fn(),
+    getHomeAssistantStatus: vi.fn(),
     moveTask: vi.fn(),
     updateTask: vi.fn(),
     addCriterion: vi.fn(),
@@ -57,6 +61,18 @@ describe("QuickAdd", () => {
     vi.clearAllMocks();
     window.localStorage.setItem("machbar:identity-member-id", "1");
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+    mockedApi.getTags.mockResolvedValue([]);
+    mockedApi.getProjects.mockResolvedValue([]);
+    mockedApi.getHomeAssistantStatus.mockResolvedValue({
+      connected: false,
+      instanceId: null,
+      protocolVersion: null,
+      connectedAt: null,
+      lastUpdateAt: null,
+      stale: false,
+      people: [],
+      contexts: [],
+    });
   });
 
   afterEach(() => {
@@ -174,6 +190,63 @@ describe("QuickAdd", () => {
         expect.objectContaining({
           projectId: 7,
           status: "actionable",
+        }),
+      ),
+    );
+  });
+
+  it("resolves selected short-syntax entities and strips resolved tokens from capture title", async () => {
+    const hanna = makeMember({ id: 2, name: "Hanna" });
+    const tag = { id: 9, name: "Haushalt", color: "#64748b", kind: "area" as const, groupingMode: "auto" as const, sortPosition: null };
+    const context = {
+      id: 10,
+      source: "home_assistant" as const,
+      externalId: "zone.home",
+      name: "Zuhause",
+      active: true,
+      updatedAt: "2026-09-07T10:00:00.000Z",
+    };
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), hanna]);
+    mockedApi.getTags.mockResolvedValue([tag]);
+    mockedApi.getProjects.mockResolvedValue([makeProject({ id: 7, title: "Urlaub" })]);
+    mockedApi.getHomeAssistantStatus.mockResolvedValue({
+      connected: true,
+      instanceId: "ha",
+      protocolVersion: 1,
+      connectedAt: "2026-09-07T09:00:00.000Z",
+      lastUpdateAt: "2026-09-07T10:00:00.000Z",
+      stale: false,
+      people: [],
+      contexts: [context],
+    });
+    mockedApi.createTask.mockResolvedValue(makeTask({ id: 90, title: "Tickets buchen" }));
+    renderWithProviders(<QuickAdd />);
+    await openCapture();
+
+    const input = screen.getByPlaceholderText("Was ist zu tun?");
+    await userEvent.type(input, "Tickets buchen >Ur");
+    await userEvent.click(await screen.findByRole("button", { name: "Urlaub active" }));
+    await userEvent.type(input, " @Han");
+    await userEvent.click(await screen.findByRole("button", { name: "Hanna" }));
+    await userEvent.type(input, " #Haus");
+    await userEvent.click(await screen.findByRole("button", { name: "Haushalt area" }));
+    await userEvent.type(input, " %Zu");
+    await userEvent.click(await screen.findByRole("button", { name: "Zuhause" }));
+    await userEvent.type(input, " !15.9 :S");
+    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Tickets buchen",
+          projectId: 7,
+          ownerMemberId: 2,
+          ownerInheritanceMode: "explicit",
+          dueDate: "2026-09-15",
+          size: "S",
+          tagIds: [9],
+          contextIds: [10],
+          contextInheritanceMode: "explicit",
         }),
       ),
     );
@@ -405,7 +478,10 @@ describe("QuickAdd", () => {
     renderWithProviders(
       <>
         <input aria-label="Anderes Feld" />
-        <QuickAdd />
+        <InteractionScopeProvider>
+          <WorkItemKeyboardNavMount />
+          <QuickAdd />
+        </InteractionScopeProvider>
       </>,
     );
 

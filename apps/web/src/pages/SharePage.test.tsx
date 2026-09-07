@@ -14,6 +14,8 @@ import {
 vi.mock("../lib/api", () => ({
   api: {
     getProjects: vi.fn(),
+    getTags: vi.fn(),
+    getHomeAssistantStatus: vi.fn(),
     searchTasks: vi.fn(),
     getAgenda: vi.fn(),
     appendTaskNotes: vi.fn(),
@@ -34,7 +36,7 @@ vi.mock("../lib/pendingShareTarget", () => ({
 }));
 
 vi.mock("../lib/identity", () => ({
-  useIdentity: () => ({ currentMemberId: 1 }),
+  useIdentity: () => ({ currentMemberId: 1, members: [{ id: 1, name: "Mira" }] }),
 }));
 
 const mockedApi = vi.mocked(api, true);
@@ -67,6 +69,17 @@ describe("SharePage", () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     mockedApi.getProjects.mockResolvedValue([]);
+    mockedApi.getTags.mockResolvedValue([]);
+    mockedApi.getHomeAssistantStatus.mockResolvedValue({
+      connected: false,
+      instanceId: null,
+      protocolVersion: null,
+      connectedAt: null,
+      lastUpdateAt: null,
+      stale: false,
+      people: [],
+      contexts: [],
+    });
     mockedApi.searchTasks.mockResolvedValue([]);
     mockedApi.getAgenda.mockResolvedValue(emptyAgenda);
     mockedDeletePendingShareTarget.mockResolvedValue();

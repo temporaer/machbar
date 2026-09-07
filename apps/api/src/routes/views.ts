@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Db } from "../db/client.js";
 import { Graph } from "../domain/graph.js";
 import { buildAgenda } from "../domain/agenda.js";
+import { buildWeekAgenda } from "../domain/weekAgenda.js";
 import { buildWaitingEntries } from "../domain/waiting.js";
 import { getMemberOrThrow } from "../domain/members.js";
 import { AppError } from "../errors.js";
@@ -35,6 +36,23 @@ const agendaQuerySchema = z.object({
 const waitingQuerySchema = z.object({
   memberId: z.coerce.number().int().positive().optional(),
   scope: z.enum(["mine", "all"]).optional(),
+});
+
+const weekQuerySchema = z.object({
+  memberId: z.coerce.number().int().positive().optional(),
+  scope: z.enum(["mine", "all"]).optional(),
+  start: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((value) => {
+      const [year, month, day] = value.split("-").map(Number);
+      const parsed = new Date(Date.UTC(year!, month! - 1, day));
+      return (
+        parsed.getUTCFullYear() === year &&
+        parsed.getUTCMonth() === month! - 1 &&
+        parsed.getUTCDate() === day
+      );
+    }, "Invalid calendar date"),
 });
 
 /**
@@ -91,6 +109,24 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
           ? contextAvailabilityForHousehold(db, task.effectiveContexts)
           : contextAvailabilityForMember(db, task.effectiveContexts, target),
     });
+  });
+
+  app.get("/api/agenda/week", async (request) => {
+    const result = weekQuerySchema.safeParse(request.query);
+    if (!result.success) {
+      throw AppError.badRequest(
+        "agenda_query_invalid",
+        "The agenda query parameters are invalid.",
+        validationDetails(result.error),
+      );
+    }
+    const { memberId: requestedMemberId, scope, start } = result.data;
+    const memberId =
+      scope === "all"
+        ? undefined
+        : request.authMember?.id ?? requestedMemberId;
+    if (memberId !== undefined) getMemberOrThrow(db, memberId);
+    return buildWeekAgenda(Graph.load(db, start), { start, memberId });
   });
 
   app.get("/api/inbox", async () => {

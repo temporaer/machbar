@@ -54,6 +54,15 @@ export function MorePage() {
               <span aria-hidden="true">›</span>
             </span>
           </Link>
+          <Link to="/more/week" className="list-link more-list-link">
+            <span>
+              <strong>{strings.weekPlanning}</strong>
+              <small className="list-link-description">
+                {strings.weekPlanningDescription}
+              </small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </Link>
           <Link to="/more/all" className="list-link more-list-link">
             <span>{strings.allTitle}</span>
             <span aria-hidden="true">›</span>

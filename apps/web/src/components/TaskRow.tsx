@@ -390,6 +390,7 @@ export function TaskRow({
       className={`task-row task-row-surface-${task.status}`}
       style={{ listStyle: "none" }}
       data-workitem-id={taskProp.id}
+      data-workitem-role="task"
     >
       <RowSwipeBackgrounds
         classPrefix="task-row"

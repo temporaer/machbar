@@ -25,8 +25,12 @@ vi.mock("./api", () => ({
 const mockedApi = vi.mocked(api, true);
 
 function OpenTaskProbe() {
-  const { openTaskId } = useTaskDetail();
-  return <output data-testid="open-task-id">{openTaskId ?? "none"}</output>;
+  const { openTaskId, focusField } = useTaskDetail();
+  return (
+    <output data-testid="open-task-id">
+      {openTaskId ?? "none"}|{focusField ?? "none"}
+    </output>
+  );
 }
 
 function handleFor(title: string): HTMLElement {
@@ -41,6 +45,62 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
+  });
+
+  it("does not open keyboard help while a text field is focused", async () => {
+    const task = makeTask({ id: 1, title: "Aufgabe", position: 0 });
+    renderWithProviders(
+      <>
+        <WorkItemKeyboardNavMount />
+        <input aria-label="Anderes Feld" />
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+      </>,
+    );
+    await screen.findByText("Aufgabe");
+
+    await userEvent.click(screen.getByLabelText("Anderes Feld"));
+    await userEvent.keyboard("?");
+
+    expect(screen.queryByRole("dialog", { name: "Tastaturhilfe" })).not.toBeInTheDocument();
+  });
+
+  it("opens contextual help and omits structural commands in compiled views", async () => {
+    const task = makeTask({ id: 1, title: "Aufgabe", position: 0 });
+    renderWithProviders(
+      <>
+        <WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+      </>,
+    );
+    await screen.findByText("Aufgabe");
+
+    await userEvent.keyboard("j");
+    await userEvent.keyboard("?");
+
+    expect(await screen.findByRole("dialog", { name: "Tastaturhilfe" })).toBeInTheDocument();
+    expect(screen.getByText("Planen")).toBeInTheDocument();
+    expect(screen.getByText("Zuweisen")).toBeInTheDocument();
+    expect(screen.getByText("Notizen")).toBeInTheDocument();
+    expect(screen.queryByText("Einklappen")).not.toBeInTheDocument();
+    expect(screen.queryByText("Organisieren")).not.toBeInTheDocument();
+  });
+
+  it("shows structural help only for an organizable outline scope", async () => {
+    const task = makeTask({ id: 1, title: "Aufgabe", position: 0 });
+    renderWithProviders(
+      <>
+        <WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" organizable />
+      </>,
+    );
+    await screen.findByText("Aufgabe");
+
+    await userEvent.keyboard("?");
+
+    expect(await screen.findByRole("dialog", { name: "Tastaturhilfe" })).toBeInTheDocument();
+    expect(screen.getByText("Einklappen")).toBeInTheDocument();
+    expect(screen.getByText("Ausklappen")).toBeInTheDocument();
+    expect(screen.getByText("Sortieren")).toBeInTheDocument();
   });
 
   it("traverses visible nested rows with j/k, including into and out of a child", async () => {
@@ -209,7 +269,49 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
 
     await userEvent.keyboard("{enter}");
 
-    expect(screen.getByTestId("open-task-id")).toHaveTextContent("42");
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|none");
+  });
+
+  it("opens focused task edit flows with s/a/n for the active task", async () => {
+    const task = makeTask({ id: 42, title: "Fokussierte Aufgabe", position: 0 });
+    renderWithProviders(
+      <>
+        <WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+        <OpenTaskProbe />
+      </>,
+    );
+    await screen.findByText("Fokussierte Aufgabe");
+
+    await userEvent.keyboard("j");
+    await userEvent.keyboard("s");
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|schedule");
+
+    await userEvent.keyboard("a");
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|owner");
+
+    await userEvent.keyboard("n");
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|notes");
+  });
+
+  it("does not run task-focused shortcuts for an active story", async () => {
+    const story = makeProject({ id: 42, title: "Story", status: "active", ownerMemberId: 1 });
+    const { container } = renderWithProviders(
+      <>
+        <WorkItemKeyboardNavMount />
+        <ul>
+          <ProjectStoryRow story={story} />
+        </ul>
+        <OpenTaskProbe />
+      </>,
+    );
+    await screen.findByText("Story");
+
+    await userEvent.keyboard("j");
+    expect(container.querySelector('[data-workitem-id="42"] .story-row-main')).toHaveFocus();
+    await userEvent.keyboard("s");
+
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("none|none");
   });
 
   it("Alt+arrows call the structural mover only in an organizable (structurally valid) scope", async () => {
