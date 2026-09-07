@@ -2,25 +2,29 @@ import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
+import { convertStoryToTask } from "../domain/roleConversion.js";
+import {
+  addCriterion,
+  removeCriterion,
+  reorderCriteria,
+  setCriterionChecked,
+  updateCriterionText,
+} from "../domain/storyCapabilities.js";
+import {
+  appendProjectNotes,
+  createProject,
+  deleteProject,
+  updateProject,
+} from "../domain/storyCrud.js";
 import {
   acknowledgeProjectReview,
   activateProject,
-  addCriterion,
   archiveProject,
-  appendProjectNotes,
   completeProject,
-  createProjectTaskSequence,
-  createProject,
-  convertStoryToTask,
-  deleteProject,
-  removeCriterion,
   reopenProject,
-  reorderCriteria,
   returnProjectToBacklog,
-  setCriterionChecked,
-  updateCriterionText,
-  updateProject,
-} from "../domain/mutations.js";
+} from "../domain/storyWorkflow.js";
+import { createProjectTaskSequence } from "../domain/taskCrud.js";
 import {
   acknowledgeReviewSchema,
   activateProjectSchema,

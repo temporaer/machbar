@@ -17,7 +17,7 @@ import * as schema from "../db/schema.js";
 import {
   availableProjectWorkflowActions,
   type ProjectWorkflowAction,
-} from "./mutations.js";
+} from "./storyWorkflow.js";
 import {
   getEffectiveOwners,
   getEffectivePhysicalContextIds,
@@ -36,7 +36,7 @@ import { evaluateProjectActivationReadiness } from "./projectReadiness.js";
 
 export interface ProjectRecord extends SharedProject {
   /** Workflow actions currently legal for this project's status (see
-   * `availableProjectWorkflowActions` in `domain/mutations.ts`); not part
+   * `availableProjectWorkflowActions` in `domain/storyWorkflow.ts`); not part
    * of the shared `Project` contract, purely an API-response convenience. */
   availableActions: ProjectWorkflowAction[];
   activationReadiness: ProjectActivationReadiness;

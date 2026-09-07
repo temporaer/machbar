@@ -6,7 +6,7 @@ import {
   deleteMember,
   listMembers,
   renameMember,
-} from "../domain/mutations.js";
+} from "../domain/members.js";
 import { createMemberSchema, renameMemberSchema } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
 

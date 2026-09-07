@@ -6,7 +6,7 @@ import {
   getOrCreateTag,
   listTags,
   updateTag,
-} from "../domain/mutations.js";
+} from "../domain/tags.js";
 import { createTagSchema, updateTagSchema } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
 

@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
-import {
-  createProject as createProjectMutation,
-  createTask,
-} from "../src/domain/mutations.js";
+import { createProject as createProjectMutation } from "../src/domain/storyCrud.js";
+import { createTask } from "../src/domain/taskCrud.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 describe("capture query views", () => {

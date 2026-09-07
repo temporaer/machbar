@@ -3,17 +3,16 @@ import { eq } from "drizzle-orm";
 import { openDb, type DbHandle } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
 import * as schema from "../src/db/schema.js";
+import { createMember } from "../src/domain/members.js";
+import { createProject as createProjectMutation, updateProject } from "../src/domain/storyCrud.js";
 import {
   activateProject,
   archiveProject,
   completeProject,
-  createMember,
-  createProject as createProjectMutation,
-  createTask,
   reopenProject,
   returnProjectToBacklog,
-  updateProject,
-} from "../src/domain/mutations.js";
+} from "../src/domain/storyWorkflow.js";
+import { createTask } from "../src/domain/taskCrud.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 function createProject(

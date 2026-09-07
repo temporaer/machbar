@@ -2,13 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, isNull } from "drizzle-orm";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
-import {
-  activateProject,
-  createProject,
-  createTask,
-  updateProject,
-  updateTask,
-} from "../src/domain/mutations.js";
+import { createProject, updateProject } from "../src/domain/storyCrud.js";
+import { activateProject } from "../src/domain/storyWorkflow.js";
+import { createTask, updateTask } from "../src/domain/taskCrud.js";
 import {
   buildNotificationPayload,
   dispatchNotificationEvents,

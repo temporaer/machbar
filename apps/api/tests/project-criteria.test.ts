@@ -3,12 +3,12 @@ import { openDb, type DbHandle } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
 import {
   addCriterion,
-  createProject,
   removeCriterion,
   reorderCriteria,
   setCriterionChecked,
   updateCriterionText,
-} from "../src/domain/mutations.js";
+} from "../src/domain/storyCapabilities.js";
+import { createProject } from "../src/domain/storyCrud.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 /**

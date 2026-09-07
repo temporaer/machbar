@@ -4,7 +4,7 @@ import type { Db } from "../db/client.js";
 import { Graph } from "../domain/graph.js";
 import { buildAgenda } from "../domain/agenda.js";
 import { buildWaitingEntries } from "../domain/waiting.js";
-import { getMemberOrThrow } from "../domain/mutations.js";
+import { getMemberOrThrow } from "../domain/members.js";
 import { AppError } from "../errors.js";
 import { validationDetails } from "../validation.js";
 import { isTaskInWorkingSystem } from "../domain/workEligibility.js";

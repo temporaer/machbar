@@ -2,15 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { asc, eq } from "drizzle-orm";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
+import { createProject } from "../src/domain/storyCrud.js";
+import { moveTask } from "../src/domain/structuralMoves.js";
 import {
-  cancelTask,
-  completeTask,
-  createProject,
   createTask,
   deleteTask,
-  moveTask,
   updateTask,
-} from "../src/domain/mutations.js";
+} from "../src/domain/taskCrud.js";
+import { cancelTask, completeTask } from "../src/domain/taskWorkflow.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 describe("atomic activity recording", () => {
