@@ -20,9 +20,8 @@ function visibleWorkItemIds(): number[] {
 }
 
 function focusRow(workItemId: number) {
-  document
-    .querySelector<HTMLElement>(`[data-workitem-id="${workItemId}"] .task-row-main`)
-    ?.focus();
+  const row = document.querySelector<HTMLElement>(`[data-workitem-id="${workItemId}"]`);
+  row?.querySelector<HTMLElement>(".task-row-main, .story-row-main")?.focus();
 }
 
 const ALT_DIRECTIONS: Record<string, StructuralMoveDirection> = {

@@ -27,6 +27,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "story.returnToBacklog":
     case "story.complete":
     case "story.reopen":
+    case "story.archive":
       return command.story.id;
     case "outline.collapse":
     case "outline.expand":
@@ -98,6 +99,9 @@ export function useWorkItemCommands() {
           return;
         case "story.reopen":
           void projectActions.runAction(command.story, "reopen", command.ownerMemberId);
+          return;
+        case "story.archive":
+          void projectActions.runAction(command.story, "archive");
           return;
         case "outline.collapse":
           scope?.setCollapsed(command.workItemId, true);

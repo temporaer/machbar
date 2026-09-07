@@ -38,6 +38,7 @@ export type WorkItemCommand =
   | { type: "story.returnToBacklog"; story: ProjectWithActions }
   | { type: "story.complete"; story: ProjectWithActions }
   | { type: "story.reopen"; story: ProjectWithActions; ownerMemberId?: number | null }
+  | { type: "story.archive"; story: ProjectWithActions }
   | { type: "outline.collapse"; workItemId: number }
   | { type: "outline.expand"; workItemId: number }
   | { type: "outline.moveUp"; workItemId: number }

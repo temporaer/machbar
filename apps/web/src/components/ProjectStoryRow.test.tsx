@@ -9,6 +9,9 @@ import { RefreshProvider } from "../lib/refresh";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectStoryRow } from "./ProjectStoryRow";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
+import { TaskActionsProvider } from "../lib/useTaskActions";
+import { TaskDetailProvider } from "../lib/taskDetailContext";
+import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import type { ProjectWithActions } from "../lib/api";
@@ -94,12 +97,18 @@ function renderWithProjectRoute(ui: ReactElement) {
     <MemoryRouter initialEntries={["/"]}>
       <IdentityProvider>
         <RefreshProvider>
-          <ProjectActionsProvider>
-            <Routes>
-              <Route path="/" element={ui} />
-              <Route path="/projects/:id" element={<ProjectRouteMarker />} />
-            </Routes>
-          </ProjectActionsProvider>
+          <SwipeSettingsProvider>
+            <TaskActionsProvider>
+              <ProjectActionsProvider>
+                <TaskDetailProvider>
+                  <Routes>
+                    <Route path="/" element={ui} />
+                    <Route path="/projects/:id" element={<ProjectRouteMarker />} />
+                  </Routes>
+                </TaskDetailProvider>
+              </ProjectActionsProvider>
+            </TaskActionsProvider>
+          </SwipeSettingsProvider>
         </RefreshProvider>
       </IdentityProvider>
     </MemoryRouter>,

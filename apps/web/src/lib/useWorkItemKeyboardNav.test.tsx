@@ -3,11 +3,12 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "../components/TaskOutline";
+import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { BottomSheet } from "../components/BottomSheet";
 import { api } from "./api";
 import { useTaskDetail } from "./taskDetailContext";
-import { makeMember, makeTask } from "../test/fixtures";
+import { makeMember, makeTask, makeProject } from "../test/fixtures";
 
 vi.mock("./api", () => ({
   api: {
@@ -131,6 +132,28 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     expect(mainButtonFor("Erste Sektion")).toHaveFocus();
     await userEvent.keyboard("j");
     expect(mainButtonFor("Zweite Sektion")).toHaveFocus();
+  });
+
+  it("continues j/k traversal into a ProjectStoryRow (story) mounted alongside a TaskOutline", async () => {
+    const task = makeTask({ id: 3, title: "Vorbereitende Aufgabe", position: 0 });
+    const story = makeProject({ id: 42, title: "Story im selben Scope", status: "active", ownerMemberId: 1 });
+    const { container } = renderWithProviders(
+      <>
+        <WorkItemKeyboardNavMount />
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+        <ul>
+          <ProjectStoryRow story={story} />
+        </ul>
+      </>,
+    );
+    await screen.findByText("Vorbereitende Aufgabe");
+    await screen.findByText("Story im selben Scope");
+
+    await userEvent.keyboard("j");
+    expect(mainButtonFor("Vorbereitende Aufgabe")).toHaveFocus();
+    await userEvent.keyboard("j");
+    const storyLink = container.querySelector('[data-workitem-id="42"] .story-row-main');
+    expect(storyLink).toHaveFocus();
   });
 
   it("does not fire j/k/h/l while a text field is focused", async () => {
