@@ -587,6 +587,16 @@ const extra = {
   reviewReasonWaiting: "Der Wartepfad braucht eine künftige Wiedervorlage.",
   reviewReasonBlocked: "Die Blockierung hat keinen erkennbaren Weg nach vorn.",
   reviewReasonAge: "Diese Arbeit wurde länger nicht bewusst bestätigt.",
+  reviewReasonBacklogPlannedWork:
+    "Dieses Backlog-Projekt hat bereits geplante oder ausführbare Arbeit — das widerspricht dem Backlog-Status.",
+  reviewReasonTaskScheduledBeforeResurface:
+    "Diese Aufgabe ist vor der Wiedervorlage des Projekts eingeplant.",
+  reviewReasonTaskDueBeforeResurface:
+    "Diese Aufgabe ist vor der Wiedervorlage des Projekts fällig.",
+  reviewReasonProjectDueBeforeResurface:
+    "Die Deadline des Projekts liegt vor seiner eigenen Wiedervorlage.",
+  reviewReasonCompletedProjectOpenWork:
+    "Dieses abgeschlossene oder archivierte Projekt hat noch offene Aufgaben.",
   reviewReasonGeneric: "Der aktuelle Zustand braucht eine bewusste Entscheidung.",
   reviewAcknowledged: "Für jetzt bestätigt",
 

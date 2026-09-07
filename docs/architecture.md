@@ -463,10 +463,15 @@ injected calendar date; there is no Review table or workflow status.
 
 Review contains structural decisions: missing project driver or progress path,
 due-without-plan, malformed waiting, broken blocker paths, XL work without
-breakdown, completion review, and age-based reconsideration. It deliberately
-excludes valid shared tasks, absent optional acceptance criteria, Inbox
-captures, reached follow-ups, and past planning dates already owned by Today.
-More's badge is the exact number of current derived items.
+breakdown, completion review, and age-based reconsideration. It also flags
+semantic contradictions between a project's own dates/status and its child
+tasks: a backlog project already carrying actionable, scheduled, or due open
+work; a task scheduled or due before its project's own resurface
+(`scheduledDate`) date; a project whose deadline precedes its own resurface
+date; and a completed/archived project that still has open child tasks. It
+deliberately excludes valid shared tasks, absent optional acceptance criteria,
+Inbox captures, reached follow-ups, and past planning dates already owned by
+Today. More's badge is the exact number of current derived items.
 
 Nullable `projects.reviewed_at` and `tasks.reviewed_at` record only explicit
 "keep active/parked/later" decisions. Opening an item never acknowledges it,

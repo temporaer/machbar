@@ -133,6 +133,16 @@ export function ReviewPage() {
         return strings.reviewReasonBlocked;
       case "completion_review":
         return strings.reviewReasonCompletion;
+      case "backlog_planned_work":
+        return strings.reviewReasonBacklogPlannedWork;
+      case "task_scheduled_before_resurface":
+        return strings.reviewReasonTaskScheduledBeforeResurface;
+      case "task_due_before_resurface":
+        return strings.reviewReasonTaskDueBeforeResurface;
+      case "project_due_before_resurface":
+        return strings.reviewReasonProjectDueBeforeResurface;
+      case "completed_project_open_work":
+        return strings.reviewReasonCompletedProjectOpenWork;
       case "active_stale":
       case "backlog_stale":
       case "backlog_due":

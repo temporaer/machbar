@@ -609,6 +609,16 @@ const en = {
   reviewReasonWaiting: "The waiting path needs a future revisit.",
   reviewReasonBlocked: "The blockage has no clear path forward.",
   reviewReasonAge: "This work has not been intentionally confirmed for a while.",
+  reviewReasonBacklogPlannedWork:
+    "This backlog project already has planned or executable work — that contradicts its backlog status.",
+  reviewReasonTaskScheduledBeforeResurface:
+    "This task is scheduled before the project's own resurface date.",
+  reviewReasonTaskDueBeforeResurface:
+    "This task is due before the project's own resurface date.",
+  reviewReasonProjectDueBeforeResurface:
+    "The project's deadline is earlier than its own resurface date.",
+  reviewReasonCompletedProjectOpenWork:
+    "This completed or archived project still has open tasks.",
   reviewReasonGeneric: "The current state needs an intentional decision.",
   reviewAcknowledged: "Confirmed for now",
 

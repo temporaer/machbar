@@ -11,6 +11,110 @@ const GERMAN_CALENDAR_WEEK_PATTERN =
 const ENGLISH_CALENDAR_WEEK_PATTERN =
   /^(?:w|wk|week)\s*(\d{1,2})(?:\s*(?:\/|,)?\s*(\d{4}))?$/i;
 
+/**
+ * Month-name lookup (full + common abbreviation) per locale, used only by
+ * `parseYearlessMonthDay` below. Sugar's own month-name parsing is what
+ * previously handled "oct 11"/"oktober 11" — but for German it silently
+ * fell back to an unrelated absolute-date interpretation (observed:
+ * "oktober 11" -> 2001-11-01) instead of failing, and for a yearless date
+ * already past this year it never rolled over to next year. Matching the
+ * month name explicitly here, before the generic Sugar fallback, avoids
+ * both problems without touching any of the already-explicit patterns
+ * above (ISO/localized-numeric/compact-relative/calendar-week).
+ */
+const MONTH_NAMES: Record<Locale, readonly string[][]> = {
+  de: [
+    ["januar", "jan"],
+    ["februar", "feb"],
+    ["märz", "maerz", "mrz", "mär"],
+    ["april", "apr"],
+    ["mai"],
+    ["juni", "jun"],
+    ["juli", "jul"],
+    ["august", "aug"],
+    ["september", "sep", "sept"],
+    ["oktober", "okt"],
+    ["november", "nov"],
+    ["dezember", "dez"],
+  ],
+  en: [
+    ["january", "jan"],
+    ["february", "feb"],
+    ["march", "mar"],
+    ["april", "apr"],
+    ["may"],
+    ["june", "jun"],
+    ["july", "jul"],
+    ["august", "aug"],
+    ["september", "sep", "sept"],
+    ["october", "oct"],
+    ["november", "nov"],
+    ["december", "dec"],
+  ],
+};
+
+function monthIndexFor(word: string, locale: Locale): number | null {
+  const normalized = word.toLowerCase().replace(/\.$/, "");
+  // Try the requested locale first, then the other — mirrors the existing
+  // localized/alternate-date fallback pattern below, so e.g. an English
+  // month name typed while the app is in German still resolves.
+  const orderedLocales: Locale[] = locale === "en" ? ["en", "de"] : ["de", "en"];
+  for (const candidateLocale of orderedLocales) {
+    const index = MONTH_NAMES[candidateLocale].findIndex((names) =>
+      names.includes(normalized),
+    );
+    if (index !== -1) return index + 1;
+  }
+  return null;
+}
+
+const MONTH_DAY_WORD_PATTERN = /^([a-zà-ÿ]+)\.?\s+(\d{1,2})\.?$/i;
+const DAY_MONTH_WORD_PATTERN = /^(\d{1,2})\.?\s+([a-zà-ÿ]+)\.?$/i;
+
+/**
+ * Yearless "month name + day" input in either word order (`oct 11`,
+ * `11 oct`, `oktober 11`, `11. Oktober`). Infers the current year from
+ * `referenceDate`, rolling over to next year if that date already passed
+ * (date-only comparison) — an explicit year elsewhere in the input is
+ * handled by the numeric-date patterns above and never reaches here.
+ */
+function parseYearlessMonthDay(
+  input: string,
+  referenceDate: Date,
+  locale: Locale,
+): Date | null {
+  const monthDayMatch = MONTH_DAY_WORD_PATTERN.exec(input);
+  const dayMonthMatch = DAY_MONTH_WORD_PATTERN.exec(input);
+  let monthWord: string | null = null;
+  let dayStr: string | null = null;
+  if (monthDayMatch) {
+    monthWord = monthDayMatch[1]!;
+    dayStr = monthDayMatch[2]!;
+  } else if (dayMonthMatch) {
+    dayStr = dayMonthMatch[1]!;
+    monthWord = dayMonthMatch[2]!;
+  } else {
+    return null;
+  }
+
+  const month = monthIndexFor(monthWord, locale);
+  if (month === null) return null;
+  const day = Number(dayStr);
+  const referenceYear = referenceDate.getFullYear();
+  if (!isValidDateParts(referenceYear, month, day)) return null;
+
+  let candidate = new Date(referenceYear, month - 1, day);
+  const referenceDateOnly = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate(),
+  );
+  if (candidate.getTime() < referenceDateOnly.getTime()) {
+    candidate = new Date(referenceYear + 1, month - 1, day);
+  }
+  return candidate;
+}
+
 function isValidDateParts(year: number, month: number, day: number): boolean {
   const date = new Date(year, month - 1, day);
   return (
@@ -152,6 +256,9 @@ export function parseNaturalDate(
       ? ENGLISH_CALENDAR_WEEK_PATTERN
       : GERMAN_CALENDAR_WEEK_PATTERN;
   if (localizedWeekPattern.test(input)) return null;
+
+  const yearlessMonthDay = parseYearlessMonthDay(input, referenceDate, locale);
+  if (yearlessMonthDay) return toIsoCalendarDate(yearlessMonthDay);
 
   const parsed =
     parseWithSugar(input, locale, referenceDate) ??
