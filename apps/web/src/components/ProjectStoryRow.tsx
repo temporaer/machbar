@@ -37,6 +37,7 @@ import { useLocale } from "../lib/locale";
 import "./ProjectStoryRow.css";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
+import { RowSwipeBackgrounds, RowKebabButton, RowErrorBanner } from "./WorkItemRowChrome";
 import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 import { hasProjectProgressPath } from "../lib/projectCommitments";
@@ -314,12 +315,16 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
       style={{ listStyle: "none" }}
       data-workitem-id={story.id}
     >
-      <div className={`story-row-swipe-bg primary${showPrimaryBg ? " visible" : ""}${swipeCoach.animate ? " swipe-coach-primary" : ""}`} aria-hidden="true">
-        {primaryLabel}
-      </div>
-      <div className={`story-row-swipe-bg chips${showChipsBg ? " visible" : ""}${swipeCoach.animate ? " swipe-coach-secondary" : ""}`} aria-hidden="true">
-        {strings.moreActions}
-      </div>
+      <RowSwipeBackgrounds
+        classPrefix="story-row"
+        primaryLabel={primaryLabel}
+        primaryVisible={showPrimaryBg}
+        primaryVariantClass="primary"
+        secondaryLabel={strings.moreActions}
+        secondaryVisible={showChipsBg}
+        secondaryVariantClass="chips"
+        coachAnimate={swipeCoach.animate}
+      />
       <div
         className={`story-row-content${driver ? " has-driver" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
         style={dragX ? { transform: `translateX(${dragX}px)` } : undefined}
@@ -446,16 +451,12 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
             <IconActionGlyph kind="waiting" />
           </span>
         ) : null}
-        <button
-          type="button"
-          className="story-row-kebab"
-          aria-label={strings.moreActions}
-          aria-expanded={chipsOpen}
+        <RowKebabButton
+          classPrefix="story-row"
+          open={chipsOpen}
           disabled={busy}
-          onClick={() => setChipsOpen((o) => !o)}
-        >
-          ⋯
-        </button>
+          onToggle={() => setChipsOpen((o) => !o)}
+        />
       </div>
       {swipeCoach.active ? (
         <SwipeCoachHint primaryAction={primaryLabel} onDismiss={swipeCoach.dismiss} />
@@ -483,13 +484,11 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
       ) : null}
 
       {rowError ? (
-        <div className="story-row-error" role="alert">
-          <span>{strings.error}</span>
-          <span className="text-muted">{rowError}</span>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => clearError(story.id)}>
-            {strings.close}
-          </button>
-        </div>
+        <RowErrorBanner
+          classPrefix="story-row"
+          message={rowError}
+          onClose={() => clearError(story.id)}
+        />
       ) : null}
 
       {sheet === "assign-to-activate" || sheet === "assign-to-reopen" ? (
