@@ -499,8 +499,8 @@ directly and searches project title/notes as well as tasks.
 
 `ProjectsPage` renders the same `ProjectStoryRow` (card variant) for active,
 backlog, completed, and archived projects. Active stories stay primary, backlog
-stories render in their own visible **Später / noch nicht aktiv** section, and
-completed/archived stories remain folded.
+stories render in their own visible but collapsed-by-default **Später / noch
+nicht aktiv** section, and completed/archived stories remain folded.
 
 - **Right swipe / primary button** runs the status-appropriate next step: `active → abschließen`, `completed → wieder öffnen`, `archived → aktivieren`. Backlog activation is offered from Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action) is the explicit non-gesture equivalent and stays available on touch.
 - **Left swipe / ⋯** reveals the chip strip: the targeted popups above plus every *remaining* legal transition from the row's `availableActions` (e.g. `In Backlog zurücklegen`, `Archivieren`).
@@ -522,9 +522,10 @@ completed/archived stories remain folded.
   archived; ties break on `position`, then `title.localeCompare(…, "de")`, then
   `id`, so the order is stable across reloads and retentions.
 - Active rows form the primary list. Backlog rows form a visible **Später /
-  noch nicht aktiv** section. Completed and archived rows keep that same
-  deterministic order inside the folded **Abgeschlossen & archiviert** section.
-  A non-empty search reveals matching terminal rows automatically.
+  noch nicht aktiv** disclosure that starts closed by default. Completed and
+  archived rows keep that same deterministic order inside the folded
+  **Abgeschlossen & archiviert** section. A non-empty search reveals matching
+  terminal rows automatically.
 - Filtering runs **before** sorting, and retained (optimistic) rows are merged into the same input list, so a retained row obeys the current search/scope and can never render twice next to its refetched counterpart.
 - `ProjectsPage` distinguishes *no stories at all* (`noProjects`) from *nothing matches* (`noMatchingProjects`) by testing the unfiltered list first.
 

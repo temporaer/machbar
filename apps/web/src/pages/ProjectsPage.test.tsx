@@ -103,7 +103,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     ]);
   });
 
-  it("shows backlog projects in a visible later section and reveals the page purpose on demand", async () => {
+  it("shows backlog projects in a collapsed later section and reveals the page purpose on demand", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Aktive Geschichte");
 
@@ -115,8 +115,16 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     );
     expect(screen.getByText(hint)).toBeInTheDocument();
     const badges = [...container.querySelectorAll(".story-row-status-badge")].map((b) => b.textContent);
-    expect(screen.getByRole("heading", { name: "Später / noch nicht aktiv" })).toBeInTheDocument();
-    expect(screen.getByText("Backlog-Geschichte")).toBeInTheDocument();
+    const backlogSection = container.querySelector<HTMLDetailsElement>(
+      '[data-project-section="backlog"]',
+    );
+    expect(backlogSection).not.toBeNull();
+    expect(backlogSection).not.toHaveAttribute("open");
+    const backlogHeading = screen.getByRole("heading", { name: "Später / noch nicht aktiv" });
+    expect(backlogHeading).toBeInTheDocument();
+    expect(screen.getByText("Backlog-Geschichte")).not.toBeVisible();
+    await userEvent.click(backlogHeading);
+    expect(screen.getByText("Backlog-Geschichte")).toBeVisible();
     expect(badges).toEqual(["Aktiv", "Später / noch nicht aktiv", "Abgeschlossen", "Archiviert"]);
   });
 
@@ -682,10 +690,9 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
 
     // Active rows are not nested inside the terminal <details> fold.
     expect(rowFor(container, "Aktive Geschichte").closest("details")).toBeNull();
-    expect(rowFor(container, "Backlog-Geschichte").closest("[data-project-section]")).toHaveAttribute(
-      "data-project-section",
-      "backlog",
-    );
+    const backlogDetails = rowFor(container, "Backlog-Geschichte").closest("details");
+    expect(backlogDetails).toHaveAttribute("data-project-section", "backlog");
+    expect(backlogDetails).not.toHaveAttribute("open");
 
     const summary = screen.getByText("Abgeschlossen & archiviert (2)");
     const details = summary.closest("details");
