@@ -506,6 +506,8 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           overflowLabel={`${strings.more} …`}
           disabled={busy}
           onCommand={runRailCommand}
+          overflowOpen={scope.openOverflowId === story.id}
+          onOverflowChange={(open) => scope.setOpenOverflow(open ? story.id : null)}
         />
       ) : null}
       {lifecycleOpen ? (

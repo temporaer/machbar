@@ -647,6 +647,8 @@ export function TaskRow({
           overflowLabel={`${strings.more} …`}
           disabled={busy}
           onCommand={runRailCommand}
+          overflowOpen={scope.openOverflowId === taskProp.id}
+          onOverflowChange={(open) => scope.setOpenOverflow(open ? taskProp.id : null)}
         />
       ) : null}
       {lifecycleOpen ? (

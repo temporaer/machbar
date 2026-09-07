@@ -10,6 +10,8 @@ type Props<T extends TaskRailCommand | ProjectRailCommand> = {
   groupLabel: string;
   overflowLabel: string;
   disabled?: boolean;
+  overflowOpen?: boolean;
+  onOverflowChange?: (open: boolean) => void;
 };
 
 export function WorkItemCommandRail<T extends TaskRailCommand | ProjectRailCommand>(props: Props<T>) {
@@ -37,7 +39,11 @@ export function WorkItemCommandRail<T extends TaskRailCommand | ProjectRailComma
           {props.labelForCommand?.(command) ?? labels[command]}
         </button>
       ))}
-      <details className="work-item-command-overflow">
+      <details
+        className="work-item-command-overflow"
+        open={props.overflowOpen}
+        onToggle={(event) => props.onOverflowChange?.(event.currentTarget.open)}
+      >
         <summary className="btn btn-sm">{overflowLabel}</summary>
         <div className="work-item-command-overflow-list">
           {overflow.map((command) => (

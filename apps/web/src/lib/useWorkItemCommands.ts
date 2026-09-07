@@ -164,7 +164,7 @@ export function useWorkItemCommands() {
         case "task.contexts":
         case "task.convertToProject":
         case "task.openOverflow":
-          taskDetail.open(command.taskId);
+          scope?.setOpenOverflow(command.taskId);
           return;
         case "task.lifecycle":
           if (command.status === "done" || command.status === "actionable") {
@@ -245,7 +245,7 @@ export function useWorkItemCommands() {
         case "story.contexts":
         case "story.lifecycle":
         case "story.openOverflow":
-          navigate(`/projects/${command.story.id}`);
+          scope?.setOpenOverflow(command.story.id);
           return;
         case "outline.collapse":
           scope?.setCollapsed(command.workItemId, true);

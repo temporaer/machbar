@@ -29,6 +29,8 @@ export interface InteractionScopeValue {
   /** The one row whose left-swipe command rail is currently open. */
   openRailId: number | null;
   setOpenRail: (id: number | null) => void;
+  openOverflowId: number | null;
+  setOpenOverflow: (id: number | null) => void;
   openLifecycleId: number | null;
   setOpenLifecycle: (id: number | null) => void;
   /**
@@ -91,10 +93,16 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
   const [activeId, setActive] = useState<number | null>(null);
   const [activeRole, setActiveRole] = useState<WorkItemInteractionRole | null>(null);
   const [openRailId, setOpenRailState] = useState<number | null>(null);
+  const [openOverflowId, setOpenOverflowId] = useState<number | null>(null);
   const [openLifecycleId, setOpenLifecycleState] = useState<number | null>(null);
   const setOpenRail = useCallback((id: number | null) => {
     setOpenRailState(id);
+    if (id === null) setOpenOverflowId(null);
     if (id !== null) setOpenLifecycleState(null);
+  }, []);
+  const setOpenOverflow = useCallback((id: number | null) => {
+    setOpenOverflowId(id);
+    if (id !== null) setOpenRailState(id);
   }, []);
   const setOpenLifecycle = useCallback((id: number | null) => {
     setOpenLifecycleState(id);
@@ -157,6 +165,8 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
       setActive: setActiveItem,
       openRailId,
       setOpenRail,
+      openOverflowId,
+      setOpenOverflow,
       openLifecycleId,
       setOpenLifecycle,
       canReorder: capability.canReorder,
@@ -176,7 +186,10 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
       activeRole,
       setActiveItem,
       openRailId,
+      openOverflowId,
       openLifecycleId,
+      setOpenRail,
+      setOpenOverflow,
       capability,
       setStructuralCapability,
       captureTarget,
