@@ -60,7 +60,7 @@ describe("ProjectAgendaCard", () => {
     expect(
       screen.getByText(/Prüfe die konkret blockierenden Voraussetzungen/),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Prüfen: heute (25.08.2026)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Wiedervorlage: heute (25.08.2026)")).toBeInTheDocument();
     expect(screen.getByLabelText("Fällig: in 3 Tagen (28.08.2026)")).toBeInTheDocument();
   });
 
@@ -82,7 +82,7 @@ describe("ProjectAgendaCard", () => {
     );
 
     expect(screen.queryByText("Projekt prüfen")).not.toBeInTheDocument();
-    expect(screen.getByText("Prüfen: seit 3 Tagen")).toBeInTheDocument();
+    expect(screen.getByText("Wiedervorlage: seit 3 Tagen")).toBeInTheDocument();
     expect(screen.queryByText(/^Fällig:/)).not.toBeInTheDocument();
   });
 

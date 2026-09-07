@@ -16,6 +16,10 @@ describe("PlanDatesSheet", () => {
       />,
     );
 
+    expect(
+      screen.getByRole("heading", { name: "Wiedervorlage & Fälligkeit" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Wiedervorlage")).toBeInTheDocument();
     const dueDate = screen.getByLabelText("Fällig");
     await userEvent.type(dueDate, "irgendwann vielleicht");
 

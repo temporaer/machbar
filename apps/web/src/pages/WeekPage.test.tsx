@@ -166,8 +166,15 @@ describe("WeekPage", () => {
 
     renderWithProviders(<WeekPage />);
 
-    expect(await screen.findByRole("button", { name: /^Müll raus/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Urlaub planen/ })).toBeInTheDocument();
+    const taskCard = (await screen.findByRole("button", { name: /^Müll raus/ }))
+      .closest("article") as HTMLElement;
+    const storyCard = screen.getByRole("button", { name: /^Urlaub planen/ })
+      .closest("article") as HTMLElement;
+    expect(taskCard).toBeInTheDocument();
+    expect(storyCard).toBeInTheDocument();
+    expect(within(taskCard).getByText("Geplant")).toBeInTheDocument();
+    expect(within(storyCard).getByText("Wiedervorlage")).toBeInTheDocument();
+    expect(within(storyCard).queryByText("Geplant")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Batterien kaufen/ })).toBeInTheDocument();
     expect(screen.getByLabelText("Mo., 7.")).toBeInTheDocument();
     expect(screen.getByLabelText("So., 13.")).toBeInTheDocument();

@@ -317,6 +317,7 @@ describe("ProjectEditSheet", () => {
         expectedRevision: 3,
       }),
     );
+    expect(screen.getByLabelText("Wiedervorlage")).toBeInTheDocument();
   });
 
   it("schließt ohne offene Textentwürfe zu speichern", async () => {

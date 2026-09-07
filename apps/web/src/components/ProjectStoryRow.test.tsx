@@ -12,6 +12,7 @@ import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
+import { RailConfigProvider } from "../lib/railConfigContext";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
@@ -99,18 +100,20 @@ function renderWithProjectRoute(ui: ReactElement) {
       <IdentityProvider>
         <RefreshProvider>
           <SwipeSettingsProvider>
-            <TaskActionsProvider>
-              <ProjectActionsProvider>
-                <InteractionScopeProvider>
-                  <TaskDetailProvider>
-                    <Routes>
-                      <Route path="/" element={ui} />
-                      <Route path="/projects/:id" element={<ProjectRouteMarker />} />
-                    </Routes>
-                  </TaskDetailProvider>
-                </InteractionScopeProvider>
-              </ProjectActionsProvider>
-            </TaskActionsProvider>
+            <RailConfigProvider>
+              <TaskActionsProvider>
+                <ProjectActionsProvider>
+                  <InteractionScopeProvider>
+                    <TaskDetailProvider>
+                      <Routes>
+                        <Route path="/" element={ui} />
+                        <Route path="/projects/:id" element={<ProjectRouteMarker />} />
+                      </Routes>
+                    </TaskDetailProvider>
+                  </InteractionScopeProvider>
+                </ProjectActionsProvider>
+              </TaskActionsProvider>
+            </RailConfigProvider>
           </SwipeSettingsProvider>
         </RefreshProvider>
       </IdentityProvider>
@@ -400,7 +403,7 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
     expect(within(chips).getByRole("button", { name: "Verantwortlich" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Erledigt, wenn …" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Planen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Wiedervorlegen" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Tags" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Projekt öffnen" })).toBeInTheDocument();
     // Secondary workflow actions, derived from `availableActions` — the
@@ -502,7 +505,9 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     await screen.findByText("Popup-Geschichte");
 
     let chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Erledigt, wenn …" }));
+    await userEvent.click(
+      within(chips).getByRole("button", { name: "Ergebnis bearbeiten" }),
+    );
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
     expect(await screen.findByDisplayValue("Angebot eingeholt")).toBeInTheDocument();
     // The sheet header and the criteria sheet's own footer button share the
@@ -514,8 +519,14 @@ describe("ProjectStoryRow – left-swipe/kebab chips", () => {
     );
 
     chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Planen" }));
-    expect(await screen.findByRole("heading", { name: "Termine planen" })).toBeInTheDocument();
+    await userEvent.click(
+      within(chips).getByRole("button", { name: "Wiedervorlegen" }),
+    );
+    expect(
+      await screen.findByRole("heading", {
+        name: "Wiedervorlage & Fälligkeit",
+      }),
+    ).toBeInTheDocument();
     const dueDate = screen.getByLabelText("Fällig");
     await userEvent.type(dueDate, "1. Mai 2026{Enter}");
 
@@ -1030,7 +1041,7 @@ describe("ProjectStoryRow – compact icon-only targeted actions", () => {
     const targeted = [
       { name: "Verantwortlich" },
       { name: "Erledigt, wenn …" },
-      { name: "Planen" },
+      { name: "Wiedervorlegen" },
       { name: "Tags" },
       { name: "Projekt öffnen" },
     ];

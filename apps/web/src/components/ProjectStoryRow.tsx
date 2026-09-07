@@ -313,6 +313,9 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
 
   const runRailCommand = (command: (typeof projectFavorites)[number]) => {
     switch (command) {
+      case "story.defer":
+        openSheet("plan-dates");
+        return;
       case "story.assignDriver":
         openSheet("assign-driver");
         return;
@@ -404,7 +407,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
               ) : null}
               {scheduledLabel ? (
                 <span>
-                  {strings.scheduled}: {scheduledLabel}
+                  {strings.projectRevisitDate}: {scheduledLabel}
                 </span>
               ) : null}
               {variant !== "card" ? (

@@ -12,6 +12,7 @@ import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
+import { RailConfigProvider } from "../lib/railConfigContext";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import { makeCriterion, makeMember, makeProject, makeTask } from "../test/fixtures";
@@ -74,16 +75,18 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
       <IdentityProvider>
         <RefreshProvider>
           <SwipeSettingsProvider>
-            <TaskActionsProvider>
-              <ProjectActionsProvider>
-                <TaskDetailProvider>
-                  <Routes>
-                    <Route path="/" element={ui} />
-                    <Route path="/projects/:id" element={<ProjectRouteMarker />} />
-                  </Routes>
-                </TaskDetailProvider>
-              </ProjectActionsProvider>
-            </TaskActionsProvider>
+            <RailConfigProvider>
+              <TaskActionsProvider>
+                <ProjectActionsProvider>
+                  <TaskDetailProvider>
+                    <Routes>
+                      <Route path="/" element={ui} />
+                      <Route path="/projects/:id" element={<ProjectRouteMarker />} />
+                    </Routes>
+                  </TaskDetailProvider>
+                </ProjectActionsProvider>
+              </TaskActionsProvider>
+            </RailConfigProvider>
           </SwipeSettingsProvider>
         </RefreshProvider>
       </IdentityProvider>
@@ -124,7 +127,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
 
     expect(screen.getByText(/Erledigt, wenn …: 1\/2/)).toBeInTheDocument();
     expect(screen.getByText(/Fällig: 01.03.2026/)).toBeInTheDocument();
-    expect(screen.getByText(/Geplant: 15.02.2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Wiedervorlage: 15.02.2026/)).toBeInTheDocument();
     expect(screen.getByText(/Aufgaben: 1\/3/)).toBeInTheDocument();
   });
 
@@ -206,19 +209,20 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("reveals the action-chip strip on a left swipe past the threshold, and via the kebab as a non-gesture alternative", async () => {
+  it("reveals the command rail on a left swipe past the threshold, and via the kebab as a non-gesture alternative", async () => {
     const story = makeProject({ id: 14, title: "Altes Gartenhaus abreißen", status: "backlog" });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Altes Gartenhaus abreißen");
 
     swipe(container, -100);
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(chips).getByRole("button", { name: "Verantwortlich" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Erledigt, wenn …" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Planen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Wiedervorlegen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Verantwortliche Person" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Arbeit planen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Ergebnis bearbeiten" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Tags" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Projekt öffnen" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Archivieren" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Kontext" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Status" })).toBeInTheDocument();
 
     // Closing and reopening via the kebab (no swipe gesture at all).
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
