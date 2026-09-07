@@ -337,7 +337,6 @@ export function ProjectDetailPage() {
           </>
         ) : null}
         <QuickAdd
-          projectId={projectId}
           autoOpen={focus === "next-action"}
           onAutoOpenClose={clearRouteFocus}
         />

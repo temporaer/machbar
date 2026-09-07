@@ -4,11 +4,8 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  * Where a contextual capture (QuickAdd) should file a new item captured
  * while this scope is active. `story` targets are used by a project/story
  * outline; every other navigable surface (Today, Inbox, Waiting, Review,
- * All) captures to the inbox. Not yet consumed -- QuickAdd still takes its
- * target as a page-supplied prop (see `QuickAdd.tsx`). Wiring QuickAdd to
- * read this instead is Phase 9 (contextual capture consolidation); the
- * field is declared here now so the scope's shape does not need to change
- * again once that happens.
+ * All) captures to the inbox. Consumed directly by `QuickAdd.tsx`, which
+ * reads this instead of taking a page-supplied `projectId` prop.
  */
 export type CaptureTarget = { kind: "inbox" } | { kind: "story"; storyId: number };
 

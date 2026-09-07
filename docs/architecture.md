@@ -172,12 +172,14 @@ become task dates.
   not separate domain commands. The transaction validates the rendered
   revision, prevents cycles and recurring parents, cascades project changes
   through descendants, and normalizes both affected sibling groups.
-- `POST /api/tasks/:id/promote-to-project` atomically classifies a root
-  `captured` task as an active or backlog project. It copies project-compatible
-  metadata, promotes direct children to project roots, preserves deeper
-  descendants, and removes the temporary capture wrapper. Captured roots cannot
-  acquire task-only dependencies, waits, recurrence, reminders, or new child
-  tasks before classification.
+- `POST /api/tasks/:id/convert-to-story` and
+  `POST /api/projects/:id/convert-to-task` atomically reclassify a root
+  `captured` task as a story (or the reverse), reusing the same numeric id
+  (see §9) so activity history, tags, contexts, and notifications survive
+  untouched. Captured roots cannot acquire task-only dependencies, waits,
+  recurrence, reminders, or new child tasks before classification; reverse
+  conversion is rejected whenever the story has children or acceptance
+  criteria.
 - External waits use revision-aware `PUT /api/tasks/:id/external-wait` and
   `DELETE /api/tasks/:id/external-wait` resources. Starting/updating a wait can
   change its description and its own revisit date atomically; resolving it

@@ -6,6 +6,15 @@ import { QuickAdd } from "./QuickAdd";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { InteractionScopeProvider } from "../lib/interactionScope";
+
+function renderQuickAddInStory(storyId: number, ui = <QuickAdd />) {
+  return renderWithProviders(
+    <InteractionScopeProvider captureTarget={{ kind: "story", storyId }}>
+      {ui}
+    </InteractionScopeProvider>,
+  );
+}
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -154,7 +163,7 @@ describe("QuickAdd", () => {
 
   it("bewahrt den Projektkontext für schnelle Aufgaben", async () => {
     mockedApi.createTask.mockResolvedValue(makeTask({ title: "Angebot senden", projectId: 7 }));
-    renderWithProviders(<QuickAdd projectId={7} />);
+    renderQuickAddInStory(7);
     await openCapture();
 
     await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Angebot senden");
@@ -378,7 +387,7 @@ describe("QuickAdd", () => {
 
   it("öffnet die Erfassung per 'c'-Tastenkürzel im aktuellen Projektkontext", async () => {
     mockedApi.createTask.mockResolvedValue(makeTask({ title: "Angebot senden", projectId: 7 }));
-    renderWithProviders(<QuickAdd projectId={7} />);
+    renderQuickAddInStory(7);
 
     await userEvent.keyboard("c");
     await userEvent.click(screen.getByRole("button", { name: "Aufgabe erfassen" }));

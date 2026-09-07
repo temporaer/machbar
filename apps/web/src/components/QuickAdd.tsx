@@ -23,6 +23,7 @@ import { ImageCropSheet } from "./ImageCropSheet";
 import { CameraCaptureSheet } from "./CameraCaptureSheet";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { shouldSuppressGlobalShortcuts } from "../lib/keyboardShortcuts";
+import { useOptionalInteractionScope } from "../lib/interactionScope";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -31,18 +32,25 @@ import { shouldSuppressGlobalShortcuts } from "../lib/keyboardShortcuts";
  * Eingang (inbox) for later clarification/refile.
  */
 export function QuickAdd({
-  projectId,
-  parentTaskId,
   autoOpen = false,
   onAutoOpenClose,
 }: {
-  projectId?: number | null;
-  parentTaskId?: number | null;
   autoOpen?: boolean;
   onAutoOpenClose?: () => void;
 }) {
   const strings = useStrings();
   const { locale } = useLocale();
+  // Contextual capture target: whichever `InteractionScopeProvider` this
+  // `QuickAdd` instance is mounted inside of (a project/story outline
+  // declares `captureTarget: {kind:"story", storyId}`; every compiled
+  // view -- Today, Inbox -- leaves it at the default `{kind:"inbox"}`).
+  // Replaces the previous `projectId`/`parentTaskId` props every caller
+  // had to thread through by hand; every production `QuickAdd` mount
+  // already sat inside a scope whose `captureTarget` said exactly the
+  // same thing those props did.
+  const scope = useOptionalInteractionScope();
+  const projectId =
+    scope?.captureTarget.kind === "story" ? scope.captureTarget.storyId : null;
   const [open, setOpen] = useState(autoOpen);
   const [captureStep, setCaptureStep] = useState<"choose" | "form">(
     autoOpen ? "form" : "choose",
@@ -75,13 +83,9 @@ export function QuickAdd({
     }
   }, [autoOpen]);
 
-  // Contextual capture (`c`): the current page already tells this exact
-  // `QuickAdd` instance what "here" means via `projectId`/`parentTaskId`
-  // (a project/story outline passes its own id, Today/Inbox pass
-  // nothing -> inbox) -- so re-using those same props is the contextual
-  // capture target, without needing a second scope-based mechanism yet
-  // (see `interactionScope.tsx`'s `captureTarget`, reserved for the
-  // later pass that replaces these props entirely).
+  // Contextual capture (`c`): `projectId` above is already this page's
+  // `captureTarget`, so opening the sheet in response to the shortcut
+  // needs no separate context lookup.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "c" || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -243,8 +247,8 @@ export function QuickAdd({
             </div>
           ) : (
             <CaptureForm
-              projectId={projectId ?? null}
-              parentTaskId={parentTaskId ?? null}
+              projectId={projectId}
+              parentTaskId={null}
               pendingFiles={pendingFile ? [pendingFile] : []}
               onCropPendingFile={(file) => setCropFile(file)}
               {...(pendingFile ? { prepareNotes: prepareMaterialNotes } : {})}

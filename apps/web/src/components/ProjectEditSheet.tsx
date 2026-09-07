@@ -663,7 +663,6 @@ export function ProjectEditSheet({
       </BottomSheet>
       {addingNextAction ? (
         <QuickAdd
-          projectId={project.id}
           autoOpen
           onAutoOpenClose={() => {
             setAddingNextAction(false);
