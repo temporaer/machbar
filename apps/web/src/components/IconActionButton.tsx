@@ -5,6 +5,7 @@ export type IconActionKind =
   | "household"
   | "criteria"
   | "schedule"
+  | "today"
   | "tags"
   | "openProject"
   | "notes"
@@ -53,6 +54,12 @@ export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
         <>
           <rect x="3.5" y="5" width="17" height="15" rx="2.2" {...common} />
           <path d="M3.5 9.7h17M8 3v4M16 3v4" {...common} />
+        </>
+      ) : kind === "today" ? (
+        <>
+          <circle cx="12" cy="12" r="8.5" {...common} />
+          <path d="M12 7.5V12l3 2" {...common} />
+          <path d="M7.5 4.5L5 7M16.5 4.5L19 7" {...common} />
         </>
       ) : kind === "tags" ? (
         <>
