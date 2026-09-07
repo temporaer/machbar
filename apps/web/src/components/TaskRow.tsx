@@ -35,6 +35,7 @@ import { MemberAvatar } from "./MemberAvatar";
 import { useLocale } from "../lib/locale";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
+import { RowSwipeBackgrounds, RowKebabButton, RowErrorBanner } from "./WorkItemRowChrome";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 import {
   extractPaperlessReferences,
@@ -390,12 +391,16 @@ export function TaskRow({
       style={{ listStyle: "none" }}
       data-workitem-id={taskProp.id}
     >
-      <div className={`task-row-swipe-bg complete${showCompleteBg ? " visible" : ""}${swipeCoach.animate ? " swipe-coach-primary" : ""}`} aria-hidden="true">
-        {primarySwipeLabel}
-      </div>
-      <div className={`task-row-swipe-bg cancel${showCancelBg ? " visible" : ""}${swipeCoach.animate ? " swipe-coach-secondary" : ""}`} aria-hidden="true">
-        {strings.moreActions}
-      </div>
+      <RowSwipeBackgrounds
+        classPrefix="task-row"
+        primaryLabel={primarySwipeLabel}
+        primaryVisible={showCompleteBg}
+        primaryVariantClass="complete"
+        secondaryLabel={strings.moreActions}
+        secondaryVisible={showCancelBg}
+        secondaryVariantClass="cancel"
+        coachAnimate={swipeCoach.animate}
+      />
       <div
         ref={contentRef}
         className={`task-row-content${ownerMember ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isSelectedForOrganize ? " organize-selected" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
@@ -579,17 +584,13 @@ export function TaskRow({
             <MemberAvatar member={ownerMember} size="sm" />
           </span>
         ) : null}
-        <button
-          type="button"
-          className="task-row-kebab"
-          aria-label={strings.moreActions}
-          aria-expanded={chipsOpen}
+        <RowKebabButton
+          classPrefix="task-row"
+          open={chipsOpen}
           disabled={busy}
-          ref={kebabButtonRef}
-          onClick={() => setChipsOpen((o) => !o)}
-        >
-          ⋯
-        </button>
+          buttonRef={kebabButtonRef}
+          onToggle={() => setChipsOpen((o) => !o)}
+        />
       </div>
       {swipeCoach.active ? (
         <SwipeCoachHint primaryAction={primarySwipeLabel} onDismiss={swipeCoach.dismiss} />
@@ -675,20 +676,15 @@ export function TaskRow({
       ) : null}
 
       {rowError ? (
-        <div className="task-row-error" role="alert">
-          <span>{organizeError && !statusError ? strings.moveFailed : strings.error}</span>
-          <span className="text-muted">{rowError}</span>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost"
-            onClick={() => {
-              clearError(task.id);
-              organize?.clearError(taskProp.id);
-            }}
-          >
-            {strings.close}
-          </button>
-        </div>
+        <RowErrorBanner
+          classPrefix="task-row"
+          headline={organizeError && !statusError ? strings.moveFailed : strings.error}
+          message={rowError}
+          onClose={() => {
+            clearError(task.id);
+            organize?.clearError(taskProp.id);
+          }}
+        />
       ) : null}
 
       {!collapsed && children.length > 0 ? (
