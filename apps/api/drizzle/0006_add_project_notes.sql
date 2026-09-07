@@ -1,1 +1,0 @@
-ALTER TABLE `projects` ADD `notes` text DEFAULT '' NOT NULL;
