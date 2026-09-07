@@ -17,6 +17,14 @@ Unclear captures go to **Eingang** as unclassified items. A concrete action can
 be marked **Machbar** immediately, and a multi-step outcome can start as a
 project.
 
+The title field accepts optional short syntax for faster capture, for example
+`~morgen` for a planned date, `!15.9` for a deadline, `@Hanna` for an owner,
+`#Haushalt` for an existing tag, `%Zuhause` for an existing physical context,
+`>Urlaub` for an existing project/story destination, and `:S`/`:M`/`:L`/`:XL`
+for effort. Entity tokens only become metadata after choosing a concrete
+suggestion; unknown tags, members, contexts, or projects stay literal title
+text and are not created by capture syntax.
+
 Installed Android PWAs can receive text and URLs from the operating-system
 share sheet. Incoming material can create new work or be appended to an
 existing task or project.
@@ -72,6 +80,14 @@ is pulled in canonical outline order: **Meine** selects the first action owned
 by the selected person or shared with the household, while **Alle** can preserve
 one independent owner/shared lane per project. A real task date still surfaces
 that task even when it is not the structural next action.
+
+**Wochenplanung** shows the next seven calendar days as a planning projection,
+not as an hourly calendar. Dragging a task or project card to a day changes
+when the household intends to work on it (`scheduledDate`). The deadline flag
+or date field changes the real due date (`dueDate`) separately, so rescheduling
+work never silently moves a constraint. The **Ohne Planung** area clears the
+planned work date. Projects can appear when their own dates need attention,
+but their dates do not cascade to child tasks.
 
 ### 4. Wait and follow up
 
@@ -195,6 +211,11 @@ buttons perform only transitions that are legal for the current item.
 
 Gestures are shortcuts rather than requirements. The same work remains
 available through visible buttons, sheets, and keyboard-accessible controls.
+Keyboard users can press `?` for contextual help derived from the same command
+registry as the shortcuts. `g` opens a short route-prefix hint, `c` opens the
+contextual capture sheet, and `s`/`a`/`n` jump from the active task to its
+existing planning, assignment, or notes flow. Structural commands are shown only
+inside outlines where structural editing is valid.
 
 ## Sharing
 

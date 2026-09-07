@@ -11,6 +11,7 @@ import { RefreshProvider } from "./refresh";
 import { SwipeSettingsProvider } from "./swipeSettings";
 import { api } from "./api";
 import { makeMember } from "../test/fixtures";
+import { useStrings } from "./strings";
 
 vi.mock("./api", () => ({
   api: {
@@ -26,15 +27,27 @@ function LocationProbe() {
 }
 
 function GlobalNavHost() {
-  useGlobalNavigationKeys();
+  const nav = useGlobalNavigationKeys();
+  const strings = useStrings();
   return (
-    <Routes>
-      <Route path="/today" element={<LocationProbe />} />
-      <Route path="/inbox" element={<LocationProbe />} />
-      <Route path="/projects" element={<LocationProbe />} />
-      <Route path="/waiting" element={<LocationProbe />} />
-      <Route path="/more" element={<LocationProbe />} />
-    </Routes>
+    <>
+      {nav.prefixOpen ? (
+        <div role="status" aria-label="g hint">
+          {nav.choices.map((choice) => (
+            <span key={choice.id}>
+              {choice.keys[0]}:{choice.label(strings)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <Routes>
+        <Route path="/today" element={<LocationProbe />} />
+        <Route path="/inbox" element={<LocationProbe />} />
+        <Route path="/projects" element={<LocationProbe />} />
+        <Route path="/waiting" element={<LocationProbe />} />
+        <Route path="/more" element={<LocationProbe />} />
+      </Routes>
+    </>
   );
 }
 
@@ -118,5 +131,34 @@ describe("useGlobalNavigationKeys (g-prefix)", () => {
     await userEvent.keyboard("gx");
 
     expect(screen.getByTestId("path")).toHaveTextContent("/today");
+  });
+
+  it("shows descriptor-derived g-prefix choices and hides them after navigation", async () => {
+    renderNavHost();
+    await screen.findByTestId("path");
+
+    await userEvent.keyboard("g");
+    const hint = await screen.findByRole("status", { name: "g hint" });
+    expect(hint).toHaveTextContent("g t:Heute");
+    expect(hint).toHaveTextContent("g i:Eingang");
+    expect(hint).toHaveTextContent("g p:Projekte");
+    expect(hint).toHaveTextContent("g w:Wartet");
+    expect(hint).toHaveTextContent("g m:Mehr");
+
+    await userEvent.keyboard("i");
+    expect(await screen.findByTestId("path")).toHaveTextContent("/inbox");
+    expect(screen.queryByRole("status", { name: "g hint" })).not.toBeInTheDocument();
+  });
+
+  it("cancels the g-prefix hint on invalid second key", async () => {
+    renderNavHost();
+    await screen.findByTestId("path");
+
+    await userEvent.keyboard("g");
+    expect(await screen.findByRole("status", { name: "g hint" })).toBeInTheDocument();
+    await userEvent.keyboard("x");
+
+    expect(screen.getByTestId("path")).toHaveTextContent("/today");
+    expect(screen.queryByRole("status", { name: "g hint" })).not.toBeInTheDocument();
   });
 });

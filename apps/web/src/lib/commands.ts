@@ -1,5 +1,5 @@
 import type { Task } from "@machbar/shared";
-import type { ProjectWithActions } from "./api";
+import type { ProjectWithActions, WeekPlanningItem } from "./api";
 import type { TaskDetailFocusField } from "./taskDetailContext";
 
 /**
@@ -18,22 +18,25 @@ import type { TaskDetailFocusField } from "./taskDetailContext";
  * directly against the specific `useOutlineOrganize()` instance that owns
  * the rendered sibling group — see `docs/architecture-rules.md`'s
  * structural-move invariant; only the interaction scope that registered a
- * given outline (Phase 4) knows which mounted `moveBy` handle a keyboard
+ * given outline knows which mounted `moveBy` handle a keyboard
  * shortcut should reach, and compiled views (Today/Inbox/Waiting/Search)
  * must never expose one. `outline.collapse`/`outline.expand` carry no
  * such risk (folding is pure scope view state, not a mutation), so
  * `useWorkItemCommands()` handles those two generically.
  *
- * `navigate.*` names the g-prefixed keyboard destinations; `capture.open`
- * names the contextual quick-add entry point. Both are listed here now so
- * the vocabulary is complete, and are wired up by the interaction scope /
- * keyboard layer (Phase 4/5) once a capture-target/route registry exists.
+ * `workItem.schedule` and `workItem.setDeadline` are role-aware date
+ * intents used by Week planning and future date surfaces; they preserve the
+ * scheduled-date/deadline distinction while still routing through existing
+ * task/story action providers. `navigate.*` names the g-prefixed keyboard
+ * destinations, and `capture.open` names the contextual QuickAdd entry point.
  */
 export type WorkItemCommand =
   | { type: "task.open"; taskId: number; focusField?: TaskDetailFocusField }
   | { type: "task.toggleDone"; task: Task }
   | { type: "task.primaryAction"; task: Task }
   | { type: "task.discard"; task: Task }
+  | { type: "workItem.schedule"; item: WeekPlanningItem; date: string | null }
+  | { type: "workItem.setDeadline"; item: WeekPlanningItem; date: string | null }
   | { type: "story.activate"; story: ProjectWithActions; ownerMemberId?: number | null }
   | { type: "story.returnToBacklog"; story: ProjectWithActions }
   | { type: "story.complete"; story: ProjectWithActions }
@@ -51,4 +54,3 @@ export type WorkItemCommand =
   | { type: "navigate.projects" }
   | { type: "navigate.waiting" }
   | { type: "navigate.more" };
-

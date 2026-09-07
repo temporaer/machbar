@@ -136,10 +136,8 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const { members } = useIdentity();
   const navigate = useNavigate();
   const dispatch = useWorkItemCommands();
-  // `null` on any page that doesn't mount an `InteractionScopeProvider`
-  // (Review, Projekte) -- see `interactionScope.tsx`'s `useOptionalInteractionScope`.
-  // Not every host of this row has one yet (Phase 7 doesn't force that),
-  // so the logical-active-item updates below are best-effort.
+  // `null` on any host outside a navigable interaction surface; logical
+  // active-item updates are best-effort there.
   const scope = useOptionalInteractionScope();
   // Sourced from the shared `ProjectActionsProvider` instance (see
   // `useProjectActions.tsx`); passing just this row's own `story` is enough
@@ -300,12 +298,12 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
 
   const handleMainClick = () => {
     setChipsOpen(false);
-    scope?.setActive(story.id);
+    scope?.setActive(story.id, "story");
   };
 
   const goToDetail = () => {
     setChipsOpen(false);
-    scope?.setActive(story.id);
+    scope?.setActive(story.id, "story");
     navigate(`/projects/${story.id}`);
   };
 
@@ -314,6 +312,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
       className={`story-row story-row-accent-${accent}`}
       style={{ listStyle: "none" }}
       data-workitem-id={story.id}
+      data-workitem-role="story"
     >
       <RowSwipeBackgrounds
         classPrefix="story-row"

@@ -9,11 +9,18 @@ vi.mock("../lib/api", () => ({
   api: {
     createTask: vi.fn(),
     createProject: vi.fn(),
+    getTags: vi.fn(),
+    getProjects: vi.fn(),
+    getHomeAssistantStatus: vi.fn(),
   },
 }));
 
 vi.mock("../lib/identity", () => ({
-  useIdentity: () => ({ currentMemberId: 1 }),
+  useIdentity: () => ({ currentMemberId: 1, members: [{ id: 1, name: "Mira" }] }),
+}));
+
+vi.mock("../lib/useAsync", () => ({
+  useAsync: () => ({ data: [] }),
 }));
 
 const mockedApi = vi.mocked(api, true);
@@ -23,6 +30,18 @@ describe("CaptureForm", () => {
     vi.clearAllMocks();
     mockedApi.createTask.mockResolvedValue(makeTask());
     mockedApi.createProject.mockResolvedValue(makeProject());
+    mockedApi.getTags.mockResolvedValue([]);
+    mockedApi.getProjects.mockResolvedValue([]);
+    mockedApi.getHomeAssistantStatus.mockResolvedValue({
+      connected: false,
+      instanceId: null,
+      protocolVersion: null,
+      connectedAt: null,
+      lastUpdateAt: null,
+      stale: false,
+      people: [],
+      contexts: [],
+    });
   });
 
   it("keeps the ordinary Capture deadline hidden and null", async () => {

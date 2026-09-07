@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { ProjectWithActions } from "../lib/api";
 import { useRefresh } from "../lib/refresh";
 import { api } from "../lib/api";
@@ -22,7 +22,6 @@ import { IconActionGlyph } from "./IconActionButton";
 import { ImageCropSheet } from "./ImageCropSheet";
 import { CameraCaptureSheet } from "./CameraCaptureSheet";
 import { useTaskDetail } from "../lib/taskDetailContext";
-import { shouldSuppressGlobalShortcuts } from "../lib/keyboardShortcuts";
 import { useOptionalInteractionScope } from "../lib/interactionScope";
 
 /**
@@ -75,6 +74,11 @@ export function QuickAdd({
   const { members } = useIdentity();
   const taskActions = useTaskActions();
   const { open: openTaskDetail } = useTaskDetail();
+  const openCapture = useCallback(() => {
+    setCaptureNotice(null);
+    setCaptureStep("choose");
+    setOpen(true);
+  }, []);
 
   useEffect(() => {
     if (autoOpen) {
@@ -83,21 +87,11 @@ export function QuickAdd({
     }
   }, [autoOpen]);
 
-  // Contextual capture (`c`): `projectId` above is already this page's
-  // `captureTarget`, so opening the sheet in response to the shortcut
-  // needs no separate context lookup.
   useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== "c" || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (shouldSuppressGlobalShortcuts(event.target)) return;
-      event.preventDefault();
-      setCaptureNotice(null);
-      setCaptureStep("choose");
-      setOpen(true);
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+    if (!scope) return undefined;
+    scope.setCaptureOpen(() => openCapture);
+    return () => scope.setCaptureOpen(null);
+  }, [scope, openCapture]);
 
   const close = () => {
     setOpen(false);
@@ -192,9 +186,7 @@ export function QuickAdd({
         type="button"
         className="quick-add-fab"
         onClick={() => {
-          setCaptureNotice(null);
-          setCaptureStep("choose");
-          setOpen(true);
+          openCapture();
         }}
         aria-label={strings.quickAdd}
       >

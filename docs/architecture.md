@@ -162,6 +162,15 @@ action. The first matching bucket wins, so a task never appears twice.
 Future-scheduled work, captured work, completed/cancelled work, and blocked work
 without a reached revisit stay out.
 
+The **Week planning** view is another read-only WorkItem projection:
+`apps/api/src/domain/weekAgenda.ts` builds `/api/agenda/week` from `Graph` into
+seven calendar days plus an unplanned pool. It is not an hourly calendar and
+does not persist a planning model of its own. A card's day placement is driven
+by that WorkItem's own `scheduledDate`; a due-only item can show a deadline flag
+without becoming scheduled work. Dragging a week card changes only
+`scheduledDate`, while the explicit deadline field changes only `dueDate`.
+Story dates mean story-level attention and never propagate to descendants.
+
 Active projects have a separate compiled `projects` bucket. A project enters
 Heute seven local calendar days before its `dueDate`, or once its
 `scheduledDate` is reached; reached scheduling prompts persist until the
@@ -713,6 +722,12 @@ Global material capture starts in `QuickAdd` but keeps the selected browser
 `File` local. `CaptureForm.prepareNotes` uploads immediately before its existing
 task/project create call, so abandoning capture before commit creates no
 Paperless document. Successful uploads are retained across create retries.
+`CaptureForm` is also the sole frontend application point for Machbar short
+syntax. `apps/web/src/lib/captureSyntax.ts` owns React-free lexical detection,
+explicit entity-token resolution, date/size token resolution, title stripping,
+and structured metadata assembly. Unknown entity-looking text remains ordinary
+title text: short syntax can select existing members, tags, physical contexts,
+and stories/projects, but it never creates them or guesses by fuzzy match.
 New camera images can optionally pass through the shared `ImageCropSheet`
 before that upload. Camera capture itself uses a resolution-bounded
 `getUserMedia` stream so Android does not need to return a full-resolution
@@ -792,12 +807,25 @@ generic here — they dispatch directly against the specific
 `useOutlineOrganize()` instance that owns the rendered sibling group (via
 the scope's registered `moveBy`), because only that instance can enforce
 the compiled-view structural-safety invariant below.
+Date commands are semantic too: `workItem.schedule` changes only
+`scheduledDate`, and `workItem.setDeadline` changes only `dueDate`, then routes
+through the existing task or story action provider based on the WorkItem role.
+`capture.open` invokes the opener registered by the scoped `QuickAdd`.
+
+**Command descriptors.** `apps/web/src/lib/commandRegistry.ts` is the
+React-independent descriptor layer for labels, groups, keys, and availability.
+It does not execute commands; `useWorkItemCommands()` remains the execution
+path. The descriptor registry derives keyboard help and `g` prefix hints, so
+shortcut documentation is not maintained as a second handwritten table.
+`Ctrl/Cmd+K` command palette UI is intentionally deferred until it can reuse
+the same descriptors without introducing a separate combobox/action framework.
 
 **Interaction scopes and the logical active item.**
 `apps/web/src/lib/interactionScope.tsx`'s `InteractionScopeProvider` is
 mounted once per navigable surface (Today, Inbox, All, a project/story
-outline, Waiting). It holds one logical "active WorkItem" that survives
-DOM focus changes (editing a field, opening a sheet), replacing the
+outline, Waiting, Week). It holds one logical "active WorkItem" plus role
+metadata that survives DOM focus changes (editing a field, opening a sheet),
+replacing the
 outline's previous private selection state; `canReorder`/`canReparent`
 flags that only a mounted, `organizable` `TaskOutline` sets to `true` —
 compiled views (Today, Inbox, Waiting, All) never do, because their
@@ -816,7 +844,11 @@ page without a separate registry — and dispatches `outline.collapse`/
 scope's registered `moveBy`. `apps/web/src/lib/useGlobalNavigationKeys.ts`
 (mounted once, above the route table, since a page-scoped provider can't
 be read from an ancestor) handles the scope-independent `g`-prefix
-navigation sequence. Both suppress themselves via one shared
+navigation sequence and returns descriptor-derived prefix choices for the
+which-key hint. `?` opens the scoped `CommandHelpSheet`, `c` dispatches
+`capture.open`, and `s`/`a`/`n` open the existing focused task detail flows
+when the logical active item is a task. Both keyboard hooks suppress
+themselves via one shared
 `shouldSuppressGlobalShortcuts()` (`apps/web/src/lib/keyboardShortcuts.ts`)
 while editing text, or while a `BottomSheet`/modal is open.
 

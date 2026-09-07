@@ -31,6 +31,9 @@ import type {
   TaskSize,
   TaskStatus,
   WaitingEntry,
+  WeekAgenda,
+  WeekAgendaDay,
+  WeekWorkItemSummary,
 } from "@machbar/shared";
 import { readRequestActorMemberId } from "./identityStorage";
 import { getClientId } from "./clientId";
@@ -262,6 +265,17 @@ export type ProjectDetail = ProjectWithActions & {
   tasks: Task[];
   childStories?: ProjectWithActions[];
   ancestors?: Array<{ id: number; title: string }>;
+};
+
+export type WeekPlanningItem = Omit<WeekWorkItemSummary, "task" | "project"> &
+  (
+    | { role: "task"; task: Task; project: null }
+    | { role: "story"; task: null; project: ProjectWithActions }
+  );
+
+export type WeekAgendaResponse = Omit<WeekAgenda, "days" | "unplanned"> & {
+  days: Array<Omit<WeekAgendaDay, "items"> & { items: WeekPlanningItem[] }>;
+  unplanned: WeekPlanningItem[];
 };
 
 /** Body for `POST /api/projects/:id/activate` (matches `activateProjectSchema`). */
@@ -577,6 +591,18 @@ export const api = {
       })}`,
     );
   },
+  getWeekAgenda: (
+    start: string,
+    memberId?: number | null,
+    scope: AgendaScope = "mine",
+  ) =>
+    request<WeekAgendaResponse>(
+      `/agenda/week${query({
+        start,
+        memberId: scope === "mine" ? memberId : undefined,
+        scope,
+      })}`,
+    ),
   getInbox: () => request<Task[]>("/inbox"),
   getWaiting: (memberId?: number | null, scope: AgendaScope = "mine") =>
     request<WaitingEntry[]>(

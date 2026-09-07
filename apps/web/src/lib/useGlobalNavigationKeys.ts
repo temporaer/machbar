@@ -1,15 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useWorkItemCommands } from "./useWorkItemCommands";
-import type { WorkItemCommand } from "./commands";
 import { shouldSuppressGlobalShortcuts } from "./keyboardShortcuts";
-
-const NAV_COMMANDS: Record<string, WorkItemCommand> = {
-  t: { type: "navigate.today" },
-  i: { type: "navigate.inbox" },
-  p: { type: "navigate.projects" },
-  w: { type: "navigate.waiting" },
-  m: { type: "navigate.more" },
-};
+import { commandDescriptors, navigationBySecondKey } from "./commandRegistry";
 
 const PREFIX_TIMEOUT_MS = 1200;
 
@@ -28,6 +20,8 @@ export function useGlobalNavigationKeys() {
   const dispatch = useWorkItemCommands();
   const dispatchRef = useRef(dispatch);
   dispatchRef.current = dispatch;
+  const [prefixOpen, setPrefixOpen] = useState(false);
+  const navigation = useMemo(navigationBySecondKey, []);
 
   useEffect(() => {
     let awaitingSecondKey = false;
@@ -35,6 +29,7 @@ export function useGlobalNavigationKeys() {
 
     function clearPrefix() {
       awaitingSecondKey = false;
+      setPrefixOpen(false);
       if (timeoutId !== null) {
         clearTimeout(timeoutId);
         timeoutId = null;
@@ -47,15 +42,16 @@ export function useGlobalNavigationKeys() {
 
       if (awaitingSecondKey) {
         clearPrefix();
-        const command = NAV_COMMANDS[event.key];
-        if (!command) return;
+        const descriptor = navigation.get(event.key);
+        if (!descriptor?.command) return;
         event.preventDefault();
-        dispatchRef.current(command);
+        dispatchRef.current(descriptor.command);
         return;
       }
 
       if (event.key === "g") {
         awaitingSecondKey = true;
+        setPrefixOpen(true);
         timeoutId = setTimeout(clearPrefix, PREFIX_TIMEOUT_MS);
       }
     }
@@ -65,5 +61,12 @@ export function useGlobalNavigationKeys() {
       window.removeEventListener("keydown", onKeyDown);
       clearPrefix();
     };
-  }, []);
+  }, [navigation]);
+
+  return {
+    prefixOpen,
+    choices: commandDescriptors.filter(
+      (descriptor) => descriptor.group === "navigation",
+    ),
+  };
 }

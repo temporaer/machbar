@@ -8,6 +8,7 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  * reads this instead of taking a page-supplied `projectId` prop.
  */
 export type CaptureTarget = { kind: "inbox" } | { kind: "story"; storyId: number };
+export type WorkItemInteractionRole = "task" | "story";
 
 /** Matches `OrganizeDirection` in `useOutlineOrganize.tsx`; not imported
  * from there to avoid a circular import (that module imports this one). */
@@ -23,7 +24,8 @@ export interface InteractionScopeValue {
    * one active item instead of each keeping its own.
    */
   activeId: number | null;
-  setActive: (id: number | null) => void;
+  activeRole: WorkItemInteractionRole | null;
+  setActive: (id: number | null, role?: WorkItemInteractionRole | null) => void;
   /**
    * True only where every `TaskOutline` mounted in this scope right now
    * renders a complete stored sibling group (a project/story's own task
@@ -50,6 +52,10 @@ export interface InteractionScopeValue {
     moveBy?: ((workItemId: number, direction: StructuralMoveDirection) => void) | null;
   }) => void;
   captureTarget: CaptureTarget;
+  captureOpen: (() => void) | null;
+  setCaptureOpen: (handler: (() => void) | null) => void;
+  helpOpen: (() => void) | null;
+  setHelpOpen: (handler: (() => void) | null) => void;
   /**
    * Fold state keyed by WorkItem id, replacing the private `collapsed`
    * `useState` that used to live inside each `TaskRow` -- folding is a
@@ -78,6 +84,11 @@ export interface InteractionScopeProviderProps {
  */
 export function InteractionScopeProvider({ children, captureTarget = { kind: "inbox" } }: InteractionScopeProviderProps) {
   const [activeId, setActive] = useState<number | null>(null);
+  const [activeRole, setActiveRole] = useState<WorkItemInteractionRole | null>(null);
+  const setActiveItem = useCallback((id: number | null, role: WorkItemInteractionRole | null = null) => {
+    setActive(id);
+    setActiveRole(id === null ? null : role);
+  }, []);
   const [capability, setCapability] = useState<{
     canReorder: boolean;
     canReparent: boolean;
@@ -99,6 +110,8 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
     [],
   );
   const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<number>>(() => new Set());
+  const [captureOpen, setCaptureOpen] = useState<(() => void) | null>(null);
+  const [helpOpen, setHelpOpen] = useState<(() => void) | null>(null);
   const isCollapsed = useCallback((workItemId: number) => collapsedIds.has(workItemId), [collapsedIds]);
   const setCollapsed = useCallback((workItemId: number, value: boolean) => {
     setCollapsedIds((prev) => {
@@ -113,16 +126,32 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
   const value = useMemo<InteractionScopeValue>(
     () => ({
       activeId,
-      setActive,
+      activeRole,
+      setActive: setActiveItem,
       canReorder: capability.canReorder,
       canReparent: capability.canReparent,
       moveBy: capability.moveBy,
       setStructuralCapability,
       captureTarget,
+      captureOpen,
+      setCaptureOpen,
+      helpOpen,
+      setHelpOpen,
       isCollapsed,
       setCollapsed,
     }),
-    [activeId, capability, setStructuralCapability, captureTarget, isCollapsed, setCollapsed],
+    [
+      activeId,
+      activeRole,
+      setActiveItem,
+      capability,
+      setStructuralCapability,
+      captureTarget,
+      captureOpen,
+      helpOpen,
+      isCollapsed,
+      setCollapsed,
+    ],
   );
   return <InteractionScopeContext.Provider value={value}>{children}</InteractionScopeContext.Provider>;
 }

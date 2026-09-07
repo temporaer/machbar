@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ProjectWithActions, CreateTaskInput } from "../lib/api";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
@@ -8,6 +8,16 @@ import { ownerAssignmentPatch } from "../lib/taskMutations";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { HumanDateInput } from "./HumanDateInput";
 import { PendingMaterialPreview } from "./PendingMaterialPreview";
+import { useLocale } from "../lib/locale";
+import { useAsync } from "../lib/useAsync";
+import {
+  autoResolvedCaptureTokens,
+  captureSyntaxSuggestions,
+  mergeResolvedCaptureTokens,
+  resolvedCaptureMetadata,
+  stripResolvedTokens,
+  type ResolvedCaptureToken,
+} from "../lib/captureSyntax";
 
 export type CaptureResult =
   | {
@@ -53,13 +63,49 @@ export function CaptureForm({
   onCaptured,
 }: CaptureFormProps) {
   const strings = useStrings();
+  const { locale } = useLocale();
   const [title, setTitle] = useState(initialTitle);
+  const [titleCursor, setTitleCursor] = useState(initialTitle.length);
+  const [selectedTokens, setSelectedTokens] = useState<ResolvedCaptureToken[]>([]);
   const [notes, setNotes] = useState(initialNotes);
   const [dueDate, setDueDate] = useState<string | null>(initialDueDate);
   const [dueDateValid, setDueDateValid] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { currentMemberId } = useIdentity();
+  const { currentMemberId, members } = useIdentity();
+  const { data: tags } = useAsync(() => api.getTags(), []);
+  const { data: projects } = useAsync(() => api.getProjects(), []);
+  const { data: homeAssistant } = useAsync(() => api.getHomeAssistantStatus(), []);
+  const automaticTokens = useMemo(
+    () => autoResolvedCaptureTokens(title, locale),
+    [locale, title],
+  );
+  const resolvedTokens = useMemo(
+    () =>
+      mergeResolvedCaptureTokens(
+        selectedTokens.filter((token) => title.slice(token.start, token.end) === token.raw),
+        automaticTokens,
+      ),
+    [automaticTokens, selectedTokens, title],
+  );
+  const syntaxMetadata = useMemo(
+    () => resolvedCaptureMetadata(resolvedTokens),
+    [resolvedTokens],
+  );
+  const capturedTitle = stripResolvedTokens(title, resolvedTokens);
+  const suggestions = useMemo(
+    () =>
+      captureSyntaxSuggestions({
+        input: title,
+        cursor: titleCursor,
+        locale,
+        members,
+        tags: tags ?? [],
+        contexts: homeAssistant?.contexts ?? [],
+        stories: projects ?? [],
+      }),
+    [homeAssistant?.contexts, locale, members, projects, tags, title, titleCursor],
+  );
   const canDeferClassification =
     (projectId ?? null) === null && (parentTaskId ?? null) === null;
 
@@ -67,19 +113,28 @@ export function CaptureForm({
     needsClarification: boolean,
     preparedNotes: string,
   ): CreateTaskInput => ({
-    title: title.trim(),
+    title: capturedTitle,
     ...(preparedNotes ? { notes: preparedNotes } : {}),
-    projectId: projectId ?? null,
+    projectId: projectId ?? syntaxMetadata.projectId ?? null,
     parentTaskId: parentTaskId ?? null,
     createdByMemberId: currentMemberId,
     status: needsClarification ? "captured" : "actionable",
-    dueDate,
-    scheduledDate: null,
-    ...(currentMemberId === null ? {} : ownerAssignmentPatch(currentMemberId)),
+    dueDate: syntaxMetadata.dueDate ?? dueDate,
+    scheduledDate: syntaxMetadata.scheduledDate ?? null,
+    ...(syntaxMetadata.size !== undefined ? { size: syntaxMetadata.size } : {}),
+    ...(syntaxMetadata.tagIds.length ? { tagIds: syntaxMetadata.tagIds } : {}),
+    ...(syntaxMetadata.contextIds.length
+      ? { contextIds: syntaxMetadata.contextIds, contextInheritanceMode: "explicit" }
+      : {}),
+    ...(syntaxMetadata.ownerMemberId !== undefined
+      ? ownerAssignmentPatch(syntaxMetadata.ownerMemberId)
+      : currentMemberId === null
+        ? {}
+        : ownerAssignmentPatch(currentMemberId)),
   });
 
   const createTask = async (needsClarification: boolean) => {
-    if (!title.trim() || saving) return;
+    if (!capturedTitle || saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -96,17 +151,27 @@ export function CaptureForm({
   };
 
   const createProject = async () => {
-    if (!title.trim() || saving) return;
+    if (!capturedTitle || saving) return;
     setSaving(true);
     setError(null);
     try {
       const preparedNotes = prepareNotes ? await prepareNotes(notes) : notes;
       const project = await api.createProject({
-        title: title.trim(),
+        title: capturedTitle,
         ...(preparedNotes ? { notes: preparedNotes } : {}),
+        ...(syntaxMetadata.projectId !== undefined ? { parentId: syntaxMetadata.projectId } : {}),
         status: "backlog",
-        ownerMemberId: currentMemberId,
-        ...(showDueDate ? { dueDate } : {}),
+        ownerMemberId: syntaxMetadata.ownerMemberId ?? currentMemberId,
+        ...(syntaxMetadata.dueDate !== undefined
+          ? { dueDate: syntaxMetadata.dueDate }
+          : showDueDate
+            ? { dueDate }
+            : {}),
+        ...(syntaxMetadata.scheduledDate !== undefined
+          ? { scheduledDate: syntaxMetadata.scheduledDate }
+          : {}),
+        ...(syntaxMetadata.tagIds.length ? { tagIds: syntaxMetadata.tagIds } : {}),
+        ...(syntaxMetadata.contextIds.length ? { contextIds: syntaxMetadata.contextIds } : {}),
       });
       onCaptured({ kind: "project", project });
     } catch (cause) {
@@ -132,8 +197,78 @@ export function CaptureForm({
           autoFocus={autoFocus}
           value={title}
           placeholder={strings.quickAddPlaceholder}
-          onChange={(event) => setTitle(event.target.value)}
+          onChange={(event) => {
+            setTitle(event.target.value);
+            setTitleCursor(event.target.selectionStart ?? event.target.value.length);
+          }}
+          onKeyUp={(event) =>
+            setTitleCursor(event.currentTarget.selectionStart ?? title.length)
+          }
+          onClick={(event) =>
+            setTitleCursor(event.currentTarget.selectionStart ?? title.length)
+          }
         />
+        {resolvedTokens.length > 0 ? (
+          <div className="capture-token-list" aria-label={strings.captureResolvedTokens}>
+            {resolvedTokens.map((token) => (
+              <button
+                key={`${token.kind}-${token.start}-${token.end}-${token.raw}`}
+                type="button"
+                className="capture-token-chip"
+                onClick={() => {
+                  setTitle((currentTitle) =>
+                    currentTitle.slice(token.start, token.end) === token.raw
+                      ? `${currentTitle.slice(0, token.start)}${currentTitle.slice(token.end)}`.replace(/\s+/g, " ")
+                      : currentTitle,
+                  );
+                  setSelectedTokens((current) =>
+                    current.filter((candidate) => candidate !== token),
+                  );
+                }}
+              >
+                {token.kind === "scheduledDate" ? strings.scheduled : null}
+                {token.kind === "dueDate" ? strings.due : null}
+                {token.kind === "member" ? strings.owner : null}
+                {token.kind === "tag" ? strings.tags : null}
+                {token.kind === "context" ? strings.context : null}
+                {token.kind === "story" ? strings.project : null}
+                {token.kind === "size" ? strings.currentSize : null}
+                {": "}
+                {"date" in token
+                  ? token.date
+                  : "member" in token
+                    ? token.member.name
+                    : "tag" in token
+                      ? token.tag.name
+                      : "context" in token
+                        ? token.context.name
+                        : "story" in token
+                          ? token.story.title
+                          : token.size}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {suggestions.length > 0 ? (
+          <div className="capture-suggestions" role="listbox" aria-label={strings.captureSuggestions}>
+            {suggestions.map((suggestion) => (
+              <button
+                key={suggestion.key}
+                type="button"
+                className="capture-suggestion"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() =>
+                  setSelectedTokens((current) =>
+                    mergeResolvedCaptureTokens(current, [suggestion.token]),
+                  )
+                }
+              >
+                <span>{suggestion.label}</span>
+                {suggestion.description ? <small>{suggestion.description}</small> : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
       {showNotes || notes ? (
         <div className="field">
@@ -167,7 +302,7 @@ export function CaptureForm({
           <button
             type="submit"
             className="btn"
-            disabled={saving || !title.trim() || !dueDateValid}
+            disabled={saving || !capturedTitle || !dueDateValid}
           >
             {strings.clarifyLater}
           </button>
@@ -176,7 +311,7 @@ export function CaptureForm({
           type="button"
           className="btn btn-primary capture-shape-action"
           aria-label={strings.captureMachbar}
-          disabled={saving || !title.trim() || !dueDateValid}
+          disabled={saving || !capturedTitle || !dueDateValid}
           onClick={() => void createTask(false)}
         >
           <span>{strings.captureMachbar}</span>
@@ -186,7 +321,7 @@ export function CaptureForm({
           type="button"
           className="btn btn-primary capture-shape-action"
           aria-label={strings.captureProject}
-          disabled={saving || !title.trim() || !dueDateValid}
+          disabled={saving || !capturedTitle || !dueDateValid}
           onClick={() => void createProject()}
         >
           <span>{strings.captureProject}</span>

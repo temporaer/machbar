@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api, type AgendaScope } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
@@ -80,16 +81,26 @@ export function TodayPage() {
         <PageHeader
           title={strings.today}
           actions={
-            <button
-              type="button"
-              className="page-header-button today-scope-toggle"
-              aria-label={strings.todayHouseholdScope}
-              aria-pressed={scope === "all"}
-              title={strings.todayHouseholdScope}
-              onClick={() => selectScope(scope === "mine" ? "all" : "mine")}
-            >
-              <IconActionGlyph kind="household" />
-            </button>
+            <>
+              <Link
+                to="/more/week"
+                className="page-header-button"
+                aria-label={strings.weekPlanning}
+                title={strings.weekPlanning}
+              >
+                {strings.weekPlanningShort}
+              </Link>
+              <button
+                type="button"
+                className="page-header-button today-scope-toggle"
+                aria-label={strings.todayHouseholdScope}
+                aria-pressed={scope === "all"}
+                title={strings.todayHouseholdScope}
+                onClick={() => selectScope(scope === "mine" ? "all" : "mine")}
+              >
+                <IconActionGlyph kind="household" />
+              </button>
+            </>
           }
           hints={pageHints}
         />

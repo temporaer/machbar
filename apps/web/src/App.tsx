@@ -18,6 +18,7 @@ import { WaitingPage } from "./pages/WaitingPage";
 import { MorePage } from "./pages/MorePage";
 import { AllPage } from "./pages/AllPage";
 import { ReviewPage } from "./pages/ReviewPage";
+import { WeekPage } from "./pages/WeekPage";
 import { TagsPage } from "./pages/TagsPage";
 import { SharePage } from "./pages/SharePage";
 import { TaskDeepLinkPage } from "./pages/TaskDeepLinkPage";
@@ -28,6 +29,7 @@ import { LocaleProvider } from "./lib/locale";
 import { ThemeProvider } from "./lib/theme";
 import { SwipeCoachProvider } from "./lib/swipeCoach";
 import { DeveloperModeProvider, useDeveloperMode } from "./lib/developerMode";
+import { useStrings } from "./lib/strings";
 
 function TaskDetailHost() {
   const { openTaskId } = useTaskDetail();
@@ -54,7 +56,8 @@ function IdentityAwareRefreshProvider({ children }: { children: ReactNode }) {
 function Shell() {
   const { currentMemberId } = useIdentity();
   const location = useLocation();
-  useGlobalNavigationKeys();
+  const strings = useStrings();
+  const navigationHint = useGlobalNavigationKeys();
   return (
     <div className="app-shell">
       <main className="app-main">
@@ -67,6 +70,7 @@ function Shell() {
             <Route path="/projects/:id" element={<ProjectDetailPage />} />
             <Route path="/waiting" element={<WaitingPage />} />
             <Route path="/more" element={<MorePage />} />
+            <Route path="/more/week" element={<WeekPage />} />
             <Route path="/more/all" element={<AllPage />} />
             <Route path="/more/review" element={<ReviewPage />} />
             <Route path="/more/tags" element={<TagsPage />} />
@@ -90,6 +94,17 @@ function Shell() {
           <TaskDetailHost />
         </IdentityGate>
       </main>
+      {navigationHint.prefixOpen ? (
+        <div className="which-key-hint" role="status" aria-live="polite">
+          <span>g …</span>
+          {navigationHint.choices.map((choice) => (
+            <span key={choice.id}>
+              <kbd>{choice.keys[0]?.replace(/^g\s+/, "")}</kbd>{" "}
+              {choice.label(strings)}
+            </span>
+          ))}
+        </div>
+      ) : null}
       {currentMemberId !== null && location.pathname !== "/share" ? <BottomNav /> : null}
     </div>
   );

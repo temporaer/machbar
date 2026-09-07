@@ -123,6 +123,7 @@ behavior.
 | Project next-action selection | `apps/api/src/repo/nextActionRepo.ts` and `Graph` |
 | Derived review diagnosis | `apps/api/src/domain/reviewItems.ts` |
 | Review decisions | `apps/web/src/lib/useProjectActions.ts` and `apps/web/src/lib/useTaskActions.ts` |
+| Week planning projection | `apps/api/src/domain/weekAgenda.ts`, `/api/agenda/week`, and `apps/web/src/pages/WeekPage.tsx` |
 | Exhaustive inventory filtering | `apps/web/src/lib/allInventory.ts` |
 | Refinement sizing semantics | `apps/web/src/lib/refinementHelpers.ts` |
 | Refinement optimistic projection | `apps/web/src/lib/useRefinementActions.ts` |
@@ -139,12 +140,14 @@ behavior.
 | Memory-bounded photo cropping | `apps/web/src/components/ImageCropSheet.tsx` |
 | Memory-bounded camera capture | `apps/web/src/components/CameraCaptureSheet.tsx` |
 | Incoming file-share staging | `apps/web/public/sw.js` and `apps/web/src/lib/pendingShareTarget.ts` |
+| Capture short syntax parsing/resolution | `apps/web/src/lib/captureSyntax.ts`, applied only by `apps/web/src/components/CaptureForm.tsx` |
 | Task/story storage and hierarchy | `apps/api/src/db/schema.ts` (`workItems`) plus `apps/api/src/repo/treeRepo.ts` recursive CTEs |
 | Task/story read projection (shared lifecycle vocabulary) | `apps/api/src/domain/workItem.ts` and `apps/api/src/domain/graph.ts` |
 | Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`) |
 | Semantic user-intent commands (mouse/touch/keyboard dispatch a common vocabulary) | `apps/web/src/lib/commands.ts` and `apps/web/src/lib/useWorkItemCommands.ts` |
 | Logical active WorkItem, structural capability, and collapse state per navigable surface | `apps/web/src/lib/interactionScope.tsx` |
-| Keyboard navigation (`j/k/h/l`, `Alt+arrows`, `g`-prefix) | `apps/web/src/lib/useWorkItemKeyboardNav.ts` and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
+| Command descriptors, keyboard help, and prefix hints | `apps/web/src/lib/commandRegistry.ts`, `apps/web/src/components/CommandHelpSheet.tsx`, and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
+| Keyboard navigation (`j/k/h/l`, `Alt+arrows`, `g`-prefix, `?`, `c`, focused task keys) | `apps/web/src/lib/useWorkItemKeyboardNav.ts` and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
 | WorkItem detail-sheet section/disclosure chrome | `apps/web/src/components/WorkItemDetailSection.tsx` |
 
 Before introducing another primitive for one of these needs, update this table
