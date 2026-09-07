@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "../components/TaskOutline";
@@ -272,7 +272,7 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|none");
   });
 
-  it("opens focused task edit flows with s/a/n for the active task", async () => {
+  it("dispatches task semantic shortcuts s/w/a/m for the active task", async () => {
     const task = makeTask({ id: 42, title: "Fokussierte Aufgabe", position: 0 });
     renderWithProviders(
       <>
@@ -290,8 +290,14 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     await userEvent.keyboard("a");
     expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|owner");
 
-    await userEvent.keyboard("n");
-    expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|notes");
+    await userEvent.keyboard("m");
+    const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
+    expect(within(chips).getByRole("button", { name: "Planen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Warten / Nachhaken" })).toBeInTheDocument();
+    expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
+
+    await userEvent.keyboard("w");
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|waiting");
   });
 
   it("does not run task-focused shortcuts for an active story", async () => {
