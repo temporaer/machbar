@@ -5,7 +5,7 @@ import type {
   ActivityEventMetadata,
   ActivityPage,
 } from "@machbar/shared";
-import { and, desc, eq, lt, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -39,14 +39,14 @@ export interface RecordActivityInput {
 
 /** Inserts an activity event using the caller's transaction-bound database. */
 export function recordActivity(db: Db, input: RecordActivityInput): number {
+  const entityId = input.taskId ?? input.projectId ?? null;
   return db.insert(schema.activityEvents)
     .values({
       actorMemberId: input.actorMemberId ?? null,
       kind: input.kind,
       entityType: input.entityType,
       entityTitle: input.entityTitle,
-      taskId: input.taskId ?? null,
-      projectId: input.projectId ?? null,
+      entityId,
       metadata: input.metadata ?? {},
     })
     .returning({ id: schema.activityEvents.id })
@@ -103,12 +103,21 @@ export function getActivityPage(
     conditions.push(eq(schema.activityEvents.actorMemberId, filters.actorId));
   }
   if (filters.taskId !== undefined) {
-    conditions.push(eq(schema.activityEvents.taskId, filters.taskId));
+    conditions.push(eq(schema.activityEvents.entityId, filters.taskId));
   }
   if (filters.projectId !== undefined) {
-    // Task events record their project context in this same column, so this
-    // includes both project events and task events captured in the project.
-    conditions.push(eq(schema.activityEvents.projectId, filters.projectId));
+    const descendantRows = db.all<{ id: number }>(sql`
+      WITH RECURSIVE descendants(id) AS (
+        SELECT ${filters.projectId}
+        UNION ALL
+        SELECT child.id
+        FROM work_items child
+        JOIN descendants d ON child.parent_id = d.id
+      )
+      SELECT id FROM descendants
+    `);
+    const ids = descendantRows.map((row) => row.id);
+    conditions.push(inArray(schema.activityEvents.entityId, ids));
   }
   if (filters.cursor !== undefined) {
     const cursor = decodeCursor(filters.cursor);
@@ -128,8 +137,7 @@ export function getActivityPage(
       id: schema.activityEvents.id,
       createdAt: schema.activityEvents.createdAt,
       kind: schema.activityEvents.kind,
-      taskId: schema.activityEvents.taskId,
-      projectId: schema.activityEvents.projectId,
+      entityId: schema.activityEvents.entityId,
       entityType: schema.activityEvents.entityType,
       entityTitle: schema.activityEvents.entityTitle,
       metadata: schema.activityEvents.metadata,
@@ -175,8 +183,8 @@ export function getActivityPage(
     entity: {
       type: row.entityType,
       title: row.entityTitle,
-      taskId: row.taskId,
-      projectId: row.projectId,
+      taskId: row.entityType === "task" ? row.entityId : null,
+      projectId: row.entityType === "project" ? row.entityId : null,
     },
     metadata: row.metadata as ActivityEventMetadata,
   }));

@@ -212,7 +212,7 @@ describe("task external waits", () => {
     const earliest = await wait("Earliest attention", "2026-09-01");
 
     ctx.handle.sqlite
-      .prepare("UPDATE tasks SET position = CASE id WHEN ? THEN 0 ELSE 99 END WHERE id IN (?, ?)")
+      .prepare("UPDATE work_items SET position = CASE id WHEN ? THEN 0 ELSE 99 END WHERE id IN (?, ?)")
       .run(missingZulu.id, missingZulu.id, missingAlphaFirst.id);
 
     const response = await ctx.app.inject({

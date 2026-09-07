@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { openDb, type DbHandle } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
 import * as schema from "../src/db/schema.js";
+import { Graph } from "../src/domain/graph.js";
 import { createProject as createProjectMutation } from "../src/domain/storyCrud.js";
 import { moveTask } from "../src/domain/structuralMoves.js";
 import { getOrCreateTag } from "../src/domain/tags.js";
@@ -62,9 +63,9 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       context,
     );
     if (!requestedActive) return project;
-    db.update(schema.projects)
+    db.update(schema.workItems)
       .set({ status: "active" })
-      .where(eq(schema.projects.id, project.id))
+      .where(eq(schema.workItems.id, project.id))
       .run();
     return { ...project, status: "active" };
   }
@@ -302,7 +303,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         status: "actionable",
       });
       handle.sqlite
-        .prepare("UPDATE tasks SET status = 'captured', needs_clarification = 1 WHERE id IN (?, ?)")
+        .prepare("UPDATE work_items SET status = 'captured', needs_clarification = 1 WHERE id IN (?, ?)")
         .run(capturedRoot.id, capturedBlocker.id);
 
       expect(getNextActionTaskIdsByProject(handle.db).get(project.id)?.[0]).toBe(
@@ -437,7 +438,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         status: "actionable",
       });
       handle.sqlite
-        .prepare("UPDATE tasks SET status = 'captured', needs_clarification = 1 WHERE id IN (?, ?)")
+        .prepare("UPDATE work_items SET status = 'captured', needs_clarification = 1 WHERE id IN (?, ?)")
         .run(capturedRoot.id, capturedWaiting.id);
 
       const mixed = createProject(handle.db, {
@@ -459,7 +460,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         ownerMemberId: owner.id,
       });
       handle.sqlite
-        .prepare("UPDATE tasks SET status = 'captured', needs_clarification = 1 WHERE id = ?")
+        .prepare("UPDATE work_items SET status = 'captured', needs_clarification = 1 WHERE id = ?")
         .run(mixedRoot.id);
 
       const reasons = getStuckReasonsByProject(handle.db);
@@ -720,9 +721,9 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         scheduledDate: "2026-10-15",
       });
       handle.db
-        .update(schema.tasks)
+        .update(schema.workItems)
         .set({ status: "captured", needsClarification: true })
-        .where(eq(schema.tasks.id, captured.id))
+        .where(eq(schema.workItems.id, captured.id))
         .run();
       const capturedAction = makeAction(capturedProject.id, "Blockiert");
       addDependency(handle.db, capturedAction.id, captured.id);
@@ -809,9 +810,9 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         if (childStatus === "external") addExternalWait(child.id);
         if (captured) {
           handle.db
-            .update(schema.tasks)
+            .update(schema.workItems)
             .set({ status: "captured", needsClarification: true })
-            .where(eq(schema.tasks.id, child.id))
+            .where(eq(schema.workItems.id, child.id))
             .run();
         }
         const action = createTask(handle.db, {
@@ -1028,14 +1029,9 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         expectedRevision: root.revision,
       });
 
-      const rows = handle.db
-        .select()
-        .from(schema.tasks)
-        .all()
-        .filter((t) => [root.id, level1.id, level2.id, level3.id].includes(t.id));
-      expect(rows).toHaveLength(4);
-      for (const row of rows) {
-        expect(row.projectId).toBe(target.id);
+      const reloaded = Graph.load(handle.db);
+      for (const id of [root.id, level1.id, level2.id, level3.id]) {
+        expect(reloaded.tasksById.get(id)?.projectId).toBe(target.id);
       }
     });
 
@@ -1053,10 +1049,10 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
 
       const reloaded = handle.db
         .select()
-        .from(schema.tasks)
+        .from(schema.workItems)
         .all()
         .find((t) => t.id === root.id)!;
-      expect(reloaded.parentTaskId).toBeNull();
+      expect(reloaded.parentId).toBeNull();
     });
 
     it("rejects a task becoming its own parent, at the mutation layer", () => {

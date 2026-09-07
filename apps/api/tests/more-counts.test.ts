@@ -3,6 +3,8 @@ import * as schema from "../src/db/schema.js";
 import {
   closeTestContext,
   createTestContext,
+  insertTestProject,
+  insertTestTask,
   type TestContext,
 } from "./helpers.js";
 
@@ -23,32 +25,22 @@ describe("GET /api/views/more-counts", () => {
       .values({ name: "Mira", color: "#123456" })
       .returning()
       .get();
-    ctx.handle.db
-      .insert(schema.projects)
-      .values({ title: "Later", status: "backlog" })
-      .run();
-    const healthy = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+    insertTestProject(ctx.handle.db, { title: "Later", status: "backlog" });
+    const healthy = insertTestProject(ctx.handle.db, {
         title: "Healthy",
         status: "active",
         ownerMemberId: member.id,
-      })
-      .returning()
-      .get();
-    ctx.handle.db.insert(schema.projectAcceptanceCriteria).values({
-      projectId: healthy.id,
+      });
+    ctx.handle.db.insert(schema.workItemAcceptanceCriteria).values({
+      workItemId: healthy.id,
       text: "Done",
     }).run();
-    ctx.handle.db.insert(schema.tasks).values({
+    insertTestTask(ctx.handle.db, {
       projectId: healthy.id,
       title: "Do it",
       status: "actionable",
-    }).run();
-    ctx.handle.db
-      .insert(schema.projects)
-      .values({ title: "Needs decisions", status: "active" })
-      .run();
+    });
+    insertTestProject(ctx.handle.db, { title: "Needs decisions", status: "active" });
 
     const response = await ctx.app.inject({
       method: "GET",

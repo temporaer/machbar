@@ -24,6 +24,7 @@ const queryBoolean = z
 export const createProjectSchema = z.object({
   title: z.string().min(1, "Project title must not be empty."),
   notes: z.string().optional(),
+  parentId: z.number().int().nullable().optional(),
   status: z.enum(projectStatuses).optional(),
   ownerMemberId: z.number().int().nullable().optional(),
   dueDate: isoDate.nullable().optional(),

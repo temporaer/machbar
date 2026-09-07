@@ -26,10 +26,10 @@ import {
 function getCriterionOrThrow(db: Db, projectId: number, criterionId: number) {
   const criterion = db
     .select()
-    .from(schema.projectAcceptanceCriteria)
-    .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+    .from(schema.workItemAcceptanceCriteria)
+    .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
     .get();
-  if (!criterion || criterion.projectId !== projectId) {
+  if (!criterion || criterion.workItemId !== projectId) {
     throw AppError.notFound(
       "acceptance_criterion_not_found",
       "The requested acceptance criterion was not found in this project.",
@@ -62,14 +62,14 @@ export function addCriterion(
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, projectId);
     const maxPosition = tx
-      .select({ position: schema.projectAcceptanceCriteria.position })
-      .from(schema.projectAcceptanceCriteria)
-      .where(eq(schema.projectAcceptanceCriteria.projectId, projectId))
+      .select({ position: schema.workItemAcceptanceCriteria.position })
+      .from(schema.workItemAcceptanceCriteria)
+      .where(eq(schema.workItemAcceptanceCriteria.workItemId, projectId))
       .all()
       .reduce((max, c) => Math.max(max, c.position), -1);
     const criterion = tx
-      .insert(schema.projectAcceptanceCriteria)
-      .values({ projectId, text: trimmed, position: maxPosition + 1 })
+      .insert(schema.workItemAcceptanceCriteria)
+      .values({ workItemId: projectId, text: trimmed, position: maxPosition + 1 })
       .returning()
       .get();
     touchProject(txDb, projectId);
@@ -110,14 +110,14 @@ export function updateCriterionText(
     const project = getProjectOrThrow(txDb, projectId);
     const criterion = getCriterionOrThrow(txDb, projectId, criterionId);
     if (criterion.text === trimmed) return criterion;
-    tx.update(schema.projectAcceptanceCriteria)
+    tx.update(schema.workItemAcceptanceCriteria)
       .set({ text: trimmed, updatedAt: nowIso() })
-      .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+      .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
       .run();
     const updated = tx
       .select()
-      .from(schema.projectAcceptanceCriteria)
-      .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+      .from(schema.workItemAcceptanceCriteria)
+      .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
       .get()!;
     touchProject(txDb, projectId);
     recordActivity(txDb, {
@@ -145,14 +145,14 @@ export function setCriterionChecked(
     const project = getProjectOrThrow(txDb, projectId);
     const criterion = getCriterionOrThrow(txDb, projectId, criterionId);
     if (criterion.checked === checked) return criterion;
-    tx.update(schema.projectAcceptanceCriteria)
+    tx.update(schema.workItemAcceptanceCriteria)
       .set({ checked, updatedAt: nowIso() })
-      .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+      .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
       .run();
     const updated = tx
       .select()
-      .from(schema.projectAcceptanceCriteria)
-      .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+      .from(schema.workItemAcceptanceCriteria)
+      .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
       .get()!;
     touchProject(txDb, projectId);
     recordActivity(txDb, {
@@ -183,8 +183,8 @@ export function reorderCriteria(
     getProjectOrThrow(txDb, projectId);
     const existing = tx
       .select()
-      .from(schema.projectAcceptanceCriteria)
-      .where(eq(schema.projectAcceptanceCriteria.projectId, projectId))
+      .from(schema.workItemAcceptanceCriteria)
+      .where(eq(schema.workItemAcceptanceCriteria.workItemId, projectId))
       .all();
     const existingIds = new Set(existing.map((c) => c.id));
     const uniqueRequestedIds = new Set(orderedCriterionIds);
@@ -204,16 +204,16 @@ export function reorderCriteria(
       );
     }
     orderedCriterionIds.forEach((criterionId, index) => {
-      tx.update(schema.projectAcceptanceCriteria)
+      tx.update(schema.workItemAcceptanceCriteria)
         .set({ position: index, updatedAt: nowIso() })
-        .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+        .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
         .run();
     });
     touchProject(txDb, projectId);
     return tx
       .select()
-      .from(schema.projectAcceptanceCriteria)
-      .where(eq(schema.projectAcceptanceCriteria.projectId, projectId))
+      .from(schema.workItemAcceptanceCriteria)
+      .where(eq(schema.workItemAcceptanceCriteria.workItemId, projectId))
       .all()
       .sort((a, b) => a.position - b.position);
   });
@@ -230,20 +230,20 @@ export function removeCriterion(
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, projectId);
     getCriterionOrThrow(txDb, projectId, criterionId);
-    tx.delete(schema.projectAcceptanceCriteria)
-      .where(eq(schema.projectAcceptanceCriteria.id, criterionId))
+    tx.delete(schema.workItemAcceptanceCriteria)
+      .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
       .run();
     const remaining = tx
       .select()
-      .from(schema.projectAcceptanceCriteria)
-      .where(eq(schema.projectAcceptanceCriteria.projectId, projectId))
+      .from(schema.workItemAcceptanceCriteria)
+      .where(eq(schema.workItemAcceptanceCriteria.workItemId, projectId))
       .all()
       .sort((a, b) => a.position - b.position);
     remaining.forEach((criterion, index) => {
       if (criterion.position !== index) {
-        tx.update(schema.projectAcceptanceCriteria)
+        tx.update(schema.workItemAcceptanceCriteria)
           .set({ position: index, updatedAt: nowIso() })
-          .where(eq(schema.projectAcceptanceCriteria.id, criterion.id))
+          .where(eq(schema.workItemAcceptanceCriteria.id, criterion.id))
           .run();
       }
     });

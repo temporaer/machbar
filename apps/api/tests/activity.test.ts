@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import { getActivityPage } from "../src/repo/activityRepo.js";
-import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
+import {
+  closeTestContext,
+  createTestContext,
+  insertTestProject,
+  insertTestTask,
+  type TestContext,
+} from "./helpers.js";
 
 describe("activity repository", () => {
   let ctx: TestContext;
@@ -26,33 +32,17 @@ describe("activity repository", () => {
       .values({ name: "Lea", color: "#abcdef" })
       .returning()
       .get();
-    const project = ctx.handle.db
-      .insert(schema.projects)
-      .values({ title: "Umzug" })
-      .returning()
-      .get();
-    const otherProject = ctx.handle.db
-      .insert(schema.projects)
-      .values({ title: "Garten" })
-      .returning()
-      .get();
-    const task = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ title: "Kisten packen", projectId: project.id })
-      .returning()
-      .get();
-    const otherTask = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ title: "Rasen mähen", projectId: otherProject.id })
-      .returning()
-      .get();
+    const project = insertTestProject(ctx.handle.db, { title: "Umzug" });
+    const otherProject = insertTestProject(ctx.handle.db, { title: "Garten" });
+    const task = insertTestTask(ctx.handle.db, { title: "Kisten packen", projectId: project.id });
+    const otherTask = insertTestTask(ctx.handle.db, { title: "Rasen mähen", projectId: otherProject.id });
 
     ctx.handle.db.insert(schema.activityEvents).values([
       {
         createdAt: "2026-08-27T18:00:00.000Z",
         actorMemberId: actor.id,
         kind: "project_updated",
-        projectId: project.id,
+        entityId: project.id,
         entityType: "project",
         entityTitle: project.title,
         metadata: { changedFields: ["notes"] },
@@ -61,8 +51,7 @@ describe("activity repository", () => {
         createdAt: "2026-08-27T18:00:00.000Z",
         actorMemberId: actor.id,
         kind: "task_updated",
-        taskId: task.id,
-        projectId: project.id,
+        entityId: task.id,
         entityType: "task",
         entityTitle: task.title,
         metadata: { changedFields: ["scheduledDate"] },
@@ -71,8 +60,7 @@ describe("activity repository", () => {
         createdAt: "2026-08-27T17:00:00.000Z",
         actorMemberId: otherActor.id,
         kind: "task_status_changed",
-        taskId: otherTask.id,
-        projectId: otherProject.id,
+        entityId: otherTask.id,
         entityType: "task",
         entityTitle: otherTask.title,
         metadata: { previousStatus: "actionable", nextStatus: "done" },
@@ -137,8 +125,8 @@ describe("activity repository", () => {
       pictureUrl: null,
     });
 
-    ctx.handle.db.delete(schema.tasks).where(eq(schema.tasks.id, task.id)).run();
-    ctx.handle.db.delete(schema.projects).where(eq(schema.projects.id, project.id)).run();
+    ctx.handle.db.delete(schema.workItems).where(eq(schema.workItems.id, task.id)).run();
+    ctx.handle.db.delete(schema.workItems).where(eq(schema.workItems.id, project.id)).run();
     ctx.handle.db.delete(schema.members).where(eq(schema.members.id, actor.id)).run();
 
     const events = getActivityPage(ctx.handle.db, { limit: 50 }).items.filter(

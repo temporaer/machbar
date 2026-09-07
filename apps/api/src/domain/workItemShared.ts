@@ -1,7 +1,7 @@
 /**
  * Shared write-path primitives used by both task and story mutations: actor/context
- * extraction, the shared work-item id allocator, revision-guard helpers
- * (`assertExpectedRevision`/`touchTask`/`touchProject`), and the small set of
+ * extraction, revision-guard helpers (`assertExpectedRevision`/`touchTask`/
+ * `touchProject`), and the small set of
  * project-state checks (`projectHasNextAction`/`projectHasTaskPlan`/
  * `assertProjectActivationReady`) that task mutations also need when a task's
  * change affects its story's contribution/activation state.
@@ -13,6 +13,7 @@ import { AppError } from "../errors.js";
 import { getEffectiveOwners, getNextActionTaskIdsByProject } from "../repo/index.js";
 import { enqueueNotification } from "../notifications/outbox.js";
 import { getProjectActivationReadiness } from "./projectReadiness.js";
+import { getTaskIdsForStory } from "../repo/treeRepo.js";
 
 export interface MutationContext {
   actorMemberId?: number | null;
@@ -20,16 +21,6 @@ export interface MutationContext {
 
 export function actor(context?: MutationContext): number | null {
   return context?.actorMemberId ?? null;
-}
-
-/**
- * Allocates a new id from the shared work-item identity space. Tasks and
- * projects both draw their `id` from here (see `schema.workItems`) so a
- * numeric id is never reused across the two tables, which in turn allows
- * task/project role conversion to preserve identity.
- */
-export function allocateWorkItemId(db: Db): number {
-  return db.insert(schema.workItems).values({}).returning().get().id;
 }
 
 export function enqueueProjectAssignment(
@@ -82,22 +73,22 @@ export function nowIso(): string {
 }
 
 export function touchTask(db: Db, taskId: number): void {
-  db.update(schema.tasks)
+  db.update(schema.workItems)
     .set({
-      revision: sql`${schema.tasks.revision} + 1`,
+      revision: sql`${schema.workItems.revision} + 1`,
       updatedAt: nowIso(),
     })
-    .where(eq(schema.tasks.id, taskId))
+    .where(and(eq(schema.workItems.id, taskId), eq(schema.workItems.role, "task")))
     .run();
 }
 
 export function touchProject(db: Db, projectId: number): void {
-  db.update(schema.projects)
+  db.update(schema.workItems)
     .set({
-      revision: sql`${schema.projects.revision} + 1`,
+      revision: sql`${schema.workItems.revision} + 1`,
       updatedAt: nowIso(),
     })
-    .where(eq(schema.projects.id, projectId))
+    .where(and(eq(schema.workItems.id, projectId), eq(schema.workItems.role, "story")))
     .run();
 }
 
@@ -153,22 +144,24 @@ export function assertProjectActivationReady(
 
 export function projectHasTaskPlan(db: Db, projectId: number): boolean {
   const project = db
-    .select({ dueDate: schema.projects.dueDate })
-    .from(schema.projects)
-    .where(eq(schema.projects.id, projectId))
+    .select({ dueDate: schema.workItems.dueDate })
+    .from(schema.workItems)
+    .where(and(eq(schema.workItems.id, projectId), eq(schema.workItems.role, "story")))
     .get();
   if (project?.dueDate === null || project === undefined) return true;
 
+  const taskIds = getTaskIdsForStory(db, projectId);
+  if (taskIds.length === 0) return false;
   return db
     .select({
-      dueDate: schema.tasks.dueDate,
-      scheduledDate: schema.tasks.scheduledDate,
+      dueDate: schema.workItems.dueDate,
+      scheduledDate: schema.workItems.scheduledDate,
     })
-    .from(schema.tasks)
+    .from(schema.workItems)
     .where(
       and(
-        eq(schema.tasks.projectId, projectId),
-        inArray(schema.tasks.status, ["captured", "actionable", "someday"]),
+        inArray(schema.workItems.id, taskIds),
+        inArray(schema.workItems.status, ["captured", "active", "backlog"]),
       ),
     )
     .all()

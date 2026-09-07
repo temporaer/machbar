@@ -324,7 +324,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     });
     await addDependency(revisit.id, blocker.id);
     ctx.handle.sqlite
-      .prepare("UPDATE tasks SET status = 'captured', needs_clarification = 1 WHERE id IN (?, ?)")
+      .prepare("UPDATE work_items SET status = 'captured', needs_clarification = 1 WHERE id IN (?, ?)")
       .run(planned.id, revisit.id);
 
     expect(await bucketsContaining("Erfasst und geplant")).toEqual([]);
@@ -505,7 +505,7 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     const project = res.json();
     if (requestedActive) {
       ctx.handle.sqlite
-        .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+        .prepare("UPDATE work_items SET status = 'active' WHERE id = ?")
         .run(project.id);
     }
     return project;
@@ -630,7 +630,7 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
       priority: 3,
     });
     ctx.handle.sqlite
-      .prepare("UPDATE tasks SET position = CASE id WHEN ? THEN 99 ELSE 0 END WHERE id IN (?, ?)")
+      .prepare("UPDATE work_items SET position = CASE id WHEN ? THEN 99 ELSE 0 END WHERE id IN (?, ?)")
       .run(alpha.id, alpha.id, zulu.id);
 
     const agenda = (await getAgenda(anna.id)).json();
@@ -843,12 +843,12 @@ describe("Heute agenda: filtering by selected member (effective owner)", () => {
     });
     ctx.handle.sqlite
       .prepare(
-        "UPDATE projects SET reviewed_at = '2099-01-01T00:00:00.000Z' WHERE id = ?",
+        "UPDATE work_items SET reviewed_at = '2099-01-01T00:00:00.000Z' WHERE id = ?",
       )
       .run(project.id);
     ctx.handle.sqlite
       .prepare(
-        "UPDATE tasks SET reviewed_at = '2099-01-01T00:00:00.000Z' WHERE id = ?",
+        "UPDATE work_items SET reviewed_at = '2099-01-01T00:00:00.000Z' WHERE id = ?",
       )
       .run(dated.id);
 
@@ -958,7 +958,7 @@ describe("Heute agenda: compiled project prompts", () => {
     expect(response.statusCode).toBe(201);
     const project = response.json();
     ctx.handle.sqlite
-      .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+      .prepare("UPDATE work_items SET status = 'active' WHERE id = ?")
       .run(project.id);
     return project;
   }
@@ -1027,7 +1027,7 @@ describe("Heute agenda: compiled project prompts", () => {
     );
 
     ctx.handle.sqlite
-      .prepare("UPDATE projects SET scheduled_date = ? WHERE id = ?")
+      .prepare("UPDATE work_items SET scheduled_date = ? WHERE id = ?")
       .run(addDaysIso(today, 1), project.id);
     expect(
       (await projectPrompts()).map((entry) => entry.project.id),
@@ -1035,7 +1035,7 @@ describe("Heute agenda: compiled project prompts", () => {
 
     ctx.handle.sqlite
       .prepare(
-        "UPDATE projects SET scheduled_date = ?, status = 'completed' WHERE id = ?",
+        "UPDATE work_items SET scheduled_date = ?, status = 'done' WHERE id = ?",
       )
       .run(today, project.id);
     expect(
@@ -1077,7 +1077,7 @@ describe("Heute agenda: compiled project prompts", () => {
       dueDate: today,
     }).then((project) => {
       ctx.handle.sqlite
-        .prepare("UPDATE projects SET status = 'backlog' WHERE id = ?")
+        .prepare("UPDATE work_items SET status = 'backlog' WHERE id = ?")
         .run(project.id);
     });
 

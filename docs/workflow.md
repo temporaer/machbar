@@ -43,14 +43,15 @@ An inbox item leaves clarification through one explicit classification:
 
 - **Machbar** keeps it as a task and makes it actionable.
 - **Irgendwann** keeps it as a task outside the current action lists.
-- **In Schritte zerlegen** promotes it to a project and opens the lightweight
+- **In Schritte zerlegen** converts it to a project/story and opens the lightweight
   handoff for adding a first action. Starting the project remains an explicit
   decision once it has a driver and a viable progress or future-waiting path.
-- **Backlog** promotes it to a backlog project.
+- **Backlog** converts it to a backlog project/story.
 
-Promotion keeps the captured title, notes, dates, tags, physical contexts, and sensible ownership.
-Existing child tasks become project-root steps while deeper task nesting stays
-intact; the temporary capture wrapper is removed.
+Conversion preserves the item's identity, title, notes, dates, tags, physical
+contexts, and sensible ownership, so activity history and links stay attached.
+Existing child tasks become story-root steps while deeper task nesting stays
+intact.
 
 ### 3. Execute
 
@@ -112,9 +113,10 @@ becoming another required workflow.
 ### 6. Inventory
 
 **Alles** is exhaustive access to every non-deleted ordinary project and task.
-Projects and standalone task trees appear as first-class inventory. Project
-details own their complete outlines so descendants are not dumped twice by
-default; search can still return a matching nested task directly.
+Projects/stories and standalone task trees appear as first-class inventory.
+Project details own their complete outlines, including nested child stories, so
+descendants are not dumped twice by default; search can still return a matching
+nested task directly.
 
 Alles answers where an item is even when Today, Review, Inbox, and Waiting do
 not currently surface it.
@@ -138,7 +140,7 @@ A project represents a result that requires more than one action. It contains:
 - a title describing the outcome;
 - free-form Markdown notes for context and decisions;
 - ordered, checkable acceptance criteria under “Erledigt, wenn …”;
-- a driver, dates, tags, and a nested task outline.
+- a driver, dates, tags, and a nested story/task outline.
 
 Projects move through backlog, active, completed, and archived states. Machbar
 does not automatically complete a project when its tasks are done; a person
@@ -151,8 +153,8 @@ path or intentional healthy future waiting.
 
 ## Tasks, outlines, and dependencies
 
-Tasks can be nested to arbitrary depth. A project outline can be reorganized
-with drag, touch, keyboard controls, or a searchable move sheet.
+Tasks and stories can be nested to arbitrary depth. A project outline can be
+reorganized with drag, touch, keyboard controls, or a searchable move sheet.
 
 Responsibility and tags can flow down from a project or parent task. A child
 can override or explicitly exclude inherited values when the general context

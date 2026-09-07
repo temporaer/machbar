@@ -2,7 +2,7 @@
  * Task hierarchy structural moves: reparenting, reordering, and cascading a
  * subtree's story assignment.
  */
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -15,6 +15,7 @@ import {
 } from "../repo/index.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import { assertParentAcceptsChildren, getTaskOrThrow } from "./taskCrud.js";
+import { Graph } from "./graph.js";
 import {
   MutationContext,
   actor,
@@ -42,12 +43,12 @@ function reindexGroup(
   orderedIds: number[],
 ) {
   orderedIds.forEach((taskId, index) => {
-    tx.update(schema.tasks)
+    tx.update(schema.workItems)
       .set({
         position: index,
         updatedAt: nowIso(),
       })
-      .where(eq(schema.tasks.id, taskId))
+      .where(eq(schema.workItems.id, taskId))
       .run();
   });
 }
@@ -70,23 +71,13 @@ function siblingsOf(
 }
 
 function db_selectAllTasks(tx: Db) {
-  return tx.select().from(schema.tasks).all();
+  return Graph.load(tx).allTasks();
 }
 
 function cascadeProjectId(tx: Db, rootId: number, newProjectId: number | null) {
-  // A single recursive-CTE lookup (repo layer) resolves the whole subtree;
-  // the update itself is then one ordinary batched Drizzle statement
-  // instead of a per-node BFS loop with one query per level.
-  const descendantIds = repoGetDescendantIds(tx, rootId);
-  if (descendantIds.length === 0) return;
-  tx.update(schema.tasks)
-    .set({
-      projectId: newProjectId,
-      revision: sql`${schema.tasks.revision} + 1`,
-      updatedAt: nowIso(),
-    })
-    .where(inArray(schema.tasks.id, descendantIds))
-    .run();
+  void tx;
+  void rootId;
+  void newProjectId;
 }
 
 /**
@@ -183,14 +174,13 @@ export function moveTask(
     const destinationIds = destinationSiblings.map((t) => t.id);
     destinationIds.splice(index, 0, taskId);
 
-    tx.update(schema.tasks)
+    tx.update(schema.workItems)
       .set({
-        parentTaskId: newParentTaskId,
-        projectId: newProjectId,
-        revision: sql`${schema.tasks.revision} + 1`,
+        parentId: newParentTaskId ?? newProjectId,
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
-      .where(eq(schema.tasks.id, taskId))
+      .where(eq(schema.workItems.id, taskId))
       .run();
 
     if (newProjectId !== task.projectId) {
@@ -214,7 +204,7 @@ export function moveTask(
       );
     }
 
-    const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, taskId)).get()!;
+    const updated = getTaskOrThrow(txDb, taskId);
     if (!movingWithinSameGroup) {
       const destinationProject =
         newProjectId !== task.projectId && newProjectId !== null

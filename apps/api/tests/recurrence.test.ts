@@ -380,9 +380,9 @@ describe("fixed-day recurring tasks", () => {
     expect(
       ctx.handle.db
         .select()
-        .from(schema.tasks)
-        .where(eq(schema.tasks.id, task.id))
+        .from(schema.workItems)
+        .where(eq(schema.workItems.id, task.id))
         .get()?.status,
-    ).toBe("actionable");
+    ).toBe("active");
   });
 });

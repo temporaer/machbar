@@ -221,6 +221,7 @@ export interface ConvertStoryToTaskInput {
 export interface CreateProjectInput {
   title: string;
   notes?: string;
+  parentId?: number | null;
   status?: ProjectStatus;
   ownerMemberId?: number | null;
   dueDate?: string | null;
@@ -257,7 +258,11 @@ export type StuckProjectWithActions = StuckProject & {
   availableActions: ProjectWorkflowAction[];
   activationReadiness: ProjectActivationReadiness;
 };
-export type ProjectDetail = ProjectWithActions & { tasks: Task[] };
+export type ProjectDetail = ProjectWithActions & {
+  tasks: Task[];
+  childStories?: ProjectWithActions[];
+  ancestors?: Array<{ id: number; title: string }>;
+};
 
 /** Body for `POST /api/projects/:id/activate` (matches `activateProjectSchema`). */
 export interface ProjectWorkflowInput {

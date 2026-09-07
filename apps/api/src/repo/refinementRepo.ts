@@ -1,6 +1,5 @@
 import type {
   Member,
-  ProjectStatus,
   TaskSize,
   TaskStatus,
 } from "@machbar/shared";
@@ -121,29 +120,20 @@ function loadFilteredOpenTasks(
 } {
   const effective = getEffectiveOwners(db);
   const effectiveTagIds = getEffectiveTagIds(db);
+  const graph = Graph.load(db);
   const projectStatusById = new Map(
-    db
-      .select({ id: schema.projects.id, status: schema.projects.status })
-      .from(schema.projects)
-      .all()
-      .map((project) => [
-        project.id,
-        project.status as ProjectStatus,
-      ]),
+    [...graph.projectsById.values()].map((project) => [project.id, project.status]),
   );
-  const allTasks = db
-    .select({
-      id: schema.tasks.id,
-      revision: schema.tasks.revision,
-      title: schema.tasks.title,
-      status: schema.tasks.status,
-      size: schema.tasks.size,
-      projectId: schema.tasks.projectId,
-      position: schema.tasks.position,
-      updatedAt: schema.tasks.updatedAt,
-    })
-    .from(schema.tasks)
-    .all() as OpenTaskRow[];
+  const allTasks = graph.allTasks().map((task): OpenTaskRow => ({
+    id: task.id,
+    revision: task.revision,
+    title: task.title,
+    status: task.status,
+    size: task.size,
+    projectId: task.projectId,
+    position: task.position,
+    updatedAt: task.updatedAt,
+  }));
 
   const effectiveOwnerId = new Map<number, number | null>();
   const effectiveOwnerSource = new Map<

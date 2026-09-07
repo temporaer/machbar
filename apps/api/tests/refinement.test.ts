@@ -35,9 +35,9 @@ describe("secondary refinement planning APIs", () => {
       context,
     );
     if (!requestedActive) return project;
-    db.update(schema.projects)
+    db.update(schema.workItems)
       .set({ status: "active" })
-      .where(eq(schema.projects.id, project.id))
+      .where(eq(schema.workItems.id, project.id))
       .run();
     return { ...project, status: "active" };
   }

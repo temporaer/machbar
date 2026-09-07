@@ -97,16 +97,17 @@ export function activateProject(
     const ownerMemberId =
       input.ownerMemberId !== undefined ? input.ownerMemberId : project.ownerMemberId;
     assertProjectActivationReady(txDb, id, ownerMemberId);
-    tx.update(schema.projects)
+    tx.update(schema.workItems)
       .set({
         status: "active",
+        archivedAt: null,
         ownerMemberId,
-        revision: sql`${schema.projects.revision} + 1`,
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
-      .where(eq(schema.projects.id, id))
+      .where(eq(schema.workItems.id, id))
       .run();
-    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = getProjectOrThrow(txDb, id);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_status_changed",
@@ -157,15 +158,16 @@ export function returnProjectToBacklog(
     const project = getProjectOrThrow(txDb, id);
     assertExpectedRevision("project", id, project.revision, expectedRevision);
     assertWorkflowAction(project, "return_to_backlog");
-    tx.update(schema.projects)
+    tx.update(schema.workItems)
       .set({
         status: "backlog",
-        revision: sql`${schema.projects.revision} + 1`,
+        archivedAt: null,
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
-      .where(eq(schema.projects.id, id))
+      .where(eq(schema.workItems.id, id))
       .run();
-    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = getProjectOrThrow(txDb, id);
     recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_status_changed",
@@ -201,11 +203,11 @@ export function completeProject(
     assertWorkflowAction(project, "complete");
     const criteria = tx
       .select({
-        id: schema.projectAcceptanceCriteria.id,
-        checked: schema.projectAcceptanceCriteria.checked,
+        id: schema.workItemAcceptanceCriteria.id,
+        checked: schema.workItemAcceptanceCriteria.checked,
       })
-      .from(schema.projectAcceptanceCriteria)
-      .where(eq(schema.projectAcceptanceCriteria.projectId, id))
+      .from(schema.workItemAcceptanceCriteria)
+      .where(eq(schema.workItemAcceptanceCriteria.workItemId, id))
       .all();
     const incompleteCriterionIds = criteria
       .filter((criterion) => !criterion.checked)
@@ -221,15 +223,17 @@ export function completeProject(
         },
       );
     }
-    tx.update(schema.projects)
+    tx.update(schema.workItems)
       .set({
-        status: "completed",
-        revision: sql`${schema.projects.revision} + 1`,
+        status: "done",
+        archivedAt: null,
+        completedAt: nowIso(),
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
-      .where(eq(schema.projects.id, id))
+      .where(eq(schema.workItems.id, id))
       .run();
-    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = getProjectOrThrow(txDb, id);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_status_changed",
@@ -269,16 +273,18 @@ export function reopenProject(
     const nextOwnerMemberId =
       ownerMemberId !== undefined ? ownerMemberId : project.ownerMemberId;
     assertProjectActivationReady(txDb, id, nextOwnerMemberId);
-    tx.update(schema.projects)
+    tx.update(schema.workItems)
       .set({
         status: "active",
+        archivedAt: null,
+        completedAt: null,
         ownerMemberId: nextOwnerMemberId,
-        revision: sql`${schema.projects.revision} + 1`,
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
-      .where(eq(schema.projects.id, id))
+      .where(eq(schema.workItems.id, id))
       .run();
-    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = getProjectOrThrow(txDb, id);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_status_changed",
@@ -312,15 +318,15 @@ export function archiveProject(
     const project = getProjectOrThrow(txDb, id);
     assertExpectedRevision("project", id, project.revision, expectedRevision);
     assertWorkflowAction(project, "archive");
-    tx.update(schema.projects)
+    tx.update(schema.workItems)
       .set({
-        status: "archived",
-        revision: sql`${schema.projects.revision} + 1`,
+        archivedAt: nowIso(),
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
-      .where(eq(schema.projects.id, id))
+      .where(eq(schema.workItems.id, id))
       .run();
-    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = getProjectOrThrow(txDb, id);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_status_changed",
@@ -355,22 +361,23 @@ export function acknowledgeProjectReview(
     const project = getProjectOrThrow(txDb, id);
     assertExpectedRevision("project", id, project.revision, expectedRevision);
     const updated = tx
-      .update(schema.projects)
+      .update(schema.workItems)
       .set({
         reviewedAt: nowIso(),
-        revision: sql`${schema.projects.revision} + 1`,
+        revision: sql`${schema.workItems.revision} + 1`,
       })
-      .where(eq(schema.projects.id, id))
+      .where(eq(schema.workItems.id, id))
       .returning()
       .get();
+    const returned = getProjectOrThrow(txDb, id);
     recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_updated",
       entityType: "project",
-      entityTitle: updated.title,
+      entityTitle: returned.title,
       projectId: id,
       metadata: { changedFields: ["reviewedAt"] },
     });
-    return updated;
+    return returned;
   });
 }

@@ -11,6 +11,7 @@ import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 import { LoadingState, ErrorState } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
+import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { QuickAdd } from "../components/QuickAdd";
 import { ProjectEditSheet } from "../components/ProjectEditSheet";
 import type { ProjectEditFocusField } from "../components/ProjectEditSheet";
@@ -198,6 +199,18 @@ export function ProjectDetailPage() {
         >
           ← {reviewReturn ? strings.reviewTitle : strings.projects}
         </Link>
+        {project?.ancestors?.length ? (
+          <nav className="row text-muted" aria-label="Breadcrumb">
+            {project.ancestors.map((ancestor, index) => (
+              <span key={ancestor.id} className="row">
+                {index > 0 ? <span aria-hidden="true">›</span> : null}
+                <Link to={`/projects/${ancestor.id}`} className="link-plain">
+                  {ancestor.title}
+                </Link>
+              </span>
+            ))}
+          </nav>
+        ) : null}
         {projectLoading ? <LoadingState /> : null}
         {projectError ? (
           <ErrorState message={projectError} onRetry={reloadProject} />
@@ -322,6 +335,13 @@ export function ProjectDetailPage() {
                 }
                 hints={[{ text: strings.projectTasksHint }]}
               />
+              {project.childStories?.length ? (
+                <ul className="project-story-list">
+                  {project.childStories.map((story) => (
+                    <ProjectStoryRow key={story.id} story={story} />
+                  ))}
+                </ul>
+              ) : null}
               <TaskOutline
                 tasks={project.tasks}
                 emptyMessage={strings.noTasks}

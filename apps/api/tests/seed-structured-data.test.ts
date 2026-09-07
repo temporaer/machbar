@@ -29,27 +29,33 @@ describe("seed data (schema-level)", () => {
 
   it("covers every project status: backlog, active, completed, archived", () => {
     const db = seed();
-    const rows = db.select().from(schema.projects).all();
-    const statuses = new Set(rows.map((p) => p.status));
+    const rows = db
+      .select()
+      .from(schema.workItems)
+      .all()
+      .filter((item) => item.role === "story");
+    const statuses = new Set(
+      rows.map((p) => (p.archivedAt ? "archived" : p.status === "done" ? "completed" : p.status)),
+    );
     expect(statuses).toEqual(new Set(["backlog", "active", "completed", "archived"]));
   });
 
   it("stores acceptance criteria with both checked and unchecked rows, never as a project.description", () => {
     const db = seed();
     const projectColumns = sqlite
-      .prepare("PRAGMA table_info(projects)")
+      .prepare("PRAGMA table_info(work_items)")
       .all() as Array<{ name: string }>;
     expect(projectColumns.map((c) => c.name)).not.toContain("description");
 
-    const criteria = db.select().from(schema.projectAcceptanceCriteria).all();
+    const criteria = db.select().from(schema.workItemAcceptanceCriteria).all();
     expect(criteria.length).toBeGreaterThan(0);
     expect(criteria.some((c) => c.checked)).toBe(true);
     expect(criteria.some((c) => !c.checked)).toBe(true);
     // Positions are per-project, always starting at 0.
     const firstOfEachProject = new Map<number, number>();
     for (const c of criteria) {
-      if (!firstOfEachProject.has(c.projectId)) {
-        firstOfEachProject.set(c.projectId, c.position);
+      if (!firstOfEachProject.has(c.workItemId)) {
+        firstOfEachProject.set(c.workItemId, c.position);
       }
     }
     for (const pos of firstOfEachProject.values()) expect(pos).toBe(0);
@@ -57,7 +63,11 @@ describe("seed data (schema-level)", () => {
 
   it("has both sized and unsized tasks", () => {
     const db = seed();
-    const tasks = db.select().from(schema.tasks).all();
+    const tasks = db
+      .select()
+      .from(schema.workItems)
+      .all()
+      .filter((item) => item.role === "task");
     const sizes = new Set(tasks.map((t) => t.size));
     expect(sizes.has(null)).toBe(true);
     expect(["S", "M", "L", "XL"].some((s) => sizes.has(s))).toBe(true);
@@ -65,23 +75,31 @@ describe("seed data (schema-level)", () => {
 
   it("has both driver (owned) and no-driver (unowned) projects", () => {
     const db = seed();
-    const rows = db.select().from(schema.projects).all();
+    const rows = db
+      .select()
+      .from(schema.workItems)
+      .all()
+      .filter((item) => item.role === "story");
     expect(rows.some((p) => p.ownerMemberId !== null)).toBe(true);
     expect(rows.some((p) => p.ownerMemberId === null)).toBe(true);
   });
 
   it("includes an active project whose tasks are all done/cancelled (future completion_review case)", () => {
     const db = seed();
-    const projects = db.select().from(schema.projects).all();
+    const projects = db
+      .select()
+      .from(schema.workItems)
+      .all()
+      .filter((item) => item.role === "story");
     const homeoffice = projects.find(
       (p) => p.title === "Homeoffice-Ecke einrichten",
     );
     expect(homeoffice?.status).toBe("active");
     const tasks = db
       .select()
-      .from(schema.tasks)
+      .from(schema.workItems)
       .all()
-      .filter((t) => t.projectId === homeoffice?.id);
+      .filter((t) => t.role === "task" && t.parentId === homeoffice?.id);
     expect(tasks.length).toBeGreaterThan(0);
     expect(tasks.every((t) => t.status === "done" || t.status === "cancelled")).toBe(
       true,
@@ -90,7 +108,11 @@ describe("seed data (schema-level)", () => {
 
   it("preserves the existing agenda example projects and their task titles", () => {
     const db = seed();
-    const projects = db.select().from(schema.projects).all();
+    const projects = db
+      .select()
+      .from(schema.workItems)
+      .all()
+      .filter((item) => item.role === "story");
     const titles = projects.map((p) => p.title);
     expect(titles).toEqual(
       expect.arrayContaining([
@@ -102,7 +124,11 @@ describe("seed data (schema-level)", () => {
         "Bücherregal aufbauen",
       ]),
     );
-    const tasks = db.select().from(schema.tasks).all();
+    const tasks = db
+      .select()
+      .from(schema.workItems)
+      .all()
+      .filter((item) => item.role === "task");
     const taskTitles = tasks.map((t) => t.title);
     expect(taskTitles).toEqual(
       expect.arrayContaining([

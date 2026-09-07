@@ -386,9 +386,11 @@ export interface ProjectActivationReadiness {
 export interface Project {
   id: number;
   revision: number;
+  parentId: number | null;
   title: string;
   notes: string;
   status: ProjectStatus;
+  archivedAt: string | null;
   ownerMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;

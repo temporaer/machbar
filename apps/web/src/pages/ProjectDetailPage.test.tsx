@@ -148,6 +148,39 @@ describe("ProjectDetailPage task explanations", () => {
     });
   });
 
+  it("renders nested stories and ancestor breadcrumbs", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({
+        id: 42,
+        title: "Gästezimmer renovieren",
+        parentId: 3,
+      }),
+      ancestors: [{ id: 3, title: "Haus verbessern" }],
+      childStories: [
+        makeProject({
+          id: 73,
+          parentId: 42,
+          title: "Wände vorbereiten",
+          status: "backlog",
+        }),
+      ],
+      tasks: [],
+    });
+
+    renderProjectRoute("/projects/42");
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Gästezimmer renovieren",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Haus verbessern" })).toHaveAttribute(
+      "href",
+      "/projects/3",
+    );
+    expect(screen.getByText("Wände vorbereiten")).toBeInTheDocument();
+  });
+
   it("loads project and recorded task activity only after opening the disclosure", async () => {
     renderWithProviders(<ProjectDetailPage />);
     expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();

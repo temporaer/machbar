@@ -34,24 +34,25 @@ export function acknowledgeTaskReview(
     const task = getTaskOrThrow(txDb, id);
     assertExpectedRevision("task", id, task.revision, expectedRevision);
     const updated = tx
-      .update(schema.tasks)
+      .update(schema.workItems)
       .set({
         reviewedAt: nowIso(),
-        revision: sql`${schema.tasks.revision} + 1`,
+        revision: sql`${schema.workItems.revision} + 1`,
       })
-      .where(eq(schema.tasks.id, id))
+      .where(eq(schema.workItems.id, id))
       .returning()
       .get();
+    const returned = getTaskOrThrow(txDb, id);
     recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_updated",
       entityType: "task",
-      entityTitle: updated.title,
+      entityTitle: returned.title,
       taskId: id,
-      projectId: updated.projectId,
+      projectId: returned.projectId,
       metadata: { changedFields: ["reviewedAt"] },
     });
-    return updated;
+    return returned;
   });
 }
 
@@ -136,15 +137,15 @@ export function completeTask(
     }
     const now = nowIso();
     if (!descendantsOnly) {
-      tx.update(schema.tasks)
+      tx.update(schema.workItems)
         .set({
           status: "done",
           needsClarification: false,
           completedAt: now,
-          revision: sql`${schema.tasks.revision} + 1`,
+          revision: sql`${schema.workItems.revision} + 1`,
           updatedAt: now,
         })
-        .where(eq(schema.tasks.id, id))
+        .where(eq(schema.workItems.id, id))
         .run();
       tx.delete(schema.taskExternalWaits)
         .where(eq(schema.taskExternalWaits.taskId, id))
@@ -158,23 +159,23 @@ export function completeTask(
       const descendantStatus =
         descendantsPolicy === "complete_children" ? "done" : "cancelled";
       for (const child of openChildren) {
-        tx.update(schema.tasks)
+        tx.update(schema.workItems)
           .set({
             status: descendantStatus,
             needsClarification: false,
             completedAt: descendantStatus === "done" ? now : null,
             cancelledAt: descendantStatus === "cancelled" ? now : null,
-            revision: sql`${schema.tasks.revision} + 1`,
+            revision: sql`${schema.workItems.revision} + 1`,
             updatedAt: now,
           })
-          .where(eq(schema.tasks.id, child.id))
+          .where(eq(schema.workItems.id, child.id))
           .run();
         tx.delete(schema.taskExternalWaits)
           .where(eq(schema.taskExternalWaits.taskId, child.id))
           .run();
       }
     }
-    const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    const updated = getTaskOrThrow(txDb, id);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: descendantsOnly
@@ -273,15 +274,15 @@ export function cancelTask(
     }
     const now = nowIso();
     if (!descendantsOnly) {
-      tx.update(schema.tasks)
+      tx.update(schema.workItems)
         .set({
           status: "cancelled",
           needsClarification: false,
           cancelledAt: now,
-          revision: sql`${schema.tasks.revision} + 1`,
+          revision: sql`${schema.workItems.revision} + 1`,
           updatedAt: now,
         })
-        .where(eq(schema.tasks.id, id))
+        .where(eq(schema.workItems.id, id))
         .run();
       tx.delete(schema.taskExternalWaits)
         .where(eq(schema.taskExternalWaits.taskId, id))
@@ -295,23 +296,23 @@ export function cancelTask(
       const descendantStatus =
         descendantsPolicy === "complete_children" ? "done" : "cancelled";
       for (const child of openChildren) {
-        tx.update(schema.tasks)
+        tx.update(schema.workItems)
           .set({
             status: descendantStatus,
             needsClarification: false,
             completedAt: descendantStatus === "done" ? now : null,
             cancelledAt: descendantStatus === "cancelled" ? now : null,
-            revision: sql`${schema.tasks.revision} + 1`,
+            revision: sql`${schema.workItems.revision} + 1`,
             updatedAt: now,
           })
-          .where(eq(schema.tasks.id, child.id))
+          .where(eq(schema.workItems.id, child.id))
           .run();
         tx.delete(schema.taskExternalWaits)
           .where(eq(schema.taskExternalWaits.taskId, child.id))
           .run();
       }
     }
-    const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    const updated = getTaskOrThrow(txDb, id);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: descendantsOnly
@@ -384,18 +385,18 @@ export function reopenTask(
     assertExpectedRevision("task", id, task.revision, expectedRevision);
     if (task.status === "actionable") return task;
     const now = nowIso();
-    tx.update(schema.tasks)
+    tx.update(schema.workItems)
       .set({
-        status: "actionable",
+        status: "active",
         needsClarification: false,
         completedAt: null,
         cancelledAt: null,
-        revision: sql`${schema.tasks.revision} + 1`,
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: now,
       })
-      .where(eq(schema.tasks.id, id))
+      .where(eq(schema.workItems.id, id))
       .run();
-    const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    const updated = getTaskOrThrow(txDb, id);
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_status_changed",

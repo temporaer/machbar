@@ -20,11 +20,11 @@ import {
   recordContribution,
 } from "../repo/index.js";
 import { addCalendarDays, isIsoCalendarDate } from "./calendarDate.js";
+import { Graph } from "./graph.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import {
   MutationContext,
   actor,
-  allocateWorkItemId,
   appendNoteContent,
   assertExpectedRevision,
   assertPhysicalContextsExist,
@@ -42,7 +42,7 @@ import {
 // ---------------------------------------------------------------------------
 
 export function getTaskOrThrow(db: Db, id: number) {
-  const task = db.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get();
+  const task = Graph.load(db).tasksById.get(id);
   if (!task) {
     throw AppError.notFound(
       "task_not_found",
@@ -163,6 +163,19 @@ function normalizeTaskStatus(
   return fallback;
 }
 
+function taskStatusToStored(status: TaskStatus): "captured" | "active" | "backlog" | "done" | "cancelled" {
+  switch (status) {
+    case "actionable":
+      return "active";
+    case "someday":
+      return "backlog";
+    case "captured":
+    case "done":
+    case "cancelled":
+      return status;
+  }
+}
+
 function assertCapturedTaskShape(
   status: TaskStatus,
   input: {
@@ -189,10 +202,13 @@ export function nextPositionForGroup(
 ): number {
   // SQLite's `= NULL` never matches, so sibling grouping is filtered in JS
   // rather than expressed as a drizzle `eq()` predicate.
-  const rows = db.select().from(schema.tasks).all();
-  const filtered = rows.filter(
-    (r) => r.parentTaskId === parentTaskId && r.projectId === projectId,
-  );
+  const parentId = parentTaskId ?? projectId;
+  const rows = db
+    .select({ position: schema.workItems.position })
+    .from(schema.workItems)
+    .where(and(eq(schema.workItems.role, "task"), parentId === null ? sql`${schema.workItems.parentId} IS NULL` : eq(schema.workItems.parentId, parentId)))
+    .all();
+  const filtered = rows;
   return filtered.reduce((max, r) => Math.max(max, r.position), -1) + 1;
 }
 
@@ -246,14 +262,13 @@ function insertTask(
   }
 
   const task = db
-    .insert(schema.tasks)
+    .insert(schema.workItems)
     .values({
-      id: allocateWorkItemId(db),
-      projectId,
-      parentTaskId,
+      role: "task",
+      parentId: parentTaskId ?? projectId,
       title: input.title.trim(),
       notes: input.notes ?? "",
-      status,
+      status: taskStatusToStored(status),
       needsClarification: status === "captured",
       ownerMemberId: input.ownerMemberId ?? null,
       ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
@@ -273,17 +288,17 @@ function insertTask(
 
   if (input.tagIds && input.tagIds.length > 0) {
     for (const tagId of input.tagIds) {
-      db.insert(schema.taskTags).values({ taskId: task.id, tagId }).run();
+      db.insert(schema.workItemTags).values({ workItemId: task.id, tagId }).run();
     }
   }
   const contextIds = sortedIds(input.contextIds ?? []);
   assertPhysicalContextsExist(db, contextIds);
   for (const contextId of contextIds) {
-    db.insert(schema.taskPhysicalContexts)
-      .values({ taskId: task.id, contextId })
+    db.insert(schema.workItemPhysicalContexts)
+      .values({ workItemId: task.id, contextId })
       .run();
   }
-  return task;
+  return getTaskOrThrow(db, task.id);
 }
 
 export function createTask(
@@ -367,9 +382,9 @@ export function createChildTask(
         ? true
         : projectHasTaskPlan(txDb, parent.projectId);
     const hadOpenChild = txDb
-      .select({ status: schema.tasks.status })
-      .from(schema.tasks)
-      .where(eq(schema.tasks.parentTaskId, parentTaskId))
+      .select({ status: schema.workItems.status })
+      .from(schema.workItems)
+      .where(and(eq(schema.workItems.role, "task"), eq(schema.workItems.parentId, parentTaskId)))
       .all()
       .some((child) => child.status !== "done" && child.status !== "cancelled");
     const task = insertTask(txDb, { ...input, parentTaskId });
@@ -527,23 +542,23 @@ export function createTaskSuccessor(
     const successorPosition = predecessor.position + 1;
     const laterSiblings = tx
       .select()
-      .from(schema.tasks)
+      .from(schema.workItems)
       .all()
       .filter(
         (task) =>
-          task.parentTaskId === predecessor.parentTaskId &&
-          task.projectId === predecessor.projectId &&
+          task.role === "task" &&
+          task.parentId === (predecessor.parentTaskId ?? predecessor.projectId) &&
           task.position >= successorPosition,
       );
     for (const sibling of laterSiblings) {
       tx
-        .update(schema.tasks)
+        .update(schema.workItems)
         .set({
           position: sibling.position + 1,
-          revision: sql`${schema.tasks.revision} + 1`,
+          revision: sql`${schema.workItems.revision} + 1`,
           updatedAt: nowIso(),
         })
-        .where(eq(schema.tasks.id, sibling.id))
+        .where(eq(schema.workItems.id, sibling.id))
         .run();
     }
     const successor = insertTask(txDb, {
@@ -654,7 +669,7 @@ export function updateTask(
         { taskId: id },
       );
     }
-    const patch: Partial<typeof schema.tasks.$inferInsert> = {};
+    const patch: Partial<typeof schema.workItems.$inferInsert> = {};
     const changedFields: string[] = [];
     const title = input.title?.trim();
     if (title !== undefined && title !== currentTask.title) {
@@ -757,7 +772,7 @@ export function updateTask(
       nextStatus !== "actionable" &&
       currentExternalWait !== undefined;
     if (statusChanged && !recurringCompletion) {
-      patch.status = nextStatus;
+      patch.status = taskStatusToStored(nextStatus);
       patch.needsClarification = nextStatus === "captured";
       patch.completedAt = nextStatus === "done" ? nowIso() : null;
       patch.cancelledAt = nextStatus === "cancelled" ? nowIso() : null;
@@ -781,7 +796,7 @@ export function updateTask(
     }
     if (
       input.contextInheritanceMode !== undefined &&
-      input.contextInheritanceMode !== currentTask.physicalContextInheritanceMode
+      input.contextInheritanceMode !== currentTask.contextInheritanceMode
     ) {
       changedFields.push("contextInheritanceMode");
       patch.physicalContextInheritanceMode = input.contextInheritanceMode;
@@ -849,7 +864,7 @@ export function updateTask(
         completedOn,
         nextRepeatAfterDays!,
       );
-      patch.status = "actionable";
+      patch.status = "active";
       patch.needsClarification = false;
       patch.completedAt = null;
       patch.cancelledAt = null;
@@ -861,9 +876,9 @@ export function updateTask(
     }
 
     const existingTagIds = sortedIds(
-      tx.select({ tagId: schema.taskTags.tagId })
-        .from(schema.taskTags)
-        .where(eq(schema.taskTags.taskId, id))
+      tx.select({ tagId: schema.workItemTags.tagId })
+        .from(schema.workItemTags)
+        .where(eq(schema.workItemTags.workItemId, id))
         .all()
         .map((row) => row.tagId),
     );
@@ -887,9 +902,9 @@ export function updateTask(
     );
     const existingContextIds = sortedIds(
       tx
-        .select({ contextId: schema.taskPhysicalContexts.contextId })
-        .from(schema.taskPhysicalContexts)
-        .where(eq(schema.taskPhysicalContexts.taskId, id))
+        .select({ contextId: schema.workItemPhysicalContexts.contextId })
+        .from(schema.workItemPhysicalContexts)
+        .where(eq(schema.workItemPhysicalContexts.workItemId, id))
         .all()
         .map((row) => row.contextId),
     );
@@ -902,7 +917,7 @@ export function updateTask(
 
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = nowIso();
-      tx.update(schema.tasks).set(patch).where(eq(schema.tasks.id, id)).run();
+      tx.update(schema.workItems).set(patch).where(eq(schema.workItems.id, id)).run();
     }
     if (removingExternalWait) {
       tx.delete(schema.taskExternalWaits)
@@ -911,9 +926,9 @@ export function updateTask(
     }
 
     if (tagsChanged) {
-      tx.delete(schema.taskTags).where(eq(schema.taskTags.taskId, id)).run();
+      tx.delete(schema.workItemTags).where(eq(schema.workItemTags.workItemId, id)).run();
       for (const tagId of nextTagIds) {
-        tx.insert(schema.taskTags).values({ taskId: id, tagId }).run();
+        tx.insert(schema.workItemTags).values({ workItemId: id, tagId }).run();
       }
     }
     if (excludedTagsChanged) {
@@ -925,12 +940,12 @@ export function updateTask(
       }
     }
     if (contextsChanged) {
-      tx.delete(schema.taskPhysicalContexts)
-        .where(eq(schema.taskPhysicalContexts.taskId, id))
+      tx.delete(schema.workItemPhysicalContexts)
+        .where(eq(schema.workItemPhysicalContexts.workItemId, id))
         .run();
       for (const contextId of nextContextIds) {
-        tx.insert(schema.taskPhysicalContexts)
-          .values({ taskId: id, contextId })
+        tx.insert(schema.workItemPhysicalContexts)
+          .values({ workItemId: id, contextId })
           .run();
       }
     }
@@ -942,7 +957,7 @@ export function updateTask(
     ) {
       touchTask(txDb, id);
     }
-    const updated = tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).get()!;
+    const updated = getTaskOrThrow(txDb, id);
     const coalescedChangedFields = [
       ...changedFields,
       ...(tagsChanged ? ["tags"] : []),
@@ -1245,25 +1260,26 @@ export function appendTaskNotes(
     const notes = appendNoteContent(task.notes, content);
     if (notes === task.notes) return task;
     const updated = tx
-      .update(schema.tasks)
+      .update(schema.workItems)
       .set({
         notes,
-        revision: sql`${schema.tasks.revision} + 1`,
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
-      .where(eq(schema.tasks.id, id))
+      .where(eq(schema.workItems.id, id))
       .returning()
       .get();
+    const returned = getTaskOrThrow(txDb, id);
     recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_updated",
       entityType: "task",
-      entityTitle: updated.title,
+      entityTitle: returned.title,
       taskId: id,
-      projectId: updated.projectId,
+      projectId: returned.projectId,
       metadata: { changedFields: ["notesAppended"] },
     });
-    return updated;
+    return returned;
   });
 }
 
@@ -1324,9 +1340,9 @@ export function deleteTask(db: Db, id: number, context?: MutationContext) {
     if (
       parent?.size === "XL" &&
       !txDb
-        .select({ id: schema.tasks.id })
-        .from(schema.tasks)
-        .where(eq(schema.tasks.parentTaskId, parent.id))
+        .select({ id: schema.workItems.id })
+        .from(schema.workItems)
+        .where(and(eq(schema.workItems.role, "task"), eq(schema.workItems.parentId, parent.id)))
         .get()
     ) {
       neutralizeContribution(txDb, {

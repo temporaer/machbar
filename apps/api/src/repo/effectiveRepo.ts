@@ -9,11 +9,11 @@ export interface EffectiveOwner {
 }
 
 /**
- * Computes effective owner inheritance for every task in the
- * database in a single pass, via a SQLite recursive CTE that walks the
- * `parentTaskId` chain top-down (root tasks resolve against their project,
- * every other task resolves against its own parent's already-computed
- * effective value). No parent-chain walking happens in application code.
+ * Computes effective owner inheritance for every task in the database in a
+ * single pass, via a SQLite recursive CTE that walks the unified `parent_id`
+ * chain top-down. Tasks directly below a story resolve against that story;
+ * tasks below tasks resolve against their parent task's already-computed
+ * effective value. No parent-chain walking happens in application code.
  *
  * Source labelling mirrors the domain rule: a task's effective value is
  * attributed to `"parent"` only when some ancestor in the chain holds an
@@ -35,17 +35,18 @@ export function getEffectiveOwners(
         CASE
           WHEN t.owner_inheritance_mode = 'explicit' THEN t.owner_member_id
           WHEN t.owner_inheritance_mode = 'none' THEN NULL
-          ELSE p.owner_member_id
+          ELSE story.owner_member_id
         END,
         CASE
           WHEN t.owner_inheritance_mode = 'explicit' THEN 'task'
           WHEN t.owner_inheritance_mode = 'none' THEN 'none'
-          WHEN p.owner_member_id IS NOT NULL THEN 'project'
+          WHEN story.owner_member_id IS NOT NULL THEN 'project'
           ELSE 'none'
         END
-      FROM tasks t
-      LEFT JOIN projects p ON p.id = t.project_id
-      WHERE t.parent_task_id IS NULL
+      FROM work_items t
+      LEFT JOIN work_items story ON story.id = t.parent_id AND story.role = 'story'
+      WHERE t.role = 'task'
+        AND (t.parent_id IS NULL OR story.id IS NOT NULL)
 
       UNION ALL
 
@@ -63,8 +64,9 @@ export function getEffectiveOwners(
           WHEN eff.owner_source = 'project' THEN 'project'
           ELSE 'parent'
         END
-      FROM tasks t
-      JOIN eff ON t.parent_task_id = eff.task_id
+      FROM work_items t
+      JOIN eff ON t.parent_id = eff.task_id
+      WHERE t.role = 'task'
     )
     SELECT task_id, owner_id, owner_source FROM eff
   `);
@@ -94,15 +96,17 @@ export function getEffectiveTagIds(db: Db): Map<number, number[]> {
         t.id,
         (
           SELECT json_group_array(tag_id) FROM (
-            SELECT pt.tag_id AS tag_id FROM project_tags pt
-            WHERE pt.project_id = t.project_id
-              AND pt.tag_id NOT IN (SELECT tag_id FROM task_excluded_tags WHERE task_id = t.id)
+            SELECT story_tags.tag_id AS tag_id FROM work_item_tags story_tags
+            WHERE story_tags.work_item_id = story.id
+              AND story_tags.tag_id NOT IN (SELECT tag_id FROM task_excluded_tags WHERE task_id = t.id)
             UNION
-            SELECT tt.tag_id FROM task_tags tt WHERE tt.task_id = t.id
+            SELECT task_tags.tag_id FROM work_item_tags task_tags WHERE task_tags.work_item_id = t.id
           )
         )
-      FROM tasks t
-      WHERE t.parent_task_id IS NULL
+      FROM work_items t
+      LEFT JOIN work_items story ON story.id = t.parent_id AND story.role = 'story'
+      WHERE t.role = 'task'
+        AND (t.parent_id IS NULL OR story.id IS NOT NULL)
 
       UNION ALL
 
@@ -113,11 +117,12 @@ export function getEffectiveTagIds(db: Db): Map<number, number[]> {
             SELECT je.value AS tag_id FROM json_each(ts.effective_json) je
             WHERE je.value NOT IN (SELECT tag_id FROM task_excluded_tags WHERE task_id = t.id)
             UNION
-            SELECT tt.tag_id FROM task_tags tt WHERE tt.task_id = t.id
+            SELECT task_tags.tag_id FROM work_item_tags task_tags WHERE task_tags.work_item_id = t.id
           )
         )
-      FROM tasks t
-      JOIN tag_state ts ON t.parent_task_id = ts.task_id
+      FROM work_items t
+      JOIN tag_state ts ON t.parent_id = ts.task_id
+      WHERE t.role = 'task'
     )
     SELECT task_id, effective_json FROM tag_state
   `);
@@ -141,17 +146,19 @@ export function getEffectivePhysicalContextIds(
             WHEN 'none' THEN json('[]')
             WHEN 'explicit' THEN (
               SELECT json_group_array(context_id)
-              FROM task_physical_contexts
-              WHERE task_id = t.id
+              FROM work_item_physical_contexts
+              WHERE work_item_id = t.id
             )
             ELSE (
               SELECT json_group_array(context_id)
-              FROM project_physical_contexts
-              WHERE project_id = t.project_id
+              FROM work_item_physical_contexts
+              WHERE work_item_id = story.id
             )
           END
-        FROM tasks t
-        WHERE t.parent_task_id IS NULL
+        FROM work_items t
+        LEFT JOIN work_items story ON story.id = t.parent_id AND story.role = 'story'
+        WHERE t.role = 'task'
+          AND (t.parent_id IS NULL OR story.id IS NOT NULL)
 
         UNION ALL
 
@@ -161,13 +168,14 @@ export function getEffectivePhysicalContextIds(
             WHEN 'none' THEN json('[]')
             WHEN 'explicit' THEN (
               SELECT json_group_array(context_id)
-              FROM task_physical_contexts
-              WHERE task_id = t.id
+              FROM work_item_physical_contexts
+              WHERE work_item_id = t.id
             )
             ELSE parent.effective_json
           END
-        FROM tasks t
-        JOIN context_state parent ON t.parent_task_id = parent.task_id
+        FROM work_items t
+        JOIN context_state parent ON t.parent_id = parent.task_id
+        WHERE t.role = 'task'
       )
       SELECT task_id, effective_json FROM context_state
   `);
