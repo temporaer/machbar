@@ -122,6 +122,10 @@ export function writeRailFavorites(
 }
 
 export function overflowRailCommands(
+  kind: RailWorkItemKind,
+  favorites: readonly RailCommand[],
+): readonly RailCommand[];
+export function overflowRailCommands(
   kind: "task",
   favorites: readonly TaskRailCommand[],
 ): readonly TaskRailCommand[];

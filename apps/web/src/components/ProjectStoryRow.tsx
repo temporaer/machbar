@@ -31,7 +31,7 @@ import { useOptionalInteractionScope } from "../lib/interactionScope";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
-import { IconActionButton, IconActionGlyph } from "./IconActionButton";
+import { IconActionGlyph } from "./IconActionButton";
 import { MemberAvatar } from "./MemberAvatar";
 import { useLocale } from "../lib/locale";
 import "./ProjectStoryRow.css";
@@ -42,6 +42,8 @@ import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 import { hasProjectProgressPath } from "../lib/projectCommitments";
 import { TaskCardTags } from "./TaskCardTags";
+import { useRailConfig } from "../lib/railConfigContext";
+import { WorkItemCommandRail } from "./WorkItemCommandRail";
 
 /**
  * Semantic accent driving the row's status badge, left-edge stripe, primary
@@ -262,6 +264,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   });
   const { dragX } = swipe;
   const chipsOpen = scope?.openRailId === storyProp.id;
+  const { projectFavorites } = useRailConfig();
   const showPrimaryBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
   const swipeCoach = useSwipeCoach(
@@ -305,6 +308,28 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
     scope?.setOpenRail(null);
     scope?.setActive(story.id, "story");
     navigate(`/projects/${story.id}`);
+  };
+
+  const runRailCommand = (command: (typeof projectFavorites)[number]) => {
+    switch (command) {
+      case "story.assignDriver":
+        openSheet("assign-driver");
+        return;
+      case "story.editOutcome":
+        openSheet("criteria");
+        return;
+      case "story.planWork":
+        navigate(`/projects/${story.id}?focus=next-action`);
+        scope?.setOpenRail(null);
+        return;
+      case "story.lifecycle":
+        scope?.setOpenRail(null);
+        dispatch({ type: command, story });
+        return;
+      default:
+        scope?.setOpenRail(null);
+        dispatch({ type: command, story });
+    }
   };
 
   return (
@@ -464,24 +489,15 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
       ) : null}
 
       {chipsOpen ? (
-        <div className="story-row-chips" role="group" aria-label={strings.moreActions}>
-          <IconActionButton kind="owner" label={strings.driver} onClick={() => openSheet("assign-driver")} />
-          <IconActionButton kind="criteria" label={strings.criteria} onClick={() => openSheet("criteria")} />
-          <IconActionButton kind="schedule" label={strings.planDates} onClick={() => openSheet("plan-dates")} />
-          <IconActionButton kind="tags" label={strings.tags} onClick={() => openSheet("tags")} />
-          <IconActionButton kind="openProject" label={strings.openProject} onClick={goToDetail} />
-          {secondaryActions.map((action) => (
-            <button
-              key={action}
-              type="button"
-              className="btn btn-sm"
-              disabled={busy}
-              onClick={() => runSecondary(action)}
-            >
-              {projectWorkflowLabel(action, strings)}
-            </button>
-          ))}
-        </div>
+        <WorkItemCommandRail
+          kind="project"
+          favorites={projectFavorites}
+          labels={strings.railCommandLabels}
+          groupLabel={strings.moreActions}
+          overflowLabel={`${strings.more} …`}
+          disabled={busy}
+          onCommand={runRailCommand}
+        />
       ) : null}
 
       {rowError ? (
