@@ -120,6 +120,8 @@ const en = {
   priority: "Priority",
   priorityHighest: "highest",
   priorityLowest: "lowest",
+  addPriority: "+ Priority",
+  addDueDate: "+ Due date",
   dependencies: "Dependencies",
   subtasks: "Subtasks",
   waitingFor: "Waiting for",

@@ -1435,6 +1435,14 @@ details[open] > .disclosure-summary::after {
   font-weight: 600;
 }
 
+.badge-button {
+  border: none;
+}
+
+.task-detail-add-property {
+  color: var(--color-text-muted);
+}
+
 .more-link-trailing {
   display: inline-flex;
   align-items: center;

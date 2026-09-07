@@ -96,6 +96,8 @@ const base = {
   priority: "Priorität",
   priorityHighest: "höchste",
   priorityLowest: "niedrigste",
+  addPriority: "+ Priorität",
+  addDueDate: "+ Fälligkeitsdatum",
   dependencies: "Abhängigkeiten",
   subtasks: "Teilaufgaben",
   waitingFor: "Wartet auf",
