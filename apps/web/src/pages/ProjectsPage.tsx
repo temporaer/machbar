@@ -223,16 +223,18 @@ export function ProjectsPage() {
               </section>
             ) : null}
             {backlogProjects.length > 0 ? (
-              <section
+              <details
                 className="section"
                 data-project-section="backlog"
                 aria-labelledby="backlog-projects-heading"
               >
-                <h2 className="section-title" id="backlog-projects-heading">
-                  {strings.backlogProjectsSection}
-                </h2>
+                <summary className="section-title disclosure-summary">
+                  <span id="backlog-projects-heading" role="heading" aria-level={2}>
+                    {strings.backlogProjectsSection}
+                  </span>
+                </summary>
                 {renderGroups("backlog", backlogProjects, 3)}
-              </section>
+              </details>
             ) : null}
             {terminalProjects.length > 0 ? (
               <details

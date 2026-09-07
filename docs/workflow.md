@@ -164,8 +164,8 @@ Alles answers where an item is even when Today, Review, Inbox, and Waiting do
 not currently surface it.
 
 The main **Projekte** tab shows active projects first and backlog projects in a
-visible **Später / noch nicht aktiv** section. Completed and archived projects
-stay folded unless search reveals them.
+visible **Später / noch nicht aktiv** section that starts collapsed. Completed
+and archived projects stay folded unless search reveals them.
 
 ## People and responsibility
 
