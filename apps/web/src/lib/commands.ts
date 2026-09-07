@@ -91,6 +91,7 @@ export type TaskRailCommand =
   | "task.tags"
   | "task.contexts"
   | "task.convertToProject"
+  | "task.discard"
   | "task.lifecycle";
 
 export type ProjectRailCommand =
