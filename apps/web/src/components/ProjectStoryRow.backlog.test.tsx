@@ -8,7 +8,7 @@ import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectStoryRow } from "./ProjectStoryRow";
-import { useProjectActions } from "../lib/useProjectActions";
+import { ProjectActionsProvider, useProjectActions } from "../lib/useProjectActions";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import { makeCriterion, makeMember, makeProject, makeTask } from "../test/fixtures";
@@ -71,10 +71,12 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
     <MemoryRouter initialEntries={["/"]}>
       <IdentityProvider>
         <RefreshProvider>
-          <Routes>
-            <Route path="/" element={ui} />
-            <Route path="/projects/:id" element={<ProjectRouteMarker />} />
-          </Routes>
+          <ProjectActionsProvider>
+            <Routes>
+              <Route path="/" element={ui} />
+              <Route path="/projects/:id" element={<ProjectRouteMarker />} />
+            </Routes>
+          </ProjectActionsProvider>
         </RefreshProvider>
       </IdentityProvider>
     </MemoryRouter>,

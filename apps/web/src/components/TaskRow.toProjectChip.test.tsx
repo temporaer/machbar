@@ -7,6 +7,7 @@ import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
+import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
@@ -46,7 +47,9 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
       <IdentityProvider>
         <RefreshProvider>
           <SwipeSettingsProvider>
-            <TaskDetailProvider>{children}</TaskDetailProvider>
+            <TaskActionsProvider>
+              <TaskDetailProvider>{children}</TaskDetailProvider>
+            </TaskActionsProvider>
           </SwipeSettingsProvider>
         </RefreshProvider>
       </IdentityProvider>

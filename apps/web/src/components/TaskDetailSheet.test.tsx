@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
+import { TaskActionsProvider } from "../lib/useTaskActions";
+import { ProjectActionsProvider } from "../lib/useProjectActions";
 import {
   TaskDetailProvider,
   useTaskDetail,
@@ -87,11 +89,15 @@ function renderSheet(taskId: number, focusField?: TaskDetailFocusField) {
     <MemoryRouter>
       <IdentityProvider>
         <RefreshProvider>
-          <TaskDetailProvider>
-            <OpenerHarness taskId={taskId} focusField={focusField}>
-              <TaskDetailSheet />
-            </OpenerHarness>
-          </TaskDetailProvider>
+          <TaskActionsProvider>
+            <ProjectActionsProvider>
+              <TaskDetailProvider>
+                <OpenerHarness taskId={taskId} focusField={focusField}>
+                  <TaskDetailSheet />
+                </OpenerHarness>
+              </TaskDetailProvider>
+            </ProjectActionsProvider>
+          </TaskActionsProvider>
         </RefreshProvider>
       </IdentityProvider>
     </MemoryRouter>,
@@ -103,11 +109,15 @@ function renderQueueSheet(taskIds: number[]) {
     <MemoryRouter>
       <IdentityProvider>
         <RefreshProvider>
-          <TaskDetailProvider>
-            <QueueOpenerHarness taskIds={taskIds}>
-              <TaskDetailSheet />
-            </QueueOpenerHarness>
-          </TaskDetailProvider>
+          <TaskActionsProvider>
+            <ProjectActionsProvider>
+              <TaskDetailProvider>
+                <QueueOpenerHarness taskIds={taskIds}>
+                  <TaskDetailSheet />
+                </QueueOpenerHarness>
+              </TaskDetailProvider>
+            </ProjectActionsProvider>
+          </TaskActionsProvider>
         </RefreshProvider>
       </IdentityProvider>
     </MemoryRouter>,

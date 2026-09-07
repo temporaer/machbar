@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { createContext, useCallback, useContext, useEffect, type ReactNode } from "react";
 import { api } from "./api";
 import type { ProjectWithActions, ProjectWorkflowAction, UpdateProjectInput } from "./api";
 import { statusAfterAction, workflowActionsByStatus } from "./projectWorkflow";
@@ -30,10 +30,15 @@ export interface RetainedStory {
  *
  * Metadata changes refresh immediately but keep their confirmed overlay until
  * the caller's authoritative project collection reaches the same revision.
+ *
+ * This is the underlying state/logic, instantiated exactly once by
+ * `ProjectActionsProvider` below so every consumer shares one
+ * optimistic/pending/error state. Call `useProjectActions(authoritative)`
+ * to consume it — each caller still passes its own currently-loaded
+ * project collection so retained rows release once *that* view's data
+ * catches up, independent of any other mounted view.
  */
-export function useProjectActions(
-  authoritativeProjects: readonly ProjectWithActions[] = [],
-) {
+function useProjectActionsState() {
   const mutations = useRetainedMutations<RetainedStory>();
   const {
     run,
@@ -44,16 +49,6 @@ export function useProjectActions(
     errors,
     clearError,
   } = mutations;
-
-  useEffect(() => {
-    for (const [id, entry] of retained) {
-      if (entry.action !== undefined) continue;
-      const authoritative = authoritativeProjects.find((project) => project.id === id);
-      if (authoritative && authoritative.revision >= entry.story.revision) {
-        release(id);
-      }
-    }
-  }, [authoritativeProjects, release, retained]);
 
   const call = useCallback(
     (
@@ -203,6 +198,7 @@ export function useProjectActions(
     pendingIds,
     isPending,
     retained,
+    release,
     errors,
     clearError,
     runAction,
@@ -214,4 +210,49 @@ export function useProjectActions(
     setContexts,
     acknowledgeReview,
   };
+}
+
+type ProjectActionsValue = ReturnType<typeof useProjectActionsState>;
+
+const ProjectActionsContext = createContext<ProjectActionsValue | null>(null);
+
+/**
+ * Mounts the single shared `useProjectActionsState()` instance for the
+ * whole app (see `App.tsx`) so every consumer (Projekte tab, project
+ * detail, Review, captured-project handoff, All) reads and mutates the
+ * same pending/retained/error state. Test files use `renderWithProviders`,
+ * which mounts this too.
+ */
+export function ProjectActionsProvider({ children }: { children: ReactNode }) {
+  const value = useProjectActionsState();
+  return (
+    <ProjectActionsContext.Provider value={value}>{children}</ProjectActionsContext.Provider>
+  );
+}
+
+/**
+ * Consumes the shared project/story action controller mounted by
+ * `ProjectActionsProvider`, releasing this caller's retained rows once its
+ * own `authoritativeProjects` collection catches up to their revision.
+ */
+export function useProjectActions(
+  authoritativeProjects: readonly ProjectWithActions[] = [],
+): Omit<ProjectActionsValue, "release"> {
+  const context = useContext(ProjectActionsContext);
+  if (!context) {
+    throw new Error("useProjectActions must be used within a ProjectActionsProvider");
+  }
+  const { release, retained, ...rest } = context;
+
+  useEffect(() => {
+    for (const [id, entry] of retained) {
+      if (entry.action !== undefined) continue;
+      const authoritative = authoritativeProjects.find((project) => project.id === id);
+      if (authoritative && authoritative.revision >= entry.story.revision) {
+        release(id);
+      }
+    }
+  }, [authoritativeProjects, release, retained]);
+
+  return { retained, ...rest };
 }

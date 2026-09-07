@@ -5,6 +5,8 @@ import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
+import { TaskActionsProvider } from "../lib/useTaskActions";
+import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { LocaleProvider, type Locale } from "../lib/locale";
 import { ThemeProvider } from "../lib/theme";
 import { SwipeCoachProvider } from "../lib/swipeCoach";
@@ -28,7 +30,11 @@ function AllProviders({
               <RefreshProvider>
                 <SwipeSettingsProvider>
                   <SwipeCoachProvider>
-                    <TaskDetailProvider>{children}</TaskDetailProvider>
+                    <TaskActionsProvider>
+                      <ProjectActionsProvider>
+                        <TaskDetailProvider>{children}</TaskDetailProvider>
+                      </ProjectActionsProvider>
+                    </TaskActionsProvider>
                   </SwipeCoachProvider>
                 </SwipeSettingsProvider>
               </RefreshProvider>

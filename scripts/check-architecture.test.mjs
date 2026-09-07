@@ -109,7 +109,7 @@ test("rejects deprecated primitives and hierarchy routes", () => {
 test("allows canonical action and pure mutation modules", () => {
   assert.deepEqual(
     rules(
-      "apps/web/src/lib/useTaskActions.ts",
+      "apps/web/src/lib/useTaskActions.tsx",
       [
         "api.completeTask(1);",
         "api.setExternalWait(1, {});",
@@ -127,7 +127,7 @@ test("allows canonical action and pure mutation modules", () => {
   );
   assert.deepEqual(
     rules(
-      "apps/web/src/lib/useProjectActions.ts",
+      "apps/web/src/lib/useProjectActions.tsx",
       "api.updateProject(1, {}); api.acknowledgeProjectReview(1, {});",
     ),
     [],

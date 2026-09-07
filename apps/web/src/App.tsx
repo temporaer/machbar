@@ -4,6 +4,8 @@ import { IdentityProvider, useIdentity } from "./lib/identity";
 import { RefreshProvider } from "./lib/refresh";
 import { TaskDetailProvider, useTaskDetail } from "./lib/taskDetailContext";
 import { SwipeSettingsProvider } from "./lib/swipeSettings";
+import { TaskActionsProvider } from "./lib/useTaskActions";
+import { ProjectActionsProvider } from "./lib/useProjectActions";
 import { IdentityGate } from "./components/IdentityGate";
 import { BottomNav } from "./components/BottomNav";
 import { TaskDetailSheet } from "./components/TaskDetailSheet";
@@ -100,11 +102,15 @@ export function App() {
             <IdentityAwareRefreshProvider>
               <SwipeSettingsProvider>
                 <SwipeCoachProvider>
-                  <TaskDetailProvider>
-                    <HashRouter>
-                      <Shell />
-                    </HashRouter>
-                  </TaskDetailProvider>
+                  <TaskActionsProvider>
+                    <ProjectActionsProvider>
+                      <TaskDetailProvider>
+                        <HashRouter>
+                          <Shell />
+                        </HashRouter>
+                      </TaskDetailProvider>
+                    </ProjectActionsProvider>
+                  </TaskActionsProvider>
                 </SwipeCoachProvider>
               </SwipeSettingsProvider>
             </IdentityAwareRefreshProvider>
