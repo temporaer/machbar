@@ -88,7 +88,7 @@ export function TodayPage() {
                 aria-label={strings.weekPlanning}
                 title={strings.weekPlanning}
               >
-                {strings.weekPlanningShort}
+                <IconActionGlyph kind="schedule" />
               </Link>
               <button
                 type="button"

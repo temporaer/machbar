@@ -313,22 +313,29 @@ function useTaskActionsState() {
     (
       task: Pick<Task, "id">,
       mutate: () => Promise<Task>,
+      throwOnError = false,
     ) =>
       run({
         id: task.id,
         mutate,
         retain: false,
+        throwOnError,
       }),
     [run],
   );
 
   const setExternalWait = useCallback(
-    (task: Pick<Task, "id" | "revision">, input: Omit<ExternalWaitInput, "expectedRevision">) =>
+    (
+      task: Pick<Task, "id" | "revision">,
+      input: Omit<ExternalWaitInput, "expectedRevision">,
+      options: { throwOnError?: boolean } = {},
+    ) =>
       runExternalWaitCommand(task, () =>
         api.setExternalWait(task.id, {
           ...input,
           expectedRevision: task.revision,
         }),
+        options.throwOnError === true,
       ),
     [runExternalWaitCommand],
   );

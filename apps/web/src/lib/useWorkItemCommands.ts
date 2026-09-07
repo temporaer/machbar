@@ -25,6 +25,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
       return "task" in command ? command.task.id : command.taskId;
     case "workItem.schedule":
     case "workItem.setDeadline":
+    case "workItem.setRevisitDate":
       return command.item.id;
     case "story.activate":
     case "story.returnToBacklog":
@@ -59,6 +60,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
       return "story";
     case "workItem.schedule":
     case "workItem.setDeadline":
+    case "workItem.setRevisitDate":
       return command.item.role;
     default:
       return null;
@@ -135,6 +137,16 @@ export function useWorkItemCommands() {
           return projectActions.schedule(command.item.project, {
             dueDate: command.date,
           });
+        case "workItem.setRevisitDate":
+          if (command.item.role === "task" && command.item.task.externalWait) {
+            return taskActions.setExternalWait(command.item.task, {
+              waitingFor: command.item.task.externalWait.waitingFor,
+              revisitDate: command.date,
+            }, {
+              throwOnError: true,
+            });
+          }
+          return;
         case "story.activate":
           void projectActions.activate(command.story, command.ownerMemberId);
           return;
