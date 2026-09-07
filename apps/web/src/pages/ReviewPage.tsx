@@ -169,6 +169,14 @@ export function ReviewPage() {
         return strings.assignDriver;
       case "add_next_action":
         return strings.addNextAction;
+      case "plan_task":
+        return strings.plan;
+      case "defer_project":
+        return strings.deferProject;
+      case "activate_project":
+        return strings.activateProject;
+      case "project_lifecycle":
+        return strings.projectLifecycle;
       case "set_followup":
         return strings.reviewActionSetFollowup;
       case "resolve_blocker":
@@ -206,6 +214,20 @@ export function ReviewPage() {
           state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
         });
         return;
+      case "plan_task":
+        openTask(targetId, item, issueIndex, "schedule");
+        return;
+      case "defer_project":
+        navigate(`/projects/${item.projectId ?? item.entityId}?focus=planning`, {
+          state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
+        });
+        return;
+      case "activate_project":
+      case "project_lifecycle":
+        navigate(`/projects/${item.projectId ?? item.entityId}`, {
+          state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
+        });
+        return;
       case "review_completion":
         navigate(`/projects/${item.projectId ?? item.entityId}?focus=completion`, {
           state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
@@ -218,7 +240,7 @@ export function ReviewPage() {
         openTask(targetId, item, issueIndex, "dependencies");
         return;
       case "add_child":
-        openTask(targetId, item, issueIndex, "subtasks");
+        openTask(targetId, item, issueIndex, "split");
         return;
       case "review_task":
         openTask(targetId, item, issueIndex);

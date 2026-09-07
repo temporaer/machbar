@@ -151,7 +151,7 @@ export function useWorkItemCommands() {
           taskDetail.open(command.taskId, "waiting");
           return;
         case "task.split":
-          taskDetail.open(command.taskId, "subtasks");
+          taskDetail.open(command.taskId, "split");
           return;
         case "task.assignOwner":
           taskDetail.open(command.taskId, "owner");

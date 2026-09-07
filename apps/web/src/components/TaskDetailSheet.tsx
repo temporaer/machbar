@@ -26,6 +26,7 @@ import { TagChip } from "./TagChip";
 import { TagPicker } from "./TagPicker";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { InlineChildComposer } from "./InlineChildComposer";
+import { TaskSplitSheet } from "./TaskSplitSheet";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
@@ -127,6 +128,7 @@ export function TaskDetailSheet() {
   const [waitingHighlighted, setWaitingHighlighted] = useState(false);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [addingChild, setAddingChild] = useState(false);
+  const [splittingTask, setSplittingTask] = useState(false);
   const [addingDependency, setAddingDependency] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
@@ -287,6 +289,11 @@ export function TaskDetailSheet() {
       setAddingDependency(true);
       return;
     }
+    if (focusField === "split" && !splittingTask) {
+      setSplittingTask(true);
+      clearFocusField();
+      return;
+    }
     const scrollTargets: Record<TaskDetailFocusField, HTMLElement | null> = {
       title: titleFieldRef.current,
       owner: ownerFieldRef.current,
@@ -296,6 +303,7 @@ export function TaskDetailSheet() {
       waiting: dependenciesFieldRef.current,
       dependencies: dependenciesFieldRef.current,
       subtasks: subtasksFieldRef.current,
+      split: subtasksFieldRef.current,
     };
     const focusTargets: Record<TaskDetailFocusField, HTMLElement | null> = {
       title: titleInputRef.current,
@@ -306,6 +314,7 @@ export function TaskDetailSheet() {
       waiting: externalWaitInputRef.current,
       dependencies: dependencyInputRef.current,
       subtasks: null,
+      split: null,
     };
     const scrollTarget = scrollTargets[focusField];
     const focusTarget = focusTargets[focusField];
@@ -323,6 +332,7 @@ export function TaskDetailSheet() {
     notesEditing,
     titleEditing,
     addingDependency,
+    splittingTask,
   ]);
 
   const inheritedTags = useMemo(() => {
@@ -1511,13 +1521,22 @@ export function TaskDetailSheet() {
                   }}
                 />
               ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => setAddingChild(true)}
-                >
-                  {strings.addChild}
-                </button>
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setAddingChild(true)}
+                  >
+                    {strings.addChild}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setSplittingTask(true)}
+                  >
+                    {strings.splitTask}
+                  </button>
+                </div>
               )
             ) : task.repeatAfterDays !== null ? (
               <p className="text-muted">{strings.recurringTaskLeafHint}</p>
@@ -1701,6 +1720,15 @@ export function TaskDetailSheet() {
         />
       ) : null}
     </BottomSheet>
+    {splittingTask && task ? (
+      <TaskSplitSheet
+        parentId={task.id}
+        onClose={() => {
+          setSplittingTask(false);
+          reload();
+        }}
+      />
+    ) : null}
     {attachmentOpen && task ? (
       <MarkdownAttachmentSheet
         onClose={() => setAttachmentOpen(false)}

@@ -738,6 +738,10 @@ export type ReviewReason =
 export type ReviewActionCode =
   | "assign_driver"
   | "add_next_action"
+  | "plan_task"
+  | "defer_project"
+  | "activate_project"
+  | "project_lifecycle"
   | "set_followup"
   | "resolve_blocker"
   | "add_child"

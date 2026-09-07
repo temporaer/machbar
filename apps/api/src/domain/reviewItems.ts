@@ -178,14 +178,16 @@ export function buildReviewItems(
           task,
           "clarification_repair",
           "task_scheduled_before_resurface",
-          { code: "review_task" },
+          { code: "plan_task", targetEntityType: "task", targetEntityId: task.id },
         ),
       );
     }
     if (task.dueDate !== null && task.dueDate < project.scheduledDate) {
       items.push(
         taskItem(task, "clarification_repair", "task_due_before_resurface", {
-          code: "review_task",
+          code: "plan_task",
+          targetEntityType: "task",
+          targetEntityId: task.id,
         }),
       );
     }
@@ -204,7 +206,7 @@ export function buildReviewItems(
           project,
           "clarification_repair",
           "project_due_before_resurface",
-          { code: "review_project" },
+          { code: "defer_project", targetEntityType: "project", targetEntityId: project.id },
         ),
       );
     }
@@ -223,7 +225,7 @@ export function buildReviewItems(
             project,
             "clarification_repair",
             "backlog_planned_work",
-            { code: "review_project" },
+            { code: "activate_project", targetEntityType: "project", targetEntityId: project.id },
           ),
         );
       }
@@ -237,7 +239,7 @@ export function buildReviewItems(
             project,
             "clarification_repair",
             "completed_project_open_work",
-            { code: "review_project" },
+            { code: "project_lifecycle", targetEntityType: "project", targetEntityId: project.id },
           ),
         );
       }
