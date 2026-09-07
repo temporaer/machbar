@@ -259,11 +259,12 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   }, [busy, criteria, dispatch, navigate, primaryAction, story]);
   const swipe = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy,
-    onPrimary: doPrimary,
+    onPrimary: () => scope?.setOpenLifecycle(storyProp.id),
     onSecondary: () => scope?.setOpenRail(storyProp.id),
   });
   const { dragX } = swipe;
   const chipsOpen = scope?.openRailId === storyProp.id;
+  const lifecycleOpen = scope?.openLifecycleId === storyProp.id;
   const { projectFavorites } = useRailConfig();
   const showPrimaryBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
@@ -330,6 +331,11 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         scope?.setOpenRail(null);
         dispatch({ type: command, story });
     }
+  };
+
+  const runLifecycleAction = (action: ProjectWorkflowAction) => {
+    scope?.setOpenLifecycle(null);
+    runSecondary(action);
   };
 
   return (
@@ -498,6 +504,24 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           disabled={busy}
           onCommand={runRailCommand}
         />
+      ) : null}
+      {lifecycleOpen ? (
+        <div className="story-row-lifecycle" role="group" aria-label={strings.status}>
+          <button type="button" className="btn btn-sm" disabled aria-current="true">
+            {strings.projectStatusLabels[story.status]}
+          </button>
+          {story.availableActions.map((action) => (
+            <button
+              key={action}
+              type="button"
+              className="btn btn-sm"
+              disabled={busy}
+              onClick={() => runLifecycleAction(action)}
+            >
+              {projectWorkflowLabel(action, strings)}
+            </button>
+          ))}
+        </div>
       ) : null}
 
       {rowError ? (
