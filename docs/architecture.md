@@ -898,11 +898,26 @@ scope's registered `moveBy`. `apps/web/src/lib/useGlobalNavigationKeys.ts`
 be read from an ancestor) handles the scope-independent `g`-prefix
 navigation sequence and returns descriptor-derived prefix choices for the
 which-key hint. `?` opens the scoped `CommandHelpSheet`, `c` dispatches
-`capture.open`, and `s`/`a`/`n` open the existing focused task detail flows
-when the logical active item is a task. Both keyboard hooks suppress
+`capture.open`, and semantic task shortcuts dispatch `task.plan`,
+`task.waitingLifecycle`, `task.assignOwner`, and `task.openOverflow` when the
+logical active item is a task. These bindings are independent of rail
+favorite configuration. Both keyboard hooks suppress
 themselves via one shared
 `shouldSuppressGlobalShortcuts()` (`apps/web/src/lib/keyboardShortcuts.ts`)
 while editing text, or while a `BottomSheet`/modal is open.
+
+**Command rails.** `WorkItemCommandRail.tsx` renders three device-local
+favorite commands from `railConfig.ts` plus a fixed `Mehr …` overflow. The
+overflow is derived from the same canonical command registry and excludes
+pinned favorites, so changing prominence never changes command semantics.
+`InteractionScopeProvider` owns the open rail identity and closes other rails
+when a new row is opened or the user taps elsewhere.
+
+**Readable detail projections.** Task and project details remain separate
+because their domain content differs, but they present current scalar values
+as direct actions, omit empty optional metadata, and keep substantive
+collections as readable sections. Semantic transformations continue through
+the shared command/action paths and focused sheets.
 
 **Still two separate rows and detail sheets.** `TaskRow.tsx` and
 `ProjectStoryRow.tsx` render as fully separate components (they now both
