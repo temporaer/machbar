@@ -154,35 +154,50 @@ household. The frontend exposes that distinction as a session-scoped
 Executable standalone work without a `scheduledDate` falls through to the
 secondary `shared` / `unscheduled` buckets. Ordinary unscheduled project work
 enters those buckets only through the canonical selector in
-`nextActionRepo.ts`: member scope chooses the first candidate effectively owned
-by the member or shared, while household scope preserves at most one candidate
-per independent effective-owner/shared lane. A real task deadline or planning
-date remains an execution signal even when that task is not the structural next
-action. The first matching bucket wins, so a task never appears twice.
-Future-scheduled work, captured work, completed/cancelled work, and blocked work
-without a reached revisit stay out.
+`agendaSelection.ts`/`nextActionRepo.ts`: member scope chooses the first
+candidate effectively owned by the member or shared, while household scope
+preserves at most one candidate per independent effective-owner/shared lane. A
+real task deadline or planning date remains an execution signal even when that
+task is not the structural next action. The first matching bucket wins, so a
+task never appears twice. Future-scheduled work, captured work,
+completed/cancelled work, unavailable-context work, and blocked work without a
+reached revisit stay out.
 
 The **Week planning** view is another read-only WorkItem projection:
 `apps/api/src/domain/weekAgenda.ts` builds `/api/agenda/week` from `Graph` into
 one compact seven-day list with chips, plus an **Ohne Planung** unplanned pool.
 It is not an hourly calendar and does not persist a planning model of its own.
-The week still uses one compact day list with chips rather than separate day or
-wait sections.
+Week uses the same `agendaSelection.ts` eligibility engine as Heute for
+ownership, working-system membership, executable available work, and project
+next-action lane selection. It deliberately disables current physical-context
+availability when filling the planning pool: Week plans across places; Today
+answers what is actionable where the household is now. Week otherwise differs
+only in temporal projection: day columns show exact-date attention, with no
+Heute-style carry-over or overdue replication. The week still uses one compact
+day list with chips rather than separate day or wait sections.
 
 There are three distinct attention dates for a card:
 - `scheduledDate` = intended work date;
 - `dueDate` = deadline or constraint;
 - `externalWait.revisitDate` = follow-up date for a direct external wait.
 
-Direct external waits with an in-week revisit appear as `revisit` placement. If
-there is no in-week revisit, the same blocked item can fall back to `due`
-placement when its real deadline is in range; waiting tasks never enter the
-unplanned pool merely because they are blocked. Dependency blocker attention,
-through `nextBlockerAttentionDate`, is derived metadata only and is not treated
-as Week revisit placement. Dragging a normal week card changes only
+Direct external waits with an in-week revisit appear as `revisit` placement for
+that exact date. If there is no in-week revisit, the same blocked item can fall
+back to `due` placement when its real deadline falls exactly in range; waiting
+tasks never enter the unplanned pool merely because they are blocked. Dependency
+blocker attention, through `nextBlockerAttentionDate`, is derived metadata only
+and is not treated as Week revisit placement. **Ohne Planung** is derived from
+the same current available-work selection as Heute's `shared` and
+`unscheduled` buckets: standalone executable work and selected project next
+actions only, never unscheduled stories/projects, waiting work, dependency
+blocked work, captured work, someday/backlog work, or already scheduled work.
+Current physical context does not remove a task from Week's planning pool.
+Dragging a normal week card changes only
 `scheduledDate`; dragging a `revisit` card changes only
-`externalWait.revisitDate`; the explicit deadline field changes only `dueDate`.
-Story dates mean story-level attention and never propagate to descendants.
+`externalWait.revisitDate`. Deadline chips are passive Week attention metadata;
+`workItem.setDeadline` remains the semantic deadline command for surfaces that
+offer due-date editing. Story dates mean story-level attention and never
+propagate to descendants.
 
 Active projects have a separate compiled `projects` bucket. A project enters
 Heute seven local calendar days before its `dueDate`, or once its

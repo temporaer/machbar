@@ -397,30 +397,6 @@ describe("WeekPage", () => {
     expect(screen.getByRole("button", { name: /^Steuer/ })).toHaveFocus();
   });
 
-  it("editing the deadline changes dueDate without changing scheduledDate", async () => {
-    const item = taskItem({
-      id: 31,
-      title: "Steuer",
-      scheduledDate: "2026-09-09",
-      dueDate: null,
-    });
-    mockedApi.getWeekAgenda.mockResolvedValue(
-      agenda({ days: [day("2026-09-07"), day("2026-09-08"), day("2026-09-09", [item]), day("2026-09-10"), day("2026-09-11"), day("2026-09-12"), day("2026-09-13")] }),
-    );
-    mockedApi.updateTask.mockResolvedValue(makeTask({ id: 31, scheduledDate: "2026-09-09", dueDate: "2026-09-15" }));
-    renderWithProviders(<WeekPage />);
-    const steuer = await screen.findByRole("button", { name: /^Steuer/ });
-
-    await userEvent.type(within(steuer.closest("article") as HTMLElement).getByRole("textbox"), "15.09.2026{enter}");
-
-    await waitFor(() =>
-      expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
-        dueDate: "2026-09-15",
-        expectedRevision: 1,
-      }),
-    );
-  });
-
   it("dropping to unplanned clears scheduledDate and rolls back on failure", async () => {
     const item = taskItem({ id: 41, title: "Paket", scheduledDate: "2026-09-10" });
     mockedApi.getWeekAgenda.mockResolvedValue(

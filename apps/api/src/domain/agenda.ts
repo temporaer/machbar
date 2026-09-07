@@ -5,11 +5,10 @@ import type {
 } from "@machbar/shared";
 import type { Graph } from "./graph.js";
 import type { TaskRecord } from "./graph.js";
-import { isTaskInWorkingSystem } from "./workEligibility.js";
-
-function isOpen(t: TaskRecord): boolean {
-  return t.status !== "done" && t.status !== "cancelled";
-}
+import {
+  createAgendaSelection,
+  selectCurrentAvailableWork,
+} from "./agendaSelection.js";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -49,21 +48,6 @@ const sortByDueThenPriorityTitleId = sortByDateThenPriorityTitleId(
   (task) => task.dueDate,
 );
 
-/**
- * A task belongs to the requesting member's agenda when it's owned by them
- * (via the *effective*, inheritance-resolved owner — never the raw/explicit
- * `ownerMemberId`) or when it has no owner at all (`effectiveOwnerId ===
- * null`, i.e. "Gemeinsam"/offen, shared across the household).
- *
- * When `memberId` is omitted entirely, no owner filtering is applied at
- * all, preserving the previous all-household response shape for API
- * clients that don't yet pass a selected member.
- */
-function matchesSelectedOwner(t: TaskRecord, memberId?: number): boolean {
-  if (memberId === undefined) return true;
-  return t.effectiveOwnerId === null || t.effectiveOwnerId === memberId;
-}
-
 export interface BuildAgendaOptions {
   dueSoonDays?: number;
   /** Browser-local calendar date used consistently for task and project boundaries. */
@@ -98,59 +82,18 @@ export interface BuildAgendaOptions {
  * `revisit`: a task with a direct external wait whose revisit date is today
  * or earlier reappears as a reminder to check on it.
  *
- * See {@link matchesSelectedOwner} for how `options.memberId` restricts
- * every bucket, revisit included, to the selected member's own and shared
- * tasks.
+ * `createAgendaSelection()` centralizes how `options.memberId` restricts every
+ * bucket, revisit included, to the selected member's own and shared tasks.
  */
 export function buildAgenda(
   graph: Graph,
   options: BuildAgendaOptions = {},
 ): Agenda {
   const { dueSoonDays = 3, memberId, today = todayIso() } = options;
-  const scope = options.scope ?? (memberId === undefined ? "all" : "mine");
-  const contextAvailability = (
-    task: TaskRecord,
-  ): ContextAvailability => {
-    const target =
-      task.effectiveOwnerId ??
-      (scope === "mine" && memberId !== undefined ? memberId : "household");
-    return (
-      options.contextAvailability?.(task, target) ?? {
-        status: "available",
-        availableNow: true,
-        missingContexts: [],
-      }
-    );
-  };
-  const isContextAvailable = (task: TaskRecord) =>
-    contextAvailability(task).status !== "unavailable";
+  const selection = createAgendaSelection(graph, options);
+  const { contextAvailability, isContextAvailable } = selection;
   const soonLimit = addDaysIso(today, dueSoonDays);
   const seen = new Set<number>();
-  const projectStatusById = new Map(
-    [...graph.projectsById.values()].map((project) => [
-      project.id,
-      project.status,
-    ]),
-  );
-  const isOperationalTask = (task: TaskRecord) =>
-    isTaskInWorkingSystem(task, projectStatusById);
-  const selectedProjectTaskIds = new Set(
-    [...graph.projectsById.values()]
-      .filter((project) => project.status === "active")
-      .flatMap((project) =>
-        graph
-          .todayNextActionsFor(
-            project.id,
-            scope === "mine" && memberId !== undefined
-              ? { scope: "mine", memberId }
-              : { scope: "all" },
-            isContextAvailable,
-          )
-          .map((task) => task.id),
-      ),
-  );
-  const isSelectedOrdinaryWork = (task: TaskRecord) =>
-    task.projectId === null || selectedProjectTaskIds.has(task.id);
 
   const take = (
     predicate: (t: TaskRecord) => boolean,
@@ -160,12 +103,10 @@ export function buildAgenda(
       .allTasks()
       .filter(
         (t) =>
-          isOpen(t) &&
-          isOperationalTask(t) &&
+          selection.isAgendaTask(t) &&
           t.executable &&
           isContextAvailable(t) &&
           !seen.has(t.id) &&
-          matchesSelectedOwner(t, memberId) &&
           predicate(t),
       )
       .sort(compare);
@@ -177,12 +118,9 @@ export function buildAgenda(
     .allTasks()
     .filter(
       (t) =>
-        isOpen(t) &&
-        isOperationalTask(t) &&
-        t.blocked &&
+        selection.isDirectExternalWaitAttention(t) &&
         !!t.externalWait?.revisitDate &&
-        t.externalWait.revisitDate <= today &&
-        matchesSelectedOwner(t, memberId),
+        t.externalWait.revisitDate <= today,
     )
     .sort(sortByRevisitThenPriorityTitleId);
   for (const task of revisit) seen.add(task.id);
@@ -205,22 +143,12 @@ export function buildAgenda(
     (t) => !!t.dueDate && t.dueDate > today && t.dueDate <= soonLimit,
     sortByDueThenPriorityTitleId,
   );
-  const shared = take(
-    (t) =>
-      t.status === "actionable" &&
-      t.effectiveOwnerId === null &&
-      !t.scheduledDate &&
-      isSelectedOrdinaryWork(t),
-    sortByPriorityTitleId,
-  );
-  const unscheduled = take(
-    (t) =>
-      t.status === "actionable" &&
-      t.effectiveOwnerId !== null &&
-      !t.scheduledDate &&
-      isSelectedOrdinaryWork(t),
-    sortByPriorityTitleId,
-  );
+  const { shared, unscheduled } = selectCurrentAvailableWork(graph, {
+    ...options,
+    today,
+    dueSoonDays,
+  });
+  for (const task of [...shared, ...unscheduled]) seen.add(task.id);
 
   const projectDueLimit = addDaysIso(today, 7);
   const stuckByProject = new Map(
@@ -244,13 +172,9 @@ export function buildAgenda(
 
       const computed = graph.projectWithComputed(project.id);
       if (!computed) return [];
-      const selection =
-        scope === "mine" && memberId !== undefined
-         ? ({ scope: "mine", memberId } as const)
-         : ({ scope: "all" } as const);
-      const availableNextAction = graph.todayNextActionsFor(
+      const availableNextAction = graph.selectedNextActionsFor(
         project.id,
-        selection,
+        selection.laneSelection,
         isContextAvailable,
       )[0] ?? null;
       const canonicalNextAction = graph.nextActionFor(project.id);

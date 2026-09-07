@@ -712,7 +712,7 @@ export class Graph {
       .filter((task): task is TaskRecord => task !== undefined);
   }
 
-  todayNextActionsFor(
+  selectedNextActionsFor(
     projectId: number,
     selection:
       | { scope: "mine"; memberId: number }

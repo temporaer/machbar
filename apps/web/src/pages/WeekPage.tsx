@@ -12,11 +12,11 @@ import { PageHeader } from "../components/PageHeader";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
-import { HumanDateInput } from "../components/HumanDateInput";
 import { TaskCardTags } from "../components/TaskCardTags";
 import { MemberAvatar } from "../components/MemberAvatar";
 import { formatDate } from "../lib/format";
 import { QuickAdd } from "../components/QuickAdd";
+import { IconActionGlyph } from "../components/IconActionButton";
 
 function weekStart(date: Date): string {
   const copy = new Date(date);
@@ -45,30 +45,6 @@ function weekdayLabel(dateIso: string, locale: string): string {
     weekday: "short",
     day: "numeric",
   }).format(new Date(`${dateIso}T00:00:00.000Z`));
-}
-
-function replaceItem(
-  agenda: WeekAgendaResponse,
-  itemId: number,
-  patch: Partial<WeekPlanningItem>,
-): WeekAgendaResponse {
-  const update = (item: WeekPlanningItem): WeekPlanningItem =>
-    item.id === itemId
-      ? ({
-          ...item,
-          ...patch,
-          task: item.task ? { ...item.task, ...patch } : item.task,
-          project: item.project ? { ...item.project, ...patch } : item.project,
-        } as WeekPlanningItem)
-      : item;
-  return {
-    ...agenda,
-    days: agenda.days.map((day) => ({
-      ...day,
-      items: day.items.map(update).filter((item) => item.placement !== "unplanned"),
-    })),
-    unplanned: agenda.unplanned.map(update).filter((item) => item.placement === "unplanned"),
-  };
 }
 
 function removeItem(agenda: WeekAgendaResponse, itemId: number): WeekAgendaResponse {
@@ -187,13 +163,11 @@ function sortAgenda(agenda: WeekAgendaResponse): WeekAgendaResponse {
 function WeekCard({
   item,
   members,
-  onDeadlineChange,
   onDragStart,
   onOpen,
 }: {
   item: WeekPlanningItem;
   members: Member[];
-  onDeadlineChange: (item: WeekPlanningItem, date: string | null) => void;
   onDragStart: (item: WeekPlanningItem) => void;
   onOpen: (item: WeekPlanningItem) => void;
 }) {
@@ -289,14 +263,6 @@ function WeekCard({
       {item.tags.length > 0 || item.contexts.length > 0 ? (
         <TaskCardTags tags={item.tags} contexts={item.contexts} />
       ) : null}
-      <div className="week-card-deadline-edit">
-        <label htmlFor={`week-deadline-${item.id}`}>{strings.due}</label>
-        <HumanDateInput
-          id={`week-deadline-${item.id}`}
-          value={item.dueDate}
-          onChange={(date) => onDeadlineChange(item, date)}
-        />
-      </div>
     </article>
   );
 }
@@ -308,7 +274,6 @@ function WeekDropZone({
   members,
   dragged,
   onDropItem,
-  onDeadlineChange,
   onDragStart,
   onOpen,
 }: {
@@ -318,7 +283,6 @@ function WeekDropZone({
   members: Member[];
   dragged: WeekPlanningItem | null;
   onDropItem: (item: WeekPlanningItem, date: string | null) => void;
-  onDeadlineChange: (item: WeekPlanningItem, date: string | null) => void;
   onDragStart: (item: WeekPlanningItem) => void;
   onOpen: (item: WeekPlanningItem) => void;
 }) {
@@ -344,7 +308,6 @@ function WeekDropZone({
               key={item.id}
               item={item}
               members={members}
-              onDeadlineChange={onDeadlineChange}
               onDragStart={onDragStart}
               onOpen={onOpen}
             />
@@ -405,19 +368,6 @@ export function WeekPage() {
     }
   };
 
-  const applyDeadline = async (item: WeekPlanningItem, date: string | null) => {
-    if (!agenda) return;
-    const previous = agenda;
-    setMutationError(null);
-    setAgenda(sortAgenda(replaceItem(agenda, item.id, { dueDate: date })));
-    try {
-      await dispatch({ type: "workItem.setDeadline", item, date });
-    } catch (cause) {
-      setAgenda(previous);
-      setMutationError(cause instanceof Error ? cause.message : strings.error);
-    }
-  };
-
   const currentAgenda = agenda;
   const title = `${strings.weekPlanning} · ${strings.calendarWeekShort} ${isoWeek(start)}`;
   const formattedRange = useMemo(() => {
@@ -445,8 +395,10 @@ export function WeekPage() {
                 type="button"
                 className="page-header-button"
                 onClick={() => setStart(weekStart(new Date()))}
+                aria-label={strings.today}
+                title={strings.today}
               >
-                {strings.today}
+                <IconActionGlyph kind="schedule" />
               </button>
               <button
                 type="button"
@@ -483,7 +435,6 @@ export function WeekPage() {
                       ? applyRevisitDate(item, date)
                       : applySchedule(item, date))
                   }
-                  onDeadlineChange={(item, date) => void applyDeadline(item, date)}
                   onDragStart={setDragged}
                   onOpen={(item) => {
                     if (item.role === "task") {
@@ -506,7 +457,6 @@ export function WeekPage() {
                   ? applyRevisitDate(item, date)
                   : applySchedule(item, date))
               }
-              onDeadlineChange={(item, date) => void applyDeadline(item, date)}
               onDragStart={setDragged}
               onOpen={(item) => {
                 if (item.role === "task") {
