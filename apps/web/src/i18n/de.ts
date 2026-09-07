@@ -39,6 +39,8 @@ const base = {
   shared: "Gemeinsam / offen",
   unscheduled: "Weitere machbare Aufgaben",
   followUp: "Nachhaken",
+  whatHappened: "Was ist passiert?",
+  continueWaiting: "Weiter warten",
   followUpHint:
     "Die Wiedervorlage ist erreicht. Jetzt nachhaken oder die Aufgabe wieder machbar machen.",
   revisit: "Wiedervorlage",

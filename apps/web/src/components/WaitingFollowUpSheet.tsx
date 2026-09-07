@@ -52,7 +52,7 @@ export function WaitingFollowUpSheet({
     >
       <div className="stack">
         <div className="field">
-          <label htmlFor={`follow-up-notes-${task.id}`}>{strings.notes}</label>
+          <label htmlFor={`follow-up-notes-${task.id}`}>{strings.whatHappened}</label>
           <textarea
             id={`follow-up-notes-${task.id}`}
             rows={6}
@@ -85,6 +85,7 @@ export function WaitingFollowUpSheet({
           />
           {strings.endWaiting}
         </label>
+        {!resolveWait ? <p className="text-muted">{strings.continueWaiting}</p> : null}
 
         {error ? (
           <div className="task-row-error" role="alert">

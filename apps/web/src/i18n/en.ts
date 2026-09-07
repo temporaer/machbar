@@ -63,6 +63,8 @@ const en = {
   shared: "Shared / open",
   unscheduled: "More ready tasks",
   followUp: "Follow up",
+  whatHappened: "What happened?",
+  continueWaiting: "Continue waiting",
   followUpHint:
     "The follow-up date has arrived. Check in now or make the task ready again.",
   revisit: "Follow-up",
