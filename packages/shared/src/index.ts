@@ -620,7 +620,11 @@ export interface Agenda {
 
 export type WeekWorkItemRole = "task" | "story";
 
-export type WeekWorkItemPlacement = "scheduled" | "due" | "unplanned";
+export type WeekWorkItemPlacement =
+  | "scheduled"
+  | "due"
+  | "revisit"
+  | "unplanned";
 
 export interface WeekWorkItemSummary {
   id: number;
@@ -631,6 +635,7 @@ export interface WeekWorkItemSummary {
   ownerMemberId: number | null;
   scheduledDate: string | null;
   dueDate: string | null;
+  externalWait: Task["externalWait"];
   placement: WeekWorkItemPlacement;
   projectId: number | null;
   projectTitle: string | null;

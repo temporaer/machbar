@@ -14,6 +14,7 @@ vi.mock("../lib/api", () => ({
     getWeekAgenda: vi.fn(),
     updateTask: vi.fn(),
     updateProject: vi.fn(),
+    setExternalWait: vi.fn(),
     getTags: vi.fn(),
     getProjects: vi.fn(),
     getHomeAssistantStatus: vi.fn(),
@@ -35,6 +36,7 @@ function taskItem(overrides: Partial<WeekPlanningItem> & { id: number; title: st
     scheduledDate: overrides.scheduledDate ?? null,
     dueDate: overrides.dueDate ?? null,
     ownerMemberId: overrides.ownerMemberId ?? null,
+    externalWait: overrides.externalWait ?? null,
   });
   return {
     id: task.id,
@@ -45,6 +47,7 @@ function taskItem(overrides: Partial<WeekPlanningItem> & { id: number; title: st
     ownerMemberId: task.ownerMemberId,
     scheduledDate: task.scheduledDate,
     dueDate: task.dueDate,
+    externalWait: task.externalWait,
     placement: overrides.placement ?? (task.scheduledDate ? "scheduled" : "unplanned"),
     projectId: task.projectId,
     projectTitle: task.projectTitle,
@@ -79,6 +82,7 @@ function storyItem(overrides: Partial<WeekPlanningItem> & { id: number; title: s
     ownerMemberId: project.ownerMemberId,
     scheduledDate: project.scheduledDate,
     dueDate: project.dueDate,
+    externalWait: null,
     placement: overrides.placement ?? (project.scheduledDate ? "scheduled" : "unplanned"),
     projectId: null,
     projectTitle: null,
@@ -177,6 +181,7 @@ describe("WeekPage", () => {
       scheduledDate: "2026-09-08",
       dueDate: "2026-09-15",
     });
+
     mockedApi.getWeekAgenda.mockResolvedValue(
       agenda({
         days: [
@@ -204,6 +209,192 @@ describe("WeekPage", () => {
         expectedRevision: 1,
       }),
     );
+  });
+
+  it("renders revisit, waiting reason, and deadline chips on a waiting card", async () => {
+    const item = taskItem({
+      id: 51,
+      title: "IKEA Lieferung",
+      dueDate: "2026-09-12",
+      externalWait: { waitingFor: "IKEA", revisitDate: "2026-09-11" },
+      placement: "revisit",
+    });
+    mockedApi.getWeekAgenda.mockResolvedValue(
+      agenda({
+        days: [
+          day("2026-09-07"),
+          day("2026-09-08"),
+          day("2026-09-09"),
+          day("2026-09-10"),
+          day("2026-09-11", [item]),
+          day("2026-09-12"),
+          day("2026-09-13"),
+        ],
+      }),
+    );
+
+    renderWithProviders(<WeekPage />);
+
+    const ikea = (await screen.findByRole("button", { name: /^IKEA Lieferung/ })).closest("article") as HTMLElement;
+    expect(within(ikea).getByText("Wiedervorlage")).toBeInTheDocument();
+    expect(within(ikea).getByText("wartet auf IKEA")).toBeInTheDocument();
+    expect(within(ikea).getByText(/^⚑/)).toBeInTheDocument();
+  });
+
+  it("dragging a revisit card updates revisitDate without setting scheduledDate", async () => {
+    const item = taskItem({
+      id: 61,
+      title: "IKEA Lieferung",
+      externalWait: { waitingFor: "IKEA", revisitDate: "2026-09-09" },
+      placement: "revisit",
+    });
+    mockedApi.getWeekAgenda.mockResolvedValue(
+      agenda({
+        days: [
+          day("2026-09-07"),
+          day("2026-09-08"),
+          day("2026-09-09", [item]),
+          day("2026-09-10"),
+          day("2026-09-11"),
+          day("2026-09-12"),
+          day("2026-09-13"),
+        ],
+      }),
+    );
+    mockedApi.setExternalWait.mockResolvedValue(
+      makeTask({
+        id: 61,
+        externalWait: { waitingFor: "IKEA", revisitDate: "2026-09-10" },
+      }),
+    );
+    renderWithProviders(<WeekPage />);
+    await screen.findByRole("button", { name: /^IKEA Lieferung/ });
+
+    const transfer = dataTransfer();
+    fireEvent.dragStart(card("IKEA Lieferung"), { dataTransfer: transfer });
+    fireEvent.drop(screen.getByLabelText("Do., 10."), { dataTransfer: transfer });
+
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(61, {
+        waitingFor: "IKEA",
+        revisitDate: "2026-09-10",
+        expectedRevision: 1,
+      }),
+    );
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(within(screen.getByLabelText("Do., 10.")).getByRole("button", { name: /^IKEA Lieferung/ })).toBeInTheDocument();
+  });
+
+  it("dropping a revisit card onto unplanned clears revisitDate and falls back to an in-week due date", async () => {
+    const item = taskItem({
+      id: 62,
+      title: "Spedition anrufen",
+      dueDate: "2026-09-12",
+      externalWait: { waitingFor: "Spedition", revisitDate: "2026-09-09" },
+      placement: "revisit",
+    });
+    mockedApi.getWeekAgenda.mockResolvedValue(
+      agenda({
+        days: [
+          day("2026-09-07"),
+          day("2026-09-08"),
+          day("2026-09-09", [item]),
+          day("2026-09-10"),
+          day("2026-09-11"),
+          day("2026-09-12"),
+          day("2026-09-13"),
+        ],
+      }),
+    );
+    mockedApi.setExternalWait.mockResolvedValue(
+      makeTask({
+        id: 62,
+        dueDate: "2026-09-12",
+        externalWait: { waitingFor: "Spedition", revisitDate: null },
+      }),
+    );
+    renderWithProviders(<WeekPage />);
+    await screen.findByRole("button", { name: /^Spedition anrufen/ });
+
+    const transfer = dataTransfer();
+    fireEvent.dragStart(card("Spedition anrufen"), { dataTransfer: transfer });
+    fireEvent.drop(screen.getByLabelText("Ohne Planung"), { dataTransfer: transfer });
+
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(62, {
+        waitingFor: "Spedition",
+        revisitDate: null,
+        expectedRevision: 1,
+      }),
+    );
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(within(screen.getByLabelText("Sa., 12.")).getByRole("button", { name: /^Spedition anrufen/ })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Ohne Planung")).queryByRole("button", { name: /^Spedition anrufen/ })).not.toBeInTheDocument();
+  });
+
+  it("rolls back a failed revisit drag", async () => {
+    const item = taskItem({
+      id: 63,
+      title: "Lieferung prüfen",
+      externalWait: { waitingFor: "Paketdienst", revisitDate: "2026-09-09" },
+      placement: "revisit",
+    });
+    mockedApi.getWeekAgenda.mockResolvedValue(
+      agenda({
+        days: [
+          day("2026-09-07"),
+          day("2026-09-08"),
+          day("2026-09-09", [item]),
+          day("2026-09-10"),
+          day("2026-09-11"),
+          day("2026-09-12"),
+          day("2026-09-13"),
+        ],
+      }),
+    );
+    mockedApi.setExternalWait.mockRejectedValue(new Error("stale_write_conflict"));
+    renderWithProviders(<WeekPage />);
+    await screen.findByRole("button", { name: /^Lieferung prüfen/ });
+
+    const transfer = dataTransfer();
+    fireEvent.dragStart(card("Lieferung prüfen"), { dataTransfer: transfer });
+    fireEvent.drop(screen.getByLabelText("Do., 10."), { dataTransfer: transfer });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("stale_write_conflict");
+    expect(within(screen.getByLabelText("Mi., 9.")).getByRole("button", { name: /^Lieferung prüfen/ })).toBeInTheDocument();
+  });
+
+  it("navigates scheduled, revisit, and due cards with j/k in one Week scope", async () => {
+    const scheduled = taskItem({ id: 71, title: "Apotheke", scheduledDate: "2026-09-07" });
+    const revisit = taskItem({
+      id: 72,
+      title: "IKEA Lieferung",
+      externalWait: { waitingFor: "IKEA", revisitDate: "2026-09-08" },
+      placement: "revisit",
+    });
+    const due = taskItem({ id: 73, title: "Steuer", dueDate: "2026-09-09", placement: "due" });
+    mockedApi.getWeekAgenda.mockResolvedValue(
+      agenda({
+        days: [
+          day("2026-09-07", [scheduled]),
+          day("2026-09-08", [revisit]),
+          day("2026-09-09", [due]),
+          day("2026-09-10"),
+          day("2026-09-11"),
+          day("2026-09-12"),
+          day("2026-09-13"),
+        ],
+      }),
+    );
+    renderWithProviders(<WeekPage />);
+    await screen.findByRole("button", { name: /^Apotheke/ });
+
+    await userEvent.keyboard("j");
+    expect(screen.getByRole("button", { name: /^Apotheke/ })).toHaveFocus();
+    await userEvent.keyboard("j");
+    expect(screen.getByRole("button", { name: /^IKEA Lieferung/ })).toHaveFocus();
+    await userEvent.keyboard("j");
+    expect(screen.getByRole("button", { name: /^Steuer/ })).toHaveFocus();
   });
 
   it("editing the deadline changes dueDate without changing scheduledDate", async () => {

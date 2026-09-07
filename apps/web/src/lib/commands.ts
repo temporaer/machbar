@@ -24,11 +24,12 @@ import type { TaskDetailFocusField } from "./taskDetailContext";
  * such risk (folding is pure scope view state, not a mutation), so
  * `useWorkItemCommands()` handles those two generically.
  *
- * `workItem.schedule` and `workItem.setDeadline` are role-aware date
- * intents used by Week planning and future date surfaces; they preserve the
- * scheduled-date/deadline distinction while still routing through existing
- * task/story action providers. `navigate.*` names the g-prefixed keyboard
- * destinations, and `capture.open` names the contextual QuickAdd entry point.
+ * `workItem.schedule`, `workItem.setDeadline`, and
+ * `workItem.setRevisitDate` are date intents used by Week planning and
+ * future date surfaces; they preserve the scheduled-date/deadline/external-wait
+ * distinction while still routing through existing task/story action providers.
+ * `navigate.*` names the g-prefixed keyboard destinations, and `capture.open`
+ * names the contextual QuickAdd entry point.
  */
 export type WorkItemCommand =
   | { type: "task.open"; taskId: number; focusField?: TaskDetailFocusField }
@@ -37,6 +38,7 @@ export type WorkItemCommand =
   | { type: "task.discard"; task: Task }
   | { type: "workItem.schedule"; item: WeekPlanningItem; date: string | null }
   | { type: "workItem.setDeadline"; item: WeekPlanningItem; date: string | null }
+  | { type: "workItem.setRevisitDate"; item: WeekPlanningItem; date: string | null }
   | { type: "story.activate"; story: ProjectWithActions; ownerMemberId?: number | null }
   | { type: "story.returnToBacklog"; story: ProjectWithActions }
   | { type: "story.complete"; story: ProjectWithActions }

@@ -41,7 +41,7 @@ const base = {
   followUp: "Nachhaken",
   followUpHint:
     "Die Wiedervorlage ist erreicht. Jetzt nachhaken oder die Aufgabe wieder machbar machen.",
-  revisit: "Blockiert prüfen",
+  revisit: "Wiedervorlage",
   revisitHint: "Blockiert, aber heute wieder zu prüfen.",
   nextAction: "Nächster Schritt",
   noNextAction: "Kein nächster Schritt",

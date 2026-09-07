@@ -81,13 +81,28 @@ by the selected person or shared with the household, while **Alle** can preserve
 one independent owner/shared lane per project. A real task date still surfaces
 that task even when it is not the structural next action.
 
-**Wochenplanung** shows the next seven calendar days as a planning projection,
-not as an hourly calendar. Dragging a task or project card to a day changes
-when the household intends to work on it (`scheduledDate`). The deadline flag
-or date field changes the real due date (`dueDate`) separately, so rescheduling
-work never silently moves a constraint. The **Ohne Planung** area clears the
-planned work date. Projects can appear when their own dates need attention,
-but their dates do not cascade to child tasks.
+**Wochenplanung** shows the next seven calendar days as a single compact
+planning list with chips, not as a separate page per date or an hourly
+calendar. The same compact list holds the scheduled, due, and direct external-wait
+revisit chips for the week.
+
+Each item has three distinct attention dates: `scheduledDate` records when the
+household intends to work on it, `dueDate` records the real deadline or
+constraint, and `externalWait.revisitDate` records the follow-up date for a direct
+external wait. A direct external wait with an in-week revisit appears as a
+`revisit` placement; if there is no in-week revisit, the same blocked item can
+fall back to a `due` placement when its real deadline falls in range. Waiting
+tasks do not enter the **Ohne Planung** pool merely because they are blocked.
+Dependency blocker attention (`nextBlockerAttentionDate`) is derived metadata only
+and is not treated as a Week revisit placement.
+
+Dragging a task or project card to a day normally changes `scheduledDate`; a
+`revisit` card instead changes `externalWait.revisitDate`. The deadline flag or
+date field changes `dueDate` separately, so rescheduling work never silently
+moves a constraint. The **Ohne Planung** area clears the planned work date for
+normal cards or clears the revisit date for `revisit` cards. Projects can appear
+when their own dates need attention, but their dates do not cascade to child
+tasks.
 
 ### 4. Wait and follow up
 

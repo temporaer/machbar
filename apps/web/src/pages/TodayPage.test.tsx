@@ -265,7 +265,7 @@ describe("TodayPage", () => {
     });
     renderWithProviders(<TodayPage />);
 
-    expect(await screen.findByText("Blockiert prüfen")).toBeInTheDocument();
+    expect(await screen.findByText("Wiedervorlage")).toBeInTheDocument();
     const revisitHint = "Blockiert, aber heute wieder zu prüfen.";
     expect(screen.queryByText(revisitHint)).not.toBeInTheDocument();
     const infoButtons = screen.getAllByRole("button", {

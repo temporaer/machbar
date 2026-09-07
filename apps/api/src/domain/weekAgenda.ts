@@ -31,9 +31,23 @@ function compareItems(
   a: WeekWorkItemSummary,
   b: WeekWorkItemSummary,
 ): number {
-  const dateA = a.scheduledDate ?? a.dueDate ?? "9999-99-99";
-  const dateB = b.scheduledDate ?? b.dueDate ?? "9999-99-99";
+  const placementDate = (item: WeekWorkItemSummary) => {
+    if (item.placement === "scheduled") return item.scheduledDate;
+    if (item.placement === "revisit") return item.externalWait?.revisitDate;
+    return item.dueDate;
+  };
+  const dateA = placementDate(a) ?? "9999-99-99";
+  const dateB = placementDate(b) ?? "9999-99-99";
   if (dateA !== dateB) return dateA.localeCompare(dateB);
+  const placementOrder: Record<WeekWorkItemPlacement, number> = {
+    scheduled: 0,
+    revisit: 1,
+    due: 2,
+    unplanned: 3,
+  };
+  if (a.placement !== b.placement) {
+    return placementOrder[a.placement] - placementOrder[b.placement];
+  }
   if (a.role !== b.role) return a.role === "story" ? -1 : 1;
   return a.title.localeCompare(b.title, "de") || a.id - b.id;
 }
@@ -54,6 +68,7 @@ function taskSummary(
     ownerMemberId: task.effectiveOwnerId,
     scheduledDate: task.scheduledDate,
     dueDate: task.dueDate,
+    externalWait: task.externalWait,
     placement,
     projectId: task.projectId,
     projectTitle: task.projectTitle ?? null,
@@ -85,6 +100,7 @@ function storySummary(
     ownerMemberId: story.ownerMemberId,
     scheduledDate: story.scheduledDate,
     dueDate: story.dueDate,
+    externalWait: null,
     placement,
     projectId: story.id,
     projectTitle: story.title,
@@ -132,6 +148,10 @@ export function buildWeekAgenda(
       dayByDate.get(item.dueDate)?.items.push(item);
       return;
     }
+    if (item.placement === "revisit" && item.externalWait?.revisitDate) {
+      dayByDate.get(item.externalWait.revisitDate)?.items.push(item);
+      return;
+    }
     unplanned.push(item);
   };
 
@@ -145,11 +165,20 @@ export function buildWeekAgenda(
     ) {
       continue;
     }
-    if (task.scheduledDate && dateSet.has(task.scheduledDate)) {
+    if (task.externalWait) {
+      if (
+        task.externalWait.revisitDate &&
+        dateSet.has(task.externalWait.revisitDate)
+      ) {
+        place(taskSummary(task, graph, "revisit"));
+      } else if (task.dueDate && dateSet.has(task.dueDate)) {
+        place(taskSummary(task, graph, "due"));
+      }
+    } else if (task.scheduledDate && dateSet.has(task.scheduledDate)) {
       place(taskSummary(task, graph, "scheduled"));
     } else if (task.dueDate && dateSet.has(task.dueDate)) {
       place(taskSummary(task, graph, "due"));
-    } else if (!task.scheduledDate) {
+    } else if (!task.scheduledDate && task.executable) {
       place(taskSummary(task, graph, "unplanned"));
     }
   }

@@ -89,10 +89,16 @@ function addItem(
   if (item.placement === "unplanned") {
     return { ...agenda, unplanned: [...agenda.unplanned, item] };
   }
+  const placementDate =
+    item.placement === "scheduled"
+      ? item.scheduledDate
+      : item.placement === "revisit"
+        ? item.externalWait?.revisitDate
+        : item.dueDate;
   return {
     ...agenda,
     days: agenda.days.map((day) =>
-      day.date === (item.placement === "scheduled" ? item.scheduledDate : item.dueDate)
+      day.date === placementDate
         ? { ...day, items: [...day.items, item] }
         : day,
     ),
@@ -114,11 +120,60 @@ function moveScheduled(
   return addItem(removeItem(agenda, item.id), next);
 }
 
+function moveRevisit(
+  agenda: WeekAgendaResponse,
+  item: WeekPlanningItem,
+  date: string | null,
+): WeekAgendaResponse {
+  if (item.role !== "task" || !item.externalWait) return agenda;
+  const externalWait = { ...item.externalWait, revisitDate: date };
+  const task = { ...item.task, externalWait };
+  if (date !== null) {
+    return addItem(
+      removeItem(agenda, item.id),
+      {
+        ...item,
+        placement: "revisit",
+        externalWait,
+        task,
+      } as WeekPlanningItem,
+    );
+  }
+  if (item.dueDate && agenda.days.some((day) => day.date === item.dueDate)) {
+    return addItem(
+      removeItem(agenda, item.id),
+      {
+        ...item,
+        placement: "due",
+        externalWait,
+        task,
+      } as WeekPlanningItem,
+    );
+  }
+  return removeItem(agenda, item.id);
+}
+
 function sortAgenda(agenda: WeekAgendaResponse): WeekAgendaResponse {
+  const placementDate = (item: WeekPlanningItem) =>
+    item.placement === "scheduled"
+      ? item.scheduledDate
+      : item.placement === "revisit"
+        ? item.externalWait?.revisitDate
+        : item.dueDate;
+  const placementOrder: Record<WeekPlanningItem["placement"], number> = {
+    scheduled: 0,
+    revisit: 1,
+    due: 2,
+    unplanned: 3,
+  };
   const sort = (a: WeekPlanningItem, b: WeekPlanningItem) =>
-    (a.scheduledDate ?? a.dueDate ?? "9999-99-99").localeCompare(
-      b.scheduledDate ?? b.dueDate ?? "9999-99-99",
-    ) || a.title.localeCompare(b.title, "de") || a.id - b.id;
+    (placementDate(a) ?? "9999-99-99").localeCompare(
+      placementDate(b) ?? "9999-99-99",
+    ) ||
+    placementOrder[a.placement] - placementOrder[b.placement] ||
+    (a.role !== b.role ? (a.role === "story" ? -1 : 1) : 0) ||
+    a.title.localeCompare(b.title, "de") ||
+    a.id - b.id;
   return {
     ...agenda,
     days: agenda.days.map((day) => ({
@@ -148,6 +203,49 @@ function WeekCard({
     ? members.find((member) => member.id === item.ownerMemberId) ?? null
     : null;
   const contextLabel = item.parentTitle ?? item.projectTitle;
+  const chipList = [] as Array<{ key: string; label: string; className: string }>;
+  if (item.placement === "scheduled") {
+    chipList.push({
+      key: "scheduled",
+      label: strings.scheduled,
+      className: "week-card-chip week-card-chip-scheduled",
+    });
+  }
+  if (item.placement === "revisit") {
+    chipList.push({
+      key: "revisit",
+      label: strings.revisit,
+      className: "week-card-chip week-card-chip-revisit",
+    });
+  }
+  if (item.dueDate) {
+    chipList.push({
+      key: "due",
+      label: `⚑ ${formatDate(item.dueDate, locale) ?? item.dueDate}`,
+      className: "week-card-chip week-card-chip-due",
+    });
+  }
+  if (item.externalWait?.waitingFor?.trim()) {
+    const waitingFor = item.externalWait.waitingFor.trim();
+    chipList.push({
+      key: "waiting",
+      label: `${strings.waitingFor.toLowerCase()} ${waitingFor}`,
+      className: "week-card-chip week-card-chip-waiting",
+    });
+  }
+  if (item.stuckReason) {
+    chipList.push({
+      key: "stuck",
+      label: strings.stuck,
+      className: "week-card-chip week-card-chip-stuck",
+    });
+  } else if (item.blocked) {
+    chipList.push({
+      key: "blocked",
+      label: strings.blocked,
+      className: "week-card-chip week-card-chip-blocked",
+    });
+  }
   return (
     <article
       className={`week-card week-card-${item.role}`}
@@ -178,11 +276,14 @@ function WeekCard({
             <span>{owner.name}</span>
           </span>
         ) : null}
-        {item.blocked ? <span className="badge">{strings.blocked}</span> : null}
-        {item.dueDate ? (
-          <span className="week-card-deadline">
-            ⚑ {formatDate(item.dueDate, locale) ?? item.dueDate}
-          </span>
+        {chipList.length > 0 ? (
+          <div className="week-card-chips" aria-label={strings.weekPlanning}>
+            {chipList.map((chip) => (
+              <span key={chip.key} className={chip.className}>
+                {chip.label}
+              </span>
+            ))}
+          </div>
         ) : null}
       </div>
       {item.tags.length > 0 || item.contexts.length > 0 ? (
@@ -288,6 +389,22 @@ export function WeekPage() {
     }
   };
 
+  const applyRevisitDate = async (
+    item: WeekPlanningItem,
+    date: string | null,
+  ) => {
+    if (!agenda || item.role !== "task" || !item.externalWait) return;
+    const previous = agenda;
+    setMutationError(null);
+    setAgenda(sortAgenda(moveRevisit(agenda, item, date)));
+    try {
+      await dispatch({ type: "workItem.setRevisitDate", item, date });
+    } catch (cause) {
+      setAgenda(previous);
+      setMutationError(cause instanceof Error ? cause.message : strings.error);
+    }
+  };
+
   const applyDeadline = async (item: WeekPlanningItem, date: string | null) => {
     if (!agenda) return;
     const previous = agenda;
@@ -361,7 +478,11 @@ export function WeekPage() {
                   items={day.items}
                   members={members}
                   dragged={dragged}
-                  onDropItem={(item, date) => void applySchedule(item, date)}
+                  onDropItem={(item, date) =>
+                    void (item.placement === "revisit"
+                      ? applyRevisitDate(item, date)
+                      : applySchedule(item, date))
+                  }
                   onDeadlineChange={(item, date) => void applyDeadline(item, date)}
                   onDragStart={setDragged}
                   onOpen={(item) => {
@@ -380,7 +501,11 @@ export function WeekPage() {
               items={currentAgenda.unplanned}
               members={members}
               dragged={dragged}
-              onDropItem={(item, date) => void applySchedule(item, date)}
+              onDropItem={(item, date) =>
+                void (item.placement === "revisit"
+                  ? applyRevisitDate(item, date)
+                  : applySchedule(item, date))
+              }
               onDeadlineChange={(item, date) => void applyDeadline(item, date)}
               onDragStart={setDragged}
               onOpen={(item) => {

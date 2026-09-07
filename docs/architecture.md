@@ -164,11 +164,24 @@ without a reached revisit stay out.
 
 The **Week planning** view is another read-only WorkItem projection:
 `apps/api/src/domain/weekAgenda.ts` builds `/api/agenda/week` from `Graph` into
-seven calendar days plus an unplanned pool. It is not an hourly calendar and
-does not persist a planning model of its own. A card's day placement is driven
-by that WorkItem's own `scheduledDate`; a due-only item can show a deadline flag
-without becoming scheduled work. Dragging a week card changes only
-`scheduledDate`, while the explicit deadline field changes only `dueDate`.
+one compact seven-day list with chips, plus an **Ohne Planung** unplanned pool.
+It is not an hourly calendar and does not persist a planning model of its own.
+The week still uses one compact day list with chips rather than separate day or
+wait sections.
+
+There are three distinct attention dates for a card:
+- `scheduledDate` = intended work date;
+- `dueDate` = deadline or constraint;
+- `externalWait.revisitDate` = follow-up date for a direct external wait.
+
+Direct external waits with an in-week revisit appear as `revisit` placement. If
+there is no in-week revisit, the same blocked item can fall back to `due`
+placement when its real deadline is in range; waiting tasks never enter the
+unplanned pool merely because they are blocked. Dependency blocker attention,
+through `nextBlockerAttentionDate`, is derived metadata only and is not treated
+as Week revisit placement. Dragging a normal week card changes only
+`scheduledDate`; dragging a `revisit` card changes only
+`externalWait.revisitDate`; the explicit deadline field changes only `dueDate`.
 Story dates mean story-level attention and never propagate to descendants.
 
 Active projects have a separate compiled `projects` bucket. A project enters
@@ -808,7 +821,8 @@ generic here — they dispatch directly against the specific
 the scope's registered `moveBy`), because only that instance can enforce
 the compiled-view structural-safety invariant below.
 Date commands are semantic too: `workItem.schedule` changes only
-`scheduledDate`, and `workItem.setDeadline` changes only `dueDate`, then routes
+`scheduledDate`, `workItem.setDeadline` changes only `dueDate`, and
+`workItem.setRevisitDate` changes only `externalWait.revisitDate`, then routes
 through the existing task or story action provider based on the WorkItem role.
 `capture.open` invokes the opener registered by the scoped `QuickAdd`.
 

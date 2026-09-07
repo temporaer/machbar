@@ -65,7 +65,7 @@ const en = {
   followUp: "Follow up",
   followUpHint:
     "The follow-up date has arrived. Check in now or make the task ready again.",
-  revisit: "Review blocked",
+  revisit: "Follow-up",
   revisitHint: "Blocked, but due for another look today.",
   nextAction: "Next step",
   noNextAction: "No next step",
