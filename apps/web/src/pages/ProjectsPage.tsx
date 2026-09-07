@@ -23,6 +23,7 @@ import { CollapsibleGroup } from "../components/CollapsibleGroup";
 import { PageHeader } from "../components/PageHeader";
 import { useLocale } from "../lib/locale";
 import { IconActionGlyph } from "../components/IconActionButton";
+import { InteractionScopeProvider } from "../lib/interactionScope";
 
 /**
  * The Projekte tab: current and terminal projects are user stories, and every
@@ -34,6 +35,14 @@ import { IconActionGlyph } from "../components/IconActionButton";
  * `lib/useProjectActions.ts` for the optimistic retention.
  */
 export function ProjectsPage() {
+  return (
+    <InteractionScopeProvider>
+      <ProjectsPageContent />
+    </InteractionScopeProvider>
+  );
+}
+
+function ProjectsPageContent() {
   const strings = useStrings();
   const { locale } = useLocale();
   const { data: projects, loading, error, reload } = useAsync(() => api.getProjects(), []);
