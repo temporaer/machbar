@@ -15,7 +15,8 @@ export type TaskDetailFocusField =
   | "attachment"
   | "waiting"
   | "dependencies"
-  | "subtasks";
+  | "subtasks"
+  | "split";
 
 interface TaskDetailContextValue {
   openTaskId: number | null;

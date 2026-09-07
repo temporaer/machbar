@@ -728,11 +728,20 @@ export type ReviewReason =
   | "active_stale"
   | "backlog_stale"
   | "backlog_due"
-  | "standalone_someday_stale";
+  | "standalone_someday_stale"
+  | "backlog_planned_work"
+  | "task_scheduled_before_resurface"
+  | "task_due_before_resurface"
+  | "project_due_before_resurface"
+  | "completed_project_open_work";
 
 export type ReviewActionCode =
   | "assign_driver"
   | "add_next_action"
+  | "plan_task"
+  | "defer_project"
+  | "activate_project"
+  | "project_lifecycle"
   | "set_followup"
   | "resolve_blocker"
   | "add_child"

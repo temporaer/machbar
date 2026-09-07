@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode, type Ref } from "react";
 
 /**
  * Shared section/disclosure primitives for the WorkItem detail surfaces
@@ -43,6 +43,7 @@ export function WorkItemDetailDisclosure({
   defaultOpen = false,
   forceOpen = false,
   resetKey,
+  detailsRef,
   className = "",
 }: {
   title: string;
@@ -51,6 +52,7 @@ export function WorkItemDetailDisclosure({
   defaultOpen?: boolean;
   forceOpen?: boolean;
   resetKey?: number;
+  detailsRef?: Ref<HTMLDetailsElement>;
   className?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -62,6 +64,7 @@ export function WorkItemDetailDisclosure({
 
   return (
     <details
+      ref={detailsRef}
       className={`task-detail-section task-detail-disclosure${className ? ` ${className}` : ""}`}
       open={open || forceOpen}
       onToggle={(event) => setOpen(event.currentTarget.open)}

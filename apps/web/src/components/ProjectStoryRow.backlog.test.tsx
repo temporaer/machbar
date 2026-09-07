@@ -12,6 +12,8 @@ import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
+import { RailConfigProvider } from "../lib/railConfigContext";
+import { InteractionScopeProvider } from "../lib/interactionScope";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import { makeCriterion, makeMember, makeProject, makeTask } from "../test/fixtures";
@@ -74,21 +76,29 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
       <IdentityProvider>
         <RefreshProvider>
           <SwipeSettingsProvider>
-            <TaskActionsProvider>
-              <ProjectActionsProvider>
-                <TaskDetailProvider>
-                  <Routes>
-                    <Route path="/" element={ui} />
-                    <Route path="/projects/:id" element={<ProjectRouteMarker />} />
-                  </Routes>
-                </TaskDetailProvider>
-              </ProjectActionsProvider>
-            </TaskActionsProvider>
+            <RailConfigProvider>
+              <TaskActionsProvider>
+                <ProjectActionsProvider>
+                  <InteractionScopeProvider>
+                    <TaskDetailProvider>
+                      <Routes>
+                        <Route path="/" element={ui} />
+                        <Route path="/projects/:id" element={<ProjectRouteMarker />} />
+                      </Routes>
+                    </TaskDetailProvider>
+                  </InteractionScopeProvider>
+                </ProjectActionsProvider>
+              </TaskActionsProvider>
+            </RailConfigProvider>
           </SwipeSettingsProvider>
         </RefreshProvider>
       </IdentityProvider>
     </MemoryRouter>,
   );
+}
+
+async function openRailOverflow(group: HTMLElement) {
+  await userEvent.click(within(group).getByText("Mehr …"));
 }
 
 describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
@@ -124,7 +134,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
 
     expect(screen.getByText(/Erledigt, wenn …: 1\/2/)).toBeInTheDocument();
     expect(screen.getByText(/Fällig: 01.03.2026/)).toBeInTheDocument();
-    expect(screen.getByText(/Geplant: 15.02.2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Wiedervorlage: 15.02.2026/)).toBeInTheDocument();
     expect(screen.getByText(/Aufgaben: 1\/3/)).toBeInTheDocument();
   });
 
@@ -138,7 +148,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.getByText(/Aufgaben: Noch keine Aufgaben/)).toBeInTheDocument();
   });
 
-  it("activates a story with a driver on a right swipe past the threshold", async () => {
+  it("activates a story with a driver from the right-swipe lifecycle rail", async () => {
     const story = makeProject({
       id: 12,
       title: "Garten aufräumen",
@@ -151,6 +161,9 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Garten aufräumen");
 
     swipe(container, 100);
+    const lifecycle = screen.getByRole("group", { name: "Status" });
+    expect(within(lifecycle).getByRole("button", { name: "Später / noch nicht aktiv" })).toHaveAttribute("aria-current", "true");
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Aktiv machen" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -165,7 +178,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
   });
 
-  it("continues activation as soon as a missing driver is selected", async () => {
+  it("continues activation from the lifecycle rail as soon as a missing driver is selected", async () => {
     const story = makeProject({
       id: 13,
       title: "Homeoffice-Ecke einrichten",
@@ -178,6 +191,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Homeoffice-Ecke einrichten");
 
     swipe(container, 100);
+    fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Aktiv machen" }));
 
     const dialog = await screen.findByRole("dialog", {
       name: "Verantwortliche Person zuweisen",
@@ -206,19 +220,23 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("reveals the action-chip strip on a left swipe past the threshold, and via the kebab as a non-gesture alternative", async () => {
+  it("reveals the command rail on a left swipe past the threshold, and via the kebab as a non-gesture alternative", async () => {
     const story = makeProject({ id: 14, title: "Altes Gartenhaus abreißen", status: "backlog" });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Altes Gartenhaus abreißen");
 
     swipe(container, -100);
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(chips).getByRole("button", { name: "Verantwortlich" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Erledigt, wenn …" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Planen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Wiedervorlegen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Verantwortliche Person" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Arbeit planen" })).toBeInTheDocument();
+    expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
+
+    await openRailOverflow(chips);
+    expect(within(chips).getByRole("button", { name: "Ergebnis bearbeiten" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Tags" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Projekt öffnen" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Archivieren" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Kontext" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Status" })).toBeInTheDocument();
 
     // Closing and reopening via the kebab (no swipe gesture at all).
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
@@ -227,14 +245,14 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
   });
 
-  it("assigns a driver via the 'Verantwortlich' chip without activating the story", async () => {
+  it("assigns a driver via the 'Verantwortliche Person' rail command without activating the story", async () => {
     const story = makeProject({ id: 15, title: "Keller aufräumen", status: "backlog", ownerMemberId: null });
     mockedApi.updateProject.mockResolvedValue({ ...story, ownerMemberId: 2 });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Keller aufräumen");
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Verantwortlich" }));
+    await userEvent.click(screen.getByRole("button", { name: "Verantwortliche Person" }));
 
     // Clearing the driver is legal while the story sits in the backlog, so the
     // "Niemand zugewiesen" chip is offered and starts pressed.
@@ -253,7 +271,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
   });
 
-  it("archives a story via the 'Archivieren' chip, retaining it with optimistic styling before it disappears", async () => {
+  it("archives a story via the lifecycle rail, retaining it with optimistic styling before it disappears", async () => {
     vi.useFakeTimers();
     const story = makeProject({ id: 16, title: "Winterreifen wechseln", status: "backlog" });
     mockedApi.archiveProject.mockResolvedValue({ ...story, status: "archived" });
@@ -263,8 +281,8 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     // timers and would hang once fake timers are active.
     expect(screen.getByText("Winterreifen wechseln")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    fireEvent.click(screen.getByRole("button", { name: "Archivieren" }));
+    swipe(container, 100);
+    fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Archivieren" }));
 
     await act(async () => {
       await flushMicrotasks();
@@ -302,6 +320,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Fehlerfall Aktivierung");
 
     swipe(container, 100);
+    fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Aktiv machen" }));
     await screen.findByText("Netzwerkfehler");
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
 
@@ -321,7 +340,8 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await screen.findByText("Speicherplatz aufräumen");
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Erledigt, wenn …" }));
+    await openRailOverflow(screen.getByRole("group", { name: "Weitere Aktionen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Ergebnis bearbeiten" }));
 
     // Stays on the backlog list — a focused sheet, not the project page.
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
@@ -337,13 +357,13 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
   });
 
-  it("still navigates to the project detail page through 'Projekt öffnen'", async () => {
+  it("still navigates to the project detail page through the 'Arbeit planen' rail command", async () => {
     const story = makeProject({ id: 19, title: "Dachboden entrümpeln", status: "backlog" });
     const { container } = renderAtRootWithProjectRoute(<Harness story={story} />);
     await screen.findByText("Dachboden entrümpeln");
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Projekt öffnen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Arbeit planen" }));
     expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 19");
   });
 });

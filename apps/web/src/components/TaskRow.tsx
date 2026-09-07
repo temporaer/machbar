@@ -23,7 +23,6 @@ import {
 import { InlineChildComposer } from "./InlineChildComposer";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import { MoveTaskSheet } from "./MoveTaskSheet";
-import { IconActionButton } from "./IconActionButton";
 import { MarkdownNotes } from "./MarkdownNotes";
 import {
   formatExactLocalDate,
@@ -42,6 +41,8 @@ import {
   markdownWithoutPaperlessReferences,
 } from "../lib/paperlessAttachments";
 import { TaskRowAttachmentPreview } from "./TaskRowAttachmentPreview";
+import { useRailConfig } from "../lib/railConfigContext";
+import { WorkItemCommandRail } from "./WorkItemCommandRail";
 
 const LONG_PRESS_MS = 480;
 
@@ -114,7 +115,7 @@ export function TaskRow({
     (value: boolean) => scope.setCollapsed(taskProp.id, value),
     [scope, taskProp.id],
   );
-  const [chipsOpen, setChipsOpen] = useState(false);
+  const chipsOpen = scope.openRailId === taskProp.id;
   const [quickAction, setQuickAction] = useState<TaskQuickAction | null>(null);
   const [childComposerOpen, setChildComposerOpen] = useState(false);
   const [successorComposerOpen, setSuccessorComposerOpen] = useState(false);
@@ -138,6 +139,7 @@ export function TaskRow({
   const contentRef = useRef<HTMLDivElement | null>(null);
   const { members, currentMemberId } = useIdentity();
   const { primarySwipeAction } = useSwipeSettings();
+  const { taskFavorites } = useRailConfig();
   const navigate = useNavigate();
   // Structural editing (drag handle, keyboard moves, drop preview) is
   // provided by the surrounding `TaskOutline`; it stays absent — and every
@@ -257,7 +259,8 @@ export function TaskRow({
   } = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy || organize?.activeId != null,
     onPrimary: () => dispatch({ type: "task.primaryAction", task }),
-    onSecondary: () => setChipsOpen(true),
+    onDeepPrimary: () => scope.setOpenLifecycle(taskProp.id),
+    onSecondary: () => scope.setOpenRail(taskProp.id),
     onRealDrag: clearLongPress,
   });
   // Only one swipe background may be visible at a time — mid-drag it
@@ -265,6 +268,7 @@ export function TaskRow({
   // strip the red "more actions" background stays shown until the chips close.
   const showCompleteBg = dragX > 0;
   const showCancelBg = dragX < 0 || chipsOpen;
+  const lifecycleOpen = scope.openLifecycleId === taskProp.id;
   const primarySwipeLabel = primaryActionBgLabel(task, primarySwipeAction, strings);
   const swipeCoach = useSwipeCoach(
     `task:${task.id}`,
@@ -292,17 +296,17 @@ export function TaskRow({
 
   const openQuickAction = (action: TaskQuickAction) => {
     setQuickAction(action);
-    setChipsOpen(false);
+    scope.setOpenRail(null);
   };
 
   const reopenChip = () => {
     dispatch({ type: "task.toggleDone", task });
-    setChipsOpen(false);
+    scope.setOpenRail(null);
   };
 
   const followUpChip = () => {
     waitingInteraction?.onFollowUp(task);
-    setChipsOpen(false);
+    scope.setOpenRail(null);
   };
 
   // A task that already belongs to a project keeps navigating straight
@@ -310,7 +314,7 @@ export function TaskRow({
   // icon instead opens the existing project picker (search + recents) —
   // never a disabled dead end.
   const goToProjectChip = () => {
-    setChipsOpen(false);
+    scope.setOpenRail(null);
     if (task.projectId) {
       navigate(`/projects/${task.projectId}`);
     } else {
@@ -318,24 +322,48 @@ export function TaskRow({
     }
   };
 
-  const closeChips = () => {
-    setChipsOpen(false);
-    const kebab = kebabButtonRef.current;
-    if (kebab && getComputedStyle(kebab).display !== "none") {
-      kebab.focus();
-    } else {
-      mainButtonRef.current?.focus();
-    }
-  };
-
   const openChildComposer = () => {
-    setChipsOpen(false);
+    scope.setOpenRail(null);
     setChildComposerOpen(true);
   };
 
   const openSuccessorComposer = () => {
-    setChipsOpen(false);
+    scope.setOpenRail(null);
     setSuccessorComposerOpen(true);
+  };
+
+  const runRailCommand = (command: (typeof taskFavorites)[number]) => {
+    switch (command) {
+      case "task.plan":
+        openQuickAction("schedule");
+        return;
+      case "task.assignOwner":
+        openQuickAction("owner");
+        return;
+      case "task.split":
+        openChildComposer();
+        return;
+      case "task.addSuccessor":
+        openSuccessorComposer();
+        return;
+      case "task.changeProject":
+        goToProjectChip();
+        return;
+      case "task.waitingLifecycle":
+        if (task.externalWait && waitingInteraction) followUpChip();
+        else dispatch({ type: command, taskId: task.id });
+        return;
+      case "task.recurrence":
+      case "task.priority":
+      case "task.tags":
+      case "task.contexts":
+      case "task.convertToProject":
+        dispatch({ type: command, taskId: task.id });
+        return;
+      case "task.lifecycle":
+        dispatch({ type: command, task, status: task.status });
+        return;
+    }
   };
 
   // The kebab is `disabled` while a status mutation of this row is in
@@ -596,7 +624,9 @@ export function TaskRow({
           open={chipsOpen}
           disabled={busy}
           buttonRef={kebabButtonRef}
-          onToggle={() => setChipsOpen((o) => !o)}
+          onToggle={() =>
+            scope.setOpenRail(chipsOpen ? null : taskProp.id)
+          }
         />
       </div>
       {swipeCoach.active ? (
@@ -604,36 +634,40 @@ export function TaskRow({
       ) : null}
 
       {chipsOpen ? (
-        <div className="task-row-chips" role="group" aria-label={strings.moreActions}>
-          <IconActionButton kind="owner" label={strings.assign} disabled={busy} onClick={() => openQuickAction("owner")} />
-          <IconActionButton kind="schedule" label={strings.schedule} disabled={busy} onClick={() => openQuickAction("schedule")} />
-          <IconActionButton kind="notes" label={strings.notes} disabled={busy} onClick={() => openQuickAction("notes")} />
-          <IconActionButton
-            kind="child"
-            label={strings.addChild}
-            disabled={busy}
-            onClick={openChildComposer}
-          />
-          <IconActionButton
-            kind="successor"
-            label={strings.addSuccessor}
-            disabled={busy}
-            onClick={openSuccessorComposer}
-          />
-          <IconActionButton
-            kind="project"
-            label={task.projectId ? strings.toProject : strings.assignProject}
-            disabled={busy}
-            onClick={goToProjectChip}
-          />
-          {isDone || isCancelled ? (
-            <IconActionButton kind="reopen" label={strings.reopen} disabled={busy} onClick={reopenChip} />
-          ) : null}
-          {waitingInteraction && task.externalWait ? (
-            <IconActionButton kind="followUp" label={strings.followUp} disabled={busy} onClick={followUpChip} />
-          ) : null}
-          <IconActionButton kind="more" label={strings.more} disabled={outlineRefreshing} onClick={() => dispatch({ type: "task.open", taskId: task.id })} />
-          <IconActionButton kind="close" label={strings.close} onClick={closeChips} />
+        <WorkItemCommandRail
+          kind="task"
+          favorites={taskFavorites}
+          labels={strings.railCommandLabels}
+          labelForCommand={(command) =>
+            command === "task.waitingLifecycle" && task.externalWait
+              ? strings.followUp
+              : strings.railCommandLabels[command]
+          }
+          groupLabel={strings.moreActions}
+          overflowLabel={`${strings.more} …`}
+          disabled={busy}
+          onCommand={runRailCommand}
+          overflowOpen={scope.openOverflowId === taskProp.id}
+          onOverflowChange={(open) => scope.setOpenOverflow(open ? taskProp.id : null)}
+        />
+      ) : null}
+      {lifecycleOpen ? (
+        <div className="task-row-lifecycle" role="group" aria-label={strings.status}>
+          {(["captured", "actionable", "someday", "done", "cancelled"] as const).map((status) => (
+            <button
+              key={status}
+              type="button"
+              className="btn btn-sm"
+              disabled={busy || task.status === status}
+              aria-current={task.status === status ? "true" : undefined}
+              onClick={() => {
+                scope.setOpenLifecycle(null);
+                dispatch({ type: "task.lifecycle", task, status });
+              }}
+            >
+              {strings.taskStatusLabels[status]}
+            </button>
+          ))}
         </div>
       ) : null}
 

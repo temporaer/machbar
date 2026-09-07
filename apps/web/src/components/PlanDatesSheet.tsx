@@ -5,7 +5,7 @@ import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 
-/** Bottom sheet for the "Planen" chip: due/scheduled dates, same fields/shape as `TaskDetailSheet`. */
+/** Bottom sheet for a project's revisit and due dates. */
 export function PlanDatesSheet({
   story,
   onClose,
@@ -27,7 +27,6 @@ export function PlanDatesSheet({
     setError(null);
     try {
       await onSave(patch);
-      onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
     } finally {
@@ -56,7 +55,9 @@ export function PlanDatesSheet({
             />
           </div>
           <div className="field" style={{ flex: 1 }}>
-            <label htmlFor="story-scheduled">{strings.scheduled}</label>
+            <label htmlFor="story-scheduled">
+              {strings.projectRevisitDate}
+            </label>
             <HumanDateInput
               id="story-scheduled"
               value={story.scheduledDate ?? ""}

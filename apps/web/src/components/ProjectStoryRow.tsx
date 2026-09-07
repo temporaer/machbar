@@ -31,7 +31,7 @@ import { useOptionalInteractionScope } from "../lib/interactionScope";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
-import { IconActionButton, IconActionGlyph } from "./IconActionButton";
+import { IconActionGlyph } from "./IconActionButton";
 import { MemberAvatar } from "./MemberAvatar";
 import { useLocale } from "../lib/locale";
 import "./ProjectStoryRow.css";
@@ -42,6 +42,8 @@ import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 import { hasProjectProgressPath } from "../lib/projectCommitments";
 import { TaskCardTags } from "./TaskCardTags";
+import { useRailConfig } from "../lib/railConfigContext";
+import { WorkItemCommandRail } from "./WorkItemCommandRail";
 
 /**
  * Semantic accent driving the row's status badge, left-edge stripe, primary
@@ -131,7 +133,6 @@ function storyWorkflowCommand(
 export function ProjectStoryRow({ story: storyProp, variant = "compact" }: ProjectStoryRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
-  const [chipsOpen, setChipsOpen] = useState(false);
   const [sheet, setSheet] = useState<Sheet>(null);
   const { members } = useIdentity();
   const navigate = useNavigate();
@@ -258,10 +259,13 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   }, [busy, criteria, dispatch, navigate, primaryAction, story]);
   const swipe = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy,
-    onPrimary: doPrimary,
-    onSecondary: () => setChipsOpen(true),
+    onPrimary: () => scope?.setOpenLifecycle(storyProp.id),
+    onSecondary: () => scope?.setOpenRail(storyProp.id),
   });
   const { dragX } = swipe;
+  const chipsOpen = scope?.openRailId === storyProp.id;
+  const lifecycleOpen = scope?.openLifecycleId === storyProp.id;
+  const { projectFavorites } = useRailConfig();
   const showPrimaryBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
   const swipeCoach = useSwipeCoach(
@@ -270,12 +274,12 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   );
 
   const openSheet = (next: Exclude<Sheet, null>) => {
-    setChipsOpen(false);
+    scope?.setOpenRail(null);
     setSheet(next);
   };
 
   const runSecondary = (action: ProjectWorkflowAction) => {
-    setChipsOpen(false);
+    scope?.setOpenRail(null);
     if (action === "complete" && criteria.some((criterion) => !criterion.checked)) {
       setSheet("criteria");
       return;
@@ -297,14 +301,44 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   };
 
   const handleMainClick = () => {
-    setChipsOpen(false);
+    scope?.setOpenRail(null);
     scope?.setActive(story.id, "story");
   };
 
   const goToDetail = () => {
-    setChipsOpen(false);
+    scope?.setOpenRail(null);
     scope?.setActive(story.id, "story");
     navigate(`/projects/${story.id}`);
+  };
+
+  const runRailCommand = (command: (typeof projectFavorites)[number]) => {
+    switch (command) {
+      case "story.defer":
+        openSheet("plan-dates");
+        return;
+      case "story.assignDriver":
+        openSheet("assign-driver");
+        return;
+      case "story.editOutcome":
+        openSheet("criteria");
+        return;
+      case "story.planWork":
+        navigate(`/projects/${story.id}?focus=next-action`);
+        scope?.setOpenRail(null);
+        return;
+      case "story.lifecycle":
+        scope?.setOpenRail(null);
+        dispatch({ type: command, story });
+        return;
+      default:
+        scope?.setOpenRail(null);
+        dispatch({ type: command, story });
+    }
+  };
+
+  const runLifecycleAction = (action: ProjectWorkflowAction) => {
+    scope?.setOpenLifecycle(null);
+    runSecondary(action);
   };
 
   return (
@@ -373,7 +407,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
               ) : null}
               {scheduledLabel ? (
                 <span>
-                  {strings.scheduled}: {scheduledLabel}
+                  {strings.projectRevisitDate}: {scheduledLabel}
                 </span>
               ) : null}
               {variant !== "card" ? (
@@ -454,7 +488,9 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           classPrefix="story-row"
           open={chipsOpen}
           disabled={busy}
-          onToggle={() => setChipsOpen((o) => !o)}
+          onToggle={() =>
+            scope?.setOpenRail(chipsOpen ? null : storyProp.id)
+          }
         />
       </div>
       {swipeCoach.active ? (
@@ -462,19 +498,30 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
       ) : null}
 
       {chipsOpen ? (
-        <div className="story-row-chips" role="group" aria-label={strings.moreActions}>
-          <IconActionButton kind="owner" label={strings.driver} onClick={() => openSheet("assign-driver")} />
-          <IconActionButton kind="criteria" label={strings.criteria} onClick={() => openSheet("criteria")} />
-          <IconActionButton kind="schedule" label={strings.planDates} onClick={() => openSheet("plan-dates")} />
-          <IconActionButton kind="tags" label={strings.tags} onClick={() => openSheet("tags")} />
-          <IconActionButton kind="openProject" label={strings.openProject} onClick={goToDetail} />
-          {secondaryActions.map((action) => (
+        <WorkItemCommandRail
+          kind="project"
+          favorites={projectFavorites}
+          labels={strings.railCommandLabels}
+          groupLabel={strings.moreActions}
+          overflowLabel={`${strings.more} …`}
+          disabled={busy}
+          onCommand={runRailCommand}
+          overflowOpen={scope.openOverflowId === story.id}
+          onOverflowChange={(open) => scope.setOpenOverflow(open ? story.id : null)}
+        />
+      ) : null}
+      {lifecycleOpen ? (
+        <div className="story-row-lifecycle" role="group" aria-label={strings.status}>
+          <button type="button" className="btn btn-sm" disabled aria-current="true">
+            {strings.projectStatusLabels[story.status]}
+          </button>
+          {story.availableActions.map((action) => (
             <button
               key={action}
               type="button"
               className="btn btn-sm"
               disabled={busy}
-              onClick={() => runSecondary(action)}
+              onClick={() => runLifecycleAction(action)}
             >
               {projectWorkflowLabel(action, strings)}
             </button>

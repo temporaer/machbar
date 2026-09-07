@@ -463,10 +463,15 @@ injected calendar date; there is no Review table or workflow status.
 
 Review contains structural decisions: missing project driver or progress path,
 due-without-plan, malformed waiting, broken blocker paths, XL work without
-breakdown, completion review, and age-based reconsideration. It deliberately
-excludes valid shared tasks, absent optional acceptance criteria, Inbox
-captures, reached follow-ups, and past planning dates already owned by Today.
-More's badge is the exact number of current derived items.
+breakdown, completion review, and age-based reconsideration. It also flags
+semantic contradictions between a project's own dates/status and its child
+tasks: a backlog project already carrying actionable, scheduled, or due open
+work; a task scheduled or due before its project's own resurface
+(`scheduledDate`) date; a project whose deadline precedes its own resurface
+date; and a completed/archived project that still has open child tasks. It
+deliberately excludes valid shared tasks, absent optional acceptance criteria,
+Inbox captures, reached follow-ups, and past planning dates already owned by
+Today. More's badge is the exact number of current derived items.
 
 Nullable `projects.reviewed_at` and `tasks.reviewed_at` record only explicit
 "keep active/parked/later" decisions. Opening an item never acknowledges it,
@@ -893,11 +898,26 @@ scope's registered `moveBy`. `apps/web/src/lib/useGlobalNavigationKeys.ts`
 be read from an ancestor) handles the scope-independent `g`-prefix
 navigation sequence and returns descriptor-derived prefix choices for the
 which-key hint. `?` opens the scoped `CommandHelpSheet`, `c` dispatches
-`capture.open`, and `s`/`a`/`n` open the existing focused task detail flows
-when the logical active item is a task. Both keyboard hooks suppress
+`capture.open`, and semantic task shortcuts dispatch `task.plan`,
+`task.waitingLifecycle`, `task.assignOwner`, and `task.openOverflow` when the
+logical active item is a task. These bindings are independent of rail
+favorite configuration. Both keyboard hooks suppress
 themselves via one shared
 `shouldSuppressGlobalShortcuts()` (`apps/web/src/lib/keyboardShortcuts.ts`)
 while editing text, or while a `BottomSheet`/modal is open.
+
+**Command rails.** `WorkItemCommandRail.tsx` renders three device-local
+favorite commands from `railConfig.ts` plus a fixed `Mehr …` overflow. The
+overflow is derived from the same canonical command registry and excludes
+pinned favorites, so changing prominence never changes command semantics.
+`InteractionScopeProvider` owns the open rail identity and closes other rails
+when a new row is opened or the user taps elsewhere.
+
+**Readable detail projections.** Task and project details remain separate
+because their domain content differs, but they present current scalar values
+as direct actions, omit empty optional metadata, and keep substantive
+collections as readable sections. Semantic transformations continue through
+the shared command/action paths and focused sheets.
 
 **Still two separate rows and detail sheets.** `TaskRow.tsx` and
 `ProjectStoryRow.tsx` render as fully separate components (they now both

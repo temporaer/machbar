@@ -29,11 +29,16 @@ import { PageHeader } from "../components/PageHeader";
 import { MemberLabel } from "../components/MemberAvatar";
 import { IconActionButton } from "../components/IconActionButton";
 import { StoryCriteriaSheet } from "../components/StoryCriteriaSheet";
+import { MemberSelectionSheet } from "../components/MemberSelectionSheet";
+import { PlanDatesSheet } from "../components/PlanDatesSheet";
+import { ProjectTagsSheet } from "../components/ProjectTagsSheet";
+import { TaskCardTags } from "../components/TaskCardTags";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { RecentActivity } from "../components/RecentActivity";
 import { useLocale } from "../lib/locale";
 import type { ProjectWithActions } from "../lib/api";
 import { useProjectActions } from "../lib/useProjectActions";
+import { canClearDriver } from "../lib/projectWorkflow";
 import { appendTextBlock } from "../lib/shareTarget";
 import {
   containsPaperlessReference,
@@ -59,6 +64,10 @@ export function ProjectDetailPage() {
   const focus = searchParams.get("focus");
   const { members } = useIdentity();
   const [editing, setEditing] = useState(false);
+  const [editingOutcome, setEditingOutcome] = useState(false);
+  const [detailSheet, setDetailSheet] = useState<
+    "driver" | "dates" | "tags" | null
+  >(null);
   const [editFocusField, setEditFocusField] = useState<
     ProjectEditFocusField | undefined
   >();
@@ -112,6 +121,18 @@ export function ProjectDetailPage() {
     project?.acceptanceCriteria.filter((c) => c.checked).length ?? 0;
   const criteriaPct =
     criteriaTotal > 0 ? Math.round((criteriaDone / criteriaTotal) * 100) : 0;
+  const dueDate = project ? formatDate(project.dueDate, locale) : null;
+  const scheduledDate = project
+    ? formatDate(project.scheduledDate, locale)
+    : null;
+  const hasProjectLabels =
+    Boolean(project?.tags.length) || Boolean(project?.contexts.length);
+  const hasProjectMeta =
+    Boolean(owner) ||
+    Boolean(dueDate) ||
+    Boolean(scheduledDate) ||
+    hasProjectLabels ||
+    criteriaTotal > 0;
 
   const clearRouteFocus = useCallback(() => {
     const next = new URLSearchParams(searchParams);
@@ -254,44 +275,100 @@ export function ProjectDetailPage() {
                   />
                 </div>
               </div>
-              <div className="row text-muted" style={{ fontSize: "0.8rem" }}>
-                <span className="badge">
-                  {strings.projectStatusLabels[project.status]}
-                </span>
-                <span className="member-label">
-                  <span>{strings.driver}:</span>
-                  {owner ? (
-                    <MemberLabel member={owner} size="xs" />
-                  ) : (
-                    strings.noDriver
-                  )}
-                </span>
-                {project.dueDate ? (
-                  <span>
-                    {strings.due}: {formatDate(project.dueDate, locale)}
+              <div
+                className="project-detail-overview"
+                aria-label={strings.projectOverview}
+              >
+                <div className="project-detail-overview-row">
+                  <span className="sr-only">{strings.projectStatus}: </span>
+                  <span className="badge project-detail-status-badge">
+                    {strings.projectStatusLabels[project.status]}
                   </span>
+                  <span className="project-detail-task-progress">
+                    {strings.taskProgress}: {taskCounts.open}{" "}
+                    {strings.openTasks.toLowerCase()} · {taskCounts.done}{" "}
+                    {strings.doneTasks.toLowerCase()}
+                  </span>
+                </div>
+                {hasProjectMeta ? (
+                  <div className="project-detail-meta-row">
+                    {owner ? (
+                      <button
+                        type="button"
+                        className="project-detail-meta-button"
+                        onClick={() => setDetailSheet("driver")}
+                      >
+                        <span className="project-detail-meta-label">
+                          {strings.driver}
+                        </span>
+                        <MemberLabel member={owner} size="xs" />
+                      </button>
+                    ) : null}
+                    {dueDate ? (
+                      <button
+                        type="button"
+                        className="project-detail-meta-button"
+                        onClick={() => setDetailSheet("dates")}
+                      >
+                        <span className="project-detail-meta-label">
+                          {strings.due}
+                        </span>
+                        <span>{dueDate}</span>
+                      </button>
+                    ) : null}
+                    {scheduledDate ? (
+                      <button
+                        type="button"
+                        className="project-detail-meta-button"
+                        onClick={() => setDetailSheet("dates")}
+                      >
+                        <span className="project-detail-meta-label">
+                          {strings.projectRevisitDate}
+                        </span>
+                        <span>{scheduledDate}</span>
+                      </button>
+                    ) : null}
+                    {hasProjectLabels ? (
+                      <button
+                        type="button"
+                        className="project-detail-meta-button project-detail-label-button"
+                        onClick={() => {
+                          if (project.contexts.length > 0) {
+                            setEditFocusField("planning");
+                            setEditing(true);
+                          } else {
+                            setDetailSheet("tags");
+                          }
+                        }}
+                      >
+                        <span className="project-detail-meta-label">
+                          {project.contexts.length > 0
+                            ? strings.cardLabels
+                            : strings.tags}
+                        </span>
+                        <TaskCardTags
+                          tags={project.tags}
+                          contexts={project.contexts}
+                        />
+                      </button>
+                    ) : null}
+                    {criteriaTotal > 0 ? (
+                      <button
+                        type="button"
+                        className="project-detail-meta-button project-detail-criteria-button"
+                        onClick={() => setEditingOutcome(true)}
+                      >
+                        <span>
+                          {strings.criteria}: {criteriaDone}/{criteriaTotal}
+                        </span>
+                        <span className="criteria-progress" aria-hidden="true">
+                          <span style={{ width: `${criteriaPct}%` }} />
+                        </span>
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
-              <div className="row text-muted" style={{ fontSize: "0.8rem" }}>
-                <span>
-                  {strings.taskProgress}: {taskCounts.open}{" "}
-                  {strings.openTasks.toLowerCase()} · {taskCounts.done}{" "}
-                  {strings.doneTasks.toLowerCase()}
-                </span>
-              </div>
-              {criteriaTotal > 0 ? (
-                <div>
-                  <p
-                    className="text-muted"
-                    style={{ fontSize: "0.8rem", margin: "4px 0 0" }}
-                  >
-                    {strings.criteria}: {criteriaDone}/{criteriaTotal}
-                  </p>
-                  <div className="criteria-progress">
-                    <span style={{ width: `${criteriaPct}%` }} />
-                  </div>
-                </div>
-              ) : null}
             </div>
             <PaperlessAttachmentStrip attachments={attachments} />
             {attachmentError ? (
@@ -388,8 +465,58 @@ export function ProjectDetailPage() {
             }
           />
         ) : null}
-        {focus === "outcome" && project ? (
-          <StoryCriteriaSheet story={project} onClose={clearRouteFocus} />
+        {(focus === "outcome" || editingOutcome) && project ? (
+          <StoryCriteriaSheet
+            story={project}
+            onClose={() => {
+              if (focus === "outcome") clearRouteFocus();
+              setEditingOutcome(false);
+            }}
+          />
+        ) : null}
+        {detailSheet === "driver" && project ? (
+          <MemberSelectionSheet
+            title={strings.assignDriver}
+            label={strings.driver}
+            idPrefix={`project-detail-driver-${project.id}`}
+            members={members}
+            value={project.ownerMemberId}
+            unassignedLabel={canClearDriver(project) ? strings.noDriver : null}
+            hint={canClearDriver(project) ? undefined : strings.driverLockedHint}
+            onClose={() => setDetailSheet(null)}
+            onSelect={async (ownerMemberId) => {
+              const confirmed = await projectActions.assignDriver(
+                project,
+                ownerMemberId,
+              );
+              if (confirmed) setConfirmedProject(confirmed);
+            }}
+          />
+        ) : null}
+        {detailSheet === "dates" && project ? (
+          <PlanDatesSheet
+            story={project}
+            onClose={() => setDetailSheet(null)}
+            onSave={async (patch) => {
+              const confirmed = await projectActions.schedule(project, patch);
+              if (confirmed) setConfirmedProject(confirmed);
+            }}
+          />
+        ) : null}
+        {detailSheet === "tags" && project ? (
+          <ProjectTagsSheet
+            story={project}
+            onClose={() => setDetailSheet(null)}
+            onSave={async (tagIds) => {
+              const confirmed = await projectActions.update(
+                project,
+                { tagIds },
+                undefined,
+                true,
+              );
+              if (confirmed) setConfirmedProject(confirmed);
+            }}
+          />
         ) : null}
         {addingSequence ? (
           <TaskSequenceSheet

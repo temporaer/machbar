@@ -182,7 +182,8 @@ function WeekCard({
   if (item.placement === "scheduled") {
     chipList.push({
       key: "scheduled",
-      label: strings.scheduled,
+      label:
+        item.role === "story" ? strings.projectRevisitDate : strings.scheduled,
       className: "week-card-chip week-card-chip-scheduled",
     });
   }

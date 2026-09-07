@@ -203,6 +203,66 @@ a {
   flex-wrap: wrap;
 }
 
+.project-detail-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-detail-overview-row,
+.project-detail-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.project-detail-task-progress {
+  color: var(--color-text-muted);
+}
+
+.project-detail-meta-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.project-detail-meta-button:hover,
+.project-detail-meta-button:focus-visible {
+  border-color: var(--color-primary);
+}
+
+.project-detail-meta-label {
+  color: var(--color-text-muted);
+  font-weight: 650;
+}
+
+.project-detail-label-button .task-card-tags {
+  margin: 0;
+}
+
+.project-detail-criteria-button {
+  border-radius: 16px;
+  align-items: stretch;
+  flex-direction: column;
+  min-width: 150px;
+}
+
+.project-detail-criteria-button .criteria-progress {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+}
+
 @media (min-width: 560px) {
   .project-page-title-row {
     align-items: center;
@@ -1433,6 +1493,14 @@ details[open] > .disclosure-summary::after {
   border-radius: 999px;
   font-size: 0.72rem;
   font-weight: 600;
+}
+
+.badge-button {
+  border: none;
+}
+
+.task-detail-add-property {
+  color: var(--color-text-muted);
 }
 
 .more-link-trailing {

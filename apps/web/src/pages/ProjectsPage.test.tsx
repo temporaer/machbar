@@ -166,7 +166,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     }
   });
 
-  it("completes an active project by swiping its row right, straight from the Projekte tab", async () => {
+  it("completes an active project from the right-swipe lifecycle rail, straight from the Projekte tab", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Aktive Geschichte");
     mockedApi.completeProject.mockResolvedValue(
@@ -174,6 +174,9 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     );
 
     swipeRow(rowFor(container, "Aktive Geschichte"), 100);
+    const lifecycle = within(rowFor(container, "Aktive Geschichte")).getByRole("group", { name: "Status" });
+    expect(within(lifecycle).getByRole("button", { name: "Aktiv" })).toHaveAttribute("aria-current", "true");
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -186,16 +189,25 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     );
   });
 
-  it("reveals per-row chips with the remaining legal transitions on a left swipe", async () => {
+  it("reveals configurable per-row commands on a left swipe and keeps status transitions in the lifecycle rail", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Archivierte Geschichte");
 
     const row = rowFor(container, "Archivierte Geschichte");
     swipeRow(row, -100);
     const chips = within(row).getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(chips).getByRole("button", { name: "Verantwortlich" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Auf später verschieben" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Wiedervorlegen" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Verantwortliche Person" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Arbeit planen" })).toBeInTheDocument();
+    expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
+    expect(within(chips).queryByRole("button", { name: "Auf später verschieben" })).not.toBeInTheDocument();
     expect(within(chips).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
+
+    swipeRow(row, 100);
+    const lifecycle = within(row).getByRole("group", { name: "Status" });
+    expect(within(lifecycle).getByRole("button", { name: "Aktiv machen" })).toBeInTheDocument();
+    expect(within(lifecycle).getByRole("button", { name: "Auf später verschieben" })).toBeInTheDocument();
+    expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
 
   it("keeps a retained row visible even when a refetch no longer lists it", async () => {
@@ -208,6 +220,8 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     mockedApi.getProjects.mockResolvedValue([]);
 
     swipeRow(rowFor(container, "Fertige Geschichte"), 100);
+    const lifecycle = within(rowFor(container, "Fertige Geschichte")).getByRole("group", { name: "Status" });
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Wieder öffnen" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -462,6 +476,8 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     ]);
 
     swipeRow(rowFor(container, "Miras aktive Geschichte"), 100);
+    const lifecycle = within(rowFor(container, "Miras aktive Geschichte")).getByRole("group", { name: "Status" });
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -782,6 +798,8 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     expect(rowFor(container, "Aktive Geschichte").closest("details")).toBeNull();
 
     swipeRow(rowFor(container, "Aktive Geschichte"), 100);
+    const lifecycle = within(rowFor(container, "Aktive Geschichte")).getByRole("group", { name: "Status" });
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -832,6 +850,8 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     await screen.findByText("Abgeschlossen & archiviert (1)");
 
     swipeRow(rowFor(container, "Wieder zu prüfende Geschichte"), 100);
+    const lifecycle = within(rowFor(container, "Wieder zu prüfende Geschichte")).getByRole("group", { name: "Status" });
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Wieder öffnen" }));
     await act(async () => {
       await flushMicrotasks();
     });

@@ -79,11 +79,16 @@ const reasonOrder: Record<ReviewReason, number> = {
   waiting_without_followup: 2,
   broken_blocker_path: 3,
   xl_without_children: 4,
-  completion_review: 5,
-  active_stale: 6,
-  backlog_due: 7,
-  backlog_stale: 8,
-  standalone_someday_stale: 9,
+  project_due_before_resurface: 5,
+  task_due_before_resurface: 6,
+  task_scheduled_before_resurface: 7,
+  backlog_planned_work: 8,
+  completed_project_open_work: 9,
+  completion_review: 10,
+  active_stale: 11,
+  backlog_due: 12,
+  backlog_stale: 13,
+  standalone_someday_stale: 14,
 };
 
 export interface BuildReviewItemsOptions {
@@ -156,8 +161,90 @@ export function buildReviewItems(
     }
   }
 
+  // Unlike the checks above, these two intentionally run over every open
+  // task regardless of `isTaskInWorkingSystem` — a task scheduled/due
+  // earlier than its own project's resurface date matters most precisely
+  // when that project is backlog/deferred (i.e. not in the working
+  // system), so gating on working-system membership would hide the
+  // exact case this is meant to catch.
+  for (const task of graph.allTasks()) {
+    if (!isOpen(task)) continue;
+    if (task.projectId === null) continue;
+    const project = graph.projectsById.get(task.projectId);
+    if (!project || project.scheduledDate === null) continue;
+    if (task.scheduledDate !== null && task.scheduledDate < project.scheduledDate) {
+      items.push(
+        taskItem(
+          task,
+          "clarification_repair",
+          "task_scheduled_before_resurface",
+          { code: "plan_task", targetEntityType: "task", targetEntityId: task.id },
+        ),
+      );
+    }
+    if (task.dueDate !== null && task.dueDate < project.scheduledDate) {
+      items.push(
+        taskItem(task, "clarification_repair", "task_due_before_resurface", {
+          code: "plan_task",
+          targetEntityType: "task",
+          targetEntityId: task.id,
+        }),
+      );
+    }
+  }
+
   for (const project of graph.listProjectsWithComputed()) {
     const tasks = graph.tasksForProject(project.id);
+
+    if (
+      project.dueDate !== null &&
+      project.scheduledDate !== null &&
+      project.dueDate < project.scheduledDate
+    ) {
+      items.push(
+        projectItem(
+          project,
+          "clarification_repair",
+          "project_due_before_resurface",
+          { code: "defer_project", targetEntityType: "project", targetEntityId: project.id },
+        ),
+      );
+    }
+
+    if (project.status === "backlog") {
+      const openTasks = tasks.filter(isOpen);
+      const hasPlannedWork = openTasks.some(
+        (task) =>
+          task.status === "actionable" ||
+          task.scheduledDate !== null ||
+          task.dueDate !== null,
+      );
+      if (hasPlannedWork) {
+        items.push(
+          projectItem(
+            project,
+            "clarification_repair",
+            "backlog_planned_work",
+            { code: "activate_project", targetEntityType: "project", targetEntityId: project.id },
+          ),
+        );
+      }
+    }
+
+    if (project.status === "completed" || project.status === "archived") {
+      const openTasks = tasks.filter(isOpen);
+      if (openTasks.length > 0) {
+        items.push(
+          projectItem(
+            project,
+            "clarification_repair",
+            "completed_project_open_work",
+            { code: "project_lifecycle", targetEntityType: "project", targetEntityId: project.id },
+          ),
+        );
+      }
+    }
+
     if (project.status === "active") {
       const openTasks = tasks.filter(isOpen);
       const canonicalCandidates = graph.nextActionCandidatesFor(project.id);

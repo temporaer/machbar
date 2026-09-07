@@ -696,4 +696,232 @@ describe("review queue", () => {
       standalone.id,
     ]);
   });
+
+  it("flags a backlog project that already carries actionable/scheduled/due open work", () => {
+    const actionableWork = ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "story", status: "backlog", title: "Backlog with actionable work" })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", parentId: actionableWork.id, title: "Do now" })
+      .run();
+
+    const scheduledWork = ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "story", status: "backlog", title: "Backlog with scheduled task" })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        status: "backlog",
+        parentId: scheduledWork.id,
+        title: "Scheduled anyway",
+        scheduledDate: today,
+      })
+      .run();
+
+    const dueWork = ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "story", status: "backlog", title: "Backlog with due task" })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        status: "backlog",
+        parentId: dueWork.id,
+        title: "Due anyway",
+        dueDate: today,
+      })
+      .run();
+
+    const cleanBacklog = ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "story", status: "backlog", title: "Genuinely dormant backlog" })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "task", status: "backlog", parentId: cleanBacklog.id, title: "Someday" })
+      .run();
+
+    const flagged = reviewItems().filter(
+      (item) => item.reason === "backlog_planned_work",
+    );
+    expect(flagged.map((item) => item.entityId).sort()).toEqual(
+      [actionableWork.id, scheduledWork.id, dueWork.id].sort(),
+    );
+    expect(flagged.some((item) => item.entityId === cleanBacklog.id)).toBe(
+      false,
+    );
+  });
+
+  it("flags a task scheduled or due before its project's resurface date", () => {
+    const project = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        status: "backlog",
+        title: "Deferred project",
+        scheduledDate: "2026-09-20",
+      })
+      .returning()
+      .get();
+    const scheduledTooEarly = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        status: "backlog",
+        parentId: project.id,
+        title: "Planned too early",
+        scheduledDate: "2026-09-10",
+      })
+      .returning()
+      .get();
+    const dueTooEarly = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        status: "backlog",
+        parentId: project.id,
+        title: "Due too early",
+        dueDate: "2026-09-15",
+      })
+      .returning()
+      .get();
+    const consistentTask = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        status: "backlog",
+        parentId: project.id,
+        title: "Planned after resurface",
+        scheduledDate: "2026-09-25",
+      })
+      .returning()
+      .get();
+
+    const items = reviewItems();
+    expect(
+      items.some(
+        (item) =>
+          item.entityId === scheduledTooEarly.id &&
+          item.reason === "task_scheduled_before_resurface",
+      ),
+    ).toBe(true);
+    expect(
+      items.some(
+        (item) =>
+          item.entityId === dueTooEarly.id &&
+          item.reason === "task_due_before_resurface",
+      ),
+    ).toBe(true);
+    expect(
+      items.some(
+        (item) =>
+          item.entityId === consistentTask.id &&
+          (item.reason === "task_scheduled_before_resurface" ||
+            item.reason === "task_due_before_resurface"),
+      ),
+    ).toBe(false);
+  });
+
+  it("flags a project whose deadline is earlier than its own resurface date", () => {
+    const inconsistent = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        status: "backlog",
+        title: "Contradictory dates",
+        scheduledDate: "2026-09-20",
+        dueDate: "2026-09-10",
+      })
+      .returning()
+      .get();
+    const consistent = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        status: "backlog",
+        title: "Consistent dates",
+        scheduledDate: "2026-09-10",
+        dueDate: "2026-09-20",
+      })
+      .returning()
+      .get();
+
+    const items = reviewItems();
+    expect(
+      items.some(
+        (item) =>
+          item.entityId === inconsistent.id &&
+          item.reason === "project_due_before_resurface",
+      ),
+    ).toBe(true);
+    expect(
+      items.some(
+        (item) =>
+          item.entityId === consistent.id &&
+          item.reason === "project_due_before_resurface",
+      ),
+    ).toBe(false);
+  });
+
+  it("flags a completed or archived project that still has open work, but not one that is fully done", () => {
+    const completedWithOpenWork = ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "story", status: "done", title: "Completed but not really" })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        status: "active",
+        parentId: completedWithOpenWork.id,
+        title: "Still open",
+        scheduledDate: today,
+      })
+      .run();
+
+    const archivedWithOpenWork = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        status: "backlog",
+        archivedAt: `${today}T10:00:00.000Z`,
+        title: "Archived but not really",
+      })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", parentId: archivedWithOpenWork.id, title: "Still open too" })
+      .run();
+
+    const genuinelyCompleted = ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "story", status: "done", title: "Actually done" })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "task", status: "done", parentId: genuinelyCompleted.id, title: "Finished" })
+      .run();
+
+    const flagged = reviewItems().filter(
+      (item) => item.reason === "completed_project_open_work",
+    );
+    expect(flagged.map((item) => item.entityId).sort()).toEqual(
+      [completedWithOpenWork.id, archivedWithOpenWork.id].sort(),
+    );
+    expect(
+      flagged.some((item) => item.entityId === genuinelyCompleted.id),
+    ).toBe(false);
+  });
 });

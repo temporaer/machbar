@@ -19,6 +19,19 @@ import { useOptionalInteractionScope } from "./interactionScope";
 function commandWorkItemId(command: WorkItemCommand): number | null {
   switch (command.type) {
     case "task.open":
+    case "task.plan":
+    case "task.waitingLifecycle":
+    case "task.split":
+    case "task.assignOwner":
+    case "task.changeProject":
+    case "task.addSuccessor":
+    case "task.recurrence":
+    case "task.priority":
+    case "task.tags":
+    case "task.contexts":
+    case "task.convertToProject":
+    case "task.lifecycle":
+    case "task.openOverflow":
     case "task.toggleDone":
     case "task.primaryAction":
     case "task.discard":
@@ -32,6 +45,14 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "story.complete":
     case "story.reopen":
     case "story.archive":
+    case "story.defer":
+    case "story.assignDriver":
+    case "story.planWork":
+    case "story.editOutcome":
+    case "story.tags":
+    case "story.contexts":
+    case "story.lifecycle":
+    case "story.openOverflow":
       return command.story.id;
     case "outline.collapse":
     case "outline.expand":
@@ -48,6 +69,19 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
 function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null {
   switch (command.type) {
     case "task.open":
+    case "task.plan":
+    case "task.waitingLifecycle":
+    case "task.split":
+    case "task.assignOwner":
+    case "task.changeProject":
+    case "task.addSuccessor":
+    case "task.recurrence":
+    case "task.priority":
+    case "task.tags":
+    case "task.contexts":
+    case "task.convertToProject":
+    case "task.lifecycle":
+    case "task.openOverflow":
     case "task.toggleDone":
     case "task.primaryAction":
     case "task.discard":
@@ -57,6 +91,14 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "story.complete":
     case "story.reopen":
     case "story.archive":
+    case "story.defer":
+    case "story.assignDriver":
+    case "story.planWork":
+    case "story.editOutcome":
+    case "story.tags":
+    case "story.contexts":
+    case "story.lifecycle":
+    case "story.openOverflow":
       return "story";
     case "workItem.schedule":
     case "workItem.setDeadline":
@@ -101,6 +143,39 @@ export function useWorkItemCommands() {
       switch (command.type) {
         case "task.open":
           taskDetail.open(command.taskId, command.focusField);
+          return;
+        case "task.plan":
+          taskDetail.open(command.taskId, "schedule");
+          return;
+        case "task.waitingLifecycle":
+          taskDetail.open(command.taskId, "waiting");
+          return;
+        case "task.split":
+          taskDetail.open(command.taskId, "split");
+          return;
+        case "task.assignOwner":
+          taskDetail.open(command.taskId, "owner");
+          return;
+        case "task.changeProject":
+        case "task.addSuccessor":
+        case "task.recurrence":
+        case "task.priority":
+        case "task.tags":
+        case "task.contexts":
+        case "task.convertToProject":
+        case "task.openOverflow":
+          scope?.setOpenOverflow(command.taskId);
+          return;
+        case "task.lifecycle":
+          if (command.status === "done" || command.status === "actionable") {
+            taskActions.requestToggle(command.task);
+          } else if (command.status === "cancelled") {
+            taskActions.requestCancel(command.task);
+          } else if (command.status === "captured") {
+            taskActions.clarify(command.task);
+          } else {
+            taskActions.setStatus(command.task, command.status);
+          }
           return;
         case "task.toggleDone":
           taskActions.requestToggle(command.task);
@@ -161,6 +236,16 @@ export function useWorkItemCommands() {
           return;
         case "story.archive":
           void projectActions.runAction(command.story, "archive");
+          return;
+        case "story.defer":
+        case "story.assignDriver":
+        case "story.planWork":
+        case "story.editOutcome":
+        case "story.tags":
+        case "story.contexts":
+        case "story.lifecycle":
+        case "story.openOverflow":
+          scope?.setOpenOverflow(command.story.id);
           return;
         case "outline.collapse":
           scope?.setCollapsed(command.workItemId, true);

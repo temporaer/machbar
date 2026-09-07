@@ -37,7 +37,11 @@ function errorMessage(err: unknown, strings: Strings): string {
   return localizedErrorMessage(err, strings);
 }
 
-export type ProjectEditFocusField = "driver" | "completion" | "notes";
+export type ProjectEditFocusField =
+  | "driver"
+  | "completion"
+  | "notes"
+  | "planning";
 
 /**
  * Mobile bottom-sheet editor for a project/story: metadata (title, driver,
@@ -122,6 +126,7 @@ export function ProjectEditSheet({
   const notesFieldRef = useRef<HTMLDivElement>(null);
   const driverFieldRef = useRef<HTMLDivElement>(null);
   const lifecycleFieldRef = useRef<HTMLDivElement>(null);
+  const planningFieldRef = useRef<HTMLDetailsElement>(null);
   const criteriaFieldRef = useRef<HTMLDivElement>(null);
   const appliedFocusRef = useRef<string | null>(null);
 
@@ -165,7 +170,9 @@ export function ProjectEditSheet({
     const container =
       focusField === "driver"
         ? driverFieldRef.current
-        : lifecycleFieldRef.current;
+        : focusField === "planning"
+          ? planningFieldRef.current
+          : lifecycleFieldRef.current;
     if (!container) return;
     container.scrollIntoView?.({ block: "center", behavior: "smooth" });
     const focusable =
@@ -567,6 +574,8 @@ export function ProjectEditSheet({
           title={strings.projectPlanningSection}
           summary={strings.projectPlanningSectionSummary}
           className="project-edit-section"
+          forceOpen={focusField === "planning"}
+          detailsRef={planningFieldRef}
         >
         <div className="row project-edit-date-row">
           <div className="field" style={{ flex: 1 }}>
@@ -579,7 +588,9 @@ export function ProjectEditSheet({
             />
           </div>
           <div className="field" style={{ flex: 1 }}>
-            <label htmlFor="project-scheduled">{strings.scheduled}</label>
+            <label htmlFor="project-scheduled">
+              {strings.projectRevisitDate}
+            </label>
             <HumanDateInput
               id="project-scheduled"
               value={displayedProject.scheduledDate ?? ""}

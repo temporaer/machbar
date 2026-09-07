@@ -3,7 +3,7 @@ import { useInteractionScope } from "./interactionScope";
 import { useWorkItemCommands } from "./useWorkItemCommands";
 import { shouldSuppressGlobalShortcuts } from "./keyboardShortcuts";
 import type { StructuralMoveDirection } from "./interactionScope";
-import type { TaskDetailFocusField } from "./taskDetailContext";
+import type { WorkItemCommand } from "./commands";
 
 /**
  * Every `TaskRow` currently rendered by this scope's outline(s), in
@@ -43,10 +43,11 @@ const ALT_DIRECTIONS: Record<string, StructuralMoveDirection> = {
   ArrowRight: "indent",
 };
 
-const TASK_FOCUS_KEYS: Record<string, TaskDetailFocusField> = {
-  s: "schedule",
-  a: "owner",
-  n: "notes",
+const TASK_COMMAND_KEYS: Record<string, (taskId: number) => WorkItemCommand> = {
+  s: (taskId) => ({ type: "task.plan", taskId }),
+  w: (taskId) => ({ type: "task.waitingLifecycle", taskId }),
+  a: (taskId) => ({ type: "task.assignOwner", taskId }),
+  m: (taskId) => ({ type: "task.openOverflow", taskId }),
 };
 
 /**
@@ -119,14 +120,10 @@ export function useWorkItemKeyboardNav() {
           return;
         default:
           if (scope.activeId !== null) {
-            const focusField = TASK_FOCUS_KEYS[event.key];
-            if (focusField && activeTaskRow(scope.activeId)) {
+            const commandFactory = TASK_COMMAND_KEYS[event.key];
+            if (commandFactory && activeTaskRow(scope.activeId)) {
               event.preventDefault();
-              dispatch({
-                type: "task.open",
-                taskId: scope.activeId,
-                focusField,
-              });
+              dispatch(commandFactory(scope.activeId));
             }
           }
       }

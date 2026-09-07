@@ -371,10 +371,10 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     swipe(container, -100);
 
-    expect(screen.getByRole("button", { name: "Zuweisen" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Planen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Notizen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Mehr" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Warten / Nachhaken" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Aufteilen" })).toBeInTheDocument();
+    expect(screen.getByText("Mehr …")).toBeInTheDocument();
     expect(mockedApi.completeTask).not.toHaveBeenCalled();
     expect(mockedApi.cancelTask).not.toHaveBeenCalled();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
@@ -387,35 +387,30 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
-    expect(screen.getByRole("button", { name: "Zuweisen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Planen" })).toBeInTheDocument();
   });
 
-  it("renders task actions as compact SVG buttons rather than visible text", async () => {
+  it("renders the default task command rail plus a More overflow", async () => {
     const task = makeTask({ id: 10, title: "Kompakte Aktionen", status: "actionable", projectId: 2 });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Kompakte Aktionen");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
-    for (const name of [
-      "Zuweisen",
-      "Planen",
-      "Notizen",
-      "Teilaufgabe hinzufügen",
-      "Nächsten Schritt danach hinzufügen",
-      "Zum Projekt",
-      "Mehr",
-    ]) {
+    for (const name of ["Planen", "Warten / Nachhaken", "Aufteilen"]) {
       const button = screen.getByRole("button", { name });
-      expect(button).toHaveClass("icon-action-button");
-      expect(button.textContent).toBe("");
-      const glyph = button.querySelector("svg");
-      expect(glyph).toHaveAttribute("aria-hidden", "true");
-      expect(glyph).toHaveAttribute("focusable", "false");
+      expect(button).toHaveClass("btn", "btn-sm");
+      expect(button.textContent).toBe(name);
+    }
+    expect(screen.getByText("Mehr …")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Mehr …"));
+    for (const name of ["Zuweisen", "Projekt ändern", "Folgeaufgabe anlegen", "Status"]) {
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
     }
   });
 
-  it("adds a successor from the chip row and returns focus to the task", async () => {
+  it("adds a successor from the rail overflow and returns focus to the task", async () => {
     const task = makeTask({
       id: 11,
       title: "Angebot einholen",
@@ -434,9 +429,10 @@ describe("TaskRow – primary swipe direction mapping", () => {
       name: "Weitere Aktionen",
     });
     await userEvent.click(moreButton);
+    await userEvent.click(screen.getByText("Mehr …"));
     await userEvent.click(
       screen.getByRole("button", {
-        name: "Nächsten Schritt danach hinzufügen",
+        name: "Folgeaufgabe anlegen",
       }),
     );
     await userEvent.type(
@@ -623,6 +619,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await screen.findByText("Kunde anrufen");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    await userEvent.click(screen.getByText("Mehr …"));
     await userEvent.click(screen.getByRole("button", { name: "Zuweisen" }));
 
     const group = await screen.findByRole("group", { name: "Zuständig" });
@@ -660,6 +657,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await screen.findByText("Geerbte Zuständigkeit");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    await userEvent.click(screen.getByText("Mehr …"));
     await userEvent.click(screen.getByRole("button", { name: "Zuweisen" }));
     await userEvent.click(
       within(await screen.findByRole("group", { name: "Zuständig" })).getByRole(
@@ -677,7 +675,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     );
   });
 
-  it("saves a valid focused schedule immediately and closes", async () => {
+  it("saves a valid focused schedule immediately and keeps the focused scheduler open", async () => {
     const task = makeTask({ id: 31, title: "Termin vereinbaren", status: "actionable" });
     renderOutlineWithDetail(task);
     await screen.findByText("Termin vereinbaren");
@@ -695,41 +693,32 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
         expectedRevision: 1,
       }),
     );
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
-  it("edits notes from a focused sheet", async () => {
+  it("opens the waiting lifecycle focus from the default rail command", async () => {
     const task = makeTask({ id: 32, title: "Vertrag prüfen", status: "actionable" });
     renderOutlineWithDetail(task);
     await screen.findByText("Vertrag prüfen");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Notizen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Warten / Nachhaken" }));
 
-    const notes = await screen.findByLabelText("Notizen");
+    const waitingFor = await screen.findByLabelText("Worauf wartet die Aufgabe?");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
-    await userEvent.type(notes, "Rückfrage vorbereiten");
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
-
-    await waitFor(() =>
-      expect(mockedApi.updateTask).toHaveBeenCalledWith(32, {
-        notes: "Rückfrage vorbereiten",
-        expectedRevision: 1,
-      }),
-    );
+    expect(waitingFor).toBeInTheDocument();
   });
 
-  it("opens the full task detail sheet from the 'Mehr' chip", async () => {
+  it("opens the rail overflow from the 'Mehr …' control", async () => {
     const task = makeTask({ id: 33, title: "Umzug planen", status: "actionable" });
     renderOutlineWithDetail(task);
     await screen.findByText("Umzug planen");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Mehr" }));
+    await userEvent.click(screen.getByText("Mehr …"));
 
-    expect(
-      await screen.findByText("Umzug planen", { selector: "strong" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Zuweisen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Status" })).toBeInTheDocument();
   });
 
 });

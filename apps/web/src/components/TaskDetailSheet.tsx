@@ -26,6 +26,7 @@ import { TagChip } from "./TagChip";
 import { TagPicker } from "./TagPicker";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { InlineChildComposer } from "./InlineChildComposer";
+import { TaskSplitSheet } from "./TaskSplitSheet";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
@@ -82,12 +83,20 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
 }
 
 /**
- * Full-metadata editor for a single task, opened as a bottom sheet from any
- * list (Today, Inbox, project outline, search, waiting). Every field on the
- * shared `Task` contract is represented, including inheritance modes, tag
- * exclusion, dependencies, subtasks and the explicit refile/move actions
+ * Read-oriented work-item view for a single task, opened as a bottom sheet
+ * from any list (Today, Inbox, project outline, search, waiting). Every field
+ * on the shared `Task` contract is reachable, including inheritance modes,
+ * tag exclusion, dependencies, subtasks and the explicit refile/move actions
  * (`Sortier-Werkzeuge`), which is how compiled views — where the outline's
  * drag editing is deliberately unavailable — still reach them.
+ *
+ * Optional scalar properties (priority, due date) that are unset are omitted
+ * rather than shown as an always-visible empty control; once set, they render
+ * as a compact clickable value that reveals the same atomic-commit control
+ * used to change or clear them (the "+ add" affordance shown while unset).
+ * This keeps the sheet reading like a work item's current state instead of
+ * a blank form, without adding a parallel editing/command path — every value
+ * still commits through the existing `patch`/`taskActions` calls.
  */
 export function TaskDetailSheet() {
   const strings = useStrings();
@@ -114,8 +123,12 @@ export function TaskDetailSheet() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [titleEditing, setTitleEditing] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
+  const [priorityEditing, setPriorityEditing] = useState(false);
+  const [dueDateEditing, setDueDateEditing] = useState(false);
+  const [waitingHighlighted, setWaitingHighlighted] = useState(false);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [addingChild, setAddingChild] = useState(false);
+  const [splittingTask, setSplittingTask] = useState(false);
   const [addingDependency, setAddingDependency] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
@@ -201,6 +214,9 @@ export function TaskDetailSheet() {
       setSaveError(null);
       setTitleEditing(false);
       setNotesEditing(false);
+      setPriorityEditing(false);
+      setDueDateEditing(false);
+      setWaitingHighlighted(false);
       setAttachmentOpen(false);
       setAddingChild(false);
       setAddingDependency(false);
@@ -273,6 +289,11 @@ export function TaskDetailSheet() {
       setAddingDependency(true);
       return;
     }
+    if (focusField === "split" && !splittingTask) {
+      setSplittingTask(true);
+      clearFocusField();
+      return;
+    }
     const scrollTargets: Record<TaskDetailFocusField, HTMLElement | null> = {
       title: titleFieldRef.current,
       owner: ownerFieldRef.current,
@@ -282,6 +303,7 @@ export function TaskDetailSheet() {
       waiting: dependenciesFieldRef.current,
       dependencies: dependenciesFieldRef.current,
       subtasks: subtasksFieldRef.current,
+      split: subtasksFieldRef.current,
     };
     const focusTargets: Record<TaskDetailFocusField, HTMLElement | null> = {
       title: titleInputRef.current,
@@ -292,6 +314,7 @@ export function TaskDetailSheet() {
       waiting: externalWaitInputRef.current,
       dependencies: dependencyInputRef.current,
       subtasks: null,
+      split: null,
     };
     const scrollTarget = scrollTargets[focusField];
     const focusTarget = focusTargets[focusField];
@@ -309,6 +332,7 @@ export function TaskDetailSheet() {
     notesEditing,
     titleEditing,
     addingDependency,
+    splittingTask,
   ]);
 
   const inheritedTags = useMemo(() => {
@@ -702,7 +726,19 @@ export function TaskDetailSheet() {
           style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}
         >
           {task.blocked && blockerSummary ? (
-            <div className="badge badge-status-waiting">{blockerSummary}</div>
+            <button
+              type="button"
+              className="badge badge-status-waiting badge-button"
+              onClick={() => {
+                setWaitingHighlighted(true);
+                const target = dependenciesFieldRef.current;
+                if (target && typeof target.scrollIntoView === "function") {
+                  target.scrollIntoView({ block: "center", behavior: "smooth" });
+                }
+              }}
+            >
+              {blockerSummary}
+            </button>
           ) : null}
           <PaperlessAttachmentStrip attachments={attachments} />
 
@@ -949,19 +985,52 @@ export function TaskDetailSheet() {
                 </span>
               </div>
               <div className="field" style={{ flex: 1 }}>
-                <label htmlFor="task-due">{strings.due}</label>
-                <HumanDateInput
-                  id="task-due"
-                  value={task.dueDate ?? ""}
-                  onChange={(dueDate) => void patch({ dueDate })}
-                  onValidityChange={setDueDateValid}
-                  disabled={task.repeatAfterDays !== null}
-                />
                 {task.repeatAfterDays !== null ? (
-                  <span className="text-muted recurrence-derived-hint">
-                    {strings.recurrenceDeadlineLocked}
-                  </span>
-                ) : null}
+                  <>
+                    <label htmlFor="task-due">{strings.due}</label>
+                    <HumanDateInput
+                      id="task-due"
+                      value={task.dueDate ?? ""}
+                      onChange={(dueDate) => void patch({ dueDate })}
+                      onValidityChange={setDueDateValid}
+                      disabled
+                    />
+                    <span className="text-muted recurrence-derived-hint">
+                      {strings.recurrenceDeadlineLocked}
+                    </span>
+                  </>
+                ) : dueDateEditing ? (
+                  <>
+                    <label htmlFor="task-due">{strings.due}</label>
+                    <HumanDateInput
+                      id="task-due"
+                      autoFocus
+                      value={task.dueDate ?? ""}
+                      onChange={(dueDate) => {
+                        void patch({ dueDate });
+                        setDueDateEditing(false);
+                      }}
+                      onValidityChange={setDueDateValid}
+                    />
+                  </>
+                ) : task.dueDate ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost task-detail-value-chip"
+                    onClick={() => setDueDateEditing(true)}
+                  >
+                    {strings.due}:{" "}
+                    {formatExactLocalDate(task.dueDate, locale) ?? task.dueDate}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost task-detail-add-property"
+                    onClick={() => setDueDateEditing(true)}
+                  >
+                    {strings.addDueDate}
+                  </button>
+                )}
               </div>
             </div>
           {task.repeatAfterDays === null ? (
@@ -972,19 +1041,46 @@ export function TaskDetailSheet() {
           ) : null}
 
           <div className="field">
-            <label htmlFor="task-priority">{strings.priority}</label>
-            <select
-              id="task-priority"
-              value={task.priority ?? ""}
-              onChange={(e) => void patch({ priority: e.target.value ? Number(e.target.value) : null })}
-            >
-              <option value="">{strings.none}</option>
-              <option value="1">1 – {strings.priorityHighest}</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5 – {strings.priorityLowest}</option>
-            </select>
+            {priorityEditing ? (
+              <>
+                <label htmlFor="task-priority">{strings.priority}</label>
+                <select
+                  id="task-priority"
+                  autoFocus
+                  value={task.priority ?? ""}
+                  onChange={(e) => {
+                    void patch({
+                      priority: e.target.value ? Number(e.target.value) : null,
+                    });
+                    setPriorityEditing(false);
+                  }}
+                  onBlur={() => setPriorityEditing(false)}
+                >
+                  <option value="">{strings.none}</option>
+                  <option value="1">1 – {strings.priorityHighest}</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5 – {strings.priorityLowest}</option>
+                </select>
+              </>
+            ) : task.priority !== null ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost task-detail-value-chip"
+                onClick={() => setPriorityEditing(true)}
+              >
+                {strings.priority}: {task.priority}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost task-detail-add-property"
+                onClick={() => setPriorityEditing(true)}
+              >
+                {strings.addPriority}
+              </button>
+            )}
           </div>
           </WorkItemDetailDisclosure>
 
@@ -993,7 +1089,9 @@ export function TaskDetailSheet() {
             summary={blockerSummary || strings.taskNotBlocked}
             defaultOpen={Boolean(task.externalWait || task.dependencies.length)}
             forceOpen={
-              focusField === "waiting" || focusField === "dependencies"
+              focusField === "waiting" ||
+              focusField === "dependencies" ||
+              waitingHighlighted
             }
             resetKey={task.id}
             className="task-detail-waiting"
@@ -1423,13 +1521,22 @@ export function TaskDetailSheet() {
                   }}
                 />
               ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => setAddingChild(true)}
-                >
-                  {strings.addChild}
-                </button>
+                <div className="row">
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setAddingChild(true)}
+                  >
+                    {strings.addChild}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setSplittingTask(true)}
+                  >
+                    {strings.splitTask}
+                  </button>
+                </div>
               )
             ) : task.repeatAfterDays !== null ? (
               <p className="text-muted">{strings.recurringTaskLeafHint}</p>
@@ -1613,6 +1720,15 @@ export function TaskDetailSheet() {
         />
       ) : null}
     </BottomSheet>
+    {splittingTask && task ? (
+      <TaskSplitSheet
+        parentId={task.id}
+        onClose={() => {
+          setSplittingTask(false);
+          reload();
+        }}
+      />
+    ) : null}
     {attachmentOpen && task ? (
       <MarkdownAttachmentSheet
         onClose={() => setAttachmentOpen(false)}

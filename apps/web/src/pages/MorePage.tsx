@@ -2,6 +2,9 @@ import { Link } from "react-router-dom";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { useSwipeSettings, primarySwipeActions } from "../lib/swipeSettings";
+import { projectRailCommands, taskRailCommands } from "../lib/railConfig";
+import { useRailConfig } from "../lib/railConfigContext";
+import type { ProjectRailCommand, TaskRailCommand } from "../lib/commands";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { MemberManager } from "../components/MemberManager";
 import { useState } from "react";
@@ -22,6 +25,12 @@ export function MorePage() {
   const { theme, setTheme } = useTheme();
   const { currentMember, authEnabled, logout } = useIdentity();
   const { primarySwipeAction, setPrimarySwipeAction } = useSwipeSettings();
+  const {
+    taskFavorites,
+    projectFavorites,
+    setTaskFavorites,
+    setProjectFavorites,
+  } = useRailConfig();
   const { developerMode, setDeveloperMode } = useDeveloperMode();
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
@@ -140,6 +149,71 @@ export function MorePage() {
                   </option>
                 ))}
               </select>
+            </div>
+          </div>
+
+          <div className="card more-setting-card">
+            <h3>{strings.railFavoritesTitle}</h3>
+            <p className="text-muted">{strings.railFavoritesHint}</p>
+            <div className="stack">
+              <strong>{strings.taskRailFavorites}</strong>
+              {taskFavorites.map((favorite, index) => (
+                <div className="field" key={`task-rail-slot-${index}`}>
+                  <label htmlFor={`task-rail-slot-${index}`}>{index + 1}</label>
+                  <select
+                    id={`task-rail-slot-${index}`}
+                    value={favorite}
+                    onChange={(event) => {
+                      const next = [...taskFavorites] as TaskRailCommand[];
+                      next[index] = event.target.value as TaskRailCommand;
+                      setTaskFavorites(next);
+                    }}
+                  >
+                    {taskRailCommands.map((command) => (
+                      <option
+                        key={command}
+                        value={command}
+                        disabled={
+                          command !== favorite &&
+                          taskFavorites.includes(command)
+                        }
+                      >
+                        {strings.railCommandLabels[command]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              <strong>{strings.projectRailFavorites}</strong>
+              {projectFavorites.map((favorite, index) => (
+                <div className="field" key={`project-rail-slot-${index}`}>
+                  <label htmlFor={`project-rail-slot-${index}`}>
+                    {index + 1}
+                  </label>
+                  <select
+                    id={`project-rail-slot-${index}`}
+                    value={favorite}
+                    onChange={(event) => {
+                      const next = [...projectFavorites] as ProjectRailCommand[];
+                      next[index] = event.target.value as ProjectRailCommand;
+                      setProjectFavorites(next);
+                    }}
+                  >
+                    {projectRailCommands.map((command) => (
+                      <option
+                        key={command}
+                        value={command}
+                        disabled={
+                          command !== favorite &&
+                          projectFavorites.includes(command)
+                        }
+                      >
+                        {strings.railCommandLabels[command]}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
             </div>
           </div>
         </div>

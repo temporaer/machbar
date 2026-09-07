@@ -7,11 +7,13 @@ import type {
 const DRAG_SLOP = 8;
 const MAX_DRAG_X = 140;
 const ACTION_THRESHOLD = 72;
+const DEEP_ACTION_THRESHOLD = 108;
 
 export interface HorizontalSwipeOptions {
   disabled?: boolean;
   onPrimary: () => void;
   onSecondary: () => void;
+  onDeepPrimary?: () => void;
   onRealDrag?: () => void;
 }
 
@@ -98,7 +100,11 @@ export function useHorizontalSwipe<T extends HTMLElement = HTMLElement>(
     suppressNextClick.current = current.realDrag;
     reset();
     if (completedDragX > ACTION_THRESHOLD) {
-      optionsRef.current.onPrimary();
+      if (completedDragX >= DEEP_ACTION_THRESHOLD && optionsRef.current.onDeepPrimary) {
+        optionsRef.current.onDeepPrimary();
+      } else {
+        optionsRef.current.onPrimary();
+      }
     } else if (completedDragX < -ACTION_THRESHOLD) {
       optionsRef.current.onSecondary();
     }

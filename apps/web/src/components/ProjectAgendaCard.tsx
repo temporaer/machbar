@@ -73,7 +73,11 @@ export function ProjectAgendaCard({
       ) : null}
       <div className="project-agenda-dates">
         {qualification !== "due" ? (
-          <DatePrompt label={strings.review} date={project.scheduledDate} scheduled />
+          <DatePrompt
+            label={strings.projectRevisitDate}
+            date={project.scheduledDate}
+            scheduled
+          />
         ) : null}
         {qualification !== "scheduled" ? (
           <DatePrompt label={strings.due} date={project.dueDate} />

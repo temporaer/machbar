@@ -42,6 +42,10 @@ export function TaskQuickActionSheet({
   };
 
   const submit = async () => {
+    if (action === "schedule") {
+      onClose();
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -73,7 +77,6 @@ export function TaskQuickActionSheet({
                     { scheduledDate: value || null },
                     { scheduledDate: value || null },
                   )
-                    .then(onClose)
                     .catch((cause) => setError(localizedErrorMessage(cause, strings)))
                     .finally(() => setSaving(false));
                 }}
@@ -91,7 +94,6 @@ export function TaskQuickActionSheet({
                   { scheduledDate: value || null },
                   { scheduledDate: value || null },
                 )
-                  .then(onClose)
                   .catch((cause) => setError(localizedErrorMessage(cause, strings)))
                   .finally(() => setSaving(false));
               }}
@@ -112,7 +114,11 @@ export function TaskQuickActionSheet({
               autoFocus
             />
           </div>
-        ) : null}
+        ) : (
+          <button type="button" className="btn btn-primary" onClick={() => void submit()} disabled={saving}>
+            {strings.close}
+          </button>
+        )}
 
         {error ? <div className="task-row-error" role="alert">{error}</div> : null}
 

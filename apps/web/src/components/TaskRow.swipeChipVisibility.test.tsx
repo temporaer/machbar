@@ -133,10 +133,10 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     // Drag resets — no lingering translateX — yet the chips are still there.
     expect(content.style.transform).toBe("");
     expect(screen.getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Zuweisen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Planen" })).toBeInTheDocument();
   });
 
-  it("keeps every action chip enabled and directly clickable once revealed by a left-swipe", async () => {
+  it("keeps every default rail command enabled and directly clickable once revealed by a left-swipe", async () => {
     const task = makeTask({ id: 5, title: "Vertrag unterschreiben", status: "actionable" });
     mockedApi.getTask.mockResolvedValue(task);
     renderWithProviders(
@@ -149,31 +149,34 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
 
     swipe(row, -100);
 
-    const chipButtons = ["Zuweisen", "Planen", "Notizen", "Mehr"].map((name) =>
-      screen.getByRole("button", { name }),
-    );
+    const chipButtons = [
+      screen.getByRole("button", { name: "Planen" }),
+      screen.getByRole("button", { name: "Warten / Nachhaken" }),
+      screen.getByRole("button", { name: "Aufteilen" }),
+      screen.getByText("Mehr …"),
+    ];
     for (const btn of chipButtons) {
       expect(btn).toBeEnabled();
       expect(btn).not.toHaveAttribute("aria-hidden");
     }
 
     // Actually interactable via a real pointer/click sequence, not just present in the DOM.
-    await userEvent.click(screen.getByRole("button", { name: "Notizen" }));
-    expect(await screen.findByLabelText("Notizen")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Planen" }));
+    expect(await screen.findByLabelText("Geplant")).toBeInTheDocument();
   });
 
-  it("closes the chip strip predictably when a chip is used, hiding the persisted red background again", async () => {
+  it("closes the command rail predictably when a command is used, hiding the persisted red background again", async () => {
     const task = makeTask({ id: 6, title: "Rückruf einplanen", status: "actionable" });
     mockedApi.updateTask.mockResolvedValue(makeTask());
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Rückruf einplanen");
 
     swipe(container, -100);
-    expect(screen.getByRole("button", { name: "Notizen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Planen" })).toBeInTheDocument();
     const cancelBg = container.querySelector(".task-row-swipe-bg.cancel") as HTMLElement;
     expect(getComputedStyle(cancelBg).opacity).toBe("1");
 
-    await userEvent.click(screen.getByRole("button", { name: "Notizen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Planen" }));
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
     expect(getComputedStyle(cancelBg).opacity).toBe("0");
   });
@@ -193,17 +196,14 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     expect(getComputedStyle(cancelBg).opacity).toBe("0");
   });
 
-  it("offers an explicit keyboard-accessible close action that resets the reveal without acting", async () => {
+  it("toggles the reveal from the kebab without acting", async () => {
     const task = makeTask({ id: 10, title: "Aktionen verwerfen", status: "actionable" });
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Aktionen verwerfen");
 
     swipe(container, -100);
     const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
-    const close = screen.getByRole("button", { name: "Schließen" });
-    close.focus();
-
-    await userEvent.keyboard("{Enter}");
+    await userEvent.click(kebab);
 
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
     expect(kebab).toHaveFocus();
@@ -214,7 +214,7 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
-  it("returns focus to the visible task control when the mobile layout hides the kebab", async () => {
+  it("closes the reveal when tapping elsewhere, including when the kebab is hidden", async () => {
     const task = makeTask({ id: 11, title: "Mobile Aktionen schließen", status: "actionable" });
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Mobile Aktionen schließen");
@@ -222,12 +222,9 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     swipe(container, -100);
     const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
     kebab.style.display = "none";
-    const close = screen.getByRole("button", { name: "Schließen" });
-    close.focus();
+    fireEvent.pointerDown(document.body);
 
-    await userEvent.keyboard("{Enter}");
-
-    expect(screen.getByRole("button", { name: "Mobile Aktionen schließen" })).toHaveFocus();
+    expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
   });
 
   it("does not leak a visible red background onto sibling rows that were not swiped", async () => {

@@ -11,6 +11,7 @@ import { useTaskDetail } from "../lib/taskDetailContext";
 import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { useIdentity } from "../lib/identity";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
+import { useInteractionScope } from "../lib/interactionScope";
 
 /** Short label for a task's current size, or the "unestimated" placeholder. */
 function sizeLabel(size: TaskSize | null, strings: Strings): string {
@@ -37,7 +38,8 @@ export interface RefinementTaskRowProps {
  */
 export function RefinementTaskRow({ task: taskProp, ownerName, actions }: RefinementTaskRowProps) {
   const strings = useStrings();
-  const [chipsOpen, setChipsOpen] = useState(false);
+  const scope = useInteractionScope();
+  const chipsOpen = scope.openRailId === taskProp.id;
   const [assigning, setAssigning] = useState(false);
   const navigate = useNavigate();
   const { open } = useTaskDetail();
@@ -52,7 +54,7 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
   const swipe = useHorizontalSwipe<HTMLDivElement>({
     disabled: isRetained,
     onPrimary: () => cycleSize(task),
-    onSecondary: () => setChipsOpen(true),
+    onSecondary: () => scope.setOpenRail(taskProp.id),
   });
   const { dragX } = swipe;
 
@@ -62,28 +64,28 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
 
   const chooseSize = (size: TaskSize) => {
     void setSize(task, size);
-    setChipsOpen(false);
+    scope.setOpenRail(null);
   };
 
   const chooseClear = () => {
     void clearSize(task);
-    setChipsOpen(false);
+    scope.setOpenRail(null);
   };
 
   // Targeted assignment popup rather than the full task editor.
   const assign = () => {
-    setChipsOpen(false);
+    scope.setOpenRail(null);
     setAssigning(true);
   };
 
   const goToProject = () => {
     if (!task.projectId) return;
-    setChipsOpen(false);
+    scope.setOpenRail(null);
     navigate(`/projects/${task.projectId}`);
   };
 
   return (
-    <li className="refinement-row" style={{ listStyle: "none" }}>
+    <li className="refinement-row" data-workitem-id={taskProp.id} data-workitem-role="task" style={{ listStyle: "none" }}>
       <div className={`refinement-row-swipe-bg cycle${showCycleBg ? " visible" : ""}`} aria-hidden="true">
         {sizeLabel(upcomingSize, strings)}
       </div>
@@ -142,7 +144,7 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
           aria-label={strings.moreActions}
           aria-expanded={chipsOpen}
           disabled={isRetained}
-          onClick={() => setChipsOpen((o) => !o)}
+          onClick={() => scope.setOpenRail(chipsOpen ? null : taskProp.id)}
         >
           ⋯
         </button>

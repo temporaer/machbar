@@ -398,7 +398,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     act(() => {
       vi.advanceTimersByTime(600);
     });
-    fireEvent.pointerMove(content, { clientX: 120, pointerId: 3 });
+    fireEvent.pointerMove(content, { clientX: 100, pointerId: 3 });
     fireEvent.pointerUp(content, { pointerId: 3 });
     await act(async () => {
       await flushMicrotasks();
@@ -587,7 +587,7 @@ describe("TaskOutline Ziehen und Umbauen", () => {
 
     const content = document.querySelectorAll<HTMLElement>(".task-row-content")[0]!;
     fireEvent.pointerDown(content, { clientX: 0, pointerId: 2 });
-    fireEvent.pointerMove(content, { clientX: 120, pointerId: 2 });
+    fireEvent.pointerMove(content, { clientX: 100, pointerId: 2 });
     fireEvent.pointerUp(content, { pointerId: 2 });
 
     await waitFor(() =>

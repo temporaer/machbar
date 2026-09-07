@@ -5,7 +5,7 @@ import { makeProject } from "../test/fixtures";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 
 describe("PlanDatesSheet", () => {
-  it("rejects an invalid date, then saves a valid selection immediately", async () => {
+  it("rejects an invalid date, saves valid input, and closes explicitly", async () => {
     const onClose = vi.fn();
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
@@ -16,6 +16,10 @@ describe("PlanDatesSheet", () => {
       />,
     );
 
+    expect(
+      screen.getByRole("heading", { name: "Wiedervorlage & Fälligkeit" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Wiedervorlage")).toBeInTheDocument();
     const dueDate = screen.getByLabelText("Fällig");
     await userEvent.type(dueDate, "irgendwann vielleicht");
 
@@ -30,6 +34,11 @@ describe("PlanDatesSheet", () => {
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({ dueDate: "2026-09-10" }),
     );
-    expect(onClose).toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Schließen" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Schließen" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 });

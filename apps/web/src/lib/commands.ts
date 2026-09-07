@@ -33,6 +33,19 @@ import type { TaskDetailFocusField } from "./taskDetailContext";
  */
 export type WorkItemCommand =
   | { type: "task.open"; taskId: number; focusField?: TaskDetailFocusField }
+  | { type: "task.plan"; taskId: number }
+  | { type: "task.waitingLifecycle"; taskId: number }
+  | { type: "task.split"; taskId: number }
+  | { type: "task.assignOwner"; taskId: number }
+  | { type: "task.changeProject"; taskId: number }
+  | { type: "task.addSuccessor"; taskId: number }
+  | { type: "task.recurrence"; taskId: number }
+  | { type: "task.priority"; taskId: number }
+  | { type: "task.tags"; taskId: number }
+  | { type: "task.contexts"; taskId: number }
+  | { type: "task.convertToProject"; taskId: number }
+  | { type: "task.lifecycle"; task: Task; status: Task["status"] }
+  | { type: "task.openOverflow"; taskId: number }
   | { type: "task.toggleDone"; task: Task }
   | { type: "task.primaryAction"; task: Task }
   | { type: "task.discard"; task: Task }
@@ -44,6 +57,14 @@ export type WorkItemCommand =
   | { type: "story.complete"; story: ProjectWithActions }
   | { type: "story.reopen"; story: ProjectWithActions; ownerMemberId?: number | null }
   | { type: "story.archive"; story: ProjectWithActions }
+  | { type: "story.defer"; story: ProjectWithActions }
+  | { type: "story.assignDriver"; story: ProjectWithActions }
+  | { type: "story.planWork"; story: ProjectWithActions }
+  | { type: "story.editOutcome"; story: ProjectWithActions }
+  | { type: "story.tags"; story: ProjectWithActions }
+  | { type: "story.contexts"; story: ProjectWithActions }
+  | { type: "story.lifecycle"; story: ProjectWithActions }
+  | { type: "story.openOverflow"; story: ProjectWithActions }
   | { type: "outline.collapse"; workItemId: number }
   | { type: "outline.expand"; workItemId: number }
   | { type: "outline.moveUp"; workItemId: number }
@@ -56,3 +77,27 @@ export type WorkItemCommand =
   | { type: "navigate.projects" }
   | { type: "navigate.waiting" }
   | { type: "navigate.more" };
+
+/** Canonical semantic commands that may be promoted into a row command rail. */
+export type TaskRailCommand =
+  | "task.plan"
+  | "task.waitingLifecycle"
+  | "task.split"
+  | "task.assignOwner"
+  | "task.changeProject"
+  | "task.addSuccessor"
+  | "task.recurrence"
+  | "task.priority"
+  | "task.tags"
+  | "task.contexts"
+  | "task.convertToProject"
+  | "task.lifecycle";
+
+export type ProjectRailCommand =
+  | "story.defer"
+  | "story.assignDriver"
+  | "story.planWork"
+  | "story.editOutcome"
+  | "story.tags"
+  | "story.contexts"
+  | "story.lifecycle";

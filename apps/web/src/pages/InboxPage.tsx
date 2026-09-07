@@ -1,4 +1,7 @@
+import { useEffect } from "react";
+import type { Task } from "@machbar/shared";
 import { api } from "../lib/api";
+import { useLocation } from "react-router-dom";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 import {
@@ -10,7 +13,7 @@ import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { PageHeader } from "../components/PageHeader";
-import { InteractionScopeProvider } from "../lib/interactionScope";
+import { InteractionScopeProvider, useInteractionScope } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 
 export function InboxPage() {
@@ -22,9 +25,11 @@ export function InboxPage() {
     reload,
   } = useAsync(() => api.getInbox(), []);
   const { openQueue } = useTaskDetail();
+  const location = useLocation();
 
   return (
     <InteractionScopeProvider>
+      <InboxFocusRail tasks={tasks} focusId={new URLSearchParams(location.search).get("focus")} />
       <WorkItemKeyboardNavMount />
       <div className="inbox-page">
         <PageHeader
@@ -60,4 +65,21 @@ export function InboxPage() {
       </div>
     </InteractionScopeProvider>
   );
+}
+
+function InboxFocusRail({
+  tasks,
+  focusId,
+}: {
+  tasks: Task[] | null | undefined;
+  focusId: string | null;
+}) {
+  const scope = useInteractionScope();
+  useEffect(() => {
+    const id = Number(focusId);
+    if (!tasks || !Number.isFinite(id) || !tasks.some((task) => task.id === id)) return;
+    scope.setActive(id, "task");
+    scope.setOpenRail(id);
+  }, [focusId, scope, tasks]);
+  return null;
 }

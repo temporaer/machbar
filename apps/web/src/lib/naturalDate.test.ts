@@ -59,6 +59,34 @@ describe("parseNaturalDate", () => {
     expect(parseNaturalDate(input, reference)).toBe(expected);
   });
 
+  it.each([
+    ["oct 11", "en", "2026-10-11"],
+    ["11 oct", "en", "2026-10-11"],
+    ["oktober 11", "de", "2026-10-11"],
+    ["11 oktober", "de", "2026-10-11"],
+    ["11. oktober", "de", "2026-10-11"],
+  ] as const)(
+    "parses yearless month-name-plus-day %s (%s locale) without the year-2001 bug",
+    (input, locale, expected) => {
+      expect(parseNaturalDate(input, reference, locale)).toBe(expected);
+    },
+  );
+
+  it.each([
+    ["jan 5", "en", "2027-01-05"],
+    ["januar 5", "de", "2027-01-05"],
+  ] as const)(
+    "rolls a yearless month-name-plus-day %s over to next year once it has passed",
+    (input, locale, expected) => {
+      expect(parseNaturalDate(input, reference, locale)).toBe(expected);
+    },
+  );
+
+  it("keeps an explicit year unaffected by yearless month-name inference", () => {
+    expect(parseNaturalDate("2026-10-11", reference)).toBe("2026-10-11");
+    expect(parseNaturalDate("11.10.2026", reference)).toBe("2026-10-11");
+  });
+
   it("keeps date arithmetic on the local calendar across daylight-saving changes", () => {
     const beforeDstChange = new Date(2026, 2, 28, 12);
     expect(parseNaturalDate("1d", beforeDstChange)).toBe("2026-03-29");

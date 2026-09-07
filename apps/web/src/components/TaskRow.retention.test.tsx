@@ -29,6 +29,13 @@ async function flushMicrotasks(times = 3) {
   }
 }
 
+function swipe(container: HTMLElement, deltaX: number) {
+  const content = container.querySelector(".task-row-content") as HTMLElement;
+  fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+  fireEvent.pointerMove(content, { clientX: deltaX, pointerId: 1 });
+  fireEvent.pointerUp(content, { clientX: deltaX, pointerId: 1 });
+}
+
 describe("TaskRow – retention of recently mutated rows", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -383,7 +390,7 @@ describe("TaskRow – parent retention snapshot covers the whole optimistic subt
   });
 });
 
-describe("TaskRow – finished/cancelled rows offer 'Wieder öffnen' instead of a generic 'Warten' chip", () => {
+describe("TaskRow – finished/cancelled rows reopen through the semantic status rail", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
@@ -391,18 +398,19 @@ describe("TaskRow – finished/cancelled rows offer 'Wieder öffnen' instead of 
     mockedApi.reopenTask.mockResolvedValue(makeTask());
   });
 
-  it("shows 'Wieder öffnen' (not 'Warten') for a done task, and reopens via the real reopen flow", async () => {
+  it("offers Machbar from the status rail for a done task, and reopens via the real reopen flow", async () => {
     const task = makeTask({ id: 401, title: "Fertige Aufgabe", status: "done", completedAt: "2025-01-01T00:00:00.000Z" });
-    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Fertige Aufgabe");
 
-    fireEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
+    swipe(container, 120);
+    const lifecycle = screen.getByRole("group", { name: "Status" });
 
-    expect(within(chips).getByRole("button", { name: "Wieder öffnen" })).toBeInTheDocument();
-    expect(within(chips).queryByRole("button", { name: "Warten" })).not.toBeInTheDocument();
+    expect(within(lifecycle).getByRole("button", { name: "Erledigt" })).toHaveAttribute("aria-current", "true");
+    expect(within(lifecycle).getByRole("button", { name: "Machbar" })).toBeEnabled();
+    expect(within(lifecycle).queryByRole("button", { name: "Warten" })).not.toBeInTheDocument();
 
-    fireEvent.click(within(chips).getByRole("button", { name: "Wieder öffnen" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Machbar" }));
 
     await waitFor(() =>
       expect(mockedApi.reopenTask).toHaveBeenCalledWith(401, 1),
@@ -412,18 +420,19 @@ describe("TaskRow – finished/cancelled rows offer 'Wieder öffnen' instead of 
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
-  it("shows 'Wieder öffnen' (not 'Warten') for a cancelled task, and reopens via the real reopen flow", async () => {
+  it("offers Machbar from the status rail for a cancelled task, and reopens via the real reopen flow", async () => {
     const task = makeTask({ id: 402, title: "Verworfene Aufgabe", status: "cancelled", cancelledAt: "2025-01-01T00:00:00.000Z" });
-    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Verworfene Aufgabe");
 
-    fireEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
+    swipe(container, 120);
+    const lifecycle = screen.getByRole("group", { name: "Status" });
 
-    expect(within(chips).getByRole("button", { name: "Wieder öffnen" })).toBeInTheDocument();
-    expect(within(chips).queryByRole("button", { name: "Warten" })).not.toBeInTheDocument();
+    expect(within(lifecycle).getByRole("button", { name: "Verworfen" })).toHaveAttribute("aria-current", "true");
+    expect(within(lifecycle).getByRole("button", { name: "Machbar" })).toBeEnabled();
+    expect(within(lifecycle).queryByRole("button", { name: "Warten" })).not.toBeInTheDocument();
 
-    fireEvent.click(within(chips).getByRole("button", { name: "Wieder öffnen" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Machbar" }));
 
     await waitFor(() =>
       expect(mockedApi.reopenTask).toHaveBeenCalledWith(402, 1),

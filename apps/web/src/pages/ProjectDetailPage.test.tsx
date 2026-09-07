@@ -3,7 +3,14 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
-import { makeMember, makeProject, makeTask } from "../test/fixtures";
+import {
+  makeCriterion,
+  makeMember,
+  makePhysicalContext,
+  makeProject,
+  makeTag,
+  makeTask,
+} from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectDetailPage } from "./ProjectDetailPage";
 import { de as strings } from "../i18n/de";
@@ -192,6 +199,109 @@ describe("ProjectDetailPage task explanations", () => {
       "/projects/3",
     );
     expect(screen.getByText("Wände vorbereiten")).toBeInTheDocument();
+  });
+
+  it("renders present project facts as direct controls and keeps status read-only", async () => {
+    const office = makeTag({ id: 10, name: "büro" });
+    mockedApi.getTags.mockResolvedValue([office]);
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({
+        id: 42,
+        title: "Sommerfest planen",
+        status: "active",
+        ownerMemberId: 1,
+        dueDate: "2026-09-15",
+        scheduledDate: "2026-09-10",
+        tags: [office],
+        contexts: [
+          makePhysicalContext({
+            id: 77,
+            name: "Zuhause",
+          }),
+        ],
+        acceptanceCriteria: [
+          makeCriterion({
+            id: 4,
+            projectId: 42,
+            text: "Ort steht",
+            checked: false,
+          }),
+        ],
+      }),
+      tasks: [],
+    });
+
+    renderProjectRoute("/projects/42");
+
+    const overview = await screen.findByLabelText(strings.projectOverview);
+    const statusBadge = within(overview).getByText("Aktiv");
+    expect(statusBadge).toHaveClass("badge");
+    expect(statusBadge.closest("button")).toBeNull();
+    expect(
+      within(overview).getByRole("button", { name: /Verantwortlich.*Mira/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(overview).getByRole("button", { name: /Fällig.*15\.09\.2026/ }),
+    ).toBeInTheDocument();
+    expect(
+      within(overview).getByRole("button", {
+        name: /Wiedervorlage.*10\.09\.2026/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(overview).getByRole("button", {
+        name: /Erledigt, wenn ….*0\/1/,
+      }),
+    ).toBeInTheDocument();
+    expect(within(overview).getByText("büro")).toBeInTheDocument();
+    expect(within(overview).getByText("Zuhause")).toBeInTheDocument();
+
+    await userEvent.click(
+      within(overview).getByRole("button", {
+        name: /Wiedervorlage.*10\.09\.2026/,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Wiedervorlage & Fälligkeit",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Wiedervorlage")).toHaveValue("10.09.2026");
+  });
+
+  it("omits optional project facts when they have no value", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({
+        id: 42,
+        title: "Sommerfest planen",
+        ownerMemberId: null,
+        dueDate: null,
+        scheduledDate: null,
+        tags: [],
+        contexts: [],
+        acceptanceCriteria: [],
+      }),
+      tasks: [],
+    });
+
+    renderProjectRoute("/projects/42");
+
+    const overview = await screen.findByLabelText(strings.projectOverview);
+    expect(within(overview).getByText("Aktiv")).toHaveClass("badge");
+    expect(within(overview).queryByText("Niemand zugewiesen")).not.toBeInTheDocument();
+    expect(
+      within(overview).queryByRole("button", { name: /Verantwortlich/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(overview).queryByRole("button", { name: /Fällig/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(overview).queryByRole("button", { name: /Wiedervorlage/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(overview).queryByRole("button", { name: /Tags/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("loads project and recorded task activity only after opening the disclosure", async () => {

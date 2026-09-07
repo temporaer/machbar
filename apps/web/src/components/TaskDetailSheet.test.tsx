@@ -562,6 +562,39 @@ describe("TaskDetailSheet", () => {
     );
   });
 
+  it("renders the top blocker summary as a clickable action that reveals the waiting section", async () => {
+    const task = makeTask({
+      id: 63,
+      title: "Blockierte Aufgabe",
+      externalWait: {
+        waitingFor: "Vermieter",
+        revisitDate: "2026-09-05",
+      },
+      blocked: true,
+      executable: false,
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderSheet(63);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Blockierte Aufgabe");
+
+    const blockerBadge = screen.getByRole("button", {
+      name: /Vermieter/,
+    });
+    expect(blockerBadge).toHaveClass("badge", "badge-status-waiting");
+
+    await userEvent.click(blockerBadge);
+
+    expect(
+      screen
+        .getByRole("heading", {
+          name: "Wartet diese Aufgabe auf etwas?",
+          level: 3,
+        })
+        .closest("details"),
+    ).toHaveAttribute("open");
+  });
+
   it("does not allow an external wait without a reason", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({ id: 42, title: "Rechnung prüfen" }),
@@ -950,6 +983,9 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Fälligkeit planen");
 
+    await userEvent.click(
+      screen.getByRole("button", { name: "+ Fälligkeitsdatum" }),
+    );
     const dueDate = screen.getByLabelText("Fällig");
     expect(dueDate).toHaveAttribute("type", "text");
     expect(dueDate).toHaveAttribute(
@@ -965,6 +1001,51 @@ describe("TaskDetailSheet", () => {
         expectedRevision: 1,
       }),
     );
+  });
+
+  it("hides priority and due date when unset and renders them as clickable values once set", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({
+        id: 60,
+        title: "Priorisierte Aufgabe",
+        priority: 3,
+        dueDate: "2026-09-20",
+      }),
+    );
+    renderSheet(60);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Priorisierte Aufgabe");
+
+    // Set values render as compact clickable actions, not a permanently open
+    // select/input.
+    expect(screen.queryByLabelText("Priorität")).not.toBeInTheDocument();
+    const priorityChip = screen.getByRole("button", { name: "Priorität: 3" });
+    const dueDateChip = screen.getByRole("button", { name: "Fällig: 20.09.2026" });
+    expect(screen.queryByLabelText("Fällig")).not.toBeInTheDocument();
+
+    await userEvent.click(priorityChip);
+    expect(screen.getByLabelText("Priorität")).toHaveValue("3");
+
+    await userEvent.click(dueDateChip);
+    expect(screen.getByLabelText("Fällig")).toHaveValue("20.09.2026");
+  });
+
+  it("omits the priority and due date controls entirely while unset", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 62, title: "Schlichte Aufgabe" }),
+    );
+    renderSheet(62);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Schlichte Aufgabe");
+
+    expect(screen.queryByLabelText("Priorität")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Fällig")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "+ Priorität" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "+ Fälligkeitsdatum" }),
+    ).toBeInTheDocument();
   });
 
   it("edits recurrence, locks the derived deadline, and retains dates on disable", async () => {
@@ -1267,6 +1348,9 @@ describe("TaskDetailSheet", () => {
     await userEvent.type(notesField, " neu");
 
     // Trigger an unrelated patch (priority change) which reloads this same task.
+    await userEvent.click(
+      screen.getByRole("button", { name: "+ Priorität" }),
+    );
     await userEvent.selectOptions(screen.getByLabelText("Priorität"), "2");
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(49, {
       priority: 2,

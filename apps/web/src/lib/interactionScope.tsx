@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 /**
  * Where a contextual capture (QuickAdd) should file a new item captured
@@ -26,6 +26,13 @@ export interface InteractionScopeValue {
   activeId: number | null;
   activeRole: WorkItemInteractionRole | null;
   setActive: (id: number | null, role?: WorkItemInteractionRole | null) => void;
+  /** The one row whose left-swipe command rail is currently open. */
+  openRailId: number | null;
+  setOpenRail: (id: number | null) => void;
+  openOverflowId: number | null;
+  setOpenOverflow: (id: number | null) => void;
+  openLifecycleId: number | null;
+  setOpenLifecycle: (id: number | null) => void;
   /**
    * True only where every `TaskOutline` mounted in this scope right now
    * renders a complete stored sibling group (a project/story's own task
@@ -85,6 +92,34 @@ export interface InteractionScopeProviderProps {
 export function InteractionScopeProvider({ children, captureTarget = { kind: "inbox" } }: InteractionScopeProviderProps) {
   const [activeId, setActive] = useState<number | null>(null);
   const [activeRole, setActiveRole] = useState<WorkItemInteractionRole | null>(null);
+  const [openRailId, setOpenRailState] = useState<number | null>(null);
+  const [openOverflowId, setOpenOverflowId] = useState<number | null>(null);
+  const [openLifecycleId, setOpenLifecycleState] = useState<number | null>(null);
+  const setOpenRail = useCallback((id: number | null) => {
+    setOpenRailState(id);
+    if (id === null) setOpenOverflowId(null);
+    if (id !== null) setOpenLifecycleState(null);
+  }, []);
+  const setOpenOverflow = useCallback((id: number | null) => {
+    setOpenOverflowId(id);
+    if (id !== null) setOpenRailState(id);
+  }, []);
+  const setOpenLifecycle = useCallback((id: number | null) => {
+    setOpenLifecycleState(id);
+    if (id !== null) setOpenRailState(null);
+  }, []);
+  useEffect(() => {
+    const closeRailOutsideRows = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (!target.closest("[data-workitem-id]")) {
+        setOpenRail(null);
+        setOpenLifecycle(null);
+      }
+    };
+    document.addEventListener("pointerdown", closeRailOutsideRows);
+    return () => document.removeEventListener("pointerdown", closeRailOutsideRows);
+  }, []);
   const setActiveItem = useCallback((id: number | null, role: WorkItemInteractionRole | null = null) => {
     setActive(id);
     setActiveRole(id === null ? null : role);
@@ -128,6 +163,12 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
       activeId,
       activeRole,
       setActive: setActiveItem,
+      openRailId,
+      setOpenRail,
+      openOverflowId,
+      setOpenOverflow,
+      openLifecycleId,
+      setOpenLifecycle,
       canReorder: capability.canReorder,
       canReparent: capability.canReparent,
       moveBy: capability.moveBy,
@@ -144,6 +185,11 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
       activeId,
       activeRole,
       setActiveItem,
+      openRailId,
+      openOverflowId,
+      openLifecycleId,
+      setOpenRail,
+      setOpenOverflow,
       capability,
       setStructuralCapability,
       captureTarget,
