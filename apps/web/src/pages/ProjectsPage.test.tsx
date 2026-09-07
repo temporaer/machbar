@@ -103,7 +103,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     ]);
   });
 
-  it("omits backlog projects and reveals its purpose on demand", async () => {
+  it("shows backlog projects in a visible later section and reveals the page purpose on demand", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Aktive Geschichte");
 
@@ -115,8 +115,9 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     );
     expect(screen.getByText(hint)).toBeInTheDocument();
     const badges = [...container.querySelectorAll(".story-row-status-badge")].map((b) => b.textContent);
-    expect(screen.queryByText("Backlog-Geschichte")).not.toBeInTheDocument();
-    expect(badges).toEqual(["Aktiv", "Abgeschlossen", "Archiviert"]);
+    expect(screen.getByRole("heading", { name: "Später / noch nicht aktiv" })).toBeInTheDocument();
+    expect(screen.getByText("Backlog-Geschichte")).toBeInTheDocument();
+    expect(badges).toEqual(["Aktiv", "Später / noch nicht aktiv", "Abgeschlossen", "Archiviert"]);
   });
 
   it("opens project creation from the bottom-right plus button", async () => {
@@ -316,7 +317,7 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
 
     expect(screen.getByText("Festgefahrene Geschichte")).toBeInTheDocument();
     expect(screen.getByText("Küche renovieren")).toBeInTheDocument();
-    expect(screen.queryByText("Backlog Küche")).not.toBeInTheDocument();
+    expect(screen.getByText("Backlog Küche")).toBeInTheDocument();
     expect(screen.queryByText("Theos Geschichte")).not.toBeInTheDocument();
   });
 
@@ -406,7 +407,12 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     await screen.findByText("Miras aktive Geschichte");
 
     const titles = [...container.querySelectorAll(".story-row-title")].map((n) => n.childNodes[0]?.textContent);
-    expect(titles).toEqual(["Miras aktive Geschichte", "Festgefahrene Geschichte", "Küche renovieren"]);
+    expect(titles).toEqual([
+      "Miras aktive Geschichte",
+      "Festgefahrene Geschichte",
+      "Küche renovieren",
+      "Backlog Küche",
+    ]);
   });
 
   it("distinguishes 'no projects at all' from 'no projects match the filter'", async () => {
@@ -467,7 +473,7 @@ describe("ProjectsPage – workflow sections", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
-  it("renders active/stuck, counted waiting, and terminal sections without backlog inventory", async () => {
+  it("renders active/stuck, counted waiting, visible backlog, and terminal sections", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({ id: 1, title: "Backlog", status: "backlog", ownerMemberId: null }),
       makeProject({
@@ -515,10 +521,10 @@ describe("ProjectsPage – workflow sections", () => {
     expect(
       [...container.querySelectorAll<HTMLElement>("[data-project-section]")]
         .map((section) => section.dataset.projectSection),
-    ).toEqual(["active", "waiting", "terminal"]);
+    ).toEqual(["active", "waiting", "backlog", "terminal"]);
     expect(screen.getByRole("region", { name: "Aktiv & festgefahren" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Wartet (2)" })).toBeInTheDocument();
-    expect(screen.queryByText("Backlog")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Später / noch nicht aktiv" })).toBeInTheDocument();
     expect(rowFor(container, "Machbar").closest("[data-project-section]")).toHaveAttribute(
       "data-project-section",
       "active",
@@ -580,8 +586,8 @@ describe("ProjectsPage – workflow sections", () => {
     fireEvent.click(within(screen.getByRole("group", { name: "Gruppieren nach" }))
       .getByRole("button", { name: "Bereich" }));
 
-    expect(screen.getAllByRole("heading", { name: "Telefon" })).toHaveLength(3);
-    for (const sectionName of ["active", "waiting", "terminal"]) {
+    expect(screen.getAllByRole("heading", { name: "Telefon" })).toHaveLength(4);
+    for (const sectionName of ["active", "waiting", "backlog", "terminal"]) {
       const section = container.querySelector<HTMLElement>(
         `[data-project-section="${sectionName}"]`,
       );
@@ -658,7 +664,7 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
-  it("keeps active stories primary, omits backlog, and folds terminal stories", async () => {
+  it("keeps active stories primary, shows backlog separately, and folds terminal stories", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 1,
@@ -676,7 +682,10 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
 
     // Active rows are not nested inside the terminal <details> fold.
     expect(rowFor(container, "Aktive Geschichte").closest("details")).toBeNull();
-    expect(screen.queryByText("Backlog-Geschichte")).not.toBeInTheDocument();
+    expect(rowFor(container, "Backlog-Geschichte").closest("[data-project-section]")).toHaveAttribute(
+      "data-project-section",
+      "backlog",
+    );
 
     const summary = screen.getByText("Abgeschlossen & archiviert (2)");
     const details = summary.closest("details");

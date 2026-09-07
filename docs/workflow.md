@@ -86,7 +86,9 @@ planning list with chips, not as a separate page per date or an hourly
 calendar. The same compact list holds the scheduled, due, and direct external-wait
 revisit chips for the week. It uses the same agenda eligibility rules as Heute;
 Week differs by projecting exact dates instead of carrying overdue attention
-forward.
+forward. Explicit dates on tasks inside open backlog projects still appear in
+Week because they are intentional planning signals; unscheduled backlog-project
+tasks stay out of **Ohne Planung** until the project is active.
 
 Each item has three distinct attention dates: `scheduledDate` records when the
 household intends to work on it, `dueDate` records the real deadline or
@@ -102,8 +104,9 @@ and is not treated as a Week revisit placement.
 standalone tasks and the selected next action(s) from active projects. Unlike
 Heute, Week does not hide tasks just because their physical context is somewhere
 else right now. It does not show unscheduled projects/stories, non-selected
-project descendants, waiting or dependency-blocked tasks, captures,
-someday/backlog tasks, or already scheduled tasks.
+project descendants, unscheduled backlog-project tasks, waiting or
+dependency-blocked tasks, captures, someday/backlog tasks, or already scheduled
+tasks.
 
 Dragging a task or project card to a day normally changes `scheduledDate`; a
 `revisit` card instead changes `externalWait.revisitDate`. Deadline chips are
@@ -159,6 +162,10 @@ nested task directly.
 
 Alles answers where an item is even when Today, Review, Inbox, and Waiting do
 not currently surface it.
+
+The main **Projekte** tab shows active projects first and backlog projects in a
+visible **Später / noch nicht aktiv** section. Completed and archived projects
+stay folded unless search reveals them.
 
 ## People and responsibility
 

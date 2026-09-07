@@ -168,14 +168,18 @@ The **Week planning** view is another read-only WorkItem projection:
 `apps/api/src/domain/weekAgenda.ts` builds `/api/agenda/week` from `Graph` into
 one compact seven-day list with chips, plus an **Ohne Planung** unplanned pool.
 It is not an hourly calendar and does not persist a planning model of its own.
-Week uses the same `agendaSelection.ts` eligibility engine as Heute for
-ownership, working-system membership, executable available work, and project
-next-action lane selection. It deliberately disables current physical-context
-availability when filling the planning pool: Week plans across places; Today
-answers what is actionable where the household is now. Week otherwise differs
-only in temporal projection: day columns show exact-date attention, with no
-Heute-style carry-over or overdue replication. The week still uses one compact
-day list with chips rather than separate day or wait sections.
+Week uses `agendaSelection.ts` for ownership, executable available work, and
+project next-action lane selection. Exact dated task attention
+(`scheduledDate`, `dueDate`, or direct `externalWait.revisitDate`) can surface
+from any open story, including backlog stories, because an explicit calendar
+date is a planning commitment for that task. The **Ohne Planung** pool remains
+stricter: it contains standalone work and selected next actions from active
+projects only. Week deliberately disables current physical-context availability
+when filling that planning pool: Week plans across places; Today answers what is
+actionable where the household is now. Week otherwise differs only in temporal
+projection: day columns show exact-date attention, with no Heute-style
+carry-over or overdue replication. The week still uses one compact day list with
+chips rather than separate day or wait sections.
 
 There are three distinct attention dates for a card:
 - `scheduledDate` = intended work date;
@@ -494,10 +498,9 @@ directly and searches project title/notes as well as tasks.
 ### Projects tab — `/projects`
 
 `ProjectsPage` renders the same `ProjectStoryRow` (card variant) for active,
-completed, and archived projects. Backlog inventory remains available through
-Alles and appears in Review only when it has a real reconsideration reason; a
-row just returned to backlog may remain on Projects only for its optimistic
-retention window.
+backlog, completed, and archived projects. Active stories stay primary, backlog
+stories render in their own visible **Später / noch nicht aktiv** section, and
+completed/archived stories remain folded.
 
 - **Right swipe / primary button** runs the status-appropriate next step: `active → abschließen`, `completed → wieder öffnen`, `archived → aktivieren`. Backlog activation is offered from Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action) is the explicit non-gesture equivalent and stays available on touch.
 - **Left swipe / ⋯** reveals the chip strip: the targeted popups above plus every *remaining* legal transition from the row's `availableActions` (e.g. `In Backlog zurücklegen`, `Archivieren`).
@@ -514,11 +517,14 @@ retention window.
 
 - **Search** folds diacritics (`NFD` + combining-mark strip) and lower-cases both sides, then substring-matches the title **and** every `acceptanceCriteria[].text`. The list endpoint already returns criteria (`Graph.load`), so no extra request is needed.
 - **Scope** is `mine` by default — the selected member's stories plus `ownerMemberId === null`. With no identity selected there is no "mine", so it collapses to unassigned-only rather than to everything. `all` disables the filter.
-- **Sort buckets**, in order: active & healthy, active & `stuckReason`, completed, archived; ties break on `position`, then `title.localeCompare(…, "de")`, then `id`, so the order is stable across reloads and retentions.
-- Active rows form the primary list. Completed and archived rows keep
-  that same deterministic order inside the folded **Abgeschlossen &
-  archiviert** section. A non-empty search reveals matching terminal
-  rows automatically.
+- **Sort buckets**, in order: active & healthy, active & `stuckReason`, active
+  with a future-scheduled next action, active waiting, backlog, completed,
+  archived; ties break on `position`, then `title.localeCompare(…, "de")`, then
+  `id`, so the order is stable across reloads and retentions.
+- Active rows form the primary list. Backlog rows form a visible **Später /
+  noch nicht aktiv** section. Completed and archived rows keep that same
+  deterministic order inside the folded **Abgeschlossen & archiviert** section.
+  A non-empty search reveals matching terminal rows automatically.
 - Filtering runs **before** sorting, and retained (optimistic) rows are merged into the same input list, so a retained row obeys the current search/scope and can never render twice next to its refetched counterpart.
 - `ProjectsPage` distinguishes *no stories at all* (`noProjects`) from *nothing matches* (`noMatchingProjects`) by testing the unfiltered list first.
 

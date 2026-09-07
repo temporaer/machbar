@@ -64,21 +64,17 @@ export function ProjectsPage() {
     }
   };
 
-  // Backlog projects have their own review surface. A project returned to the
-  // backlog from this page may remain briefly through the retained projection,
-  // but fetched backlog inventory must not leak into the Projects tab.
-  const listed = (projects ?? []).filter((project) => project.status !== "backlog");
   // A story that just transitioned optimistically must keep rendering during
-  // its retention window even if a refetch drops it from this list — but,
+  // its retention window even if a refetch drops it from the fetched list — but,
   // just like every other row, it still obeys the current search/scope and
   // must never appear twice alongside its refetched counterpart. When both
   // copies exist, the retained story is the effective one for filtering and
   // section placement as well as for the row itself.
   const retainedOnly = [...actions.retained.values()]
     .map((entry) => entry.story)
-    .filter((story) => !listed.some((p) => p.id === story.id));
+    .filter((story) => !(projects ?? []).some((p) => p.id === story.id));
   const allProjects = [
-    ...listed.map((project) => actions.retained.get(project.id)?.story ?? project),
+    ...(projects ?? []).map((project) => actions.retained.get(project.id)?.story ?? project),
     ...retainedOnly,
   ];
 
@@ -230,9 +226,12 @@ export function ProjectsPage() {
               <section
                 className="section"
                 data-project-section="backlog"
-                aria-label={strings.backlogProjectsSection}
+                aria-labelledby="backlog-projects-heading"
               >
-                {renderGroups("backlog", backlogProjects, 2)}
+                <h2 className="section-title" id="backlog-projects-heading">
+                  {strings.backlogProjectsSection}
+                </h2>
+                {renderGroups("backlog", backlogProjects, 3)}
               </section>
             ) : null}
             {terminalProjects.length > 0 ? (

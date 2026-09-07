@@ -20,6 +20,35 @@ function isOpenStory(story: ProjectRecord): boolean {
   return story.status !== "completed" && story.status !== "archived";
 }
 
+function isWeekDatedTask(
+  task: TaskRecord,
+  graph: Graph,
+  selection: ReturnType<typeof createAgendaSelection>,
+): boolean {
+  if (
+    task.status !== "actionable" ||
+    task.needsClarification ||
+    !selection.matchesOwner(task)
+  ) {
+    return false;
+  }
+  if (task.projectId === null) return selection.isAgendaTask(task);
+  const story = graph.projectsById.get(task.projectId);
+  return story !== undefined && isOpenStory(story);
+}
+
+function isWeekDirectExternalWaitAttention(
+  task: TaskRecord,
+  graph: Graph,
+  selection: ReturnType<typeof createAgendaSelection>,
+): boolean {
+  return (
+    isWeekDatedTask(task, graph, selection) &&
+    task.blocked &&
+    task.externalWait !== null
+  );
+}
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -156,8 +185,8 @@ export function buildWeekAgenda(
   };
 
   for (const task of graph.allTasks()) {
-    if (!selection.isAgendaTask(task)) continue;
-    if (selection.isDirectExternalWaitAttention(task)) {
+    if (!isWeekDatedTask(task, graph, selection)) continue;
+    if (isWeekDirectExternalWaitAttention(task, graph, selection)) {
       if (
         task.externalWait?.revisitDate &&
         dateSet.has(task.externalWait.revisitDate)

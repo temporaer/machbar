@@ -88,6 +88,7 @@ describe("TaskRow Wiedervorlage date", () => {
     });
 
     expect(screen.getByText("Fällig: 24.08.2026")).toBeInTheDocument();
+    expect(screen.getByText("Geplant: 05.09.2026")).toBeInTheDocument();
     expect(screen.getByText("Wiedervorlage: heute")).toBeInTheDocument();
     expect(screen.getByText("Projekt fällig: in 3 Tagen")).toBeInTheDocument();
   });
