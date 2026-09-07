@@ -139,6 +139,7 @@ function multipartBody(
 }
 
 const BASE = "/api/integrations/paperless/documents";
+const STATUS = "/api/integrations/paperless/status";
 
 describe("Paperless integration routes", () => {
   describe("when Paperless is not configured", () => {
@@ -182,6 +183,16 @@ describe("Paperless integration routes", () => {
         expect(response.json().error.code).toBe("paperless_not_configured");
       }
     });
+
+    it("reports Paperless as unavailable for UI links without exposing credentials", async () => {
+      const response = await ctx.app.inject({ method: "GET", url: STATUS });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        configured: false,
+        documentUiBaseUrl: null,
+      });
+    });
   });
 
   describe("when Paperless is configured", () => {
@@ -195,6 +206,26 @@ describe("Paperless integration routes", () => {
 
     afterEach(async () => {
       await closeTestContext(ctx);
+    });
+
+    it("returns only the configured Paperless UI base URL", async () => {
+      await closeTestContext(ctx);
+      ctx = createTestContext({
+        paperless: {
+          baseUrl: "https://paperless.example/archive",
+          apiToken: "secret-token",
+        },
+        paperlessClient: client,
+      });
+
+      const response = await ctx.app.inject({ method: "GET", url: STATUS });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        configured: true,
+        documentUiBaseUrl: "https://paperless.example/archive",
+      });
+      expect(JSON.stringify(response.json())).not.toContain("secret-token");
     });
 
     it("rejects an invalid document ID before contacting Paperless", async () => {

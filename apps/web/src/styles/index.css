@@ -2809,27 +2809,34 @@ details[open] > .disclosure-summary::after {
   width: 112px;
   flex: 0 0 112px;
   display: grid;
-  grid-template-rows: 72px auto;
+  grid-template-rows: auto auto;
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface-alt);
   color: var(--color-text);
-  text-decoration: none;
 }
 
 .paperless-attachment-tile:hover {
   border-color: var(--color-primary);
 }
 
-.paperless-attachment-tile img,
+.paperless-attachment-primary {
+  display: grid;
+  grid-template-rows: 72px auto;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.paperless-attachment-primary img,
 .paperless-attachment-document-icon {
   width: 100%;
   height: 72px;
   background: var(--color-surface);
 }
 
-.paperless-attachment-tile img {
+.paperless-attachment-primary img {
   object-fit: cover;
 }
 
@@ -2842,13 +2849,21 @@ details[open] > .disclosure-summary::after {
   letter-spacing: 0.05em;
 }
 
-.paperless-attachment-tile > span:last-child {
+.paperless-attachment-primary > span:last-child {
   padding: 6px 7px;
   overflow: hidden;
   font-size: 0.72rem;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.paperless-attachment-external {
+  padding: 0 7px 7px;
+  color: var(--color-primary);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 .task-row-attachment-preview {

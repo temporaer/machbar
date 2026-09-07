@@ -206,6 +206,11 @@ export interface PaperlessDocumentSummary {
   mimeType: string | null;
 }
 
+export interface PaperlessIntegrationStatus {
+  configured: boolean;
+  documentUiBaseUrl: string | null;
+}
+
 export interface ActivityEventMetadata {
   changedFields?: string[];
   previousStatus?: TaskStatus | ProjectStatus;

@@ -4,7 +4,7 @@
  * of copying between task/project tables, so ids, links, tags, contexts,
  * notifications, and activity history stay attached to the same row.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import type { TaskStatus } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -32,6 +32,12 @@ export interface ConvertTaskToStoryInput {
   expectedRevision?: number;
 }
 
+type TaskToStoryInvalidReason =
+  | "not_root"
+  | "inside_story"
+  | "unsupported_status"
+  | "task_only_relations";
+
 function taskStatusToStored(
   status: TaskStatus,
 ): "captured" | "active" | "backlog" | "done" | "cancelled" {
@@ -57,15 +63,35 @@ export function convertTaskToStory(
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
     assertExpectedRevision("task", taskId, task.revision, input.expectedRevision);
-    if (
-      task.status !== "captured" ||
-      task.projectId !== null ||
-      task.parentTaskId !== null
-    ) {
+    const reject = (
+      reason: TaskToStoryInvalidReason,
+      message: string,
+      details: Record<string, unknown> = {},
+    ) => {
       throw AppError.conflict(
-        "task_promotion_invalid",
-        "Only a root-level captured inbox item can be converted to a story.",
-        { taskId, reason: "not_root_capture" },
+        "role_conversion_invalid",
+        message,
+        { taskId, reason, ...details },
+      );
+    };
+    if (task.parentTaskId !== null) {
+      reject(
+        "not_root",
+        "Only a root-level standalone task can be converted to a story.",
+      );
+    }
+    if (task.projectId !== null) {
+      reject(
+        "inside_story",
+        "A task inside a story cannot be converted independently.",
+        { projectId: task.projectId },
+      );
+    }
+    if (!["captured", "actionable", "someday"].includes(task.status)) {
+      reject(
+        "unsupported_status",
+        "Only open captured, actionable, or someday tasks can be converted to a story.",
+        { status: task.status },
       );
     }
     const title = input.title?.trim() ?? task.title;
@@ -86,7 +112,10 @@ export function convertTaskToStory(
         .select({ id: schema.taskDependencies.id })
         .from(schema.taskDependencies)
         .where(
-          sql`${schema.taskDependencies.taskId} = ${taskId} OR ${schema.taskDependencies.dependsOnTaskId} = ${taskId}`,
+          or(
+            eq(schema.taskDependencies.taskId, taskId),
+            eq(schema.taskDependencies.dependsOnTaskId, taskId),
+          ),
         )
         .get() !== undefined ||
       tx
@@ -95,30 +124,17 @@ export function convertTaskToStory(
         .where(eq(schema.taskRecurrenceOccurrences.taskId, taskId))
         .get() !== undefined ||
       task.repeatAfterDays !== null ||
+      task.allowedDeviationDays !== null ||
       task.reminderAt !== null;
     if (hasTaskOnlyRelation) {
-      throw AppError.conflict(
-        "task_promotion_invalid",
-        "Resolve task-only waits, dependencies, recurrence, and reminders before promotion.",
-        { taskId, reason: "task_only_relations" },
+      reject(
+        "task_only_relations",
+        "Resolve task-only waits, dependencies, recurrence, and reminders before converting this task to a story.",
       );
     }
 
-    const maxPosition = tx
-      .select({ position: schema.workItems.position })
-      .from(schema.workItems)
-      .where(and(eq(schema.workItems.role, "story"), sql`${schema.workItems.parentId} IS NULL`))
-      .all()
-      .reduce((max, story) => Math.max(max, story.position), -1);
     const ownerMemberId =
       task.ownerInheritanceMode === "explicit" ? task.ownerMemberId : null;
-    if (input.status === "active" && ownerMemberId === null) {
-      throw AppError.conflict(
-        "project_driver_required",
-        "An active project needs a driver.",
-        { taskId, reason: "capture_driver_required" },
-      );
-    }
 
     tx.update(schema.workItems)
       .set({
@@ -130,8 +146,6 @@ export function convertTaskToStory(
         archivedAt: null,
         needsClarification: false,
         ownerMemberId,
-        ownerInheritanceMode: "inherit",
-        physicalContextInheritanceMode: "inherit",
         priority: null,
         size: null,
         completedAt: null,
@@ -140,7 +154,6 @@ export function convertTaskToStory(
         repeatAfterDays: null,
         allowedDeviationDays: null,
         reminderAt: null,
-        position: maxPosition + 1,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })

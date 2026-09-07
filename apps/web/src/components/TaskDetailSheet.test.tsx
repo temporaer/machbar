@@ -1354,7 +1354,7 @@ describe("TaskDetailSheet", () => {
     );
   });
 
-  it("promotes a captured item and opens the captured-project handoff", async () => {
+  it("converts a captured item and opens the captured-project handoff", async () => {
     const task = makeTask({
       id: 56,
       title: "Kinderzimmer renovieren",
@@ -1390,7 +1390,7 @@ describe("TaskDetailSheet", () => {
     ).toBeInTheDocument();
   });
 
-  it("promotes a captured item directly into the backlog", async () => {
+  it("converts a captured item directly into the backlog", async () => {
     const task = makeTask({
       id: 57,
       title: "Vielleicht umziehen",
@@ -1409,5 +1409,130 @@ describe("TaskDetailSheet", () => {
         expectedRevision: 1,
       }),
     );
+  });
+
+  it("shows project conversion for a normal standalone task with subtasks", async () => {
+    const task = makeTask({
+      id: 58,
+      title: "Keller organisieren",
+      status: "actionable",
+      children: [
+        makeTask({
+          id: 59,
+          parentTaskId: 58,
+          title: "Regale ausmessen",
+        }),
+      ],
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(58);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Keller organisieren");
+
+    expect(
+      screen.getByRole("button", { name: "Als Projekt behandeln" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Als Projekt behandeln" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Ins Backlog" }));
+
+    await waitFor(() =>
+      expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(58, {
+        status: "backlog",
+        expectedRevision: 1,
+      }),
+    );
+  });
+
+  it("does not show project conversion for subtasks or project-contained tasks", async () => {
+    mockedApi.getTask.mockResolvedValueOnce(
+      makeTask({
+        id: 60,
+        title: "Teilaufgabe",
+        parentTaskId: 58,
+      }),
+    );
+    renderSheet(60);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Teilaufgabe");
+    expect(
+      screen.queryByRole("button", { name: "Als Projekt behandeln" }),
+    ).not.toBeInTheDocument();
+
+    mockedApi.getTask.mockResolvedValueOnce(
+      makeTask({
+        id: 61,
+        title: "Projektaufgabe",
+        projectId: 80,
+        projectTitle: "Keller",
+      }),
+    );
+    renderSheet(61);
+    await userEvent.click(screen.getAllByText("open").at(-1)!);
+    await waitForTaskTitle("Projektaufgabe");
+    expect(
+      screen.queryByRole("button", { name: "Als Projekt behandeln" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses the explicit active choice for normal task conversion", async () => {
+    const task = makeTask({
+      id: 62,
+      title: "Aktiv machen",
+      status: "actionable",
+      ownerMemberId: 1,
+      ownerInheritanceMode: "explicit",
+      children: [makeTask({ id: 63, parentTaskId: 62 })],
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+
+    renderSheet(62);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Aktiv machen");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Als Projekt behandeln" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Aktivieren" }));
+
+    await waitFor(() =>
+      expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(62, {
+        status: "active",
+        expectedRevision: 1,
+      }),
+    );
+  });
+
+  it("keeps the task detail open and displays conversion errors", async () => {
+    const task = makeTask({
+      id: 64,
+      title: "Nicht aktivierbar",
+      status: "actionable",
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.convertTaskToStory.mockRejectedValueOnce(
+      Object.assign(new Error("invalid conversion"), {
+        name: "ApiError",
+        code: "role_conversion_invalid",
+        details: { reason: "task_only_relations" },
+      }),
+    );
+
+    renderSheet(64);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Nicht aktivierbar");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Als Projekt behandeln" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Aktivieren" }));
+
+    expect(await screen.findByText("Nicht aktivierbar")).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Diese Aufgabe kann erst in ein Projekt umgewandelt werden, wenn widersprechende Aufgaben-Eigenschaften entfernt wurden.",
+      ),
+    ).toBeInTheDocument();
   });
 });

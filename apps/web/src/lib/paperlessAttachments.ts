@@ -27,6 +27,28 @@ export function paperlessDocumentId(url: string | undefined): number | null {
   return Number.isSafeInteger(id) ? id : null;
 }
 
+export function paperlessDocumentUiUrl(
+  baseUrl: string | null | undefined,
+  id: number,
+): string | null {
+  if (paperlessDocumentId(`paperless:${id}`) === null) return null;
+  if (!baseUrl?.trim()) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password) {
+    return null;
+  }
+  parsed.search = "";
+  parsed.hash = "";
+  const basePath = parsed.pathname.replace(/\/+$/, "");
+  parsed.pathname = `${basePath}/documents/${id}/details`;
+  return parsed.href;
+}
+
 interface LocatedPaperlessMarkdownReference extends PaperlessMarkdownReference {
   start: number;
   end: number;

@@ -5,6 +5,7 @@ import {
   markdownWithoutPaperlessReferences,
   paperlessAttachmentBlock,
   paperlessDocumentId,
+  paperlessDocumentUiUrl,
   paperlessMarkdownReference,
   uploadPaperlessFile,
   uploadPaperlessFiles,
@@ -68,6 +69,32 @@ describe("Paperless Markdown attachments", () => {
     expect(paperlessDocumentId("paperless:-1")).toBeNull();
     expect(paperlessDocumentId("paperless:01")).toBeNull();
     expect(paperlessDocumentId("paperless:999999999999999999999")).toBeNull();
+  });
+
+  it("builds Paperless document detail URLs from configured base URLs", () => {
+    expect(paperlessDocumentUiUrl("https://paperless.example", 123)).toBe(
+      "https://paperless.example/documents/123/details",
+    );
+    expect(paperlessDocumentUiUrl("https://paperless.example/", 123)).toBe(
+      "https://paperless.example/documents/123/details",
+    );
+    expect(
+      paperlessDocumentUiUrl("https://paperless.example/paperless/", 123),
+    ).toBe("https://paperless.example/paperless/documents/123/details");
+  });
+
+  it("does not construct unsafe or bogus Paperless document UI URLs", () => {
+    expect(paperlessDocumentUiUrl(null, 123)).toBeNull();
+    expect(paperlessDocumentUiUrl("", 123)).toBeNull();
+    expect(paperlessDocumentUiUrl("not a url", 123)).toBeNull();
+    expect(paperlessDocumentUiUrl("http://paperless.example", 123)).toBeNull();
+    expect(
+      paperlessDocumentUiUrl("https://token@paperless.example", 123),
+    ).toBeNull();
+    expect(
+      paperlessDocumentUiUrl("https://paperless.example?token=secret", 123),
+    ).toBe("https://paperless.example/documents/123/details");
+    expect(paperlessDocumentUiUrl("https://paperless.example", 0)).toBeNull();
   });
 
   it("ignores Paperless-shaped literal code and escaped Markdown", () => {

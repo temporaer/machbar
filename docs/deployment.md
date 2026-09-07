@@ -150,7 +150,9 @@ The token is used only by the Machbar server. Browsers upload through
 authenticated same-origin Machbar routes and never receive the token or an
 authenticated Paperless URL. Paperless physically stores and processes every
 file; task and project notes contain only stable `paperless:<document-id>`
-Markdown references.
+Markdown references. `PAPERLESS_URL` is also exposed without credentials as the
+public Paperless web base URL for secondary “open in Paperless” document links,
+so include any reverse-proxy path prefix in that value.
 
 Machbar requests Paperless API version 10 explicitly and automatically retries
 with the compatible version 9 contract when an older server rejects version 10.
