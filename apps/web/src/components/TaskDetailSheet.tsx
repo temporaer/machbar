@@ -1,10 +1,8 @@
 import {
   useEffect,
-  useId,
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import { Link } from "react-router-dom";
 import type { Task } from "@machbar/shared";
@@ -65,6 +63,10 @@ import { appendTextBlock } from "../lib/shareTarget";
 import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
 import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
 import { PhysicalContextPicker } from "./PhysicalContextPicker";
+import {
+  WorkItemDetailSection,
+  WorkItemDetailDisclosure,
+} from "./WorkItemDetailSection";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -77,68 +79,6 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
     title: task.title,
     notes: task.notes ?? "",
   };
-}
-
-function TaskDetailSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  const headingId = useId();
-  return (
-    <section className="task-detail-section" aria-labelledby={headingId}>
-      <h3 id={headingId} className="task-detail-section-title">
-        {title}
-      </h3>
-      <div className="task-detail-section-body">{children}</div>
-    </section>
-  );
-}
-
-function TaskDetailDisclosure({
-  title,
-  summary,
-  children,
-  defaultOpen = false,
-  forceOpen = false,
-  resetKey,
-  className = "",
-}: {
-  title: string;
-  summary?: ReactNode;
-  children: ReactNode;
-  defaultOpen?: boolean;
-  forceOpen?: boolean;
-  resetKey: number;
-  className?: string;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-
-  useEffect(() => {
-    setOpen(defaultOpen);
-  }, [defaultOpen, resetKey]);
-
-  return (
-    <details
-      className={`task-detail-section task-detail-disclosure${className ? ` ${className}` : ""}`}
-      open={open || forceOpen}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="task-detail-section-title disclosure-summary">
-        <span className="task-detail-disclosure-heading">
-          <span role="heading" aria-level={3}>
-            {title}
-          </span>
-          {summary ? (
-            <span className="task-detail-disclosure-summary">{summary}</span>
-          ) : null}
-        </span>
-      </summary>
-      <div className="task-detail-section-body">{children}</div>
-    </details>
-  );
 }
 
 /**
@@ -745,7 +685,7 @@ export function TaskDetailSheet() {
           ) : null}
           <PaperlessAttachmentStrip attachments={attachments} />
 
-          <TaskDetailSection title={strings.taskSection}>
+          <WorkItemDetailSection title={strings.taskSection}>
             {task.projectId !== null && task.projectTitle ? (
               <div className="task-project-context">
                 <div className="task-project-context-item">
@@ -846,9 +786,9 @@ export function TaskDetailSheet() {
               </select>
             </div> : null}
 
-          </TaskDetailSection>
+          </WorkItemDetailSection>
 
-          <TaskDetailSection title={strings.owner}>
+          <WorkItemDetailSection title={strings.owner}>
             <div ref={ownerFieldRef}>
               <TaskOwnerChoiceGroup
                 label={strings.owner}
@@ -867,10 +807,10 @@ export function TaskDetailSheet() {
                 onChange={(choice) => void patch(choice)}
               />
             </div>
-          </TaskDetailSection>
+          </WorkItemDetailSection>
 
           {isCapturedInboxItem ? (
-            <TaskDetailSection title={strings.classificationPrompt}>
+            <WorkItemDetailSection title={strings.classificationPrompt}>
               <div className="capture-shape-actions">
                 <button
                   type="button"
@@ -905,11 +845,11 @@ export function TaskDetailSheet() {
                   {strings.classifyAsSomeday}
                 </button>
               </div>
-            </TaskDetailSection>
+            </WorkItemDetailSection>
           ) : null}
 
           <div className="task-timing-sections">
-          <TaskDetailDisclosure
+          <WorkItemDetailDisclosure
             title={strings.taskPlanningSection}
             summary={planningSummary || strings.taskPlanningEmpty}
             defaultOpen={Boolean(planningSummary || task.externalWait)}
@@ -968,9 +908,9 @@ export function TaskDetailSheet() {
               <option value="5">5 – {strings.priorityLowest}</option>
             </select>
           </div>
-          </TaskDetailDisclosure>
+          </WorkItemDetailDisclosure>
 
-          <TaskDetailDisclosure
+          <WorkItemDetailDisclosure
             title={strings.taskWaitingSection}
             summary={blockerSummary || strings.taskNotBlocked}
             defaultOpen={Boolean(task.externalWait || task.dependencies.length)}
@@ -1168,10 +1108,10 @@ export function TaskDetailSheet() {
                 </section>
               ) : null}
             </div>
-          </TaskDetailDisclosure>
+          </WorkItemDetailDisclosure>
           </div>
 
-          <TaskDetailDisclosure
+          <WorkItemDetailDisclosure
             title={strings.recurrence}
             defaultOpen={task.repeatAfterDays !== null}
             resetKey={task.id}
@@ -1255,9 +1195,9 @@ export function TaskDetailSheet() {
               </>
             ) : null}
             </div>
-          </TaskDetailDisclosure>
+          </WorkItemDetailDisclosure>
 
-          <TaskDetailDisclosure
+          <WorkItemDetailDisclosure
             title={strings.taskContentSection}
             summary={contentSummary || strings.taskContentEmpty}
             defaultOpen={Boolean(contentSummary)}
@@ -1354,9 +1294,9 @@ export function TaskDetailSheet() {
               <span className="text-muted">{saveError ?? taskActions.errors[task.id]}</span>
             </div>
           ) : null}
-          </TaskDetailDisclosure>
+          </WorkItemDetailDisclosure>
 
-          <TaskDetailDisclosure
+          <WorkItemDetailDisclosure
             title={strings.subtasks}
             summary={
               task.children.length > 0
@@ -1417,9 +1357,9 @@ export function TaskDetailSheet() {
               <p className="text-muted">{strings.recurringTaskLeafHint}</p>
             ) : null}
             </div>
-          </TaskDetailDisclosure>
+          </WorkItemDetailDisclosure>
 
-          <TaskDetailDisclosure
+          <WorkItemDetailDisclosure
             title={strings.taskOrganizationSection}
             resetKey={task.id}
           >
@@ -1442,7 +1382,7 @@ export function TaskDetailSheet() {
               {strings.created}: {formatDateTime(task.createdAt, locale)} ·{" "}
               {strings.updated}: {formatDateTime(task.updatedAt, locale)}
             </p>
-          </TaskDetailDisclosure>
+          </WorkItemDetailDisclosure>
 
           {task.repeatAfterDays !== null ||
           (recurrenceHistory?.summary.totalCount ?? 0) > 0 ? (
@@ -1537,7 +1477,7 @@ export function TaskDetailSheet() {
             idPrefix={`task-${task.id}-activity`}
           />
 
-          <TaskDetailDisclosure
+          <WorkItemDetailDisclosure
             title={strings.taskDangerSection}
             resetKey={task.id}
             className="task-detail-danger"
@@ -1565,7 +1505,7 @@ export function TaskDetailSheet() {
             >
               {strings.delete}
             </button>
-          </TaskDetailDisclosure>
+          </WorkItemDetailDisclosure>
         </fieldset>
       ) : null}
 
