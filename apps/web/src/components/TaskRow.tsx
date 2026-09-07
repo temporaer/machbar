@@ -259,6 +259,7 @@ export function TaskRow({
   } = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy || organize?.activeId != null,
     onPrimary: () => dispatch({ type: "task.primaryAction", task }),
+    onDeepPrimary: () => scope.setOpenLifecycle(taskProp.id),
     onSecondary: () => scope.setOpenRail(taskProp.id),
     onRealDrag: clearLongPress,
   });
@@ -267,6 +268,7 @@ export function TaskRow({
   // strip the red "more actions" background stays shown until the chips close.
   const showCompleteBg = dragX > 0;
   const showCancelBg = dragX < 0 || chipsOpen;
+  const lifecycleOpen = scope.openLifecycleId === taskProp.id;
   const primarySwipeLabel = primaryActionBgLabel(task, primarySwipeAction, strings);
   const swipeCoach = useSwipeCoach(
     `task:${task.id}`,
@@ -356,8 +358,10 @@ export function TaskRow({
       case "task.tags":
       case "task.contexts":
       case "task.convertToProject":
-      case "task.lifecycle":
         dispatch({ type: command, taskId: task.id });
+        return;
+      case "task.lifecycle":
+        dispatch({ type: command, task, status: task.status });
         return;
     }
   };
@@ -644,6 +648,25 @@ export function TaskRow({
           disabled={busy}
           onCommand={runRailCommand}
         />
+      ) : null}
+      {lifecycleOpen ? (
+        <div className="task-row-lifecycle" role="group" aria-label={strings.status}>
+          {(["captured", "actionable", "someday", "done", "cancelled"] as const).map((status) => (
+            <button
+              key={status}
+              type="button"
+              className="btn btn-sm"
+              disabled={busy || task.status === status}
+              aria-current={task.status === status ? "true" : undefined}
+              onClick={() => {
+                scope.setOpenLifecycle(null);
+                dispatch({ type: "task.lifecycle", task, status });
+              }}
+            >
+              {strings.taskStatusLabels[status]}
+            </button>
+          ))}
+        </div>
       ) : null}
 
       {childComposerOpen ? (

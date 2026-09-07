@@ -44,7 +44,7 @@ export type WorkItemCommand =
   | { type: "task.tags"; taskId: number }
   | { type: "task.contexts"; taskId: number }
   | { type: "task.convertToProject"; taskId: number }
-  | { type: "task.lifecycle"; taskId: number }
+  | { type: "task.lifecycle"; task: Task; status: Task["status"] }
   | { type: "task.openOverflow"; taskId: number }
   | { type: "task.toggleDone"; task: Task }
   | { type: "task.primaryAction"; task: Task }

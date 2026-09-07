@@ -163,9 +163,19 @@ export function useWorkItemCommands() {
         case "task.tags":
         case "task.contexts":
         case "task.convertToProject":
-        case "task.lifecycle":
         case "task.openOverflow":
           taskDetail.open(command.taskId);
+          return;
+        case "task.lifecycle":
+          if (command.status === "done" || command.status === "actionable") {
+            taskActions.requestToggle(command.task);
+          } else if (command.status === "cancelled") {
+            taskActions.requestCancel(command.task);
+          } else if (command.status === "captured") {
+            taskActions.clarify(command.task);
+          } else {
+            taskActions.setStatus(command.task, command.status);
+          }
           return;
         case "task.toggleDone":
           taskActions.requestToggle(command.task);
