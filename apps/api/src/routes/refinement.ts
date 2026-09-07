@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
-import { getMemberOrThrow } from "../domain/mutations.js";
+import { getMemberOrThrow } from "../domain/members.js";
 import {
   getRefinementOwnerSizeCounts,
   getRefinementTasks,

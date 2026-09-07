@@ -1,5 +1,6 @@
 import { loadEnv } from "../env.js";
-import { allocateWorkItemId, colorForTag } from "../domain/mutations.js";
+import { colorForTag } from "../domain/tags.js";
+import { allocateWorkItemId } from "../domain/workItemShared.js";
 import { openDb, type Db } from "./client.js";
 import { runMigrations } from "./migrate.js";
 import * as schema from "./schema.js";

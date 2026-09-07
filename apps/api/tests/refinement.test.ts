@@ -1,11 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
-import {
-  createProject as createProjectMutation,
-  createTask,
-  updateTask,
-} from "../src/domain/mutations.js";
+import { createProject as createProjectMutation } from "../src/domain/storyCrud.js";
+import { createTask, updateTask } from "../src/domain/taskCrud.js";
 import {
   getRefinementOwnerSizeCounts,
   getRefinementTasks,

@@ -3,14 +3,11 @@ import { eq } from "drizzle-orm";
 import { openDb, type DbHandle } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
 import * as schema from "../src/db/schema.js";
-import {
-  addDependency,
-  createProject as createProjectMutation,
-  createTask,
-  getOrCreateTag,
-  moveTask,
-  updateTask,
-} from "../src/domain/mutations.js";
+import { createProject as createProjectMutation } from "../src/domain/storyCrud.js";
+import { moveTask } from "../src/domain/structuralMoves.js";
+import { getOrCreateTag } from "../src/domain/tags.js";
+import { addDependency } from "../src/domain/taskCapabilities.js";
+import { createTask, updateTask } from "../src/domain/taskCrud.js";
 import {
   getBlockedTaskIds,
   wouldCreateDependencyCycle,

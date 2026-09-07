@@ -3,30 +3,34 @@ import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
 import { getTaskRecurrenceHistory } from "../repo/recurrenceRepo.js";
+import { convertTaskToStory } from "../domain/roleConversion.js";
+import { moveTask } from "../domain/structuralMoves.js";
 import {
-  acknowledgeTaskReview,
   addDependency,
   addExcludedTag,
   addTaskTag,
-  appendTaskNotes,
-  cancelTask,
-  clarifyTask,
-  completeTask,
-  createChildTask,
-  createTaskSuccessor,
-  createTask,
-  deleteTask,
   followUpExternalWait,
-  moveTask,
-  convertTaskToStory,
   removeDependency,
   removeExcludedTag,
   removeTaskTag,
   resolveExternalWait,
-  reopenTask,
   upsertExternalWait,
+} from "../domain/taskCapabilities.js";
+import {
+  appendTaskNotes,
+  createChildTask,
+  createTaskSuccessor,
+  createTask,
+  deleteTask,
   updateTask,
-} from "../domain/mutations.js";
+} from "../domain/taskCrud.js";
+import {
+  acknowledgeTaskReview,
+  cancelTask,
+  clarifyTask,
+  completeTask,
+  reopenTask,
+} from "../domain/taskWorkflow.js";
 import {
   acknowledgeReviewSchema,
   appendNotesSchema,

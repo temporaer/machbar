@@ -307,7 +307,7 @@ backlog ──activate──► active ──complete──► completed
 archived ──activate──► active
 ```
 
-`availableProjectWorkflowActions()` in `apps/api/src/domain/mutations.ts` is the **single source of truth** for legal transitions and is surfaced on every project response as `availableActions`. Rules:
+`availableProjectWorkflowActions()` in `apps/api/src/domain/storyWorkflow.ts` is the **single source of truth** for legal transitions and is surfaced on every project response as `availableActions`. Rules:
 
 - `PATCH /api/projects/:id` **refuses status changes** — status only moves
   through the dedicated workflow endpoints (`/activate`, `/complete`,
@@ -738,7 +738,7 @@ refactor's `plan.md`; the sections below describe what has already landed.
 
 **Shared identity.** `work_items(id)` (`apps/api/src/db/schema.ts`) is a
 thin parent row both `tasks.id` and `projects.id` foreign-key into.
-`allocateWorkItemId(db)` (`apps/api/src/domain/mutations.ts`) is the only
+`allocateWorkItemId(db)` (`apps/api/src/domain/workItemShared.ts`) is the only
 way either table's row gets an id, which guarantees a task and a project
 can never collide on the same numeric id — a precondition for identity to
 survive role conversion.
@@ -756,7 +756,7 @@ stories cannot yet nest under stories, so nested Scrum structure (§ product
 spec) is not yet representable at the schema level.
 
 **Identity-preserving role conversion.** `convertTaskToStory` /
-`convertStoryToTask` (`apps/api/src/domain/mutations.ts`) replace the old,
+`convertStoryToTask` (`apps/api/src/domain/roleConversion.ts`) replace the old,
 identity-destroying `promoteTaskToProject`: converting a task to a story
 (or back) reuses the same numeric id (enabled by the shared identity
 above) and re-points `activity_events`/`notification_events`/

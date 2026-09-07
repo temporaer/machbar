@@ -3,7 +3,7 @@ import type { ProjectWorkflowAction } from "./api";
 import type { Strings } from "./strings";
 
 /**
- * Frontend mirror of `apps/api/src/domain/mutations.ts::workflowActionsByStatus`.
+ * Frontend mirror of `apps/api/src/domain/storyWorkflow.ts::workflowActionsByStatus`.
  *
  * The backend remains the single source of truth — every project response
  * carries its own `availableActions`, and that list is what the UI renders.
@@ -127,7 +127,7 @@ export function needsDriverBeforeAction(story: Project, action: ProjectWorkflowA
 
 /**
  * A story's driver may only be cleared while it sits in the backlog — see
- * `updateProject` in `apps/api/src/domain/mutations.ts`. Everything else
+ * `updateProject` in `apps/api/src/domain/storyCrud.ts`. Everything else
  * (active/completed/archived) can be reassigned but never unassigned.
  */
 export function canClearDriver(story: Project): boolean {

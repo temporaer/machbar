@@ -3,13 +3,15 @@ import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import {
-  cancelTask,
-  completeTask,
   createTask,
   deleteTask,
-  reopenTask,
   updateTask,
-} from "../src/domain/mutations.js";
+} from "../src/domain/taskCrud.js";
+import {
+  cancelTask,
+  completeTask,
+  reopenTask,
+} from "../src/domain/taskWorkflow.js";
 import {
   getContributionSummary,
   recordContribution,

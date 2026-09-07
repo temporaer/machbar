@@ -234,7 +234,7 @@ export type UpdateProjectInput = Partial<CreateProjectInput> & {
   expectedRevision?: number;
 };
 
-/** Matches `apps/api/src/domain/mutations.ts::ProjectWorkflowAction`. */
+/** Matches `apps/api/src/domain/storyWorkflow.ts::ProjectWorkflowAction`. */
 export type ProjectWorkflowAction =
   | "activate"
   | "return_to_backlog"
