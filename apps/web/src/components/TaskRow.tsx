@@ -360,6 +360,9 @@ export function TaskRow({
       case "task.convertToProject":
         dispatch({ type: command, taskId: task.id });
         return;
+      case "task.discard":
+        dispatch({ type: "task.discard", task });
+        return;
       case "task.lifecycle":
         dispatch({ type: command, task, status: task.status });
         return;

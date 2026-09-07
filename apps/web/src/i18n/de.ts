@@ -545,6 +545,7 @@ const extra = {
     "task.tags": "Tags",
     "task.contexts": "Kontext",
     "task.convertToProject": "Zum Projekt machen",
+    "task.discard": "Verwerfen",
     "task.lifecycle": "Status",
     "story.defer": "Wiedervorlegen",
     "story.assignDriver": "Verantwortliche Person",

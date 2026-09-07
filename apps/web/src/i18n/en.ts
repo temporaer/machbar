@@ -563,6 +563,7 @@ const en = {
     "task.tags": "Tags",
     "task.contexts": "Context",
     "task.convertToProject": "Make project",
+    "task.discard": "Discard",
     "task.lifecycle": "Status",
     "story.defer": "Resurface",
     "story.assignDriver": "Assign driver",
