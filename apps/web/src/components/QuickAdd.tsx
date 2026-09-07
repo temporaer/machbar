@@ -22,6 +22,7 @@ import { IconActionGlyph } from "./IconActionButton";
 import { ImageCropSheet } from "./ImageCropSheet";
 import { CameraCaptureSheet } from "./CameraCaptureSheet";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { shouldSuppressGlobalShortcuts } from "../lib/keyboardShortcuts";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -73,6 +74,26 @@ export function QuickAdd({
       setOpen(true);
     }
   }, [autoOpen]);
+
+  // Contextual capture (`c`): the current page already tells this exact
+  // `QuickAdd` instance what "here" means via `projectId`/`parentTaskId`
+  // (a project/story outline passes its own id, Today/Inbox pass
+  // nothing -> inbox) -- so re-using those same props is the contextual
+  // capture target, without needing a second scope-based mechanism yet
+  // (see `interactionScope.tsx`'s `captureTarget`, reserved for the
+  // later pass that replaces these props entirely).
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "c" || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (shouldSuppressGlobalShortcuts(event.target)) return;
+      event.preventDefault();
+      setCaptureNotice(null);
+      setCaptureStep("choose");
+      setOpen(true);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const close = () => {
     setOpen(false);

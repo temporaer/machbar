@@ -14,13 +14,15 @@ import type { TaskDetailFocusField } from "./taskDetailContext";
  * mutation/optimistic-retention behaviour behind each command.
  *
  * `outline.*` commands describe structural intent (reorder/indent/
- * outdent/fold), but are dispatched directly against the specific
- * `useOutlineOrganize()` instance that owns the rendered sibling group —
- * see `docs/architecture-rules.md`'s structural-move invariant. There is
- * deliberately no generic `outline.*` case in `useWorkItemCommands()`:
- * only the interaction scope that registered a given outline (Phase 4)
- * knows which mounted `organize` handle a keyboard shortcut should reach,
- * and compiled views (Today/Inbox/Waiting/Search) must never expose one.
+ * outdent/fold). `outline.moveUp/moveDown/indent/outdent` are dispatched
+ * directly against the specific `useOutlineOrganize()` instance that owns
+ * the rendered sibling group — see `docs/architecture-rules.md`'s
+ * structural-move invariant; only the interaction scope that registered a
+ * given outline (Phase 4) knows which mounted `moveBy` handle a keyboard
+ * shortcut should reach, and compiled views (Today/Inbox/Waiting/Search)
+ * must never expose one. `outline.collapse`/`outline.expand` carry no
+ * such risk (folding is pure scope view state, not a mutation), so
+ * `useWorkItemCommands()` handles those two generically.
  *
  * `navigate.*` names the g-prefixed keyboard destinations; `capture.open`
  * names the contextual quick-add entry point. Both are listed here now so

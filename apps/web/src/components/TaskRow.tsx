@@ -8,6 +8,7 @@ import { formatDate, isOverdue } from "../lib/format";
 import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
+import { useInteractionScope } from "../lib/interactionScope";
 import { useSwipeSettings } from "../lib/swipeSettings";
 import type { PrimarySwipeAction } from "../lib/swipeSettings";
 import { useOutlineOrganizeRow } from "../lib/useOutlineOrganize";
@@ -103,7 +104,15 @@ export function TaskRow({
 }: TaskRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
-  const [collapsed, setCollapsed] = useState(false);
+  // Fold state is scope-owned (see `interactionScope.tsx`), not private to
+  // this row -- `h`/`l` keyboard shortcuts and future non-row callers need
+  // to read/set it from outside whichever row happens to render this item.
+  const scope = useInteractionScope();
+  const collapsed = scope.isCollapsed(taskProp.id);
+  const setCollapsed = useCallback(
+    (value: boolean) => scope.setCollapsed(taskProp.id, value),
+    [scope, taskProp.id],
+  );
   const [chipsOpen, setChipsOpen] = useState(false);
   const [quickAction, setQuickAction] = useState<TaskQuickAction | null>(null);
   const [childComposerOpen, setChildComposerOpen] = useState(false);
@@ -196,11 +205,11 @@ export function TaskRow({
 
   // A task dropped into this row while it was collapsed would be invisible
   // right after the move, so the outline asks the destination parent to
-  // reveal its children (collapse state is per row and lives here).
+  // reveal its children (collapse state is scope-owned, see above).
   const expandRequest = organize?.expandRequest ?? null;
   useEffect(() => {
     if (expandRequest?.taskId === taskProp.id) setCollapsed(false);
-  }, [expandRequest, taskProp.id]);
+  }, [expandRequest, taskProp.id, setCollapsed]);
 
   const children = sortByPosition(task.children);
   const isDone = task.status === "done";
@@ -361,10 +370,9 @@ export function TaskRow({
     returnFocusToRow();
   };
 
-  // Collapsed state lives in this component only, so a freshly created
-  // child (nested under a possibly-collapsed row) must be made visible
-  // right here once creation succeeds — the refresh bus alone wouldn't
-  // reopen it.
+  // A freshly created child (nested under a possibly-collapsed row) must
+  // be made visible right here once creation succeeds -- the refresh bus
+  // alone wouldn't reopen it.
   const handleChildCreated = () => {
     setCollapsed(false);
     setChildComposerOpen(false);
@@ -380,6 +388,7 @@ export function TaskRow({
     <li
       className={`task-row task-row-surface-${task.status}`}
       style={{ listStyle: "none" }}
+      data-workitem-id={taskProp.id}
     >
       <div className={`task-row-swipe-bg complete${showCompleteBg ? " visible" : ""}${swipeCoach.animate ? " swipe-coach-primary" : ""}`} aria-hidden="true">
         {primarySwipeLabel}
@@ -458,7 +467,9 @@ export function TaskRow({
             className="task-row-toggle"
             aria-expanded={!collapsed}
             aria-label={collapsed ? strings.expand : strings.collapse}
-            onClick={() => setCollapsed((c) => !c)}
+            onClick={() =>
+              dispatch({ type: collapsed ? "outline.expand" : "outline.collapse", workItemId: taskProp.id })
+            }
           >
             {collapsed ? "▸" : "▾"}
           </button>

@@ -11,6 +11,7 @@ import { QuickAdd } from "../components/QuickAdd";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { PageHeader } from "../components/PageHeader";
 import { InteractionScopeProvider } from "../lib/interactionScope";
+import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 
 export function InboxPage() {
   const strings = useStrings();
@@ -24,6 +25,7 @@ export function InboxPage() {
 
   return (
     <InteractionScopeProvider>
+      <WorkItemKeyboardNavMount />
       <div className="inbox-page">
         <PageHeader
           title={strings.inbox}

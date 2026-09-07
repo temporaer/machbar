@@ -57,6 +57,11 @@ function topSheet() {
   return sheetStack.at(-1);
 }
 
+/** Read by the keyboard layer: page-level shortcuts must yield to whatever a modal owns while one is open. */
+export function isAnySheetOpen() {
+  return sheetStack.length > 0;
+}
+
 function restoreHiddenState(element: HTMLElement, state: HiddenState) {
   if (state.ariaHidden === null) element.removeAttribute("aria-hidden");
   else element.setAttribute("aria-hidden", state.ariaHidden);

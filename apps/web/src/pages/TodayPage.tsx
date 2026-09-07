@@ -16,6 +16,7 @@ import { ContributionPulse } from "../components/ContributionPulse";
 import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { InteractionScopeProvider } from "../lib/interactionScope";
+import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 
 export function TodayPage() {
   const strings = useStrings();
@@ -74,6 +75,7 @@ export function TodayPage() {
 
   return (
     <InteractionScopeProvider>
+      <WorkItemKeyboardNavMount />
       <div className="today-page">
         <PageHeader
           title={strings.today}

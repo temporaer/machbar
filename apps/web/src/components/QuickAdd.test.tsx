@@ -375,4 +375,34 @@ describe("QuickAdd", () => {
     expect(screen.getByTestId("open-task-id")).toHaveTextContent("67");
     expect(screen.queryByText("In Heute hinzugefügt")).not.toBeInTheDocument();
   });
+
+  it("öffnet die Erfassung per 'c'-Tastenkürzel im aktuellen Projektkontext", async () => {
+    mockedApi.createTask.mockResolvedValue(makeTask({ title: "Angebot senden", projectId: 7 }));
+    renderWithProviders(<QuickAdd projectId={7} />);
+
+    await userEvent.keyboard("c");
+    await userEvent.click(screen.getByRole("button", { name: "Aufgabe erfassen" }));
+    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Angebot senden");
+    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ projectId: 7 }),
+      ),
+    );
+  });
+
+  it("ignoriert das 'c'-Tastenkürzel, während ein Textfeld fokussiert ist", async () => {
+    renderWithProviders(
+      <>
+        <input aria-label="Anderes Feld" />
+        <QuickAdd />
+      </>,
+    );
+
+    await userEvent.click(screen.getByLabelText("Anderes Feld"));
+    await userEvent.keyboard("c");
+
+    expect(screen.queryByText("Nur Titel reicht")).not.toBeInTheDocument();
+  });
 });

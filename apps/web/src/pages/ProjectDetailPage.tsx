@@ -45,6 +45,7 @@ import {
   localizedErrorMessage,
 } from "../lib/errorMessage";
 import { InteractionScopeProvider } from "../lib/interactionScope";
+import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 
 export function ProjectDetailPage() {
   const strings = useStrings();
@@ -188,6 +189,7 @@ export function ProjectDetailPage() {
     <InteractionScopeProvider
       captureTarget={{ kind: "story", storyId: projectId }}
     >
+      <WorkItemKeyboardNavMount />
       <div>
         <Link
           to={reviewReturn ? "/more/review" : "/projects"}

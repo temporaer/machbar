@@ -117,9 +117,6 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   const scope = useInteractionScope();
   const selectedId = scope.activeId;
   const setSelectedId = scope.setActive;
-  useEffect(() => {
-    scope.setStructuralCapability({ canReorder: organizable, canReparent: organizable });
-  }, [organizable, scope]);
   const [override, setOverride] = useState<{
     tasks: Task[];
     taskId: number;
@@ -499,6 +496,28 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     },
     [commitMove],
   );
+
+  // Registered alongside the capability flags it's paired with: this is
+  // the single mounted instance's own mover, not a second implementation
+  // -- Alt+arrow keyboard commands call this handle instead of routing
+  // through a generic command that could target the wrong outline.
+  //
+  // Depends on the stable `setStructuralCapability` function itself, not
+  // the whole `scope` object: the scope's `activeId`/`capability` change
+  // whenever *any* mounted outline (this one or another) registers, and
+  // depending on all of `scope` would re-run this effect on every such
+  // change even when nothing this instance owns actually changed --
+  // which, with two organizable outlines sharing one scope, becomes an
+  // infinite update loop (each one's registration is a genuinely new
+  // `moveBy` reference from the other's perspective).
+  const setStructuralCapability = scope.setStructuralCapability;
+  useEffect(() => {
+    setStructuralCapability({
+      canReorder: organizable,
+      canReparent: organizable,
+      moveBy: organizable ? moveBy : null,
+    });
+  }, [organizable, setStructuralCapability, moveBy]);
 
   const dragDepthDelta = useMemo(() => {
     if (activeId === null || !projection) return 0;

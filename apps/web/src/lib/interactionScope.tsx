@@ -12,6 +12,10 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  */
 export type CaptureTarget = { kind: "inbox" } | { kind: "story"; storyId: number };
 
+/** Matches `OrganizeDirection` in `useOutlineOrganize.tsx`; not imported
+ * from there to avoid a circular import (that module imports this one). */
+export type StructuralMoveDirection = "up" | "down" | "indent" | "outdent";
+
 export interface InteractionScopeValue {
   /**
    * The one logical WorkItem the user is conceptually "on" in this scope,
@@ -34,8 +38,30 @@ export interface InteractionScopeValue {
    */
   canReorder: boolean;
   canReparent: boolean;
-  setStructuralCapability: (capability: { canReorder: boolean; canReparent: boolean }) => void;
+  /**
+   * The specific mounted `useOutlineOrganize()` instance's own `moveBy`,
+   * registered by that instance alongside its capability flags -- never a
+   * second, independently-implemented mover. `null` whenever no
+   * `organizable` outline is currently mounted in this scope (compiled
+   * views, or an outline before it declares itself). Used by
+   * `Alt+↑/↓/←/→` structural keyboard commands.
+   */
+  moveBy: ((workItemId: number, direction: StructuralMoveDirection) => void) | null;
+  setStructuralCapability: (capability: {
+    canReorder: boolean;
+    canReparent: boolean;
+    moveBy?: ((workItemId: number, direction: StructuralMoveDirection) => void) | null;
+  }) => void;
   captureTarget: CaptureTarget;
+  /**
+   * Fold state keyed by WorkItem id, replacing the private `collapsed`
+   * `useState` that used to live inside each `TaskRow` -- folding is a
+   * structural interaction capability (`h`/`l`) that must be readable and
+   * settable from outside the row that happens to render a given item.
+   * Not persisted; resets like the old per-row state did.
+   */
+  isCollapsed: (workItemId: number) => boolean;
+  setCollapsed: (workItemId: number, value: boolean) => void;
 }
 
 const InteractionScopeContext = createContext<InteractionScopeValue | null>(null);
@@ -55,11 +81,37 @@ export interface InteractionScopeProviderProps {
  */
 export function InteractionScopeProvider({ children, captureTarget = { kind: "inbox" } }: InteractionScopeProviderProps) {
   const [activeId, setActive] = useState<number | null>(null);
-  const [capability, setCapability] = useState({ canReorder: false, canReparent: false });
-  const setStructuralCapability = useCallback((next: { canReorder: boolean; canReparent: boolean }) => {
-    setCapability((prev) =>
-      prev.canReorder === next.canReorder && prev.canReparent === next.canReparent ? prev : next,
-    );
+  const [capability, setCapability] = useState<{
+    canReorder: boolean;
+    canReparent: boolean;
+    moveBy: ((workItemId: number, direction: StructuralMoveDirection) => void) | null;
+  }>({ canReorder: false, canReparent: false, moveBy: null });
+  const setStructuralCapability = useCallback(
+    (next: {
+      canReorder: boolean;
+      canReparent: boolean;
+      moveBy?: ((workItemId: number, direction: StructuralMoveDirection) => void) | null;
+    }) => {
+      const nextMoveBy = next.moveBy ?? null;
+      setCapability((prev) =>
+        prev.canReorder === next.canReorder && prev.canReparent === next.canReparent && prev.moveBy === nextMoveBy
+          ? prev
+          : { canReorder: next.canReorder, canReparent: next.canReparent, moveBy: nextMoveBy },
+      );
+    },
+    [],
+  );
+  const [collapsedIds, setCollapsedIds] = useState<ReadonlySet<number>>(() => new Set());
+  const isCollapsed = useCallback((workItemId: number) => collapsedIds.has(workItemId), [collapsedIds]);
+  const setCollapsed = useCallback((workItemId: number, value: boolean) => {
+    setCollapsedIds((prev) => {
+      const already = prev.has(workItemId);
+      if (already === value) return prev;
+      const next = new Set(prev);
+      if (value) next.add(workItemId);
+      else next.delete(workItemId);
+      return next;
+    });
   }, []);
   const value = useMemo<InteractionScopeValue>(
     () => ({
@@ -67,10 +119,13 @@ export function InteractionScopeProvider({ children, captureTarget = { kind: "in
       setActive,
       canReorder: capability.canReorder,
       canReparent: capability.canReparent,
+      moveBy: capability.moveBy,
       setStructuralCapability,
       captureTarget,
+      isCollapsed,
+      setCollapsed,
     }),
-    [activeId, capability, setStructuralCapability, captureTarget],
+    [activeId, capability, setStructuralCapability, captureTarget, isCollapsed, setCollapsed],
   );
   return <InteractionScopeContext.Provider value={value}>{children}</InteractionScopeContext.Provider>;
 }
@@ -80,4 +135,15 @@ export function useInteractionScope(): InteractionScopeValue {
   const ctx = useContext(InteractionScopeContext);
   if (!ctx) throw new Error("useInteractionScope must be used within an InteractionScopeProvider");
   return ctx;
+}
+
+/**
+ * Same as `useInteractionScope`, but returns `null` instead of throwing
+ * outside a provider. Used by call sites that are shared with contexts
+ * that don't (yet) mount a scope, such as `useWorkItemCommands()`'s
+ * generic "update the active item" side effect -- not every future
+ * `dispatch()` caller is guaranteed to sit inside a navigable page scope.
+ */
+export function useOptionalInteractionScope(): InteractionScopeValue | null {
+  return useContext(InteractionScopeContext);
 }

@@ -6,6 +6,7 @@ import { WaitingGroupList } from "../components/WaitingGroupList";
 import { PageHeader } from "../components/PageHeader";
 import { useIdentity } from "../lib/identity";
 import { InteractionScopeProvider } from "../lib/interactionScope";
+import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 
 export function WaitingPage() {
   const strings = useStrings();
@@ -21,6 +22,7 @@ export function WaitingPage() {
   );
   return (
     <InteractionScopeProvider>
+      <WorkItemKeyboardNavMount />
       <div className="waiting-page">
         <PageHeader
           title={strings.waiting}

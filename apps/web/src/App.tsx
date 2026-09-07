@@ -6,6 +6,7 @@ import { TaskDetailProvider, useTaskDetail } from "./lib/taskDetailContext";
 import { SwipeSettingsProvider } from "./lib/swipeSettings";
 import { TaskActionsProvider } from "./lib/useTaskActions";
 import { ProjectActionsProvider } from "./lib/useProjectActions";
+import { useGlobalNavigationKeys } from "./lib/useGlobalNavigationKeys";
 import { IdentityGate } from "./components/IdentityGate";
 import { BottomNav } from "./components/BottomNav";
 import { TaskDetailSheet } from "./components/TaskDetailSheet";
@@ -53,6 +54,7 @@ function IdentityAwareRefreshProvider({ children }: { children: ReactNode }) {
 function Shell() {
   const { currentMemberId } = useIdentity();
   const location = useLocation();
+  useGlobalNavigationKeys();
   return (
     <div className="app-shell">
       <main className="app-main">

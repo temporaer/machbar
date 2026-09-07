@@ -21,6 +21,7 @@ import { filterAndSortProjects } from "../lib/projectListFilter";
 import { useLocale } from "../lib/locale";
 import { sortInventoryTasks } from "../lib/sortOrder";
 import { InteractionScopeProvider } from "../lib/interactionScope";
+import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 
 export function AllPage() {
   const strings = useStrings();
@@ -65,6 +66,7 @@ export function AllPage() {
 
   return (
     <InteractionScopeProvider>
+      <WorkItemKeyboardNavMount />
       <div>
         <PageHeader
           title={strings.allTitle}
