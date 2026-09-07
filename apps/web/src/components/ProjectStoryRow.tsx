@@ -24,7 +24,7 @@ import {
   projectWorkflowLabel,
   secondaryWorkflowActions,
 } from "../lib/projectWorkflow";
-import type { useProjectActions } from "../lib/useProjectActions";
+import { useProjectActions } from "../lib/useProjectActions";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
@@ -58,7 +58,6 @@ const statusAccentByClassification: Record<ProjectListClassification, StatusAcce
 
 export interface ProjectStoryRowProps {
   story: ProjectWithActions;
-  actions: ReturnType<typeof useProjectActions>;
   /**
    * `compact` — the inventory/Review meta line (criteria, driver, dates, tasks).
    * `card` — the Projekte tab: same meta plus next action and the task /
@@ -96,13 +95,17 @@ type Sheet =
  * straight to the list; "Projekt öffnen" navigates to the project page, and
  * tapping the row itself still opens the story detail as before.
  */
-export function ProjectStoryRow({ story: storyProp, actions, variant = "compact" }: ProjectStoryRowProps) {
+export function ProjectStoryRow({ story: storyProp, variant = "compact" }: ProjectStoryRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
   const [chipsOpen, setChipsOpen] = useState(false);
   const [sheet, setSheet] = useState<Sheet>(null);
   const { members } = useIdentity();
   const navigate = useNavigate();
+  // Sourced from the shared `ProjectActionsProvider` instance (see
+  // `useProjectActions.tsx`); passing just this row's own `story` is enough
+  // for its retained entry to release once this prop confirms the same
+  // revision, without needing the host page's whole loaded collection.
   const {
     isPending,
     retained,
@@ -112,7 +115,7 @@ export function ProjectStoryRow({ story: storyProp, actions, variant = "compact"
     update,
     assignDriver,
     schedule,
-  } = actions;
+  } = useProjectActions([storyProp]);
 
   // A story that just transitioned keeps rendering here — muted, with the
   // past-tense confirmation of what happened — for `RETENTION_MS` (~4s)

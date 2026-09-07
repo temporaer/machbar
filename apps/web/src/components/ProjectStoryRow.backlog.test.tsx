@@ -8,7 +8,7 @@ import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectStoryRow } from "./ProjectStoryRow";
-import { ProjectActionsProvider, useProjectActions } from "../lib/useProjectActions";
+import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import { makeCriterion, makeMember, makeProject, makeTask } from "../test/fixtures";
@@ -40,10 +40,9 @@ async function flushMicrotasks(times = 3) {
 }
 
 function Harness({ story }: { story: ReturnType<typeof makeProject> }) {
-  const actions = useProjectActions();
   return (
     <ul>
-      <ProjectStoryRow story={story} actions={actions} />
+      <ProjectStoryRow story={story} />
     </ul>
   );
 }

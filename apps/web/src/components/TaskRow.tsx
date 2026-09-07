@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Task } from "@machbar/shared";
-import type { TaskDetailFocusField } from "../lib/taskDetailContext";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { formatDate, isOverdue } from "../lib/format";
 import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useSwipeSettings } from "../lib/swipeSettings";
 import type { PrimarySwipeAction } from "../lib/swipeSettings";
 import { useOutlineOrganizeRow } from "../lib/useOutlineOrganize";
@@ -69,8 +69,6 @@ export interface TaskRowProps {
   parentTask: Task | null;
   /** Nesting level, used for the outline's flat drag/drop projection. */
   depth: number;
-  onOpenDetail: (taskId: number, focusField?: TaskDetailFocusField) => void;
-  taskActions: ReturnType<typeof useTaskActions>;
   /** See `TaskRowWaitingInteraction`. Absent everywhere but the Warten page's outline. */
   waitingInteraction?: TaskRowWaitingInteraction | undefined;
   /** Show this row's external-wait revisit date. */
@@ -100,8 +98,6 @@ export function TaskRow({
   task: taskProp,
   parentTask,
   depth,
-  onOpenDetail,
-  taskActions,
   waitingInteraction,
   showRevisitDate = false,
 }: TaskRowProps) {
@@ -137,16 +133,15 @@ export function TaskRow({
   // provided by the surrounding `TaskOutline`; it stays absent — and every
   // handle with it — in views whose row order carries no hierarchy meaning.
   const organize = useOutlineOrganizeRow();
+  const dispatch = useWorkItemCommands();
   const {
-    requestToggle,
-    requestPrimarySwipe,
     update,
     assignOwner,
     isPending,
     retained,
     errors,
     clearError,
-  } = taskActions;
+  } = useTaskActions();
   const outlineRefreshing = organize?.pendingId !== null;
   const busy = isPending(taskProp.id) || outlineRefreshing;
 
@@ -250,7 +245,7 @@ export function TaskRow({
     cancel: cancelSwipe,
   } = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy || organize?.activeId != null,
-    onPrimary: () => requestPrimarySwipe(task, primarySwipeAction),
+    onPrimary: () => dispatch({ type: "task.primaryAction", task }),
     onSecondary: () => setChipsOpen(true),
     onRealDrag: clearLongPress,
   });
@@ -290,7 +285,7 @@ export function TaskRow({
   };
 
   const reopenChip = () => {
-    requestToggle(task);
+    dispatch({ type: "task.toggleDone", task });
     setChipsOpen(false);
   };
 
@@ -482,7 +477,7 @@ export function TaskRow({
           className={`task-row-checkbox${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}
           aria-label={isDone || isCancelled ? strings.reopen : strings.done}
           disabled={busy}
-          onClick={() => requestToggle(task)}
+          onClick={() => dispatch({ type: "task.toggleDone", task })}
         >
           {isDone ? "✓" : isCancelled ? "×" : ""}
         </button>
@@ -493,7 +488,7 @@ export function TaskRow({
             ref={mainButtonRef}
             aria-label={task.title}
             disabled={outlineRefreshing}
-            onClick={() => onOpenDetail(task.id)}
+            onClick={() => dispatch({ type: "task.open", taskId: task.id })}
           >
             <div className="task-row-header">
               <TaskCardTags
@@ -618,7 +613,7 @@ export function TaskRow({
           {waitingInteraction && task.externalWait ? (
             <IconActionButton kind="followUp" label={strings.followUp} disabled={busy} onClick={followUpChip} />
           ) : null}
-          <IconActionButton kind="more" label={strings.more} disabled={outlineRefreshing} onClick={() => onOpenDetail(task.id)} />
+          <IconActionButton kind="more" label={strings.more} disabled={outlineRefreshing} onClick={() => dispatch({ type: "task.open", taskId: task.id })} />
           <IconActionButton kind="close" label={strings.close} onClick={closeChips} />
         </div>
       ) : null}
@@ -693,8 +688,6 @@ export function TaskRow({
               task={child}
               parentTask={task}
               depth={depth + 1}
-              onOpenDetail={onOpenDetail}
-              taskActions={taskActions}
               waitingInteraction={waitingInteraction}
             />
           ))}

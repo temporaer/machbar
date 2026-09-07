@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import type { SearchFilters } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
-import { useProjectActions } from "../lib/useProjectActions";
 import { useStrings } from "../lib/strings";
 import {
   filterInventoryProjects,
@@ -32,7 +31,6 @@ export function AllPage() {
     error: tasksError,
     reload: reloadTasks,
   } = useAsync(() => api.searchTasks(filters), [filtersKey]);
-  const projectActions = useProjectActions(projects ?? []);
   const filteredProjects = useMemo(
     () =>
       filterAndSortProjects(filterInventoryProjects(projects ?? [], filters), {
@@ -90,7 +88,6 @@ export function AllPage() {
                     <ProjectStoryRow
                       key={project.id}
                       story={project}
-                      actions={projectActions}
                       variant="compact"
                     />
                   ))}

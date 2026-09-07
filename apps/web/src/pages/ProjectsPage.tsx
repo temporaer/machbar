@@ -129,14 +129,14 @@ export function ProjectsPage() {
         >
           <ul className="list story-row-list">
             {group.items.map((project) => (
-              <ProjectStoryRow key={project.id} story={project} actions={actions} variant="card" />
+              <ProjectStoryRow key={project.id} story={project} variant="card" />
             ))}
           </ul>
         </CollapsibleGroup>
       ) : (
         <ul className="list story-row-list" key={`${sectionKey}-all`}>
           {group.items.map((project) => (
-            <ProjectStoryRow key={project.id} story={project} actions={actions} variant="card" />
+            <ProjectStoryRow key={project.id} story={project} variant="card" />
           ))}
         </ul>
       ),

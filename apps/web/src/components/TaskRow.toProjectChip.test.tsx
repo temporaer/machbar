@@ -8,6 +8,7 @@ import { RefreshProvider } from "../lib/refresh";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { TaskActionsProvider } from "../lib/useTaskActions";
+import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
@@ -48,7 +49,9 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
         <RefreshProvider>
           <SwipeSettingsProvider>
             <TaskActionsProvider>
-              <TaskDetailProvider>{children}</TaskDetailProvider>
+              <ProjectActionsProvider>
+                <TaskDetailProvider>{children}</TaskDetailProvider>
+              </ProjectActionsProvider>
             </TaskActionsProvider>
           </SwipeSettingsProvider>
         </RefreshProvider>
