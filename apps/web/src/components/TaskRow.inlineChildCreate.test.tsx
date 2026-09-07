@@ -47,13 +47,12 @@ describe("TaskRow – inline child (subtask) composer", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
   });
 
-  it("opens a small inline composer beneath the task from the chip strip, not a full sheet", async () => {
+  it("opens a small inline composer beneath the task from the default split rail command, not a full sheet", async () => {
     const task = makeTask({ id: 200, title: "Umzug organisieren", status: "actionable" });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await openChipsFor("Umzug organisieren");
 
-    const addChildButton = screen.getByRole("button", { name: "Teilaufgabe hinzufügen" });
-    expect(addChildButton).toHaveAttribute("title", "Teilaufgabe hinzufügen");
+    const addChildButton = screen.getByRole("button", { name: "Aufteilen" });
     await userEvent.click(addChildButton);
 
     // Composer is inline, not the full detail sheet.
@@ -62,7 +61,7 @@ describe("TaskRow – inline child (subtask) composer", () => {
     const input = screen.getByPlaceholderText("Neue Teilaufgabe");
     expect(input).toBeInTheDocument();
     // Opening the composer also closes the chip strip itself.
-    expect(screen.queryByRole("button", { name: "Zuweisen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
   });
 
   it("creates the child via api.createChildTask with the title and sensible defaults, bumps refresh, closes the composer, and returns focus to the task row's kebab button", async () => {
@@ -76,7 +75,7 @@ describe("TaskRow – inline child (subtask) composer", () => {
       </div>,
     );
     await openChipsFor("Konferenz vorbereiten");
-    await userEvent.click(screen.getByRole("button", { name: "Teilaufgabe hinzufügen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufteilen" }));
 
     const input = screen.getByPlaceholderText("Neue Teilaufgabe");
     await userEvent.type(input, "Redner einladen");
@@ -111,7 +110,7 @@ describe("TaskRow – inline child (subtask) composer", () => {
     expect(screen.queryByText("Bestehende Teilaufgabe")).not.toBeInTheDocument();
 
     await openChipsFor("Projekt starten");
-    await userEvent.click(screen.getByRole("button", { name: "Teilaufgabe hinzufügen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufteilen" }));
     await userEvent.type(screen.getByPlaceholderText("Neue Teilaufgabe"), "Neue Teilaufgabe X");
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -129,7 +128,7 @@ describe("TaskRow – inline child (subtask) composer", () => {
     await screen.findByText("Kind-Aufgabe");
 
     await openChipsFor("Kind-Aufgabe");
-    await userEvent.click(screen.getByRole("button", { name: "Teilaufgabe hinzufügen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufteilen" }));
     await userEvent.type(screen.getByPlaceholderText("Neue Teilaufgabe"), "Enkel-Aufgabe");
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -146,7 +145,7 @@ describe("TaskRow – inline child (subtask) composer", () => {
     const task = makeTask({ id: 500, title: "Steuererklärung", status: "actionable" });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await openChipsFor("Steuererklärung");
-    await userEvent.click(screen.getByRole("button", { name: "Teilaufgabe hinzufügen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufteilen" }));
 
     await userEvent.type(screen.getByPlaceholderText("Neue Teilaufgabe"), "Sollte verworfen werden");
     await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
@@ -161,7 +160,7 @@ describe("TaskRow – inline child (subtask) composer", () => {
     mockedApi.createChildTask.mockRejectedValue(new Error("Netzwerkfehler"));
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await openChipsFor("Reisekosten abrechnen");
-    await userEvent.click(screen.getByRole("button", { name: "Teilaufgabe hinzufügen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufteilen" }));
 
     const input = screen.getByPlaceholderText("Neue Teilaufgabe");
     await userEvent.type(input, "Belege sammeln");
@@ -182,7 +181,7 @@ describe("TaskRow – inline child (subtask) composer", () => {
     );
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await openChipsFor("Werkstatt anrufen");
-    await userEvent.click(screen.getByRole("button", { name: "Teilaufgabe hinzufügen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufteilen" }));
 
     await userEvent.type(screen.getByPlaceholderText("Neue Teilaufgabe"), "Termin klären");
     const saveButton = screen.getByRole("button", { name: "Speichern" });
@@ -207,7 +206,7 @@ describe("TaskRow – inline child (subtask) composer", () => {
     );
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await openChipsFor("Anhänger mieten");
-    await userEvent.click(screen.getByRole("button", { name: "Teilaufgabe hinzufügen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Aufteilen" }));
     expect(screen.getByPlaceholderText("Neue Teilaufgabe")).toBeInTheDocument();
 
     // A status mutation starts while the composer is open, disabling the
@@ -240,7 +239,7 @@ describe("TaskRow – inline child (subtask) composer", () => {
     );
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await openChipsFor("Vertrag unterschreiben");
-    const addChildButton = screen.getByRole("button", { name: "Teilaufgabe hinzufügen" });
+    const addChildButton = screen.getByRole("button", { name: "Aufteilen" });
     expect(addChildButton).toBeEnabled();
 
     // Trigger a busy mutation via the checkbox while the chip strip is

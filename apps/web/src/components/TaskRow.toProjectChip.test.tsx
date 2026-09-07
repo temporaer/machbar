@@ -10,6 +10,7 @@ import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { InteractionScopeProvider } from "../lib/interactionScope";
+import { RailConfigProvider } from "../lib/railConfigContext";
 import { TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
@@ -35,8 +36,8 @@ const mockedApi = vi.mocked(api, true);
  * `renderWithProviders` (src/test/testUtils.tsx) hard-codes its own bare
  * `<MemoryRouter>` with no routes, so it can't observe an actual navigation.
  * This local wrapper mirrors the same provider stack but also declares a
- * `/projects/:id` route with a distinct marker, so clicking the "Zum
- * Projekt" chip can be asserted to have really navigated there — not just
+ * `/projects/:id` route with a distinct marker, so clicking the project
+ * rail command can be asserted to have really navigated there — not just
  * that `navigate()` was called with the right string.
  */
 function renderAtRootWithProjectRoute(ui: ReactElement) {
@@ -51,9 +52,11 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
           <SwipeSettingsProvider>
             <TaskActionsProvider>
               <ProjectActionsProvider>
-                <InteractionScopeProvider>
-                  <TaskDetailProvider>{children}</TaskDetailProvider>
-                </InteractionScopeProvider>
+                <RailConfigProvider>
+                  <InteractionScopeProvider>
+                    <TaskDetailProvider>{children}</TaskDetailProvider>
+                  </InteractionScopeProvider>
+                </RailConfigProvider>
               </ProjectActionsProvider>
             </TaskActionsProvider>
           </SwipeSettingsProvider>
@@ -61,6 +64,7 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
       </IdentityProvider>
     );
   }
+
   return render(
     <MemoryRouter initialEntries={["/"]}>
       <Providers>
@@ -73,6 +77,10 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
   );
 }
 
+async function openTaskRailOverflow() {
+  await userEvent.click(screen.getByText("Mehr …"));
+}
+
 /** Simulates a horizontal drag past the swipe threshold and releases it. */
 function swipe(container: HTMLElement, deltaX: number) {
   const content = container.querySelector(".task-row-content") as HTMLElement;
@@ -81,7 +89,7 @@ function swipe(container: HTMLElement, deltaX: number) {
   fireEvent.pointerUp(content, { clientX: deltaX, pointerId: 1 });
 }
 
-describe("TaskRow – project chip (navigate when assigned, assign when projectless)", () => {
+describe("TaskRow – project rail command (navigate when assigned, assign when projectless)", () => {
   const umzug = makeProject({ id: 77, title: "Umzug nach Leipzig" });
   const garten = makeProject({ id: 78, title: "Garten winterfest machen" });
 
@@ -93,47 +101,49 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
   });
 
   describe("task already belongs to a project", () => {
-    it("reveals an enabled 'Zum Projekt' chip via a left-swipe and navigates to /projects/:id", async () => {
+    it("reveals an enabled overflow 'Projekt ändern' command via a left-swipe and navigates to /projects/:id", async () => {
       const task = makeTask({ id: 50, title: "Angebot erstellen", status: "actionable", projectId: 77 });
       const { container } = renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
       await screen.findByText("Angebot erstellen");
 
       swipe(container, -100);
+      await openTaskRailOverflow();
 
-      const chip = screen.getByRole("button", { name: "Zum Projekt" });
-      expect(chip).toBeEnabled();
+      const command = screen.getByRole("button", { name: "Projekt ändern" });
+      expect(command).toBeEnabled();
 
-      await userEvent.click(chip);
+      await userEvent.click(command);
 
       expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 77");
-      // Using the chip must also close the strip, same as every other chip.
+      // Using the command must also close the rail, same as every other command.
       expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
     });
 
-    it("also navigates when the chip strip is opened via the ⋯ kebab (non-gesture access)", async () => {
+    it("also navigates when the command rail is opened via the ⋯ kebab (non-gesture access)", async () => {
       const task = makeTask({ id: 51, title: "Kunde kontaktieren", status: "actionable", projectId: 12 });
       renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
       await screen.findByText("Kunde kontaktieren");
 
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-      await userEvent.click(screen.getByRole("button", { name: "Zum Projekt" }));
+      await openTaskRailOverflow();
+      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
 
       expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 12");
     });
   });
 
   describe("projectless task", () => {
-    it("renders the same icon enabled as 'Projekt zuweisen' instead of a disabled dead end", async () => {
+    it("renders the same overflow command enabled instead of a disabled dead end", async () => {
       const task = makeTask({ id: 52, title: "Wäsche waschen", status: "actionable", projectId: null });
       const { container } = renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
       await screen.findByText("Wäsche waschen");
 
       swipe(container, -100);
+      await openTaskRailOverflow();
 
-      const chip = screen.getByRole("button", { name: "Projekt zuweisen" });
-      expect(chip).toBeEnabled();
-      expect(chip).not.toHaveAttribute("aria-disabled", "true");
-      expect(screen.queryByRole("button", { name: "Zum Projekt" })).not.toBeInTheDocument();
+      const command = screen.getByRole("button", { name: "Projekt ändern" });
+      expect(command).toBeEnabled();
+      expect(command).not.toHaveAttribute("aria-disabled", "true");
     });
 
     it("opens the existing searchable/recent MoveTaskSheet project picker on click", async () => {
@@ -143,7 +153,8 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
       await screen.findByText("Wäsche waschen");
 
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-      await userEvent.click(screen.getByRole("button", { name: "Projekt zuweisen" }));
+      await openTaskRailOverflow();
+      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
 
       expect(await screen.findByRole("heading", { name: "In anderes Projekt verschieben" })).toBeInTheDocument();
       expect(screen.getByRole("searchbox", { name: "Ziel suchen" })).toBeInTheDocument();
@@ -161,7 +172,8 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
 
       const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
       await userEvent.click(kebab);
-      await userEvent.click(screen.getByRole("button", { name: "Projekt zuweisen" }));
+      await openTaskRailOverflow();
+      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
 
       await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
@@ -186,7 +198,8 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
 
       const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
       await userEvent.click(kebab);
-      await userEvent.click(screen.getByRole("button", { name: "Projekt zuweisen" }));
+      await openTaskRailOverflow();
+      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
       await screen.findByRole("heading", { name: "In anderes Projekt verschieben" });
 
       await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
@@ -203,7 +216,8 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
       await screen.findByText("Wäsche waschen");
 
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-      await userEvent.click(screen.getByRole("button", { name: "Projekt zuweisen" }));
+      await openTaskRailOverflow();
+      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
       await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
 
@@ -230,7 +244,8 @@ describe("TaskRow – project chip (navigate when assigned, assign when projectl
       // kebabs on screen — one per row).
       const kebabs = screen.getAllByRole("button", { name: "Weitere Aktionen" });
       await userEvent.click(kebabs[0]!);
-      await userEvent.click(screen.getByRole("button", { name: "Projekt zuweisen" }));
+      await openTaskRailOverflow();
+      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
       await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
 
