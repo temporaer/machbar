@@ -18,7 +18,7 @@ import {
   deleteTask,
   followUpExternalWait,
   moveTask,
-  promoteTaskToProject,
+  convertTaskToStory,
   removeDependency,
   removeExcludedTag,
   removeTaskTag,
@@ -37,7 +37,7 @@ import {
   dependencySchema,
   externalWaitFollowUpSchema,
   moveTaskSchema,
-  promoteTaskToProjectSchema,
+  convertTaskToStorySchema,
   tagRefSchema,
   taskLifecycleSchema,
   transitionTaskStatusSchema,
@@ -208,11 +208,11 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
   );
 
   app.post<{ Params: { id: string } }>(
-    "/api/tasks/:id/promote-to-project",
+    "/api/tasks/:id/convert-to-story",
     async (request, reply) => {
       const id = parseId(request.params.id);
-      const body = parseOrThrow(promoteTaskToProjectSchema, request.body);
-      const project = promoteTaskToProject(db, id, body, {
+      const body = parseOrThrow(convertTaskToStorySchema, request.body);
+      const project = convertTaskToStory(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
       });
       const graph = Graph.load(db);

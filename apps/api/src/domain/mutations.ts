@@ -24,6 +24,7 @@ import {
 import { addCalendarDays, isIsoCalendarDate } from "./calendarDate.js";
 import { enqueueNotification } from "../notifications/outbox.js";
 import { getProjectActivationReadiness } from "./projectReadiness.js";
+import { lifecycleToTaskStatus, projectLifecycle } from "./workItem.js";
 
 export interface MutationContext {
   actorMemberId?: number | null;
@@ -31,6 +32,16 @@ export interface MutationContext {
 
 function actor(context?: MutationContext): number | null {
   return context?.actorMemberId ?? null;
+}
+
+/**
+ * Allocates a new id from the shared work-item identity space. Tasks and
+ * projects both draw their `id` from here (see `schema.workItems`) so a
+ * numeric id is never reused across the two tables, which in turn allows
+ * task/project role conversion to preserve identity.
+ */
+export function allocateWorkItemId(db: Db): number {
+  return db.insert(schema.workItems).values({}).returning().get().id;
 }
 
 function enqueueProjectAssignment(
@@ -580,6 +591,7 @@ export function createProject(
     const project = tx
       .insert(schema.projects)
       .values({
+        id: allocateWorkItemId(tx as unknown as Db),
         title: input.title.trim(),
         notes: input.notes ?? "",
         status: input.status ?? "backlog",
@@ -863,7 +875,11 @@ export function deleteProject(db: Db, id: number, context?: MutationContext) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
-    tx.delete(schema.projects).where(eq(schema.projects.id, id)).run();
+    // Deleting the shared work_items row cascades to the projects row (and
+    // from there to project tags/criteria, exactly as a direct projects
+    // delete used to), while tasks.projectId keeps its own ON DELETE SET
+    // NULL behavior toward projects.id, unaffected by this extra layer.
+    tx.delete(schema.workItems).where(eq(schema.workItems.id, id)).run();
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_deleted",
@@ -1660,6 +1676,7 @@ function insertTask(
   const task = db
     .insert(schema.tasks)
     .values({
+      id: allocateWorkItemId(db),
       projectId,
       parentTaskId,
       title: input.title.trim(),
@@ -2034,17 +2051,28 @@ export interface UpdateTaskInput {
   expectedRevision?: number;
 }
 
-export interface PromoteTaskToProjectInput {
+export interface ConvertTaskToStoryInput {
   status: "active" | "backlog";
   title?: string;
   notes?: string;
   expectedRevision?: number;
 }
 
-export function promoteTaskToProject(
+/**
+ * Converts a root-level captured task into a story ("project"), preserving
+ * its identity (same numeric id, enabled by the shared `work_items`
+ * allocator) so activity history, tags, contexts, and notifications keyed
+ * on that id survive the conversion in place rather than being recreated
+ * under a new id. Replaces the former identity-destroying
+ * `promoteTaskToProject` (which deleted the task and inserted a brand-new
+ * project row).
+ *
+ * See `convertStoryToTask` for the reverse direction.
+ */
+export function convertTaskToStory(
   db: Db,
   taskId: number,
-  input: PromoteTaskToProjectInput,
+  input: ConvertTaskToStoryInput,
   context?: MutationContext,
 ) {
   return db.transaction((tx) => {
@@ -2058,7 +2086,7 @@ export function promoteTaskToProject(
     ) {
       throw AppError.conflict(
         "task_promotion_invalid",
-        "Only a root-level captured inbox item can be promoted to a project.",
+        "Only a root-level captured inbox item can be converted to a story.",
         { taskId, reason: "not_root_capture" },
       );
     }
@@ -2121,6 +2149,10 @@ export function promoteTaskToProject(
     const project = tx
       .insert(schema.projects)
       .values({
+        // Reuse the task's own id (shared work_items allocator) instead of
+        // allocating a new one, so the item's identity survives the role
+        // conversion.
+        id: taskId,
         title,
         notes: input.notes ?? task.notes,
         status: input.status,
@@ -2178,23 +2210,49 @@ export function promoteTaskToProject(
       assertProjectActivationReady(txDb, project.id, ownerMemberId);
     }
 
+    // Re-point history keyed on the shared id from "task" to "project" in
+    // place, before the old `tasks` row is retired, so activity,
+    // notifications, and contributions survive the conversion under the
+    // same identity instead of being neutralized/recreated.
+    tx.update(schema.activityEvents)
+      .set({ entityType: "project", projectId: taskId, taskId: null })
+      .where(
+        and(
+          eq(schema.activityEvents.entityType, "task"),
+          eq(schema.activityEvents.taskId, taskId),
+        ),
+      )
+      .run();
+    tx.update(schema.notificationEvents)
+      .set({ entityType: "project" })
+      .where(
+        and(
+          eq(schema.notificationEvents.entityType, "task"),
+          eq(schema.notificationEvents.entityId, taskId),
+        ),
+      )
+      .run();
+    tx.update(schema.contributionEvents)
+      .set({ entityType: "project" })
+      .where(
+        and(
+          eq(schema.contributionEvents.entityType, "task"),
+          eq(schema.contributionEvents.entityId, taskId),
+        ),
+      )
+      .run();
+
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
-      kind: "project_created",
+      kind: "work_item_role_converted",
       entityType: "project",
       entityTitle: project.title,
       projectId: project.id,
       metadata: {
-        changedFields: ["promotedFromCapture"],
-        relatedTaskIds: [taskId],
-        relatedTaskTitles: [task.title],
+        changedFields: ["role"],
+        relatedTaskIds: descendantIds,
         affectedCount: descendantIds.length,
       },
-    });
-    neutralizeEntityContributions(txDb, {
-      activityEventId,
-      entityType: "task",
-      entityId: taskId,
     });
     recordContribution(txDb, {
       activityEventId,
@@ -2206,8 +2264,168 @@ export function promoteTaskToProject(
       personalEligible: true,
     });
     enqueueProjectAssignment(txDb, project, activityEventId, context);
+    // Delete only the retired `tasks` row (cascades to task-only
+    // satellites like taskTags/taskPhysicalContexts, already copied to
+    // their project-side equivalents above). The shared `work_items` row
+    // is intentionally left in place: `projects` now owns the same id.
     tx.delete(schema.tasks).where(eq(schema.tasks.id, taskId)).run();
     return project;
+  });
+}
+
+export interface ConvertStoryToTaskInput {
+  title?: string;
+  notes?: string;
+  expectedRevision?: number;
+}
+
+/**
+ * Reverse of {@link convertTaskToStory}: converts a story back into a
+ * task, preserving identity the same way. Conservative by design (per the
+ * user's own guard): a story with any children or acceptance criteria
+ * cannot be reduced to a single task, and is rejected outright rather than
+ * best-effort flattened.
+ */
+export function convertStoryToTask(
+  db: Db,
+  projectId: number,
+  input: ConvertStoryToTaskInput,
+  context?: MutationContext,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const project = getProjectOrThrow(txDb, projectId);
+    assertExpectedRevision(
+      "project",
+      projectId,
+      project.revision,
+      input.expectedRevision,
+    );
+    const hasChildTask = tx
+      .select({ id: schema.tasks.id })
+      .from(schema.tasks)
+      .where(eq(schema.tasks.projectId, projectId))
+      .get();
+    if (hasChildTask) {
+      throw AppError.conflict(
+        "role_conversion_invalid",
+        "A story with tasks cannot be converted back to a single task.",
+        { projectId, reason: "has_children" },
+      );
+    }
+    const hasAcceptanceCriterion = tx
+      .select({ id: schema.projectAcceptanceCriteria.id })
+      .from(schema.projectAcceptanceCriteria)
+      .where(eq(schema.projectAcceptanceCriteria.projectId, projectId))
+      .get();
+    if (hasAcceptanceCriterion) {
+      throw AppError.conflict(
+        "role_conversion_invalid",
+        "A story with acceptance criteria cannot be converted back to a single task.",
+        { projectId, reason: "has_acceptance_criteria" },
+      );
+    }
+    const title = input.title?.trim() ?? project.title;
+    if (title === "") {
+      throw AppError.badRequest(
+        "task_title_required",
+        "The task title must not be empty.",
+      );
+    }
+
+    const status = lifecycleToTaskStatus(
+      projectLifecycle(project.status as ProjectStatus),
+    );
+    const ownerInheritanceMode = project.ownerMemberId !== null ? "explicit" : "none";
+    const position = nextPositionForGroup(txDb, null, null);
+
+    const task = tx
+      .insert(schema.tasks)
+      .values({
+        // Reuse the story's own id, preserving identity across the
+        // conversion just like the forward direction.
+        id: projectId,
+        title,
+        notes: input.notes ?? project.notes,
+        status,
+        needsClarification: status === "captured",
+        ownerMemberId: project.ownerMemberId,
+        ownerInheritanceMode,
+        dueDate: project.dueDate,
+        scheduledDate: project.scheduledDate,
+        position,
+      })
+      .returning()
+      .get();
+
+    const tagIds = tx
+      .select({ tagId: schema.projectTags.tagId })
+      .from(schema.projectTags)
+      .where(eq(schema.projectTags.projectId, projectId))
+      .all()
+      .map((row) => row.tagId);
+    for (const tagId of tagIds) {
+      tx.insert(schema.taskTags).values({ taskId: task.id, tagId }).run();
+    }
+    const contextIds = tx
+      .select({ contextId: schema.projectPhysicalContexts.contextId })
+      .from(schema.projectPhysicalContexts)
+      .where(eq(schema.projectPhysicalContexts.projectId, projectId))
+      .all()
+      .map((row) => row.contextId);
+    if (contextIds.length > 0) {
+      tx.update(schema.tasks)
+        .set({ physicalContextInheritanceMode: "explicit" })
+        .where(eq(schema.tasks.id, task.id))
+        .run();
+      for (const contextId of contextIds) {
+        tx.insert(schema.taskPhysicalContexts)
+          .values({ taskId: task.id, contextId })
+          .run();
+      }
+    }
+
+    tx.update(schema.activityEvents)
+      .set({ entityType: "task", taskId: projectId, projectId: null })
+      .where(
+        and(
+          eq(schema.activityEvents.entityType, "project"),
+          eq(schema.activityEvents.projectId, projectId),
+        ),
+      )
+      .run();
+    tx.update(schema.notificationEvents)
+      .set({ entityType: "task" })
+      .where(
+        and(
+          eq(schema.notificationEvents.entityType, "project"),
+          eq(schema.notificationEvents.entityId, projectId),
+        ),
+      )
+      .run();
+    tx.update(schema.contributionEvents)
+      .set({ entityType: "task" })
+      .where(
+        and(
+          eq(schema.contributionEvents.entityType, "project"),
+          eq(schema.contributionEvents.entityId, projectId),
+        ),
+      )
+      .run();
+
+    recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "work_item_role_converted",
+      entityType: "task",
+      entityTitle: task.title,
+      taskId: task.id,
+      metadata: { changedFields: ["role"] },
+    });
+
+    // Delete only the retired `projects` row; the shared `work_items` row
+    // stays in place since `tasks` now owns the same id.
+    tx.delete(schema.projects).where(eq(schema.projects.id, projectId)).run();
+    return task;
   });
 }
 
@@ -2943,7 +3161,13 @@ export function deleteTask(db: Db, id: number, context?: MutationContext) {
       )
       .all()
       .map((row) => row.id);
-    tx.delete(schema.tasks).where(eq(schema.tasks.id, id)).run();
+    // Deleting the task cascades to descendants via parentTaskId, but that
+    // internal cascade does not clean up each descendant's own shared
+    // work_items row, so retire the whole subtree's ids explicitly here
+    // (deleting each work_items row also cascades to its tasks row).
+    tx.delete(schema.workItems)
+      .where(inArray(schema.workItems.id, [id, ...descendantIds]))
+      .run();
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_deleted",

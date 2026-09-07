@@ -150,6 +150,10 @@ export function formatActivityDescription(
         : strings.activityText.criterionChecked;
     case "project_acceptance_criterion_removed":
       return strings.activityText.criterionRemoved;
+    case "work_item_role_converted":
+      return event.entity.type === "project"
+        ? strings.activityText.convertedToStory
+        : strings.activityText.convertedToTask;
   }
 }
 

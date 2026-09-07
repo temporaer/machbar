@@ -28,7 +28,7 @@ vi.mock("../lib/api", () => ({
     getTask: vi.fn(),
     getTaskRecurrenceHistory: vi.fn(),
     updateTask: vi.fn(),
-    promoteTaskToProject: vi.fn(),
+    convertTaskToStory: vi.fn(),
     createTask: vi.fn(),
     setExternalWait: vi.fn(),
     addCriterion: vi.fn(),
@@ -148,7 +148,7 @@ describe("TaskDetailSheet", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getTags.mockResolvedValue([makeTag({ id: 10, name: "büro" })]);
     mockedApi.updateTask.mockResolvedValue(makeTask());
-    mockedApi.promoteTaskToProject.mockResolvedValue(
+    mockedApi.convertTaskToStory.mockResolvedValue(
       makeProject({ id: 80, title: "Projekt aus Erfassung" }),
     );
     mockedApi.createTask.mockResolvedValue(makeTask());
@@ -1357,7 +1357,7 @@ describe("TaskDetailSheet", () => {
       notes: "Farbe auswählen",
     });
     mockedApi.getTask.mockResolvedValue(task);
-    mockedApi.promoteTaskToProject.mockResolvedValue(project);
+    mockedApi.convertTaskToStory.mockResolvedValue(project);
 
     renderQueueSheet([56]);
     await userEvent.click(screen.getByText("open queue"));
@@ -1367,7 +1367,7 @@ describe("TaskDetailSheet", () => {
     );
 
     await waitFor(() =>
-      expect(mockedApi.promoteTaskToProject).toHaveBeenCalledWith(56, {
+      expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(56, {
         status: "backlog",
         expectedRevision: 1,
       }),
@@ -1394,7 +1394,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Backlog" }));
 
     await waitFor(() =>
-      expect(mockedApi.promoteTaskToProject).toHaveBeenCalledWith(57, {
+      expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(57, {
         status: "backlog",
         expectedRevision: 1,
       }),

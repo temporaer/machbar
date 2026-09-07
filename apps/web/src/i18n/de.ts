@@ -847,6 +847,8 @@ const extra = {
       `hat eine Folgeaufgabe zu „${title}“ erstellt`,
     taskCreated: "hat die Aufgabe erstellt",
     projectCreated: "hat das Projekt erstellt",
+    convertedToStory: "hat daraus ein Projekt gemacht",
+    convertedToTask: "hat daraus eine Aufgabe gemacht",
     sequenceCreated: (count: number) =>
       `hat eine Aufgabenfolge mit ${count} Schritten erstellt`,
     entityUpdated: (entity: "task" | "project", fields: string) =>
@@ -1017,6 +1019,8 @@ const extra = {
       "Eine Aufgabe kann nicht ihre eigene übergeordnete Aufgabe sein.",
     task_promotion_invalid:
       "Dieser Eingangseintrag kann in seinem aktuellen Zustand nicht in ein Projekt umgewandelt werden.",
+    role_conversion_invalid:
+      "Dieses Element kann in seinem aktuellen Zustand nicht umgewandelt werden.",
     task_sequence_too_short:
       "Eine Aufgabenfolge braucht mindestens zwei Schritte.",
     task_title_required: "Bitte gib einen Aufgabentitel ein.",

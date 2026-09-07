@@ -42,6 +42,7 @@ const activityEventKinds = [
   "project_acceptance_criterion_updated",
   "project_acceptance_criterion_checked",
   "project_acceptance_criterion_removed",
+  "work_item_role_converted",
 ] as const satisfies readonly ActivityEventKind[];
 
 const activityEntityTypes = [
@@ -251,8 +252,23 @@ export const physicalContexts = sqliteTable(
   ],
 );
 
-export const projects = sqliteTable("projects", {
+/**
+ * Shared identity allocator for tasks and projects. Both tables' `id`
+ * columns reference a row here instead of using their own
+ * `AUTOINCREMENT` sequence, so a numeric id is never reused across the two
+ * tables. This is what makes identity-preserving task/project role
+ * conversion possible (a converted item keeps the same id), and gives a
+ * real shared-entity row to hang future shared columns off of if the two
+ * tables are ever merged.
+ */
+export const workItems = sqliteTable("work_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+});
+
+export const projects = sqliteTable("projects", {
+  id: integer("id")
+    .primaryKey()
+    .references(() => workItems.id, { onDelete: "cascade" }),
   revision: integer("revision").notNull().default(1),
   title: text("title").notNull(),
   notes: text("notes").notNull().default(""),
@@ -326,7 +342,9 @@ export const projectPhysicalContexts = sqliteTable(
 export const tasks = sqliteTable(
   "tasks",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: integer("id")
+      .primaryKey()
+      .references(() => workItems.id, { onDelete: "cascade" }),
     revision: integer("revision").notNull().default(1),
     projectId: integer("project_id").references(() => projects.id, {
       onDelete: "set null",

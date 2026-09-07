@@ -201,8 +201,14 @@ export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "parentTaskId" | "pr
   completedOn?: string;
 };
 
-export interface PromoteTaskToProjectInput {
+export interface ConvertTaskToStoryInput {
   status: "active" | "backlog";
+  title?: string;
+  notes?: string;
+  expectedRevision?: number;
+}
+
+export interface ConvertStoryToTaskInput {
   title?: string;
   notes?: string;
   expectedRevision?: number;
@@ -639,8 +645,13 @@ export const api = {
     }),
   updateTask: (id: number, patch: UpdateTaskInput) =>
     request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
-  promoteTaskToProject: (id: number, input: PromoteTaskToProjectInput) =>
-    request<ProjectWithActions>(`/tasks/${id}/promote-to-project`, {
+  convertTaskToStory: (id: number, input: ConvertTaskToStoryInput) =>
+    request<ProjectWithActions>(`/tasks/${id}/convert-to-story`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  convertStoryToTask: (id: number, input: ConvertStoryToTaskInput = {}) =>
+    request<Task>(`/projects/${id}/convert-to-task`, {
       method: "POST",
       body: JSON.stringify(input),
     }),

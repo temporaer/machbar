@@ -473,7 +473,7 @@ export function TaskDetailSheet() {
     setClassificationBusy(true);
     setSaveError(null);
     try {
-      const project = await api.promoteTaskToProject(task.id, {
+      const project = await api.convertTaskToStory(task.id, {
         status: "backlog",
         expectedRevision: revisionRef.current ?? task.revision,
       });

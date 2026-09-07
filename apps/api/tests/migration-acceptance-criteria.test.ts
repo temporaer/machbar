@@ -97,8 +97,24 @@ describe("0002 migration: acceptance criteria + task size", () => {
       .run(withDescription.lastInsertRowid, now, now);
 
     // 2. Apply the real (full) migrations folder, which — for this
-    //    already-migrated database — only runs the newer 0002 migration.
+    //    already-migrated database — only runs the newer 0002 migration
+    //    (plus every other later migration, including 0023's renumbering
+    //    of project ids: look projects back up by their stable title
+    //    rather than trusting the pre-migration rowid below).
     runMigrations(preDb);
+
+    function projectIdByTitle(title: string): number {
+      return (
+        sqlite!.prepare(`SELECT id FROM projects WHERE title = ?`).get(title) as {
+          id: number;
+        }
+      ).id;
+    }
+    const withDescriptionId = projectIdByTitle("Projekt mit Beschreibung");
+    const withEmptyDescriptionId = projectIdByTitle("Projekt ohne Beschreibung");
+    const withWhitespaceDescriptionId = projectIdByTitle(
+      "Projekt mit Leerzeichen-Beschreibung",
+    );
 
     const newProjectColumns = tableInfo(sqlite, "projects").map((c) => c.name);
     expect(newProjectColumns).not.toContain("description");
@@ -107,7 +123,7 @@ describe("0002 migration: acceptance criteria + task size", () => {
     expect(
       sqlite
         .prepare(`SELECT notes FROM projects WHERE id = ?`)
-        .get(withDescription.lastInsertRowid),
+        .get(withDescriptionId),
     ).toEqual({ notes: "" });
 
     const criteriaTableColumns = tableInfo(
@@ -145,7 +161,7 @@ describe("0002 migration: acceptance criteria + task size", () => {
     // inserted as blank criteria.
     expect(criteriaByProject).toHaveLength(1);
     expect(criteriaByProject[0]).toMatchObject({
-      projectId: withDescription.lastInsertRowid,
+      projectId: withDescriptionId,
       text: "Alte Freitextbeschreibung.",
       checked: 0,
       position: 0,
@@ -153,8 +169,8 @@ describe("0002 migration: acceptance criteria + task size", () => {
     expect(
       criteriaByProject.find(
         (c) =>
-          c.projectId === withEmptyDescription.lastInsertRowid ||
-          c.projectId === withWhitespaceDescription.lastInsertRowid,
+          c.projectId === withEmptyDescriptionId ||
+          c.projectId === withWhitespaceDescriptionId,
       ),
     ).toBeUndefined();
 
@@ -162,12 +178,12 @@ describe("0002 migration: acceptance criteria + task size", () => {
     // still point at the same project id.
     const survivingProjectTag = sqlite
       .prepare(`SELECT * FROM project_tags WHERE project_id = ?`)
-      .get(withDescription.lastInsertRowid);
+      .get(withDescriptionId);
     expect(survivingProjectTag).toBeDefined();
     const survivingTask = sqlite
       .prepare(`SELECT project_id as projectId FROM tasks WHERE id = ?`)
       .get(task.lastInsertRowid) as { projectId: number } | undefined;
-    expect(survivingTask?.projectId).toBe(withDescription.lastInsertRowid);
+    expect(survivingTask?.projectId).toBe(withDescriptionId);
 
     // 3. Task `size` column exists, is nullable, and is indexed.
     const taskColumns = tableInfo(sqlite, "tasks");
@@ -180,7 +196,7 @@ describe("0002 migration: acceptance criteria + task size", () => {
     // 4. FK cascade: deleting the project removes its acceptance criteria.
     sqlite
       .prepare(`DELETE FROM projects WHERE id = ?`)
-      .run(withDescription.lastInsertRowid);
+      .run(withDescriptionId);
     const remaining = sqlite
       .prepare(`SELECT COUNT(*) as n FROM project_acceptance_criteria`)
       .get() as { n: number };
@@ -195,8 +211,11 @@ describe("0002 migration: acceptance criteria + task size", () => {
 
     const now = new Date().toISOString();
     sqlite
+      .prepare(`INSERT INTO work_items DEFAULT VALUES`)
+      .run();
+    sqlite
       .prepare(
-        `INSERT INTO projects (title, position, created_at, updated_at) VALUES (?, 0, ?, ?)`,
+        `INSERT INTO projects (id, title, position, created_at, updated_at) VALUES (last_insert_rowid(), ?, 0, ?, ?)`,
       )
       .run("Neues Projekt ohne Status", now, now);
     const row = sqlite

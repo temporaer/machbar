@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as schema from "../src/db/schema.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
-describe("captured task promotion", () => {
+describe("task <-> story role conversion", () => {
   let ctx: TestContext;
 
   beforeEach(() => {
@@ -57,7 +57,7 @@ describe("captured task promotion", () => {
       payload: { status: "captured" },
     });
 
-    const promoted = await post(`/api/tasks/${root.id}/promote-to-project`, {
+    const promoted = await post(`/api/tasks/${root.id}/convert-to-story`, {
       status: "active",
       title: "Kinderzimmer fertig renovieren",
       notes: "Aktualisierte Notizen",
@@ -66,6 +66,7 @@ describe("captured task promotion", () => {
 
     expect(promoted.statusCode).toBe(201);
     expect(promoted.json()).toMatchObject({
+      id: root.id,
       title: "Kinderzimmer fertig renovieren",
       notes: "Aktualisierte Notizen",
       status: "active",
@@ -96,12 +97,11 @@ describe("captured task promotion", () => {
 
     const activity = ctx.handle.db.select().from(schema.activityEvents).all();
     expect(activity.at(-1)).toMatchObject({
-      kind: "project_created",
+      kind: "work_item_role_converted",
       projectId: promoted.json().id,
       entityTitle: "Kinderzimmer fertig renovieren",
       metadata: expect.objectContaining({
-        changedFields: ["promotedFromCapture"],
-        relatedTaskIds: [root.id],
+        changedFields: ["role"],
         affectedCount: 3,
       }),
     });
@@ -109,13 +109,14 @@ describe("captured task promotion", () => {
 
   it("promotes a capture to the project backlog", async () => {
     const root = (await post("/api/tasks", { title: "Vielleicht umziehen" })).json();
-    const promoted = await post(`/api/tasks/${root.id}/promote-to-project`, {
+    const promoted = await post(`/api/tasks/${root.id}/convert-to-story`, {
       status: "backlog",
       expectedRevision: root.revision,
     });
 
     expect(promoted.statusCode).toBe(201);
     expect(promoted.json()).toMatchObject({
+      id: root.id,
       title: "Vielleicht umziehen",
       status: "backlog",
     });
@@ -131,7 +132,7 @@ describe("captured task promotion", () => {
   it("requires an explicit owner when promoting a capture to an active project", async () => {
     const root = (await post("/api/tasks", { title: "Keller aufräumen" })).json();
     const activePromotion = await post(
-      `/api/tasks/${root.id}/promote-to-project`,
+      `/api/tasks/${root.id}/convert-to-story`,
       {
         status: "active",
         expectedRevision: root.revision,
@@ -155,7 +156,7 @@ describe("captured task promotion", () => {
       })
     ).json();
     const response = await post(
-      `/api/tasks/${root.id}/promote-to-project`,
+      `/api/tasks/${root.id}/convert-to-story`,
       { status: "active", expectedRevision: root.revision },
     );
 
@@ -183,7 +184,7 @@ describe("captured task promotion", () => {
       await post("/api/tasks", { title: "Schon Aufgabe", status: "actionable" })
     ).json();
     const classified = await post(
-      `/api/tasks/${actionable.id}/promote-to-project`,
+      `/api/tasks/${actionable.id}/convert-to-story`,
       { status: "active" },
     );
     expect(classified.statusCode).toBe(409);
@@ -206,7 +207,7 @@ describe("captured task promotion", () => {
     });
     expect(dependency.statusCode).toBe(201);
     const dependencyPromotion = await post(
-      `/api/tasks/${captured.id}/promote-to-project`,
+      `/api/tasks/${captured.id}/convert-to-story`,
       { status: "backlog" },
     );
     expect(dependencyPromotion.statusCode).toBe(409);
@@ -219,5 +220,74 @@ describe("captured task promotion", () => {
     });
     expect(child.statusCode).toBe(409);
     expect(child.json().error.code).toBe("task_promotion_invalid");
+  });
+
+  it("converts a story back to a task, preserving identity and history, when the story has no children or acceptance criteria", async () => {
+    const root = (await post("/api/tasks", { title: "Wieder zur Aufgabe" })).json();
+    const promoted = (
+      await post(`/api/tasks/${root.id}/convert-to-story`, {
+        status: "backlog",
+        expectedRevision: root.revision,
+      })
+    ).json();
+    expect(promoted.id).toBe(root.id);
+
+    const reverted = await post(`/api/projects/${promoted.id}/convert-to-task`, {
+      expectedRevision: promoted.revision,
+    });
+    expect(reverted.statusCode).toBe(201);
+    expect(reverted.json()).toMatchObject({
+      id: root.id,
+      title: "Wieder zur Aufgabe",
+      status: "someday",
+    });
+    expect(
+      await ctx.app.inject({
+        method: "GET",
+        url: `/api/projects/${promoted.id}`,
+      }),
+    ).toMatchObject({ statusCode: 404 });
+
+    const activity = ctx.handle.db
+      .select()
+      .from(schema.activityEvents)
+      .all();
+    expect(activity.filter((e) => e.kind === "work_item_role_converted")).toHaveLength(
+      2,
+    );
+  });
+
+  it("rejects converting a story with tasks or acceptance criteria back to a task", async () => {
+    const root = (await post("/api/tasks", { title: "Mit Unterschritten" })).json();
+    const promoted = (
+      await post(`/api/tasks/${root.id}/convert-to-story`, { status: "backlog" })
+    ).json();
+    await post(`/api/tasks`, { title: "Schritt", projectId: promoted.id });
+
+    const withChildren = await post(
+      `/api/projects/${promoted.id}/convert-to-task`,
+      {},
+    );
+    expect(withChildren.statusCode).toBe(409);
+    expect(withChildren.json().error.code).toBe("role_conversion_invalid");
+
+    const emptyRoot = (
+      await post("/api/tasks", { title: "Ohne Unterschritte" })
+    ).json();
+    const emptyPromoted = (
+      await post(`/api/tasks/${emptyRoot.id}/convert-to-story`, {
+        status: "backlog",
+      })
+    ).json();
+    await post(`/api/projects/${emptyPromoted.id}/criteria`, {
+      text: "Fertig, wenn alles sauber ist",
+    });
+
+    const withCriteria = await post(
+      `/api/projects/${emptyPromoted.id}/convert-to-task`,
+      {},
+    );
+    expect(withCriteria.statusCode).toBe(409);
+    expect(withCriteria.json().error.code).toBe("role_conversion_invalid");
   });
 });

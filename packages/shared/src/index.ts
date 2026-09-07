@@ -39,6 +39,7 @@ export const activityEventKinds = [
   "project_acceptance_criterion_updated",
   "project_acceptance_criterion_checked",
   "project_acceptance_criterion_removed",
+  "work_item_role_converted",
 ] as const;
 export const activityEntityTypes = ["task", "project"] as const;
 export const contributionCategories = ["completion", "planning"] as const;
@@ -179,6 +180,7 @@ export type ApiErrorCode =
   | "task_not_found"
   | "task_parent_self"
   | "task_promotion_invalid"
+  | "role_conversion_invalid"
   | "task_sequence_too_short"
   | "task_title_required"
   | "external_wait_reason_required"

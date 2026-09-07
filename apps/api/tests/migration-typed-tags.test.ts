@@ -115,11 +115,18 @@ describe("0007 migration: typed tags and context removal", () => {
     expect(columns("projects")).not.toContain("context");
     expect(columns("tasks")).not.toContain("context");
     expect(columns("tasks")).not.toContain("context_inheritance_mode");
+    // Later migrations (0023) renumber project ids, so re-resolve the
+    // project's post-migration id by its stable title before using it.
+    const migratedProjectId = (
+      sqlite
+        .prepare(`SELECT id FROM projects WHERE title = 'Bestand'`)
+        .get() as { id: number }
+    ).id;
     expect(
       sqlite
         .prepare(`SELECT COUNT(*) FROM project_tags WHERE project_id = ?`)
         .pluck()
-        .get(projectId),
+        .get(migratedProjectId),
     ).toBe(1);
     expect(
       sqlite

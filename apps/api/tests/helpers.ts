@@ -35,6 +35,27 @@ export function createTestContext(options?: {
 }): TestContext {
   const handle = openDb(":memory:");
   runMigrations(handle.db);
+  // Test-only convenience: many tests build fixtures with raw
+  // `.insert(schema.tasks)`/`.insert(schema.projects)` calls that don't
+  // specify `id`, bypassing `allocateWorkItemId()` (the only path real
+  // application code uses to populate the shared `work_items` identity
+  // table introduced by the 0023 migration). Auto-create the matching
+  // work_items row so those FK-backed inserts still succeed; production
+  // code must keep going through `allocateWorkItemId()` explicitly.
+  handle.sqlite.exec(`
+    CREATE TRIGGER test_only_projects_work_item_autofill
+    AFTER INSERT ON projects
+    WHEN NEW.id NOT IN (SELECT id FROM work_items)
+    BEGIN
+      INSERT INTO work_items (id) VALUES (NEW.id);
+    END;
+    CREATE TRIGGER test_only_tasks_work_item_autofill
+    AFTER INSERT ON tasks
+    WHEN NEW.id NOT IN (SELECT id FROM work_items)
+    BEGIN
+      INSERT INTO work_items (id) VALUES (NEW.id);
+    END;
+  `);
   if (options?.seed) {
     seedDatabase(handle.db);
   }
