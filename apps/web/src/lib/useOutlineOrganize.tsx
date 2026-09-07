@@ -5,6 +5,7 @@ import { useRefresh } from "./refresh";
 import { useStrings } from "./strings";
 import type { Strings } from "./strings";
 import { isStaleWriteConflict, localizedErrorMessage } from "./errorMessage";
+import { useInteractionScope } from "./interactionScope";
 import {
   INDENT_WIDTH,
   applyMove,
@@ -106,13 +107,25 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   const strings = useStrings();
   const { bump } = useRefresh();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // The logical active WorkItem is scope state, not private hook state --
+  // one scope may contain several outline mounts (Today's per-section
+  // TaskOutlines) and they must share one cursor instead of each keeping
+  // its own "selected task". The mounted outline is also the sole source
+  // of truth for the scope's structural capability: it declares its own
+  // `organizable` value into the scope rather than the page declaring a
+  // separate flag that could drift out of sync with it.
+  const scope = useInteractionScope();
+  const selectedId = scope.activeId;
+  const setSelectedId = scope.setActive;
+  useEffect(() => {
+    scope.setStructuralCapability({ canReorder: organizable, canReparent: organizable });
+  }, [organizable, scope]);
   const [override, setOverride] = useState<{
     tasks: Task[];
     taskId: number;
     revision: number;
   } | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [projection, setProjection] = useState<DropProjection | null>(null);
   const [indicatorTop, setIndicatorTop] = useState(0);
@@ -446,9 +459,12 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     return suppressed;
   }, []);
 
-  const toggleSelect = useCallback((taskId: number) => {
-    setSelectedId((prev) => (prev === taskId ? null : taskId));
-  }, []);
+  const toggleSelect = useCallback(
+    (taskId: number) => {
+      setSelectedId(selectedId === taskId ? null : taskId);
+    },
+    [selectedId, setSelectedId],
+  );
 
   const moveBy = useCallback(
     (taskId: number, direction: OrganizeDirection) => {

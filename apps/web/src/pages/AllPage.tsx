@@ -8,7 +8,11 @@ import {
   hasInventoryFilters,
   topLevelTaskResults,
 } from "../lib/allInventory";
-import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
+import {
+  LoadingState,
+  ErrorState,
+  EmptyState,
+} from "../components/AsyncStates";
 import { PageHeader } from "../components/PageHeader";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { SearchFilterBar } from "../components/SearchFilterBar";
@@ -16,14 +20,19 @@ import { TaskOutline } from "../components/TaskOutline";
 import { filterAndSortProjects } from "../lib/projectListFilter";
 import { useLocale } from "../lib/locale";
 import { sortInventoryTasks } from "../lib/sortOrder";
+import { InteractionScopeProvider } from "../lib/interactionScope";
 
 export function AllPage() {
   const strings = useStrings();
   const { locale } = useLocale();
   const [filters, setFilters] = useState<SearchFilters>({});
   const filtersKey = JSON.stringify(filters);
-  const { data: projects, loading: projectsLoading, error: projectsError, reload: reloadProjects } =
-    useAsync(() => api.getProjects(), []);
+  const {
+    data: projects,
+    loading: projectsLoading,
+    error: projectsError,
+    reload: reloadProjects,
+  } = useAsync(() => api.getProjects(), []);
   const { data: tags } = useAsync(() => api.getTags(), []);
   const {
     data: tasks,
@@ -55,60 +64,73 @@ export function AllPage() {
   const error = projectsError ?? tasksError;
 
   return (
-    <div>
-      <PageHeader title={strings.allTitle} hints={[{ text: strings.allHint }]} />
-      <SearchFilterBar
-        filters={filters}
-        onChange={setFilters}
-        projects={projects ?? []}
-        tags={tags ?? []}
-      />
-      {loading ? <LoadingState /> : null}
-      {error ? (
-        <ErrorState
-          message={error}
-          onRetry={() => {
-            reloadProjects();
-            reloadTasks();
-          }}
+    <InteractionScopeProvider>
+      <div>
+        <PageHeader
+          title={strings.allTitle}
+          hints={[{ text: strings.allHint }]}
         />
-      ) : null}
-      {projects && tasks ? (
-        filteredProjects.length === 0 && visibleTasks.length === 0 ? (
-          <EmptyState message={strings.allEmpty} />
-        ) : (
-          <>
-            {filteredProjects.length > 0 ? (
-              <section className="section" aria-labelledby="all-projects-heading">
-                <h2 id="all-projects-heading" className="section-title">
-                  {strings.allProjectsHeading}
-                </h2>
-                <ul className="list story-row-list">
-                  {filteredProjects.map((project) => (
-                    <ProjectStoryRow
-                      key={project.id}
-                      story={project}
-                      variant="compact"
-                    />
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-            {visibleTasks.length > 0 ? (
-              <section className="section" aria-labelledby="all-tasks-heading">
-                <h2 id="all-tasks-heading" className="section-title">
-                  {filtering ? strings.allMatchingTasksHeading : strings.allStandaloneTasksHeading}
-                </h2>
-                <TaskOutline
-                  tasks={visibleTasks}
-                  emptyMessage={strings.allEmpty}
-                  preserveRootOrder
-                />
-              </section>
-            ) : null}
-          </>
-        )
-      ) : null}
-    </div>
+        <SearchFilterBar
+          filters={filters}
+          onChange={setFilters}
+          projects={projects ?? []}
+          tags={tags ?? []}
+        />
+        {loading ? <LoadingState /> : null}
+        {error ? (
+          <ErrorState
+            message={error}
+            onRetry={() => {
+              reloadProjects();
+              reloadTasks();
+            }}
+          />
+        ) : null}
+        {projects && tasks ? (
+          filteredProjects.length === 0 && visibleTasks.length === 0 ? (
+            <EmptyState message={strings.allEmpty} />
+          ) : (
+            <>
+              {filteredProjects.length > 0 ? (
+                <section
+                  className="section"
+                  aria-labelledby="all-projects-heading"
+                >
+                  <h2 id="all-projects-heading" className="section-title">
+                    {strings.allProjectsHeading}
+                  </h2>
+                  <ul className="list story-row-list">
+                    {filteredProjects.map((project) => (
+                      <ProjectStoryRow
+                        key={project.id}
+                        story={project}
+                        variant="compact"
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ) : null}
+              {visibleTasks.length > 0 ? (
+                <section
+                  className="section"
+                  aria-labelledby="all-tasks-heading"
+                >
+                  <h2 id="all-tasks-heading" className="section-title">
+                    {filtering
+                      ? strings.allMatchingTasksHeading
+                      : strings.allStandaloneTasksHeading}
+                  </h2>
+                  <TaskOutline
+                    tasks={visibleTasks}
+                    emptyMessage={strings.allEmpty}
+                    preserveRootOrder
+                  />
+                </section>
+              ) : null}
+            </>
+          )
+        ) : null}
+      </div>
+    </InteractionScopeProvider>
   );
 }

@@ -44,6 +44,7 @@ import {
   isStaleWriteConflict,
   localizedErrorMessage,
 } from "../lib/errorMessage";
+import { InteractionScopeProvider } from "../lib/interactionScope";
 
 export function ProjectDetailPage() {
   const strings = useStrings();
@@ -67,7 +68,11 @@ export function ProjectDetailPage() {
   const planningTaskRef = useRef<number | null>(null);
   const planningOwnsSheetRef = useRef(false);
   const planningSheetOpenedRef = useRef(false);
-  const { openTaskId, open: openTaskDetail, close: closeTaskDetail } = useTaskDetail();
+  const {
+    openTaskId,
+    open: openTaskDetail,
+    close: closeTaskDetail,
+  } = useTaskDetail();
   const openTaskIdRef = useRef(openTaskId);
   const closeTaskDetailRef = useRef(closeTaskDetail);
   openTaskIdRef.current = openTaskId;
@@ -91,16 +96,20 @@ export function ProjectDetailPage() {
     confirmedProject.revision > loadedProject.revision
       ? { ...loadedProject, ...confirmedProject, tasks: loadedProject.tasks }
       : loadedProject;
-  const projectActions = useProjectActions(loadedProject ? [loadedProject] : []);
-  const attachments = project
-    ? extractPaperlessReferences(project.notes)
-    : [];
+  const projectActions = useProjectActions(
+    loadedProject ? [loadedProject] : [],
+  );
+  const attachments = project ? extractPaperlessReferences(project.notes) : [];
 
-  const owner = project ? members.find((m) => m.id === project.ownerMemberId) : undefined;
+  const owner = project
+    ? members.find((m) => m.id === project.ownerMemberId)
+    : undefined;
   const taskCounts = project ? countTasks(project.tasks) : { open: 0, done: 0 };
   const criteriaTotal = project?.acceptanceCriteria.length ?? 0;
-  const criteriaDone = project?.acceptanceCriteria.filter((c) => c.checked).length ?? 0;
-  const criteriaPct = criteriaTotal > 0 ? Math.round((criteriaDone / criteriaTotal) * 100) : 0;
+  const criteriaDone =
+    project?.acceptanceCriteria.filter((c) => c.checked).length ?? 0;
+  const criteriaPct =
+    criteriaTotal > 0 ? Math.round((criteriaDone / criteriaTotal) * 100) : 0;
 
   const clearRouteFocus = useCallback(() => {
     const next = new URLSearchParams(searchParams);
@@ -160,7 +169,12 @@ export function ProjectDetailPage() {
 
   useEffect(() => {
     const ownedTaskId = planningTaskRef.current;
-    if (!planningFocusActive || !planningOwnsSheetRef.current || ownedTaskId === null) return;
+    if (
+      !planningFocusActive ||
+      !planningOwnsSheetRef.current ||
+      ownedTaskId === null
+    )
+      return;
 
     if (openTaskId === ownedTaskId) {
       planningSheetOpenedRef.current = true;
@@ -171,203 +185,221 @@ export function ProjectDetailPage() {
   }, [planningFocusActive, openTaskId, clearRouteFocus]);
 
   return (
-    <div>
-      <Link
-        to={reviewReturn ? "/more/review" : "/projects"}
-        state={reviewReturn ? { reviewReturn } : undefined}
-        className="link-plain"
-      >
-        ← {reviewReturn ? strings.reviewTitle : strings.projects}
-      </Link>
-      {projectLoading ? <LoadingState /> : null}
-      {projectError ? <ErrorState message={projectError} onRetry={reloadProject} /> : null}
-      {project ? (
-        <>
-          <div className="page-header project-page-header">
-            <div className="row-between project-page-title-row">
-              <h1>{project.title}</h1>
-              <div className="row project-page-actions">
-                <NativeShareButton
-                  title={project.title}
-                  text={serializeProjectForShare(project, locale)}
-                  url={buildProjectShareUrl(project.id)}
-                />
-                <CalendarExportButton
-                  item={{
-                    kind: "project",
-                    id: project.id,
-                    title: project.title,
-                    notes: project.notes,
-                    dueDate: project.dueDate,
-                  }}
-                />
-                <IconActionButton
-                  kind="attachment"
-                  label={strings.attach}
-                  disabled={projectActions.isPending(project.id)}
-                  onClick={() => {
-                    setAttachmentError(null);
-                    setAttachmentOpen(true);
-                  }}
-                />
+    <InteractionScopeProvider
+      captureTarget={{ kind: "story", storyId: projectId }}
+    >
+      <div>
+        <Link
+          to={reviewReturn ? "/more/review" : "/projects"}
+          state={reviewReturn ? { reviewReturn } : undefined}
+          className="link-plain"
+        >
+          ← {reviewReturn ? strings.reviewTitle : strings.projects}
+        </Link>
+        {projectLoading ? <LoadingState /> : null}
+        {projectError ? (
+          <ErrorState message={projectError} onRetry={reloadProject} />
+        ) : null}
+        {project ? (
+          <>
+            <div className="page-header project-page-header">
+              <div className="row-between project-page-title-row">
+                <h1>{project.title}</h1>
+                <div className="row project-page-actions">
+                  <NativeShareButton
+                    title={project.title}
+                    text={serializeProjectForShare(project, locale)}
+                    url={buildProjectShareUrl(project.id)}
+                  />
+                  <CalendarExportButton
+                    item={{
+                      kind: "project",
+                      id: project.id,
+                      title: project.title,
+                      notes: project.notes,
+                      dueDate: project.dueDate,
+                    }}
+                  />
+                  <IconActionButton
+                    kind="attachment"
+                    label={strings.attach}
+                    disabled={projectActions.isPending(project.id)}
+                    onClick={() => {
+                      setAttachmentError(null);
+                      setAttachmentOpen(true);
+                    }}
+                  />
+                  <IconActionButton
+                    kind="edit"
+                    label={strings.edit}
+                    onClick={() => {
+                      setEditFocusField(undefined);
+                      setEditing(true);
+                    }}
+                  />
+                </div>
+              </div>
+              <div className="row text-muted" style={{ fontSize: "0.8rem" }}>
+                <span className="badge">
+                  {strings.projectStatusLabels[project.status]}
+                </span>
+                <span className="member-label">
+                  <span>{strings.driver}:</span>
+                  {owner ? (
+                    <MemberLabel member={owner} size="xs" />
+                  ) : (
+                    strings.noDriver
+                  )}
+                </span>
+                {project.dueDate ? (
+                  <span>
+                    {strings.due}: {formatDate(project.dueDate, locale)}
+                  </span>
+                ) : null}
+              </div>
+              <div className="row text-muted" style={{ fontSize: "0.8rem" }}>
+                <span>
+                  {strings.taskProgress}: {taskCounts.open}{" "}
+                  {strings.openTasks.toLowerCase()} · {taskCounts.done}{" "}
+                  {strings.doneTasks.toLowerCase()}
+                </span>
+              </div>
+              {criteriaTotal > 0 ? (
+                <div>
+                  <p
+                    className="text-muted"
+                    style={{ fontSize: "0.8rem", margin: "4px 0 0" }}
+                  >
+                    {strings.criteria}: {criteriaDone}/{criteriaTotal}
+                  </p>
+                  <div className="criteria-progress">
+                    <span style={{ width: `${criteriaPct}%` }} />
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <PaperlessAttachmentStrip attachments={attachments} />
+            {attachmentError ? (
+              <p className="capture-error" role="alert">
+                {attachmentError}
+              </p>
+            ) : null}
+            {project.stuckReason ? (
+              <ProjectStuckNotice reason={project.stuckReason} />
+            ) : null}
+            <section className="section project-notes-section">
+              <div className="row-between">
+                <h2 className="section-title">{strings.notes}</h2>
                 <IconActionButton
                   kind="edit"
                   label={strings.edit}
                   onClick={() => {
-                    setEditFocusField(undefined);
+                    setEditFocusField("notes");
                     setEditing(true);
                   }}
                 />
               </div>
-            </div>
-            <div className="row text-muted" style={{ fontSize: "0.8rem" }}>
-              <span className="badge">{strings.projectStatusLabels[project.status]}</span>
-              <span className="member-label">
-                <span>{strings.driver}:</span>
-                {owner ? (
-                  <MemberLabel member={owner} size="xs" />
-                ) : (
-                  strings.noDriver
-                )}
-              </span>
-              {project.dueDate ? (
-                <span>
-                  {strings.due}: {formatDate(project.dueDate, locale)}
-                </span>
-              ) : null}
-            </div>
-            <div className="row text-muted" style={{ fontSize: "0.8rem" }}>
-              <span>
-                {strings.taskProgress}: {taskCounts.open} {strings.openTasks.toLowerCase()} · {taskCounts.done}{" "}
-                {strings.doneTasks.toLowerCase()}
-              </span>
-            </div>
-            {criteriaTotal > 0 ? (
-              <div>
-                <p className="text-muted" style={{ fontSize: "0.8rem", margin: "4px 0 0" }}>
-                  {strings.criteria}: {criteriaDone}/{criteriaTotal}
-                </p>
-                <div className="criteria-progress">
-                  <span style={{ width: `${criteriaPct}%` }} />
-                </div>
-              </div>
-            ) : null}
-          </div>
-          <PaperlessAttachmentStrip attachments={attachments} />
-          {attachmentError ? (
-            <p className="capture-error" role="alert">{attachmentError}</p>
-          ) : null}
-          {project.stuckReason ? <ProjectStuckNotice reason={project.stuckReason} /> : null}
-          <section className="section project-notes-section">
-            <div className="row-between">
-              <h2 className="section-title">{strings.notes}</h2>
-              <IconActionButton
-                kind="edit"
-                label={strings.edit}
-                onClick={() => {
-                  setEditFocusField("notes");
-                  setEditing(true);
-                }}
+              {project.notes.trim() ? (
+                <MarkdownNotes value={project.notes} />
+              ) : (
+                <p className="text-muted">{strings.noNotes}</p>
+              )}
+            </section>
+            <section className="section">
+              <PageHeader
+                title={strings.taskSummary}
+                headingLevel={2}
+                actions={
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setAddingSequence(true)}
+                  >
+                    {strings.addSequence}
+                  </button>
+                }
+                hints={[{ text: strings.projectTasksHint }]}
               />
-            </div>
-            {project.notes.trim() ? (
-              <MarkdownNotes value={project.notes} />
-            ) : (
-              <p className="text-muted">{strings.noNotes}</p>
-            )}
-          </section>
-          <section className="section">
-            <PageHeader
-              title={strings.taskSummary}
-              headingLevel={2}
-              actions={
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => setAddingSequence(true)}
-                >
-                  {strings.addSequence}
-                </button>
-              }
-              hints={[{ text: strings.projectTasksHint }]}
+              <TaskOutline
+                tasks={project.tasks}
+                emptyMessage={strings.noTasks}
+                organizable
+                showSwipeHint={false}
+              />
+            </section>
+            <RecentActivity
+              key={`project-activity-${project.id}`}
+              filters={{ projectId: project.id }}
+              idPrefix={`project-${project.id}-activity`}
             />
-            <TaskOutline
-              tasks={project.tasks}
-              emptyMessage={strings.noTasks}
-              organizable
-              showSwipeHint={false}
-            />
-          </section>
-          <RecentActivity
-            key={`project-activity-${project.id}`}
-            filters={{ projectId: project.id }}
-            idPrefix={`project-${project.id}-activity`}
-          />
-        </>
-      ) : null}
-      <QuickAdd
-        projectId={projectId}
-        autoOpen={focus === "next-action"}
-        onAutoOpenClose={clearRouteFocus}
-      />
-      {(editing || focus === "driver" || focus === "completion") && project ? (
-        <ProjectEditSheet
-          project={project}
-          onProjectConfirmed={setConfirmedProject}
-          focusField={
-            focus === "driver"
-              ? "driver"
-              : focus === "completion"
-                ? "completion"
-                : editFocusField
-          }
-          onClose={() => {
-            setEditing(false);
-            setEditFocusField(undefined);
-            if (focus === "driver" || focus === "completion") clearRouteFocus();
-          }}
-          onDeleted={
-            reviewReturn
-              ? () =>
-                  navigate("/more/review", {
-                    state: { reviewReturn },
-                  })
-              : undefined
-          }
-        />
-      ) : null}
-      {focus === "outcome" && project ? (
-        <StoryCriteriaSheet story={project} onClose={clearRouteFocus} />
-      ) : null}
-      {addingSequence ? (
-        <TaskSequenceSheet
+          </>
+        ) : null}
+        <QuickAdd
           projectId={projectId}
-          onClose={() => setAddingSequence(false)}
+          autoOpen={focus === "next-action"}
+          onAutoOpenClose={clearRouteFocus}
         />
-      ) : null}
-      {attachmentOpen && project ? (
-        <MarkdownAttachmentSheet
-          onClose={() => setAttachmentOpen(false)}
-          onInsert={async (markdown) => {
-            if (containsPaperlessReference(project.notes, markdown)) return;
-            const nextNotes = appendTextBlock(project.notes, markdown);
-            setAttachmentError(null);
-            try {
-              const updated = await projectActions.update(
-                project,
-                { notes: nextNotes },
-                { notes: nextNotes },
-                true,
-              );
-              if (updated) setConfirmedProject(updated);
-            } catch (cause) {
-              if (isStaleWriteConflict(cause)) reloadProject();
-              setAttachmentError(localizedErrorMessage(cause, strings));
-              throw cause;
+        {(editing || focus === "driver" || focus === "completion") &&
+        project ? (
+          <ProjectEditSheet
+            project={project}
+            onProjectConfirmed={setConfirmedProject}
+            focusField={
+              focus === "driver"
+                ? "driver"
+                : focus === "completion"
+                  ? "completion"
+                  : editFocusField
             }
-          }}
-        />
-      ) : null}
-    </div>
+            onClose={() => {
+              setEditing(false);
+              setEditFocusField(undefined);
+              if (focus === "driver" || focus === "completion")
+                clearRouteFocus();
+            }}
+            onDeleted={
+              reviewReturn
+                ? () =>
+                    navigate("/more/review", {
+                      state: { reviewReturn },
+                    })
+                : undefined
+            }
+          />
+        ) : null}
+        {focus === "outcome" && project ? (
+          <StoryCriteriaSheet story={project} onClose={clearRouteFocus} />
+        ) : null}
+        {addingSequence ? (
+          <TaskSequenceSheet
+            projectId={projectId}
+            onClose={() => setAddingSequence(false)}
+          />
+        ) : null}
+        {attachmentOpen && project ? (
+          <MarkdownAttachmentSheet
+            onClose={() => setAttachmentOpen(false)}
+            onInsert={async (markdown) => {
+              if (containsPaperlessReference(project.notes, markdown)) return;
+              const nextNotes = appendTextBlock(project.notes, markdown);
+              setAttachmentError(null);
+              try {
+                const updated = await projectActions.update(
+                  project,
+                  { notes: nextNotes },
+                  { notes: nextNotes },
+                  true,
+                );
+                if (updated) setConfirmedProject(updated);
+              } catch (cause) {
+                if (isStaleWriteConflict(cause)) reloadProject();
+                setAttachmentError(localizedErrorMessage(cause, strings));
+                throw cause;
+              }
+            }}
+          />
+        ) : null}
+      </div>
+    </InteractionScopeProvider>
   );
 }

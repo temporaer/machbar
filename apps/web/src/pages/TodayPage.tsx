@@ -3,7 +3,11 @@ import { api, type AgendaScope } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
-import { LoadingState, ErrorState, EmptyState } from "../components/AsyncStates";
+import {
+  LoadingState,
+  ErrorState,
+  EmptyState,
+} from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaCard } from "../components/ProjectAgendaCard";
@@ -11,6 +15,7 @@ import { PageHeader, type PageHint } from "../components/PageHeader";
 import { ContributionPulse } from "../components/ContributionPulse";
 import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 import { IconActionGlyph } from "../components/IconActionButton";
+import { InteractionScopeProvider } from "../lib/interactionScope";
 
 export function TodayPage() {
   const strings = useStrings();
@@ -33,7 +38,12 @@ export function TodayPage() {
   // ensures switching identities always shows that member's own agenda.
   const { currentMemberId, members } = useIdentity();
   const agendaSelectionKey = `${scope}:${currentMemberId ?? "none"}`;
-  const { data: loadedAgenda, loading, error, reload } = useAsync(
+  const {
+    data: loadedAgenda,
+    loading,
+    error,
+    reload,
+  } = useAsync(
     async () => ({
       selectionKey: agendaSelectionKey,
       agenda: await api.getAgenda(currentMemberId, scope),
@@ -49,7 +59,10 @@ export function TodayPage() {
     writeTodayScope(nextScope);
   };
   const revisitTasks = agenda?.revisit ?? [];
-  const additionalTasks = [...(agenda?.shared ?? []), ...(agenda?.unscheduled ?? [])];
+  const additionalTasks = [
+    ...(agenda?.shared ?? []),
+    ...(agenda?.unscheduled ?? []),
+  ];
   const projectAgenda = agenda?.projects ?? [];
   const pageHints: PageHint[] = [
     { text: strings.todayExplanation },
@@ -60,100 +73,107 @@ export function TodayPage() {
   ];
 
   return (
-    <div className="today-page">
-      <PageHeader
-        title={strings.today}
-        actions={
-          <button
-            type="button"
-            className="page-header-button today-scope-toggle"
-            aria-label={strings.todayHouseholdScope}
-            aria-pressed={scope === "all"}
-            title={strings.todayHouseholdScope}
-            onClick={() => selectScope(scope === "mine" ? "all" : "mine")}
-          >
-            <IconActionGlyph kind="household" />
-          </button>
-        }
-        hints={pageHints}
-      />
-      <ContributionPulse />
-      {loading ? <LoadingState /> : null}
-      {error ? <ErrorState message={error} onRetry={reload} /> : null}
-      {agenda ? (
-        (() => {
-          const total =
-            sections.reduce((sum, s) => sum + agenda[s.key].length, 0) +
-            additionalTasks.length +
-            revisitTasks.length +
-            projectAgenda.length;
-          if (total === 0) return <EmptyState message={strings.todayEmpty} />;
-          return (
-            <>
-              {projectAgenda.length > 0 ? (
-                <section className="section" aria-labelledby="today-projects-heading">
-                  <h2 className="section-title" id="today-projects-heading">
-                    {strings.projectAgenda}
-                  </h2>
-                  <div className="list">
-                    {projectAgenda.map((entry) => (
-                      <ProjectAgendaCard
-                        key={entry.project.id}
-                        entry={entry}
-                        owner={
-                          scope === "all" && entry.project.ownerMemberId !== null
-                            ? members.find(
-                                (member) =>
-                                  member.id === entry.project.ownerMemberId,
-                              ) ?? null
-                            : null
-                        }
-                      />
+    <InteractionScopeProvider>
+      <div className="today-page">
+        <PageHeader
+          title={strings.today}
+          actions={
+            <button
+              type="button"
+              className="page-header-button today-scope-toggle"
+              aria-label={strings.todayHouseholdScope}
+              aria-pressed={scope === "all"}
+              title={strings.todayHouseholdScope}
+              onClick={() => selectScope(scope === "mine" ? "all" : "mine")}
+            >
+              <IconActionGlyph kind="household" />
+            </button>
+          }
+          hints={pageHints}
+        />
+        <ContributionPulse />
+        {loading ? <LoadingState /> : null}
+        {error ? <ErrorState message={error} onRetry={reload} /> : null}
+        {agenda
+          ? (() => {
+              const total =
+                sections.reduce((sum, s) => sum + agenda[s.key].length, 0) +
+                additionalTasks.length +
+                revisitTasks.length +
+                projectAgenda.length;
+              if (total === 0)
+                return <EmptyState message={strings.todayEmpty} />;
+              return (
+                <>
+                  {projectAgenda.length > 0 ? (
+                    <section
+                      className="section"
+                      aria-labelledby="today-projects-heading"
+                    >
+                      <h2 className="section-title" id="today-projects-heading">
+                        {strings.projectAgenda}
+                      </h2>
+                      <div className="list">
+                        {projectAgenda.map((entry) => (
+                          <ProjectAgendaCard
+                            key={entry.project.id}
+                            entry={entry}
+                            owner={
+                              scope === "all" &&
+                              entry.project.ownerMemberId !== null
+                                ? (members.find(
+                                    (member) =>
+                                      member.id === entry.project.ownerMemberId,
+                                  ) ?? null)
+                                : null
+                            }
+                          />
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+                  {sections
+                    .filter((s) => agenda[s.key].length > 0)
+                    .map((s) => (
+                      <div className="section" key={s.key}>
+                        <div className="section-title">{s.label}</div>
+                        <TaskOutline
+                          tasks={agenda[s.key]}
+                          emptyMessage={strings.noItems}
+                          preserveRootOrder
+                          showSwipeHint={false}
+                        />
+                      </div>
                     ))}
-                  </div>
-                </section>
-              ) : null}
-              {sections
-                .filter((s) => agenda[s.key].length > 0)
-                .map((s) => (
-                  <div className="section" key={s.key}>
-                    <div className="section-title">{s.label}</div>
-                    <TaskOutline
-                      tasks={agenda[s.key]}
-                      emptyMessage={strings.noItems}
-                      preserveRootOrder
-                      showSwipeHint={false}
-                    />
-                  </div>
-                ))}
-              {revisitTasks.length > 0 ? (
-                <div className="section" key="revisit">
-                  <div className="section-title">{strings.revisit}</div>
-                  <TaskOutline
-                    tasks={revisitTasks}
-                    emptyMessage={strings.noItems}
-                    preserveRootOrder
-                    showRevisitDate
-                    showSwipeHint={false}
-                  />
-                </div>
-              ) : null}
-              {additionalTasks.length > 0 ? (
-                <div className="section">
-                  <div className="section-title">{strings.unscheduled}</div>
-                  <TaskOutline
-                    tasks={additionalTasks}
-                    emptyMessage={strings.noItems}
-                    preserveRootOrder
-                    showSwipeHint={false}
-                  />
-                </div>
-              ) : null}
-            </>
-          );
-        })()
-      ) : null}
-      <QuickAdd />
-    </div>
+                  {revisitTasks.length > 0 ? (
+                    <div className="section" key="revisit">
+                      <div className="section-title">{strings.revisit}</div>
+                      <TaskOutline
+                        tasks={revisitTasks}
+                        emptyMessage={strings.noItems}
+                        preserveRootOrder
+                        showRevisitDate
+                        showSwipeHint={false}
+                      />
+                    </div>
+                  ) : null}
+                  {additionalTasks.length > 0 ? (
+                    <div className="section">
+                      <div className="section-title">{strings.unscheduled}</div>
+                      <TaskOutline
+                        tasks={additionalTasks}
+                        emptyMessage={strings.noItems}
+                        preserveRootOrder
+                        showSwipeHint={false}
+                      />
+                    </div>
+                  ) : null}
+                </>
+              );
+            })()
+          : null}
+        <QuickAdd />
+      </div>
+    </InteractionScopeProvider>
   );
 }
