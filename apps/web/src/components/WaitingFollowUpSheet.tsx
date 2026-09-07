@@ -60,6 +60,7 @@ export function WaitingFollowUpSheet({
             onChange={(event) => setContent(event.target.value)}
             disabled={saving}
             autoFocus
+            aria-label={strings.notes}
           />
         </div>
 
