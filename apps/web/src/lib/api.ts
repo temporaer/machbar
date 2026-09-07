@@ -13,6 +13,7 @@ import type {
   Member,
   MoreCounts,
   PaperlessDocumentSummary,
+  PaperlessIntegrationStatus,
   Project,
   ProjectActivationReadiness,
   ProjectAgendaEntry,
@@ -445,6 +446,8 @@ export const api = {
     request<PaperlessDocumentSummary[]>(
       `${paperlessDocumentsPath}${query({ query: search })}`,
     ),
+  getPaperlessStatus: () =>
+    request<PaperlessIntegrationStatus>("/integrations/paperless/status"),
   getPaperlessDocumentPreview: (id: number) =>
     request<Blob>(`${paperlessDocumentsPath}/${id}/preview`, undefined, "blob"),
 

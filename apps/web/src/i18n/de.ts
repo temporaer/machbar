@@ -743,6 +743,9 @@ const extra = {
   paperlessSearchEmpty: "Keine passenden Dokumente gefunden.",
   paperlessUploading: "Wird hochgeladen …",
   paperlessSearching: "Paperless wird durchsucht …",
+  openInPaperless: "In Paperless öffnen",
+  openInPaperlessLabel: (label: string) =>
+    `${label} in Paperless öffnen`,
   paperlessImageUnavailable: "Bild nicht verfügbar – Dokument öffnen",
   sharedAttachments: (count: number) =>
     count === 1 ? "1 geteilter Anhang" : `${count} geteilte Anhänge`,

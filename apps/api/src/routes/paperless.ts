@@ -1,4 +1,5 @@
 import multipart from "@fastify/multipart";
+import type { PaperlessIntegrationStatus } from "@machbar/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import sharp from "sharp";
 import type { Env } from "../env.js";
@@ -108,6 +109,14 @@ export function registerPaperlessRoutes(
       limits: { fileSize: MAX_UPLOAD_BYTES },
       throwFileSizeLimit: false,
     });
+
+    instance.get(
+      "/api/integrations/paperless/status",
+      async (): Promise<PaperlessIntegrationStatus> => ({
+        configured: env.paperless !== null,
+        documentUiBaseUrl: env.paperless?.baseUrl ?? null,
+      }),
+    );
 
     instance.post(
       BASE_PATH,

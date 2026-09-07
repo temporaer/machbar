@@ -62,7 +62,8 @@ WorkItem(role=story) ─── WorkItem(role=task)
 - **Attachments remain notes, not database entities.** A Markdown target such
   as `paperless:4711` is an opaque reference to a document stored by the
   optional Paperless-ngx integration. Machbar stores no attachment bytes or
-  authenticated Paperless URL.
+  authenticated Paperless URL; direct Paperless UI links are generated at
+  render time from the configured public base URL.
 - **Tasks** are WorkItems whose nearest ancestor story is exposed as the legacy
   `Task.projectId`; their immediate parent task, if any, is exposed as
   `Task.parentTaskId`. Both are derived from `work_items.parent_id` rather than
@@ -727,8 +728,10 @@ drafts and delegates execution to `useTaskActions.followUpExternalWait`.
 authentication, generated OpenAPI response shapes, or upstream paths. Focused
 Fastify routes under `/api/integrations/paperless/documents` expose upload,
 search, thumbnail, preview, and download through Machbar's existing session and
-Origin protection. `PAPERLESS_URL` and `PAPERLESS_API_TOKEN` are optional as a
-pair; ordinary task/project behavior has no Paperless dependency.
+Origin protection. `/api/integrations/paperless/status` exposes only whether
+Paperless is configured and the public document UI base URL, never the API
+token. `PAPERLESS_URL` and `PAPERLESS_API_TOKEN` are optional as a pair;
+ordinary task/project behavior has no Paperless dependency.
 
 `apps/web/src/lib/paperlessAttachments.ts` is the canonical conversion from a
 browser `File` or existing Paperless result to Markdown and the canonical
@@ -745,7 +748,9 @@ notes mutation retries the resolved Markdown reference rather than uploading
 the bytes again. `MarkdownNotes` maps only valid positive IDs to same-origin
 Machbar binary routes and keeps its existing scheme allowlist for all other
 links. Thumbnail responses use a short private browser cache; previews and
-downloads remain mediated authenticated routes.
+downloads remain mediated authenticated routes. `PaperlessAttachmentStrip`
+keeps those Machbar routes as the primary action and adds a secondary direct
+Paperless-ngx document-detail link for metadata/archive editing.
 
 Global material capture starts in `QuickAdd` but keeps the selected browser
 `File` local. `CaptureForm.prepareNotes` uploads immediately before its existing

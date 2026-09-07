@@ -764,6 +764,9 @@ const en = {
   paperlessSearchEmpty: "No matching documents found.",
   paperlessUploading: "Uploading…",
   paperlessSearching: "Searching Paperless…",
+  openInPaperless: "Open in Paperless",
+  openInPaperlessLabel: (label: string) =>
+    `Open ${label} in Paperless`,
   paperlessImageUnavailable: "Image unavailable — open document",
   sharedAttachments: (count: number) =>
     count === 1 ? "1 shared attachment" : `${count} shared attachments`,
