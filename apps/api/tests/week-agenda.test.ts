@@ -128,6 +128,48 @@ describe("week planning agenda", () => {
     expect(titles(week.days[2].items)).toContain("Urlaub planen");
   });
 
+  it("places explicitly dated tasks from backlog stories without adding their unscheduled siblings to the planning pool", async () => {
+    const story = await createProject({ title: "All-Hands planen" });
+    const scheduled = await createTask({
+      title: "Fuer All-Hands anmelden",
+      projectId: story.id,
+      scheduledDate: tuesday,
+    });
+    await createTask({
+      title: "Unterkunft irgendwann klaeren",
+      projectId: story.id,
+    });
+    const waiting = await createTask({
+      title: "Biggi nach Reise fragen",
+      projectId: story.id,
+    });
+    await setExternalWait(waiting, {
+      waitingFor: "Biggi",
+      revisitDate: wednesday,
+    });
+
+    const week = await getWeek();
+
+    expect(week.days[1].items).toContainEqual(
+      expect.objectContaining({
+        id: scheduled.id,
+        title: "Fuer All-Hands anmelden",
+        placement: "scheduled",
+        projectId: story.id,
+        projectTitle: "All-Hands planen",
+      }),
+    );
+    expect(week.days[2].items).toContainEqual(
+      expect.objectContaining({
+        id: waiting.id,
+        title: "Biggi nach Reise fragen",
+        placement: "revisit",
+        externalWait: { waitingFor: "Biggi", revisitDate: wednesday },
+      }),
+    );
+    expect(titles(week.unplanned)).not.toContain("Unterkunft irgendwann klaeren");
+  });
+
   it("keeps due-only items distinct from scheduled planning", async () => {
     await createTask({
       title: "Steuerunterlagen",

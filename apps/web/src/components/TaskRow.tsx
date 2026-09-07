@@ -227,6 +227,7 @@ export function TaskRow({
         ? strings.me
         : ownerMember?.name ?? strings.unknownMember;
   const due = formatDate(task.dueDate, locale);
+  const scheduled = formatDate(task.scheduledDate, locale);
   const projectDueRelative = task.projectDueDate
     ? formatRelativeDueDate(task.projectDueDate, new Date(), locale)
     : null;
@@ -538,6 +539,11 @@ export function TaskRow({
               {due ? (
                 <span className={`task-row-meta-item${overdue ? " overdue" : ""}`}>
                   {strings.due}: {due}
+                </span>
+              ) : null}
+              {scheduled ? (
+                <span className="task-row-meta-item">
+                  {strings.scheduled}: {scheduled}
                 </span>
               ) : null}
               {revisitRelative && revisitExact ? (
