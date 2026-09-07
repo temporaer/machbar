@@ -17,6 +17,7 @@ import { MemberAvatar } from "../components/MemberAvatar";
 import { formatDate } from "../lib/format";
 import { QuickAdd } from "../components/QuickAdd";
 import { IconActionGlyph } from "../components/IconActionButton";
+import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 
 function weekStart(date: Date): string {
   const copy = new Date(date);
@@ -324,7 +325,7 @@ export function WeekPage() {
   const { currentMemberId, members } = useIdentity();
   const dispatch = useWorkItemCommands();
   const navigate = useNavigate();
-  const [scope] = useState<AgendaScope>("mine");
+  const [scope, setScope] = useState<AgendaScope>(readTodayScope);
   const [start, setStart] = useState(() => weekStart(new Date()));
   const [agenda, setAgenda] = useState<WeekAgendaResponse | null>(null);
   const [dragged, setDragged] = useState<WeekPlanningItem | null>(null);
@@ -334,6 +335,10 @@ export function WeekPage() {
     () => api.getWeekAgenda(start, currentMemberId, scope),
     [loadKey],
   );
+  const selectScope = (nextScope: AgendaScope) => {
+    setScope(nextScope);
+    writeTodayScope(nextScope);
+  };
 
   useEffect(() => {
     if (data) setAgenda(data);
@@ -391,15 +396,14 @@ export function WeekPage() {
               >
                 ‹
               </button>
-              <button
-                type="button"
+              <Link
+                to="/"
                 className="page-header-button"
-                onClick={() => setStart(weekStart(new Date()))}
                 aria-label={strings.today}
                 title={strings.today}
               >
-                <IconActionGlyph kind="schedule" />
-              </button>
+                <IconActionGlyph kind="today" />
+              </Link>
               <button
                 type="button"
                 className="page-header-button"
@@ -407,6 +411,16 @@ export function WeekPage() {
                 aria-label={strings.nextWeek}
               >
                 ›
+              </button>
+              <button
+                type="button"
+                className="page-header-button today-scope-toggle"
+                aria-label={strings.todayHouseholdScope}
+                aria-pressed={scope === "all"}
+                title={strings.todayHouseholdScope}
+                onClick={() => selectScope(scope === "mine" ? "all" : "mine")}
+              >
+                <IconActionGlyph kind="household" />
               </button>
             </div>
           }

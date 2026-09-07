@@ -174,6 +174,87 @@ describe("WeekPage", () => {
     expect(screen.getByLabelText("Ohne Planung")).toBeInTheDocument();
   });
 
+  it("switches between my and household week agenda from the compact header toggle", async () => {
+    mockedApi.getWeekAgenda.mockImplementation(async (_start, _memberId, scope) =>
+      scope === "all"
+        ? agenda({
+            days: [
+              day("2026-09-07", [
+                taskItem({
+                  id: 15,
+                  title: "Haushaltsaufgabe",
+                  scheduledDate: "2026-09-07",
+                }),
+              ]),
+              day("2026-09-08"),
+              day("2026-09-09"),
+              day("2026-09-10"),
+              day("2026-09-11"),
+              day("2026-09-12"),
+              day("2026-09-13"),
+            ],
+          })
+        : agenda({
+            days: [
+              day("2026-09-07", [
+                taskItem({
+                  id: 14,
+                  title: "Meine Wochenaufgabe",
+                  scheduledDate: "2026-09-07",
+                }),
+              ]),
+              day("2026-09-08"),
+              day("2026-09-09"),
+              day("2026-09-10"),
+              day("2026-09-11"),
+              day("2026-09-12"),
+              day("2026-09-13"),
+            ],
+          }),
+    );
+    renderWithProviders(<WeekPage />);
+
+    const toggle = await screen.findByRole("button", {
+      name: "Aufgaben aller Personen anzeigen",
+    });
+    expect(toggle).toHaveClass("page-header-button", "today-scope-toggle");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(await screen.findByText("Meine Wochenaufgabe")).toBeInTheDocument();
+
+    await userEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(mockedApi.getWeekAgenda).toHaveBeenLastCalledWith(
+        expect.any(String),
+        1,
+        "all",
+      ),
+    );
+    expect(await screen.findByText("Haushaltsaufgabe")).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(toggle);
+    await waitFor(() =>
+      expect(mockedApi.getWeekAgenda).toHaveBeenLastCalledWith(
+        expect.any(String),
+        1,
+        "mine",
+      ),
+    );
+  });
+
+  it("links the today-ish header icon back to Today", async () => {
+    mockedApi.getWeekAgenda.mockResolvedValue(agenda());
+    const { container } = renderWithProviders(<WeekPage />);
+
+    const todayLink = await screen.findByRole("link", { name: "Heute" });
+    expect(todayLink).toHaveAttribute("href", "/");
+    expect(todayLink.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+    expect(container.querySelector(".page-header-button[href='/']")).toBe(
+      todayLink,
+    );
+  });
+
   it("dragging a card changes scheduledDate without changing dueDate", async () => {
     const item = taskItem({
       id: 21,
