@@ -253,110 +253,56 @@ export const physicalContexts = sqliteTable(
 );
 
 /**
- * Shared identity allocator for tasks and projects. Both tables' `id`
- * columns reference a row here instead of using their own
- * `AUTOINCREMENT` sequence, so a numeric id is never reused across the two
- * tables. This is what makes identity-preserving task/project role
- * conversion possible (a converted item keeps the same id), and gives a
- * real shared-entity row to hang future shared columns off of if the two
- * tables are ever merged.
+ * The unified WorkItem table: every task and every story ("project") is one
+ * row here, distinguished by `role`. Nesting is a single self-referencing
+ * `parentId` chain of arbitrary depth for both roles (a story can contain
+ * stories and/or tasks; a task can contain tasks) — this replaces the old
+ * `tasks.parentTaskId` (task-under-task nesting) and `tasks.projectId` (the
+ * flat "which story do I ultimately belong to" shortcut) with one edge.
+ * "Which story does this task/story ultimately belong to" is answered with
+ * a recursive CTE walking `parentId` (see `repo/treeRepo.ts`), not a
+ * denormalized column — the household-scale data volume this app runs at
+ * makes that CTE cheap, and it removes an invariant the domain layer would
+ * otherwise have to keep in sync by hand.
+ *
+ * `status` stores the shared lifecycle vocabulary (`captured | backlog |
+ * active | done | cancelled`), not the role-specific wire vocabulary
+ * (`actionable`/`someday`/`completed`/etc.) that `@machbar/shared`'s
+ * `TaskStatus`/`ProjectStatus` types and the `/api/tasks`+`/api/projects`
+ * response shapes still use — `domain/workItem.ts`'s lifecycle mapping
+ * functions translate at the read/write boundary, keeping the external API
+ * surface stable while the storage layer uses one vocabulary for both
+ * roles.
+ *
+ * `archivedAt` is an orthogonal flag, not a fifth status value: a story can
+ * be archived from any non-archived status and reactivated back into
+ * whichever status is requested, without archival itself ever being what
+ * `status` holds.
+ *
+ * Task-only columns (`size`, `priority`, recurrence/reminder fields,
+ * `needsClarification`) stay nullable on this shared table rather than
+ * living in a side table — they are a small, stable set of scalars, every
+ * call site already reads them directly off the row, and a side table
+ * would reintroduce the role-branching join complexity this merge exists
+ * to remove. The domain/mutation layer is responsible for rejecting writes
+ * to task-only columns when `role !== "task"`.
  */
-export const workItems = sqliteTable("work_items", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-});
-
-export const projects = sqliteTable("projects", {
-  id: integer("id")
-    .primaryKey()
-    .references(() => workItems.id, { onDelete: "cascade" }),
-  revision: integer("revision").notNull().default(1),
-  title: text("title").notNull(),
-  notes: text("notes").notNull().default(""),
-  status: text("status").notNull().default("backlog"), // backlog | active | completed | archived
-  ownerMemberId: integer("owner_member_id").references(() => members.id, {
-    onDelete: "set null",
-  }),
-  dueDate: text("due_date"),
-  scheduledDate: text("scheduled_date"),
-  position: integer("position").notNull().default(0),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
-  updatedAt: text("updated_at")
-    .notNull()
-    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
-  reviewedAt: text("reviewed_at"),
-});
-
-/**
- * Structured completion criteria complementing the project's free-form
- * notes. Each row is one checkable "Erledigt, wenn …" line,
- * ordered by `position` within its project.
- */
-export const projectAcceptanceCriteria = sqliteTable(
-  "project_acceptance_criteria",
+export const workItems = sqliteTable(
+  "work_items",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    projectId: integer("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    text: text("text").notNull(),
-    checked: integer("checked", { mode: "boolean" }).notNull().default(false),
-    position: integer("position").notNull().default(0),
-    createdAt: text("created_at")
-      .notNull()
-      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
-    updatedAt: text("updated_at")
-      .notNull()
-      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
-  },
-  (t) => [index("project_acceptance_criteria_project_idx").on(t.projectId)],
-);
-
-export const projectTags = sqliteTable(
-  "project_tags",
-  {
-    projectId: integer("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    tagId: integer("tag_id")
-      .notNull()
-      .references(() => tags.id, { onDelete: "cascade" }),
-  },
-  (t) => [primaryKey({ columns: [t.projectId, t.tagId] })],
-);
-
-export const projectPhysicalContexts = sqliteTable(
-  "project_physical_contexts",
-  {
-    projectId: integer("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    contextId: integer("context_id")
-      .notNull()
-      .references(() => physicalContexts.id, { onDelete: "restrict" }),
-  },
-  (t) => [primaryKey({ columns: [t.projectId, t.contextId] })],
-);
-
-export const tasks = sqliteTable(
-  "tasks",
-  {
-    id: integer("id")
-      .primaryKey()
-      .references(() => workItems.id, { onDelete: "cascade" }),
     revision: integer("revision").notNull().default(1),
-    projectId: integer("project_id").references(() => projects.id, {
-      onDelete: "set null",
-    }),
-    parentTaskId: integer("parent_task_id").references((): any => tasks.id, {
+    parentId: integer("parent_id").references((): any => workItems.id, {
       onDelete: "cascade",
     }),
+    role: text("role", { enum: ["task", "story"] }).notNull(),
     title: text("title").notNull(),
     notes: text("notes").notNull().default(""),
-    status: text("status").notNull().default("actionable"),
-    // Legacy storage retained to avoid rebuilding the referenced tasks table.
-    // Domain responses derive clarification exclusively from status="captured".
+    // captured | backlog | active | done | cancelled
+    status: text("status").notNull().default("captured"),
+    archivedAt: text("archived_at"),
+    // Legacy storage retained to avoid rebuilding this table again. Domain
+    // responses derive clarification exclusively from status="captured".
     needsClarification: integer("needs_clarification", { mode: "boolean" })
       .notNull()
       .default(false),
@@ -376,14 +322,14 @@ export const tasks = sqliteTable(
     dueDate: text("due_date"),
     scheduledDate: text("scheduled_date"),
     priority: integer("priority"),
-    size: text("size"), // nullable S | M | L | XL
+    size: text("size"), // task-only, nullable S | M | L | XL
     position: integer("position").notNull().default(0),
     completedAt: text("completed_at"),
     cancelledAt: text("cancelled_at"),
-    recurrenceRuleLegacy: text("recurrence_rule"),
-    repeatAfterDays: integer("repeat_after_days"),
-    allowedDeviationDays: integer("allowed_deviation_days"),
-    reminderAt: text("reminder_at"),
+    recurrenceRuleLegacy: text("recurrence_rule"), // task-only
+    repeatAfterDays: integer("repeat_after_days"), // task-only
+    allowedDeviationDays: integer("allowed_deviation_days"), // task-only
+    reminderAt: text("reminder_at"), // task-only
     createdAt: text("created_at")
       .notNull()
       .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
@@ -393,31 +339,71 @@ export const tasks = sqliteTable(
     reviewedAt: text("reviewed_at"),
   },
   (t) => [
-    index("tasks_project_idx").on(t.projectId),
-    index("tasks_parent_idx").on(t.parentTaskId),
-    index("tasks_status_idx").on(t.status),
-    index("tasks_size_idx").on(t.size),
-    index("tasks_reminder_idx").on(t.reminderAt, t.status),
+    index("work_items_parent_idx").on(t.parentId),
+    index("work_items_role_idx").on(t.role),
+    index("work_items_status_idx").on(t.status),
+    index("work_items_size_idx").on(t.size),
+    index("work_items_reminder_idx").on(t.reminderAt, t.status),
   ],
 );
 
-export const taskPhysicalContexts = sqliteTable(
-  "task_physical_contexts",
+/**
+ * Structured completion criteria complementing a story's free-form notes.
+ * Each row is one checkable "Erledigt, wenn …" line, ordered by `position`
+ * within its story. Story-only (task rows never have any), kept as a
+ * separate child table rather than inlined since it's list-shaped, not
+ * scalar.
+ */
+export const workItemAcceptanceCriteria = sqliteTable(
+  "work_item_acceptance_criteria",
   {
-    taskId: integer("task_id")
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    workItemId: integer("work_item_id")
       .notNull()
-      .references(() => tasks.id, { onDelete: "cascade" }),
+      .references(() => workItems.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    checked: integer("checked", { mode: "boolean" }).notNull().default(false),
+    position: integer("position").notNull().default(0),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (t) => [index("work_item_acceptance_criteria_work_item_idx").on(t.workItemId)],
+);
+
+export const workItemTags = sqliteTable(
+  "work_item_tags",
+  {
+    workItemId: integer("work_item_id")
+      .notNull()
+      .references(() => workItems.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.workItemId, t.tagId] })],
+);
+
+export const workItemPhysicalContexts = sqliteTable(
+  "work_item_physical_contexts",
+  {
+    workItemId: integer("work_item_id")
+      .notNull()
+      .references(() => workItems.id, { onDelete: "cascade" }),
     contextId: integer("context_id")
       .notNull()
       .references(() => physicalContexts.id, { onDelete: "restrict" }),
   },
-  (t) => [primaryKey({ columns: [t.taskId, t.contextId] })],
+  (t) => [primaryKey({ columns: [t.workItemId, t.contextId] })],
 );
 
 export const taskExternalWaits = sqliteTable("task_external_waits", {
   taskId: integer("task_id")
     .primaryKey()
-    .references(() => tasks.id, { onDelete: "cascade" }),
+    .references(() => workItems.id, { onDelete: "cascade" }),
   waitingFor: text("waiting_for"),
   revisitDate: text("revisit_date"),
   createdAt: text("created_at")
@@ -434,7 +420,7 @@ export const taskRecurrenceOccurrences = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     taskId: integer("task_id")
       .notNull()
-      .references(() => tasks.id, { onDelete: "cascade" }),
+      .references(() => workItems.id, { onDelete: "cascade" }),
     scheduledDate: text("scheduled_date").notNull(),
     deadlineDate: text("deadline_date").notNull(),
     completedOn: text("completed_on").notNull(),
@@ -450,6 +436,13 @@ export const taskRecurrenceOccurrences = sqliteTable(
   ],
 );
 
+/**
+ * `entityId` alone is sufficient to join back to `work_items` (ids are
+ * never reused across roles), but `entityType` is kept: it records which
+ * role the item had *at the time of the event*, which matters once role
+ * conversion exists (a historical "this was completed while it was still
+ * a task" record stays meaningful even if the item is later converted).
+ */
 export const activityEvents = sqliteTable(
   "activity_events",
   {
@@ -461,10 +454,7 @@ export const activityEvents = sqliteTable(
       onDelete: "set null",
     }),
     kind: text("kind", { enum: activityEventKinds }).notNull(),
-    taskId: integer("task_id").references(() => tasks.id, {
-      onDelete: "set null",
-    }),
-    projectId: integer("project_id").references(() => projects.id, {
+    entityId: integer("entity_id").references(() => workItems.id, {
       onDelete: "set null",
     }),
     entityType: text("entity_type", { enum: activityEntityTypes }).notNull(),
@@ -481,13 +471,8 @@ export const activityEvents = sqliteTable(
       t.createdAt,
       t.id,
     ),
-    index("activity_events_task_idx").on(
-      t.taskId,
-      t.createdAt,
-      t.id,
-    ),
-    index("activity_events_project_idx").on(
-      t.projectId,
+    index("activity_events_entity_idx").on(
+      t.entityId,
       t.createdAt,
       t.id,
     ),
@@ -565,12 +550,12 @@ export const contributionEvents = sqliteTable(
   ],
 );
 
-export const taskTags = sqliteTable(
-  "task_tags",
+export const taskExcludedTags = sqliteTable(
+  "task_excluded_tags",
   {
     taskId: integer("task_id")
       .notNull()
-      .references(() => tasks.id, { onDelete: "cascade" }),
+      .references(() => workItems.id, { onDelete: "cascade" }),
     tagId: integer("tag_id")
       .notNull()
       .references(() => tags.id, { onDelete: "cascade" }),
@@ -578,18 +563,6 @@ export const taskTags = sqliteTable(
   (t) => [primaryKey({ columns: [t.taskId, t.tagId] })],
 );
 
-export const taskExcludedTags = sqliteTable(
-  "task_excluded_tags",
-  {
-    taskId: integer("task_id")
-      .notNull()
-      .references(() => tasks.id, { onDelete: "cascade" }),
-    tagId: integer("tag_id")
-      .notNull()
-      .references(() => tags.id, { onDelete: "cascade" }),
-  },
-  (t) => [primaryKey({ columns: [t.taskId, t.tagId] })],
-);
 
 export const homeAssistantPeople = sqliteTable(
   "home_assistant_people",
@@ -640,10 +613,10 @@ export const taskDependencies = sqliteTable(
     id: integer("id").primaryKey({ autoIncrement: true }),
     taskId: integer("task_id")
       .notNull()
-      .references(() => tasks.id, { onDelete: "cascade" }),
+      .references(() => workItems.id, { onDelete: "cascade" }),
     dependsOnTaskId: integer("depends_on_task_id")
       .notNull()
-      .references(() => tasks.id, { onDelete: "cascade" }),
+      .references(() => workItems.id, { onDelete: "cascade" }),
   },
   (t) => [
     unique("task_dependencies_unique").on(t.taskId, t.dependsOnTaskId),

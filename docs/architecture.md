@@ -39,28 +39,37 @@ Member   Tag
   │        │
   │        └─────────────────────┐
   ▼                              ▼
-Project ──── Task ──── SubTask (Task.parentTaskId)
-               ├── Dependency (taskId → dependsOnTaskId)
-               └── ExternalWait (one-to-one by taskId)
+WorkItem(role=story) ─── WorkItem(role=task)
+          │                         │
+          ├── nested story          ├── nested task
+          ├── AcceptanceCriterion   ├── Dependency (taskId → dependsOnTaskId)
+          └── child tasks/stories   └── ExternalWait (one-to-one by taskId)
 ```
 
-- **Members** are the people who use the app. Every task and project can be assigned an owner (`ownerMemberId`).
-- **Projects are household projects or plans.** A project has one responsible
-  person, optional due/scheduled dates, free-form `notes`, and an ordered
+- **Members** are the people who use the app. Every WorkItem can be assigned an
+  owner (`ownerMemberId`).
+- **WorkItems are one physical hierarchy.** `work_items.role = 'task'` means
+  executable work; `role = 'story'` means an outcome planned through child
+  progress. Stories may contain stories and/or tasks at arbitrary depth.
+- **Projects are the story UI/API adapter.** The German UI may still call a
+  story a “Projekt”. A story has one responsible person, optional
+  due/scheduled dates, free-form `notes`, and an ordered
   **“Erledigt, wenn …”** checklist.
-- **Project notes and completion criteria are separate.** `projects.notes`
+- **Story notes and completion criteria are separate.** `work_items.notes`
   stores context, constraints, links, phone numbers, decisions, and
-  background. `project_acceptance_criteria` stores structured, individually
+  background. `work_item_acceptance_criteria` stores structured, individually
   checkable, position-ordered completion rows. Neither replaces the other.
 - **Attachments remain notes, not database entities.** A Markdown target such
   as `paperless:4711` is an opaque reference to a document stored by the
   optional Paperless-ngx integration. Machbar stores no attachment bytes or
   authenticated Paperless URL.
-- **Tasks** belong to at most one project and at most one parent task (forming
-  a tree of arbitrary depth). Each task carries optional household effort
+- **Tasks** are WorkItems whose nearest ancestor story is exposed as the legacy
+  `Task.projectId`; their immediate parent task, if any, is exposed as
+  `Task.parentTaskId`. Both are derived from `work_items.parent_id` rather than
+  stored as separate columns. Each task carries optional household effort
   (`S | M | L | XL`); effort guides splitting and sorting only and never
   changes eligibility or workflow.
-- **Tags** are many-to-many with both projects and tasks. Every tag has a
+- **Tags** are many-to-many with WorkItems via `work_item_tags`. Every tag has a
   persisted colour; newly created names map deterministically onto the
   application palette, so colours do not change between clients or renders.
 
@@ -70,7 +79,7 @@ Two kinds of values cascade down the task tree:
 
 | Field | Resolved as `effective*` |
 |-------|--------------------------|
-| `ownerMemberId` | First non-null value walking up: task → parent task → … → project |
+| `ownerMemberId` | First non-null value walking up: task → parent task/story → … → nearest story |
 | tags | Union of ancestor tags minus any `excludedTagIds` on the task |
 | physical contexts | Nearest explicit task set, otherwise parent/project set |
 
@@ -90,9 +99,9 @@ Person, or Normal. The picker creates a missing tag with the
 kind of its active section and selects it immediately. Inherited task tags
 remain separately excludable rather than being converted into explicit task
 tags. `TagManager` exposes kind and grouping metadata under **Mehr**;
-`DELETE /api/tags/:id` relies on the three join tables' `ON DELETE CASCADE`
+`DELETE /api/tags/:id` relies on the shared WorkItem join tables' `ON DELETE CASCADE`
 constraints, so deleting a tag removes its associations without deleting
-projects or tasks.
+stories or tasks.
 
 Projects compute effective tags as their explicit tags plus the effective tags
 used by descendant tasks. Bereich grouping selects one primary area per
@@ -731,29 +740,32 @@ worker never forwards the operating-system POST or bypasses API authentication.
 
 ## 9. WorkItem projection and interaction architecture
 
-Tasks and projects/stories remain separate `tasks`/`projects` tables (see
-§2), but both now share one numeric identity space and converge above the
-schema in three layers. This is an ongoing convergence, tracked in the
-refactor's `plan.md`; the sections below describe what has already landed.
+Tasks and projects/stories now share one physical `work_items` table (see
+§2). The public API remains role-specific for compatibility, but the storage,
+recursive tree traversal, shared lifecycle vocabulary, tags, contexts, and
+acceptance-criteria ownership are all WorkItem-based.
 
-**Shared identity.** `work_items(id)` (`apps/api/src/db/schema.ts`) is a
-thin parent row both `tasks.id` and `projects.id` foreign-key into.
-`allocateWorkItemId(db)` (`apps/api/src/domain/workItemShared.ts`) is the only
-way either table's row gets an id, which guarantees a task and a project
-can never collide on the same numeric id — a precondition for identity to
-survive role conversion.
+**Unified storage.** `work_items` (`apps/api/src/db/schema.ts`) stores both
+roles. `role = 'task'` is executable work; `role = 'story'` is a planned
+outcome. `parent_id` is the single hierarchy edge, so tasks can contain tasks,
+stories can contain stories, and stories can contain tasks at arbitrary depth.
+`apps/api/src/repo/treeRepo.ts` owns the recursive CTEs that derive legacy
+adapter fields such as `Task.projectId` (nearest ancestor story) and
+`Task.parentTaskId` (immediate parent task).
+
+**Shared lifecycle and archival.** `work_items.status` stores the common
+`captured | backlog | active | done | cancelled` lifecycle. Task API responses
+translate `active` → `actionable` and `backlog` → `someday`; story responses
+translate `done` → `completed`. Archival is orthogonal: `archived_at` marks a
+shelved story and the story API exposes `status: "archived"` for the existing
+frontend workflow labels while preserving the underlying lifecycle.
 
 **WorkItem read projection.** `apps/api/src/domain/workItem.ts` maps a
 `TaskRecord`/`ProjectRecord` (from `graph.ts`) onto one shared shape:
-`role: "task" | "story"` and one lifecycle vocabulary
-(`captured | backlog | active | done | cancelled`), with role-specific
-label derivation (`task+active → actionable`, `task+backlog → someday`,
-`story+active → active`, `story+backlog → backlog`,
-`story+done → completed`). The underlying `tasks.status`/`projects.status`
-columns are unchanged; this is a projection-only mapping, not a schema
-merge. A story's `children` are currently its root-level tasks only —
-stories cannot yet nest under stories, so nested Scrum structure (§ product
-spec) is not yet representable at the schema level.
+`role: "task" | "story"`, the shared lifecycle vocabulary, role-specific label
+derivation (`task+active → actionable`, `task+backlog → someday`,
+`story+done → completed`), and ordered recursive `children` containing nested
+stories and tasks.
 
 **Identity-preserving role conversion.** `convertTaskToStory` /
 `convertStoryToTask` (`apps/api/src/domain/roleConversion.ts`) replace the old,
@@ -826,21 +838,17 @@ Drizzle migrations live in `apps/api/drizzle/` and are applied on every server s
 
 `runMigrations` (`apps/api/src/db/migrate.ts`) wraps `migrate()` in `PRAGMA foreign_keys = OFF` / `ON`. Drizzle runs all pending migrations inside one implicit transaction, where a migration file's own pragma statements are no-ops; without the wrapper, migration `0002`'s table rebuild would cascade into dependent rows.
 
-`0002_project_acceptance_criteria_task_size.sql`:
+The current migration set starts with a squashed `0000_baseline.sql` for fresh
+installs, including the preserved default tag seed data from the historical
+migration chain. New migrations must be forward-only; never edit the baseline
+for an already-deployed compatibility fix.
 
-1. creates `project_acceptance_criteria` (+ `project_acceptance_criteria_project_idx`),
-2. rebuilds `projects` — dropping `description` and defaulting `status` to `'backlog'`,
-3. **copies each non-empty description into an acceptance criterion at position 0** (no data loss),
-4. adds `tasks.size` + `tasks_size_idx`.
-
-`apps/api/tests/migration-acceptance-criteria.test.ts` pins this behaviour against `tests/fixtures/pre-0002-migrations`.
-
-`0015_external_waits.sql` introduces the external-wait relation and migrates
-existing waiting tasks without changing their `scheduled_date`. The following
-`0016_remove_waiting_compatibility.sql` migration removes the superseded task
-column and normalizes activity status metadata to the current lifecycle
-vocabulary.
-
-`0019_external_wait_revisit_date.sql` adds the dedicated revisit field, moves
-the historical scheduled date of each existing external wait into it, and
-clears only those tasks' overloaded planning dates.
+`0001_work_items_merge.sql` is the physical WorkItem cutover. It rebuilds the
+identity-only `work_items` table into the unified table, copies every legacy
+task/project row exactly once, maps legacy task/story statuses into the shared
+stored lifecycle, moves project acceptance criteria/tags/contexts into shared
+WorkItem satellite tables, repoints task-only side tables to `work_items`, and
+rebuilds activity events around `entity_id`. The migration is covered by
+`apps/api/tests/migration-workitems-merge.test.ts`, including status mapping,
+satellite-table repointing, deletion-safe activity snapshots, and archived-story
+metadata.

@@ -56,10 +56,10 @@ describe("tags", () => {
       .prepare("SELECT id, color FROM tags WHERE name = ?")
       .get("Garten") as { id: number; color: string };
     const project = ctx.handle.sqlite
-      .prepare("INSERT INTO projects (title) VALUES (?) RETURNING id")
+      .prepare("INSERT INTO work_items (role, status, title) VALUES ('story', 'backlog', ?) RETURNING id")
       .get("Gartenprojekt") as { id: number };
     ctx.handle.sqlite
-      .prepare("INSERT INTO project_tags (project_id, tag_id) VALUES (?, ?)")
+      .prepare("INSERT INTO work_item_tags (work_item_id, tag_id) VALUES (?, ?)")
       .run(project.id, tag.id);
 
     const response = await ctx.app.inject({
@@ -76,7 +76,7 @@ describe("tags", () => {
     });
     expect(
       ctx.handle.sqlite
-        .prepare("SELECT project_id AS projectId FROM project_tags WHERE tag_id = ?")
+        .prepare("SELECT work_item_id AS projectId FROM work_item_tags WHERE tag_id = ?")
         .get(tag.id),
     ).toEqual({ projectId: project.id });
   });
@@ -110,16 +110,16 @@ describe("tags", () => {
       .prepare("SELECT id FROM tags WHERE name = ?")
       .get("Garten") as { id: number };
     const project = ctx.handle.sqlite
-      .prepare("INSERT INTO projects (title) VALUES (?) RETURNING id")
+      .prepare("INSERT INTO work_items (role, status, title) VALUES ('story', 'backlog', ?) RETURNING id")
       .get("Gartenprojekt") as { id: number };
     const task = ctx.handle.sqlite
-      .prepare("INSERT INTO tasks (title, project_id) VALUES (?, ?) RETURNING id")
+      .prepare("INSERT INTO work_items (role, status, title, parent_id) VALUES ('task', 'active', ?, ?) RETURNING id")
       .get("Hecke schneiden", project.id) as { id: number };
     ctx.handle.sqlite
-      .prepare("INSERT INTO project_tags (project_id, tag_id) VALUES (?, ?)")
+      .prepare("INSERT INTO work_item_tags (work_item_id, tag_id) VALUES (?, ?)")
       .run(project.id, tag.id);
     ctx.handle.sqlite
-      .prepare("INSERT INTO task_tags (task_id, tag_id) VALUES (?, ?)")
+      .prepare("INSERT INTO work_item_tags (work_item_id, tag_id) VALUES (?, ?)")
       .run(task.id, tag.id);
     ctx.handle.sqlite
       .prepare("INSERT INTO task_excluded_tags (task_id, tag_id) VALUES (?, ?)")
@@ -127,14 +127,12 @@ describe("tags", () => {
 
     const response = await ctx.app.inject({ method: "DELETE", url: `/api/tags/${tag.id}` });
     expect(response.statusCode).toBe(204);
-    expect(ctx.handle.sqlite.prepare("SELECT count(*) AS count FROM project_tags WHERE tag_id = ?").get(tag.id))
-      .toEqual({ count: 0 });
-    expect(ctx.handle.sqlite.prepare("SELECT count(*) AS count FROM task_tags WHERE tag_id = ?").get(tag.id))
+    expect(ctx.handle.sqlite.prepare("SELECT count(*) AS count FROM work_item_tags WHERE tag_id = ?").get(tag.id))
       .toEqual({ count: 0 });
     expect(ctx.handle.sqlite.prepare("SELECT count(*) AS count FROM task_excluded_tags WHERE tag_id = ?").get(tag.id))
       .toEqual({ count: 0 });
-    expect(ctx.handle.sqlite.prepare("SELECT id FROM projects WHERE id = ?").get(project.id)).toEqual({ id: project.id });
-    expect(ctx.handle.sqlite.prepare("SELECT id FROM tasks WHERE id = ?").get(task.id)).toEqual({ id: task.id });
+    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'story' AND id = ?").get(project.id)).toEqual({ id: project.id });
+    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'task' AND id = ?").get(task.id)).toEqual({ id: task.id });
 
     const missing = await ctx.app.inject({ method: "DELETE", url: `/api/tags/${tag.id}` });
     expect(missing.statusCode).toBe(404);

@@ -251,7 +251,7 @@ describe("project acceptance criteria (HTTP routes)", () => {
   it("allows completion with zero criteria but rejects one or more unchecked criteria", async () => {
       const empty = await createProjectRoute();
       ctx.handle.sqlite
-        .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+        .prepare("UPDATE work_items SET status = 'active' WHERE id = ?")
         .run(empty.id);
       const emptyCompletion = await ctx.app.inject({
         method: "POST",
@@ -268,7 +268,7 @@ describe("project acceptance criteria (HTTP routes)", () => {
         })
       ).json();
       ctx.handle.sqlite
-        .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+        .prepare("UPDATE work_items SET status = 'active' WHERE id = ?")
         .run(guarded.id);
       const rejected = await ctx.app.inject({
         method: "POST",

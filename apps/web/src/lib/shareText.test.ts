@@ -55,9 +55,11 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 function makeProject(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
   return {
     id: 3,
+    parentId: null,
     title: "Umzug organisieren",
     notes: "",
     status: "active",
+    archivedAt: null,
     ownerMemberId: null,
     dueDate: null,
     scheduledDate: null,
@@ -71,6 +73,8 @@ function makeProject(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
     effectiveAreaTags: [],
     primaryAreaTag: null,
     acceptanceCriteria: [],
+    childStories: [],
+    ancestors: [],
     availableActions: [],
     activationReadiness: {
       ready: false,

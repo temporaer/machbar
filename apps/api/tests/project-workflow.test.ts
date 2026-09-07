@@ -26,9 +26,9 @@ function createProject(
     context,
   );
   if (!requestedActive) return project;
-  db.update(schema.projects)
+  db.update(schema.workItems)
     .set({ status: "active" })
-    .where(eq(schema.projects.id, project.id))
+    .where(eq(schema.workItems.id, project.id))
     .run();
   return { ...project, status: "active" };
 }
@@ -70,7 +70,7 @@ describe("project workflow (HTTP routes)", () => {
     const project = res.json();
     if (requestedActive) {
       ctx.handle.sqlite
-        .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+        .prepare("UPDATE work_items SET status = 'active' WHERE id = ?")
         .run(project.id);
       return (
         await ctx.app.inject({
@@ -95,6 +95,44 @@ describe("project workflow (HTTP routes)", () => {
     const project = await createProjectRoute();
     expect(project.status).toBe("backlog");
     expect(project.availableActions.sort()).toEqual(["activate", "archive"]);
+  });
+
+  it("creates nested stories and exposes child stories plus breadcrumbs", async () => {
+    const parent = await createProjectRoute({ title: "Haus verbessern" });
+    const child = await createProjectRoute({
+      title: "Gästezimmer renovieren",
+      parentId: parent.id,
+    });
+    const grandchild = await createProjectRoute({
+      title: "Wände vorbereiten",
+      parentId: child.id,
+    });
+
+    const parentDetail = await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${parent.id}`,
+    });
+    expect(parentDetail.statusCode).toBe(200);
+    expect(parentDetail.json().childStories).toEqual([
+      expect.objectContaining({
+        id: child.id,
+        parentId: parent.id,
+        title: "Gästezimmer renovieren",
+      }),
+    ]);
+
+    const grandchildDetail = await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${grandchild.id}`,
+    });
+    expect(grandchildDetail.statusCode).toBe(200);
+    expect(grandchildDetail.json()).toMatchObject({
+      parentId: child.id,
+      ancestors: [
+        { id: parent.id, title: "Haus verbessern" },
+        { id: child.id, title: "Gästezimmer renovieren" },
+      ],
+    });
   });
 
   it("rejects activation without a driver with a structured 400", async () => {
@@ -480,7 +518,13 @@ describe("project workflow (service layer)", () => {
         ownerMemberId: anna.id,
       }),
     ).toThrow(/executable progress path/);
-    expect(handle.db.select().from(schema.projects).all()).toEqual([]);
+    expect(
+      handle.db
+        .select()
+        .from(schema.workItems)
+        .where(eq(schema.workItems.role, "story"))
+        .all(),
+    ).toEqual([]);
   });
 
   it("re-activates an archived, previously-active project without requiring the driver again", () => {
@@ -528,7 +572,7 @@ describe("project workflow (service layer)", () => {
     // same statement batch.
     const reloaded = handle.db
       .select()
-      .from(schema.projects)
+      .from(schema.workItems)
       .all()
       .find((p) => p.id === project.id)!;
     expect(reloaded.ownerMemberId).toBe(anna.id);

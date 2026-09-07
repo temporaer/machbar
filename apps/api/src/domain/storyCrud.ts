@@ -3,7 +3,7 @@
  * Lifecycle transitions live in `storyWorkflow.ts`; acceptance criteria live
  * in `storyCapabilities.ts`.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { ProjectStatus } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -17,7 +17,6 @@ import {
 import {
   MutationContext,
   actor,
-  allocateWorkItemId,
   appendNoteContent,
   assertExpectedRevision,
   assertPhysicalContextsExist,
@@ -33,9 +32,38 @@ import {
 // Projects
 // ---------------------------------------------------------------------------
 
+function projectStatusToStored(status: ProjectStatus): "backlog" | "active" | "done" {
+  switch (status) {
+    case "backlog":
+    case "active":
+      return status;
+    case "completed":
+      return "done";
+    case "archived":
+      return "backlog";
+  }
+}
+
+function projectStatusFromStored(
+  status: string,
+  archivedAt: string | null,
+): ProjectStatus {
+  if (archivedAt !== null) return "archived";
+  switch (status) {
+    case "active":
+      return "active";
+    case "done":
+      return "completed";
+    case "backlog":
+    default:
+      return "backlog";
+  }
+}
+
 export interface CreateProjectInput {
   title: string;
   notes?: string;
+  parentId?: number | null;
   status?: ProjectStatus;
   ownerMemberId?: number | null;
   dueDate?: string | null;
@@ -47,8 +75,8 @@ export interface CreateProjectInput {
 export function getProjectOrThrow(db: Db, id: number) {
   const project = db
     .select()
-    .from(schema.projects)
-    .where(eq(schema.projects.id, id))
+    .from(schema.workItems)
+    .where(and(eq(schema.workItems.id, id), eq(schema.workItems.role, "story")))
     .get();
   if (!project) {
     throw AppError.notFound(
@@ -57,7 +85,10 @@ export function getProjectOrThrow(db: Db, id: number) {
       { projectId: id },
     );
   }
-  return project;
+  return {
+    ...project,
+    status: projectStatusFromStored(project.status, project.archivedAt),
+  };
 }
 
 /**
@@ -77,19 +108,32 @@ export function createProject(
     );
   }
   return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const parentId = input.parentId ?? null;
+    if (parentId !== null) getProjectOrThrow(txDb, parentId);
     const maxPosition = tx
-      .select({ position: schema.projects.position })
-      .from(schema.projects)
+      .select({ position: schema.workItems.position })
+      .from(schema.workItems)
+      .where(
+        and(
+          eq(schema.workItems.role, "story"),
+          parentId === null
+            ? isNull(schema.workItems.parentId)
+            : eq(schema.workItems.parentId, parentId),
+        ),
+      )
       .all()
       .reduce((max, p) => Math.max(max, p.position), -1);
 
     const project = tx
-      .insert(schema.projects)
+      .insert(schema.workItems)
       .values({
-        id: allocateWorkItemId(tx as unknown as Db),
+        role: "story",
+        parentId,
         title: input.title.trim(),
         notes: input.notes ?? "",
-        status: input.status ?? "backlog",
+        status: projectStatusToStored(input.status ?? "backlog"),
+        archivedAt: input.status === "archived" ? nowIso() : null,
         ownerMemberId: input.ownerMemberId ?? null,
         dueDate: input.dueDate ?? null,
         scheduledDate: input.scheduledDate ?? null,
@@ -100,37 +144,40 @@ export function createProject(
 
     if (input.tagIds && input.tagIds.length > 0) {
       for (const tagId of input.tagIds) {
-        tx.insert(schema.projectTags)
-          .values({ projectId: project.id, tagId })
+        tx.insert(schema.workItemTags)
+          .values({ workItemId: project.id, tagId })
           .run();
       }
     }
     const contextIds = sortedIds(input.contextIds ?? []);
     assertPhysicalContextsExist(tx as unknown as Db, contextIds);
     for (const contextId of contextIds) {
-      tx.insert(schema.projectPhysicalContexts)
-        .values({ projectId: project.id, contextId })
+      tx.insert(schema.workItemPhysicalContexts)
+        .values({ workItemId: project.id, contextId })
         .run();
     }
-    const txDb = tx as unknown as Db;
-    if (project.status === "active") {
+    const returned = {
+      ...project,
+      status: projectStatusFromStored(project.status, project.archivedAt),
+    };
+    if (returned.status === "active") {
       assertProjectActivationReady(txDb, project.id, project.ownerMemberId);
     }
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_created",
       entityType: "project",
-      entityTitle: project.title,
+      entityTitle: returned.title,
       projectId: project.id,
       metadata: {},
     });
     enqueueProjectAssignment(
       txDb,
-      project,
+      returned,
       activityEventId,
       context,
     );
-    return project;
+    return returned;
   });
 }
 
@@ -184,7 +231,7 @@ export function updateProject(
         { projectId: id, currentStatus: project.status, requiredStatus: "backlog" },
       );
     }
-    const patch: Partial<typeof schema.projects.$inferInsert> = {};
+    const patch: Partial<typeof schema.workItems.$inferInsert> = {};
     const changedFields: string[] = [];
     const title = input.title?.trim();
     if (title !== undefined && title !== project.title) {
@@ -219,9 +266,9 @@ export function updateProject(
 
     const existingTagIds = sortedIds(
       tx
-        .select({ tagId: schema.projectTags.tagId })
-        .from(schema.projectTags)
-        .where(eq(schema.projectTags.projectId, id))
+        .select({ tagId: schema.workItemTags.tagId })
+        .from(schema.workItemTags)
+        .where(eq(schema.workItemTags.workItemId, id))
         .all()
         .map((row) => row.tagId),
     );
@@ -230,9 +277,9 @@ export function updateProject(
     const tagsChanged = !sameIds(existingTagIds, nextTagIds);
     const existingContextIds = sortedIds(
       tx
-        .select({ contextId: schema.projectPhysicalContexts.contextId })
-        .from(schema.projectPhysicalContexts)
-        .where(eq(schema.projectPhysicalContexts.projectId, id))
+        .select({ contextId: schema.workItemPhysicalContexts.contextId })
+        .from(schema.workItemPhysicalContexts)
+        .where(eq(schema.workItemPhysicalContexts.workItemId, id))
         .all()
         .map((row) => row.contextId),
     );
@@ -245,31 +292,31 @@ export function updateProject(
 
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = nowIso();
-      tx.update(schema.projects).set(patch).where(eq(schema.projects.id, id)).run();
+      tx.update(schema.workItems).set(patch).where(eq(schema.workItems.id, id)).run();
     }
 
     if (tagsChanged) {
-      tx.delete(schema.projectTags)
-        .where(eq(schema.projectTags.projectId, id))
+      tx.delete(schema.workItemTags)
+        .where(eq(schema.workItemTags.workItemId, id))
         .run();
       for (const tagId of nextTagIds) {
-        tx.insert(schema.projectTags).values({ projectId: id, tagId }).run();
+        tx.insert(schema.workItemTags).values({ workItemId: id, tagId }).run();
       }
     }
     if (contextsChanged) {
-      tx.delete(schema.projectPhysicalContexts)
-        .where(eq(schema.projectPhysicalContexts.projectId, id))
+      tx.delete(schema.workItemPhysicalContexts)
+        .where(eq(schema.workItemPhysicalContexts.workItemId, id))
         .run();
       for (const contextId of nextContextIds) {
-        tx.insert(schema.projectPhysicalContexts)
-          .values({ projectId: id, contextId })
+        tx.insert(schema.workItemPhysicalContexts)
+          .values({ workItemId: id, contextId })
           .run();
       }
     }
     if (Object.keys(patch).length > 0 || tagsChanged || contextsChanged) {
       touchProject(txDb, id);
     }
-    const updated = tx.select().from(schema.projects).where(eq(schema.projects.id, id)).get()!;
+    const updated = getProjectOrThrow(txDb, id);
     if (changedFields.length > 0) {
       const activityEventId = recordActivity(txDb, {
         actorMemberId: actor(context),
@@ -340,24 +387,28 @@ export function appendProjectNotes(
     const notes = appendNoteContent(project.notes, content);
     if (notes === project.notes) return project;
     const updated = tx
-      .update(schema.projects)
+      .update(schema.workItems)
       .set({
         notes,
-        revision: sql`${schema.projects.revision} + 1`,
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
-      .where(eq(schema.projects.id, id))
+      .where(eq(schema.workItems.id, id))
       .returning()
       .get();
+    const returned = {
+      ...updated,
+      status: projectStatusFromStored(updated.status, updated.archivedAt),
+    };
     recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_updated",
       entityType: "project",
-      entityTitle: updated.title,
+      entityTitle: returned.title,
       projectId: id,
       metadata: { changedFields: ["notesAppended"] },
     });
-    return updated;
+    return returned;
   });
 }
 
@@ -370,10 +421,13 @@ export function deleteProject(db: Db, id: number, context?: MutationContext) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
-    // Deleting the shared work_items row cascades to the projects row (and
-    // from there to project tags/criteria, exactly as a direct projects
-    // delete used to), while tasks.projectId keeps its own ON DELETE SET
-    // NULL behavior toward projects.id, unaffected by this extra layer.
+    tx.update(schema.workItems)
+      .set({
+        parentId: null,
+        updatedAt: nowIso(),
+      })
+      .where(eq(schema.workItems.parentId, id))
+      .run();
     tx.delete(schema.workItems).where(eq(schema.workItems.id, id)).run();
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),

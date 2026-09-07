@@ -39,9 +39,9 @@ describe("search/filter and project CRUD/archive", () => {
       context,
     );
     if (!requestedActive) return project;
-    db.update(schema.projects)
+    db.update(schema.workItems)
       .set({ status: "active" })
-      .where(eq(schema.projects.id, project.id))
+      .where(eq(schema.workItems.id, project.id))
       .run();
     return { ...project, status: "active" };
   }
@@ -134,7 +134,7 @@ describe("search/filter and project CRUD/archive", () => {
       },
     })).json();
     ctx.handle.sqlite
-      .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+      .prepare("UPDATE work_items SET status = 'active' WHERE id = ?")
       .run(project.id);
     const wait = await ctx.app.inject({
       method: "PUT",
@@ -372,7 +372,7 @@ describe("search/filter and project CRUD/archive", () => {
       })
     ).json();
     ctx.handle.sqlite
-      .prepare("UPDATE projects SET status = 'active' WHERE id = ?")
+      .prepare("UPDATE work_items SET status = 'active' WHERE id = ?")
       .run(project.id);
     for (const payload of [
       {

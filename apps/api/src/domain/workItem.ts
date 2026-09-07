@@ -1,29 +1,15 @@
 /**
- * Phase 1 of the WorkItem convergence (see plan): a pure, additive read
- * projection that presents a `TaskRecord` or `ProjectRecord` (see
- * `graph.ts`) through one shared vocabulary — `role` + `lifecycle` instead
- * of separate task/project status enums.
- *
- * This module does not change persisted columns, routes, or response
- * shapes. `tasks.status` and `projects.status` remain the source of truth;
- * this is a projection boundary only, consumed by tests today and by the
- * Phase 2 `convertRole` command next. Existing `/api/tasks` and
- * `/api/projects` endpoints are unaffected.
- *
- * Note on nesting: today only tasks nest under tasks (`parentTaskId`), and
- * tasks nest under a project (`projectId`); projects cannot yet nest under
- * other projects/stories. `projectToWorkItem` therefore surfaces a
- * project's root-level tasks as its `children` — full arbitrary
- * story-under-story nesting requires the (deferred) persistence merge
- * described in plan.md and is out of scope here.
+ * WorkItem projection over the unified `work_items` table. It presents tasks
+ * and stories through one shared vocabulary — `role`, `parentId`, `lifecycle`,
+ * and ordered recursive `children` — while the public `/api/tasks` and
+ * `/api/projects` response shapes remain role-specific adapters.
  */
 import type { ProjectStatus, TaskSize, TaskStatus } from "@machbar/shared";
 import type { ProjectRecord, TaskRecord } from "./graph.js";
 
 export type WorkItemRole = "task" | "story";
 
-/** Shared lifecycle vocabulary (request item 4). Underlying `tasks.status`
- * / `projects.status` columns are unchanged; this is derived only. */
+/** Shared lifecycle vocabulary stored by `work_items.status`. */
 export type WorkItemLifecycle =
   | "captured"
   | "backlog"
@@ -61,13 +47,6 @@ export function taskLifecycle(status: TaskStatus): WorkItemLifecycle {
   }
 }
 
-/**
- * `archived` is approximated as `cancelled` (a story being shelved/retired
- * without necessarily having been completed). This is a documented
- * simplification: the user's own request notes archival should ideally
- * become orthogonal to completion/cancellation, but that is deferred
- * future work, not part of this additive projection.
- */
 export function projectLifecycle(status: ProjectStatus): WorkItemLifecycle {
   switch (status) {
     case "backlog":
@@ -77,7 +56,7 @@ export function projectLifecycle(status: ProjectStatus): WorkItemLifecycle {
     case "completed":
       return "done";
     case "archived":
-      return "cancelled";
+      return "backlog";
   }
 }
 
@@ -173,13 +152,14 @@ export function taskToWorkItem(task: TaskRecord): WorkItemView {
 export function projectToWorkItem(
   project: ProjectRecord,
   rootTasks: TaskRecord[],
+  rootTasksForProject: (projectId: number) => TaskRecord[] = () => [],
 ): WorkItemView {
   const lifecycle = projectLifecycle(project.status);
   return {
     id: project.id,
     revision: project.revision,
     role: "story",
-    parentId: null,
+    parentId: project.parentId,
     title: project.title,
     notes: project.notes,
     lifecycle,
@@ -191,6 +171,11 @@ export function projectToWorkItem(
     scheduledDate: project.scheduledDate,
     size: null,
     position: project.position,
-    children: rootTasks.map(taskToWorkItem),
+    children: [
+      ...project.childStories.map((story) =>
+        projectToWorkItem(story, rootTasksForProject(story.id), rootTasksForProject),
+      ),
+      ...rootTasks.map(taskToWorkItem),
+    ].sort((a, b) => a.position - b.position),
   };
 }

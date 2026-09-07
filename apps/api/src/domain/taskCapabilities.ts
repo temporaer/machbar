@@ -149,13 +149,13 @@ export function followUpExternalWait(
         .run();
     }
     const updated = tx
-      .update(schema.tasks)
+      .update(schema.workItems)
       .set({
         notes,
-        revision: sql`${schema.tasks.revision} + 1`,
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: now,
       })
-      .where(eq(schema.tasks.id, taskId))
+      .where(eq(schema.workItems.id, taskId))
       .returning()
       .get();
     const waitChanged =
@@ -567,11 +567,11 @@ export function addTaskTag(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
-    const existing = tx.select().from(schema.taskTags)
-      .where(and(eq(schema.taskTags.taskId, taskId), eq(schema.taskTags.tagId, tagId)))
+    const existing = tx.select().from(schema.workItemTags)
+      .where(and(eq(schema.workItemTags.workItemId, taskId), eq(schema.workItemTags.tagId, tagId)))
       .get();
     if (existing) return;
-    tx.insert(schema.taskTags).values({ taskId, tagId }).run();
+    tx.insert(schema.workItemTags).values({ workItemId: taskId, tagId }).run();
     touchTask(txDb, taskId);
     recordActivity(txDb, {
       actorMemberId: actor(context),
@@ -594,8 +594,8 @@ export function removeTaskTag(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
-    const deleted = tx.delete(schema.taskTags)
-      .where(and(eq(schema.taskTags.taskId, taskId), eq(schema.taskTags.tagId, tagId)))
+    const deleted = tx.delete(schema.workItemTags)
+      .where(and(eq(schema.workItemTags.workItemId, taskId), eq(schema.workItemTags.tagId, tagId)))
       .run();
     if (deleted.changes > 0) {
       touchTask(txDb, taskId);

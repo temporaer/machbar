@@ -115,9 +115,11 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
   return {
     id: nextId(),
     revision: 1,
+    parentId: null,
     title: "Beispielprojekt",
     notes: "",
     status,
+    archivedAt: status === "archived" ? new Date("2026-01-01T09:00:00Z").toISOString() : null,
     ownerMemberId: null,
     dueDate: null,
     scheduledDate: null,

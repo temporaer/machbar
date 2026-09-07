@@ -142,12 +142,13 @@ export function deleteMember(db: Db, id: number) {
     getMemberOrThrow(txDb, id);
     assertMemberNotOidcManaged(txDb, id);
     const activeProjects = tx
-      .select({ id: schema.projects.id, title: schema.projects.title })
-      .from(schema.projects)
+      .select({ id: schema.workItems.id, title: schema.workItems.title })
+      .from(schema.workItems)
       .where(
         and(
-          eq(schema.projects.ownerMemberId, id),
-          eq(schema.projects.status, "active"),
+          eq(schema.workItems.role, "story"),
+          eq(schema.workItems.ownerMemberId, id),
+          eq(schema.workItems.status, "active"),
         ),
       )
       .all();
@@ -164,29 +165,29 @@ export function deleteMember(db: Db, id: number) {
     }
 
     const now = nowIso();
-    tx.update(schema.projects)
+    tx.update(schema.workItems)
       .set({
         ownerMemberId: null,
-        revision: sql`${schema.projects.revision} + 1`,
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: now,
       })
-      .where(eq(schema.projects.ownerMemberId, id))
+      .where(and(eq(schema.workItems.role, "story"), eq(schema.workItems.ownerMemberId, id)))
       .run();
-    tx.update(schema.tasks)
+    tx.update(schema.workItems)
       .set({
         ownerMemberId: null,
-        revision: sql`${schema.tasks.revision} + 1`,
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: now,
       })
-      .where(eq(schema.tasks.ownerMemberId, id))
+      .where(and(eq(schema.workItems.role, "task"), eq(schema.workItems.ownerMemberId, id)))
       .run();
-    tx.update(schema.tasks)
+    tx.update(schema.workItems)
       .set({
         createdByMemberId: null,
-        revision: sql`${schema.tasks.revision} + 1`,
+        revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: now,
       })
-      .where(eq(schema.tasks.createdByMemberId, id))
+      .where(and(eq(schema.workItems.role, "task"), eq(schema.workItems.createdByMemberId, id)))
       .run();
 
     tx.delete(schema.members).where(eq(schema.members.id, id)).run();

@@ -1,4 +1,4 @@
-import { asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import type {
   PushNotificationAction,
   PushNotificationPayload,
@@ -64,8 +64,8 @@ export function buildNotificationPayload(
   if (event.kind === "task_reminder") {
     const task = db
       .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.id, event.entityId))
+      .from(schema.workItems)
+      .where(and(eq(schema.workItems.id, event.entityId), eq(schema.workItems.role, "task")))
       .get();
     if (
       task &&
@@ -81,11 +81,11 @@ export function buildNotificationPayload(
   } else if (event.kind === "task_assigned") {
     const task = db
       .select({
-        revision: schema.tasks.revision,
-        repeatAfterDays: schema.tasks.repeatAfterDays,
+        revision: schema.workItems.revision,
+        repeatAfterDays: schema.workItems.repeatAfterDays,
       })
-      .from(schema.tasks)
-      .where(eq(schema.tasks.id, event.entityId))
+      .from(schema.workItems)
+      .where(and(eq(schema.workItems.id, event.entityId), eq(schema.workItems.role, "task")))
       .get();
     if (task) {
       taskRevision = task.revision;

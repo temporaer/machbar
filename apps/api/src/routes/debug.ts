@@ -41,17 +41,19 @@ export function registerDebugRoutes(app: FastifyInstance, db: Db) {
     const counts = db.get<DatabaseCounts>(sql`
       SELECT
         (SELECT COUNT(*) FROM members) AS members,
-        (SELECT COUNT(*) FROM projects) AS projects,
-        (SELECT COUNT(*) FROM tasks) AS tasks,
+        (SELECT COUNT(*) FROM work_items WHERE role = 'story') AS projects,
+        (SELECT COUNT(*) FROM work_items WHERE role = 'task') AS tasks,
         (SELECT COUNT(*) FROM tags) AS tags,
         (SELECT COUNT(*) FROM task_dependencies) AS dependencies,
         (SELECT COUNT(*) FROM task_external_waits) AS externalWaits,
         (SELECT COUNT(*) FROM activity_events) AS activityEvents,
         (SELECT COUNT(*) FROM contribution_events) AS contributionEvents,
-        (SELECT COUNT(*) FROM tasks
-          WHERE substr(created_at, 1, 10) = date('now')) AS tasksCreatedToday,
-        (SELECT COUNT(*) FROM tasks
-          WHERE created_at >= datetime('now', '-7 days')) AS tasksCreatedLast7Days,
+        (SELECT COUNT(*) FROM work_items
+          WHERE role = 'task'
+            AND substr(created_at, 1, 10) = date('now')) AS tasksCreatedToday,
+        (SELECT COUNT(*) FROM work_items
+          WHERE role = 'task'
+            AND created_at >= datetime('now', '-7 days')) AS tasksCreatedLast7Days,
         (SELECT COUNT(*) FROM activity_events
           WHERE created_at >= datetime('now', '-7 days')) AS activityEventsCreatedLast7Days
     `);
@@ -66,24 +68,46 @@ export function registerDebugRoutes(app: FastifyInstance, db: Db) {
         (SELECT freelist_count FROM pragma_freelist_count) AS freelistPages
     `);
     const taskStatuses = db.all<{ status: TaskStatus; count: number }>(sql`
-      SELECT status, COUNT(*) AS count
-      FROM tasks
-      WHERE status IN ('captured', 'actionable', 'someday', 'done', 'cancelled')
-      GROUP BY status
+      SELECT
+        CASE status
+          WHEN 'active' THEN 'actionable'
+          WHEN 'backlog' THEN 'someday'
+          ELSE status
+        END AS status,
+        COUNT(*) AS count
+      FROM work_items
+      WHERE role = 'task'
+        AND status IN ('captured', 'active', 'backlog', 'done', 'cancelled')
+      GROUP BY 1
     `);
     const projectStatuses = db.all<{
       status: ProjectStatus;
       count: number;
     }>(sql`
-      SELECT status, COUNT(*) AS count FROM projects GROUP BY status
+      SELECT
+        CASE
+          WHEN archived_at IS NOT NULL THEN 'archived'
+          WHEN status = 'done' THEN 'completed'
+          ELSE status
+        END AS status,
+        COUNT(*) AS count
+      FROM work_items
+      WHERE role = 'story'
+      GROUP BY 1
     `);
     const depth = db.get<{ maxDepth: number }>(sql`
       WITH RECURSIVE tree(id, depth) AS (
-        SELECT id, 0 FROM tasks WHERE parent_task_id IS NULL
+        SELECT id, 0 FROM work_items
+        WHERE role = 'task'
+          AND (
+            parent_id IS NULL
+            OR parent_id IN (SELECT id FROM work_items WHERE role = 'story')
+          )
         UNION ALL
         SELECT task.id, tree.depth + 1
-        FROM tasks task
-        JOIN tree ON task.parent_task_id = tree.id
+        FROM work_items task
+        JOIN tree ON task.parent_id = tree.id
+        WHERE task.role = 'task'
       )
       SELECT COALESCE(MAX(depth), 0) AS maxDepth FROM tree
     `);

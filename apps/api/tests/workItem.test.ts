@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import * as schema from "../src/db/schema.js";
 import { Graph } from "../src/domain/graph.js";
 import {
   projectLifecycle,
@@ -8,7 +7,13 @@ import {
   taskToWorkItem,
   workItemLabel,
 } from "../src/domain/workItem.js";
-import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
+import {
+  closeTestContext,
+  createTestContext,
+  insertTestProject,
+  insertTestTask,
+  type TestContext,
+} from "./helpers.js";
 
 describe("WorkItem projection (Phase 1)", () => {
   it("maps every task status to the shared lifecycle vocabulary and role-specific label", () => {
@@ -27,7 +32,7 @@ describe("WorkItem projection (Phase 1)", () => {
     expect(projectLifecycle("backlog")).toBe("backlog");
     expect(projectLifecycle("active")).toBe("active");
     expect(projectLifecycle("completed")).toBe("done");
-    expect(projectLifecycle("archived")).toBe("cancelled");
+    expect(projectLifecycle("archived")).toBe("backlog");
 
     expect(workItemLabel("story", projectLifecycle("backlog"))).toBe("backlog");
     expect(workItemLabel("story", projectLifecycle("active"))).toBe("active");
@@ -40,20 +45,12 @@ describe("WorkItem projection (Phase 1)", () => {
   it("projects a task tree (with nested subtasks) into a WorkItem tree, preserving id/revision/hierarchy", async () => {
     let ctx: TestContext = createTestContext();
     try {
-      const parent = ctx.handle.db
-        .insert(schema.tasks)
-        .values({ title: "Parent task", status: "captured" })
-        .returning()
-        .get();
-      const child = ctx.handle.db
-        .insert(schema.tasks)
-        .values({
+      const parent = insertTestTask(ctx.handle.db, { title: "Parent task", status: "captured" });
+      const child = insertTestTask(ctx.handle.db, {
           title: "Child task",
           status: "actionable",
           parentTaskId: parent.id,
-        })
-        .returning()
-        .get();
+        });
 
       const graph = Graph.load(ctx.handle.db, "2026-01-01");
       const parentRecord = graph.allTasks().find((t) => t.id === parent.id)!;
@@ -75,26 +72,14 @@ describe("WorkItem projection (Phase 1)", () => {
   it("projects a project and its root-level tasks into a story WorkItem, excluding non-root tasks from the direct children", async () => {
     let ctx: TestContext = createTestContext();
     try {
-      const project = ctx.handle.db
-        .insert(schema.projects)
-        .values({ title: "Renovate", status: "active" })
-        .returning()
-        .get();
-      const root = ctx.handle.db
-        .insert(schema.tasks)
-        .values({ title: "Measure walls", status: "actionable", projectId: project.id })
-        .returning()
-        .get();
-      ctx.handle.db
-        .insert(schema.tasks)
-        .values({
+      const project = insertTestProject(ctx.handle.db, { title: "Renovate", status: "active" });
+      const root = insertTestTask(ctx.handle.db, { title: "Measure walls", status: "actionable", projectId: project.id });
+      insertTestTask(ctx.handle.db, {
           title: "Buy paint",
           status: "captured",
           projectId: project.id,
           parentTaskId: root.id,
-        })
-        .returning()
-        .get();
+        });
 
       const graph = Graph.load(ctx.handle.db, "2026-01-01");
       const projectRecord = graph.projectWithComputed(project.id)!;

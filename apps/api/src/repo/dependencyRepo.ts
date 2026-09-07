@@ -40,16 +40,19 @@ export function wouldCreateDependencyCycle(
 export function getBlockedTaskIds(db: Db): Set<number> {
   const rows = db.all<{ id: number }>(sql`
     SELECT t.id AS id
-    FROM tasks t
-    WHERE t.status = 'actionable'
+    FROM work_items t
+    WHERE t.role = 'task'
+      AND t.status = 'active'
       AND (
         EXISTS (
           SELECT 1 FROM task_external_waits ew WHERE ew.task_id = t.id
         )
         OR EXISTS (
           SELECT 1 FROM task_dependencies td
-          JOIN tasks dep ON dep.id = td.depends_on_task_id
-          WHERE td.task_id = t.id AND dep.status NOT IN ('done', 'cancelled')
+          JOIN work_items dep ON dep.id = td.depends_on_task_id
+          WHERE td.task_id = t.id
+            AND dep.role = 'task'
+            AND dep.status NOT IN ('done', 'cancelled')
         )
       )
   `);

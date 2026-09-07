@@ -24,6 +24,7 @@ import {
   getEffectiveTagIds,
 } from "../repo/effectiveRepo.js";
 import { getNextActionTaskIdsByProject } from "../repo/nextActionRepo.js";
+import { getTaskProjectIds } from "../repo/treeRepo.js";
 import { selectPrimaryAreaTag } from "./projectAreas.js";
 import { performance } from "node:perf_hooks";
 import { recordGraphLoad } from "../diagnostics/graphMetrics.js";
@@ -40,6 +41,8 @@ export interface ProjectRecord extends SharedProject {
    * of the shared `Project` contract, purely an API-response convenience. */
   availableActions: ProjectWorkflowAction[];
   activationReadiness: ProjectActivationReadiness;
+  childStories: ProjectRecord[];
+  ancestors: Array<{ id: number; title: string }>;
 }
 
 export interface TaskRecord extends SharedTask {}
@@ -87,9 +90,11 @@ interface RawTask {
 interface RawProject {
   id: number;
   revision: number;
+  parentId: number | null;
   title: string;
   notes: string;
   status: ProjectStatus;
+  archivedAt: string | null;
   ownerMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
@@ -97,6 +102,43 @@ interface RawProject {
   createdAt: string;
   updatedAt: string;
   reviewedAt: string | null;
+}
+
+type StoredWorkItemStatus =
+  | "captured"
+  | "backlog"
+  | "active"
+  | "done"
+  | "cancelled";
+
+function taskStatusFromStored(status: StoredWorkItemStatus): TaskStatus {
+  switch (status) {
+    case "active":
+      return "actionable";
+    case "backlog":
+      return "someday";
+    case "captured":
+    case "done":
+    case "cancelled":
+      return status;
+  }
+}
+
+function projectStatusFromStored(
+  status: StoredWorkItemStatus,
+  archivedAt: string | null,
+): ProjectStatus {
+  if (archivedAt !== null) return "archived";
+  switch (status) {
+    case "active":
+      return "active";
+    case "done":
+      return "completed";
+    case "backlog":
+    case "captured":
+    case "cancelled":
+      return "backlog";
+  }
 }
 
 function stuckReasonForDiagnoses(
@@ -148,6 +190,7 @@ export class Graph {
     number,
     ProjectActivationReadiness
   >();
+  private readonly childStoryIdsByParent = new Map<number | null, number[]>();
 
   private constructor(
     stuckReasonByProject: Map<number, StuckReason>,
@@ -170,8 +213,63 @@ export class Graph {
     const graph = new Graph(new Map(), nextActionIdsByProject);
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
-    const rawProjects = db.select().from(schema.projects).all() as RawProject[];
-    const rawTasks = db.select().from(schema.tasks).all() as RawTask[];
+    const taskProjectIds = getTaskProjectIds(db);
+    const workItemRows = db.select().from(schema.workItems).all();
+    const rawProjects = workItemRows
+      .filter((row) => row.role === "story")
+      .map((row): RawProject => ({
+        id: row.id,
+        revision: row.revision,
+        parentId: row.parentId,
+        title: row.title,
+        notes: row.notes,
+        status: projectStatusFromStored(
+          row.status as StoredWorkItemStatus,
+          row.archivedAt,
+        ),
+        archivedAt: row.archivedAt,
+        ownerMemberId: row.ownerMemberId,
+        dueDate: row.dueDate,
+        scheduledDate: row.scheduledDate,
+        position: row.position,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        reviewedAt: row.reviewedAt,
+      }));
+    const rawTasks = workItemRows
+      .filter((row) => row.role === "task")
+      .map((row): RawTask => ({
+        id: row.id,
+        revision: row.revision,
+        projectId: taskProjectIds.get(row.id) ?? null,
+        parentTaskId:
+          row.parentId !== null &&
+          workItemRows.some((candidate) => candidate.id === row.parentId && candidate.role === "task")
+            ? row.parentId
+            : null,
+        title: row.title,
+        notes: row.notes,
+        status: taskStatusFromStored(row.status as StoredWorkItemStatus),
+        needsClarification: row.status === "captured",
+        ownerMemberId: row.ownerMemberId,
+        ownerInheritanceMode: row.ownerInheritanceMode as InheritanceMode,
+        physicalContextInheritanceMode:
+          row.physicalContextInheritanceMode as InheritanceMode,
+        createdByMemberId: row.createdByMemberId,
+        dueDate: row.dueDate,
+        scheduledDate: row.scheduledDate,
+        priority: row.priority,
+        size: row.size as TaskSize | null,
+        position: row.position,
+        completedAt: row.completedAt,
+        cancelledAt: row.cancelledAt,
+        repeatAfterDays: row.repeatAfterDays,
+        allowedDeviationDays: row.allowedDeviationDays,
+        reminderAt: row.reminderAt,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        reviewedAt: row.reviewedAt,
+      }));
     const allTags = db.select().from(schema.tags).all() as Tag[];
     const tagsById = new Map(allTags.map((t) => [t.id, t]));
     const allContexts = db
@@ -180,46 +278,56 @@ export class Graph {
       .all() as PhysicalContext[];
     const contextsById = new Map(allContexts.map((context) => [context.id, context]));
 
-    const projectTagRows = db.select().from(schema.projectTags).all();
+    const projectTagRows = db
+      .select()
+      .from(schema.workItemTags)
+      .all()
+      .filter((row) => graph.projectsById.has(row.workItemId) || rawProjects.some((project) => project.id === row.workItemId));
     const projectTagsByProject = new Map<number, Tag[]>();
     for (const row of projectTagRows) {
       const tag = tagsById.get(row.tagId);
       if (!tag) continue;
-      const list = projectTagsByProject.get(row.projectId) ?? [];
+      const list = projectTagsByProject.get(row.workItemId) ?? [];
       list.push(tag);
-      projectTagsByProject.set(row.projectId, list);
+      projectTagsByProject.set(row.workItemId, list);
     }
 
     const projectContextRows = db
       .select()
-      .from(schema.projectPhysicalContexts)
-      .all();
+      .from(schema.workItemPhysicalContexts)
+      .all()
+      .filter((row) => rawProjects.some((project) => project.id === row.workItemId));
     const contextIdsByProject = new Map<number, number[]>();
     for (const row of projectContextRows) {
-      const list = contextIdsByProject.get(row.projectId) ?? [];
+      const list = contextIdsByProject.get(row.workItemId) ?? [];
       list.push(row.contextId);
-      contextIdsByProject.set(row.projectId, list);
+      contextIdsByProject.set(row.workItemId, list);
     }
 
     const taskContextRows = db
       .select()
-      .from(schema.taskPhysicalContexts)
-      .all();
+      .from(schema.workItemPhysicalContexts)
+      .all()
+      .filter((row) => rawTasks.some((task) => task.id === row.workItemId));
     const contextIdsByTask = new Map<number, number[]>();
     for (const row of taskContextRows) {
-      const list = contextIdsByTask.get(row.taskId) ?? [];
+      const list = contextIdsByTask.get(row.workItemId) ?? [];
       list.push(row.contextId);
-      contextIdsByTask.set(row.taskId, list);
+      contextIdsByTask.set(row.workItemId, list);
     }
 
-    const taskTagRows = db.select().from(schema.taskTags).all();
+    const taskTagRows = db
+      .select()
+      .from(schema.workItemTags)
+      .all()
+      .filter((row) => rawTasks.some((task) => task.id === row.workItemId));
     const explicitTagsByTask = new Map<number, Tag[]>();
     for (const row of taskTagRows) {
       const tag = tagsById.get(row.tagId);
       if (!tag) continue;
-      const list = explicitTagsByTask.get(row.taskId) ?? [];
+      const list = explicitTagsByTask.get(row.workItemId) ?? [];
       list.push(tag);
-      explicitTagsByTask.set(row.taskId, list);
+      explicitTagsByTask.set(row.workItemId, list);
     }
 
     const excludedRows = db.select().from(schema.taskExcludedTags).all();
@@ -255,21 +363,21 @@ export class Graph {
 
     const criteriaRows = db
       .select()
-      .from(schema.projectAcceptanceCriteria)
+      .from(schema.workItemAcceptanceCriteria)
       .all();
     const criteriaByProject = new Map<number, AcceptanceCriterion[]>();
     for (const row of criteriaRows) {
-      const list = criteriaByProject.get(row.projectId) ?? [];
+      const list = criteriaByProject.get(row.workItemId) ?? [];
       list.push({
         id: row.id,
-        projectId: row.projectId,
+        projectId: row.workItemId,
         text: row.text,
         checked: row.checked,
         position: row.position,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       });
-      criteriaByProject.set(row.projectId, list);
+      criteriaByProject.set(row.workItemId, list);
     }
     for (const list of criteriaByProject.values()) {
       list.sort((a, b) => a.position - b.position);
@@ -335,12 +443,17 @@ export class Graph {
     }
 
     for (const p of rawProjects) {
+      const childStoryIds = graph.childStoryIdsByParent.get(p.parentId) ?? [];
+      childStoryIds.push(p.id);
+      graph.childStoryIdsByParent.set(p.parentId, childStoryIds);
       graph.projectsById.set(p.id, {
         id: p.id,
         revision: p.revision,
+        parentId: p.parentId,
         title: p.title,
         notes: p.notes,
         status: p.status,
+        archivedAt: p.archivedAt,
         ownerMemberId: p.ownerMemberId,
         dueDate: p.dueDate,
         scheduledDate: p.scheduledDate,
@@ -362,6 +475,8 @@ export class Graph {
         acceptanceCriteria: criteriaByProject.get(p.id) ?? [],
         availableActions: availableProjectWorkflowActions(p.status),
         activationReadiness: graph.activationReadinessByProject.get(p.id)!,
+        childStories: [],
+        ancestors: [],
       });
     }
 
@@ -632,9 +747,29 @@ export class Graph {
     return this.blockerAnalysisByTask.get(taskId) ?? null;
   }
 
-  projectWithComputed(projectId: number): ProjectRecord | null {
+  private ancestorsFor(projectId: number): Array<{ id: number; title: string }> {
+    const ancestors: Array<{ id: number; title: string }> = [];
+    let parentId = this.projectsById.get(projectId)?.parentId ?? null;
+    const seen = new Set<number>([projectId]);
+    while (parentId !== null && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = this.projectsById.get(parentId);
+      if (!parent) break;
+      ancestors.unshift({ id: parent.id, title: parent.title });
+      parentId = parent.parentId;
+    }
+    return ancestors;
+  }
+
+  projectWithComputed(
+    projectId: number,
+    seen: ReadonlySet<number> = new Set(),
+  ): ProjectRecord | null {
     const project = this.projectsById.get(projectId);
     if (!project) return null;
+    if (seen.has(projectId)) return project;
+    const nextSeen = new Set(seen);
+    nextSeen.add(projectId);
     const tasks = this.tasksForProject(projectId);
     const openCount = tasks.filter(
       (t) => t.status !== "done" && t.status !== "cancelled",
@@ -679,6 +814,16 @@ export class Graph {
       stuckReason: this.stuckReasonFor(projectId),
       waitingOn,
       waitingUntil,
+      childStories: (this.childStoryIdsByParent.get(projectId) ?? [])
+        .map((childId) => this.projectWithComputed(childId, nextSeen))
+        .filter((child): child is ProjectRecord => child !== null)
+        .sort(
+          (a, b) =>
+            a.position - b.position ||
+            a.title.localeCompare(b.title, "de") ||
+            a.id - b.id,
+        ),
+      ancestors: this.ancestorsFor(projectId),
     };
   }
 

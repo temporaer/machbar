@@ -27,13 +27,13 @@ describe("review queue", () => {
 
   function setProjectAge(id: number, date: string) {
     ctx.handle.sqlite
-      .prepare("UPDATE projects SET updated_at = ?, reviewed_at = NULL WHERE id = ?")
+      .prepare("UPDATE work_items SET updated_at = ?, reviewed_at = NULL WHERE id = ?")
       .run(`${date}T10:00:00.000Z`, id);
   }
 
   function setTaskAge(id: number, date: string) {
     ctx.handle.sqlite
-      .prepare("UPDATE tasks SET updated_at = ?, reviewed_at = NULL WHERE id = ?")
+      .prepare("UPDATE work_items SET updated_at = ?, reviewed_at = NULL WHERE id = ?")
       .run(`${date}T10:00:00.000Z`, id);
   }
 
@@ -48,13 +48,13 @@ describe("review queue", () => {
       .returning()
       .get();
     const noDriver = ctx.handle.db
-      .insert(schema.projects)
-      .values({ title: "No driver", status: "active" })
+      .insert(schema.workItems)
+      .values({ role: "story", title: "No driver", status: "active" })
       .returning()
       .get();
     const staleActive = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Stale active",
         status: "active",
         ownerMemberId: member.id,
@@ -62,37 +62,37 @@ describe("review queue", () => {
       .returning()
       .get();
     const activeTask = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ projectId: staleActive.id, title: "Do it" })
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", parentId: staleActive.id, title: "Do it" })
       .returning()
       .get();
     const completion = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Complete me",
         status: "active",
         ownerMemberId: member.id,
       })
       .returning()
       .get();
-    ctx.handle.db.insert(schema.tasks).values({
-      projectId: completion.id,
+    ctx.handle.db.insert(schema.workItems).values({ role: "task",
+      parentId: completion.id,
       title: "Done",
       status: "done",
     }).run();
     const backlog = ctx.handle.db
-      .insert(schema.projects)
-      .values({ title: "Old backlog" })
+      .insert(schema.workItems)
+      .values({ role: "story", status: "backlog", title: "Old backlog" })
       .returning()
       .get();
     const dueBacklog = ctx.handle.db
-      .insert(schema.projects)
-      .values({ title: "Due backlog", dueDate: today })
+      .insert(schema.workItems)
+      .values({ role: "story", status: "backlog", title: "Due backlog", dueDate: today })
       .returning()
       .get();
     const someday = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ title: "Maybe", status: "someday" })
+      .insert(schema.workItems)
+      .values({ role: "task", title: "Maybe", status: "backlog" })
       .returning()
       .get();
     setProjectAge(
@@ -128,8 +128,8 @@ describe("review queue", () => {
 
   it("leases an acknowledged overdue backlog project for 30 days", () => {
     const project = ctx.handle.db
-      .insert(schema.projects)
-      .values({ title: "Due backlog", dueDate: today })
+      .insert(schema.workItems)
+      .values({ role: "story", status: "backlog", title: "Due backlog", dueDate: today })
       .returning()
       .get();
     expect(
@@ -140,14 +140,14 @@ describe("review queue", () => {
     ).toBe(true);
 
     ctx.handle.sqlite
-      .prepare("UPDATE projects SET reviewed_at = ? WHERE id = ?")
+      .prepare("UPDATE work_items SET reviewed_at = ? WHERE id = ?")
       .run(`${today}T10:00:00.000Z`, project.id);
     expect(reviewItems().some((item) => item.entityId === project.id)).toBe(
       false,
     );
 
     ctx.handle.sqlite
-      .prepare("UPDATE projects SET reviewed_at = ? WHERE id = ?")
+      .prepare("UPDATE work_items SET reviewed_at = ? WHERE id = ?")
       .run("2026-08-01T10:00:00.000Z", project.id);
     expect(
       reviewItems().some(
@@ -164,8 +164,8 @@ describe("review queue", () => {
       .returning()
       .get();
     const project = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Waiting well",
         status: "active",
         ownerMemberId: member.id,
@@ -173,9 +173,9 @@ describe("review queue", () => {
       .returning()
       .get();
     const waiting = ctx.handle.db
-      .insert(schema.tasks)
-      .values({
-        projectId: project.id,
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active",
+        parentId: project.id,
         title: "Reply",
         scheduledDate: "2026-09-02",
       })
@@ -187,11 +187,11 @@ describe("review queue", () => {
       revisitDate: "2026-09-02",
     }).run();
     const projectSomeday = ctx.handle.db
-      .insert(schema.tasks)
-      .values({
-        projectId: project.id,
+      .insert(schema.workItems)
+      .values({ role: "task",
+        parentId: project.id,
         title: "Later in project",
-        status: "someday",
+        status: "backlog",
       })
       .returning()
       .get();
@@ -217,8 +217,8 @@ describe("review queue", () => {
       .returning()
       .get();
     const project = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Room setup",
         status: "active",
         ownerMemberId: member.id,
@@ -226,20 +226,20 @@ describe("review queue", () => {
       .returning()
       .get();
     const prerequisite = ctx.handle.db
-      .insert(schema.tasks)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "task",
         title: "Place order",
-        status: "actionable",
+        status: "active",
         scheduledDate: today,
       })
       .returning()
       .get();
     const blocked = ctx.handle.db
-      .insert(schema.tasks)
-      .values({
-        projectId: project.id,
+      .insert(schema.workItems)
+      .values({ role: "task",
+        parentId: project.id,
         title: "Build wardrobe",
-        status: "actionable",
+        status: "active",
       })
       .returning()
       .get();
@@ -263,8 +263,8 @@ describe("review queue", () => {
       .returning()
       .get();
     const project = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Await delivery",
         status: "active",
         ownerMemberId: member.id,
@@ -272,11 +272,11 @@ describe("review queue", () => {
       .returning()
       .get();
     const waiting = ctx.handle.db
-      .insert(schema.tasks)
-      .values({
-        projectId: project.id,
+      .insert(schema.workItems)
+      .values({ role: "task",
+        parentId: project.id,
         title: "Receive delivery",
-        status: "actionable",
+        status: "active",
       })
       .returning()
       .get();
@@ -301,8 +301,8 @@ describe("review queue", () => {
       .returning()
       .get();
     const project = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Recently reviewed",
         status: "active",
         ownerMemberId: member.id,
@@ -310,14 +310,14 @@ describe("review queue", () => {
       .returning()
       .get();
     const task = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ projectId: project.id, title: "Still viable" })
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", parentId: project.id, title: "Still viable" })
       .returning()
       .get();
     setProjectAge(project.id, "2026-01-01");
     setTaskAge(task.id, "2026-01-01");
     ctx.handle.sqlite
-      .prepare("UPDATE tasks SET reviewed_at = ? WHERE id = ?")
+      .prepare("UPDATE work_items SET reviewed_at = ? WHERE id = ?")
       .run("2026-08-30T10:00:00.000Z", task.id);
     expect(
       reviewItems().some(
@@ -327,10 +327,10 @@ describe("review queue", () => {
     ).toBe(false);
 
     ctx.handle.sqlite
-      .prepare("UPDATE tasks SET reviewed_at = NULL WHERE id = ?")
+      .prepare("UPDATE work_items SET reviewed_at = NULL WHERE id = ?")
       .run(task.id);
     ctx.handle.sqlite
-      .prepare("UPDATE projects SET reviewed_at = ? WHERE id = ?")
+      .prepare("UPDATE work_items SET reviewed_at = ? WHERE id = ?")
       .run("2026-08-30T10:00:00.000Z", project.id);
     expect(
       reviewItems().some(
@@ -347,8 +347,8 @@ describe("review queue", () => {
       .returning()
       .get();
     const healthy = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Healthy but old",
         status: "active",
         ownerMemberId: member.id,
@@ -356,13 +356,13 @@ describe("review queue", () => {
       .returning()
       .get();
     const healthyTask = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ projectId: healthy.id, title: "Executable" })
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", parentId: healthy.id, title: "Executable" })
       .returning()
       .get();
     const noPath = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "No path and old",
         status: "active",
         ownerMemberId: member.id,
@@ -370,8 +370,8 @@ describe("review queue", () => {
       .returning()
       .get();
     const completion = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Complete and old",
         status: "active",
         ownerMemberId: member.id,
@@ -379,17 +379,17 @@ describe("review queue", () => {
       .returning()
       .get();
     const doneTask = ctx.handle.db
-      .insert(schema.tasks)
-      .values({
-        projectId: completion.id,
+      .insert(schema.workItems)
+      .values({ role: "task",
+        parentId: completion.id,
         title: "Done",
         status: "done",
       })
       .returning()
       .get();
     const waitingDefect = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Waiting defect and old",
         status: "active",
         ownerMemberId: member.id,
@@ -397,13 +397,13 @@ describe("review queue", () => {
       .returning()
       .get();
     const executable = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ projectId: waitingDefect.id, title: "Still executable" })
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", parentId: waitingDefect.id, title: "Still executable" })
       .returning()
       .get();
     const waiting = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ projectId: waitingDefect.id, title: "Missing followup" })
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", parentId: waitingDefect.id, title: "Missing followup" })
       .returning()
       .get();
     ctx.handle.db.insert(schema.taskExternalWaits).values({
@@ -459,8 +459,8 @@ describe("review queue", () => {
       .returning()
       .get();
     const project = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Repair project",
         status: "active",
         ownerMemberId: member.id,
@@ -469,21 +469,21 @@ describe("review queue", () => {
       .returning()
       .get();
     const large = ctx.handle.db
-      .insert(schema.tasks)
-      .values({
-        projectId: project.id,
+      .insert(schema.workItems)
+      .values({ role: "task",
+        parentId: project.id,
         title: "Large work",
-        status: "actionable",
+        status: "active",
         size: "XL",
       })
       .returning()
       .get();
     const waiting = ctx.handle.db
-      .insert(schema.tasks)
-      .values({
-        projectId: project.id,
+      .insert(schema.workItems)
+      .values({ role: "task",
+        parentId: project.id,
         title: "Wait without date",
-        status: "actionable",
+        status: "active",
       })
       .returning()
       .get();
@@ -492,13 +492,13 @@ describe("review queue", () => {
       waitingFor: "Reply",
     }).run();
     const captured = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ title: "Captured prerequisite", status: "captured" })
+      .insert(schema.workItems)
+      .values({ role: "task", title: "Captured prerequisite", status: "captured" })
       .returning()
       .get();
     const downstream = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ title: "Broken downstream", status: "actionable" })
+      .insert(schema.workItems)
+      .values({ role: "task", title: "Broken downstream", status: "active" })
       .returning()
       .get();
     ctx.handle.db.insert(schema.taskDependencies).values({
@@ -506,10 +506,10 @@ describe("review queue", () => {
       dependsOnTaskId: captured.id,
     }).run();
     const dueWait = ctx.handle.db
-      .insert(schema.tasks)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "task",
         title: "Reached followup",
-        status: "actionable",
+        status: "active",
       })
       .returning()
       .get();
@@ -518,9 +518,9 @@ describe("review queue", () => {
       waitingFor: "Reached",
       revisitDate: today,
     }).run();
-    ctx.handle.db.insert(schema.tasks).values({
+    ctx.handle.db.insert(schema.workItems).values({ role: "task",
       title: "Unassigned executable",
-      status: "actionable",
+      status: "active",
     }).run();
 
     const items = reviewItems();
@@ -556,13 +556,13 @@ describe("review queue", () => {
 
   it("acknowledges project and task review revision-safely without touching updatedAt or awarding points", async () => {
     const project = ctx.handle.db
-      .insert(schema.projects)
-      .values({ title: "Review project" })
+      .insert(schema.workItems)
+      .values({ role: "story", status: "backlog", title: "Review project" })
       .returning()
       .get();
     const task = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ title: "Review task", status: "someday" })
+      .insert(schema.workItems)
+      .values({ role: "task", title: "Review task", status: "backlog" })
       .returning()
       .get();
 
@@ -602,8 +602,8 @@ describe("review queue", () => {
 
   it("returns the same derived queue and count from review endpoints", async () => {
     const project = ctx.handle.db
-      .insert(schema.projects)
-      .values({ title: "Old backlog" })
+      .insert(schema.workItems)
+      .values({ role: "story", status: "backlog", title: "Old backlog" })
       .returning()
       .get();
     setProjectAge(project.id, "2026-01-01");
@@ -629,8 +629,8 @@ describe("review queue", () => {
       .returning()
       .get();
     const zuluProject = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Zulu project",
         status: "active",
         ownerMemberId: member.id,
@@ -638,8 +638,8 @@ describe("review queue", () => {
       .returning()
       .get();
     const alphaProject = ctx.handle.db
-      .insert(schema.projects)
-      .values({
+      .insert(schema.workItems)
+      .values({ role: "story",
         title: "Alpha project",
         status: "active",
         ownerMemberId: member.id,
@@ -647,28 +647,28 @@ describe("review queue", () => {
       .returning()
       .get();
     const zuluProjectTask = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ projectId: zuluProject.id, title: "Alpha entity" })
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", parentId: zuluProject.id, title: "Alpha entity" })
       .returning()
       .get();
     const alphaProjectTask = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ projectId: alphaProject.id, title: "Zulu entity" })
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", parentId: alphaProject.id, title: "Zulu entity" })
       .returning()
       .get();
     const duplicateFirst = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ projectId: alphaProject.id, title: "Duplicate entity" })
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", parentId: alphaProject.id, title: "Duplicate entity" })
       .returning()
       .get();
     const duplicateSecond = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ projectId: alphaProject.id, title: "Duplicate entity" })
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", parentId: alphaProject.id, title: "Duplicate entity" })
       .returning()
       .get();
     const standalone = ctx.handle.db
-      .insert(schema.tasks)
-      .values({ title: "A standalone entity" })
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active", title: "A standalone entity" })
       .returning()
       .get();
     for (const task of [

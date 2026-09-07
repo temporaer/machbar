@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -98,11 +99,11 @@ describe("task <-> story role conversion", () => {
     const activity = ctx.handle.db.select().from(schema.activityEvents).all();
     expect(activity.at(-1)).toMatchObject({
       kind: "work_item_role_converted",
-      projectId: promoted.json().id,
+      entityId: promoted.json().id,
+      entityType: "project",
       entityTitle: "Kinderzimmer fertig renovieren",
       metadata: expect.objectContaining({
         changedFields: ["role"],
-        affectedCount: 3,
       }),
     });
   });
@@ -166,7 +167,11 @@ describe("task <-> story role conversion", () => {
       await ctx.app.inject({ method: "GET", url: `/api/tasks/${root.id}` }),
     ).toMatchObject({ statusCode: 200 });
     expect(
-      ctx.handle.db.select().from(schema.projects).all(),
+      ctx.handle.db
+        .select()
+        .from(schema.workItems)
+        .where(eq(schema.workItems.role, "story"))
+        .all(),
     ).toEqual([]);
   });
 

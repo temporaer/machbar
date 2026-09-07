@@ -13,6 +13,8 @@ import type { VapidConfig } from "../src/env.js";
 import type { PushTransport } from "../src/notifications/delivery.js";
 import type { PaperlessConfig } from "../src/env.js";
 import type { PaperlessClient } from "../src/paperless/client.js";
+import * as schema from "../src/db/schema.js";
+import type { Db } from "../src/db/client.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -35,27 +37,6 @@ export function createTestContext(options?: {
 }): TestContext {
   const handle = openDb(":memory:");
   runMigrations(handle.db);
-  // Test-only convenience: many tests build fixtures with raw
-  // `.insert(schema.tasks)`/`.insert(schema.projects)` calls that don't
-  // specify `id`, bypassing `allocateWorkItemId()` (the only path real
-  // application code uses to populate the shared `work_items` identity
-  // table introduced by the 0023 migration). Auto-create the matching
-  // work_items row so those FK-backed inserts still succeed; production
-  // code must keep going through `allocateWorkItemId()` explicitly.
-  handle.sqlite.exec(`
-    CREATE TRIGGER test_only_projects_work_item_autofill
-    AFTER INSERT ON projects
-    WHEN NEW.id NOT IN (SELECT id FROM work_items)
-    BEGIN
-      INSERT INTO work_items (id) VALUES (NEW.id);
-    END;
-    CREATE TRIGGER test_only_tasks_work_item_autofill
-    AFTER INSERT ON tasks
-    WHEN NEW.id NOT IN (SELECT id FROM work_items)
-    BEGIN
-      INSERT INTO work_items (id) VALUES (NEW.id);
-    END;
-  `);
   if (options?.seed) {
     seedDatabase(handle.db);
   }
@@ -87,4 +68,63 @@ export function createTestContext(options?: {
 export async function closeTestContext(ctx: TestContext) {
   await ctx.app.close();
   ctx.handle.close();
+}
+
+export function insertTestProject(
+  db: Db,
+  values: Partial<typeof schema.workItems.$inferInsert> & {
+    title: string;
+    status?: "backlog" | "active" | "completed" | "archived";
+  },
+) {
+  const { status = "backlog", ...rest } = values;
+  return db
+    .insert(schema.workItems)
+    .values({
+      ...rest,
+      role: "story",
+      status:
+        status === "completed"
+          ? "done"
+          : status === "archived"
+            ? "backlog"
+            : status,
+      archivedAt: status === "archived" ? new Date().toISOString() : null,
+    })
+    .returning()
+    .get();
+}
+
+export function insertTestTask(
+  db: Db,
+  values: Omit<Partial<typeof schema.workItems.$inferInsert>, "status"> & {
+    title: string;
+    status?: "captured" | "actionable" | "someday" | "done" | "cancelled";
+    projectId?: number | null;
+    parentTaskId?: number | null;
+  },
+) {
+  const {
+    status = "actionable",
+    projectId = null,
+    parentTaskId = null,
+    ...rest
+  } = values;
+  const row = db
+    .insert(schema.workItems)
+    .values({
+      ...rest,
+      role: "task",
+      parentId: parentTaskId ?? projectId,
+      status:
+        status === "actionable"
+          ? "active"
+          : status === "someday"
+            ? "backlog"
+            : status,
+      needsClarification: status === "captured",
+    })
+    .returning()
+    .get();
+  return { ...row, status, projectId, parentTaskId };
 }

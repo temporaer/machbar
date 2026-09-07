@@ -2,33 +2,38 @@ import { sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 
 /**
- * "Next action" selection: the first actionable, unblocked task in a
- * project's tree that no longer needs clarification, in depth-first
+ * "Next action" selection: the first active, unblocked task in a story's tree
+ * that no longer needs clarification, in depth-first
  * pre-order (top-to-bottom, following
  * sibling `position` order at every level). Implemented as a single
  * SQLite recursive CTE that builds a lexicographically-sortable materialized
- * path per task (zero-padded position segments joined by `.`), combined
- * with one ordered result per project — no per-project queries and no DFS
- * walk in application code. Keeping every eligible candidate lets Today pick
- * the first canonical item for a selected member or for each ownership lane.
+ * path per task (zero-padded position segments joined by `.`), carrying the
+ * nearest ancestor story id as the legacy project id. Keeping every eligible
+ * candidate lets Today pick the first canonical item for a selected member or
+ * for each ownership lane.
  */
 export function getNextActionTaskIdsByProject(db: Db): Map<number, number[]> {
   const rows = db.all<{ project_id: number; task_id: number }>(sql`
     WITH RECURSIVE sortkey(task_id, project_id, key) AS (
-      SELECT id, project_id, printf('%08d', position) FROM tasks WHERE parent_task_id IS NULL
+      SELECT task.id, story.id, printf('%08d', task.position)
+      FROM work_items task
+      JOIN work_items story ON story.id = task.parent_id AND story.role = 'story'
+      WHERE task.role = 'task'
       UNION ALL
-      SELECT t.id, t.project_id, sk.key || '.' || printf('%08d', t.position)
-      FROM tasks t JOIN sortkey sk ON t.parent_task_id = sk.task_id
+      SELECT task.id, sk.project_id, sk.key || '.' || printf('%08d', task.position)
+      FROM work_items task
+      JOIN sortkey sk ON task.parent_id = sk.task_id
+      WHERE task.role = 'task'
     ),
     eligible AS (
       SELECT sk.task_id, sk.project_id, sk.key
       FROM sortkey sk
-      JOIN tasks t ON t.id = sk.task_id
+      JOIN work_items t ON t.id = sk.task_id
       WHERE sk.project_id IS NOT NULL
-        AND t.status = 'actionable'
+        AND t.status = 'active'
         AND NOT EXISTS (
           SELECT 1 FROM task_dependencies td
-          JOIN tasks dep ON dep.id = td.depends_on_task_id
+          JOIN work_items dep ON dep.id = td.depends_on_task_id
           WHERE td.task_id = t.id AND dep.status NOT IN ('done', 'cancelled')
         )
         AND NOT EXISTS (

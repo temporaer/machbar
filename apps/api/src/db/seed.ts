@@ -1,6 +1,5 @@
 import { loadEnv } from "../env.js";
 import { colorForTag } from "../domain/tags.js";
-import { allocateWorkItemId } from "../domain/workItemShared.js";
 import { openDb, type Db } from "./client.js";
 import { runMigrations } from "./migrate.js";
 import * as schema from "./schema.js";
@@ -18,9 +17,9 @@ function nowIso(): string {
 interface SeedTaskInput {
   title: string;
   notes?: string;
-  status?: (typeof schema.tasks.$inferInsert)["status"];
+  status?: "captured" | "actionable" | "someday" | "done" | "cancelled";
   ownerMemberId?: number | null;
-  ownerInheritanceMode?: (typeof schema.tasks.$inferInsert)["ownerInheritanceMode"];
+  ownerInheritanceMode?: (typeof schema.workItems.$inferInsert)["ownerInheritanceMode"];
   dueDate?: string | null;
   scheduledDate?: string | null;
   externalWait?: {
@@ -28,7 +27,7 @@ interface SeedTaskInput {
     revisitDate?: string | null;
   } | null;
   priority?: number | null;
-  size?: (typeof schema.tasks.$inferInsert)["size"];
+  size?: (typeof schema.workItems.$inferInsert)["size"];
   tagNames?: string[];
   dependsOn?: string[]; // titles of sibling/earlier tasks within the same seed run
   children?: SeedTaskInput[];
@@ -50,11 +49,9 @@ export function seedDatabase(db: Db): void {
     tx.delete(schema.taskExternalWaits).run();
     tx.delete(schema.taskDependencies).run();
     tx.delete(schema.taskExcludedTags).run();
-    tx.delete(schema.taskTags).run();
-    tx.delete(schema.tasks).run();
-    tx.delete(schema.projectAcceptanceCriteria).run();
-    tx.delete(schema.projectTags).run();
-    tx.delete(schema.projects).run();
+    tx.delete(schema.workItemTags).run();
+    tx.delete(schema.workItemAcceptanceCriteria).run();
+    tx.delete(schema.workItems).run();
     tx.delete(schema.tags).run();
     tx.delete(schema.members).run();
 
@@ -125,14 +122,18 @@ export function seedDatabase(db: Db): void {
         const now = nowIso();
         const status = input.status ?? "actionable";
         const row = tx
-          .insert(schema.tasks)
+          .insert(schema.workItems)
           .values({
-            id: allocateWorkItemId(tx),
-            projectId,
-            parentTaskId,
+            role: "task",
+            parentId: parentTaskId ?? projectId,
             title: input.title,
             notes: input.notes ?? "",
-            status,
+            status:
+              status === "actionable"
+                ? "active"
+                : status === "someday"
+                  ? "backlog"
+                  : status,
             needsClarification: status === "captured",
             ownerMemberId: input.ownerMemberId ?? null,
             ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
@@ -160,7 +161,9 @@ export function seedDatabase(db: Db): void {
 
         if (input.tagNames && input.tagNames.length > 0) {
           for (const tagId of tagIds(input.tagNames)) {
-            tx.insert(schema.taskTags).values({ taskId: row.id, tagId }).run();
+            tx.insert(schema.workItemTags)
+              .values({ workItemId: row.id, tagId })
+              .run();
           }
         }
 
@@ -189,7 +192,7 @@ export function seedDatabase(db: Db): void {
     function createProject(input: {
       title: string;
       criteria?: SeedCriterionInput[];
-      status?: (typeof schema.projects.$inferInsert)["status"];
+      status?: "backlog" | "active" | "completed" | "archived";
       ownerMemberId: number | null;
       dueDate?: string | null;
       tagNames?: string[];
@@ -197,11 +200,17 @@ export function seedDatabase(db: Db): void {
       tasks: SeedTaskInput[];
     }) {
       const project = tx
-        .insert(schema.projects)
+        .insert(schema.workItems)
         .values({
-          id: allocateWorkItemId(tx),
+          role: "story",
           title: input.title,
-          status: input.status ?? "active",
+          status:
+            input.status === "completed"
+              ? "done"
+              : input.status === "archived"
+                ? "backlog"
+                : input.status ?? "active",
+          archivedAt: input.status === "archived" ? nowIso() : null,
           ownerMemberId: input.ownerMemberId,
           dueDate: input.dueDate ?? null,
           position: input.position,
@@ -210,15 +219,15 @@ export function seedDatabase(db: Db): void {
         .get();
       if (input.tagNames) {
         for (const tagId of tagIds(input.tagNames)) {
-          tx.insert(schema.projectTags)
-            .values({ projectId: project.id, tagId })
+          tx.insert(schema.workItemTags)
+            .values({ workItemId: project.id, tagId })
             .run();
         }
       }
       (input.criteria ?? []).forEach((criterion, index) => {
-        tx.insert(schema.projectAcceptanceCriteria)
+        tx.insert(schema.workItemAcceptanceCriteria)
           .values({
-            projectId: project.id,
+            workItemId: project.id,
             text: criterion.text,
             checked: criterion.checked ?? false,
             position: index,

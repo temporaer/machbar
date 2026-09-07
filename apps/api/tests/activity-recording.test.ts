@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
 import { createProject } from "../src/domain/storyCrud.js";
@@ -40,7 +40,13 @@ describe("atomic activity recording", () => {
       ),
     ).toThrow();
 
-    expect(ctx.handle.db.select().from(schema.tasks).all()).toEqual([]);
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.workItems)
+        .where(eq(schema.workItems.role, "task"))
+        .all(),
+    ).toEqual([]);
     expect(events()).toEqual([]);
   });
 
@@ -59,8 +65,8 @@ describe("atomic activity recording", () => {
     expect(
       ctx.handle.db
         .select()
-        .from(schema.tasks)
-        .where(eq(schema.tasks.id, task.id))
+        .from(schema.workItems)
+        .where(and(eq(schema.workItems.id, task.id), eq(schema.workItems.role, "task")))
         .get()?.title,
     ).toBe("Bestand");
     expect(events()).toEqual(before);
@@ -71,8 +77,8 @@ describe("atomic activity recording", () => {
     expect(
       ctx.handle.db
         .select()
-        .from(schema.tasks)
-        .where(eq(schema.tasks.id, task.id))
+        .from(schema.workItems)
+        .where(and(eq(schema.workItems.id, task.id), eq(schema.workItems.role, "task")))
         .get(),
     ).toBeDefined();
     expect(events()).toEqual(before);
@@ -373,8 +379,8 @@ describe("atomic activity recording", () => {
         .get(),
     ).toMatchObject({
       entityTitle: "Alte Aufgabe",
-      taskId: null,
-      projectId: null,
+      entityId: null,
+      entityType: "task",
     });
     expect(
       ctx.handle.db
@@ -384,7 +390,8 @@ describe("atomic activity recording", () => {
         .get(),
     ).toMatchObject({
       entityTitle: "Altes Projekt",
-      projectId: null,
+      entityId: null,
+      entityType: "project",
     });
   });
 
