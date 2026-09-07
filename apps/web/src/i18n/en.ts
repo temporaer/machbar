@@ -387,6 +387,15 @@ const en = {
   classifyAsProjectSteps: "Break into steps",
   classifyAsBacklog: "Backlog",
   classifyAsSomeday: "Someday",
+  workItemRole: "Type",
+  taskRoleTask: "Task",
+  convertToProject: "Treat as project",
+  convertToProjectBacklog: "Move to backlog",
+  convertToProjectActive: "Activate",
+  convertToProjectUnsupportedStatus:
+    "Completed or discarded tasks cannot be converted to projects.",
+  convertToProjectTaskOnlyRelations:
+    "Remove waits, dependencies, recurrence, or reminders first.",
   needsClarification: "Needs clarification",
   clarifyEmpty: "The inbox is empty. Nice work!",
   waitingEmpty: "Nothing is waiting right now.",
@@ -1053,7 +1062,7 @@ const en = {
     task_promotion_invalid:
       "This inbox item cannot be converted to a project in its current state.",
     role_conversion_invalid:
-      "This item cannot be converted in its current state.",
+      "Remove conflicting task-only details before converting this task to a project.",
     task_sequence_too_short: "A task sequence needs at least two steps.",
     task_title_required: "Enter a task title.",
     external_wait_reason_required: "Enter what this task is waiting for.",

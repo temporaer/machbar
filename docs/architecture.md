@@ -388,8 +388,9 @@ either executable progress or an intentional healthy future-waiting path:
 
 Quick project capture creates backlog work and preserves the selected driver.
 Its handoff may add a first action, but Start remains explicit. Active
-task-to-project promotion is subject to the same invariant; promotion preserves
-captured content and descendants rather than manufacturing readiness.
+task-to-story conversion is subject to the same invariant; role conversion
+preserves the task identity, compatible metadata, and descendants rather than
+manufacturing readiness.
 
 Legacy rows migrated from before the invariant may still be `active` without a
 responsible person; the clarification service flags them urgently.
@@ -816,10 +817,15 @@ identity-destroying `promoteTaskToProject`: converting a task to a story
 (or back) reuses the same numeric id (enabled by the shared identity
 above) and re-points `activity_events`/`notification_events`/
 `contribution_events` in place, so activity history, tags, and contexts
-survive the conversion instead of starting fresh. Reverse conversion
-(story → task) is conservative: it rejects whenever the story has any
-children or acceptance criteria (`role_conversion_invalid`), rather than
-silently discarding data. Routes:
+survive the conversion instead of starting fresh. A root standalone task may
+become a story while keeping its descendants and compatible metadata; conversion
+only rejects task-specific semantics that a story cannot safely represent
+(direct waits, dependencies, recurrence, reminders, or terminal task statuses)
+with `role_conversion_invalid`. Conversion and commitment stay separate:
+backlog conversion does not require activation readiness, while active
+conversion still runs the normal story activation guards. Reverse conversion
+(story → task) remains conservative: it rejects whenever the story has any
+children or acceptance criteria, rather than silently discarding data. Routes:
 `POST /api/tasks/:id/convert-to-story`, `POST /api/projects/:id/convert-to-task`.
 
 **Semantic commands.** `apps/web/src/lib/commands.ts` defines a pure,

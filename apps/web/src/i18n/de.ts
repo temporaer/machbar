@@ -374,6 +374,15 @@ const extra = {
   classifyAsProjectSteps: "In Schritte zerlegen",
   classifyAsBacklog: "Backlog",
   classifyAsSomeday: "Irgendwann",
+  workItemRole: "Typ",
+  taskRoleTask: "Aufgabe",
+  convertToProject: "Als Projekt behandeln",
+  convertToProjectBacklog: "Ins Backlog",
+  convertToProjectActive: "Aktivieren",
+  convertToProjectUnsupportedStatus:
+    "Erledigte oder verworfene Aufgaben können nicht in Projekte umgewandelt werden.",
+  convertToProjectTaskOnlyRelations:
+    "Entferne zuerst Warten, Abhängigkeiten, Wiederholung oder Erinnerung.",
   needsClarification: "Zu klären",
   clarifyEmpty: "Der Eingang ist leer. Gute Arbeit!",
   waitingEmpty: "Nichts wartet gerade.",
@@ -1042,7 +1051,7 @@ const extra = {
     task_promotion_invalid:
       "Dieser Eingangseintrag kann in seinem aktuellen Zustand nicht in ein Projekt umgewandelt werden.",
     role_conversion_invalid:
-      "Dieses Element kann in seinem aktuellen Zustand nicht umgewandelt werden.",
+      "Diese Aufgabe kann erst in ein Projekt umgewandelt werden, wenn widersprechende Aufgaben-Eigenschaften entfernt wurden.",
     task_sequence_too_short:
       "Eine Aufgabenfolge braucht mindestens zwei Schritte.",
     task_title_required: "Bitte gib einen Aufgabentitel ein.",

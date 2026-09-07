@@ -124,7 +124,8 @@ export function TaskDetailSheet() {
   const [statusDraft, setStatusDraft] = useState<Task["status"]>("actionable");
   const [changingStatus, setChangingStatus] = useState(false);
   const [classificationBusy, setClassificationBusy] = useState(false);
-  const [promotedProject, setPromotedProject] =
+  const [storyConversionOpen, setStoryConversionOpen] = useState(false);
+  const [convertedProject, setConvertedProject] =
     useState<ProjectWithActions | null>(null);
   const titleFieldRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
@@ -215,6 +216,8 @@ export function TaskDetailSheet() {
       );
       setDependencyError(null);
       setAddingDependencyId(null);
+      setStoryConversionOpen(false);
+      setConvertedProject(null);
     }
     const hasUnsavedEdits =
       !isNewTask &&
@@ -408,18 +411,21 @@ export function TaskDetailSheet() {
     }
   };
 
-  const promoteCapture = async (openHandoff: boolean) => {
+  const convertTaskToStory = async (
+    status: "active" | "backlog",
+    options: { openHandoff?: boolean } = {},
+  ) => {
     if (!task || classificationBusy || contentDirty) return;
     setClassificationBusy(true);
     setSaveError(null);
     try {
       const project = await api.convertTaskToStory(task.id, {
-        status: "backlog",
+        status,
         expectedRevision: revisionRef.current ?? task.revision,
       });
       bump();
-      if (openHandoff) {
-        setPromotedProject(project);
+      if (options.openHandoff) {
+        setConvertedProject(project);
       } else {
         finishClassification();
       }
@@ -567,9 +573,24 @@ export function TaskDetailSheet() {
     task?.status === "captured" &&
     task.projectId === null &&
     task.parentTaskId === null;
+  const isRootStandaloneTask =
+    task?.projectId === null && task.parentTaskId === null;
   const taskMutationPending = task ? taskActions.isPending(task.id) : false;
   const unresolvedDependencyCount =
     task?.dependencies.filter((dependency) => !dependency.resolved).length ?? 0;
+  const taskToStoryBlockReason = task
+    ? task.status === "done" || task.status === "cancelled"
+      ? strings.convertToProjectUnsupportedStatus
+      : task.externalWait !== null ||
+          unresolvedDependencyCount > 0 ||
+          task.repeatAfterDays !== null ||
+          task.allowedDeviationDays !== null ||
+          task.reminderAt !== null
+        ? strings.convertToProjectTaskOnlyRelations
+        : null
+    : null;
+  const showRoleConversion =
+    task !== null && isRootStandaloneTask && !isCapturedInboxItem;
   const planningSummary = task
     ? [
         task.scheduledDate
@@ -824,7 +845,9 @@ export function TaskDetailSheet() {
                   type="button"
                   className="btn btn-primary capture-shape-action"
                   disabled={classificationBusy || contentDirty}
-                  onClick={() => void promoteCapture(true)}
+                  onClick={() =>
+                    void convertTaskToStory("backlog", { openHandoff: true })
+                  }
                 >
                   {strings.classifyAsProjectSteps}
                 </button>
@@ -832,7 +855,7 @@ export function TaskDetailSheet() {
                   type="button"
                   className="btn capture-shape-action"
                   disabled={classificationBusy || contentDirty}
-                  onClick={() => void promoteCapture(false)}
+                  onClick={() => void convertTaskToStory("backlog")}
                 >
                   {strings.classifyAsBacklog}
                 </button>
@@ -845,6 +868,61 @@ export function TaskDetailSheet() {
                   {strings.classifyAsSomeday}
                 </button>
               </div>
+            </WorkItemDetailSection>
+          ) : null}
+
+          {showRoleConversion ? (
+            <WorkItemDetailSection title={strings.workItemRole}>
+              <div className="field">
+                <div className="row-between">
+                  <span>{strings.taskRoleTask}</span>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={
+                      classificationBusy ||
+                      contentDirty ||
+                      taskToStoryBlockReason !== null
+                    }
+                    onClick={() => setStoryConversionOpen((open) => !open)}
+                  >
+                    {strings.convertToProject}
+                  </button>
+                </div>
+                {taskToStoryBlockReason ? (
+                  <span className="text-muted task-detail-field-hint">
+                    {taskToStoryBlockReason}
+                  </span>
+                ) : null}
+              </div>
+              {storyConversionOpen ? (
+                <div className="capture-shape-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary capture-shape-action"
+                    disabled={classificationBusy || contentDirty}
+                    onClick={() => void convertTaskToStory("backlog")}
+                  >
+                    {strings.convertToProjectBacklog}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn capture-shape-action"
+                    disabled={classificationBusy || contentDirty}
+                    onClick={() => void convertTaskToStory("active")}
+                  >
+                    {strings.convertToProjectActive}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn capture-shape-action"
+                    disabled={classificationBusy}
+                    onClick={() => setStoryConversionOpen(false)}
+                  >
+                    {strings.cancel}
+                  </button>
+                </div>
+              ) : null}
             </WorkItemDetailSection>
           ) : null}
 
@@ -1580,11 +1658,11 @@ export function TaskDetailSheet() {
         }}
       />
     ) : null}
-    {promotedProject ? (
+    {convertedProject ? (
       <CapturedProjectHandoff
-        project={promotedProject}
+        project={convertedProject}
         onDone={() => {
-          setPromotedProject(null);
+          setConvertedProject(null);
           finishClassification();
         }}
       />

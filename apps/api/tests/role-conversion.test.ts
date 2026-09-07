@@ -18,7 +18,7 @@ describe("task <-> story role conversion", () => {
     return ctx.app.inject({ method: "POST", url, payload });
   }
 
-  it("promotes a captured tree to an active project without a wrapper task", async () => {
+  it("converts a captured tree to an active story without a wrapper task", async () => {
     const member = (
       await post("/api/members", { name: "Mira" })
     ).json();
@@ -58,15 +58,15 @@ describe("task <-> story role conversion", () => {
       payload: { status: "captured" },
     });
 
-    const promoted = await post(`/api/tasks/${root.id}/convert-to-story`, {
+    const converted = await post(`/api/tasks/${root.id}/convert-to-story`, {
       status: "active",
       title: "Kinderzimmer fertig renovieren",
       notes: "Aktualisierte Notizen",
       expectedRevision: 2,
     });
 
-    expect(promoted.statusCode).toBe(201);
-    expect(promoted.json()).toMatchObject({
+    expect(converted.statusCode).toBe(201);
+    expect(converted.json()).toMatchObject({
       id: root.id,
       title: "Kinderzimmer fertig renovieren",
       notes: "Aktualisierte Notizen",
@@ -80,7 +80,7 @@ describe("task <-> story role conversion", () => {
     const project = (
       await ctx.app.inject({
         method: "GET",
-        url: `/api/projects/${promoted.json().id}`,
+        url: `/api/projects/${converted.json().id}`,
       })
     ).json();
     expect(project.tasks.map((task: { id: number }) => task.id)).toEqual([
@@ -99,7 +99,7 @@ describe("task <-> story role conversion", () => {
     const activity = ctx.handle.db.select().from(schema.activityEvents).all();
     expect(activity.at(-1)).toMatchObject({
       kind: "work_item_role_converted",
-      entityId: promoted.json().id,
+      entityId: converted.json().id,
       entityType: "project",
       entityTitle: "Kinderzimmer fertig renovieren",
       metadata: expect.objectContaining({
@@ -108,15 +108,15 @@ describe("task <-> story role conversion", () => {
     });
   });
 
-  it("promotes a capture to the project backlog", async () => {
+  it("converts a captured root task to the story backlog", async () => {
     const root = (await post("/api/tasks", { title: "Vielleicht umziehen" })).json();
-    const promoted = await post(`/api/tasks/${root.id}/convert-to-story`, {
+    const converted = await post(`/api/tasks/${root.id}/convert-to-story`, {
       status: "backlog",
       expectedRevision: root.revision,
     });
 
-    expect(promoted.statusCode).toBe(201);
-    expect(promoted.json()).toMatchObject({
+    expect(converted.statusCode).toBe(201);
+    expect(converted.json()).toMatchObject({
       id: root.id,
       title: "Vielleicht umziehen",
       status: "backlog",
@@ -126,11 +126,149 @@ describe("task <-> story role conversion", () => {
       await ctx.app.inject({ method: "GET", url: "/api/projects" })
     ).json();
     expect(projects).toContainEqual(
-      expect.objectContaining({ id: promoted.json().id, status: "backlog" }),
+      expect.objectContaining({ id: converted.json().id, status: "backlog" }),
     );
   });
 
-  it("requires an explicit owner when promoting a capture to an active project", async () => {
+  it("converts actionable and someday standalone tasks to backlog stories", async () => {
+    const actionable = (
+      await post("/api/tasks", {
+        title: "Actionable wird Projekt",
+        status: "actionable",
+      })
+    ).json();
+    const someday = (
+      await post("/api/tasks", {
+        title: "Someday wird Projekt",
+        status: "someday",
+      })
+    ).json();
+
+    const actionableStory = await post(
+      `/api/tasks/${actionable.id}/convert-to-story`,
+      { status: "backlog", expectedRevision: actionable.revision },
+    );
+    const somedayStory = await post(
+      `/api/tasks/${someday.id}/convert-to-story`,
+      { status: "backlog", expectedRevision: someday.revision },
+    );
+
+    expect(actionableStory.statusCode).toBe(201);
+    expect(actionableStory.json()).toMatchObject({
+      id: actionable.id,
+      status: "backlog",
+      title: "Actionable wird Projekt",
+    });
+    expect(somedayStory.statusCode).toBe(201);
+    expect(somedayStory.json()).toMatchObject({
+      id: someday.id,
+      status: "backlog",
+      title: "Someday wird Projekt",
+    });
+  });
+
+  it("preserves hierarchy, compatible metadata, and activity identity", async () => {
+    const member = (await post("/api/members", { name: "Hannes" })).json();
+    const tag = (await post("/api/tags", { name: "keller", kind: "plain" })).json();
+    const context = ctx.handle.db
+      .insert(schema.physicalContexts)
+      .values({
+        source: "home_assistant",
+        externalId: "basement",
+        name: "Keller",
+      })
+      .returning()
+      .get();
+    const root = (
+      await post("/api/tasks", {
+        title: "Keller organisieren",
+        notes: "Regale und Kisten",
+        status: "actionable",
+        ownerMemberId: member.id,
+        ownerInheritanceMode: "explicit",
+        dueDate: "2026-10-10",
+        scheduledDate: "2026-09-15",
+        tagIds: [tag.id],
+        contextInheritanceMode: "explicit",
+        contextIds: [context.id],
+      })
+    ).json();
+    const first = (
+      await post(`/api/tasks/${root.id}/children`, { title: "Regale ausmessen" })
+    ).json();
+    const second = (
+      await post(`/api/tasks/${root.id}/children`, { title: "Kisten kaufen" })
+    ).json();
+    const grandchild = (
+      await post(`/api/tasks/${first.id}/children`, { title: "Maßband suchen" })
+    ).json();
+
+    const converted = await post(`/api/tasks/${root.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: root.revision,
+    });
+
+    expect(converted.statusCode).toBe(201);
+    expect(converted.json()).toMatchObject({
+      id: root.id,
+      revision: root.revision + 1,
+      title: "Keller organisieren",
+      notes: "Regale und Kisten",
+      status: "backlog",
+      ownerMemberId: member.id,
+      dueDate: "2026-10-10",
+      scheduledDate: "2026-09-15",
+      tags: [expect.objectContaining({ id: tag.id })],
+      contexts: [expect.objectContaining({ id: context.id })],
+    });
+    const project = (
+      await ctx.app.inject({ method: "GET", url: `/api/projects/${root.id}` })
+    ).json();
+    expect(project.tasks.map((task: { id: number }) => task.id)).toEqual([
+      first.id,
+      second.id,
+    ]);
+    expect(project.tasks[0]).toMatchObject({
+      id: first.id,
+      parentTaskId: null,
+      children: [expect.objectContaining({ id: grandchild.id })],
+    });
+    const rows = ctx.handle.db
+      .select({
+        id: schema.workItems.id,
+        parentId: schema.workItems.parentId,
+        role: schema.workItems.role,
+        position: schema.workItems.position,
+      })
+      .from(schema.workItems)
+      .where(eq(schema.workItems.id, first.id))
+      .all();
+    expect(rows).toEqual([
+      {
+        id: first.id,
+        parentId: root.id,
+        role: "task",
+        position: first.position,
+      },
+    ]);
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.workItems)
+        .where(eq(schema.workItems.id, grandchild.id))
+        .get(),
+    ).toMatchObject({ parentId: first.id, role: "task" });
+    const activity = ctx.handle.db.select().from(schema.activityEvents).all();
+    expect(activity.at(-1)).toMatchObject({
+      kind: "work_item_role_converted",
+      entityId: root.id,
+      entityType: "project",
+    });
+    expect(activity.some((event) => event.kind === "project_deleted")).toBe(false);
+    expect(activity.filter((event) => event.kind === "project_created")).toHaveLength(0);
+  });
+
+  it("requires an explicit owner when converting to an active project", async () => {
     const root = (await post("/api/tasks", { title: "Keller aufräumen" })).json();
     const activePromotion = await post(
       `/api/tasks/${root.id}/convert-to-story`,
@@ -140,14 +278,14 @@ describe("task <-> story role conversion", () => {
       },
     );
 
-    expect(activePromotion.statusCode).toBe(409);
+    expect(activePromotion.statusCode).toBe(400);
     expect(activePromotion.json().error.code).toBe("project_driver_required");
     expect(
       await ctx.app.inject({ method: "GET", url: `/api/tasks/${root.id}` }),
     ).toMatchObject({ statusCode: 200 });
   });
 
-  it("rejects an active promotion with a driver but no progress path atomically", async () => {
+  it("rejects an active conversion with a driver but no progress path atomically", async () => {
     const member = (await post("/api/members", { name: "No path owner" })).json();
     const root = (
       await post("/api/tasks", {
@@ -175,70 +313,195 @@ describe("task <-> story role conversion", () => {
     ).toEqual([]);
   });
 
-  it("rejects non-root, classified, and task-only promotion states", async () => {
-    const capturedWithReminder = await post("/api/tasks", {
-      title: "Mit Erinnerung",
-      reminderAt: "2030-01-01T09:00:00.000Z",
-    });
-    expect(capturedWithReminder.statusCode).toBe(409);
-    expect(capturedWithReminder.json().error.code).toBe(
-      "task_promotion_invalid",
-    );
-
-    const actionable = (
-      await post("/api/tasks", { title: "Schon Aufgabe", status: "actionable" })
+  it("converts an actionable root with a driver and viable child next action to active", async () => {
+    const member = (await post("/api/members", { name: "Active owner" })).json();
+    const root = (
+      await post("/api/tasks", {
+        title: "Keller organisieren",
+        status: "actionable",
+        ownerMemberId: member.id,
+        ownerInheritanceMode: "explicit",
+      })
     ).json();
-    const classified = await post(
-      `/api/tasks/${actionable.id}/convert-to-story`,
-      { status: "active" },
-    );
-    expect(classified.statusCode).toBe(409);
-    expect(classified.json().error.code).toBe("task_promotion_invalid");
-
-    const captured = (await post("/api/tasks", { title: "Noch offen" })).json();
-    const recurrence = await ctx.app.inject({
-      method: "PATCH",
-      url: `/api/tasks/${captured.id}`,
-      payload: { repeatAfterDays: 7 },
+    await post(`/api/tasks/${root.id}/children`, {
+      title: "Regale ausmessen",
     });
-    expect(recurrence.statusCode).toBe(409);
-    expect(recurrence.json().error.code).toBe("task_promotion_invalid");
 
+    const response = await post(`/api/tasks/${root.id}/convert-to-story`, {
+      status: "active",
+      expectedRevision: root.revision,
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      id: root.id,
+      status: "active",
+      ownerMemberId: member.id,
+    });
+  });
+
+  it("allows backlog conversion without activation readiness", async () => {
+    const root = (
+      await post("/api/tasks", {
+        title: "Noch nicht reif",
+        status: "actionable",
+      })
+    ).json();
+
+    const response = await post(`/api/tasks/${root.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: root.revision,
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      id: root.id,
+      status: "backlog",
+      ownerMemberId: null,
+    });
+  });
+
+  it("rejects subtasks, project-contained tasks, and unsupported terminal states", async () => {
+    const root = (
+      await post("/api/tasks", { title: "Root", status: "actionable" })
+    ).json();
+    const child = (await post(`/api/tasks/${root.id}/children`, { title: "Child" })).json();
+    const storyRoot = (await post("/api/tasks", { title: "Story root" })).json();
+    const story = (
+      await post(`/api/tasks/${storyRoot.id}/convert-to-story`, {
+        status: "backlog",
+        expectedRevision: storyRoot.revision,
+      })
+    ).json();
+    const insideStory = (
+      await post("/api/tasks", {
+        title: "Inside story",
+        projectId: story.id,
+      })
+    ).json();
+    const done = (
+      await post("/api/tasks", {
+        title: "Done task",
+        status: "done",
+      })
+    ).json();
+    const cancelled = (
+      await post("/api/tasks", {
+        title: "Cancelled task",
+        status: "cancelled",
+      })
+    ).json();
+
+    const childConversion = await post(`/api/tasks/${child.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: child.revision,
+    });
+    const storyContainedConversion = await post(
+      `/api/tasks/${insideStory.id}/convert-to-story`,
+      { status: "backlog", expectedRevision: insideStory.revision },
+    );
+    const doneConversion = await post(`/api/tasks/${done.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: done.revision,
+    });
+    const cancelledConversion = await post(
+      `/api/tasks/${cancelled.id}/convert-to-story`,
+      { status: "backlog", expectedRevision: cancelled.revision },
+    );
+
+    expect(childConversion.statusCode).toBe(409);
+    expect(childConversion.json().error).toMatchObject({
+      code: "role_conversion_invalid",
+      details: { reason: "not_root" },
+    });
+    expect(storyContainedConversion.statusCode).toBe(409);
+    expect(storyContainedConversion.json().error).toMatchObject({
+      code: "role_conversion_invalid",
+      details: { reason: "inside_story" },
+    });
+    expect(doneConversion.statusCode).toBe(409);
+    expect(doneConversion.json().error).toMatchObject({
+      code: "role_conversion_invalid",
+      details: { reason: "unsupported_status" },
+    });
+    expect(cancelledConversion.statusCode).toBe(409);
+    expect(cancelledConversion.json().error).toMatchObject({
+      code: "role_conversion_invalid",
+      details: { reason: "unsupported_status" },
+    });
+  });
+
+  it("rejects task-only relations before converting a task to a story", async () => {
+    const waiting = (
+      await post("/api/tasks", { title: "Wartet extern", status: "actionable" })
+    ).json();
+    await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${waiting.id}/external-wait`,
+      payload: {
+        expectedRevision: waiting.revision,
+        waitingFor: "Antwort",
+      },
+    });
+
+    const dependencyTask = (
+      await post("/api/tasks", { title: "Mit Abhängigkeit", status: "actionable" })
+    ).json();
     const blocker = (
       await post("/api/tasks", { title: "Voraussetzung", status: "actionable" })
     ).json();
-    const dependency = await post(`/api/tasks/${captured.id}/dependencies`, {
-      dependsOnTaskId: blocker.id,
-    });
-    expect(dependency.statusCode).toBe(201);
-    const dependencyPromotion = await post(
-      `/api/tasks/${captured.id}/convert-to-story`,
-      { status: "backlog" },
-    );
-    expect(dependencyPromotion.statusCode).toBe(409);
-    expect(dependencyPromotion.json().error.code).toBe(
-      "task_promotion_invalid",
-    );
+    expect(
+      await post(`/api/tasks/${dependencyTask.id}/dependencies`, {
+        dependsOnTaskId: blocker.id,
+      }),
+    ).toMatchObject({ statusCode: 201 });
 
-    const child = await post(`/api/tasks/${captured.id}/children`, {
-      title: "Unzulässiger Schritt",
-    });
-    expect(child.statusCode).toBe(409);
-    expect(child.json().error.code).toBe("task_promotion_invalid");
+    const recurring = (
+      await post("/api/tasks", {
+        title: "Wiederholt",
+        status: "actionable",
+      })
+    ).json();
+    ctx.handle.db
+      .update(schema.workItems)
+      .set({ repeatAfterDays: 7 })
+      .where(eq(schema.workItems.id, recurring.id))
+      .run();
+    const reminder = (
+      await post("/api/tasks", {
+        title: "Mit Erinnerung",
+        status: "actionable",
+      })
+    ).json();
+    ctx.handle.db
+      .update(schema.workItems)
+      .set({ reminderAt: "2030-01-01T09:00:00.000Z" })
+      .where(eq(schema.workItems.id, reminder.id))
+      .run();
+
+    for (const task of [waiting, dependencyTask, blocker, recurring, reminder]) {
+      const response = await post(`/api/tasks/${task.id}/convert-to-story`, {
+        status: "backlog",
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json().error).toMatchObject({
+        code: "role_conversion_invalid",
+        details: { reason: "task_only_relations" },
+      });
+    }
   });
 
   it("converts a story back to a task, preserving identity and history, when the story has no children or acceptance criteria", async () => {
     const root = (await post("/api/tasks", { title: "Wieder zur Aufgabe" })).json();
-    const promoted = (
+    const converted = (
       await post(`/api/tasks/${root.id}/convert-to-story`, {
         status: "backlog",
         expectedRevision: root.revision,
       })
     ).json();
-    expect(promoted.id).toBe(root.id);
-
-    const reverted = await post(`/api/projects/${promoted.id}/convert-to-task`, {
-      expectedRevision: promoted.revision,
+    expect(converted.id).toBe(root.id);
+    const reverted = await post(`/api/projects/${converted.id}/convert-to-task`, {
+      expectedRevision: converted.revision,
     });
     expect(reverted.statusCode).toBe(201);
     expect(reverted.json()).toMatchObject({
@@ -249,7 +512,7 @@ describe("task <-> story role conversion", () => {
     expect(
       await ctx.app.inject({
         method: "GET",
-        url: `/api/projects/${promoted.id}`,
+        url: `/api/projects/${converted.id}`,
       }),
     ).toMatchObject({ statusCode: 404 });
 
@@ -264,13 +527,13 @@ describe("task <-> story role conversion", () => {
 
   it("rejects converting a story with tasks or acceptance criteria back to a task", async () => {
     const root = (await post("/api/tasks", { title: "Mit Unterschritten" })).json();
-    const promoted = (
+    const converted = (
       await post(`/api/tasks/${root.id}/convert-to-story`, { status: "backlog" })
     ).json();
-    await post(`/api/tasks`, { title: "Schritt", projectId: promoted.id });
+    await post(`/api/tasks`, { title: "Schritt", projectId: converted.id });
 
     const withChildren = await post(
-      `/api/projects/${promoted.id}/convert-to-task`,
+      `/api/projects/${converted.id}/convert-to-task`,
       {},
     );
     expect(withChildren.statusCode).toBe(409);
