@@ -131,7 +131,6 @@ function storyWorkflowCommand(
 export function ProjectStoryRow({ story: storyProp, variant = "compact" }: ProjectStoryRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
-  const [chipsOpen, setChipsOpen] = useState(false);
   const [sheet, setSheet] = useState<Sheet>(null);
   const { members } = useIdentity();
   const navigate = useNavigate();
@@ -259,9 +258,10 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const swipe = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy,
     onPrimary: doPrimary,
-    onSecondary: () => setChipsOpen(true),
+    onSecondary: () => scope?.setOpenRail(storyProp.id),
   });
   const { dragX } = swipe;
+  const chipsOpen = scope?.openRailId === storyProp.id;
   const showPrimaryBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
   const swipeCoach = useSwipeCoach(
@@ -270,12 +270,12 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   );
 
   const openSheet = (next: Exclude<Sheet, null>) => {
-    setChipsOpen(false);
+    scope?.setOpenRail(null);
     setSheet(next);
   };
 
   const runSecondary = (action: ProjectWorkflowAction) => {
-    setChipsOpen(false);
+    scope?.setOpenRail(null);
     if (action === "complete" && criteria.some((criterion) => !criterion.checked)) {
       setSheet("criteria");
       return;
@@ -297,12 +297,12 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   };
 
   const handleMainClick = () => {
-    setChipsOpen(false);
+    scope?.setOpenRail(null);
     scope?.setActive(story.id, "story");
   };
 
   const goToDetail = () => {
-    setChipsOpen(false);
+    scope?.setOpenRail(null);
     scope?.setActive(story.id, "story");
     navigate(`/projects/${story.id}`);
   };
@@ -454,7 +454,9 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           classPrefix="story-row"
           open={chipsOpen}
           disabled={busy}
-          onToggle={() => setChipsOpen((o) => !o)}
+          onToggle={() =>
+            scope?.setOpenRail(chipsOpen ? null : storyProp.id)
+          }
         />
       </div>
       {swipeCoach.active ? (

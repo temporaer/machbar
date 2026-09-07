@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { TaskDetailProvider, useTaskDetail } from "../lib/taskDetailContext";
+import { InteractionScopeProvider } from "../lib/interactionScope";
 import { api } from "../lib/api";
 import { makeMember } from "../test/fixtures";
 import type { RefinementListItem } from "../lib/useRefinementActions";
@@ -88,10 +89,12 @@ function renderRow(task: RefinementListItem, opts: { routes?: boolean } = {}) {
     <MemoryRouter initialEntries={["/"]}>
       <IdentityProvider>
         <RefreshProvider>
-          <TaskDetailProvider>
-            <Harness task={task} onOpen={onOpen} routes={opts.routes ?? false} />
-            <OpenSpy onOpen={onOpen} />
-          </TaskDetailProvider>
+          <InteractionScopeProvider>
+            <TaskDetailProvider>
+              <Harness task={task} onOpen={onOpen} routes={opts.routes ?? false} />
+              <OpenSpy onOpen={onOpen} />
+            </TaskDetailProvider>
+          </InteractionScopeProvider>
         </RefreshProvider>
       </IdentityProvider>
     </MemoryRouter>,
@@ -382,9 +385,11 @@ describe("RefinementTaskRow", () => {
       <MemoryRouter initialEntries={["/"]}>
         <IdentityProvider>
           <RefreshProvider>
-            <TaskDetailProvider>
-              <Harness task={task} onOpen={vi.fn()} routes />
-            </TaskDetailProvider>
+            <InteractionScopeProvider>
+              <TaskDetailProvider>
+                <Harness task={task} onOpen={vi.fn()} routes />
+              </TaskDetailProvider>
+            </InteractionScopeProvider>
           </RefreshProvider>
         </IdentityProvider>
       </MemoryRouter>,

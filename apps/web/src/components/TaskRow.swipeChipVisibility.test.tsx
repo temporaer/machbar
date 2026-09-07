@@ -193,17 +193,14 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     expect(getComputedStyle(cancelBg).opacity).toBe("0");
   });
 
-  it("offers an explicit keyboard-accessible close action that resets the reveal without acting", async () => {
+  it("toggles the reveal from the kebab without acting", async () => {
     const task = makeTask({ id: 10, title: "Aktionen verwerfen", status: "actionable" });
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Aktionen verwerfen");
 
     swipe(container, -100);
     const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
-    const close = screen.getByRole("button", { name: "Schließen" });
-    close.focus();
-
-    await userEvent.keyboard("{Enter}");
+    await userEvent.click(kebab);
 
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
     expect(kebab).toHaveFocus();
@@ -214,7 +211,7 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
-  it("returns focus to the visible task control when the mobile layout hides the kebab", async () => {
+  it("closes the reveal when tapping elsewhere, including when the kebab is hidden", async () => {
     const task = makeTask({ id: 11, title: "Mobile Aktionen schließen", status: "actionable" });
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Mobile Aktionen schließen");
@@ -222,12 +219,9 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     swipe(container, -100);
     const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
     kebab.style.display = "none";
-    const close = screen.getByRole("button", { name: "Schließen" });
-    close.focus();
+    fireEvent.pointerDown(document.body);
 
-    await userEvent.keyboard("{Enter}");
-
-    expect(screen.getByRole("button", { name: "Mobile Aktionen schließen" })).toHaveFocus();
+    expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
   });
 
   it("does not leak a visible red background onto sibling rows that were not swiped", async () => {

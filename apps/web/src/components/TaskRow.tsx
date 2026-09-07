@@ -114,7 +114,7 @@ export function TaskRow({
     (value: boolean) => scope.setCollapsed(taskProp.id, value),
     [scope, taskProp.id],
   );
-  const [chipsOpen, setChipsOpen] = useState(false);
+  const chipsOpen = scope.openRailId === taskProp.id;
   const [quickAction, setQuickAction] = useState<TaskQuickAction | null>(null);
   const [childComposerOpen, setChildComposerOpen] = useState(false);
   const [successorComposerOpen, setSuccessorComposerOpen] = useState(false);
@@ -257,7 +257,7 @@ export function TaskRow({
   } = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy || organize?.activeId != null,
     onPrimary: () => dispatch({ type: "task.primaryAction", task }),
-    onSecondary: () => setChipsOpen(true),
+    onSecondary: () => scope.setOpenRail(taskProp.id),
     onRealDrag: clearLongPress,
   });
   // Only one swipe background may be visible at a time — mid-drag it
@@ -292,17 +292,17 @@ export function TaskRow({
 
   const openQuickAction = (action: TaskQuickAction) => {
     setQuickAction(action);
-    setChipsOpen(false);
+    scope.setOpenRail(null);
   };
 
   const reopenChip = () => {
     dispatch({ type: "task.toggleDone", task });
-    setChipsOpen(false);
+    scope.setOpenRail(null);
   };
 
   const followUpChip = () => {
     waitingInteraction?.onFollowUp(task);
-    setChipsOpen(false);
+    scope.setOpenRail(null);
   };
 
   // A task that already belongs to a project keeps navigating straight
@@ -310,7 +310,7 @@ export function TaskRow({
   // icon instead opens the existing project picker (search + recents) —
   // never a disabled dead end.
   const goToProjectChip = () => {
-    setChipsOpen(false);
+    scope.setOpenRail(null);
     if (task.projectId) {
       navigate(`/projects/${task.projectId}`);
     } else {
@@ -318,23 +318,13 @@ export function TaskRow({
     }
   };
 
-  const closeChips = () => {
-    setChipsOpen(false);
-    const kebab = kebabButtonRef.current;
-    if (kebab && getComputedStyle(kebab).display !== "none") {
-      kebab.focus();
-    } else {
-      mainButtonRef.current?.focus();
-    }
-  };
-
   const openChildComposer = () => {
-    setChipsOpen(false);
+    scope.setOpenRail(null);
     setChildComposerOpen(true);
   };
 
   const openSuccessorComposer = () => {
-    setChipsOpen(false);
+    scope.setOpenRail(null);
     setSuccessorComposerOpen(true);
   };
 
@@ -596,7 +586,9 @@ export function TaskRow({
           open={chipsOpen}
           disabled={busy}
           buttonRef={kebabButtonRef}
-          onToggle={() => setChipsOpen((o) => !o)}
+          onToggle={() =>
+            scope.setOpenRail(chipsOpen ? null : taskProp.id)
+          }
         />
       </div>
       {swipeCoach.active ? (
@@ -633,7 +625,6 @@ export function TaskRow({
             <IconActionButton kind="followUp" label={strings.followUp} disabled={busy} onClick={followUpChip} />
           ) : null}
           <IconActionButton kind="more" label={strings.more} disabled={outlineRefreshing} onClick={() => dispatch({ type: "task.open", taskId: task.id })} />
-          <IconActionButton kind="close" label={strings.close} onClick={closeChips} />
         </div>
       ) : null}
 

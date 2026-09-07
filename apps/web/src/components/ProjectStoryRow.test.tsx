@@ -12,6 +12,7 @@ import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
+import { InteractionScopeProvider } from "../lib/interactionScope";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
 import type { ProjectWithActions } from "../lib/api";
@@ -100,12 +101,14 @@ function renderWithProjectRoute(ui: ReactElement) {
           <SwipeSettingsProvider>
             <TaskActionsProvider>
               <ProjectActionsProvider>
-                <TaskDetailProvider>
-                  <Routes>
-                    <Route path="/" element={ui} />
-                    <Route path="/projects/:id" element={<ProjectRouteMarker />} />
-                  </Routes>
-                </TaskDetailProvider>
+                <InteractionScopeProvider>
+                  <TaskDetailProvider>
+                    <Routes>
+                      <Route path="/" element={ui} />
+                      <Route path="/projects/:id" element={<ProjectRouteMarker />} />
+                    </Routes>
+                  </TaskDetailProvider>
+                </InteractionScopeProvider>
               </ProjectActionsProvider>
             </TaskActionsProvider>
           </SwipeSettingsProvider>
