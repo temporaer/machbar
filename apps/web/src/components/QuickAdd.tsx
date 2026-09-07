@@ -1,18 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import type { ProjectWithActions } from "../lib/api";
 import { useRefresh } from "../lib/refresh";
-import { api } from "../lib/api";
 import { useStrings } from "../lib/strings";
-import { localizedErrorMessage } from "../lib/errorMessage";
-import { useTaskActions } from "../lib/useTaskActions";
-import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { BottomSheet } from "./BottomSheet";
 import { CaptureForm } from "./CaptureForm";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
-import { DestinationPicker, type DestinationOption } from "./DestinationPicker";
-import { useIdentity } from "../lib/identity";
-import { useLocale } from "../lib/locale";
-import { sortProjectDestinations } from "../lib/sortOrder";
 import { appendTextBlock } from "../lib/shareTarget";
 import {
   uploadPaperlessFile,
@@ -21,7 +14,6 @@ import {
 import { IconActionGlyph } from "./IconActionButton";
 import { ImageCropSheet } from "./ImageCropSheet";
 import { CameraCaptureSheet } from "./CameraCaptureSheet";
-import { useTaskDetail } from "../lib/taskDetailContext";
 import { useOptionalInteractionScope } from "../lib/interactionScope";
 
 /**
@@ -38,7 +30,7 @@ export function QuickAdd({
   onAutoOpenClose?: () => void;
 }) {
   const strings = useStrings();
-  const { locale } = useLocale();
+  const navigate = useNavigate();
   // Contextual capture target: whichever `InteractionScopeProvider` this
   // `QuickAdd` instance is mounted inside of (a project/story outline
   // declares `captureTarget: {kind:"story", storyId}`; every compiled
@@ -61,21 +53,9 @@ export function QuickAdd({
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadedAttachmentRef =
     useRef<Promise<UploadedPaperlessAttachment> | null>(null);
-  const [createdTask, setCreatedTask] = useState<Awaited<ReturnType<typeof api.createTask>> | null>(null);
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const [projects, setProjects] = useState<ProjectWithActions[] | null>(null);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
-  const [projectPickerError, setProjectPickerError] = useState<string | null>(null);
-  const [moving, setMoving] = useState(false);
-  const [assigning, setAssigning] = useState(false);
   const [createdProject, setCreatedProject] = useState<ProjectWithActions | null>(null);
-  const [captureNotice, setCaptureNotice] = useState<string | null>(null);
   const { bump } = useRefresh();
-  const { members } = useIdentity();
-  const taskActions = useTaskActions();
-  const { open: openTaskDetail } = useTaskDetail();
   const openCapture = useCallback(() => {
-    setCaptureNotice(null);
     setCaptureStep("choose");
     setOpen(true);
   }, []);
@@ -127,58 +107,6 @@ export function QuickAdd({
     if (!attachment) return notes;
     return appendTextBlock(notes, attachment.markdown);
   };
-
-  const loadProjects = () => {
-    setProjectPickerError(null);
-    setProjects(null);
-    void api
-      .getProjects()
-      .then(setProjects)
-      .catch((err: unknown) =>
-        setProjectPickerError(localizedErrorMessage(err, strings)),
-      );
-  };
-
-  const openProjectPicker = () => {
-    setSelectedProjectId(createdTask?.projectId ?? null);
-    setProjectPickerOpen(true);
-    loadProjects();
-  };
-
-  const moveToProject = async () => {
-    if (!createdTask || moving) return;
-    setMoving(true);
-    setProjectPickerError(null);
-    try {
-      const moved = await api.moveTask(createdTask.id, {
-        parentTaskId: null,
-        projectId: selectedProjectId,
-        expectedRevision: createdTask.revision,
-      });
-      setCreatedTask(moved);
-      bump();
-      setProjectPickerOpen(false);
-    } catch (err) {
-      setProjectPickerError(localizedErrorMessage(err, strings));
-    } finally {
-      setMoving(false);
-    }
-  };
-
-  const openCreatedTaskDetails = () => {
-    if (!createdTask || assigning || moving) return;
-    const taskId = createdTask.id;
-    setCreatedTask(null);
-    openTaskDetail(taskId);
-  };
-
-  const projectOptions: DestinationOption[] = sortProjectDestinations(
-    projects ?? [],
-    locale,
-  ).map((project) => ({
-    id: project.id,
-    title: project.title,
-  }));
 
   return (
     <>
@@ -250,11 +178,11 @@ export function QuickAdd({
                 close();
                 if (result.kind === "project") {
                   setCreatedProject(result.project);
-                } else if (result.needsClarification) {
-                  setCaptureNotice(strings.filedInInbox);
                 } else {
-                  setCaptureNotice(null);
-                  setCreatedTask(result.task);
+                  scope?.setOpenRail(result.task.id);
+                  if (projectId === null) {
+                    navigate(`/inbox?focus=${result.task.id}`);
+                  }
                 }
               }}
             />
@@ -287,88 +215,6 @@ export function QuickAdd({
             setCaptureStep("form");
           }}
         />
-      ) : null}
-      {createdTask ? (
-        <section className="capture-correction-toast" role="status" aria-live="polite">
-          <strong>{strings.addedToToday}</strong>
-          <div className="capture-correction-actions">
-            <button type="button" className="btn btn-sm" disabled={assigning || moving} onClick={() => setAssigning(true)}>
-              {strings.changeOwner}
-            </button>
-            <button type="button" className="btn btn-sm" disabled={assigning || moving} onClick={openProjectPicker}>
-              {strings.selectProject}
-            </button>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={assigning || moving} onClick={openCreatedTaskDetails}>
-              {strings.openTaskDetails}
-            </button>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={assigning || moving} onClick={() => setCreatedTask(null)}>
-              {strings.close}
-            </button>
-          </div>
-        </section>
-      ) : null}
-      {captureNotice ? (
-        <section className="capture-correction-toast" role="status" aria-live="polite">
-          <strong>{captureNotice}</strong>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setCaptureNotice(null)}>
-            {strings.close}
-          </button>
-        </section>
-      ) : null}
-      {assigning && createdTask ? (
-        <MemberSelectionSheet
-          title={strings.changeOwner}
-          label={strings.owner}
-          idPrefix={`capture-owner-${createdTask.id}`}
-          members={members}
-          value={createdTask.ownerMemberId}
-          unassignedLabel={strings.shared}
-          onClose={() => setAssigning(false)}
-          onSelect={async (ownerMemberId) => {
-            const task = await taskActions.assignOwner(
-              createdTask,
-              ownerMemberId,
-            );
-            if (task) setCreatedTask(task);
-          }}
-        />
-      ) : null}
-      {projectPickerOpen && createdTask ? (
-        <BottomSheet title={strings.selectProject} onClose={() => setProjectPickerOpen(false)} labelledBy="capture-project-picker-title">
-          <div className="stack">
-            {projectPickerError ? <p className="capture-error" role="alert">{projectPickerError}</p> : null}
-            {projects ? (
-              <>
-                <DestinationPicker
-                  kind="project"
-                  label={strings.selectProject}
-                  options={projectOptions}
-                  value={selectedProjectId}
-                  onChange={setSelectedProjectId}
-                  noneLabel={strings.noProject}
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  className="btn btn-primary btn-block"
-                  disabled={moving}
-                  onClick={() => void moveToProject()}
-                >
-                  {strings.moveHere}
-                </button>
-              </>
-            ) : (
-              <div className="stack">
-                <p className="text-muted">{strings.loading}</p>
-                {projectPickerError ? (
-                  <button type="button" className="btn" onClick={loadProjects}>
-                    {strings.retry}
-                  </button>
-                ) : null}
-              </div>
-            )}
-          </div>
-        </BottomSheet>
       ) : null}
       {createdProject ? (
         <CapturedProjectHandoff
