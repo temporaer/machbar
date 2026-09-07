@@ -4,6 +4,7 @@ import { IdentityProvider, useIdentity } from "./lib/identity";
 import { RefreshProvider } from "./lib/refresh";
 import { TaskDetailProvider, useTaskDetail } from "./lib/taskDetailContext";
 import { SwipeSettingsProvider } from "./lib/swipeSettings";
+import { RailConfigProvider } from "./lib/railConfigContext";
 import { TaskActionsProvider } from "./lib/useTaskActions";
 import { ProjectActionsProvider } from "./lib/useProjectActions";
 import { useGlobalNavigationKeys } from "./lib/useGlobalNavigationKeys";
@@ -118,17 +119,19 @@ export function App() {
           <IdentityProvider>
             <IdentityAwareRefreshProvider>
               <SwipeSettingsProvider>
-                <SwipeCoachProvider>
-                  <TaskActionsProvider>
-                    <ProjectActionsProvider>
-                      <TaskDetailProvider>
-                        <HashRouter>
-                          <Shell />
-                        </HashRouter>
-                      </TaskDetailProvider>
-                    </ProjectActionsProvider>
-                  </TaskActionsProvider>
-                </SwipeCoachProvider>
+                <RailConfigProvider>
+                  <SwipeCoachProvider>
+                    <TaskActionsProvider>
+                      <ProjectActionsProvider>
+                        <TaskDetailProvider>
+                          <HashRouter>
+                            <Shell />
+                          </HashRouter>
+                        </TaskDetailProvider>
+                      </ProjectActionsProvider>
+                    </TaskActionsProvider>
+                  </SwipeCoachProvider>
+                </RailConfigProvider>
               </SwipeSettingsProvider>
             </IdentityAwareRefreshProvider>
           </IdentityProvider>

@@ -77,3 +77,27 @@ export type WorkItemCommand =
   | { type: "navigate.projects" }
   | { type: "navigate.waiting" }
   | { type: "navigate.more" };
+
+/** Canonical semantic commands that may be promoted into a row command rail. */
+export type TaskRailCommand =
+  | "task.plan"
+  | "task.waitingLifecycle"
+  | "task.split"
+  | "task.assignOwner"
+  | "task.changeProject"
+  | "task.addSuccessor"
+  | "task.recurrence"
+  | "task.priority"
+  | "task.tags"
+  | "task.contexts"
+  | "task.convertToProject"
+  | "task.lifecycle";
+
+export type ProjectRailCommand =
+  | "story.defer"
+  | "story.assignDriver"
+  | "story.planWork"
+  | "story.editOutcome"
+  | "story.tags"
+  | "story.contexts"
+  | "story.lifecycle";

@@ -5,6 +5,7 @@ import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
+import { RailConfigProvider } from "../lib/railConfigContext";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { InteractionScopeProvider } from "../lib/interactionScope";
@@ -30,15 +31,17 @@ function AllProviders({
             <IdentityProvider>
               <RefreshProvider>
                 <SwipeSettingsProvider>
-                  <SwipeCoachProvider>
-                    <TaskActionsProvider>
-                      <ProjectActionsProvider>
-                        <InteractionScopeProvider>
-                          <TaskDetailProvider>{children}</TaskDetailProvider>
-                        </InteractionScopeProvider>
-                      </ProjectActionsProvider>
-                    </TaskActionsProvider>
-                  </SwipeCoachProvider>
+                  <RailConfigProvider>
+                    <SwipeCoachProvider>
+                      <TaskActionsProvider>
+                        <ProjectActionsProvider>
+                          <InteractionScopeProvider>
+                            <TaskDetailProvider>{children}</TaskDetailProvider>
+                          </InteractionScopeProvider>
+                        </ProjectActionsProvider>
+                      </TaskActionsProvider>
+                    </SwipeCoachProvider>
+                  </RailConfigProvider>
                 </SwipeSettingsProvider>
               </RefreshProvider>
             </IdentityProvider>
