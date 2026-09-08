@@ -400,11 +400,7 @@ function SharePageContent({
 
   const completeCapture = (result: CaptureResult) => {
     bump();
-    setCompleted(
-      result.kind === "task"
-        ? { kind: "task", id: result.task.id, title: result.task.title }
-        : { kind: "project", id: result.project.id, title: result.project.title },
-    );
+    setCompleted({ kind: "task", id: result.task.id, title: result.task.title });
     setCaptureOpen(false);
     clearPendingShare();
   };

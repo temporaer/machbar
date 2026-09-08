@@ -174,7 +174,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Memory-bounded photo cropping | `apps/web/src/components/ImageCropSheet.tsx` |
 | Memory-bounded camera capture | `apps/web/src/components/CameraCaptureSheet.tsx` |
 | Incoming file-share staging | `apps/web/public/sw.js` and `apps/web/src/lib/pendingShareTarget.ts` |
-| Capture short syntax parsing/resolution | `apps/web/src/lib/captureSyntax.ts`, applied only by `apps/web/src/components/CaptureForm.tsx` |
+| Single-task capture and short syntax parsing/resolution | `apps/web/src/components/CaptureForm.tsx` and `apps/web/src/lib/captureSyntax.ts` (the shared editor creates tasks only; syntax is applied only there) |
 | Task/story storage and hierarchy | `apps/api/src/db/schema.ts` (`workItems`) plus `apps/api/src/repo/treeRepo.ts` recursive CTEs |
 | Task/story read projection (shared lifecycle vocabulary) | `apps/api/src/domain/workItem.ts` and `apps/api/src/domain/graph.ts` |
 | Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`) |

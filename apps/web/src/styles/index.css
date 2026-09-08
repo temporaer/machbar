@@ -2279,10 +2279,9 @@ details[open] > .disclosure-summary::after {
   margin-top: 10px;
 }
 
-.capture-shape-actions {
+.capture-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 8px;
 }
 
@@ -2337,6 +2336,18 @@ details[open] > .disclosure-summary::after {
   font-size: 0.78rem;
 }
 
+.capture-actions .btn {
+  min-height: 48px;
+  width: 100%;
+}
+
+.capture-shape-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 8px;
+}
+
 .capture-shape-actions .btn {
   min-height: 58px;
   width: 100%;
@@ -2352,6 +2363,7 @@ details[open] > .disclosure-summary::after {
   font-weight: 400;
   opacity: 0.85;
 }
+
 
 .capture-breakdown-section {
   padding-top: 10px;

@@ -773,11 +773,12 @@ keeps those Machbar routes as the primary action and adds a secondary direct
 Paperless-ngx document-detail link for metadata/archive editing.
 
 Global material capture starts in `QuickAdd` but keeps the selected browser
-`File` local. `CaptureForm.prepareNotes` uploads immediately before its existing
-task/project create call, so abandoning capture before commit creates no
-Paperless document. Successful uploads are retained across create retries.
-`CaptureForm` is also the sole frontend application point for Machbar short
-syntax. `apps/web/src/lib/captureSyntax.ts` owns React-free lexical detection,
+`File` local. `CaptureForm.prepareNotes` uploads immediately before its task
+create call, so abandoning capture before commit creates no Paperless document.
+Successful uploads are retained across create retries. Capture always creates
+a task; project promotion remains the separate `task.convertToProject`
+workflow. `CaptureForm` is also the sole frontend application point for
+Machbar short syntax. `apps/web/src/lib/captureSyntax.ts` owns React-free lexical detection,
 explicit entity-token resolution, date/size token resolution, title stripping,
 and structured metadata assembly. Unknown entity-looking text remains ordinary
 title text: short syntax can select existing members, tags, physical contexts,

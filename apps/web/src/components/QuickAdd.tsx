@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import type { ProjectWithActions } from "../lib/api";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { CaptureForm } from "./CaptureForm";
-import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { appendTextBlock } from "../lib/shareTarget";
 import {
   uploadPaperlessFile,
@@ -53,7 +51,6 @@ export function QuickAdd({
   const fileRef = useRef<HTMLInputElement>(null);
   const uploadedAttachmentRef =
     useRef<Promise<UploadedPaperlessAttachment> | null>(null);
-  const [createdProject, setCreatedProject] = useState<ProjectWithActions | null>(null);
   const { bump } = useRefresh();
   const openCapture = useCallback(() => {
     setCaptureStep("choose");
@@ -176,13 +173,9 @@ export function QuickAdd({
               onCaptured={(result) => {
                 bump();
                 close();
-                if (result.kind === "project") {
-                  setCreatedProject(result.project);
-                } else {
-                  scope?.setOpenRail(result.task.id);
-                  if (projectId === null) {
-                    navigate(`/inbox?focus=${result.task.id}`);
-                  }
+                scope?.setOpenRail(result.task.id);
+                if (projectId === null) {
+                  navigate(`/inbox?focus=${result.task.id}`);
                 }
               }}
             />
@@ -214,12 +207,6 @@ export function QuickAdd({
             uploadedAttachmentRef.current = null;
             setCaptureStep("form");
           }}
-        />
-      ) : null}
-      {createdProject ? (
-        <CapturedProjectHandoff
-          project={createdProject}
-          onDone={() => setCreatedProject(null)}
         />
       ) : null}
     </>

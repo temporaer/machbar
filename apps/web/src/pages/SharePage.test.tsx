@@ -442,7 +442,7 @@ describe("SharePage", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "+ Neue Aufgabe" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(

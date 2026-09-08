@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { ProjectWithActions, CreateTaskInput } from "../lib/api";
+import type { CreateTaskInput } from "../lib/api";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
@@ -24,10 +24,6 @@ export type CaptureResult =
       kind: "task";
       task: Awaited<ReturnType<typeof api.createTask>>;
       needsClarification: boolean;
-    }
-  | {
-      kind: "project";
-      project: ProjectWithActions;
     };
 
 export interface CaptureFormProps {
@@ -106,9 +102,6 @@ export function CaptureForm({
       }),
     [homeAssistant?.contexts, locale, members, projects, tags, title, titleCursor],
   );
-  const canDeferClassification =
-    (projectId ?? null) === null && (parentTaskId ?? null) === null;
-
   const taskInput = (
     needsClarification: boolean,
     preparedNotes: string,
@@ -133,8 +126,10 @@ export function CaptureForm({
         : ownerAssignmentPatch(currentMemberId)),
   });
 
-  const createTask = async (needsClarification: boolean) => {
+  const createTask = async () => {
     if (!capturedTitle || saving) return;
+    const needsClarification =
+      (projectId ?? null) === null && (parentTaskId ?? null) === null;
     setSaving(true);
     setError(null);
     try {
@@ -150,43 +145,12 @@ export function CaptureForm({
     }
   };
 
-  const createProject = async () => {
-    if (!capturedTitle || saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const preparedNotes = prepareNotes ? await prepareNotes(notes) : notes;
-      const project = await api.createProject({
-        title: capturedTitle,
-        ...(preparedNotes ? { notes: preparedNotes } : {}),
-        ...(syntaxMetadata.projectId !== undefined ? { parentId: syntaxMetadata.projectId } : {}),
-        status: "backlog",
-        ownerMemberId: syntaxMetadata.ownerMemberId ?? currentMemberId,
-        ...(syntaxMetadata.dueDate !== undefined
-          ? { dueDate: syntaxMetadata.dueDate }
-          : showDueDate
-            ? { dueDate }
-            : {}),
-        ...(syntaxMetadata.scheduledDate !== undefined
-          ? { scheduledDate: syntaxMetadata.scheduledDate }
-          : {}),
-        ...(syntaxMetadata.tagIds.length ? { tagIds: syntaxMetadata.tagIds } : {}),
-        ...(syntaxMetadata.contextIds.length ? { contextIds: syntaxMetadata.contextIds } : {}),
-      });
-      onCaptured({ kind: "project", project });
-    } catch (cause) {
-      setError(localizedErrorMessage(cause, strings));
-    } finally {
-      setSaving(false);
-    }
-  };
-
   return (
     <form
       className="stack"
       onSubmit={(event) => {
         event.preventDefault();
-        void createTask(canDeferClassification);
+        void createTask();
       }}
     >
       <PendingMaterialPreview files={pendingFiles} onCrop={onCropPendingFile} />
@@ -294,38 +258,17 @@ export function CaptureForm({
         </div>
       ) : null}
       {error ? <p className="capture-error" role="alert">{error}</p> : null}
-      <div className="capture-shape-actions">
+      <div className="capture-actions">
         <button type="button" className="btn" onClick={onCancel}>
           {strings.cancel}
         </button>
-        {canDeferClassification ? (
-          <button
-            type="submit"
-            className="btn"
-            disabled={saving || !capturedTitle || !dueDateValid}
-          >
-            {strings.clarifyLater}
-          </button>
-        ) : null}
         <button
-          type="button"
-          className="btn btn-primary capture-shape-action"
-          aria-label={strings.captureMachbar}
+          type="submit"
+          className="btn btn-primary"
+          aria-label={strings.create}
           disabled={saving || !capturedTitle || !dueDateValid}
-          onClick={() => void createTask(false)}
         >
-          <span>{strings.captureMachbar}</span>
-          <small>{strings.captureMachbarHint}</small>
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary capture-shape-action"
-          aria-label={strings.captureProject}
-          disabled={saving || !capturedTitle || !dueDateValid}
-          onClick={() => void createProject()}
-        >
-          <span>{strings.captureProject}</span>
-          <small>{strings.captureProjectHint}</small>
+          {strings.create}
         </button>
       </div>
     </form>

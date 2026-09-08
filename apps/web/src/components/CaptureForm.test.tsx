@@ -3,12 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CaptureForm } from "./CaptureForm";
 import { api } from "../lib/api";
-import { makeProject, makeTask } from "../test/fixtures";
+import { makeTask } from "../test/fixtures";
 
 vi.mock("../lib/api", () => ({
   api: {
     createTask: vi.fn(),
-    createProject: vi.fn(),
     getTags: vi.fn(),
     getProjects: vi.fn(),
     getHomeAssistantStatus: vi.fn(),
@@ -29,7 +28,6 @@ describe("CaptureForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedApi.createTask.mockResolvedValue(makeTask());
-    mockedApi.createProject.mockResolvedValue(makeProject());
     mockedApi.getTags.mockResolvedValue([]);
     mockedApi.getProjects.mockResolvedValue([]);
     mockedApi.getHomeAssistantStatus.mockResolvedValue({
@@ -54,7 +52,7 @@ describe("CaptureForm", () => {
     );
 
     expect(screen.queryByLabelText("Fällig")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
@@ -75,7 +73,7 @@ describe("CaptureForm", () => {
     );
 
     expect(screen.getByLabelText("Fällig")).toHaveValue("15.09.2026");
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
@@ -94,38 +92,11 @@ describe("CaptureForm", () => {
       />,
     );
 
-    expect(
-      screen.queryByRole("button", { name: "Später klären" }),
-    ).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
         expect.objectContaining({ projectId: 42, status: "actionable" }),
-      ),
-    );
-  });
-
-  it("submits an initial deadline for a new Project", async () => {
-    render(
-      <CaptureForm
-        initialTitle="Sommerfest"
-        initialDueDate="2026-09-15"
-        showDueDate
-        onCancel={vi.fn()}
-        onCaptured={vi.fn()}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: "Projekt" }));
-
-    await waitFor(() =>
-      expect(mockedApi.createProject).toHaveBeenCalledWith(
-        expect.objectContaining({
-          dueDate: "2026-09-15",
-          status: "backlog",
-          ownerMemberId: 1,
-        }),
       ),
     );
   });
@@ -144,10 +115,10 @@ describe("CaptureForm", () => {
     const dueDate = screen.getByLabelText("Fällig");
     await userEvent.clear(dueDate);
     await userEvent.tab();
-    await userEvent.click(screen.getByRole("button", { name: "Projekt" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     await waitFor(() =>
-      expect(mockedApi.createProject).toHaveBeenCalledWith(
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
         expect.objectContaining({ dueDate: null }),
       ),
     );
