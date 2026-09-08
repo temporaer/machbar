@@ -35,6 +35,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.contexts":
     case "task.convertToProject":
     case "task.lifecycle":
+    case "task.setStatus":
     case "task.openOverflow":
     case "task.toggleDone":
     case "task.primaryAction":
@@ -85,6 +86,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.contexts":
     case "task.convertToProject":
     case "task.lifecycle":
+    case "task.setStatus":
     case "task.openOverflow":
     case "task.toggleDone":
     case "task.primaryAction":
@@ -220,16 +222,38 @@ export function useWorkItemCommands() {
           scope?.setOpenOverflow(command.taskId);
           return;
         case "task.lifecycle":
-          if (command.status === "done" || command.status === "actionable") {
-            taskActions.requestToggle(command.task);
-          } else if (command.status === "cancelled") {
-            taskActions.requestCancel(command.task);
-          } else if (command.status === "captured") {
-            taskActions.clarify(command.task);
-          } else {
-            taskActions.setStatus(command.task, command.status);
-          }
+          scope?.setOpenLifecycle(command.taskId);
           return;
+        case "task.setStatus": {
+          // State-sensitive resolution lives here rather than in each caller:
+          // leaving a terminal status is one atomic backend transition, while
+          // entering one may need the shared child-policy prompt first.
+          const current = command.task.status;
+          const next = command.status;
+          if (current === next) return;
+          if (current === "done" || current === "cancelled") {
+            if (next === "actionable") {
+              taskActions.requestToggle(command.task);
+            } else {
+              taskActions.transitionStatus(command.task, next);
+            }
+            return;
+          }
+          if (next === "done") {
+            taskActions.requestToggle(command.task);
+            return;
+          }
+          if (next === "cancelled") {
+            taskActions.requestCancel(command.task);
+            return;
+          }
+          if (next === "captured") {
+            taskActions.transitionStatus(command.task, "captured");
+            return;
+          }
+          taskActions.setStatus(command.task, next);
+          return;
+        }
         case "task.toggleDone":
           taskActions.requestToggle(command.task);
           return;

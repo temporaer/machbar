@@ -15,7 +15,9 @@ import { renderWithProviders } from "../test/testUtils";
 import { ProjectDetailPage } from "./ProjectDetailPage";
 import { de as strings } from "../i18n/de";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { TaskDetailSheet } from "../components/TaskDetailSheet";
+import { TaskWorkflowHost } from "../components/TaskWorkflowHost";
 
 vi.mock("../lib/api", () => ({
   paperlessDocumentDownloadUrl: (id: number) =>
@@ -63,8 +65,28 @@ function TaskRouteState() {
       <output aria-label="task-route-state">
         {openTaskId ?? "none"}|{focusField ?? "none"}
       </output>
+      <TaskWorkflowRouteState />
       <button type="button" onClick={() => open(8)}>Open another task</button>
+      <PlanAnotherTaskControl />
     </>
+  );
+}
+
+function PlanAnotherTaskControl() {
+  const { open } = useTaskWorkflow();
+  return (
+    <button type="button" onClick={() => open("plan", 8)}>
+      Plan another task
+    </button>
+  );
+}
+
+function TaskWorkflowRouteState() {
+  const { current } = useTaskWorkflow();
+  return (
+    <output aria-label="task-workflow-state">
+      {current?.kind ?? "none"}|{current?.taskId ?? "none"}
+    </output>
   );
 }
 
@@ -120,6 +142,7 @@ function renderProjectRoute(entry: string, initialEntries = [entry]) {
         <Route path="/more/review" element={<p>Review destination</p>} />
       </Routes>
       <TaskDetailHost />
+      <TaskWorkflowHost />
       <ProjectRouteLocation />
       <TaskRouteState />
       <RouteControls />
@@ -558,82 +581,71 @@ describe("ProjectDetailPage task explanations", () => {
     );
   });
 
-  it("opens the globally hosted task sheet on the initial planning target", async () => {
+  it("opens the one focused planning workflow on the initial planning target", async () => {
     renderProjectRoute("/projects/42?focus=planning");
 
-    const dialog = await screen.findByRole("dialog", { name: strings.taskDetails });
-    await waitFor(() => expect(within(dialog).getByLabelText(strings.taskPlanFor)).toHaveFocus());
-    expect(
-      within(dialog).getByText("Ort reservieren", { selector: "strong" }),
-    ).toBeInTheDocument();
-    expect(screen.getByLabelText("task-route-state")).toHaveTextContent("7|none");
+    // A planning repair link is the `task.plan` intent, so it must reach the
+    // same focused workflow as the rail, keyboard and detail value — not a
+    // route-specific inspector or a focus field inside the task details.
+    const dialog = await screen.findByRole("dialog", {
+      name: `${strings.railCommandLabels["task.plan"]}: Ort reservieren`,
+    });
+    await waitFor(() =>
+      expect(within(dialog).getByLabelText(strings.taskPlanQuestion)).toHaveFocus(),
+    );
+    expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|7");
+    expect(screen.getByLabelText("task-route-state")).toHaveTextContent("none|none");
   });
 
-  it("keeps the initial planning target open after its schedule commits immediately", async () => {
-    let scheduled = false;
-    mockedApi.getProject.mockImplementation(async () => ({
-      ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
-      tasks: [
-        makeTask({
-          id: 7,
-          projectId: 42,
-          title: "Ort reservieren",
-          scheduledDate: scheduled ? "2026-08-27" : null,
-        }),
-        makeTask({ id: 8, projectId: 42, title: "Catering bestätigen" }),
-      ],
-    }));
-    mockedApi.getTask.mockImplementation(async (id) =>
-      makeTask({
-        id,
-        projectId: 42,
-        title: id === 7 ? "Ort reservieren" : "Catering bestätigen",
-        scheduledDate: id === 7 && scheduled ? "2026-08-27" : null,
-      }),
+  it("keeps the initial planning target open until its planning workflow commits", async () => {
+    mockedApi.updateTask.mockImplementation(async (id, input) =>
+      makeTask({ id, projectId: 42, ...input }),
     );
-    mockedApi.updateTask.mockImplementation(async (id, input) => {
-      if (id === 7 && input.scheduledDate) scheduled = true;
-      return makeTask({ id, projectId: 42, ...input });
-    });
 
     renderProjectRoute("/projects/42?focus=planning");
 
-    const dialog = await screen.findByRole("dialog", { name: strings.taskDetails });
-    expect(
-      await within(dialog).findByText("Ort reservieren", {
-        selector: "strong",
-      }),
-    ).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", {
+      name: `${strings.railCommandLabels["task.plan"]}: Ort reservieren`,
+    });
     await userEvent.click(
-      within(dialog).getByRole("button", { name: strings.scheduleShortcutLabels.today }),
+      within(dialog).getByRole("button", {
+        name: strings.scheduleShortcutLabels.today,
+      }),
+    );
+    expect(dialog).toBeInTheDocument();
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: strings.confirmDone }),
     );
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(7, {
         scheduledDate: expect.any(String),
+        dueDate: null,
         expectedRevision: 1,
       }),
     );
-    expect(dialog).toBeInTheDocument();
-    expect(mockedApi.getTask).not.toHaveBeenCalledWith(8);
-    expect(screen.getByLabelText("task-route-state")).toHaveTextContent(
-      "7|none",
+    await waitFor(() =>
+      expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent(
+        "none|none",
+      ),
     );
+    expect(mockedApi.getTask).not.toHaveBeenCalledWith(8);
   });
 
   it.each([
     ["focus removal", ["/projects/42?focus=planning"], "Remove planning focus"],
     ["Back navigation", ["/projects", "/projects/42?focus=planning"], "Back"],
-  ])("closes its globally hosted planning sheet on %s", async (_name, entries, action) => {
+  ])("closes its route-owned planning workflow on %s", async (_name, entries, action) => {
     renderProjectRoute(entries.at(-1)!, entries);
 
-    expect(await screen.findByRole("dialog", { name: strings.taskDetails })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: action }));
 
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: strings.taskDetails })).not.toBeInTheDocument(),
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
-    expect(screen.getByLabelText("task-route-state")).toHaveTextContent("none|none");
+    expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("none|none");
     if (action === "Back") {
       expect(screen.getByText("Projects destination")).toBeInTheDocument();
     } else {
@@ -642,29 +654,28 @@ describe("ProjectDetailPage task explanations", () => {
     }
   });
 
-  it("does not close a task sheet that replaces the route-owned planning sheet", async () => {
+  it("does not close a workflow that replaced the route-owned planning workflow", async () => {
     renderProjectRoute("/projects/42?focus=planning");
 
-    const planningDialog = await screen.findByRole("dialog", { name: strings.taskDetails });
     expect(
-      await within(planningDialog).findByText("Ort reservieren", {
-        selector: "strong",
+      await screen.findByRole("dialog", {
+        name: `${strings.railCommandLabels["task.plan"]}: Ort reservieren`,
       }),
     ).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Open another task" }));
+    // Once the user steers the single workflow slot elsewhere, the route no
+    // longer owns it and must not close it when it drops its focus query.
+    await userEvent.click(screen.getByRole("button", { name: "Plan another task" }));
 
-    const currentDialog = screen.getByRole("dialog", { name: strings.taskDetails });
     expect(
-      await within(currentDialog).findByText("Catering bestätigen", {
-        selector: "strong",
+      await screen.findByRole("dialog", {
+        name: `${strings.railCommandLabels["task.plan"]}: Catering bestätigen`,
       }),
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByLabelText("project-route")).not.toHaveTextContent("focus="),
     );
-    expect(screen.getByLabelText("task-route-state")).toHaveTextContent("8|none");
-    expect(currentDialog).toBeInTheDocument();
+    expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|8");
   });
 
   it("preserves a user-opened task sheet across planning navigation and Back", async () => {

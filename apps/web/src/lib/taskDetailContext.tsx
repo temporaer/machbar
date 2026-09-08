@@ -2,21 +2,17 @@ import { createContext, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 /**
- * Hints which part of the detail sheet to focus once it opens. Used by the
- * mobile swipe-chip actions (Zuweisen/Planen/Notizen) so tapping a chip
- * lands the user directly in the relevant field of the existing edit flow
- * instead of just opening the sheet at the top.
+ * Hints which part of the detail sheet to focus once it opens. This is
+ * deliberately limited to the document-like content the sheet itself owns
+ * (title, notes, attachments, dependencies); every scalar work-item property
+ * is edited through its own semantic `task.*` command and focused workflow,
+ * never through a focus hint into this sheet.
  */
 export type TaskDetailFocusField =
   | "title"
-  | "owner"
-  | "schedule"
   | "notes"
   | "attachment"
-  | "waiting"
-  | "dependencies"
-  | "subtasks"
-  | "split";
+  | "dependencies";
 
 interface TaskDetailContextValue {
   openTaskId: number | null;

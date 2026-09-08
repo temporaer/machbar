@@ -210,7 +210,7 @@ a {
 }
 
 .project-detail-overview-row,
-.project-detail-meta-row {
+.detail-meta-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -222,7 +222,8 @@ a {
   color: var(--color-text-muted);
 }
 
-.project-detail-meta-button {
+.detail-meta-static,
+.detail-meta-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -236,16 +237,22 @@ a {
   cursor: pointer;
 }
 
-.project-detail-meta-button:hover,
-.project-detail-meta-button:focus-visible {
+.detail-meta-static {
+  cursor: default;
+  border-style: dashed;
+}
+
+.detail-meta-button:hover,
+.detail-meta-button:focus-visible {
   border-color: var(--color-primary);
 }
 
-.project-detail-meta-label {
+.detail-meta-label {
   color: var(--color-text-muted);
   font-weight: 650;
 }
 
+.detail-meta-label-button .task-card-tags,
 .project-detail-label-button .task-card-tags {
   margin: 0;
 }

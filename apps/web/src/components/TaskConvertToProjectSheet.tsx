@@ -19,6 +19,8 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
   const blockReason =
     task.status === "done" || task.status === "cancelled"
       ? strings.convertToProjectUnsupportedStatus
+      : task.parentTaskId !== null || task.projectId !== null
+      ? strings.convertToProjectNotStandalone
       : task.externalWait !== null ||
           unresolvedDependencyCount > 0 ||
           task.repeatAfterDays !== null ||

@@ -250,9 +250,6 @@ export function TaskRow({
     kebabButtonRef.current?.focus();
     scope.setOpenRail(null);
     switch (command) {
-      case "task.lifecycle":
-        dispatch({ type: command, task, status: task.status });
-        return;
       case "task.discard":
         dispatch({ type: command, task });
         return;
@@ -509,7 +506,7 @@ export function TaskRow({
               aria-current={task.status === status ? "true" : undefined}
               onClick={() => {
                 scope.setOpenLifecycle(null);
-                dispatch({ type: "task.lifecycle", task, status });
+                dispatch({ type: "task.setStatus", task, status });
               }}
             >
               {strings.taskStatusLabels[status]}

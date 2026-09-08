@@ -125,7 +125,15 @@ or `taskDetail.open`. State-sensitive resolution belongs there too: whether
 
 `task.open` is the only command whose intent *is* opening task details. No
 other command may open the detail sheet to focus a field; the narrow
-`InboxPage` clarification queue is the documented exception.
+`InboxPage` clarification queue is the documented exception. Accordingly
+`TaskDetailFocusField` covers only what lives *in* the detail — `title`,
+`notes`, `attachment`, `dependencies` — and never a scalar property that a
+focused workflow owns.
+
+Choosing and applying are separate commands where the choice itself is a
+surface: `task.lifecycle` opens the status chooser, `task.setStatus` applies a
+chosen status and resolves centrally which lifecycle mutation that requires
+(complete, cancel, reopen, clarify, or a direct transition).
 
 Rows keep only genuinely row-specific behavior: gesture mechanics, folding,
 drag/outline manipulation, optimistic row presentation, and rail visibility.

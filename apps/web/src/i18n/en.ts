@@ -120,13 +120,13 @@ const en = {
   priority: "Priority",
   priorityHighest: "highest",
   priorityLowest: "lowest",
-  addPriority: "+ Priority",
-  addDueDate: "+ Due date",
+  addPlan: "+ Plan",
+  addWaiting: "+ Waiting for",
+  addOwner: "+ Assign",
   dependencies: "Dependencies",
   subtasks: "Subtasks",
   waitingFor: "Waiting for",
   markAsWaiting: "Mark as waiting",
-  updateWaiting: "Update waiting",
   endWaiting: "End waiting",
   inherited: "Inherited",
   inheritedProject: "Inherited from project",
@@ -315,25 +315,7 @@ const en = {
   collapse: "Collapse",
   expand: "Expand",
   taskDetails: "Details",
-  taskSection: "Task",
-  taskPlanningSection: "Planning",
-  taskPlanningEmpty: "No dates or priority",
   taskPlanFor: "Plan for",
-  taskPlanForGuidance:
-    "Shows the actionable task in Today from this date.",
-  taskContentSection: "Content",
-  taskContentEmpty: "No notes or tags",
-  taskWaitingSection: "Is this task waiting for something?",
-  taskNotBlocked: "Not blocked",
-  externalWaitSection: "External wait",
-  externalWaitGuidance:
-    "Use this when you cannot continue until a reply, delivery, or event happens.",
-  externalWaitReasonLabel: "What is the task waiting for?",
-  revisitDateRecommended: "Revisit on (recommended)",
-  revisitDateGuidance:
-    "Shows the blocked task in Today for review from this date. Without a date, Review will ask you to clarify it.",
-  dependencyGuidance:
-    "Only link tasks that genuinely need to be completed first.",
   dependencySummary: (count: number) =>
     `${count} open ${count === 1 ? "dependency" : "dependencies"}`,
   subtaskSummary: (count: number) =>
@@ -348,6 +330,7 @@ const en = {
   recurrenceHint:
     "Reopens the same task with a new date after every completion.",
   recurrenceEnabled: "Enabled",
+  recurrenceEveryDays: (days: number) => `Every ${days} days`,
   repeatAfterDays: "Repeat after days",
   allowedDeviationDays: "Allowed deviation in days",
   recurrenceScheduleRequired: "Set a scheduled date first.",
@@ -404,6 +387,8 @@ const en = {
     "Completed or discarded tasks cannot be converted to projects.",
   convertToProjectTaskOnlyRelations:
     "Remove waits, dependencies, recurrence, or reminders first.",
+  convertToProjectNotStandalone:
+    "Only standalone tasks without a parent task or project can become a project.",
   needsClarification: "Needs clarification",
   clarifyEmpty: "The inbox is empty. Nice work!",
   waitingEmpty: "Nothing is waiting right now.",

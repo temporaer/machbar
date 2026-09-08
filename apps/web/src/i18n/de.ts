@@ -96,13 +96,13 @@ const base = {
   priority: "Priorität",
   priorityHighest: "höchste",
   priorityLowest: "niedrigste",
-  addPriority: "+ Priorität",
-  addDueDate: "+ Fälligkeitsdatum",
+  addPlan: "+ Planen",
+  addWaiting: "+ Warten auf",
+  addOwner: "+ Zuweisen",
   dependencies: "Abhängigkeiten",
   subtasks: "Teilaufgaben",
   waitingFor: "Wartet auf",
   markAsWaiting: "Als wartend markieren",
-  updateWaiting: "Warten aktualisieren",
   endWaiting: "Warten beenden",
   inherited: "Geerbt",
   inheritedProject: "Von Projekt geerbt",
@@ -299,25 +299,7 @@ const extra = {
   collapse: "Einklappen",
   expand: "Ausklappen",
   taskDetails: "Details",
-  taskSection: "Aufgabe",
-  taskPlanningSection: "Planung",
-  taskPlanningEmpty: "Keine Termine oder Priorität",
   taskPlanFor: "Einplanen für",
-  taskPlanForGuidance:
-    "Zeigt die machbare Aufgabe ab diesem Tag in Heute.",
-  taskContentSection: "Inhalt",
-  taskContentEmpty: "Keine Notizen oder Tags",
-  taskWaitingSection: "Wartet diese Aufgabe auf etwas?",
-  taskNotBlocked: "Nicht blockiert",
-  externalWaitSection: "Externes Warten",
-  externalWaitGuidance:
-    "Nutze dies, wenn du erst nach einer Rückmeldung, Lieferung oder einem Ereignis weitermachen kannst.",
-  externalWaitReasonLabel: "Worauf wartet die Aufgabe?",
-  revisitDateRecommended: "Wiedervorlage am (empfohlen)",
-  revisitDateGuidance:
-    "Zeigt die blockierte Aufgabe ab diesem Tag zur Prüfung in Heute. Ohne Datum erinnert dich der Review an die Klärung.",
-  dependencyGuidance:
-    "Verknüpfe nur Aufgaben, die wirklich zuerst erledigt werden müssen.",
   dependencySummary: (count: number) =>
     `${count} ${count === 1 ? "offene Abhängigkeit" : "offene Abhängigkeiten"}`,
   subtaskSummary: (count: number) =>
@@ -332,6 +314,7 @@ const extra = {
   recurrenceHint:
     "Öffnet dieselbe Aufgabe nach jeder Erledigung mit einem neuen Termin.",
   recurrenceEnabled: "Aktiv",
+  recurrenceEveryDays: (days: number) => `Alle ${days} Tage`,
   repeatAfterDays: "Wiederholen nach Tagen",
   allowedDeviationDays: "Erlaubte Abweichung in Tagen",
   recurrenceScheduleRequired:
@@ -391,6 +374,8 @@ const extra = {
     "Erledigte oder verworfene Aufgaben können nicht in Projekte umgewandelt werden.",
   convertToProjectTaskOnlyRelations:
     "Entferne zuerst Warten, Abhängigkeiten, Wiederholung oder Erinnerung.",
+  convertToProjectNotStandalone:
+    "Nur eigenständige Aufgaben ohne Elternaufgabe und Projekt können zu einem Projekt werden.",
   needsClarification: "Zu klären",
   clarifyEmpty: "Der Eingang ist leer. Gute Arbeit!",
   waitingEmpty: "Nichts wartet gerade.",

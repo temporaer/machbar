@@ -658,13 +658,20 @@ A household has at most ~5 members, so every focused assignment popup renders th
 - An explicit "nobody" chip (`Gemeinsam / offen` for tasks, `Niemand zugewiesen` for stories) where clearing is legal. Driver activation omits it because the API rejects activating without a driver.
 - Chips keep a ~44 px touch target (`.choice-chip`) and wrap rather than scroll.
 
-The **full** editors (`TaskDetailSheet`, `ProjectEditSheet`) keep their selects:
-they are multi-field forms reached by a deliberate "Bearbeiten"/"Mehr" tap,
-not one-decision popups. `TaskDetailSheet` groups always-visible task,
-planning, content, blocker, and subtask sections; recurrence, organization,
-activity, and deletion use accessible disclosures, with active recurrence
-opened automatically. Filters (`SearchFilterBar`) and settings (`MorePage`)
-are likewise unaffected.
+`TaskDetailSheet` is no longer an inspector and owns no scalar-property
+editor at all. It reads as a document: authored title and notes with explicit
+Edit/Save/Cancel, a compact meta row of *current* values, and the two real
+collections (subtasks, dependencies) as disclosures, followed by
+`Weitere Aktionen`, `Organisation`, activity and deletion.
+
+Every scalar value in the meta row is a button that dispatches the same
+semantic command as the rail and keyboard — owner, planning, waiting,
+recurrence, priority, tags and contexts. Unset rare properties render nothing;
+only owner, planning and waiting keep a lightweight `+ …` affordance. Status
+shows as a read-only badge, with changes made through the `task.lifecycle`
+chooser under `Weitere Aktionen`. `ProjectEditSheet` still carries the older
+multi-field form and is the remaining migration target. Filters
+(`SearchFilterBar`) and settings (`MorePage`) are unaffected.
 
 ### Outline structure editing: drag, keyboard, one toolbar
 
@@ -923,8 +930,10 @@ the shared command/action paths and focused sheets.
 `ProjectStoryRow.tsx` render as fully separate components (they now both
 carry `data-workitem-id` and dispatch through the same command layer, but
 not a shared JSX row). `TaskDetailSheet.tsx` and `ProjectEditSheet.tsx`
-likewise remain separate sheets; they share only their section/disclosure
-chrome (`apps/web/src/components/WorkItemDetailSection.tsx`). A full
+likewise remain separate sheets. They now share only
+`WorkItemDetailDisclosure`; `TaskDetailSheet` dropped
+`WorkItemDetailSection` entirely because it has no always-visible field
+groups left to title. A full
 "one universal WorkItem row"/"one unified inspector" merge is future work,
 not yet attempted, given the scale of behavioral difference (swipe
 semantics, chip strips, and field sets) between the task and story cases.

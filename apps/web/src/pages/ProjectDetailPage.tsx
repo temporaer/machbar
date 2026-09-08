@@ -33,6 +33,8 @@ import { MemberSelectionSheet } from "../components/MemberSelectionSheet";
 import { PlanDatesSheet } from "../components/PlanDatesSheet";
 import { ProjectTagsSheet } from "../components/ProjectTagsSheet";
 import { TaskCardTags } from "../components/TaskCardTags";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
+import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { RecentActivity } from "../components/RecentActivity";
 import { useLocale } from "../lib/locale";
@@ -79,15 +81,18 @@ export function ProjectDetailPage() {
   const planningTaskRef = useRef<number | null>(null);
   const planningOwnsSheetRef = useRef(false);
   const planningSheetOpenedRef = useRef(false);
-  const {
-    openTaskId,
-    open: openTaskDetail,
-    close: closeTaskDetail,
-  } = useTaskDetail();
-  const openTaskIdRef = useRef(openTaskId);
-  const closeTaskDetailRef = useRef(closeTaskDetail);
-  openTaskIdRef.current = openTaskId;
-  closeTaskDetailRef.current = closeTaskDetail;
+  const dispatch = useWorkItemCommands();
+  const taskWorkflow = useTaskWorkflow();
+  const { openTaskId } = useTaskDetail();
+  // `?focus=planning` is a deep link into the canonical `task.plan` workflow
+  // for the project's first unplanned task; this page only decides *which*
+  // task and cleans up after itself, it never implements planning.
+  const planningWorkflowTaskId =
+    taskWorkflow.current?.kind === "plan" ? taskWorkflow.current.taskId : null;
+  const openTaskIdRef = useRef(planningWorkflowTaskId);
+  const closeTaskDetailRef = useRef(taskWorkflow.close);
+  openTaskIdRef.current = planningWorkflowTaskId;
+  closeTaskDetailRef.current = taskWorkflow.close;
   const {
     data: loadedProject,
     loading: projectLoading,
@@ -172,6 +177,8 @@ export function ProjectDetailPage() {
       !project ||
       project.id !== projectId ||
       planningTaskRef.current !== null ||
+      planningWorkflowTaskId !== null ||
+      // A deep link must never displace a focused surface the user opened.
       openTaskId !== null
     ) {
       return;
@@ -187,8 +194,15 @@ export function ProjectDetailPage() {
     planningTaskRef.current = taskToPlan.id;
     planningOwnsSheetRef.current = true;
     planningSheetOpenedRef.current = false;
-    openTaskDetail(taskToPlan.id, "schedule");
-  }, [planningFocusActive, project, projectId, openTaskId, openTaskDetail]);
+    dispatch({ type: "task.plan", taskId: taskToPlan.id });
+  }, [
+    planningFocusActive,
+    project,
+    projectId,
+    planningWorkflowTaskId,
+    openTaskId,
+    dispatch,
+  ]);
 
   useEffect(() => {
     const ownedTaskId = planningTaskRef.current;
@@ -199,13 +213,13 @@ export function ProjectDetailPage() {
     )
       return;
 
-    if (openTaskId === ownedTaskId) {
+    if (planningWorkflowTaskId === ownedTaskId) {
       planningSheetOpenedRef.current = true;
-    } else if (planningSheetOpenedRef.current || openTaskId !== null) {
+    } else if (planningSheetOpenedRef.current || planningWorkflowTaskId !== null) {
       planningOwnsSheetRef.current = false;
       clearRouteFocus();
     }
-  }, [planningFocusActive, openTaskId, clearRouteFocus]);
+  }, [planningFocusActive, planningWorkflowTaskId, clearRouteFocus]);
 
   return (
     <InteractionScopeProvider
@@ -291,14 +305,14 @@ export function ProjectDetailPage() {
                   </span>
                 </div>
                 {hasProjectMeta ? (
-                  <div className="project-detail-meta-row">
+                  <div className="detail-meta-row">
                     {owner ? (
                       <button
                         type="button"
-                        className="project-detail-meta-button"
+                        className="detail-meta-button"
                         onClick={() => setDetailSheet("driver")}
                       >
-                        <span className="project-detail-meta-label">
+                        <span className="detail-meta-label">
                           {strings.driver}
                         </span>
                         <MemberLabel member={owner} size="xs" />
@@ -307,10 +321,10 @@ export function ProjectDetailPage() {
                     {dueDate ? (
                       <button
                         type="button"
-                        className="project-detail-meta-button"
+                        className="detail-meta-button"
                         onClick={() => setDetailSheet("dates")}
                       >
-                        <span className="project-detail-meta-label">
+                        <span className="detail-meta-label">
                           {strings.due}
                         </span>
                         <span>{dueDate}</span>
@@ -319,10 +333,10 @@ export function ProjectDetailPage() {
                     {scheduledDate ? (
                       <button
                         type="button"
-                        className="project-detail-meta-button"
+                        className="detail-meta-button"
                         onClick={() => setDetailSheet("dates")}
                       >
-                        <span className="project-detail-meta-label">
+                        <span className="detail-meta-label">
                           {strings.projectRevisitDate}
                         </span>
                         <span>{scheduledDate}</span>
@@ -331,7 +345,7 @@ export function ProjectDetailPage() {
                     {hasProjectLabels ? (
                       <button
                         type="button"
-                        className="project-detail-meta-button project-detail-label-button"
+                        className="detail-meta-button project-detail-label-button"
                         onClick={() => {
                           if (project.contexts.length > 0) {
                             setEditFocusField("planning");
@@ -341,7 +355,7 @@ export function ProjectDetailPage() {
                           }
                         }}
                       >
-                        <span className="project-detail-meta-label">
+                        <span className="detail-meta-label">
                           {project.contexts.length > 0
                             ? strings.cardLabels
                             : strings.tags}
@@ -355,7 +369,7 @@ export function ProjectDetailPage() {
                     {criteriaTotal > 0 ? (
                       <button
                         type="button"
-                        className="project-detail-meta-button project-detail-criteria-button"
+                        className="detail-meta-button project-detail-criteria-button"
                         onClick={() => setEditingOutcome(true)}
                       >
                         <span>

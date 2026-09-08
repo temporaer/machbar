@@ -110,10 +110,6 @@ const WORKFLOW_SHEET_HOSTS = new Map([
  */
 const WORKFLOW_SHEET_EXCEPTIONS = new Map([
   [
-    `${WEB_SOURCE}components/TaskDetailSheet.tsx`,
-    new Set(["TaskSplitSheet"]),
-  ],
-  [
     `${WEB_SOURCE}pages/ProjectDetailPage.tsx`,
     new Set(["ProjectTagsSheet", "StoryCriteriaSheet", "PlanDatesSheet"]),
   ],
