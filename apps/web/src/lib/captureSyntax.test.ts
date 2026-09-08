@@ -90,6 +90,34 @@ describe("capture short syntax", () => {
     expect(unknownSuggestions).toEqual([]);
   });
 
+  it("shows all matching members and contexts for bare prefixes", () => {
+    const sarah = { ...mira, id: 2, name: "Sarah" };
+    const office = { ...context, id: 4, name: "Büro" };
+
+    expect(
+      captureSyntaxSuggestions({
+        input: "@",
+        cursor: 1,
+        locale: "de",
+        members: [sarah, mira],
+        tags: [],
+        contexts: [],
+        stories: [],
+      }).map((suggestion) => suggestion.label),
+    ).toEqual(["Mira", "Sarah"]);
+    expect(
+      captureSyntaxSuggestions({
+        input: "%",
+        cursor: 1,
+        locale: "de",
+        members: [],
+        tags: [],
+        contexts: [office, context],
+        stories: [],
+      }).map((suggestion) => suggestion.label),
+    ).toEqual(["Büro", "Zuhause"]);
+  });
+
   it("builds structured metadata only from resolved tokens and strips them from the title", () => {
     const input = "Tickets buchen >Ur @Mira #Haus %Zu ~Freitag !15.9 :S";
     const auto = autoResolvedCaptureTokens(input, "de", referenceDate);
