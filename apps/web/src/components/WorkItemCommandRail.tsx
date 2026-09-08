@@ -13,15 +13,24 @@ type Props<T extends TaskRailCommand | ProjectRailCommand> = {
   disabled?: boolean;
   overflowOpen?: boolean;
   onOverflowChange?: (open: boolean) => void;
+  /**
+   * Commands unavailable for this specific work item right now (e.g. an
+   * unclassified captured inbox item cannot be reparented/filed into a
+   * project or split into steps — the API rejects those with
+   * `task_promotion_invalid`). Hidden from both the favorites row and the
+   * overflow grid rather than shown and left to fail on click.
+   */
+  hiddenCommands?: readonly T[];
 };
 
 export function WorkItemCommandRail<T extends TaskRailCommand | ProjectRailCommand>(props: Props<T>) {
-  const { kind, labels, groupLabel, overflowLabel, disabled = false } = props;
-  const overflow: readonly T[] =
+  const { kind, labels, groupLabel, overflowLabel, disabled = false, hiddenCommands = [] } = props;
+  const overflow: readonly T[] = (
     kind === "task"
       ? overflowRailCommands("task", props.favorites as readonly TaskRailCommand[]) as readonly T[]
-      : overflowRailCommands("project", props.favorites as readonly ProjectRailCommand[]) as readonly T[];
-  const commands = props.favorites;
+      : overflowRailCommands("project", props.favorites as readonly ProjectRailCommand[]) as readonly T[]
+  ).filter((command) => !hiddenCommands.includes(command));
+  const commands = props.favorites.filter((command) => !hiddenCommands.includes(command));
 
   return (
     <div

@@ -158,7 +158,7 @@ export function MorePage() {
             <div className="stack">
               <strong>{strings.taskRailFavorites}</strong>
               {taskFavorites.map((favorite, index) => (
-                <div className="field" key={`task-rail-slot-${index}`}>
+                <div className="rail-favorite-slot" key={`task-rail-slot-${index}`}>
                   <label htmlFor={`task-rail-slot-${index}`}>{index + 1}</label>
                   <select
                     id={`task-rail-slot-${index}`}
@@ -186,7 +186,7 @@ export function MorePage() {
               ))}
               <strong>{strings.projectRailFavorites}</strong>
               {projectFavorites.map((favorite, index) => (
-                <div className="field" key={`project-rail-slot-${index}`}>
+                <div className="rail-favorite-slot" key={`project-rail-slot-${index}`}>
                   <label htmlFor={`project-rail-slot-${index}`}>
                     {index + 1}
                   </label>

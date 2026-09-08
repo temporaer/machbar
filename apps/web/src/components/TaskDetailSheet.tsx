@@ -18,7 +18,7 @@ import { useTaskDetail } from "../lib/taskDetailContext";
 import { useStrings } from "../lib/strings";
 import { formatDateTime } from "../lib/format";
 import { formatExactLocalDate } from "../lib/relativeDate";
-import { sortByPosition } from "../lib/taskHelpers";
+import { isCapturedInboxItem, sortByPosition } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
@@ -430,10 +430,7 @@ export function TaskDetailSheet() {
     }
   };
 
-  const isCapturedInboxItem =
-    task?.status === "captured" &&
-    task.projectId === null &&
-    task.parentTaskId === null;
+  const taskIsCapturedInboxItem = task ? isCapturedInboxItem(task) : false;
   const taskMutationPending = task ? taskActions.isPending(task.id) : false;
   const unresolvedDependencyCount =
     task?.dependencies.filter((dependency) => !dependency.resolved).length ?? 0;
@@ -590,10 +587,10 @@ export function TaskDetailSheet() {
           </div>
 
           <div className="detail-meta-row">
-            {isCapturedInboxItem ? <span className="sr-only">{strings.status}: </span> : null}
+            {taskIsCapturedInboxItem ? <span className="sr-only">{strings.status}: </span> : null}
             <StatusBadge
               status={task.status}
-              {...(isCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })}
+              {...(taskIsCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })}
             />
             {task.projectId !== null && task.projectTitle ? (
               <span className="detail-meta-static">
@@ -750,7 +747,7 @@ export function TaskDetailSheet() {
 
           <PaperlessAttachmentStrip attachments={attachments} />
 
-          {isCapturedInboxItem ? (
+          {taskIsCapturedInboxItem ? (
             <div className="capture-shape-actions">
               <button
                 type="button"
@@ -874,7 +871,7 @@ export function TaskDetailSheet() {
                 </li>
               ))}
             </ul>
-            {task.repeatAfterDays === null && !isCapturedInboxItem ? (
+            {task.repeatAfterDays === null && !taskIsCapturedInboxItem ? (
               <div className="row">
                 <button
                   type="button"
@@ -1008,32 +1005,43 @@ export function TaskDetailSheet() {
             className="task-detail-commands"
           >
             <CommandCategoryGrid
-              commands={taskRailCommands.filter((command) => command !== "task.lifecycle")}
+              commands={taskRailCommands.filter(
+                (command) =>
+                  command !== "task.lifecycle" &&
+                  // Reparenting/filing into a project and splitting into
+                  // steps both require a classified task server-side
+                  // (`task_promotion_invalid`); an unclassified capture must
+                  // go through the capture-shape actions above instead.
+                  (!taskIsCapturedInboxItem ||
+                    (command !== "task.changeProject" && command !== "task.split")),
+              )}
               labels={strings.railCommandLabels}
               onCommand={runCommand}
             />
           </WorkItemDetailDisclosure>
 
-          <WorkItemDetailDisclosure
-            title={strings.taskOrganizationSection}
-            resetKey={task.id}
-          >
-            <div className="field">
-            <label>{strings.organizeControls}</label>
-            <div className="row" style={{ flexWrap: "wrap" }}>
-              <button type="button" className="btn btn-sm" onClick={() => setMovePrompt("parent")}>
-                {strings.changeParent}
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => runCommand("task.changeProject")}
-              >
-                {strings.moveProject}
-              </button>
-            </div>
-            </div>
-          </WorkItemDetailDisclosure>
+          {!taskIsCapturedInboxItem ? (
+            <WorkItemDetailDisclosure
+              title={strings.taskOrganizationSection}
+              resetKey={task.id}
+            >
+              <div className="field">
+              <label>{strings.organizeControls}</label>
+              <div className="row" style={{ flexWrap: "wrap" }}>
+                <button type="button" className="btn btn-sm" onClick={() => setMovePrompt("parent")}>
+                  {strings.changeParent}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => runCommand("task.changeProject")}
+                >
+                  {strings.moveProject}
+                </button>
+              </div>
+              </div>
+            </WorkItemDetailDisclosure>
+          ) : null}
 
           {task.repeatAfterDays !== null ||
           (recurrenceHistory?.summary.totalCount ?? 0) > 0 ? (
