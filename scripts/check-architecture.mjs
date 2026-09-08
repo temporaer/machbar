@@ -100,20 +100,16 @@ const WORKFLOW_SHEET_HOSTS = new Map([
   ["ProjectContextsSheet", "ProjectWorkflowHost"],
   ["StoryCriteriaSheet", "ProjectWorkflowHost"],
   ["PlanDatesSheet", "ProjectWorkflowHost"],
+  ["ProjectEditSheet", "ProjectWorkflowHost"],
 ]);
 
 /**
- * Surfaces that still render a focused workflow themselves. Each entry is
- * outstanding migration work, not an accepted pattern: TaskDetailSheet and
- * ProjectDetailPage are still inspectors whose values must become semantic
- * command dispatches. Shrink this map; never add to it.
+ * Surfaces allowed to render a focused workflow themselves. It is empty, and
+ * that is the point: every `task.*`/`story.*` workflow is reached only
+ * through `TaskWorkflowHost`/`ProjectWorkflowHost`. Never add to this map —
+ * dispatch the semantic command instead.
  */
-const WORKFLOW_SHEET_EXCEPTIONS = new Map([
-  [
-    `${WEB_SOURCE}pages/ProjectDetailPage.tsx`,
-    new Set(["ProjectTagsSheet", "StoryCriteriaSheet", "PlanDatesSheet"]),
-  ],
-]);
+const WORKFLOW_SHEET_EXCEPTIONS = new Map([]);
 
 /**
  * Opening a workflow or the task detail sheet is command dispatch, not

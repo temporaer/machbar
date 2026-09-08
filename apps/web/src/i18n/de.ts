@@ -556,6 +556,7 @@ const extra = {
     "story.defer": "Wiedervorlegen",
     "story.assignDriver": "Verantwortliche Person",
     "story.planWork": "Arbeit planen",
+    "story.planDates": "Termine",
     "story.editOutcome": "Ergebnis bearbeiten",
     "story.tags": "Tags",
     "story.contexts": "Kontext",
@@ -737,13 +738,6 @@ const extra = {
 
   // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---
   openProject: "Projekt öffnen",
-  editProject: "Projekt bearbeiten",
-  projectContentSection: "Inhalt",
-  projectResponsibilitySection: "Status & Verantwortung",
-  projectPlanningSection: "Planung & Einordnung",
-  projectPlanningSectionSummary:
-    "Fälligkeit, Wiedervorlage, Tags und physische Kontexte",
-  projectOutcomeSection: "Ergebnis",
   projectDangerSection: "Projekt löschen",
   returnToBacklogStory: "Auf später verschieben",
   completeStory: "Abschließen",

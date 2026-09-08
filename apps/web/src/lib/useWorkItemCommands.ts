@@ -329,6 +329,9 @@ export function useWorkItemCommands() {
         case "story.editOutcome":
           projectWorkflow.open("editOutcome", command.story.id);
           return;
+        case "story.planDates":
+          projectWorkflow.open("planDates", command.story.id);
+          return;
         case "story.tags":
           projectWorkflow.open("tags", command.story.id);
           return;

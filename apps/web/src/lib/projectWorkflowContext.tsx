@@ -22,6 +22,7 @@ export type ProjectWorkflowKind =
   | "defer"
   | "assignDriver"
   | "editOutcome"
+  | "planDates"
   | "tags"
   | "contexts"
   | "activateWithDriver"

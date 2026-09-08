@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
-import type { WorkItemCommand } from "../lib/commands";
+import { storyWorkflowCommand } from "../lib/commands";
 import { useStrings } from "../lib/strings";
 import { formatDate } from "../lib/format";
 import {
@@ -65,35 +65,6 @@ export interface ProjectStoryRowProps {
   variant?: "compact" | "card";
 }
 
-
-/**
- * Maps a legal `ProjectWorkflowAction` onto its `story.*` semantic command
- * (see `commands.ts`) so every actual workflow transition -- primary
- * swipe/button, chip strip, and (via `useWorkItemCommands()`) any future
- * keyboard/palette caller -- goes through the one shared dispatch surface
- * instead of this row calling `useProjectActions().runAction` directly.
- */
-function storyWorkflowCommand(
-  story: ProjectWithActions,
-  action: ProjectWorkflowAction,
-  ownerMemberId?: number | null,
-): WorkItemCommand {
-  const ownerMemberIdField =
-    ownerMemberId !== undefined ? { ownerMemberId } : {};
-  switch (action) {
-    case "activate":
-      return { type: "story.activate", story, ...ownerMemberIdField };
-    case "return_to_backlog":
-      return { type: "story.returnToBacklog", story };
-    case "complete":
-      return { type: "story.complete", story };
-    case "reopen":
-      return { type: "story.reopen", story, ...ownerMemberIdField };
-    case "archive":
-    default:
-      return { type: "story.archive", story };
-  }
-}
 
 /**
  * One story row with the full mobile workflow gestures, shared by the

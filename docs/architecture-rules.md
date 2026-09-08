@@ -139,8 +139,8 @@ Rows keep only genuinely row-specific behavior: gesture mechanics, folding,
 drag/outline manipulation, optimistic row presentation, and rail visibility.
 
 `canonical-workflow-host` and `canonical-workflow-routing` in
-`scripts/check-architecture.mjs` enforce this. Its exception map lists the
-surfaces still rendering their own workflows; shrink it, never extend it.
+`scripts/check-architecture.mjs` enforce this. Its exception map is empty:
+no surface outside the two hosts renders a focused workflow. Never add to it.
 
 ## Canonical primitive registry
 
@@ -183,10 +183,12 @@ surfaces still rendering their own workflows; shrink it, never extend it.
 | Logical active WorkItem, structural capability, and collapse state per navigable surface | `apps/web/src/lib/interactionScope.tsx` |
 | Command descriptors, keyboard help, and prefix hints | `apps/web/src/lib/commandRegistry.ts`, `apps/web/src/components/CommandHelpSheet.tsx`, and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
 | Keyboard navigation (`j/k/h/l`, `Alt+arrows`, `g`-prefix, `?`, `c`, focused task keys) | `apps/web/src/lib/useWorkItemKeyboardNav.ts` and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
-| WorkItem detail-sheet section/disclosure chrome | `apps/web/src/components/WorkItemDetailSection.tsx` |
+| WorkItem detail disclosure chrome | `apps/web/src/components/WorkItemDetailSection.tsx` |
 | Focused task workflows (one sheet per `task.*` command) | `apps/web/src/components/TaskWorkflowHost.tsx` and `apps/web/src/lib/taskWorkflowContext.tsx` |
 | Focused project workflows (one sheet per `story.*` command) | `apps/web/src/components/ProjectWorkflowHost.tsx` and `apps/web/src/lib/projectWorkflowContext.tsx` |
 | Project lifecycle prerequisites (missing driver, unmet criteria, no progress path) | `lifecyclePrerequisite()` in `apps/web/src/lib/projectWorkflow.ts`, resolved by `useWorkItemCommands()` |
+| Legal project transition to `story.*` command | `storyWorkflowCommand()` in `apps/web/src/lib/commands.ts` |
+| Authored project title/notes editing | `apps/web/src/pages/ProjectDetailPage.tsx` |
 | Focused waiting/follow-up workflow | `apps/web/src/components/WaitingFollowUpSheet.tsx` and `apps/web/src/lib/useTaskActions.ts` |
 
 Before introducing another primitive for one of these needs, update this table

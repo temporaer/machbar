@@ -18,6 +18,7 @@ import { useTaskDetail } from "../lib/taskDetailContext";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { TaskDetailSheet } from "../components/TaskDetailSheet";
 import { TaskWorkflowHost } from "../components/TaskWorkflowHost";
+import { ProjectWorkflowHost } from "../components/ProjectWorkflowHost";
 
 vi.mock("../lib/api", () => ({
   paperlessDocumentDownloadUrl: (id: number) =>
@@ -29,12 +30,15 @@ vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
     getProject: vi.fn(),
+    deleteProject: vi.fn(),
+    createProject: vi.fn(),
     getTags: vi.fn(),
     getProjects: vi.fn(),
     getHomeAssistantStatus: vi.fn(),
     getTask: vi.fn(),
     updateTask: vi.fn(),
     updateProject: vi.fn(),
+    completeProject: vi.fn(),
     getActivity: vi.fn(),
     uploadPaperlessDocument: vi.fn(),
     searchPaperlessDocuments: vi.fn(),
@@ -143,6 +147,7 @@ function renderProjectRoute(entry: string, initialEntries = [entry]) {
       </Routes>
       <TaskDetailHost />
       <TaskWorkflowHost />
+      <ProjectWorkflowHost />
       <ProjectRouteLocation />
       <TaskRouteState />
       <RouteControls />
@@ -363,93 +368,137 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.queryByText(purpose)).not.toBeInTheDocument();
   });
 
-  it("uses distinct icon-only actions for the project header and notes editors", async () => {
+  it("edits title and notes inline as separate explicit transactions", async () => {
+    mockedApi.updateProject.mockImplementation(async (id, input) => ({
+      ...makeProject({ id, title: "Sommerfest planen", ownerMemberId: 1 }),
+      ...input,
+      revision: 2,
+    }));
     renderWithProviders(<ProjectDetailPage />);
 
     expect(await screen.findByText("Ort reservieren")).toBeInTheDocument();
-    const projectHeader = screen.getByRole("heading", { level: 1, name: "Sommerfest planen" })
+    const projectHeader = screen
+      .getByRole("heading", { level: 1, name: /Sommerfest planen/ })
       .closest<HTMLElement>(".page-header")!;
-    const notesSection = screen.getByRole("heading", { name: "Notizen" }).closest("section")!;
-    const headerEdit = within(projectHeader).getByRole("button", { name: "Bearbeiten" });
-    const notesEdit = within(notesSection).getByRole("button", { name: "Bearbeiten" });
+    const notesSection = screen
+      .getByRole("heading", { name: "Notizen" })
+      .closest("section")!;
+    const headerEdit = within(projectHeader).getByRole("button", {
+      name: "Bearbeiten",
+    });
+    const notesEdit = within(notesSection).getByRole("button", {
+      name: "Bearbeiten",
+    });
 
-    expect(screen.getAllByRole("button", { name: "Bearbeiten" })).toEqual([
-      headerEdit,
-      notesEdit,
-    ]);
     for (const editButton of [headerEdit, notesEdit]) {
       expect(editButton).toHaveClass("icon-action-button");
-      expect(editButton).toHaveAttribute("title", "Bearbeiten");
       expect(editButton).not.toHaveTextContent("Bearbeiten");
-      editButton.focus();
-      expect(editButton).toHaveFocus();
     }
 
+    // Authored text edits in place — no editor sheet stacks over the page.
     await userEvent.click(headerEdit);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const titleInput = screen.getByDisplayValue("Sommerfest planen");
+    await userEvent.clear(titleInput);
+    await userEvent.type(titleInput, "Sommerfest 2027");
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: strings.save }));
 
-    const projectEditor = screen.getByRole("dialog", { name: strings.editProject });
-    expect(within(projectEditor).getByDisplayValue("Sommerfest planen")).toBeInTheDocument();
-    expect(within(notesSection).queryByRole("textbox")).not.toBeInTheDocument();
-
-    await userEvent.click(within(projectEditor).getByRole("button", { name: strings.close }));
-
-    await userEvent.click(notesEdit);
-
-    const notesEditor = screen.getByRole("dialog", { name: strings.editProject });
-    const notesInput = within(notesEditor).getByLabelText(strings.notes);
-    await waitFor(() => expect(notesInput).toHaveFocus());
-    expect(notesInput).toBeEnabled();
-    expect(
-      within(notesEditor).getByRole("button", {
-        name: `${strings.save}: ${strings.notes}`,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      within(notesEditor).getByRole("button", {
-        name: `${strings.cancel}: ${strings.notes}`,
-      }),
-    ).toBeInTheDocument();
-    expect(within(notesSection).queryByRole("textbox")).not.toBeInTheDocument();
-  });
-
-  it("keeps confirmed project metadata after the editor closes while refresh is stale", async () => {
-    mockedApi.updateProject.mockResolvedValue({
-      ...makeProject({
-        id: 42,
-        title: "Sommerfest planen",
-        ownerMemberId: 1,
-        notes: "Neue Notiz",
-        revision: 2,
-      }),
-    });
-    renderWithProviders(<ProjectDetailPage />);
-    await screen.findByText("Ort reservieren");
-
-    const notesSection = screen.getByRole("heading", { name: "Notizen" }).closest("section")!;
-    await userEvent.click(within(notesSection).getByRole("button", { name: "Bearbeiten" }));
-    const editor = screen.getByRole("dialog", { name: strings.editProject });
-    const notesInput = within(editor).getByLabelText(strings.notes);
-    await userEvent.type(notesInput, "Neue Notiz");
-    await userEvent.click(
-      within(editor).getByRole("button", {
-        name: `${strings.save}: ${strings.notes}`,
-      }),
-    );
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(42, {
-        notes: "Neue Notiz",
+        title: "Sommerfest 2027",
         expectedRevision: 1,
       }),
     );
-    await userEvent.click(within(editor).getByRole("button", { name: strings.close }));
 
+    // The confirmed revision is reused, so a stale reload cannot resurrect
+    // the old text or force a conflicting second write.
+    await userEvent.click(
+      within(notesSection).getByRole("button", { name: "Bearbeiten" }),
+    );
+    const notesInput = within(notesSection).getByRole("textbox");
+    await userEvent.type(notesInput, "Neue Notiz");
+    await userEvent.click(screen.getByRole("button", { name: strings.saveNotes }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateProject).toHaveBeenCalledWith(42, {
+        notes: "Neue Notiz",
+        expectedRevision: 2,
+      }),
+    );
     expect(await screen.findByText("Neue Notiz")).toBeInTheDocument();
-    await userEvent.click(within(notesSection).getByRole("button", { name: "Bearbeiten" }));
+  });
+
+  it("restores a cancelled draft without writing", async () => {
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByText("Ort reservieren");
+
+    const notesSection = screen
+      .getByRole("heading", { name: "Notizen" })
+      .closest("section")!;
+    await userEvent.click(
+      within(notesSection).getByRole("button", { name: "Bearbeiten" }),
+    );
+    await userEvent.type(
+      within(notesSection).getByRole("textbox"),
+      "Verworfen",
+    );
+    await userEvent.click(screen.getByRole("button", { name: strings.cancel }));
+
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+    expect(screen.queryByText("Verworfen")).not.toBeInTheDocument();
+    expect(within(notesSection).queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("shows status as a read-only badge and only its legal transitions", async () => {
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByText("Ort reservieren");
+
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(
-      within(screen.getByRole("dialog", { name: strings.editProject })).getByLabelText(
-        strings.notes,
-      ),
-    ).toHaveValue("Neue Notiz");
+      screen.getByText(strings.projectStatusLabels.active, {
+        selector: ".badge",
+      }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: strings.moreActions, level: 3 }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: strings.railCommandLabels["story.lifecycle"],
+      }),
+    );
+
+    const statuses = screen.getByRole("group", { name: strings.status });
+    expect(
+      within(statuses).getByRole("button", { name: strings.completeStory }),
+    ).toBeInTheDocument();
+    expect(
+      within(statuses).queryByRole("button", { name: strings.reopen }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("deletes a project only after confirmation", async () => {
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    mockedApi.deleteProject.mockResolvedValue(undefined);
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByText("Ort reservieren");
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: strings.projectDangerSection, level: 3 }),
+    );
+    const deleteButton = screen.getByRole("button", { name: strings.deleteProject });
+
+    await userEvent.click(deleteButton);
+    expect(mockedApi.deleteProject).not.toHaveBeenCalled();
+
+    await userEvent.click(deleteButton);
+    await waitFor(() => expect(mockedApi.deleteProject).toHaveBeenCalledWith(42));
+    confirmSpy.mockRestore();
   });
 
   it("shows Calendar export beside Share only for a dated Project", async () => {
@@ -471,12 +520,12 @@ describe("ProjectDetailPage task explanations", () => {
       screen.getByRole("button", { name: "In Kalender" }),
     ).toBeInTheDocument();
     const titleRow = screen
-      .getByRole("heading", { level: 1, name: "Sommerfest planen" })
+      .getByRole("heading", { level: 1, name: /Sommerfest planen/ })
       .closest(".project-page-title-row");
     const actions = titleRow?.querySelector(".project-page-actions");
     expect(titleRow).toHaveClass("project-page-title-row");
     expect(actions).toHaveClass("project-page-actions");
-    expect(within(actions as HTMLElement).getAllByRole("button")).toHaveLength(4);
+    expect(within(actions as HTMLElement).getAllByRole("button")).toHaveLength(3);
   });
 
   it("does not show Calendar export for a Project without a deadline", async () => {
@@ -558,18 +607,62 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.getByLabelText("project-route")).not.toHaveTextContent("focus=");
   });
 
-  it.each([
-    ["driver", "button", "Mira"],
-    ["completion", "button", strings.completeStory],
-  ] as const)(
-    "opens and focuses the existing project edit surface for %s repair links",
-    async (focus, role, name) => {
-      renderProjectRoute(`/projects/42?focus=${focus}`);
+  it("routes a driver repair link to the one assign-driver workflow", async () => {
+    renderProjectRoute("/projects/42?focus=driver");
 
-      const control = await screen.findByRole(role, { name });
-      await waitFor(() => expect(control).toHaveFocus());
-    },
-  );
+    const dialog = await screen.findByRole("dialog", {
+      name: `${strings.assignDriver}: Sommerfest planen`,
+    });
+    const control = within(dialog).getByRole("button", { name: "Mira" });
+    await waitFor(() => expect(control).toHaveFocus());
+  });
+
+  it("routes a completion repair link to unmet criteria before completing", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({
+        id: 42,
+        title: "Sommerfest planen",
+        ownerMemberId: 1,
+        acceptanceCriteria: [
+          makeCriterion({ id: 1, text: "Location gebucht", checked: false }),
+        ],
+      }),
+      tasks: [],
+    });
+    renderProjectRoute("/projects/42?focus=completion");
+
+    // `story.complete` resolves its own prerequisite: with an open criterion
+    // the repair link lands in the criteria editor, never in a status form.
+    expect(
+      await screen.findByRole("dialog", {
+        name: `${strings.criteria}: Sommerfest planen`,
+      }),
+    ).toBeInTheDocument();
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
+    expect(mockedApi.completeProject).not.toHaveBeenCalled();
+  });
+
+  it("completes directly from a completion repair link once criteria are met", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({
+        id: 42,
+        title: "Sommerfest planen",
+        ownerMemberId: 1,
+        acceptanceCriteria: [
+          makeCriterion({ id: 1, text: "Location gebucht", checked: true }),
+        ],
+      }),
+      tasks: [],
+    });
+    renderProjectRoute("/projects/42?focus=completion");
+
+    await waitFor(() =>
+      expect(mockedApi.completeProject).toHaveBeenCalledWith(42, {
+        expectedRevision: 1,
+      }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 
   it("opens the project-scoped task capture sheet for a next-action repair link", async () => {
     renderProjectRoute("/projects/42?focus=next-action");

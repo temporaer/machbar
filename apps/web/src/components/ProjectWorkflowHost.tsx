@@ -6,6 +6,7 @@ import { useIdentity } from "../lib/identity";
 import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { ProjectDeferSheet } from "./ProjectDeferSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
+import { PlanDatesSheet } from "./PlanDatesSheet";
 import { ProjectContextsSheet } from "./ProjectContextsSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { useStrings } from "../lib/strings";
@@ -63,6 +64,16 @@ export function ProjectWorkflowHost() {
       );
     case "editOutcome":
       return <StoryCriteriaSheet story={story} onClose={close} />;
+    case "planDates":
+      return (
+        <PlanDatesSheet
+          story={story}
+          onClose={close}
+          onSave={async (patch) => {
+            await projectActions.schedule(story, patch);
+          }}
+        />
+      );
     case "tags":
       return (
         <ProjectTagsSheet

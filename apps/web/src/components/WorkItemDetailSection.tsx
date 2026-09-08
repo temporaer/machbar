@@ -1,41 +1,14 @@
 import { useEffect, useId, useState, type ReactNode, type Ref } from "react";
 
 /**
- * Shared section/disclosure primitives for the WorkItem detail surfaces
- * (`TaskDetailSheet.tsx`, `ProjectEditSheet.tsx`). Both previously defined
- * their own near-identical `*Section`/`*Disclosure` components against the
- * same `.task-detail-section`/`.task-detail-disclosure` CSS classes — this
- * is the one shared implementation both now use, per the "common WorkItem
- * inspector... common sections" architecture (see `docs/architecture-rules.md`).
+ * The one collapsible-section primitive shared by the WorkItem detail
+ * surfaces (`TaskDetailSheet.tsx`, `ProjectDetailPage.tsx`).
  *
- * A full merge of the two sheets into one unified inspector component is a
- * larger, separately-scoped effort; this is the safely-extractable shared
- * piece that doesn't require unifying the
- * rest of either sheet's task-specific/story-specific field logic.
+ * Neither surface has always-visible field groups any more — scalar
+ * properties are meta-row values that dispatch semantic commands — so the
+ * former always-open `WorkItemDetailSection` companion is gone and only the
+ * disclosure remains.
  */
-export function WorkItemDetailSection({
-  title,
-  children,
-  className = "",
-}: {
-  title: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  const headingId = useId();
-  return (
-    <section
-      className={`task-detail-section${className ? ` ${className}` : ""}`}
-      aria-labelledby={headingId}
-    >
-      <h3 id={headingId} className="task-detail-section-title">
-        {title}
-      </h3>
-      <div className="task-detail-section-body">{children}</div>
-    </section>
-  );
-}
-
 export function WorkItemDetailDisclosure({
   title,
   summary,

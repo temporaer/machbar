@@ -24,6 +24,7 @@ export const projectRailCommands: readonly ProjectRailCommand[] = [
   "story.assignDriver",
   "story.planWork",
   "story.editOutcome",
+  "story.planDates",
   "story.tags",
   "story.contexts",
   "story.lifecycle",
