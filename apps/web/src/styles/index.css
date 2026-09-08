@@ -260,6 +260,36 @@ a {
   font-weight: 650;
 }
 
+.detail-meta-status-button.status-actionable {
+  background: var(--color-success-surface);
+  color: var(--color-success);
+  border-color: var(--color-success-surface);
+}
+.detail-meta-status-button.status-waiting {
+  background: var(--color-warning-surface);
+  color: var(--color-warning);
+  border-color: var(--color-warning-surface);
+}
+.detail-meta-status-button.status-someday {
+  background: var(--color-info-surface);
+  color: var(--color-info);
+  border-color: var(--color-info-surface);
+}
+.detail-meta-status-button.status-done {
+  background: var(--color-status-neutral-surface);
+  color: var(--color-status-neutral);
+  border-color: var(--color-status-neutral-surface);
+}
+.detail-meta-status-button.status-cancelled {
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+  border-color: var(--color-danger-surface);
+}
+.detail-meta-status-button .detail-meta-label {
+  color: inherit;
+  opacity: 0.75;
+}
+
 .detail-meta-label-button .task-card-tags,
 .project-detail-label-button .task-card-tags {
   margin: 0;

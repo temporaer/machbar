@@ -84,6 +84,7 @@ const base = {
   owner: "Zuständig",
   status: "Status",
   due: "Fällig",
+  pickDate: "Datum …",
   scheduled: "Geplant",
   context: "Kontext",
   tags: "Tags",
@@ -119,7 +120,6 @@ const base = {
   },
   changeParent: "Übergeordnete Aufgabe ändern",
   moveProject: "In Projekt verschieben",
-  moveSubtree: "Teilbaum verschieben",
   search: "Suchen",
   filter: "Filtern",
   noItems: "Hier ist gerade nichts zu tun.",
@@ -258,7 +258,7 @@ const extra = {
   collapse: "Einklappen",
   expand: "Ausklappen",
   taskDetails: "Details",
-  taskPlanFor: "Einplanen für",
+  taskPlanFor: "Eingeplant für",
   dependencySummary: (count: number) =>
     `${count} ${count === 1 ? "offene Abhängigkeit" : "offene Abhängigkeiten"}`,
   subtaskSummary: (count: number) =>
@@ -422,7 +422,6 @@ const extra = {
   unknownMember: "Unbekannte Person",
   ownerInheritFromProject: (owner: string) => `Vom Projekt: ${owner}`,
   ownerInheritFromParent: (owner: string) => `Von Aufgabe: ${owner}`,
-  addChildTitle: "Neue Teilaufgabe",
   splitTask: "Aufgabe aufteilen",
   splitTaskCount: (count: number) =>
     count === 1 ? "1 Teilaufgabe anlegen" : `${count} Teilaufgaben anlegen`,

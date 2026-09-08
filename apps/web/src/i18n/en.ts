@@ -108,6 +108,7 @@ const en = {
   owner: "Owner",
   status: "Status",
   due: "Due",
+  pickDate: "Date …",
   scheduled: "Scheduled",
   context: "Context",
   tags: "Tags",
@@ -143,7 +144,6 @@ const en = {
   },
   changeParent: "Change parent task",
   moveProject: "Move to project",
-  moveSubtree: "Move task and subtasks",
   search: "Search",
   filter: "Filter",
   noItems: "Nothing needs your attention here.",
@@ -276,7 +276,7 @@ const en = {
   collapse: "Collapse",
   expand: "Expand",
   taskDetails: "Details",
-  taskPlanFor: "Plan for",
+  taskPlanFor: "Scheduled for",
   dependencySummary: (count: number) =>
     `${count} open ${count === 1 ? "dependency" : "dependencies"}`,
   subtaskSummary: (count: number) =>
@@ -441,7 +441,6 @@ const en = {
   unknownMember: "Unknown person",
   ownerInheritFromProject: (owner: string) => `From project: ${owner}`,
   ownerInheritFromParent: (owner: string) => `From task: ${owner}`,
-  addChildTitle: "New subtask",
   splitTask: "Break down task",
   splitTaskCount: (count: number) =>
     count === 1 ? "Create 1 subtask" : `Create ${count} subtasks`,

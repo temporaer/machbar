@@ -269,7 +269,13 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         >
           {primaryAction ? projectWorkflowIcons[primaryAction] : "·"}
         </button>
-        <Link className="story-row-main" to={`/projects/${story.id}`} onClick={handleMainClick}>
+        <Link
+          className="story-row-main"
+          to={`/projects/${story.id}`}
+          onClick={handleMainClick}
+          draggable={false}
+          onDragStart={(event) => event.preventDefault()}
+        >
           <div className="story-row-title">
             {story.title}
             <span className="sr-only">{strings.projectStatus}: </span>

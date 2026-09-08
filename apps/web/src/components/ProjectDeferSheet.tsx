@@ -27,7 +27,7 @@ export function ProjectDeferSheet({
   const [customDate, setCustomDate] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(story.scheduledDate ?? "");
   const [dateValid, setDateValid] = useState(true);
-  const [editingDeadline, setEditingDeadline] = useState(false);
+  const [showDeadline, setShowDeadline] = useState(Boolean(story.dueDate));
   const [dueDate, setDueDate] = useState(story.dueDate ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +98,7 @@ export function ProjectDeferSheet({
               disabled={saving}
               onClick={() => setCustomDate(true)}
             >
-              {strings.due} …
+              {strings.pickDate}
             </button>
           </div>
           {customDate ? (
@@ -123,32 +123,35 @@ export function ProjectDeferSheet({
         </div>
 
         <div className="field">
-          <span className="field-label">{strings.due}</span>
-          {editingDeadline ? (
-            <div className="row">
-              <HumanDateInput
-                id="project-defer-due-date"
-                value={dueDate}
-                onChange={(date) => setDueDate(date ?? "")}
-                onValidityChange={setDateValid}
-                disabled={saving}
-              />
-              <button
-                type="button"
-                className="btn btn-sm btn-primary"
-                disabled={saving || !dateValid}
-                onClick={() => void commit({ dueDate: dueDate || null })}
-              >
-                {strings.save}
-              </button>
-            </div>
+          {showDeadline ? (
+            <>
+              <label htmlFor="project-defer-due-date">{strings.due}</label>
+              <div className="row">
+                <HumanDateInput
+                  id="project-defer-due-date"
+                  value={dueDate}
+                  onChange={(date) => setDueDate(date ?? "")}
+                  onValidityChange={setDateValid}
+                  disabled={saving}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={saving || !dateValid}
+                  onClick={() => void commit({ dueDate: dueDate || null })}
+                >
+                  {strings.save}
+                </button>
+              </div>
+            </>
           ) : (
             <button
               type="button"
-              className="btn btn-sm"
-              onClick={() => setEditingDeadline(true)}
+              className="btn btn-sm btn-ghost task-detail-add-property"
+              onClick={() => setShowDeadline(true)}
             >
-              {story.dueDate ?? strings.none}
+              {strings.addDeadline}
             </button>
           )}
         </div>

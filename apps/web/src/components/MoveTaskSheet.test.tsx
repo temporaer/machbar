@@ -49,14 +49,14 @@ describe("MoveTaskSheet", () => {
 
   it("filters projects case-insensitively as you type — no native select", async () => {
     const task = makeTask({ id: 40, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="project" onClose={vi.fn()} />);
+    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={vi.fn()} />);
 
-    const search = await screen.findByRole("searchbox", { name: "Ziel suchen" });
+    const [search] = await screen.findAllByRole("searchbox", { name: "Ziel suchen" });
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Umzug nach Leipzig" })).toBeInTheDocument();
 
     // Lower-case query against a capitalised title, matched mid-word.
-    await userEvent.type(search, "gArTeN");
+    await userEvent.type(search!, "gArTeN");
 
     expect(screen.getByRole("button", { name: "Garten winterfest machen" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Umzug nach Leipzig" })).not.toBeInTheDocument();
@@ -65,10 +65,10 @@ describe("MoveTaskSheet", () => {
 
   it("reports an empty result set instead of an empty list", async () => {
     const task = makeTask({ id: 41, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="project" onClose={vi.fn()} />);
+    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={vi.fn()} />);
 
-    const search = await screen.findByRole("searchbox", { name: "Ziel suchen" });
-    await userEvent.type(search, "zzz");
+    const [search] = await screen.findAllByRole("searchbox", { name: "Ziel suchen" });
+    await userEvent.type(search!, "zzz");
 
     expect(screen.getByText("Kein Ziel passt zu dieser Suche.")).toBeInTheDocument();
   });
@@ -76,7 +76,7 @@ describe("MoveTaskSheet", () => {
   it("moves to the tapped project and remembers it as a recent destination", async () => {
     const onClose = vi.fn();
     const task = makeTask({ id: 42, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="project" onClose={onClose} />);
+    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={onClose} />);
 
     const target = await screen.findByRole("button", { name: "Garten winterfest machen" });
     await userEvent.click(target);
@@ -98,7 +98,7 @@ describe("MoveTaskSheet", () => {
   it("lists recently used destinations first when no query is typed", async () => {
     window.localStorage.setItem("machbar:recent-destinations:project", JSON.stringify([3, 2]));
     const task = makeTask({ id: 43, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="project" onClose={vi.fn()} />);
+    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={vi.fn()} />);
 
     const recents = await screen.findByRole("group", { name: "Zuletzt verwendet" });
     expect(rowNames(recents)).toEqual(["Steuererklärung 2025", "Garten winterfest machen"]);
@@ -118,7 +118,7 @@ describe("MoveTaskSheet", () => {
     renderWithProviders(
       <MoveTaskSheet
         task={makeTask({ id: 46, projectId: 4 })}
-        mode="project"
+        mode="subtree"
         onClose={vi.fn()}
       />,
     );
@@ -138,7 +138,7 @@ describe("MoveTaskSheet", () => {
     // 99 was archived/deleted since it was last used.
     window.localStorage.setItem("machbar:recent-destinations:project", JSON.stringify([99, 2]));
     const task = makeTask({ id: 44, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="project" onClose={vi.fn()} />);
+    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={vi.fn()} />);
 
     const recents = await screen.findByRole("group", { name: "Zuletzt verwendet" });
     expect(rowNames(recents)).toEqual(["Garten winterfest machen"]);
@@ -147,12 +147,12 @@ describe("MoveTaskSheet", () => {
   it("hides the recents section entirely once a query is typed", async () => {
     window.localStorage.setItem("machbar:recent-destinations:project", JSON.stringify([3]));
     const task = makeTask({ id: 45, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="project" onClose={vi.fn()} />);
+    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={vi.fn()} />);
 
-    const search = await screen.findByRole("searchbox", { name: "Ziel suchen" });
+    const [search] = await screen.findAllByRole("searchbox", { name: "Ziel suchen" });
     expect(screen.getByRole("group", { name: "Zuletzt verwendet" })).toBeInTheDocument();
 
-    await userEvent.type(search, "umzug");
+    await userEvent.type(search!, "umzug");
     expect(screen.queryByRole("group", { name: "Zuletzt verwendet" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Umzug nach Leipzig" })).toBeInTheDocument();
   });

@@ -714,14 +714,7 @@ the moved task, matching the backend contract.
 - Dropping into a **collapsed** parent would hide the moved row, so the hook publishes an `expandRequest` the addressed row reacts to (collapse state is per row).
 - A drag is announced through a `role="status"` live region, since the gesture has no meaning for assistive tech.
 
-### Inline child composer
-
-`InlineChildComposer` is the *+ Teilaufgabe hinzufügen* chip's target: a single-field form rendered directly beneath the row (its own auto-flow grid row of `.task-row`, like the chip strip), not a `BottomSheet`. It mirrors the focused quick sheets in spirit — one field, save/cancel, errors stay visible — and posts to `POST /tasks/:id/children` with the current identity as `createdByMemberId`.
-
-`TaskRow` owns what the composer cannot: the collapsed state is local to the row, so success flips it open (the refresh bus alone would not), and focus returns to the always-mounted ⋯ button — falling back to the row's first enabled control when a mutation in flight has disabled it, so focus never lands on `<body>`. Cancel and <kbd>Esc</kbd> never touch the API; a failed create keeps the composer open with the typed title; an in-flight create disables the submit so a double click cannot create two tasks.
-
-
-`MoveTaskSheet` backs all three explicit moves — `parent`, `project` and `subtree` — and renders each destination list through `DestinationPicker`. It is opened from the outline's selected-task toolbar (`Ablegen`, `subtree` mode, which offers both pickers) and from `TaskDetailSheet`:
+`MoveTaskSheet` backs both explicit moves — `parent` and `subtree` — and renders each destination list through `DestinationPicker`. It is opened from the outline's selected-task toolbar (`Ablegen`, `subtree` mode, which offers both pickers) and from `TaskDetailSheet`:
 
 - **Search** is an always-visible filter over the candidate list, matched case-insensitively (`toLocaleLowerCase`, so German umlauts fold correctly) as a substring of `title + subtitle`. For parent-task candidates the subtitle is the owning project's title, so typing a project name finds its tasks. In `parent` mode the project list is never fetched, so the title comes from the `GET /api/projects/:id` response the sheet already loads.
 - **Recents** (`lib/recentDestinations.ts`) are shown first while the query is empty, in a `Zuletzt verwendet` group, with the remaining candidates under `Alle Ziele`. Once a query is typed the grouping collapses to plain results.
