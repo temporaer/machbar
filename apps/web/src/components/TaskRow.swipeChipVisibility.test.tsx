@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
@@ -182,6 +182,29 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     await userEvent.click(screen.getByRole("button", { name: "Planen" }));
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
     expect(getComputedStyle(cancelBg).opacity).toBe("0");
+  });
+
+  it("closes the previously open rail when another row opens its command rail", async () => {
+    const firstTask = makeTask({ id: 12, title: "Erste Aufgabe", status: "actionable" });
+    const secondTask = makeTask({ id: 13, title: "Zweite Aufgabe", status: "actionable" });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[firstTask, secondTask]} emptyMessage="Nichts da" />,
+    );
+    await screen.findByText("Erste Aufgabe");
+    await screen.findByText("Zweite Aufgabe");
+
+    const rows = Array.from(container.querySelectorAll(".task-row")) as HTMLElement[];
+    expect(rows).toHaveLength(2);
+    const firstRow = rows[0]!;
+    const secondRow = rows[1]!;
+
+    swipe(firstRow, -100);
+    expect(within(firstRow).getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
+    expect(within(secondRow).queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
+
+    swipe(secondRow, -100);
+    expect(within(firstRow).queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
+    expect(within(secondRow).getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
   });
 
   it("closes the chip strip predictably when the kebab button is toggled again", async () => {
