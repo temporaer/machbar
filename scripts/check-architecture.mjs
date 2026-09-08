@@ -100,7 +100,6 @@ const WORKFLOW_SHEET_HOSTS = new Map([
   ["ProjectContextsSheet", "ProjectWorkflowHost"],
   ["StoryCriteriaSheet", "ProjectWorkflowHost"],
   ["PlanDatesSheet", "ProjectWorkflowHost"],
-  ["ProjectEditSheet", "ProjectWorkflowHost"],
 ]);
 
 /**
