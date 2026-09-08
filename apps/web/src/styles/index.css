@@ -2285,6 +2285,13 @@ details[open] > .disclosure-summary::after {
   gap: 8px;
 }
 
+.capture-modifiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .share-page {
   max-width: 640px;
   margin: 0 auto;

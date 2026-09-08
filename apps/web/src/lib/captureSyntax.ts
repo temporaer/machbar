@@ -35,6 +35,22 @@ export interface CaptureSyntaxSuggestion {
   token: ResolvedCaptureToken;
 }
 
+export function modifierCaptureToken(
+  token:
+    | { kind: "member"; member: Member }
+    | { kind: "context"; context: PhysicalContext }
+    | { kind: "story"; story: ProjectWithActions }
+    | { kind: "scheduledDate"; date: string },
+): ResolvedCaptureToken {
+  return {
+    ...token,
+    start: 0,
+    end: 0,
+    raw: "",
+    query: "",
+  };
+}
+
 const tokenPattern = /(?:^|\s)([~!@#%>:][^\s]*)/g;
 const sizes = new Set<TaskSize>(["S", "M", "L", "XL"]);
 
@@ -193,7 +209,19 @@ export function mergeResolvedCaptureTokens(
 ): ResolvedCaptureToken[] {
   const result = new Map<string, ResolvedCaptureToken>();
   for (const token of [...automatic, ...explicit]) {
-    result.set(`${token.kind}:${token.start}:${token.end}:${token.raw}`, token);
+    const identity =
+      "member" in token
+        ? token.member.id
+        : "context" in token
+          ? token.context.id
+          : "story" in token
+            ? token.story.id
+            : "date" in token
+              ? token.date
+              : "size" in token
+                ? token.size
+                : token.raw;
+    result.set(`${token.kind}:${token.start}:${token.end}:${identity}`, token);
   }
   return [...result.values()].sort((a, b) => a.start - b.start);
 }
