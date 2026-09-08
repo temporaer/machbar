@@ -22,9 +22,11 @@ The title field accepts optional short syntax for faster capture, for example
 `~morgen` for a planned date, `!15.9` for a deadline, `@Hanna` for an owner,
 `#Haushalt` for an existing tag, `%Zuhause` for an existing physical context,
 `>Urlaub` for an existing project/story destination, and `:S`/`:M`/`:L`/`:XL`
-for effort. Entity tokens only become metadata after choosing a concrete
-suggestion; unknown tags, members, contexts, or projects stay literal title
-text and are not created by capture syntax.
+for effort. Typing an entity prefix such as `@` or `%` immediately offers the
+available matching entities, while adding a modifier from the compact Capture
+controls writes the same metadata. Entity tokens only become metadata after
+choosing a concrete suggestion; unknown tags, members, contexts, or projects
+stay literal title text and are not created by capture syntax.
 
 Installed Android PWAs can receive text and URLs from the operating-system
 share sheet. Incoming material can create new work or be appended to an
