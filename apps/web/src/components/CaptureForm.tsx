@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { CreateTaskInput } from "../lib/api";
 import { api } from "../lib/api";
 import { useIdentity } from "../lib/identity";
@@ -16,8 +16,11 @@ import {
   mergeResolvedCaptureTokens,
   resolvedCaptureMetadata,
   stripResolvedTokens,
+  modifierCaptureToken,
   type ResolvedCaptureToken,
 } from "../lib/captureSyntax";
+import { MemberChoiceGroup } from "./MemberChoiceGroup";
+import { ScheduleShortcuts } from "./ScheduleShortcuts";
 
 export type CaptureResult =
   | {
@@ -68,6 +71,10 @@ export function CaptureForm({
   const [dueDateValid, setDueDateValid] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openModifier, setOpenModifier] = useState<
+    "member" | "context" | "schedule" | "project" | null
+  >(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const { currentMemberId, members } = useIdentity();
   const { data: tags } = useAsync(() => api.getTags(), []);
   const { data: projects } = useAsync(() => api.getProjects(), []);
@@ -108,7 +115,7 @@ export function CaptureForm({
   ): CreateTaskInput => ({
     title: capturedTitle,
     ...(preparedNotes ? { notes: preparedNotes } : {}),
-    projectId: projectId ?? syntaxMetadata.projectId ?? null,
+    projectId: syntaxMetadata.projectId ?? projectId ?? null,
     parentTaskId: parentTaskId ?? null,
     createdByMemberId: currentMemberId,
     status: needsClarification ? "captured" : "actionable",
@@ -145,6 +152,41 @@ export function CaptureForm({
     }
   };
 
+  const focusTitle = () => {
+    requestAnimationFrame(() => titleInputRef.current?.focus());
+  };
+
+  const selectModifier = (token: ResolvedCaptureToken) => {
+    setSelectedTokens((current) =>
+      mergeResolvedCaptureTokens(
+        current.filter((candidate) => candidate.kind !== token.kind),
+        [token],
+      ),
+    );
+    setOpenModifier(null);
+    focusTitle();
+  };
+
+  const toggleContextModifier = (contextId: number) => {
+    const context = homeAssistant?.contexts.find((candidate) => candidate.id === contextId);
+    if (!context) return;
+    setSelectedTokens((current) => {
+      const selected = current.filter((token) => token.kind === "context");
+      const selectedIds = new Set(
+        selected.map((token) => ("context" in token ? token.context.id : null)),
+      );
+      if (selectedIds.has(contextId)) selectedIds.delete(contextId);
+      else selectedIds.add(contextId);
+      return [
+        ...current.filter((token) => token.kind !== "context"),
+        ...[...selectedIds]
+          .map((id) => homeAssistant?.contexts.find((candidate) => candidate.id === id))
+          .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
+          .map((candidate) => modifierCaptureToken({ kind: "context", context: candidate })),
+      ];
+    });
+  };
+
   return (
     <form
       className="stack"
@@ -158,6 +200,7 @@ export function CaptureForm({
         <label htmlFor="capture-title">{strings.titleEnough}</label>
         <input
           id="capture-title"
+          ref={titleInputRef}
           autoFocus={autoFocus}
           value={title}
           placeholder={strings.quickAddPlaceholder}
@@ -231,6 +274,114 @@ export function CaptureForm({
                 {suggestion.description ? <small>{suggestion.description}</small> : null}
               </button>
             ))}
+          </div>
+        ) : null}
+        <div className="capture-modifiers" role="group" aria-label={strings.captureModifiers}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => setOpenModifier(openModifier === "member" ? null : "member")}
+          >
+            + {strings.member}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => setOpenModifier(openModifier === "context" ? null : "context")}
+          >
+            + {strings.physicalContexts}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => setOpenModifier(openModifier === "schedule" ? null : "schedule")}
+          >
+            + {strings.schedule}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => setOpenModifier(openModifier === "project" ? null : "project")}
+          >
+            + {strings.project}
+          </button>
+        </div>
+        {openModifier === "member" ? (
+          <MemberChoiceGroup
+            label={strings.member}
+            idPrefix="capture-member"
+            members={members}
+            value={syntaxMetadata.ownerMemberId ?? null}
+            unassignedLabel={null}
+            onChange={(memberId) => {
+              const member = members.find((candidate) => candidate.id === memberId);
+              if (member) selectModifier(modifierCaptureToken({ kind: "member", member }));
+            }}
+          />
+        ) : null}
+        {openModifier === "context" ? (
+          <div className="choice-group" role="group" aria-label={strings.physicalContexts}>
+            {(homeAssistant?.contexts ?? [])
+              .filter((context) => context.active)
+              .map((context) => {
+                const selected = syntaxMetadata.contextIds.includes(context.id);
+                return (
+                  <button
+                    key={context.id}
+                    type="button"
+                    className="choice-chip"
+                    aria-pressed={selected}
+                    onClick={() => toggleContextModifier(context.id)}
+                  >
+                    {context.name}
+                  </button>
+                );
+              })}
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                setOpenModifier(null);
+                focusTitle();
+              }}
+            >
+              {strings.close}
+            </button>
+          </div>
+        ) : null}
+        {openModifier === "schedule" ? (
+          <div className="stack">
+            <ScheduleShortcuts
+              value={syntaxMetadata.scheduledDate ?? null}
+              onChange={(date) => {
+                if (date) selectModifier(modifierCaptureToken({ kind: "scheduledDate", date }));
+              }}
+            />
+            <HumanDateInput
+              id="capture-scheduled-date"
+              value={syntaxMetadata.scheduledDate ?? null}
+              onChange={(date) => {
+                if (date) selectModifier(modifierCaptureToken({ kind: "scheduledDate", date }));
+              }}
+            />
+          </div>
+        ) : null}
+        {openModifier === "project" ? (
+          <div className="choice-group" role="group" aria-label={strings.project}>
+            {(projects ?? [])
+              .slice()
+              .sort((a, b) => a.title.localeCompare(b.title, locale))
+              .map((project) => (
+                <button
+                  key={project.id}
+                  type="button"
+                  className="choice-chip"
+                  aria-pressed={syntaxMetadata.projectId === project.id}
+                  onClick={() => selectModifier(modifierCaptureToken({ kind: "story", story: project }))}
+                >
+                  {project.title}
+                </button>
+              ))}
           </div>
         ) : null}
       </div>

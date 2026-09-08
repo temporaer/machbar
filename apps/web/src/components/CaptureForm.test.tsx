@@ -15,7 +15,13 @@ vi.mock("../lib/api", () => ({
 }));
 
 vi.mock("../lib/identity", () => ({
-  useIdentity: () => ({ currentMemberId: 1, members: [{ id: 1, name: "Mira" }] }),
+  useIdentity: () => ({
+    currentMemberId: 1,
+    members: [
+      { id: 1, name: "Mira" },
+      { id: 2, name: "Sarah" },
+    ],
+  }),
 }));
 
 vi.mock("../lib/useAsync", () => ({
@@ -97,6 +103,57 @@ describe("CaptureForm", () => {
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
         expect.objectContaining({ projectId: 42, status: "actionable" }),
+      ),
+    );
+  });
+
+  it("applies a person modifier to the same explicit owner metadata as typed capture", async () => {
+    render(
+      <CaptureForm
+        initialTitle="Sarah zurückrufen"
+        onCancel={vi.fn()}
+        onCaptured={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "+ Person" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sarah" }));
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveFocus(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerMemberId: 2,
+          ownerInheritanceMode: "explicit",
+        }),
+      ),
+    );
+  });
+
+  it("applies a planning shortcut through the capture metadata state", async () => {
+    render(
+      <CaptureForm
+        initialTitle="Paket wegbringen"
+        onCancel={vi.fn()}
+        onCaptured={vi.fn()}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "+ Planen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Heute" }));
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("Was ist zu tun?")).toHaveFocus(),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scheduledDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        }),
       ),
     );
   });
