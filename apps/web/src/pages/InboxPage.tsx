@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { Task } from "@machbar/shared";
 import { api } from "../lib/api";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 import {
@@ -67,19 +67,44 @@ export function InboxPage() {
   );
 }
 
-function InboxFocusRail({
+export function InboxFocusRail({
   tasks,
   focusId,
 }: {
   tasks: Task[] | null | undefined;
   focusId: string | null;
 }) {
-  const scope = useInteractionScope();
+  const { setActive, setOpenRail } = useInteractionScope();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const consumedFocusIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     const id = Number(focusId);
-    if (!tasks || !Number.isFinite(id) || !tasks.some((task) => task.id === id)) return;
-    scope.setActive(id, "task");
-    scope.setOpenRail(id);
-  }, [focusId, scope, tasks]);
+    if (
+      !focusId ||
+      consumedFocusIdRef.current === focusId ||
+      !tasks ||
+      !Number.isFinite(id) ||
+      !tasks.some((task) => task.id === id)
+    ) {
+      return;
+    }
+
+    consumedFocusIdRef.current = focusId;
+    setActive(id, "task");
+    setOpenRail(id);
+
+    const params = new URLSearchParams(location.search);
+    params.delete("focus");
+    const search = params.toString();
+    navigate(
+      {
+        pathname: location.pathname,
+        search: search ? `?${search}` : "",
+      },
+      { replace: true },
+    );
+  }, [focusId, location.pathname, location.search, navigate, setActive, setOpenRail, tasks]);
   return null;
 }

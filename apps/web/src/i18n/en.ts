@@ -110,7 +110,7 @@ const en = {
   due: "Due",
   pickDate: "Date …",
   scheduled: "Scheduled",
-  context: "Context",
+  context: "Place",
   tags: "Tags",
   priority: "Priority",
   priorityHighest: "highest",
@@ -178,7 +178,7 @@ const en = {
   pageHints: "Tips",
   showPageHints: "Show tips for this page",
   hidePageHints: "Hide tips for this page",
-  searchPlaceholder: "Title, notes, context…",
+  searchPlaceholder: "Title, notes, place…",
   filters: "Filters",
   resetFilters: "Reset filters",
   allMembers: "Everyone",
@@ -405,7 +405,7 @@ const en = {
   taskTags: "Tags",
   moreTaskTags: (count: number) =>
     `${count} more ${count === 1 ? "tag" : "tags"}`,
-  cardLabels: "Tags and physical contexts",
+  cardLabels: "Tags and places",
   moreCardLabels: (count: number) =>
     `${count} more ${count === 1 ? "label" : "labels"}`,
   identityRequiredBody:
@@ -436,8 +436,8 @@ const en = {
   removeStep: "Remove step",
   confirmDone: "Done",
   unknownMember: "Unknown person",
-  ownerInheritFromProject: (owner: string) => `From project: ${owner}`,
-  ownerInheritFromParent: (owner: string) => `From task: ${owner}`,
+  ownerInheritFromProject: (owner: string) => `Use project owner: ${owner}`,
+  ownerInheritFromParent: (owner: string) => `Use parent task owner: ${owner}`,
   splitTask: "Break down task",
   splitTaskCount: (count: number) =>
     count === 1 ? "Create 1 subtask" : `Create ${count} subtasks`,
@@ -491,7 +491,7 @@ const en = {
     "task.recurrence": "Recurrence",
     "task.priority": "Priority",
     "task.tags": "Tags",
-    "task.contexts": "Context",
+    "task.contexts": "Place",
     "task.convertToProject": "Make project",
     "task.discard": "Discard",
     "task.lifecycle": "Status",
@@ -501,7 +501,7 @@ const en = {
     "story.planDates": "Dates",
     "story.editOutcome": "Edit outcome",
     "story.tags": "Tags",
-    "story.contexts": "Context",
+    "story.contexts": "Place",
     "story.lifecycle": "Status",
   },
   swipeCoachHint: (rightAction: string) =>
@@ -621,18 +621,18 @@ const en = {
   waitingPageHint:
     "Work that cannot move yet lives here. See what it is waiting on and when it needs another look.",
   waitingExternal: "External",
-  waitingContext: "Context",
+  waitingContext: "Place",
   waitingContextHint:
     "These tasks return automatically when Home Assistant reports a matching place.",
   contextUnavailableNow: "not available at the current place",
-  physicalContexts: "Physical contexts",
+  physicalContexts: "Places",
   noPhysicalContexts: "No places have been synchronized from Home Assistant yet.",
   contextInheritedFrom: "Inherited",
   contextInheritFromProject: "Inherit from project",
-  noContext: "No context",
+  noContext: "No place",
   inactive: "inactive",
   homeAssistant: "Home Assistant",
-  homeAssistantLinkHint: "Connect places and people for physical contexts",
+  homeAssistantLinkHint: "Connect Home Assistant places and people",
   homeAssistantConnection: "Connection",
   homeAssistantConnected: "Connected",
   homeAssistantDisconnected: "Not connected",
@@ -663,6 +663,11 @@ const en = {
   workflowStep: "Next step",
   projectSearchPlaceholder: "Search title, notes, or “Done when…”",
   projectHouseholdScope: "Show everyone's projects",
+  projectHiddenMatchesHint: (count: number) =>
+    count === 1
+      ? "1 more match belongs to someone else"
+      : `${count} more matches belong to someone else`,
+  showAllProjects: "Show all",
   noMatchingProjects: "No projects match your search and filters.",
   activeProjectsSection: "Active & stuck",
   waitingProjectsSection: (count: number) => `Waiting (${count})`,
@@ -893,8 +898,8 @@ const en = {
     dependenciesChanged: "changed dependencies",
     taskTagsChanged: "changed the task tags",
     projectTagsChanged: "changed the project tags",
-    taskContextsChanged: "changed the task's physical contexts",
-    projectContextsChanged: "changed the project's physical contexts",
+    taskContextsChanged: "changed the task's places",
+    projectContextsChanged: "changed the project's places",
     criterionAdded: "added an acceptance criterion",
     criterionUpdated: "updated an acceptance criterion",
     criterionReopened: "reopened an acceptance criterion",
@@ -909,7 +914,7 @@ const en = {
     pairing_code_expired: "The pairing code has expired.",
     pairing_code_invalid: "The pairing code is invalid.",
     pairing_code_used: "The pairing code has already been used.",
-    physical_context_not_found: "The selected physical context was not found.",
+    physical_context_not_found: "The selected place was not found.",
     unsupported_protocol_version:
       "This Home Assistant integration version is not supported.",
     contribution_query_invalid:

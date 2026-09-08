@@ -14,11 +14,12 @@ import {
 import type { PrimarySwipeAction } from "./swipeSettings";
 import {
   ownerAssignmentPatch,
+  setOwnerInheritance,
   updateTask,
 } from "./taskMutations";
 import { useRetainedMutations } from "./useRetainedMutations";
 export { RETENTION_MS } from "./useRetainedMutations";
-export { ownerAssignmentPatch } from "./taskMutations";
+export { ownerAssignmentPatch, setOwnerInheritance } from "./taskMutations";
 
 /** The three choices offered by the mandatory open-descendant policy prompt. */
 export type ChildPolicy = "leave_open" | "complete_children" | "cancel_children";
@@ -261,15 +262,28 @@ function useTaskActionsState() {
   );
 
   const assignOwner = useCallback(
-    (task: Task, ownerMemberId: number | null) => {
-      const patch = ownerAssignmentPatch(ownerMemberId);
+    (
+      task: Task,
+      ownerMemberId: number | null,
+      ownerInheritanceMode: Task["ownerInheritanceMode"] =
+        ownerMemberId === null ? "none" : "explicit",
+    ) => {
+      const patch = ownerAssignmentPatch(ownerMemberId, ownerInheritanceMode);
+      const effectiveOwnerSource =
+        ownerInheritanceMode === "inherit"
+          ? task.effectiveOwnerSource
+          : ownerMemberId === null
+            ? "none"
+            : "task";
+      const effectiveOwnerId =
+        ownerInheritanceMode === "inherit" ? task.effectiveOwnerId : ownerMemberId;
       return update(
         task,
         patch,
         {
           ...patch,
-          effectiveOwnerId: ownerMemberId,
-          effectiveOwnerSource: ownerMemberId === null ? "none" : "task",
+          effectiveOwnerId,
+          effectiveOwnerSource,
         },
         true,
       );

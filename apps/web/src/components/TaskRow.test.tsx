@@ -539,7 +539,7 @@ describe("TaskRow – calm shared card presentation", () => {
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
 
     const labels = await screen.findByRole("list", {
-      name: "Tags und physische Kontexte",
+      name: "Tags und Orte",
     });
     expect(within(labels).getByText("Seligenstadt")).toHaveClass(
       "task-card-tag",
@@ -656,7 +656,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     // Tap chips rather than a native <select>, with the shared/unassigned
     // bucket offered explicitly and pressed while nobody is assigned.
     expect(within(group).queryByRole("combobox")).not.toBeInTheDocument();
-    expect(within(group).getByRole("button", { name: "Gemeinsam / offen" })).toHaveAttribute(
+    expect(within(group).getByRole("button", { name: "Gemeinsam" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -678,8 +678,10 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
       title: "Geerbte Zuständigkeit",
       status: "actionable",
       ownerMemberId: null,
+      ownerInheritanceMode: "inherit",
       effectiveOwnerId: 1,
       effectiveOwnerSource: "project",
+      inheritedOwnerId: 1,
     });
     renderOutlineWithDetail(task);
     await screen.findByText("Geerbte Zuständigkeit");

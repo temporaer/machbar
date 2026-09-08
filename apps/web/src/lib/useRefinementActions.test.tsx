@@ -18,13 +18,17 @@ function makeItem(overrides: Partial<RefinementListItem> = {}): RefinementListIt
   return {
     id: 1,
     revision: 1,
+    parentTaskId: null,
     title: "Beispielaufgabe",
     status: "actionable",
     size: null,
     projectId: null,
     projectTitle: null,
+    ownerMemberId: null,
+    ownerInheritanceMode: "inherit",
     effectiveOwnerId: null,
     effectiveOwnerSource: "none",
+    inheritedOwnerId: null,
     position: 0,
     updatedAt: "2026-01-01T09:00:00.000Z",
     blocked: false,
@@ -145,8 +149,47 @@ describe("useRefinementActions", () => {
       expectedRevision: 4,
     });
     expect(result.current.retained.get(13)).toMatchObject({
+      ownerMemberId: 7,
+      ownerInheritanceMode: "explicit",
       effectiveOwnerId: 7,
       effectiveOwnerSource: "task",
+    });
+  });
+
+  it("restores inherited ownership without flattening it to 'none'", async () => {
+    const task = makeItem({
+      id: 14,
+      revision: 2,
+      projectId: 9,
+      ownerMemberId: 7,
+      ownerInheritanceMode: "explicit",
+      effectiveOwnerId: 7,
+      effectiveOwnerSource: "task",
+      inheritedOwnerId: 5,
+    });
+    mockedApi.updateTask.mockResolvedValue({
+      ...task,
+      ownerMemberId: null,
+      ownerInheritanceMode: "inherit",
+      effectiveOwnerId: 5,
+      effectiveOwnerSource: "project",
+    } as never);
+
+    const { result } = renderHook(() => useRefinementActions(), { wrapper });
+    await act(async () => {
+      await result.current.assignOwner(task, null, "inherit");
+    });
+
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(14, {
+      ownerMemberId: null,
+      ownerInheritanceMode: "inherit",
+      expectedRevision: 2,
+    });
+    expect(result.current.retained.get(14)).toMatchObject({
+      ownerMemberId: null,
+      ownerInheritanceMode: "inherit",
+      effectiveOwnerId: 5,
+      effectiveOwnerSource: "project",
     });
   });
 });

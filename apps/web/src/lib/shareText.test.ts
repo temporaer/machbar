@@ -32,6 +32,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     effectiveOwnerId: null,
     effectiveOwnerSource: "none",
     inheritedOwnerId: null,
+    inheritedTags: [],
     effectiveTags: [],
     effectiveAreaTags: [],
     effectiveActorTags: [],

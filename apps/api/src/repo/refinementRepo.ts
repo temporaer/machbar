@@ -45,13 +45,17 @@ export interface OwnerSizeCounts {
 export interface RefinementTaskRow {
   id: number;
   revision: number;
+  parentTaskId: number | null;
   title: string;
   status: TaskStatus;
   size: TaskSize | null;
   projectId: number | null;
   projectTitle: string | null;
+  ownerMemberId: number | null;
+  ownerInheritanceMode: "inherit" | "explicit" | "none";
   effectiveOwnerId: number | null;
   effectiveOwnerSource: "task" | "parent" | "project" | "none";
+  inheritedOwnerId: number | null;
   position: number;
   updatedAt: string;
   blocked: boolean;
@@ -271,13 +275,17 @@ export function getRefinementTasks(
     .map((task) => ({
       id: task.id,
       revision: task.revision,
+      parentTaskId: task.parentTaskId,
       title: task.title,
       status: task.status,
       size: task.size,
       projectId: task.projectId,
       projectTitle: task.projectTitle ?? null,
+      ownerMemberId: task.ownerMemberId,
+      ownerInheritanceMode: task.ownerInheritanceMode,
       effectiveOwnerId: task.effectiveOwnerId,
       effectiveOwnerSource: task.effectiveOwnerSource,
+      inheritedOwnerId: task.inheritedOwnerId,
       position: task.position,
       updatedAt: task.updatedAt,
       blocked: task.blocked,

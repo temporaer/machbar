@@ -4,8 +4,8 @@ import { useAsync } from "../lib/useAsync";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useIdentity } from "../lib/identity";
-import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { MoveTaskSheet } from "./MoveTaskSheet";
+import { TaskOwnerSheet } from "./TaskOwnerSheet";
 import { TaskPlanSheet } from "./TaskPlanSheet";
 import { TaskWaitSheet } from "./TaskWaitSheet";
 import { WaitingFollowUpSheet } from "./WaitingFollowUpSheet";
@@ -64,17 +64,27 @@ export function TaskWorkflowHost() {
       return <TaskSplitSheet parentId={task.id} parentTitle={task.title} onClose={close} />;
     case "assignOwner":
       return (
-        <MemberSelectionSheet
+        <TaskOwnerSheet
           title={`${strings.assign}: ${task.title}`}
-          label={strings.owner}
-          idPrefix={`task-workflow-owner-${task.id}`}
+          taskTitle={task.title}
           members={members}
-          value={task.effectiveOwnerId}
-          valueIsExplicit={task.effectiveOwnerSource === "task"}
-          unassignedLabel={strings.shared}
+          ownerMemberId={task.ownerMemberId}
+          ownerInheritanceMode={task.ownerInheritanceMode}
+          inheritedOwnerId={task.inheritedOwnerId}
+          inheritanceSource={
+            task.inheritedOwnerId === null
+              ? null
+              : task.parentTaskId !== null
+                ? "parent"
+                : "project"
+          }
           onClose={close}
-          onSelect={async (ownerMemberId) => {
-            await taskActions.assignOwner(task, ownerMemberId);
+          onSelect={async ({ ownerMemberId, ownerInheritanceMode }) => {
+            await taskActions.assignOwner(
+              task,
+              ownerMemberId,
+              ownerInheritanceMode,
+            );
           }}
         />
       );

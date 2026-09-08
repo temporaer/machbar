@@ -8,10 +8,10 @@ import type { RefinementListItem } from "../lib/useRefinementActions";
 import type { useRefinementActions } from "../lib/useRefinementActions";
 import { nextSizeInCycle } from "../lib/refinementHelpers";
 import { useTaskDetail } from "../lib/taskDetailContext";
-import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { useIdentity } from "../lib/identity";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 import { useInteractionScope } from "../lib/interactionScope";
+import { TaskOwnerSheet } from "./TaskOwnerSheet";
 
 /** Short label for a task's current size, or the "unestimated" placeholder. */
 function sizeLabel(size: TaskSize | null, strings: Strings): string {
@@ -183,17 +183,23 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
       ) : null}
 
       {assigning ? (
-        <MemberSelectionSheet
+        <TaskOwnerSheet
           title={`${strings.assign}: ${task.title}`}
-          label={strings.owner}
-          idPrefix={`refinement-owner-${task.id}`}
+          taskTitle={task.title}
           members={members}
-          value={task.effectiveOwnerId}
-          valueIsExplicit={task.effectiveOwnerSource === "task"}
-          unassignedLabel={strings.shared}
+          ownerMemberId={task.ownerMemberId}
+          ownerInheritanceMode={task.ownerInheritanceMode}
+          inheritedOwnerId={task.inheritedOwnerId}
+          inheritanceSource={
+            task.inheritedOwnerId === null
+              ? null
+              : task.parentTaskId !== null
+                ? "parent"
+                : "project"
+          }
           onClose={() => setAssigning(false)}
-          onSelect={async (ownerMemberId) => {
-            await assignOwner(task, ownerMemberId);
+          onSelect={async ({ ownerMemberId, ownerInheritanceMode }) => {
+            await assignOwner(task, ownerMemberId, ownerInheritanceMode);
           }}
         />
       ) : null}

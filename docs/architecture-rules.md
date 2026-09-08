@@ -164,6 +164,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Project metadata and lifecycle actions | `apps/web/src/lib/useProjectActions.ts` |
 | Task hierarchy planning | `apps/web/src/lib/taskTreeMove.ts` |
 | Task hierarchy execution | `apps/web/src/lib/useOutlineOrganize.tsx` and `api.moveTask` |
+| Task owner selection | `apps/web/src/components/TaskOwnerSheet.tsx` and `apps/web/src/components/TaskOwnerChoiceGroup.tsx` |
 | Household member selection | `apps/web/src/components/MemberSelectionSheet.tsx` |
 | Single-task composition | `apps/web/src/components/InlineTaskComposer.tsx` |
 | Acceptance criteria editing | `apps/web/src/components/AcceptanceCriteriaEditor.tsx` |

@@ -308,13 +308,17 @@ export interface OwnerSizeCounts {
 export interface RefinementTaskRow {
   id: number;
   revision: number;
+  parentTaskId: number | null;
   title: string;
   status: TaskStatus;
   size: TaskSize | null;
   projectId: number | null;
   projectTitle: string | null;
+  ownerMemberId: number | null;
+  ownerInheritanceMode: InheritanceMode;
   effectiveOwnerId: number | null;
   effectiveOwnerSource: "task" | "parent" | "project" | "none";
+  inheritedOwnerId: number | null;
   position: number;
   updatedAt: string;
   blocked: boolean;

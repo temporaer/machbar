@@ -25,7 +25,9 @@ describe("TaskOwnerChoiceGroup", () => {
 
     const group = screen.getByRole("group", { name: "Zuständig" });
     expect(
-      within(group).getByRole("button", { name: "Von Aufgabe: Jonas" }),
+      within(group).getByRole("button", {
+        name: "Von Aufgabe übernehmen: Jonas",
+      }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(within(group).getByRole("button", { name: "Gemeinsam" })).toHaveAttribute(
       "aria-pressed",
@@ -52,7 +54,9 @@ describe("TaskOwnerChoiceGroup", () => {
     );
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Vom Projekt: Mira" }),
+      screen.getByRole("button", {
+        name: "Vom Projekt übernehmen: Mira",
+      }),
     );
     await userEvent.click(screen.getByRole("button", { name: "Gemeinsam" }));
     await userEvent.click(screen.getByRole("button", { name: "Jonas" }));

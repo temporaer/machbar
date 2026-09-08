@@ -426,6 +426,30 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     });
   });
 
+  it("shows a hint when the current search only matches projects hidden by the scope toggle", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Küche renovieren");
+
+    fireEvent.change(screen.getByLabelText("Suchen"), {
+      target: { value: "Theo" },
+    });
+
+    expect(
+      await screen.findByText("1 weiterer Treffer bei anderen Personen"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Alle anzeigen" })).toBeInTheDocument();
+    expect(screen.queryByText("Theos Geschichte")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Alle anzeigen" }));
+    await waitFor(() =>
+      expect(screen.getByText("Theos Geschichte")).toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByText("1 weiterer Treffer bei anderen Personen"),
+    ).not.toBeInTheDocument();
+  });
+
   it("sorts active-stuck stories after actionable ones and before active waiting", async () => {
     window.localStorage.setItem("machbar:identity-member-id", "1");
     const { container } = renderWithProviders(<ProjectsPage />);

@@ -55,6 +55,20 @@ function matchesScope(project: ProjectWithActions, scope: ProjectVisibilityScope
   return project.ownerMemberId === null || project.ownerMemberId === currentMemberId;
 }
 
+export function countScopeHiddenMatches(
+  projects: ProjectWithActions[],
+  query: string,
+  currentMemberId: number | null,
+): number {
+  const foldedQuery = foldForSearch(query.trim());
+  if (!foldedQuery) return 0;
+  return projects.filter(
+    (project) =>
+      matchesQuery(project, foldedQuery) &&
+      !matchesScope(project, "mine", currentMemberId),
+  ).length;
+}
+
 /**
  * Classifies a project for the list without changing its persisted workflow
  * status. Active waiting is the narrow active state with neither a next
