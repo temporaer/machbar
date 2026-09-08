@@ -403,7 +403,7 @@ describe("TaskRow – finished/cancelled rows reopen through the semantic status
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Fertige Aufgabe");
 
-    swipe(container, 120);
+    swipe(container, 140);
     const lifecycle = screen.getByRole("group", { name: "Status" });
 
     expect(within(lifecycle).getByRole("button", { name: "Erledigt" })).toHaveAttribute("aria-current", "true");
@@ -425,7 +425,7 @@ describe("TaskRow – finished/cancelled rows reopen through the semantic status
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Verworfene Aufgabe");
 
-    swipe(container, 120);
+    swipe(container, 140);
     const lifecycle = screen.getByRole("group", { name: "Status" });
 
     expect(within(lifecycle).getByRole("button", { name: "Verworfen" })).toHaveAttribute("aria-current", "true");
