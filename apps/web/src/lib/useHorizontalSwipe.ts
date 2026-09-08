@@ -7,7 +7,13 @@ import type {
 const DRAG_SLOP = 8;
 const MAX_DRAG_X = 140;
 const ACTION_THRESHOLD = 72;
-const DEEP_ACTION_THRESHOLD = 108;
+/**
+ * Exported so callers with a two-tier primary swipe (see `onDeepPrimary`
+ * below) can show live visual feedback — e.g. a background/label change —
+ * once a drag in progress has crossed into "deep" territory, without
+ * waiting for pointer-up.
+ */
+export const DEEP_ACTION_THRESHOLD = 108;
 
 export interface HorizontalSwipeOptions {
   disabled?: boolean;

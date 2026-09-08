@@ -26,7 +26,7 @@ import { useLocale } from "../lib/locale";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
 import { RowSwipeBackgrounds, RowKebabButton, RowErrorBanner } from "./WorkItemRowChrome";
-import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
+import { useHorizontalSwipe, DEEP_ACTION_THRESHOLD } from "../lib/useHorizontalSwipe";
 import {
   extractPaperlessReferences,
   markdownWithoutPaperlessReferences,
@@ -217,7 +217,13 @@ export function TaskRow({
   const showCompleteBg = dragX > 0;
   const showCancelBg = dragX < 0 || chipsOpen;
   const lifecycleOpen = scope.openLifecycleId === taskProp.id;
-  const primarySwipeLabel = primaryActionBgLabel(task, primarySwipeAction, strings);
+  // Live feedback that continuing the drag will open the status rail
+  // instead of running the primary action, updated during the drag itself
+  // (not just on release) so the switch is visible as it happens.
+  const isDeepDrag = dragX >= DEEP_ACTION_THRESHOLD;
+  const primarySwipeLabel = isDeepDrag
+    ? strings.status
+    : primaryActionBgLabel(task, primarySwipeAction, strings);
   const swipeCoach = useSwipeCoach(
     `task:${task.id}`,
     !busy && !isRetained && !chipsOpen,
@@ -269,7 +275,7 @@ export function TaskRow({
         classPrefix="task-row"
         primaryLabel={primarySwipeLabel}
         primaryVisible={showCompleteBg}
-        primaryVariantClass="complete"
+        primaryVariantClass={isDeepDrag ? "complete deep" : "complete"}
         secondaryLabel={strings.moreActions}
         secondaryVisible={showCancelBg}
         secondaryVariantClass="cancel"

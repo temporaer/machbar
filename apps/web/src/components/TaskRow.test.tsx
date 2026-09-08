@@ -233,6 +233,28 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(container.querySelector(".task-row-swipe-bg.complete")).toHaveTextContent("Machbar");
   });
 
+  it("switches the swipe reveal to a status label once the drag crosses the deep threshold", async () => {
+    const task = makeTask({ id: 18, title: "Tiefe Wischgeste", status: "actionable" });
+    const { container } = renderWithProviders(
+      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+    );
+    await screen.findByText("Tiefe Wischgeste");
+    const content = container.querySelector(".task-row-content") as HTMLElement;
+
+    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: 90, pointerId: 1 });
+    const bg = container.querySelector(".task-row-swipe-bg.complete") as HTMLElement;
+    expect(bg).not.toHaveClass("deep");
+    expect(bg).not.toHaveTextContent("Status");
+
+    fireEvent.pointerMove(content, { clientX: 110, pointerId: 1 });
+    expect(bg).toHaveClass("deep");
+    expect(bg).toHaveTextContent("Status");
+
+    fireEvent.pointerUp(content, { clientX: 110, pointerId: 1 });
+    expect(container.querySelector(".task-row-lifecycle")).toBeInTheDocument();
+  });
+
   it("clarifies a captured task before a configured defer action outside Eingang", async () => {
     window.localStorage.setItem(STORAGE_KEY, "someday");
     const task = makeTask({

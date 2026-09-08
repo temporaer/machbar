@@ -2503,7 +2503,7 @@ details[open] > .disclosure-summary::after {
    * row would look permanently red even while idle or swiping the other way.
    */
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity 120ms ease, background-color 120ms ease;
 }
 
 .task-row-swipe-bg.visible {
@@ -2513,6 +2513,16 @@ details[open] > .disclosure-summary::after {
 .task-row-swipe-bg.complete {
   background: var(--color-success-strong);
   justify-content: flex-start;
+}
+
+/*
+ * A right-swipe past the deep threshold (see `DEEP_ACTION_THRESHOLD` in
+ * `useHorizontalSwipe.ts`) opens the status rail instead of running the
+ * primary action — recoloring the reveal live, mid-drag, is the only cue
+ * that releasing now does something different.
+ */
+.task-row-swipe-bg.complete.deep {
+  background: var(--color-info-strong);
 }
 
 .task-row-swipe-bg.cancel {
@@ -2713,7 +2723,25 @@ details[open] > .disclosure-summary::after {
   align-items: center;
   gap: 8px;
   padding: 8px 8px 10px 44px;
-  background: var(--color-surface-alt);
+  /* Tinted to match `.task-row-swipe-bg.cancel`, the reveal it continues. */
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface-alt));
+}
+
+/*
+ * Auto-flows the same way as `.task-row-chips` above (they are mutually
+ * exclusive, only one mounts at a time), opened either by a deep
+ * right-swipe or by tapping the status pill directly.
+ */
+.task-row-lifecycle {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 10px 44px;
+  /* Tinted to match `.task-row-swipe-bg.complete.deep`, the reveal it continues. */
+  background: color-mix(in srgb, var(--color-info) 12%, var(--color-surface-alt));
 }
 
 .icon-action-button {
