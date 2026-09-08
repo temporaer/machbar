@@ -2710,6 +2710,21 @@ details[open] > .disclosure-summary::after {
   .task-row-checkbox {
     display: none;
   }
+
+  /*
+   * The 44px left padding below aligns these panels' content under the
+   * checkbox column above them. On coarse-pointer (touch) devices that
+   * column is hidden (see rule above -- swipe-to-complete replaces the
+   * tap target), so the row content itself starts flush at the row's own
+   * 8px padding. Match that here, or these panels are left with a large,
+   * unjustified left margin under nothing.
+   */
+  .task-row-chips,
+  .task-row-lifecycle,
+  .inline-child-composer,
+  .task-row-error {
+    padding-left: 8px;
+  }
 }
 
 .task-row-checkbox.done {
@@ -2749,13 +2764,24 @@ details[open] > .disclosure-summary::after {
 .task-row-chips {
   position: relative;
   z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
+  /*
+   * A grid (matching `.command-category-group` below) rather than a
+   * wrapping flex row: fixed-width flex chips wrap unpredictably (e.g. two
+   * short chips then one long one alone on the next line, with ragged
+   * trailing space), while equal-width grid cells settle into tidy,
+   * evenly-filled rows regardless of each label's length.
+   */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
   align-items: center;
   gap: 8px;
   padding: 8px 8px 10px 44px;
   /* Tinted to match `.task-row-swipe-bg.cancel`, the reveal it continues. */
   background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface-alt));
+}
+
+.task-row-chips > .btn {
+  width: 100%;
 }
 
 /*
@@ -3532,16 +3558,42 @@ details[open] > .disclosure-summary::after {
 }
 
 /*
- * The favorites row in `WorkItemCommandRail` is a wrapping flex container
- * shared with this disclosure's `<summary>` trigger. Without an explicit
- * full-row basis, a flex item's default `flex-basis: auto` only claims its
- * content width, so the browser fills the remaining horizontal space on
- * that line with the *next* favorite chips before wrapping to a new line —
- * visually sandwiching them between this element's tall opened content and
- * its own first category group instead of keeping it on its own line.
+ * `WorkItemCommandRail`'s favorites row (`.task-row-chips` for tasks) is a
+ * grid shared with this disclosure's `<summary>` trigger. While
+ * *closed*, the trigger is just a small chip and sits in a grid cell like
+ * any other favorite. Once *opened*, its content is the tall category
+ * grid below, so it needs to span every column -- otherwise it would only
+ * claim its own single cell, leaving the *next* favorite chips to fill
+ * the rest of that row and visually sandwiching them between this
+ * element's tall opened content and its own first category group instead
+ * of giving it the full row.
  */
 .work-item-command-overflow {
-  flex-basis: 100%;
+  position: relative;
+}
+
+.work-item-command-overflow[open] {
+  grid-column: 1 / -1;
+}
+
+/*
+ * Once expanded, the "More …" label has nothing left to do -- the grid
+ * below it is the whole point, and the rail (or the row itself) can
+ * always be dismissed to re-collapse it. Rather than leave it sitting on
+ * its own row with a lot of empty trailing space, collapse it visually to
+ * nothing while it's open, but keep it in the accessibility tree so
+ * keyboard/screen-reader users can still reach and toggle it.
+ */
+.work-item-command-overflow[open] > summary {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .command-category-group {
