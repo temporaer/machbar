@@ -3486,6 +3486,48 @@ details[open] > .disclosure-summary::after {
   gap: 8px;
 }
 
+/*
+ * Shared by `CommandCategoryGrid` (the rail's "More…" overflow, and the
+ * "Weitere Aktionen" disclosures in TaskDetailSheet/ProjectDetailPage): a
+ * dozen identically-styled command buttons in one flat row/wrap read as
+ * clutter, so they're grouped into a grid per `RailCommandCategory` and
+ * each group gets a subtle, category-specific tint.
+ */
+.command-category-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.command-category-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+}
+
+.command-category-group .btn {
+  width: 100%;
+}
+
+.command-category-schedule {
+  background: color-mix(in srgb, var(--color-info) 8%, transparent);
+}
+
+.command-category-organize {
+  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
+}
+
+.command-category-classify {
+  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
+}
+
+.command-category-lifecycle {
+  background: color-mix(in srgb, var(--color-danger) 7%, transparent);
+}
+
 .list-option-field {
   display: flex;
   flex-direction: column;

@@ -57,6 +57,7 @@ import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
 import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
 import { WorkItemDetailDisclosure } from "./WorkItemDetailSection";
 import { taskRailCommands } from "../lib/railConfig";
+import { CommandCategoryGrid } from "./CommandCategoryGrid";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -1006,20 +1007,11 @@ export function TaskDetailSheet() {
             resetKey={task.id}
             className="task-detail-commands"
           >
-            <div className="row" style={{ flexWrap: "wrap" }}>
-              {taskRailCommands
-                .filter((command) => command !== "task.lifecycle")
-                .map((command) => (
-                  <button
-                    key={command}
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => runCommand(command)}
-                  >
-                    {strings.railCommandLabels[command]}
-                  </button>
-                ))}
-            </div>
+            <CommandCategoryGrid
+              commands={taskRailCommands.filter((command) => command !== "task.lifecycle")}
+              labels={strings.railCommandLabels}
+              onCommand={runCommand}
+            />
           </WorkItemDetailDisclosure>
 
           <WorkItemDetailDisclosure

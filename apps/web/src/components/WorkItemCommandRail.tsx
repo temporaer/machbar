@@ -1,5 +1,6 @@
 import type { ProjectRailCommand, TaskRailCommand } from "../lib/commands";
 import { overflowRailCommands } from "../lib/railConfig";
+import { CommandCategoryGrid } from "./CommandCategoryGrid";
 
 type Props<T extends TaskRailCommand | ProjectRailCommand> = {
   kind: "task" | "project";
@@ -45,19 +46,13 @@ export function WorkItemCommandRail<T extends TaskRailCommand | ProjectRailComma
         onToggle={(event) => props.onOverflowChange?.(event.currentTarget.open)}
       >
         <summary className="btn btn-sm">{overflowLabel}</summary>
-        <div className="work-item-command-overflow-list">
-          {overflow.map((command) => (
-            <button
-              key={command}
-              type="button"
-              className="btn btn-sm"
-              disabled={disabled}
-              onClick={() => props.onCommand(command)}
-            >
-              {props.labelForCommand?.(command) ?? labels[command]}
-            </button>
-          ))}
-        </div>
+        <CommandCategoryGrid
+          commands={overflow}
+          labels={labels}
+          labelForCommand={props.labelForCommand}
+          onCommand={props.onCommand}
+          disabled={disabled}
+        />
       </details>
     </div>
   );
