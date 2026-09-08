@@ -5,15 +5,15 @@ import type {
 } from "react";
 
 const DRAG_SLOP = 8;
-const MAX_DRAG_X = 140;
-const ACTION_THRESHOLD = 72;
+const MAX_DRAG_X = 160;
+const ACTION_THRESHOLD = 64;
 /**
  * Exported so callers with a two-tier primary swipe (see `onDeepPrimary`
  * below) can show live visual feedback — e.g. a background/label change —
  * once a drag in progress has crossed into "deep" territory, without
  * waiting for pointer-up.
  */
-export const DEEP_ACTION_THRESHOLD = 108;
+export const DEEP_ACTION_THRESHOLD = 128;
 
 export interface HorizontalSwipeOptions {
   disabled?: boolean;
@@ -105,13 +105,13 @@ export function useHorizontalSwipe<T extends HTMLElement = HTMLElement>(
     const completedDragX = current.dragX;
     suppressNextClick.current = current.realDrag;
     reset();
-    if (completedDragX > ACTION_THRESHOLD) {
+    if (completedDragX >= ACTION_THRESHOLD) {
       if (completedDragX >= DEEP_ACTION_THRESHOLD && optionsRef.current.onDeepPrimary) {
         optionsRef.current.onDeepPrimary();
       } else {
         optionsRef.current.onPrimary();
       }
-    } else if (completedDragX < -ACTION_THRESHOLD) {
+    } else if (completedDragX <= -ACTION_THRESHOLD) {
       optionsRef.current.onSecondary();
     }
   }, [reset]);

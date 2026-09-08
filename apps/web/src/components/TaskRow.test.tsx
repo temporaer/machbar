@@ -228,7 +228,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     const content = container.querySelector(".task-row-content") as HTMLElement;
     fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
-    fireEvent.pointerMove(content, { clientX: 70, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: 80, pointerId: 1 });
 
     expect(container.querySelector(".task-row-swipe-bg.complete")).toHaveTextContent("Machbar");
   });
@@ -242,16 +242,16 @@ describe("TaskRow – primary swipe direction mapping", () => {
     const content = container.querySelector(".task-row-content") as HTMLElement;
 
     fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
-    fireEvent.pointerMove(content, { clientX: 90, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: 100, pointerId: 1 });
     const bg = container.querySelector(".task-row-swipe-bg.complete") as HTMLElement;
     expect(bg).not.toHaveClass("deep");
     expect(bg).not.toHaveTextContent("Status");
 
-    fireEvent.pointerMove(content, { clientX: 110, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: 140, pointerId: 1 });
     expect(bg).toHaveClass("deep");
     expect(bg).toHaveTextContent("Status");
 
-    fireEvent.pointerUp(content, { clientX: 110, pointerId: 1 });
+    fireEvent.pointerUp(content, { clientX: 140, pointerId: 1 });
     expect(container.querySelector(".task-row-lifecycle")).toBeInTheDocument();
   });
 

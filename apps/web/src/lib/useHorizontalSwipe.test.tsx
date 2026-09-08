@@ -6,12 +6,14 @@ function Harness({
   disabled = false,
   onPrimary = vi.fn(),
   onSecondary = vi.fn(),
+  onDeepPrimary,
   onRealDrag,
   onClick = vi.fn(),
 }: {
   disabled?: boolean;
   onPrimary?: () => void;
   onSecondary?: () => void;
+  onDeepPrimary?: () => void;
   onRealDrag?: () => void;
   onClick?: () => void;
 }) {
@@ -19,6 +21,7 @@ function Harness({
     disabled,
     onPrimary,
     onSecondary,
+    ...(onDeepPrimary ? { onDeepPrimary } : {}),
     ...(onRealDrag ? { onRealDrag } : {}),
   });
   return (
@@ -49,13 +52,19 @@ describe("useHorizontalSwipe", () => {
     expect(click).toHaveBeenCalledOnce();
   });
 
-  it("captures after the slop, clamps dragX, acts at the threshold, and suppresses one click", () => {
+  it("runs the primary action for an ~80px right swipe and suppresses one click", () => {
     const capture = vi.fn();
     const primary = vi.fn();
+    const deepPrimary = vi.fn();
     const realDrag = vi.fn();
     const click = vi.fn();
     const { getByTestId, getByRole } = render(
-      <Harness onPrimary={primary} onRealDrag={realDrag} onClick={click} />,
+      <Harness
+        onPrimary={primary}
+        onDeepPrimary={deepPrimary}
+        onRealDrag={realDrag}
+        onClick={click}
+      />,
     );
     const surface = getByTestId("surface");
     const button = getByRole("button", { name: "Open" });
@@ -63,19 +72,37 @@ describe("useHorizontalSwipe", () => {
 
     fireEvent.pointerDown(surface, { clientX: 0, pointerId: 7 });
     fireEvent.pointerMove(surface, { clientX: 9, pointerId: 7 });
-    fireEvent.pointerMove(surface, { clientX: 200, pointerId: 7 });
-    expect(surface).toHaveAttribute("data-drag-x", "140");
+    fireEvent.pointerMove(surface, { clientX: 80, pointerId: 7 });
+    expect(surface).toHaveAttribute("data-drag-x", "80");
     expect(capture).toHaveBeenCalledOnce();
     expect(capture).toHaveBeenCalledWith(7);
     expect(realDrag).toHaveBeenCalledOnce();
 
-    fireEvent.pointerUp(surface, { clientX: 200, pointerId: 7 });
+    fireEvent.pointerUp(surface, { clientX: 80, pointerId: 7 });
     expect(primary).toHaveBeenCalledOnce();
+    expect(deepPrimary).not.toHaveBeenCalled();
     expect(surface).toHaveAttribute("data-drag-x", "0");
 
     fireEvent.click(button);
     fireEvent.click(button);
     expect(click).toHaveBeenCalledOnce();
+  });
+
+  it("runs the deep primary action for an ~140px right swipe instead of the normal primary action", () => {
+    const primary = vi.fn();
+    const deepPrimary = vi.fn();
+    const { getByTestId } = render(
+      <Harness onPrimary={primary} onDeepPrimary={deepPrimary} />,
+    );
+    const surface = getByTestId("surface");
+
+    fireEvent.pointerDown(surface, { clientX: 0, pointerId: 3 });
+    fireEvent.pointerMove(surface, { clientX: 140, pointerId: 3 });
+    expect(surface).toHaveAttribute("data-drag-x", "140");
+    fireEvent.pointerUp(surface, { clientX: 140, pointerId: 3 });
+
+    expect(deepPrimary).toHaveBeenCalledOnce();
+    expect(primary).not.toHaveBeenCalled();
   });
 
   it("runs the secondary action for a completed left swipe", () => {
@@ -84,8 +111,8 @@ describe("useHorizontalSwipe", () => {
     const surface = getByTestId("surface");
 
     fireEvent.pointerDown(surface, { clientX: 100, pointerId: 1 });
-    fireEvent.pointerMove(surface, { clientX: 27, pointerId: 1 });
-    fireEvent.pointerUp(surface, { clientX: 27, pointerId: 1 });
+    fireEvent.pointerMove(surface, { clientX: 20, pointerId: 1 });
+    fireEvent.pointerUp(surface, { clientX: 20, pointerId: 1 });
 
     expect(secondary).toHaveBeenCalledOnce();
   });
