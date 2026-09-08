@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -13,8 +12,9 @@ import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
+import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useTaskDetail } from "../lib/taskDetailContext";
-import type { TaskDetailFocusField } from "../lib/taskDetailContext";
 import { useStrings } from "../lib/strings";
 import { formatDateTime } from "../lib/format";
 import { formatExactLocalDate } from "../lib/relativeDate";
@@ -22,17 +22,12 @@ import { sortByPosition } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
-import { TagChip } from "./TagChip";
-import { TagPicker } from "./TagPicker";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { InlineChildComposer } from "./InlineChildComposer";
-import { TaskSplitSheet } from "./TaskSplitSheet";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { MoveTaskSheet } from "./MoveTaskSheet";
-import type { MoveMode } from "./MoveTaskSheet";
-import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { MemberLabel } from "./MemberAvatar";
-import { TaskOwnerChoiceGroup } from "./TaskOwnerChoiceGroup";
+import { TaskCardTags } from "./TaskCardTags";
 import {
   insertMarkdownAtSelection,
   MarkdownEditor,
@@ -43,7 +38,6 @@ import { CalendarExportButton } from "./CalendarExportButton";
 import { IconActionButton } from "./IconActionButton";
 import { serializeTaskForShare } from "../lib/shareText";
 import { buildTaskShareUrl } from "../lib/shareUrls";
-import { HumanDateInput } from "./HumanDateInput";
 import { RecentActivity } from "./RecentActivity";
 import { useLocale } from "../lib/locale";
 import {
@@ -58,16 +52,12 @@ import {
 import {
   containsPaperlessReference,
   extractPaperlessReferences,
-  markdownWithoutPaperlessReferences,
 } from "../lib/paperlessAttachments";
 import { appendTextBlock } from "../lib/shareTarget";
 import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
 import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
-import { PhysicalContextPicker } from "./PhysicalContextPicker";
-import {
-  WorkItemDetailSection,
-  WorkItemDetailDisclosure,
-} from "./WorkItemDetailSection";
+import { WorkItemDetailDisclosure } from "./WorkItemDetailSection";
+import { taskRailCommands } from "../lib/railConfig";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -83,20 +73,24 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
 }
 
 /**
- * Read-oriented work-item view for a single task, opened as a bottom sheet
- * from any list (Today, Inbox, project outline, search, waiting). Every field
- * on the shared `Task` contract is reachable, including inheritance modes,
- * tag exclusion, dependencies, subtasks and the explicit refile/move actions
- * (`Sortier-Werkzeuge`), which is how compiled views — where the outline's
- * drag editing is deliberately unavailable — still reach them.
+ * The document-like view of one work item: what it is (title), the small set
+ * of scalar properties it currently has, and its actual content (notes,
+ * subtasks, dependencies, history).
  *
- * Optional scalar properties (priority, due date) that are unset are omitted
- * rather than shown as an always-visible empty control; once set, they render
- * as a compact clickable value that reveals the same atomic-commit control
- * used to change or clear them (the "+ add" affordance shown while unset).
- * This keeps the sheet reading like a work item's current state instead of
- * a blank form, without adding a parallel editing/command path — every value
- * still commits through the existing `patch`/`taskActions` calls.
+ * This sheet owns no scalar-property editor. Every scalar property renders as
+ * a compact value that dispatches its canonical semantic command
+ * (`task.plan`, `task.assignOwner`, `task.waitingLifecycle`, …), which
+ * `useWorkItemCommands()` routes into the one focused workflow that also
+ * serves the row rail, the keyboard, and Review's repairs. Properties that
+ * are unset stay invisible unless they are common enough to deserve a
+ * lightweight affordance; everything else is reachable through
+ * `Weitere Aktionen`.
+ *
+ * What remains here is genuinely document-shaped and has no other home:
+ * authored text (title/notes, with explicit Edit/Save/Cancel), the subtask
+ * and dependency collections, activity/recurrence history, the explicit
+ * refile/move tools (`Sortier-Werkzeuge`) that compiled views cannot reach
+ * through outline drag editing, and permanent deletion.
  */
 export function TaskDetailSheet() {
   const strings = useStrings();
@@ -105,7 +99,9 @@ export function TaskDetailSheet() {
   const { bump } = useRefresh();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
-  const [movePrompt, setMovePrompt] = useState<MoveMode | null>(null);
+  const dispatch = useWorkItemCommands();
+  const taskWorkflow = useTaskWorkflow();
+  const [movePrompt, setMovePrompt] = useState<"parent" | "subtree" | null>(null);
   const [depQuery, setDepQuery] = useState("");
   const [depResults, setDepResults] = useState<Task[]>([]);
   const [dependencyError, setDependencyError] = useState<{
@@ -115,44 +111,28 @@ export function TaskDetailSheet() {
   const [addingDependencyId, setAddingDependencyId] = useState<number | null>(null);
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
-  const [externalWaitDraft, setExternalWaitDraft] = useState("");
-  const [externalWaitDateDraft, setExternalWaitDateDraft] = useState("");
-  const [externalWaitDateValid, setExternalWaitDateValid] = useState(true);
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
   const [savingTextFields, setSavingTextFields] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [titleEditing, setTitleEditing] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
-  const [priorityEditing, setPriorityEditing] = useState(false);
-  const [dueDateEditing, setDueDateEditing] = useState(false);
-  const [waitingHighlighted, setWaitingHighlighted] = useState(false);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [addingChild, setAddingChild] = useState(false);
-  const [splittingTask, setSplittingTask] = useState(false);
   const [addingDependency, setAddingDependency] = useState(false);
+  const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
-  const [dueDateValid, setDueDateValid] = useState(true);
-  const [scheduledDateValid, setScheduledDateValid] = useState(true);
-  const [statusDraft, setStatusDraft] = useState<Task["status"]>("actionable");
-  const [changingStatus, setChangingStatus] = useState(false);
   const [classificationBusy, setClassificationBusy] = useState(false);
-  const [storyConversionOpen, setStoryConversionOpen] = useState(false);
   const [convertedProject, setConvertedProject] =
     useState<ProjectWithActions | null>(null);
   const titleFieldRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const ownerFieldRef = useRef<HTMLDivElement>(null);
-  const ownerInputRef = useRef<HTMLButtonElement>(null);
-  const scheduleFieldRef = useRef<HTMLDivElement>(null);
-  const scheduleInputRef = useRef<HTMLInputElement>(null);
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const dependenciesFieldRef = useRef<HTMLDivElement>(null);
-  const externalWaitInputRef = useRef<HTMLInputElement>(null);
   const dependencyInputRef = useRef<HTMLInputElement>(null);
-  const subtasksFieldRef = useRef<HTMLDivElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
   const revisionRef = useRef<number | null>(null);
+  const workflowKind = taskWorkflow.current?.kind ?? null;
 
   const {
     data: loadedTask,
@@ -185,14 +165,6 @@ export function TaskDetailSheet() {
         : Promise.resolve(null),
     [openTaskId, task?.revision],
   );
-  const { data: tags } = useAsync(() => api.getTags(), []);
-  const { data: homeAssistant } = useAsync(
-    () =>
-      typeof api.getHomeAssistantStatus === "function"
-        ? api.getHomeAssistantStatus()
-        : Promise.resolve(null),
-    [],
-  );
 
   // Resets the drafts (and the dirty-check baseline) whenever a *different*
   // task is opened, or whenever this task's data arrives from the server and
@@ -214,25 +186,14 @@ export function TaskDetailSheet() {
       setSaveError(null);
       setTitleEditing(false);
       setNotesEditing(false);
-      setPriorityEditing(false);
-      setDueDateEditing(false);
-      setWaitingHighlighted(false);
       setAttachmentOpen(false);
       setAddingChild(false);
       setAddingDependency(false);
+      setLifecycleOpen(false);
       setDeleting(false);
       setShareStatus(null);
-      setDueDateValid(true);
-      setScheduledDateValid(true);
-      setExternalWaitDateValid(true);
-      setStatusDraft(loadedTask.status);
-      setExternalWaitDraft(loadedTask.externalWait?.waitingFor ?? "");
-      setExternalWaitDateDraft(
-        loadedTask.externalWait?.revisitDate ?? "",
-      );
       setDependencyError(null);
       setAddingDependencyId(null);
-      setStoryConversionOpen(false);
       setConvertedProject(null);
     }
     const hasUnsavedEdits =
@@ -259,17 +220,15 @@ export function TaskDetailSheet() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadedTask]);
 
+  // A focused workflow launched from here commits against the same task, so
+  // its scalar values are stale once it closes.
   useEffect(() => {
-    if (task) setStatusDraft(task.status);
-  }, [task?.id, task?.status, task?.revision]);
+    if (workflowKind === null && lastLoadedTaskIdRef.current !== null) reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workflowKind]);
 
-  useEffect(() => {
-    if (!task || taskActions.errors[task.id] === undefined) return;
-    setStatusDraft(task.status);
-  }, [task, taskActions.errors]);
-
-  // Chip-driven opens (Zuweisen/Planen/Notizen) land the user directly on the
-  // relevant field of this same edit flow instead of just the sheet's top.
+  // Focus hints only address this sheet's own document content; scalar
+  // properties are reached through their semantic command instead.
   useEffect(() => {
     if (!task || !focusField) return;
     if (focusField === "title" && !titleEditing) {
@@ -289,35 +248,18 @@ export function TaskDetailSheet() {
       setAddingDependency(true);
       return;
     }
-    if (focusField === "split" && !splittingTask) {
-      setSplittingTask(true);
-      clearFocusField();
-      return;
-    }
-    const scrollTargets: Record<TaskDetailFocusField, HTMLElement | null> = {
-      title: titleFieldRef.current,
-      owner: ownerFieldRef.current,
-      schedule: scheduleFieldRef.current,
-      notes: notesRef.current,
-      attachment: null,
-      waiting: dependenciesFieldRef.current,
-      dependencies: dependenciesFieldRef.current,
-      subtasks: subtasksFieldRef.current,
-      split: subtasksFieldRef.current,
-    };
-    const focusTargets: Record<TaskDetailFocusField, HTMLElement | null> = {
-      title: titleInputRef.current,
-      owner: ownerInputRef.current,
-      schedule: scheduleInputRef.current,
-      notes: notesRef.current,
-      attachment: null,
-      waiting: externalWaitInputRef.current,
-      dependencies: dependencyInputRef.current,
-      subtasks: null,
-      split: null,
-    };
-    const scrollTarget = scrollTargets[focusField];
-    const focusTarget = focusTargets[focusField];
+    const scrollTarget =
+      focusField === "title"
+        ? titleFieldRef.current
+        : focusField === "notes"
+          ? notesRef.current
+          : dependenciesFieldRef.current;
+    const focusTarget =
+      focusField === "title"
+        ? titleInputRef.current
+        : focusField === "notes"
+          ? notesRef.current
+          : dependencyInputRef.current;
     if (scrollTarget) {
       if (typeof scrollTarget.scrollIntoView === "function") {
         scrollTarget.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -332,29 +274,9 @@ export function TaskDetailSheet() {
     notesEditing,
     titleEditing,
     addingDependency,
-    splittingTask,
   ]);
 
-  const inheritedTags = useMemo(() => {
-    if (!task) return [];
-    const explicitIds = new Set(task.explicitTags.map((t) => t.id));
-    return task.effectiveTags.filter((t) => !explicitIds.has(t.id));
-  }, [task]);
-
   if (openTaskId === null) return null;
-
-  const patch = async (input: Parameters<typeof api.updateTask>[1]) => {
-    if (!task) return;
-    setSaveError(null);
-    try {
-      const updated = await taskActions.update(task, input, input, true);
-      if (!updated) return;
-      revisionRef.current = updated.revision;
-    } catch (err) {
-      if (isStaleWriteConflict(err)) reload();
-      setSaveError(localizedErrorMessage(err, strings));
-    }
-  };
 
   const titleIsValid = titleDraft.trim().length > 0;
   const titleDirty =
@@ -464,58 +386,6 @@ export function TaskDetailSheet() {
     }
   };
 
-  const changeStatus = async (nextStatus: Task["status"]) => {
-    if (!task || nextStatus === statusDraft || changingStatus) return;
-    const previousStatus = statusDraft;
-    setSaveError(null);
-    setStatusDraft(nextStatus);
-    if (previousStatus === "done" || previousStatus === "cancelled") {
-      setChangingStatus(true);
-      try {
-        const updated = await taskActions.transitionStatus(task, nextStatus);
-        if (!updated) setStatusDraft(previousStatus);
-      } catch (err) {
-        setStatusDraft(previousStatus);
-        setSaveError(localizedErrorMessage(err, strings));
-      } finally {
-        setChangingStatus(false);
-      }
-      return;
-    }
-    if (nextStatus === "done") {
-      taskActions.requestToggle(task);
-      if (task.repeatAfterDays !== null) setStatusDraft("actionable");
-      return;
-    }
-    if (nextStatus === "cancelled") {
-      taskActions.requestCancel(task);
-      return;
-    }
-    setChangingStatus(true);
-    try {
-      const updated =
-        nextStatus === "captured"
-          ? await taskActions.update(
-              task,
-              { status: nextStatus },
-              {
-                status: nextStatus,
-                needsClarification: true,
-                completedAt: null,
-                cancelledAt: null,
-              },
-              true,
-            )
-          : await taskActions.setStatus(task, nextStatus);
-      if (!updated) setStatusDraft(previousStatus);
-    } catch (err) {
-      setStatusDraft(previousStatus);
-      setSaveError(localizedErrorMessage(err, strings));
-    } finally {
-      setChangingStatus(false);
-    }
-  };
-
   const runDependencySearch = async (value: string) => {
     setDepQuery(value);
     setDependencyError(null);
@@ -562,106 +432,53 @@ export function TaskDetailSheet() {
     }
   };
 
-  const saveExternalWait = async () => {
-    if (!task || !externalWaitDateValid) return;
-    setSaveError(null);
-    const updated = await taskActions.setExternalWait({
-      id: task.id,
-      revision: revisionRef.current ?? task.revision,
-    }, {
-      waitingFor: externalWaitDraft.trim(),
-      revisitDate: externalWaitDateDraft || null,
-    });
-    if (updated) {
-      revisionRef.current = updated.revision;
-      reload();
-    }
-  };
-
-  const resolveExternalWait = async () => {
-    if (!task) return;
-    setSaveError(null);
-    const updated = await taskActions.resolveExternalWait({
-      id: task.id,
-      revision: revisionRef.current ?? task.revision,
-    });
-    if (updated) {
-      revisionRef.current = updated.revision;
-      setExternalWaitDraft("");
-      setExternalWaitDateDraft("");
-      reload();
-    }
-  };
-
   const isCapturedInboxItem =
     task?.status === "captured" &&
     task.projectId === null &&
     task.parentTaskId === null;
-  const isRootStandaloneTask =
-    task?.projectId === null && task.parentTaskId === null;
   const taskMutationPending = task ? taskActions.isPending(task.id) : false;
   const unresolvedDependencyCount =
     task?.dependencies.filter((dependency) => !dependency.resolved).length ?? 0;
-  const taskToStoryBlockReason = task
-    ? task.status === "done" || task.status === "cancelled"
-      ? strings.convertToProjectUnsupportedStatus
-      : task.externalWait !== null ||
-          unresolvedDependencyCount > 0 ||
-          task.repeatAfterDays !== null ||
-          task.allowedDeviationDays !== null ||
-          task.reminderAt !== null
-        ? strings.convertToProjectTaskOnlyRelations
-        : null
-    : null;
-  const showRoleConversion =
-    task !== null && isRootStandaloneTask && !isCapturedInboxItem;
-  const planningSummary = task
-    ? [
-        task.scheduledDate
-          ? `${strings.taskPlanFor}: ${
-              formatExactLocalDate(task.scheduledDate, locale) ??
-              task.scheduledDate
-            }`
-          : null,
-        task.dueDate
-          ? `${strings.due}: ${
-              formatExactLocalDate(task.dueDate, locale) ?? task.dueDate
-            }`
-          : null,
-        task.priority !== null ? `${strings.priority}: ${task.priority}` : null,
-      ]
-        .filter((value): value is string => value !== null)
-        .join(" · ")
-    : "";
   const attachments = extractPaperlessReferences(notesDraft);
-  const contentSummary = task
-    ? [
-        task.effectiveTags.length > 0
-          ? `${task.effectiveTags.length} ${strings.tags}`
-          : null,
-        markdownWithoutPaperlessReferences(notesDraft) ? strings.notes : null,
-        attachments.length > 0
-          ? strings.attachmentCount(attachments.length)
-          : null,
-      ]
-        .filter((value): value is string => value !== null)
-        .join(" · ")
-    : "";
-  const blockerSummary = task
-    ? [
-        task.externalWait?.waitingFor?.trim()
-          ? `${strings.waitingFor}: ${task.externalWait.waitingFor.trim()}`
-          : null,
-        unresolvedDependencyCount > 0
-          ? strings.dependencySummary(unresolvedDependencyCount)
-          : null,
-      ]
-        .filter((value): value is string => value !== null)
-        .join(" · ")
-    : "";
   const projectOwner = task
     ? members.find((member) => member.id === task.projectOwnerMemberId)
     : undefined;
+  const effectiveOwner = task
+    ? members.find((member) => member.id === task.effectiveOwnerId)
+    : undefined;
+  const localDate = (value: string) =>
+    formatExactLocalDate(value, locale) ?? value;
+  const planValue = task
+    ? [
+        task.scheduledDate ? localDate(task.scheduledDate) : null,
+        task.dueDate ? `${strings.due} ${localDate(task.dueDate)}` : null,
+      ]
+        .filter((value): value is string => value !== null)
+        .join(" · ")
+    : "";
+  const waitValue = task?.externalWait
+    ? [
+        task.externalWait.waitingFor?.trim() ?? null,
+        task.externalWait.revisitDate
+          ? localDate(task.externalWait.revisitDate)
+          : null,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(" · ")
+    : "";
+
+  const runCommand = (command: (typeof taskRailCommands)[number]) => {
+    if (!task) return;
+    if (command === "task.lifecycle") {
+      setLifecycleOpen((current) => !current);
+      return;
+    }
+    if (command === "task.discard") {
+      dispatch({ type: command, task });
+      return;
+    }
+    dispatch({ type: command, taskId: task.id });
+  };
 
   return (
     <>
@@ -725,693 +542,224 @@ export function TaskDetailSheet() {
           aria-busy={taskMutationPending}
           style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}
         >
-          {task.blocked && blockerSummary ? (
-            <button
-              type="button"
-              className="badge badge-status-waiting badge-button"
-              onClick={() => {
-                setWaitingHighlighted(true);
-                const target = dependenciesFieldRef.current;
-                if (target && typeof target.scrollIntoView === "function") {
-                  target.scrollIntoView({ block: "center", behavior: "smooth" });
-                }
-              }}
-            >
-              {blockerSummary}
-            </button>
-          ) : null}
-          <PaperlessAttachmentStrip attachments={attachments} />
-
-          <WorkItemDetailSection title={strings.taskSection}>
-            {task.projectId !== null && task.projectTitle ? (
-              <div className="task-project-context">
-                <div className="task-project-context-item">
-                  <span className="task-project-context-label">
-                    {strings.project}
-                  </span>
-                  <Link
-                    className="task-project-context-link"
-                    to={`/projects/${task.projectId}`}
-                    onClick={close}
-                  >
-                    {task.projectTitle}
-                  </Link>
-                </div>
-                <div className="task-project-context-item">
-                  <span className="task-project-context-label">
-                    {strings.driver}
-                  </span>
-                  {projectOwner ? (
-                    <MemberLabel member={projectOwner} size="sm" />
-                  ) : task.projectOwnerMemberId === null ? (
-                    <span>{strings.noDriver}</span>
-                  ) : (
-                    <span className="text-muted">{strings.loading}</span>
-                  )}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="field" ref={titleFieldRef}>
-              <div className="row-between">
-                <label className="field-label" htmlFor="task-title">
-                  {strings.title}
-                </label>
-                {!titleEditing ? (
-                  <IconActionButton
-                    kind="edit"
-                    label={strings.edit}
-                    onClick={() => setTitleEditing(true)}
-                  />
-                ) : null}
-              </div>
-              {titleEditing ? (
-                <>
-                  <input
-                    ref={titleInputRef}
-                    id="task-title"
-                    value={titleDraft}
-                    onChange={(e) => setTitleDraft(e.target.value)}
-                  />
-                  <div className="row">
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={savingTextFields}
-                      onClick={cancelTitleEdit}
-                    >
-                      {strings.cancel}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-primary"
-                      disabled={!titleIsValid || !titleDirty || savingTextFields}
-                      onClick={() =>
-                        void saveContentField("title").then((saved) => {
-                          if (saved) setTitleEditing(false);
-                        })
-                      }
-                    >
-                      {strings.save}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <strong>{task.title}</strong>
-              )}
+          <div className="field" ref={titleFieldRef}>
+            <div className="row-between">
+              <label className="field-label" htmlFor="task-title">
+                {strings.title}
+              </label>
+              {!titleEditing ? (
+                <IconActionButton
+                  kind="edit"
+                  label={strings.edit}
+                  onClick={() => setTitleEditing(true)}
+                />
+              ) : null}
             </div>
-
-            {!isCapturedInboxItem ? <div className="field">
-              <label htmlFor="task-status">{strings.status}</label>
-              <select
-                id="task-status"
-                value={statusDraft}
-                disabled={
-                  changingStatus ||
-                  taskActions.isPending(task.id) ||
-                  taskActions.pendingTask?.id === task.id
-                }
-                onChange={(e) => void changeStatus(e.target.value as Task["status"])}
-              >
-                {taskStatuses
-                  .filter((status) => status !== "captured" || task.status === "captured")
-                  .map((s) => (
-                  <option key={s} value={s}>
-                    {strings.taskStatusLabels[s]}
-                  </option>
-                  ))}
-              </select>
-            </div> : null}
-
-          </WorkItemDetailSection>
-
-          <WorkItemDetailSection title={strings.owner}>
-            <div ref={ownerFieldRef}>
-              <TaskOwnerChoiceGroup
-                label={strings.owner}
-                members={members}
-                ownerMemberId={task.ownerMemberId}
-                ownerInheritanceMode={task.ownerInheritanceMode}
-                inheritedOwnerId={task.inheritedOwnerId}
-                inheritanceSource={
-                  task.parentTaskId !== null
-                    ? "parent"
-                    : task.projectId !== null
-                      ? "project"
-                      : null
-                }
-                focusRef={ownerInputRef}
-                onChange={(choice) => void patch(choice)}
-              />
-            </div>
-          </WorkItemDetailSection>
-
-          {isCapturedInboxItem ? (
-            <WorkItemDetailSection title={strings.classificationPrompt}>
-              <div className="capture-shape-actions">
-                <button
-                  type="button"
-                  className="btn btn-primary capture-shape-action"
-                  disabled={classificationBusy || contentDirty}
-                  onClick={() => void classifyCapture("actionable")}
-                >
-                  {strings.classifyAsAction}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary capture-shape-action"
-                  disabled={classificationBusy || contentDirty}
-                  onClick={() =>
-                    void convertTaskToStory("backlog", { openHandoff: true })
-                  }
-                >
-                  {strings.classifyAsProjectSteps}
-                </button>
-                <button
-                  type="button"
-                  className="btn capture-shape-action"
-                  disabled={classificationBusy || contentDirty}
-                  onClick={() => void convertTaskToStory("backlog")}
-                >
-                  {strings.classifyAsBacklog}
-                </button>
-                <button
-                  type="button"
-                  className="btn capture-shape-action"
-                  disabled={classificationBusy || contentDirty}
-                  onClick={() => void classifyCapture("someday")}
-                >
-                  {strings.classifyAsSomeday}
-                </button>
-              </div>
-            </WorkItemDetailSection>
-          ) : null}
-
-          {showRoleConversion ? (
-            <WorkItemDetailSection title={strings.workItemRole}>
-              <div className="field">
-                <div className="row-between">
-                  <span>{strings.taskRoleTask}</span>
+            {titleEditing ? (
+              <>
+                <input
+                  ref={titleInputRef}
+                  id="task-title"
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                />
+                <div className="row">
                   <button
                     type="button"
                     className="btn btn-sm"
-                    disabled={
-                      classificationBusy ||
-                      contentDirty ||
-                      taskToStoryBlockReason !== null
-                    }
-                    onClick={() => setStoryConversionOpen((open) => !open)}
-                  >
-                    {strings.convertToProject}
-                  </button>
-                </div>
-                {taskToStoryBlockReason ? (
-                  <span className="text-muted task-detail-field-hint">
-                    {taskToStoryBlockReason}
-                  </span>
-                ) : null}
-              </div>
-              {storyConversionOpen ? (
-                <div className="capture-shape-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary capture-shape-action"
-                    disabled={classificationBusy || contentDirty}
-                    onClick={() => void convertTaskToStory("backlog")}
-                  >
-                    {strings.convertToProjectBacklog}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn capture-shape-action"
-                    disabled={classificationBusy || contentDirty}
-                    onClick={() => void convertTaskToStory("active")}
-                  >
-                    {strings.convertToProjectActive}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn capture-shape-action"
-                    disabled={classificationBusy}
-                    onClick={() => setStoryConversionOpen(false)}
+                    disabled={savingTextFields}
+                    onClick={cancelTitleEdit}
                   >
                     {strings.cancel}
                   </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    disabled={!titleIsValid || !titleDirty || savingTextFields}
+                    onClick={() =>
+                      void saveContentField("title").then((saved) => {
+                        if (saved) setTitleEditing(false);
+                      })
+                    }
+                  >
+                    {strings.save}
+                  </button>
                 </div>
-              ) : null}
-            </WorkItemDetailSection>
-          ) : null}
-
-          <div className="task-timing-sections">
-          <WorkItemDetailDisclosure
-            title={strings.taskPlanningSection}
-            summary={planningSummary || strings.taskPlanningEmpty}
-            defaultOpen={Boolean(planningSummary || task.externalWait)}
-            forceOpen={focusField === "schedule"}
-            resetKey={task.id}
-          >
-            <div className="row task-detail-date-row">
-              <div className="field" style={{ flex: 1 }} ref={scheduleFieldRef}>
-                <label htmlFor="task-scheduled">{strings.taskPlanFor}</label>
-                <HumanDateInput
-                  inputRef={scheduleInputRef}
-                  id="task-scheduled"
-                  value={task.scheduledDate ?? ""}
-                  onChange={(scheduledDate) => void patch({ scheduledDate })}
-                  onValidityChange={setScheduledDateValid}
-                />
-                <span className="text-muted task-detail-field-hint">
-                  {strings.taskPlanForGuidance}
-                </span>
-              </div>
-              <div className="field" style={{ flex: 1 }}>
-                {task.repeatAfterDays !== null ? (
-                  <>
-                    <label htmlFor="task-due">{strings.due}</label>
-                    <HumanDateInput
-                      id="task-due"
-                      value={task.dueDate ?? ""}
-                      onChange={(dueDate) => void patch({ dueDate })}
-                      onValidityChange={setDueDateValid}
-                      disabled
-                    />
-                    <span className="text-muted recurrence-derived-hint">
-                      {strings.recurrenceDeadlineLocked}
-                    </span>
-                  </>
-                ) : dueDateEditing ? (
-                  <>
-                    <label htmlFor="task-due">{strings.due}</label>
-                    <HumanDateInput
-                      id="task-due"
-                      autoFocus
-                      value={task.dueDate ?? ""}
-                      onChange={(dueDate) => {
-                        void patch({ dueDate });
-                        setDueDateEditing(false);
-                      }}
-                      onValidityChange={setDueDateValid}
-                    />
-                  </>
-                ) : task.dueDate ? (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-ghost task-detail-value-chip"
-                    onClick={() => setDueDateEditing(true)}
-                  >
-                    {strings.due}:{" "}
-                    {formatExactLocalDate(task.dueDate, locale) ?? task.dueDate}
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-ghost task-detail-add-property"
-                    onClick={() => setDueDateEditing(true)}
-                  >
-                    {strings.addDueDate}
-                  </button>
-                )}
-              </div>
-            </div>
-          {task.repeatAfterDays === null ? (
-            <ScheduleShortcuts
-              value={task.scheduledDate}
-              onChange={(scheduledDate) => void patch({ scheduledDate })}
-            />
-          ) : null}
-
-          <div className="field">
-            {priorityEditing ? (
-              <>
-                <label htmlFor="task-priority">{strings.priority}</label>
-                <select
-                  id="task-priority"
-                  autoFocus
-                  value={task.priority ?? ""}
-                  onChange={(e) => {
-                    void patch({
-                      priority: e.target.value ? Number(e.target.value) : null,
-                    });
-                    setPriorityEditing(false);
-                  }}
-                  onBlur={() => setPriorityEditing(false)}
-                >
-                  <option value="">{strings.none}</option>
-                  <option value="1">1 – {strings.priorityHighest}</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5 – {strings.priorityLowest}</option>
-                </select>
               </>
-            ) : task.priority !== null ? (
+            ) : (
+              <strong>{task.title}</strong>
+            )}
+          </div>
+
+          <div className="detail-meta-row">
+            <span className="sr-only">{strings.status}: </span>
+            <StatusBadge status={task.status} />
+            {task.projectId !== null && task.projectTitle ? (
+              <span className="detail-meta-static">
+                <span className="detail-meta-label">{strings.project}</span>
+                <Link
+                  className="task-project-context-link"
+                  to={`/projects/${task.projectId}`}
+                  onClick={close}
+                >
+                  {task.projectTitle}
+                </Link>
+                {projectOwner ? (
+                  <MemberLabel member={projectOwner} size="xs" />
+                ) : null}
+              </span>
+            ) : null}
+            {effectiveOwner ? (
               <button
                 type="button"
-                className="btn btn-sm btn-ghost task-detail-value-chip"
-                onClick={() => setPriorityEditing(true)}
+                className="detail-meta-button"
+                onClick={() => runCommand("task.assignOwner")}
               >
-                {strings.priority}: {task.priority}
+                <span className="detail-meta-label">{strings.owner}</span>
+                <MemberLabel member={effectiveOwner} size="xs" />
               </button>
             ) : (
               <button
                 type="button"
                 className="btn btn-sm btn-ghost task-detail-add-property"
-                onClick={() => setPriorityEditing(true)}
+                onClick={() => runCommand("task.assignOwner")}
               >
-                {strings.addPriority}
+                {strings.addOwner}
               </button>
             )}
-          </div>
-          </WorkItemDetailDisclosure>
-
-          <WorkItemDetailDisclosure
-            title={strings.taskWaitingSection}
-            summary={blockerSummary || strings.taskNotBlocked}
-            defaultOpen={Boolean(task.externalWait || task.dependencies.length)}
-            forceOpen={
-              focusField === "waiting" ||
-              focusField === "dependencies" ||
-              waitingHighlighted
-            }
-            resetKey={task.id}
-            className="task-detail-waiting"
-          >
-            <div className="stack blocker-control" ref={dependenciesFieldRef}>
-              <section className="task-waiting-group">
-                <h4>{strings.externalWaitSection}</h4>
-                <p className="task-detail-guidance">
-                  {strings.externalWaitGuidance}
-                </p>
-                <div className="field">
-                  <label htmlFor="task-external-wait">
-                    {strings.externalWaitReasonLabel}
-                  </label>
-                  <input
-                    ref={externalWaitInputRef}
-                    id="task-external-wait"
-                    value={externalWaitDraft}
-                    placeholder={strings.waitingForPlaceholder}
-                    onChange={(event) =>
-                      setExternalWaitDraft(event.target.value)
-                    }
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="task-external-wait-date">
-                    {strings.revisitDateRecommended}
-                  </label>
-                  <HumanDateInput
-                    id="task-external-wait-date"
-                    value={externalWaitDateDraft}
-                    onChange={(date) =>
-                      setExternalWaitDateDraft(date ?? "")
-                    }
-                    onValidityChange={setExternalWaitDateValid}
-                  />
-                  <span className="text-muted task-detail-field-hint">
-                    {strings.revisitDateGuidance}
-                  </span>
-                </div>
-                <div className="row task-detail-command-actions">
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
-                    disabled={
-                      !externalWaitDraft.trim() ||
-                      !externalWaitDateValid ||
-                      taskMutationPending
-                    }
-                    onClick={() => void saveExternalWait()}
-                  >
-                    {task.externalWait
-                      ? strings.updateWaiting
-                      : strings.markAsWaiting}
-                  </button>
-                  {task.externalWait ? (
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={taskMutationPending}
-                      onClick={() => void resolveExternalWait()}
-                    >
-                      {strings.endWaiting}
-                    </button>
-                  ) : null}
-                </div>
-              </section>
-
-              <section className="task-waiting-group">
-                <h4>{strings.dependencies}</h4>
-                <p className="task-detail-guidance">
-                  {strings.dependencyGuidance}
-                </p>
-                <ul className="list" style={{ padding: 0, margin: 0 }}>
-                  {sortDependencies(task.dependencies, locale).map((dep) => (
-                    <li key={dep.id} className="row-between">
-                      <span>{dep.title ?? `#${dep.dependsOnTaskId}`}</span>
-                      <span className="row">
-                        <span className="text-muted">
-                          {dep.resolved ? strings.resolved : strings.unresolved}
-                        </span>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-ghost"
-                          onClick={() =>
-                            void api
-                              .removeDependency(task.id, dep.dependsOnTaskId)
-                              .then(() => {
-                                bump();
-                                reload();
-                              })
-                          }
-                        >
-                          {strings.removeDependency}
-                        </button>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-                {addingDependency ? (
-                  <div className="stack task-dependency-search">
-                    <input
-                      ref={dependencyInputRef}
-                      aria-label={strings.searchDependency}
-                      placeholder={strings.searchDependency}
-                      value={depQuery}
-                      onChange={(event) =>
-                        void runDependencySearch(event.target.value)
-                      }
-                    />
-                    {depResults.length > 0 ? (
-                      <ul className="list" style={{ padding: 0, margin: 0 }}>
-                        {depResults.map((candidate) => (
-                          <li key={candidate.id} className="stack">
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-block"
-                              disabled={addingDependencyId !== null}
-                              onClick={() =>
-                                void addTaskDependency(candidate)
-                              }
-                            >
-                              {strings.addDependency}: {candidate.title}
-                              {candidate.projectTitle ? (
-                                <span className="text-muted">
-                                  {" "}
-                                  · {candidate.projectTitle}
-                                </span>
-                              ) : null}
-                            </button>
-                            {dependencyError?.candidateTaskId ===
-                            candidate.id ? (
-                              <div className="task-row-error" role="alert">
-                                <span>{strings.error}</span>
-                                <span className="text-muted">
-                                  {dependencyError.message}
-                                </span>
-                              </div>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                    {dependencyError?.candidateTaskId === null ? (
-                      <div className="task-row-error" role="alert">
-                        <span>{strings.error}</span>
-                        <span className="text-muted">
-                          {dependencyError.message}
-                        </span>
-                      </div>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      onClick={() => {
-                        setAddingDependency(false);
-                        setDepQuery("");
-                        setDepResults([]);
-                        setDependencyError(null);
-                      }}
-                    >
-                      {strings.cancel}
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => setAddingDependency(true)}
-                  >
-                    {strings.addDependency}
-                  </button>
-                )}
-              </section>
-
-              {task.effectiveContexts.length > 0 ||
-              homeAssistant?.contexts.some((context) => context.active) ? (
-                <section className="task-waiting-group">
-                  <h4>{strings.physicalContexts}</h4>
-                  <PhysicalContextPicker
-                    contexts={homeAssistant?.contexts ?? []}
-                    selected={task.explicitContexts}
-                    inherited={task.inheritedContexts}
-                    mode={task.contextInheritanceMode}
-                    onChange={(mode, contextIds) => {
-                      if (mode)
-                        void taskActions.setContexts(task, mode, contextIds);
-                    }}
-                  />
-                </section>
-              ) : null}
-            </div>
-          </WorkItemDetailDisclosure>
-          </div>
-
-          <WorkItemDetailDisclosure
-            title={strings.recurrence}
-            defaultOpen={task.repeatAfterDays !== null}
-            resetKey={task.id}
-            className="task-detail-recurrence"
-          >
-            <div className="recurrence-editor">
-            <div className="row-between">
-              <p className="text-muted">{strings.recurrenceHint}</p>
-              <label className="recurrence-toggle">
-                <input
-                  type="checkbox"
-                  checked={task.repeatAfterDays !== null}
-                  onChange={(event) => {
-                    if (!event.target.checked) {
-                      void patch({
-                        repeatAfterDays: null,
-                        allowedDeviationDays: null,
-                      });
-                      return;
-                    }
-                    if (!task.scheduledDate) {
-                      setSaveError(strings.recurrenceScheduleRequired);
-                      return;
-                    }
-                    setSaveError(null);
-                    void patch({
-                      repeatAfterDays: 7,
-                      allowedDeviationDays: 0,
-                    });
-                  }}
-                />
-                <span>{strings.recurrenceEnabled}</span>
-              </label>
-            </div>
-            {task.repeatAfterDays !== null &&
-            task.allowedDeviationDays !== null ? (
-              <>
-                <div className="recurrence-number-grid">
-                  <label className="field">
-                    <span>{strings.repeatAfterDays}</span>
-                    <input
-                      key={`repeat-${task.id}-${task.repeatAfterDays}`}
-                      type="number"
-                      inputMode="numeric"
-                      min={1}
-                      step={1}
-                      defaultValue={task.repeatAfterDays}
-                      onBlur={(event) => {
-                        const value = Number(event.target.value);
-                        if (Number.isInteger(value) && value >= 1) {
-                          void patch({ repeatAfterDays: value });
-                        }
-                      }}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{strings.allowedDeviationDays}</span>
-                    <input
-                      key={`deviation-${task.id}-${task.allowedDeviationDays}`}
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      step={1}
-                      defaultValue={task.allowedDeviationDays}
-                      onBlur={(event) => {
-                        const value = Number(event.target.value);
-                        if (Number.isInteger(value) && value >= 0) {
-                          void patch({ allowedDeviationDays: value });
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-                <p className="recurrence-preview">
-                  {strings.recurrenceDeadlinePreview(
-                    formatExactLocalDate(task.dueDate ?? "", locale) ??
-                      task.dueDate ??
-                      "–",
-                  )}
-                </p>
-              </>
+            {planValue ? (
+              <button
+                type="button"
+                className="detail-meta-button"
+                onClick={() => runCommand("task.plan")}
+              >
+                <span className="detail-meta-label">{strings.taskPlanFor}</span>
+                <span>{planValue}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost task-detail-add-property"
+                onClick={() => runCommand("task.plan")}
+              >
+                {strings.addPlan}
+              </button>
+            )}
+            {task.externalWait ? (
+              <button
+                type="button"
+                className="detail-meta-button"
+                onClick={() => runCommand("task.waitingLifecycle")}
+              >
+                <span className="detail-meta-label">{strings.waitingFor}</span>
+                <span>{waitValue}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost task-detail-add-property"
+                onClick={() => runCommand("task.waitingLifecycle")}
+              >
+                {strings.addWaiting}
+              </button>
+            )}
+            {task.repeatAfterDays !== null ? (
+              <button
+                type="button"
+                className="detail-meta-button"
+                onClick={() => runCommand("task.recurrence")}
+              >
+                <span className="detail-meta-label">{strings.recurrence}</span>
+                <span>{strings.recurrenceEveryDays(task.repeatAfterDays)}</span>
+              </button>
             ) : null}
-            </div>
-          </WorkItemDetailDisclosure>
-
-          <WorkItemDetailDisclosure
-            title={strings.taskContentSection}
-            summary={contentSummary || strings.taskContentEmpty}
-            defaultOpen={Boolean(contentSummary)}
-            forceOpen={focusField === "notes"}
-            resetKey={task.id}
-            className="task-detail-content-fields"
-          >
-            <div className="field">
-            <label>{strings.effectiveTags}</label>
-            <div className="row" style={{ flexWrap: "wrap" }}>
-              {task.explicitTags.length === 0 && inheritedTags.length === 0 ? (
-                <span className="text-muted">{strings.noTags}</span>
-              ) : null}
-              {inheritedTags.map((tag) => {
-                const excluded = task.excludedTagIds.includes(tag.id);
-                return (
-                  <TagChip
-                    key={tag.id}
-                    tag={tag}
-                    excluded={excluded}
-                    onToggleExclude={() =>
-                      void patch({
-                        excludedTagIds: excluded
-                          ? task.excludedTagIds.filter((id) => id !== tag.id)
-                          : [...task.excludedTagIds, tag.id],
-                      })
-                    }
-                  />
-                );
-              })}
-            </div>
-            <TagPicker
-              tags={tags ?? []}
-              selectedIds={task.explicitTags.map((tag) => tag.id)}
-              hiddenIds={inheritedTags.map((tag) => tag.id)}
-              onChange={(tagIds) => patch({ tagIds })}
-            />
+            {task.priority !== null ? (
+              <button
+                type="button"
+                className="detail-meta-button"
+                onClick={() => runCommand("task.priority")}
+              >
+                <span className="detail-meta-label">{strings.priority}</span>
+                <span>{task.priority}</span>
+              </button>
+            ) : null}
+            {task.effectiveTags.length > 0 ||
+            task.effectiveContexts.length > 0 ? (
+              <button
+                type="button"
+                className="detail-meta-button detail-meta-label-button"
+                aria-label={
+                  task.effectiveContexts.length > 0 &&
+                  task.effectiveTags.length === 0
+                    ? strings.physicalContexts
+                    : strings.tags
+                }
+                onClick={() =>
+                  runCommand(
+                    task.effectiveContexts.length > 0 &&
+                      task.effectiveTags.length === 0
+                      ? "task.contexts"
+                      : "task.tags",
+                  )
+                }
+              >
+                <TaskCardTags
+                  tags={task.effectiveTags}
+                  contexts={task.effectiveContexts}
+                />
+              </button>
+            ) : null}
           </div>
+
+          {saveError ?? taskActions.errors[task.id] ? (
+            <div className="task-row-error" role="alert">
+              <span>{strings.error}</span>
+              <span className="text-muted">
+                {saveError ?? taskActions.errors[task.id]}
+              </span>
+            </div>
+          ) : null}
+
+          <PaperlessAttachmentStrip attachments={attachments} />
+
+          {isCapturedInboxItem ? (
+            <div className="capture-shape-actions">
+              <button
+                type="button"
+                className="btn btn-primary capture-shape-action"
+                disabled={classificationBusy || contentDirty}
+                onClick={() => void classifyCapture("actionable")}
+              >
+                {strings.classifyAsAction}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary capture-shape-action"
+                disabled={classificationBusy || contentDirty}
+                onClick={() =>
+                  void convertTaskToStory("backlog", { openHandoff: true })
+                }
+              >
+                {strings.classifyAsProjectSteps}
+              </button>
+              <button
+                type="button"
+                className="btn capture-shape-action"
+                disabled={classificationBusy || contentDirty}
+                onClick={() => void convertTaskToStory("backlog")}
+              >
+                {strings.classifyAsBacklog}
+              </button>
+              <button
+                type="button"
+                className="btn capture-shape-action"
+                disabled={classificationBusy || contentDirty}
+                onClick={() => void classifyCapture("someday")}
+              >
+                {strings.classifyAsSomeday}
+              </button>
+            </div>
+          ) : null}
 
           <div className="field task-notes-field">
             <div className="row-between">
@@ -1464,14 +812,6 @@ export function TaskDetailSheet() {
             )}
           </div>
 
-          {saveError ?? taskActions.errors[task.id] ? (
-            <div className="task-row-error" role="alert">
-              <span>{strings.error}</span>
-              <span className="text-muted">{saveError ?? taskActions.errors[task.id]}</span>
-            </div>
-          ) : null}
-          </WorkItemDetailDisclosure>
-
           <WorkItemDetailDisclosure
             title={strings.subtasks}
             summary={
@@ -1480,13 +820,9 @@ export function TaskDetailSheet() {
                 : strings.noSubtasks
             }
             defaultOpen={task.children.length > 0}
-            forceOpen={focusField === "subtasks"}
             resetKey={task.id}
           >
-            <div className="field" ref={subtasksFieldRef}>
-            {task.children.length === 0 ? (
-              <p className="text-muted">{strings.noSubtasks}</p>
-            ) : null}
+            <div className="field">
             <ul className="list" style={{ padding: 0, margin: 0 }}>
               {sortByPosition(task.children).map((child) => (
                 <li key={child.id} className="row-between">
@@ -1532,7 +868,7 @@ export function TaskDetailSheet() {
                   <button
                     type="button"
                     className="btn btn-sm"
-                    onClick={() => setSplittingTask(true)}
+                    onClick={() => runCommand("task.split")}
                   >
                     {strings.splitTask}
                   </button>
@@ -1545,6 +881,160 @@ export function TaskDetailSheet() {
           </WorkItemDetailDisclosure>
 
           <WorkItemDetailDisclosure
+            title={strings.dependencies}
+            summary={
+              unresolvedDependencyCount > 0
+                ? strings.dependencySummary(unresolvedDependencyCount)
+                : undefined
+            }
+            defaultOpen={task.dependencies.length > 0}
+            forceOpen={focusField === "dependencies"}
+            resetKey={task.id}
+          >
+            <div className="stack blocker-control" ref={dependenciesFieldRef}>
+              <ul className="list" style={{ padding: 0, margin: 0 }}>
+                {sortDependencies(task.dependencies, locale).map((dep) => (
+                  <li key={dep.id} className="row-between">
+                    <span>{dep.title ?? `#${dep.dependsOnTaskId}`}</span>
+                    <span className="row">
+                      <span className="text-muted">
+                        {dep.resolved ? strings.resolved : strings.unresolved}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-ghost"
+                        onClick={() =>
+                          void api
+                            .removeDependency(task.id, dep.dependsOnTaskId)
+                            .then(() => {
+                              bump();
+                              reload();
+                            })
+                        }
+                      >
+                        {strings.removeDependency}
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {addingDependency ? (
+                <div className="stack task-dependency-search">
+                  <input
+                    ref={dependencyInputRef}
+                    aria-label={strings.searchDependency}
+                    placeholder={strings.searchDependency}
+                    value={depQuery}
+                    onChange={(event) =>
+                      void runDependencySearch(event.target.value)
+                    }
+                  />
+                  {depResults.length > 0 ? (
+                    <ul className="list" style={{ padding: 0, margin: 0 }}>
+                      {depResults.map((candidate) => (
+                        <li key={candidate.id} className="stack">
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-block"
+                            disabled={addingDependencyId !== null}
+                            onClick={() => void addTaskDependency(candidate)}
+                          >
+                            {strings.addDependency}: {candidate.title}
+                            {candidate.projectTitle ? (
+                              <span className="text-muted">
+                                {" "}
+                                · {candidate.projectTitle}
+                              </span>
+                            ) : null}
+                          </button>
+                          {dependencyError?.candidateTaskId === candidate.id ? (
+                            <div className="task-row-error" role="alert">
+                              <span>{strings.error}</span>
+                              <span className="text-muted">
+                                {dependencyError.message}
+                              </span>
+                            </div>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {dependencyError?.candidateTaskId === null ? (
+                    <div className="task-row-error" role="alert">
+                      <span>{strings.error}</span>
+                      <span className="text-muted">
+                        {dependencyError.message}
+                      </span>
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => {
+                      setAddingDependency(false);
+                      setDepQuery("");
+                      setDepResults([]);
+                      setDependencyError(null);
+                    }}
+                  >
+                    {strings.cancel}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setAddingDependency(true)}
+                >
+                  {strings.addDependency}
+                </button>
+              )}
+            </div>
+          </WorkItemDetailDisclosure>
+
+          <WorkItemDetailDisclosure
+            title={strings.moreActions}
+            resetKey={task.id}
+            className="task-detail-commands"
+          >
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              {taskRailCommands
+                .filter((command) => !isCapturedInboxItem || command !== "task.lifecycle")
+                .map((command) => (
+                  <button
+                    key={command}
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => runCommand(command)}
+                  >
+                    {strings.railCommandLabels[command]}
+                  </button>
+                ))}
+            </div>
+            {lifecycleOpen ? (
+              <div className="task-row-lifecycle" role="group" aria-label={strings.status}>
+                {taskStatuses
+                  .filter((status) => status !== "captured" || task.status === "captured")
+                  .map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      className="btn btn-sm"
+                      disabled={task.status === status}
+                      aria-current={task.status === status ? "true" : undefined}
+                      onClick={() => {
+                        setLifecycleOpen(false);
+                        dispatch({ type: "task.setStatus", task, status });
+                      }}
+                    >
+                      {strings.taskStatusLabels[status]}
+                    </button>
+                  ))}
+              </div>
+            ) : null}
+          </WorkItemDetailDisclosure>
+
+          <WorkItemDetailDisclosure
             title={strings.taskOrganizationSection}
             resetKey={task.id}
           >
@@ -1554,7 +1044,11 @@ export function TaskDetailSheet() {
               <button type="button" className="btn btn-sm" onClick={() => setMovePrompt("parent")}>
                 {strings.changeParent}
               </button>
-              <button type="button" className="btn btn-sm" onClick={() => setMovePrompt("project")}>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => runCommand("task.changeProject")}
+              >
                 {strings.moveProject}
               </button>
               <button type="button" className="btn btn-sm" onClick={() => setMovePrompt("subtree")}>
@@ -1702,10 +1196,7 @@ export function TaskDetailSheet() {
             taskActions.resolvePolicy(policy);
             reload();
           }}
-          onClose={() => {
-            setStatusDraft(task?.status ?? "actionable");
-            taskActions.cancelPrompt();
-          }}
+          onClose={() => taskActions.cancelPrompt()}
         />
       ) : null}
 
@@ -1720,15 +1211,6 @@ export function TaskDetailSheet() {
         />
       ) : null}
     </BottomSheet>
-    {splittingTask && task ? (
-      <TaskSplitSheet
-        parentId={task.id}
-        onClose={() => {
-          setSplittingTask(false);
-          reload();
-        }}
-      />
-    ) : null}
     {attachmentOpen && task ? (
       <MarkdownAttachmentSheet
         onClose={() => setAttachmentOpen(false)}

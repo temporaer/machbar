@@ -1,6 +1,7 @@
 import type { Task } from "@machbar/shared";
 import type { ProjectWithActions, WeekPlanningItem } from "./api";
 import type { TaskDetailFocusField } from "./taskDetailContext";
+import type { ProjectWorkflowAction } from "./api";
 
 /**
  * The semantic command vocabulary every interaction surface dispatches
@@ -44,7 +45,8 @@ export type WorkItemCommand =
   | { type: "task.tags"; taskId: number }
   | { type: "task.contexts"; taskId: number }
   | { type: "task.convertToProject"; taskId: number }
-  | { type: "task.lifecycle"; task: Task; status: Task["status"] }
+  | { type: "task.lifecycle"; taskId: number }
+  | { type: "task.setStatus"; task: Task; status: Task["status"] }
   | { type: "task.openOverflow"; taskId: number }
   | { type: "task.toggleDone"; task: Task }
   | { type: "task.primaryAction"; task: Task }
@@ -61,6 +63,7 @@ export type WorkItemCommand =
   | { type: "story.assignDriver"; story: ProjectWithActions }
   | { type: "story.planWork"; story: ProjectWithActions }
   | { type: "story.editOutcome"; story: ProjectWithActions }
+  | { type: "story.planDates"; story: ProjectWithActions }
   | { type: "story.tags"; story: ProjectWithActions }
   | { type: "story.contexts"; story: ProjectWithActions }
   | { type: "story.lifecycle"; story: ProjectWithActions }
@@ -99,6 +102,36 @@ export type ProjectRailCommand =
   | "story.assignDriver"
   | "story.planWork"
   | "story.editOutcome"
+  | "story.planDates"
   | "story.tags"
   | "story.contexts"
   | "story.lifecycle";
+
+/**
+ * Maps a legal `ProjectWorkflowAction` onto its `story.*` semantic command
+ so every actual workflow transition -- a row's primary swipe/button, its
+ * chip strip, the project detail's status group, and any keyboard/palette
+ * caller -- goes through the one shared dispatch surface instead of calling
+ * `useProjectActions().runAction` directly.
+ */
+export function storyWorkflowCommand(
+  story: ProjectWithActions,
+  action: ProjectWorkflowAction,
+  ownerMemberId?: number | null,
+): WorkItemCommand {
+  const ownerMemberIdField =
+    ownerMemberId !== undefined ? { ownerMemberId } : {};
+  switch (action) {
+    case "activate":
+      return { type: "story.activate", story, ...ownerMemberIdField };
+    case "return_to_backlog":
+      return { type: "story.returnToBacklog", story };
+    case "complete":
+      return { type: "story.complete", story };
+    case "reopen":
+      return { type: "story.reopen", story, ...ownerMemberIdField };
+    case "archive":
+    default:
+      return { type: "story.archive", story };
+  }
+}

@@ -1,7 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
-import type { WorkItemCommand } from "../lib/commands";
+import { storyWorkflowCommand } from "../lib/commands";
 import { useStrings } from "../lib/strings";
 import { formatDate } from "../lib/format";
 import {
@@ -17,8 +17,6 @@ import {
   type ProjectListClassification,
 } from "../lib/projectListFilter";
 import {
-  canClearDriver,
-  needsDriverBeforeAction,
   primaryWorkflowAction,
   projectTransitionLabel,
   projectWorkflowIcons,
@@ -28,9 +26,6 @@ import {
 import { useProjectActions } from "../lib/useProjectActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useOptionalInteractionScope } from "../lib/interactionScope";
-import { PlanDatesSheet } from "./PlanDatesSheet";
-import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
-import { ProjectTagsSheet } from "./ProjectTagsSheet";
 import { IconActionGlyph } from "./IconActionButton";
 import { MemberAvatar } from "./MemberAvatar";
 import { useLocale } from "../lib/locale";
@@ -38,9 +33,7 @@ import "./ProjectStoryRow.css";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
 import { RowSwipeBackgrounds, RowKebabButton, RowErrorBanner } from "./WorkItemRowChrome";
-import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
-import { hasProjectProgressPath } from "../lib/projectCommitments";
 import { TaskCardTags } from "./TaskCardTags";
 import { useRailConfig } from "../lib/railConfigContext";
 import { WorkItemCommandRail } from "./WorkItemCommandRail";
@@ -72,43 +65,6 @@ export interface ProjectStoryRowProps {
   variant?: "compact" | "card";
 }
 
-type Sheet =
-  | "assign-to-activate"
-  | "assign-to-reopen"
-  | "assign-driver"
-  | "plan-dates"
-  | "criteria"
-  | "tags"
-  | null;
-
-/**
- * Maps a legal `ProjectWorkflowAction` onto its `story.*` semantic command
- * (see `commands.ts`) so every actual workflow transition -- primary
- * swipe/button, chip strip, and (via `useWorkItemCommands()`) any future
- * keyboard/palette caller -- goes through the one shared dispatch surface
- * instead of this row calling `useProjectActions().runAction` directly.
- */
-function storyWorkflowCommand(
-  story: ProjectWithActions,
-  action: ProjectWorkflowAction,
-  ownerMemberId?: number | null,
-): WorkItemCommand {
-  const ownerMemberIdField =
-    ownerMemberId !== undefined ? { ownerMemberId } : {};
-  switch (action) {
-    case "activate":
-      return { type: "story.activate", story, ...ownerMemberIdField };
-    case "return_to_backlog":
-      return { type: "story.returnToBacklog", story };
-    case "complete":
-      return { type: "story.complete", story };
-    case "reopen":
-      return { type: "story.reopen", story, ...ownerMemberIdField };
-    case "archive":
-    default:
-      return { type: "story.archive", story };
-  }
-}
 
 /**
  * One story row with the full mobile workflow gestures, shared by the
@@ -125,15 +81,17 @@ function storyWorkflowCommand(
  *
  * Only transitions the backend advertises in `availableActions` are ever
  * offered; every remaining legal one appears as a chip (e.g. "In Backlog
- * zurücklegen", "Archivieren"). Chips that edit a *single* aspect (driver,
- * dates, acceptance criteria, tags) open their own targeted popup and return
- * straight to the list; "Projekt öffnen" navigates to the project page, and
- * tapping the row itself still opens the story detail as before.
+ * zurücklegen", "Archivieren"). The row renders no workflow sheets of its
+ * own: every command — lifecycle transition, driver, dates, acceptance
+ * criteria, tags — is dispatched as a semantic `story.*` command and
+ * rendered by `ProjectWorkflowHost`, including the prerequisites a
+ * transition may need first (see `lifecyclePrerequisite()`). "Projekt
+ * öffnen" navigates to the project page, and tapping the row itself still
+ * opens the story detail as before.
  */
 export function ProjectStoryRow({ story: storyProp, variant = "compact" }: ProjectStoryRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
-  const [sheet, setSheet] = useState<Sheet>(null);
   const { members } = useIdentity();
   const navigate = useNavigate();
   const dispatch = useWorkItemCommands();
@@ -144,16 +102,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   // `useProjectActions.tsx`); passing just this row's own `story` is enough
   // for its retained entry to release once this prop confirms the same
   // revision, without needing the host page's whole loaded collection.
-  const {
-    isPending,
-    retained,
-    errors,
-    clearError,
-    runAction,
-    update,
-    assignDriver,
-    schedule,
-  } = useProjectActions([storyProp]);
+  const { isPending, retained, errors, clearError } = useProjectActions([storyProp]);
 
   // A story that just transitioned keeps rendering here — muted, with the
   // past-tense confirmation of what happened — for `RETENTION_MS` (~4s)
@@ -236,27 +185,8 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
 
   const doPrimary = useCallback(() => {
     if (busy || !primaryAction) return;
-    if (primaryAction === "complete" && criteria.some((criterion) => !criterion.checked)) {
-      setSheet("criteria");
-      return;
-    }
-    if (
-      (primaryAction === "activate" || primaryAction === "reopen") &&
-      !hasProjectProgressPath(story)
-    ) {
-      navigate(`/projects/${story.id}?focus=next-action`);
-      return;
-    }
-    if (needsDriverBeforeAction(story, primaryAction)) {
-      setSheet(
-        primaryAction === "reopen"
-          ? "assign-to-reopen"
-          : "assign-to-activate",
-      );
-      return;
-    }
     dispatch(storyWorkflowCommand(story, primaryAction));
-  }, [busy, criteria, dispatch, navigate, primaryAction, story]);
+  }, [busy, dispatch, primaryAction, story]);
   const swipe = useHorizontalSwipe<HTMLDivElement>({
     disabled: busy,
     onPrimary: () => scope?.setOpenLifecycle(storyProp.id),
@@ -273,30 +203,8 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
     !busy && !isRetained && !chipsOpen && primaryAction !== null,
   );
 
-  const openSheet = (next: Exclude<Sheet, null>) => {
-    scope?.setOpenRail(null);
-    setSheet(next);
-  };
-
   const runSecondary = (action: ProjectWorkflowAction) => {
     scope?.setOpenRail(null);
-    if (action === "complete" && criteria.some((criterion) => !criterion.checked)) {
-      setSheet("criteria");
-      return;
-    }
-    if (
-      (action === "activate" || action === "reopen") &&
-      !hasProjectProgressPath(story)
-    ) {
-      navigate(`/projects/${story.id}?focus=next-action`);
-      return;
-    }
-    if (needsDriverBeforeAction(story, action)) {
-      setSheet(
-        action === "reopen" ? "assign-to-reopen" : "assign-to-activate",
-      );
-      return;
-    }
     dispatch(storyWorkflowCommand(story, action));
   };
 
@@ -312,28 +220,8 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   };
 
   const runRailCommand = (command: (typeof projectFavorites)[number]) => {
-    switch (command) {
-      case "story.defer":
-        openSheet("plan-dates");
-        return;
-      case "story.assignDriver":
-        openSheet("assign-driver");
-        return;
-      case "story.editOutcome":
-        openSheet("criteria");
-        return;
-      case "story.planWork":
-        navigate(`/projects/${story.id}?focus=next-action`);
-        scope?.setOpenRail(null);
-        return;
-      case "story.lifecycle":
-        scope?.setOpenRail(null);
-        dispatch({ type: command, story });
-        return;
-      default:
-        scope?.setOpenRail(null);
-        dispatch({ type: command, story });
-    }
+    scope?.setOpenRail(null);
+    dispatch({ type: command, story });
   };
 
   const runLifecycleAction = (action: ProjectWorkflowAction) => {
@@ -534,64 +422,6 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           classPrefix="story-row"
           message={rowError}
           onClose={() => clearError(story.id)}
-        />
-      ) : null}
-
-      {sheet === "assign-to-activate" || sheet === "assign-to-reopen" ? (
-        <MemberSelectionSheet
-          title={strings.assignDriver}
-          label={strings.driver}
-          idPrefix={`activate-driver-${story.id}`}
-          members={members}
-          value={story.ownerMemberId}
-          unassignedLabel={null}
-          hint={strings.assignDriverToActivateHint}
-          onClose={() => setSheet(null)}
-          onSelect={async (ownerMemberId) => {
-            await runAction(
-              story,
-              sheet === "assign-to-reopen" ? "reopen" : "activate",
-              ownerMemberId,
-            );
-          }}
-        />
-      ) : null}
-
-      {sheet === "assign-driver" ? (
-        <MemberSelectionSheet
-          title={strings.assignDriver}
-          label={strings.driver}
-          idPrefix={`project-driver-${story.id}`}
-          members={members}
-          value={story.ownerMemberId}
-          unassignedLabel={canClearDriver(story) ? strings.noDriver : null}
-          hint={canClearDriver(story) ? undefined : strings.driverLockedHint}
-          onClose={() => setSheet(null)}
-          onSelect={async (ownerMemberId) => {
-            await assignDriver(story, ownerMemberId);
-          }}
-        />
-      ) : null}
-
-      {sheet === "criteria" ? <StoryCriteriaSheet story={story} onClose={() => setSheet(null)} /> : null}
-
-      {sheet === "plan-dates" ? (
-        <PlanDatesSheet
-          story={story}
-          onClose={() => setSheet(null)}
-          onSave={async (patch) => {
-            await schedule(story, patch);
-          }}
-        />
-      ) : null}
-
-      {sheet === "tags" ? (
-        <ProjectTagsSheet
-          story={story}
-          onClose={() => setSheet(null)}
-          onSave={async (tagIds) => {
-            await update(story, { tagIds }, undefined, true);
-          }}
         />
       ) : null}
     </li>

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { TaskDetailSheet } from "./TaskDetailSheet";
+import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { api } from "../lib/api";
 import {
   makeMember,
@@ -420,8 +421,12 @@ describe("TaskRow – primary swipe direction mapping", () => {
     mockedApi.createTaskSuccessor.mockResolvedValue(
       makeTask({ id: 12, title: "Termin vereinbaren", projectId: 2 }),
     );
+    mockedApi.getTask.mockResolvedValue(task);
     renderWithProviders(
-      <TaskOutline tasks={[task]} emptyMessage="Nichts da" />,
+      <div>
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+        <TaskWorkflowHost />
+      </div>,
     );
     await screen.findByText("Angebot einholen");
 
@@ -609,6 +614,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
       <div>
         <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
         <TaskDetailSheet />
+        <TaskWorkflowHost />
       </div>,
     );
   }
@@ -675,7 +681,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     );
   });
 
-  it("saves a valid focused schedule immediately and keeps the focused scheduler open", async () => {
+  it("plans via the focused TaskPlanSheet workflow with an explicit commit", async () => {
     const task = makeTask({ id: 31, title: "Termin vereinbaren", status: "actionable" });
     renderOutlineWithDetail(task);
     await screen.findByText("Termin vereinbaren");
@@ -683,17 +689,24 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Planen" }));
 
-    await screen.findByLabelText("Geplant");
+    await screen.findByLabelText("Wann willst du das angehen?");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
+
+    // Choosing a shortcut is a local draft, not an immediate commit — the
+    // sheet stays open and nothing is saved until "Fertig".
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
         scheduledDate: resolveScheduleShortcut("tomorrow"),
+        dueDate: null,
         expectedRevision: 1,
       }),
     );
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("opens the waiting lifecycle focus from the default rail command", async () => {
@@ -704,7 +717,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Warten / Nachhaken" }));
 
-    const waitingFor = await screen.findByLabelText("Worauf wartet die Aufgabe?");
+    const waitingFor = await screen.findByLabelText("Worauf wartest du?");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
     expect(waitingFor).toBeInTheDocument();
   });

@@ -109,6 +109,39 @@ import lower-case domain helpers from React-free modules rather than from hook
 modules. Hooks may compose other hooks. Tests may import hooks to exercise
 behavior.
 
+### Focused workflows
+
+One intent has one semantic command, and one semantic command has one focused
+workflow. A rail, keyboard shortcut, Review repair, post-capture rail, and a
+clicked value in a detail view are five ways to dispatch the same command, not
+five places to decide what that command does.
+
+Surfaces dispatch; they do not choose sheets. Only `TaskWorkflowHost` and
+`ProjectWorkflowHost` import a focused workflow sheet, and only
+`useWorkItemCommands()` may call `taskWorkflow.open`, `projectWorkflow.open`,
+or `taskDetail.open`. State-sensitive resolution belongs there too: whether
+`task.waitingLifecycle` means "start waiting" or "follow up", and whether
+`story.complete` must first show unmet acceptance criteria, is decided once.
+
+`task.open` is the only command whose intent *is* opening task details. No
+other command may open the detail sheet to focus a field; the narrow
+`InboxPage` clarification queue is the documented exception. Accordingly
+`TaskDetailFocusField` covers only what lives *in* the detail — `title`,
+`notes`, `attachment`, `dependencies` — and never a scalar property that a
+focused workflow owns.
+
+Choosing and applying are separate commands where the choice itself is a
+surface: `task.lifecycle` opens the status chooser, `task.setStatus` applies a
+chosen status and resolves centrally which lifecycle mutation that requires
+(complete, cancel, reopen, clarify, or a direct transition).
+
+Rows keep only genuinely row-specific behavior: gesture mechanics, folding,
+drag/outline manipulation, optimistic row presentation, and rail visibility.
+
+`canonical-workflow-host` and `canonical-workflow-routing` in
+`scripts/check-architecture.mjs` enforce this. Its exception map is empty:
+no surface outside the two hosts renders a focused workflow. Never add to it.
+
 ## Canonical primitive registry
 
 | Need | Canonical primitive or path |
@@ -150,7 +183,12 @@ behavior.
 | Logical active WorkItem, structural capability, and collapse state per navigable surface | `apps/web/src/lib/interactionScope.tsx` |
 | Command descriptors, keyboard help, and prefix hints | `apps/web/src/lib/commandRegistry.ts`, `apps/web/src/components/CommandHelpSheet.tsx`, and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
 | Keyboard navigation (`j/k/h/l`, `Alt+arrows`, `g`-prefix, `?`, `c`, focused task keys) | `apps/web/src/lib/useWorkItemKeyboardNav.ts` and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
-| WorkItem detail-sheet section/disclosure chrome | `apps/web/src/components/WorkItemDetailSection.tsx` |
+| WorkItem detail disclosure chrome | `apps/web/src/components/WorkItemDetailSection.tsx` |
+| Focused task workflows (one sheet per `task.*` command) | `apps/web/src/components/TaskWorkflowHost.tsx` and `apps/web/src/lib/taskWorkflowContext.tsx` |
+| Focused project workflows (one sheet per `story.*` command) | `apps/web/src/components/ProjectWorkflowHost.tsx` and `apps/web/src/lib/projectWorkflowContext.tsx` |
+| Project lifecycle prerequisites (missing driver, unmet criteria, no progress path) | `lifecyclePrerequisite()` in `apps/web/src/lib/projectWorkflow.ts`, resolved by `useWorkItemCommands()` |
+| Legal project transition to `story.*` command | `storyWorkflowCommand()` in `apps/web/src/lib/commands.ts` |
+| Authored project title/notes editing | `apps/web/src/pages/ProjectDetailPage.tsx` |
 | Focused waiting/follow-up workflow | `apps/web/src/components/WaitingFollowUpSheet.tsx` and `apps/web/src/lib/useTaskActions.ts` |
 
 Before introducing another primitive for one of these needs, update this table

@@ -5,15 +5,18 @@ import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "../components/TaskOutline";
 import { ProjectStoryRow } from "../components/ProjectStoryRow";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
+import { TaskWorkflowHost } from "../components/TaskWorkflowHost";
 import { BottomSheet } from "../components/BottomSheet";
 import { api } from "./api";
 import { useTaskDetail } from "./taskDetailContext";
+import { useTaskWorkflow } from "./taskWorkflowContext";
 import { makeMember, makeTask, makeProject } from "../test/fixtures";
 
 vi.mock("./api", () => ({
   api: {
     getMembers: vi.fn(),
     getTags: vi.fn(),
+    getTask: vi.fn(),
     completeTask: vi.fn(),
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
@@ -29,6 +32,15 @@ function OpenTaskProbe() {
   return (
     <output data-testid="open-task-id">
       {openTaskId ?? "none"}|{focusField ?? "none"}
+    </output>
+  );
+}
+
+function OpenWorkflowProbe() {
+  const workflow = useTaskWorkflow();
+  return (
+    <output data-testid="open-workflow">
+      {workflow.current ? `${workflow.current.taskId}|${workflow.current.kind}` : "none|none"}
     </output>
   );
 }
@@ -274,21 +286,29 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
 
   it("dispatches task semantic shortcuts s/w/a/m for the active task", async () => {
     const task = makeTask({ id: 42, title: "Fokussierte Aufgabe", position: 0 });
+    mockedApi.getTask.mockResolvedValue(task);
     renderWithProviders(
       <>
         <WorkItemKeyboardNavMount />
         <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
-        <OpenTaskProbe />
+        <TaskWorkflowHost />
+        <OpenWorkflowProbe />
       </>,
     );
     await screen.findByText("Fokussierte Aufgabe");
 
     await userEvent.keyboard("j");
     await userEvent.keyboard("s");
-    expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|schedule");
+    expect(screen.getByTestId("open-workflow")).toHaveTextContent("42|plan");
+    expect(await screen.findByLabelText("Wann willst du das angehen?")).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.getByTestId("open-workflow")).toHaveTextContent("none|none"));
 
     await userEvent.keyboard("a");
-    expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|owner");
+    expect(screen.getByTestId("open-workflow")).toHaveTextContent("42|assignOwner");
+    expect(await screen.findByRole("group", { name: "Zuständig" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.getByTestId("open-workflow")).toHaveTextContent("none|none"));
 
     await userEvent.keyboard("m");
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
@@ -297,7 +317,8 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
 
     await userEvent.keyboard("w");
-    expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|waiting");
+    expect(screen.getByTestId("open-workflow")).toHaveTextContent("42|waitingLifecycle");
+    expect(await screen.findByLabelText("Worauf wartest du?")).toBeInTheDocument();
   });
 
   it("does not run task-focused shortcuts for an active story", async () => {
@@ -308,7 +329,7 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
         <ul>
           <ProjectStoryRow story={story} />
         </ul>
-        <OpenTaskProbe />
+        <OpenWorkflowProbe />
       </>,
     );
     await screen.findByText("Story");
@@ -317,7 +338,7 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     expect(container.querySelector('[data-workitem-id="42"] .story-row-main')).toHaveFocus();
     await userEvent.keyboard("s");
 
-    expect(screen.getByTestId("open-task-id")).toHaveTextContent("none|none");
+    expect(screen.getByTestId("open-workflow")).toHaveTextContent("none|none");
   });
 
   it("Alt+arrows call the structural mover only in an organizable (structurally valid) scope", async () => {

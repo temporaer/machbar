@@ -102,4 +102,26 @@ describe("rail configuration", () => {
     ]);
     expect(projectRailCommands).toContain("story.defer");
   });
+
+  it("namespaces favorites per member so two members stay independent", () => {
+    writeRailFavorites("task", ["task.tags", "task.contexts", "task.priority"], 1);
+    writeRailFavorites("task", ["task.plan", "task.split", "task.assignOwner"], 2);
+
+    expect(readRailFavorites("task", 1)).toEqual([
+      "task.tags",
+      "task.contexts",
+      "task.priority",
+    ]);
+    expect(readRailFavorites("task", 2)).toEqual([
+      "task.plan",
+      "task.split",
+      "task.assignOwner",
+    ]);
+    // No member (unauthenticated/local) falls back to defaults, not either member's data.
+    expect(readRailFavorites("task", null)).toEqual([
+      "task.plan",
+      "task.waitingLifecycle",
+      "task.split",
+    ]);
+  });
 });

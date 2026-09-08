@@ -5,6 +5,7 @@ import { WaitingFollowUpSheet } from "./WaitingFollowUpSheet";
 import { api } from "../lib/api";
 import { makeMember, makeTask } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
+import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -21,7 +22,7 @@ describe("WaitingFollowUpSheet", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
-  it("sends authored content and the wait's revisit date in one continue command", async () => {
+  it("continues waiting with a revisit shortcut, keeping the existing waitingFor", async () => {
     const task = makeTask({
       id: 9,
       notes: "Erste Anfrage.",
@@ -40,21 +41,19 @@ describe("WaitingFollowUpSheet", () => {
       revision: 4,
     });
     const onClose = vi.fn();
-    renderWithProviders(
-      <WaitingFollowUpSheet task={task} onClose={onClose} />,
-    );
+    renderWithProviders(<WaitingFollowUpSheet task={task} onClose={onClose} />);
 
     const content = await screen.findByLabelText("Notizen");
     expect(content).toHaveValue("");
     await userEvent.type(content, "Erneut angerufen.");
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
 
     await waitFor(() =>
       expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(9, {
         action: "continue",
         content: "Erneut angerufen.",
         waitingFor: "Vermieter",
-        revisitDate: "2026-09-05",
+        revisitDate: addIsoCalendarDays(toIsoCalendarDate(new Date()), 1),
         expectedRevision: 3,
       }),
     );
@@ -62,7 +61,7 @@ describe("WaitingFollowUpSheet", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it("resolves the wait together with the newly authored follow-up", async () => {
+  it("resolves the wait via the separate 'Warten beenden' action", async () => {
     const task = makeTask({
       id: 10,
       notes: "Erste Anfrage.",
@@ -78,18 +77,14 @@ describe("WaitingFollowUpSheet", () => {
       revision: 8,
       externalWait: null,
     });
-    renderWithProviders(
-      <WaitingFollowUpSheet task={task} onClose={vi.fn()} />,
-    );
+    const onClose = vi.fn();
+    renderWithProviders(<WaitingFollowUpSheet task={task} onClose={onClose} />);
 
     await userEvent.type(
       await screen.findByLabelText("Notizen"),
       "Antwort erhalten.",
     );
-    await userEvent.click(
-      screen.getByRole("checkbox", { name: "Warten beenden" }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await userEvent.click(screen.getByRole("button", { name: "Warten beenden" }));
 
     await waitFor(() =>
       expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(10, {
@@ -99,6 +94,7 @@ describe("WaitingFollowUpSheet", () => {
       }),
     );
     expect(mockedApi.followUpExternalWait).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("retains the draft and error after a failed atomic save", async () => {
@@ -109,20 +105,18 @@ describe("WaitingFollowUpSheet", () => {
     });
     mockedApi.followUpExternalWait.mockRejectedValue(new Error("Save failed"));
     const onClose = vi.fn();
-    renderWithProviders(
-      <WaitingFollowUpSheet task={task} onClose={onClose} />,
-    );
+    renderWithProviders(<WaitingFollowUpSheet task={task} onClose={onClose} />);
 
     const content = await screen.findByLabelText("Notizen");
     await userEvent.type(content, "Mein Entwurf");
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Save failed");
     expect(content).toHaveValue("Mein Entwurf");
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("offers explicit Save and Cancel actions and blocks every close path while pending", async () => {
+  it("blocks close while a follow-up is pending and closes once it resolves", async () => {
     const task = makeTask({
       id: 12,
       revision: 4,
@@ -135,22 +129,17 @@ describe("WaitingFollowUpSheet", () => {
       }),
     );
     const onClose = vi.fn();
-    renderWithProviders(
-      <WaitingFollowUpSheet task={task} onClose={onClose} />,
-    );
+    renderWithProviders(<WaitingFollowUpSheet task={task} onClose={onClose} />);
 
-    const save = screen.getByRole("button", { name: "Speichern" });
-    const cancel = screen.getByRole("button", { name: "Abbrechen" });
-    expect(save).toBeDisabled();
     await userEvent.type(await screen.findByLabelText("Notizen"), "Nachfrage");
-    expect(save).toBeEnabled();
-    await userEvent.click(save);
+    await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
     await waitFor(() =>
       expect(mockedApi.followUpExternalWait).toHaveBeenCalledTimes(1),
     );
+
+    const cancel = screen.getByRole("button", { name: "Abbrechen" });
     expect(cancel).toBeDisabled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Schließen" }));
     await userEvent.keyboard("{Escape}");
     expect(onClose).not.toHaveBeenCalled();
 

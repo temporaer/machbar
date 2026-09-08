@@ -6,6 +6,8 @@ import { useGlobalNavigationKeys } from "./useGlobalNavigationKeys";
 import { TaskActionsProvider } from "./useTaskActions";
 import { ProjectActionsProvider } from "./useProjectActions";
 import { TaskDetailProvider } from "./taskDetailContext";
+import { TaskWorkflowProvider } from "./taskWorkflowContext";
+import { ProjectWorkflowProvider } from "./projectWorkflowContext";
 import { IdentityProvider } from "./identity";
 import { RefreshProvider } from "./refresh";
 import { SwipeSettingsProvider } from "./swipeSettings";
@@ -60,7 +62,11 @@ function renderNavHost() {
             <TaskActionsProvider>
               <ProjectActionsProvider>
                 <TaskDetailProvider>
-                  <GlobalNavHost />
+                  <TaskWorkflowProvider>
+                    <ProjectWorkflowProvider>
+                      <GlobalNavHost />
+                    </ProjectWorkflowProvider>
+                  </TaskWorkflowProvider>
                 </TaskDetailProvider>
               </ProjectActionsProvider>
             </TaskActionsProvider>
@@ -106,8 +112,12 @@ describe("useGlobalNavigationKeys (g-prefix)", () => {
               <TaskActionsProvider>
                 <ProjectActionsProvider>
                   <TaskDetailProvider>
-                    <input aria-label="Freitext" />
-                    <GlobalNavHost />
+                    <TaskWorkflowProvider>
+                      <ProjectWorkflowProvider>
+                        <input aria-label="Freitext" />
+                        <GlobalNavHost />
+                      </ProjectWorkflowProvider>
+                    </TaskWorkflowProvider>
                   </TaskDetailProvider>
                 </ProjectActionsProvider>
               </TaskActionsProvider>

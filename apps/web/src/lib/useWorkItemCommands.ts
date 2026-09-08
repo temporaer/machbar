@@ -1,9 +1,13 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import type { ProjectWithActions } from "./api";
 import type { WorkItemCommand } from "./commands";
+import { lifecyclePrerequisite } from "./projectWorkflow";
 import { useTaskActions } from "./useTaskActions";
 import { useProjectActions } from "./useProjectActions";
 import { useTaskDetail } from "./taskDetailContext";
+import { useTaskWorkflow } from "./taskWorkflowContext";
+import { useProjectWorkflow } from "./projectWorkflowContext";
 import { useSwipeSettings } from "./swipeSettings";
 import { useOptionalInteractionScope } from "./interactionScope";
 
@@ -31,6 +35,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.contexts":
     case "task.convertToProject":
     case "task.lifecycle":
+    case "task.setStatus":
     case "task.openOverflow":
     case "task.toggleDone":
     case "task.primaryAction":
@@ -81,6 +86,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.contexts":
     case "task.convertToProject":
     case "task.lifecycle":
+    case "task.setStatus":
     case "task.openOverflow":
     case "task.toggleDone":
     case "task.primaryAction":
@@ -132,9 +138,44 @@ export function useWorkItemCommands() {
   const taskActions = useTaskActions();
   const projectActions = useProjectActions();
   const taskDetail = useTaskDetail();
+  const taskWorkflow = useTaskWorkflow();
+  const projectWorkflow = useProjectWorkflow();
   const navigate = useNavigate();
   const { primarySwipeAction } = useSwipeSettings();
   const scope = useOptionalInteractionScope();
+
+  /**
+   * Opens whatever a lifecycle transition still needs before it can be
+   * committed and reports whether the transition itself must wait. Callers
+   * dispatch `story.activate`/`story.complete`/`story.reopen` unconditionally;
+   * only this function decides that e.g. completing a story with open
+   * acceptance criteria means "show me the criteria first".
+   */
+  const resolveStoryPrerequisite = useCallback(
+    (
+      story: ProjectWithActions,
+      action: "activate" | "complete" | "reopen",
+      ownerMemberId?: number | null,
+    ): boolean => {
+      switch (lifecyclePrerequisite(story, action, ownerMemberId)) {
+        case "openCriteria":
+          projectWorkflow.open("editOutcome", story.id);
+          return true;
+        case "progressPath":
+          navigate(`/projects/${story.id}?focus=next-action`);
+          return true;
+        case "driver":
+          projectWorkflow.open(
+            action === "reopen" ? "reopenWithDriver" : "activateWithDriver",
+            story.id,
+          );
+          return true;
+        default:
+          return false;
+      }
+    },
+    [navigate, projectWorkflow],
+  );
 
   const dispatch = useCallback(
     (command: WorkItemCommand) => {
@@ -145,38 +186,74 @@ export function useWorkItemCommands() {
           taskDetail.open(command.taskId, command.focusField);
           return;
         case "task.plan":
-          taskDetail.open(command.taskId, "schedule");
+          taskWorkflow.open("plan", command.taskId);
           return;
         case "task.waitingLifecycle":
-          taskDetail.open(command.taskId, "waiting");
+          taskWorkflow.open("waitingLifecycle", command.taskId);
           return;
         case "task.split":
-          taskDetail.open(command.taskId, "split");
+          taskWorkflow.open("split", command.taskId);
           return;
         case "task.assignOwner":
-          taskDetail.open(command.taskId, "owner");
+          taskWorkflow.open("assignOwner", command.taskId);
           return;
         case "task.changeProject":
+          taskWorkflow.open("changeProject", command.taskId);
+          return;
         case "task.addSuccessor":
+          taskWorkflow.open("addSuccessor", command.taskId);
+          return;
         case "task.recurrence":
+          taskWorkflow.open("recurrence", command.taskId);
+          return;
         case "task.priority":
+          taskWorkflow.open("priority", command.taskId);
+          return;
         case "task.tags":
+          taskWorkflow.open("tags", command.taskId);
+          return;
         case "task.contexts":
+          taskWorkflow.open("contexts", command.taskId);
+          return;
         case "task.convertToProject":
+          taskWorkflow.open("convertToProject", command.taskId);
+          return;
         case "task.openOverflow":
           scope?.setOpenOverflow(command.taskId);
           return;
         case "task.lifecycle":
-          if (command.status === "done" || command.status === "actionable") {
-            taskActions.requestToggle(command.task);
-          } else if (command.status === "cancelled") {
-            taskActions.requestCancel(command.task);
-          } else if (command.status === "captured") {
-            taskActions.clarify(command.task);
-          } else {
-            taskActions.setStatus(command.task, command.status);
-          }
+          scope?.setOpenLifecycle(command.taskId);
           return;
+        case "task.setStatus": {
+          // State-sensitive resolution lives here rather than in each caller:
+          // leaving a terminal status is one atomic backend transition, while
+          // entering one may need the shared child-policy prompt first.
+          const current = command.task.status;
+          const next = command.status;
+          if (current === next) return;
+          if (current === "done" || current === "cancelled") {
+            if (next === "actionable") {
+              taskActions.requestToggle(command.task);
+            } else {
+              taskActions.transitionStatus(command.task, next);
+            }
+            return;
+          }
+          if (next === "done") {
+            taskActions.requestToggle(command.task);
+            return;
+          }
+          if (next === "cancelled") {
+            taskActions.requestCancel(command.task);
+            return;
+          }
+          if (next === "captured") {
+            taskActions.transitionStatus(command.task, "captured");
+            return;
+          }
+          taskActions.setStatus(command.task, next);
+          return;
+        }
         case "task.toggleDone":
           taskActions.requestToggle(command.task);
           return;
@@ -223,27 +300,50 @@ export function useWorkItemCommands() {
           }
           return;
         case "story.activate":
-          void projectActions.activate(command.story, command.ownerMemberId);
+          if (!resolveStoryPrerequisite(command.story, "activate", command.ownerMemberId)) {
+            void projectActions.activate(command.story, command.ownerMemberId);
+          }
           return;
         case "story.returnToBacklog":
           void projectActions.runAction(command.story, "return_to_backlog");
           return;
         case "story.complete":
-          void projectActions.runAction(command.story, "complete");
+          if (!resolveStoryPrerequisite(command.story, "complete")) {
+            void projectActions.runAction(command.story, "complete");
+          }
           return;
         case "story.reopen":
-          void projectActions.runAction(command.story, "reopen", command.ownerMemberId);
+          if (!resolveStoryPrerequisite(command.story, "reopen", command.ownerMemberId)) {
+            void projectActions.runAction(command.story, "reopen", command.ownerMemberId);
+          }
           return;
         case "story.archive":
           void projectActions.runAction(command.story, "archive");
           return;
         case "story.defer":
+          projectWorkflow.open("defer", command.story.id);
+          return;
         case "story.assignDriver":
-        case "story.planWork":
+          projectWorkflow.open("assignDriver", command.story.id);
+          return;
         case "story.editOutcome":
+          projectWorkflow.open("editOutcome", command.story.id);
+          return;
+        case "story.planDates":
+          projectWorkflow.open("planDates", command.story.id);
+          return;
         case "story.tags":
+          projectWorkflow.open("tags", command.story.id);
+          return;
         case "story.contexts":
+          projectWorkflow.open("contexts", command.story.id);
+          return;
+        case "story.planWork":
+          navigate(`/projects/${command.story.id}?focus=next-action`);
+          return;
         case "story.lifecycle":
+          scope?.setOpenLifecycle(command.story.id);
+          return;
         case "story.openOverflow":
           scope?.setOpenOverflow(command.story.id);
           return;
@@ -279,7 +379,17 @@ export function useWorkItemCommands() {
           return;
       }
     },
-    [taskActions, projectActions, taskDetail, navigate, primarySwipeAction, scope],
+    [
+      taskActions,
+      projectActions,
+      taskDetail,
+      taskWorkflow,
+      projectWorkflow,
+      navigate,
+      primarySwipeAction,
+      scope,
+      resolveStoryPrerequisite,
+    ],
   );
 
   return dispatch;

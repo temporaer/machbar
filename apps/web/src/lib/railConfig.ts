@@ -24,6 +24,7 @@ export const projectRailCommands: readonly ProjectRailCommand[] = [
   "story.assignDriver",
   "story.planWork",
   "story.editOutcome",
+  "story.planDates",
   "story.tags",
   "story.contexts",
   "story.lifecycle",
@@ -41,7 +42,11 @@ const PROJECT_DEFAULT_FAVORITES: readonly ProjectRailCommand[] = [
   "story.planWork",
 ];
 
-const STORAGE_KEY = "machbar:rail-favorites";
+const STORAGE_KEY_PREFIX = "machbar:rail-favorites";
+
+function storageKey(memberId: number | null): string {
+  return memberId === null ? STORAGE_KEY_PREFIX : `${STORAGE_KEY_PREFIX}:${memberId}`;
+}
 
 type StoredFavorites = {
   task?: unknown;
@@ -73,16 +78,19 @@ function uniqueFavorites<T extends RailCommand>(
 
 export function readRailFavorites(
   kind: "task",
+  memberId?: number | null,
 ): readonly TaskRailCommand[];
 export function readRailFavorites(
   kind: "project",
+  memberId?: number | null,
 ): readonly ProjectRailCommand[];
 export function readRailFavorites(
   kind: RailWorkItemKind,
+  memberId: number | null = null,
 ): readonly RailCommand[] {
   let stored: StoredFavorites = {};
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const raw = window.localStorage.getItem(storageKey(memberId));
     if (raw) {
       const parsed: unknown = JSON.parse(raw);
       if (parsed && typeof parsed === "object") stored = parsed as StoredFavorites;
@@ -99,24 +107,28 @@ export function readRailFavorites(
 export function writeRailFavorites(
   kind: "task",
   favorites: readonly TaskRailCommand[],
+  memberId?: number | null,
 ): void;
 export function writeRailFavorites(
   kind: "project",
   favorites: readonly ProjectRailCommand[],
+  memberId?: number | null,
 ): void;
 export function writeRailFavorites(
   kind: RailWorkItemKind,
   favorites: readonly RailCommand[],
+  memberId: number | null = null,
 ): void {
   const current: StoredFavorites = {};
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const key = storageKey(memberId);
+    const raw = window.localStorage.getItem(key);
     if (raw) {
       const parsed: unknown = JSON.parse(raw);
       if (parsed && typeof parsed === "object") Object.assign(current, parsed);
     }
     current[kind] = [...favorites];
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+    window.localStorage.setItem(key, JSON.stringify(current));
   } catch {
     // localStorage may be unavailable in private mode, SSR, or tests.
   }

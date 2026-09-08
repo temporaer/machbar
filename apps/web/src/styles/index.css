@@ -182,6 +182,11 @@ a {
   flex-direction: column;
 }
 
+.project-title-field {
+  width: 100%;
+  min-width: 0;
+}
+
 .project-page-title-row {
   min-width: 0;
   align-items: flex-start;
@@ -191,6 +196,9 @@ a {
 .project-page-title-row h1 {
   min-width: 0;
   overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .project-page-actions {
@@ -210,7 +218,7 @@ a {
 }
 
 .project-detail-overview-row,
-.project-detail-meta-row {
+.detail-meta-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -222,7 +230,8 @@ a {
   color: var(--color-text-muted);
 }
 
-.project-detail-meta-button {
+.detail-meta-static,
+.detail-meta-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -236,16 +245,22 @@ a {
   cursor: pointer;
 }
 
-.project-detail-meta-button:hover,
-.project-detail-meta-button:focus-visible {
+.detail-meta-static {
+  cursor: default;
+  border-style: dashed;
+}
+
+.detail-meta-button:hover,
+.detail-meta-button:focus-visible {
   border-color: var(--color-primary);
 }
 
-.project-detail-meta-label {
+.detail-meta-label {
   color: var(--color-text-muted);
   font-weight: 650;
 }
 
+.detail-meta-label-button .task-card-tags,
 .project-detail-label-button .task-card-tags {
   margin: 0;
 }
@@ -1768,10 +1783,6 @@ details[open] > .disclosure-summary::after {
   gap: 14px;
 }
 
-.project-edit-content {
-  gap: 14px;
-}
-
 .task-detail-section,
 .task-detail-content > .contextual-activity,
 .task-detail-content > .recurrence-history {
@@ -1790,12 +1801,6 @@ details[open] > .disclosure-summary::after {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-.project-edit-section > .task-detail-section-title {
-  color: var(--color-text);
-  font-size: 0.95rem;
-  letter-spacing: 0.02em;
 }
 
 .task-detail-section-body {

@@ -544,7 +544,7 @@ The row shows **one** progress bar — task completion, marked up as a real `rol
 
 ### Status is a badge, transitions are buttons
 
-No surface offers the project status as a `<select>`. `ProjectStoryRow`, `ProjectDetailPage` and `ProjectEditSheet` all render the status as a read-only badge (`projectStatusLabels`, plus an `.sr-only` "Status:" prefix on the row) and expose the change itself as thumb-sized, explicitly named buttons for exactly the transitions in `availableActions` — the sheet groups them in a `role="group"` labelled by its status field. Tests assert the absence of a status combobox, so a dropdown cannot creep back in.
+No surface offers the project status as a `<select>`. `ProjectStoryRow` and `ProjectDetailPage` both render the status as a read-only badge (`projectStatusLabels`, plus an `.sr-only` "Status:" prefix on the row) and expose the change itself as thumb-sized, explicitly named buttons for exactly the transitions in `availableActions`, grouped in a `role="group"` labelled `Status`. Both reach them through `story.lifecycle` and map the chosen action onto its `story.*` command with the shared `storyWorkflowCommand()` in `commands.ts`. Tests assert the absence of a status combobox, so a dropdown cannot creep back in.
 
 ### One headless horizontal-swipe primitive
 
@@ -601,8 +601,7 @@ Editing surfaces follow three explicit contracts:
 Focused sheets may own drafts and user intent, but not a second mutation
 implementation. Task metadata and external-wait execution flow through
 `useTaskActions`; project metadata and lifecycle changes flow through
-`useProjectActions`. `ProjectEditSheet` is the sole project-notes editor,
-including the notes-focused entry from `ProjectDetailPage`.
+`useProjectActions`. `ProjectDetailPage` is the sole project-notes editor.
 
 ### One canonical mutation path
 
@@ -640,7 +639,7 @@ Interactions target one field at a time instead of opening the full detail sheet
 | `TaskQuickActionSheet` | Focused task schedule or notes editing; execution is supplied by `useTaskActions` |
 | `MemberSelectionSheet` | Reusable task-owner/project-driver picker, including assign-and-activate intent |
 | `MemberChoiceGroup` | The tap-chip choice group rendered by assignment surfaces |
-| `AcceptanceCriteriaEditor` | Reusable ordered criteria editor; shared by `ProjectEditSheet` and `StoryCriteriaSheet` |
+| `AcceptanceCriteriaEditor` | Reusable ordered criteria editor, rendered by `StoryCriteriaSheet` |
 | `StoryCriteriaSheet` | Targeted criteria popup for a story row |
 | `PlanDatesSheet` | Due/scheduled dates only |
 | `WaitingFollowUpSheet` | Owns follow-up drafts; delegates the atomic command, pending state, errors, and refresh to `useTaskActions` |
@@ -658,13 +657,29 @@ A household has at most ~5 members, so every focused assignment popup renders th
 - An explicit "nobody" chip (`Gemeinsam / offen` for tasks, `Niemand zugewiesen` for stories) where clearing is legal. Driver activation omits it because the API rejects activating without a driver.
 - Chips keep a ~44 px touch target (`.choice-chip`) and wrap rather than scroll.
 
-The **full** editors (`TaskDetailSheet`, `ProjectEditSheet`) keep their selects:
-they are multi-field forms reached by a deliberate "Bearbeiten"/"Mehr" tap,
-not one-decision popups. `TaskDetailSheet` groups always-visible task,
-planning, content, blocker, and subtask sections; recurrence, organization,
-activity, and deletion use accessible disclosures, with active recurrence
-opened automatically. Filters (`SearchFilterBar`) and settings (`MorePage`)
-are likewise unaffected.
+`TaskDetailSheet` is no longer an inspector and owns no scalar-property
+editor at all. It reads as a document: authored title and notes with explicit
+Edit/Save/Cancel, a compact meta row of *current* values, and the two real
+collections (subtasks, dependencies) as disclosures, followed by
+`Weitere Aktionen`, `Organisation`, activity and deletion.
+
+Every scalar value in the meta row is a button that dispatches the same
+semantic command as the rail and keyboard — owner, planning, waiting,
+recurrence, priority, tags and contexts. Unset rare properties render nothing;
+only owner, planning and waiting keep a lightweight `+ …` affordance. Status
+shows as a read-only badge, with changes made through the `task.lifecycle`
+chooser under `Weitere Aktionen`.
+
+`ProjectDetailPage` is the same shape for stories, and `ProjectEditSheet` is
+gone. The page edits only its authored title and notes in place; driver,
+dates, tags, contexts and outcome are meta-row values that dispatch
+`story.assignDriver`/`story.planDates`/`story.tags`/`story.contexts`/
+`story.editOutcome`. Deleting the sheet also deleted its private copies of
+activation-driver, activation-progress and completion-criteria prerequisite
+handling, which `resolveStoryPrerequisite()` already decides once. Review
+repair links (`?focus=driver|completion|outcome`) dispatch those same
+commands rather than scrolling a form to a field. Filters
+(`SearchFilterBar`) and settings (`MorePage`) are unaffected.
 
 ### Outline structure editing: drag, keyboard, one toolbar
 
@@ -919,12 +934,13 @@ as direct actions, omit empty optional metadata, and keep substantive
 collections as readable sections. Semantic transformations continue through
 the shared command/action paths and focused sheets.
 
-**Still two separate rows and detail sheets.** `TaskRow.tsx` and
-`ProjectStoryRow.tsx` render as fully separate components (they now both
+**Still two separate rows and two separate detail surfaces.** `TaskRow.tsx`
+and `ProjectStoryRow.tsx` render as fully separate components (they now both
 carry `data-workitem-id` and dispatch through the same command layer, but
-not a shared JSX row). `TaskDetailSheet.tsx` and `ProjectEditSheet.tsx`
-likewise remain separate sheets; they share only their section/disclosure
-chrome (`apps/web/src/components/WorkItemDetailSection.tsx`). A full
+not a shared JSX row). `TaskDetailSheet.tsx` (a sheet) and
+`ProjectDetailPage.tsx` (a route) likewise stay separate. They now share only
+`WorkItemDetailDisclosure`; `WorkItemDetailSection` is unused because neither
+has always-visible field groups left to title. A full
 "one universal WorkItem row"/"one unified inspector" merge is future work,
 not yet attempted, given the scale of behavioral difference (swipe
 semantics, chip strips, and field sets) between the task and story cases.

@@ -13,6 +13,8 @@ import {
   type TaskDetailFocusField,
 } from "../lib/taskDetailContext";
 import { TaskDetailSheet } from "./TaskDetailSheet";
+import { TaskWorkflowHost } from "./TaskWorkflowHost";
+import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
 import { de as strings } from "../i18n/de";
@@ -85,42 +87,20 @@ function QueueOpenerHarness({ taskIds, children }: { taskIds: number[]; children
 }
 
 function renderSheet(taskId: number, focusField?: TaskDetailFocusField) {
-  return render(
-    <MemoryRouter>
-      <IdentityProvider>
-        <RefreshProvider>
-          <TaskActionsProvider>
-            <ProjectActionsProvider>
-              <TaskDetailProvider>
-                <OpenerHarness taskId={taskId} focusField={focusField}>
-                  <TaskDetailSheet />
-                </OpenerHarness>
-              </TaskDetailProvider>
-            </ProjectActionsProvider>
-          </TaskActionsProvider>
-        </RefreshProvider>
-      </IdentityProvider>
-    </MemoryRouter>,
+  return renderWithProviders(
+    <OpenerHarness taskId={taskId} focusField={focusField}>
+      <TaskDetailSheet />
+      <TaskWorkflowHost />
+    </OpenerHarness>,
   );
 }
 
 function renderQueueSheet(taskIds: number[]) {
-  return render(
-    <MemoryRouter>
-      <IdentityProvider>
-        <RefreshProvider>
-          <TaskActionsProvider>
-            <ProjectActionsProvider>
-              <TaskDetailProvider>
-                <QueueOpenerHarness taskIds={taskIds}>
-                  <TaskDetailSheet />
-                </QueueOpenerHarness>
-              </TaskDetailProvider>
-            </ProjectActionsProvider>
-          </TaskActionsProvider>
-        </RefreshProvider>
-      </IdentityProvider>
-    </MemoryRouter>,
+  return renderWithProviders(
+    <QueueOpenerHarness taskIds={taskIds}>
+      <TaskDetailSheet />
+      <TaskWorkflowHost />
+    </QueueOpenerHarness>,
   );
 }
 
@@ -267,7 +247,7 @@ describe("TaskDetailSheet", () => {
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
-  it("groups common fields and collapses rare task controls", async () => {
+  it("reads as a document: no scalar-property editors, no empty-state prose", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({ id: 42, title: "Strukturierte Aufgabe" }),
     );
@@ -275,64 +255,67 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     await waitForTaskTitle("Strukturierte Aufgabe");
 
-    for (const heading of [
-      "Aufgabe",
-      "Zuständig",
-      "Planung",
-      "Wartet diese Aufgabe auf etwas?",
-      "Inhalt",
-      "Teilaufgaben",
-    ]) {
+    // Authored content and the two real collections stay; every scalar
+    // property is a command, not an embedded editor.
+    expect(screen.getByText("Titel", { selector: "label" })).toBeVisible();
+    expect(screen.getByText("Notizen", { selector: "label" })).toBeVisible();
+    for (const heading of ["Teilaufgaben", "Abhängigkeiten"]) {
       expect(
         screen.getByRole("heading", { name: heading, level: 3 }),
       ).toBeVisible();
     }
 
-    const recurrence = screen
-      .getByRole("heading", { name: "Wiederholung", level: 3 })
+    for (const label of [
+      "Status",
+      "Priorität",
+      "Fällig",
+      "Einplanen für",
+      "Worauf wartet die Aufgabe?",
+      "Wiederholen nach Tagen",
+    ]) {
+      expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+    }
+    expect(
+      screen.queryByRole("group", { name: "Zuständig" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: "Schnell planen" }),
+    ).not.toBeInTheDocument();
+
+    // The old inspector's empty-state prose is gone with its sections.
+    for (const prose of [
+      "Keine Termine oder Priorität",
+      "Keine Notizen oder Tags",
+      "Nicht blockiert",
+    ]) {
+      expect(screen.queryByText(prose)).not.toBeInTheDocument();
+    }
+
+    // Unset rare properties show nothing at all; unset common ones offer a
+    // lightweight affordance that dispatches the same command.
+    const meta = document.querySelector<HTMLElement>(".detail-meta-row")!;
+    expect(
+      within(meta).queryByRole("button", { name: /Priorität/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(meta).queryByRole("button", { name: /Wiederholung/ }),
+    ).not.toBeInTheDocument();
+    for (const affordance of ["+ Planen", "+ Warten auf", "+ Zuweisen"]) {
+      expect(within(meta).getByRole("button", { name: affordance })).toBeVisible();
+    }
+
+    const activity = screen
+      .getByRole("heading", { name: "Letzte Aktivitäten", level: 2 })
       .closest("details");
     const organization = screen
       .getByRole("heading", { name: "Organisation", level: 3 })
       .closest("details");
-    const activity = screen
-      .getByRole("heading", { name: "Letzte Aktivitäten", level: 2 })
-      .closest("details");
     const danger = screen
       .getByRole("heading", { name: "Gefahrenbereich", level: 3 })
       .closest("details");
-
-    expect(recurrence).not.toHaveAttribute("open");
-    expect(organization).not.toHaveAttribute("open");
     expect(activity).not.toHaveAttribute("open");
+    expect(organization).not.toHaveAttribute("open");
     expect(danger).not.toHaveAttribute("open");
-    for (const heading of [
-      "Planung",
-      "Inhalt",
-      "Wartet diese Aufgabe auf etwas?",
-      "Teilaufgaben",
-    ]) {
-      expect(
-        screen.getByRole("heading", { name: heading, level: 3 }).closest("details"),
-      ).not.toHaveAttribute("open");
-    }
-    expect(screen.getByText("Keine Termine oder Priorität")).toBeVisible();
-    expect(screen.getByText("Keine Notizen oder Tags")).toBeVisible();
-    expect(screen.getByText("Nicht blockiert")).toBeVisible();
-    expect(
-      screen
-        .getByRole("heading", { name: "Planung", level: 3 })
-        .closest(".task-timing-sections"),
-    ).toBe(
-      screen
-        .getByRole("heading", {
-          name: "Wartet diese Aufgabe auf etwas?",
-          level: 3,
-        })
-        .closest(".task-timing-sections"),
-    );
-    expect(
-      screen.getByRole("button", { name: "Löschen", hidden: true }),
-    ).not.toBeVisible();
 
     await userEvent.click(
       screen.getByRole("heading", { name: "Organisation", level: 3 }),
@@ -344,6 +327,36 @@ describe("TaskDetailSheet", () => {
       screen.getByRole("heading", { name: "Gefahrenbereich", level: 3 }),
     );
     expect(screen.getByRole("button", { name: "Löschen" })).toBeVisible();
+  });
+
+  it("reaches every task command from the detail's own command list", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 42, title: "Vollständige Aufgabe" }),
+    );
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Vollständige Aufgabe");
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+    );
+    for (const label of [
+      "Planen",
+      "Warten / Nachhaken",
+      "Aufteilen",
+      "Zuweisen",
+      "Projekt ändern",
+      "Folgeaufgabe anlegen",
+      "Wiederholung",
+      "Priorität",
+      "Tags",
+      "Kontext",
+      "Zum Projekt machen",
+      "Verwerfen",
+      "Status",
+    ]) {
+      expect(screen.getByRole("button", { name: label })).toBeVisible();
+    }
   });
 
   it("loads task activity only after its collapsed disclosure is opened", async () => {
@@ -413,10 +426,7 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     await userEvent.click(
-      screen.getByRole("heading", {
-        name: "Wartet diese Aufgabe auf etwas?",
-        level: 3,
-      }),
+      screen.getByRole("heading", { name: "Abhängigkeiten", level: 3 }),
     );
     await userEvent.click(
       screen.getByRole("button", { name: "Abhängigkeit hinzufügen" }),
@@ -512,7 +522,7 @@ describe("TaskDetailSheet", () => {
     ]);
   });
 
-  it("manages external waits beside dependencies without a waiting status", async () => {
+  it("shows an existing external wait as a value that opens the follow-up workflow", async () => {
     const task = makeTask({
       id: 42,
       title: "Freigabe",
@@ -526,91 +536,41 @@ describe("TaskDetailSheet", () => {
       nextBlockerAttentionDate: "2026-09-05",
     });
     mockedApi.getTask.mockResolvedValue(task);
-    mockedApi.setExternalWait.mockResolvedValue({ ...task, revision: 2 });
     renderSheet(42);
     await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Freigabe");
 
-    const status = await screen.findByLabelText("Status");
-    expect(within(status).queryByRole("option", { name: "Wartet" })).not.toBeInTheDocument();
+    // Waiting is blocker data, never a status.
+    expect(screen.queryByLabelText("Status")).not.toBeInTheDocument();
+    const waitValue = screen.getByRole("button", {
+      name: /Wartet auf.*Vermieter.*05\.09\.2026/,
+    });
+
+    await userEvent.click(waitValue);
+
+    // An already-waiting task resolves to Nachhaken, not "mark as waiting".
     expect(
-      screen.getByLabelText("Worauf wartet die Aufgabe?"),
-    ).toHaveValue("Vermieter");
-    expect(screen.getByLabelText("Einplanen für")).toHaveValue(
-      "10.09.2026",
-    );
-    expect(screen.getByLabelText("Wiedervorlage am (empfohlen)")).toHaveValue(
-      "05.09.2026",
-    );
-    expect(
-      screen.getByText(/blockierte Aufgabe ab diesem Tag zur Prüfung/),
+      await screen.findByRole("heading", { name: "Nachhaken: Freigabe" }),
     ).toBeInTheDocument();
-
-    await userEvent.clear(screen.getByLabelText("Worauf wartet die Aufgabe?"));
-    await userEvent.type(
-      screen.getByLabelText("Worauf wartet die Aufgabe?"),
-      "Hausverwaltung",
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Warten aktualisieren" }),
-    );
-    await waitFor(() =>
-      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(42, {
-        waitingFor: "Hausverwaltung",
-        revisitDate: "2026-09-05",
-        expectedRevision: 1,
-      }),
-    );
-  });
-
-  it("renders the top blocker summary as a clickable action that reveals the waiting section", async () => {
-    const task = makeTask({
-      id: 63,
-      title: "Blockierte Aufgabe",
-      externalWait: {
-        waitingFor: "Vermieter",
-        revisitDate: "2026-09-05",
-      },
-      blocked: true,
-      executable: false,
-    });
-    mockedApi.getTask.mockResolvedValue(task);
-    renderSheet(63);
-    await userEvent.click(screen.getByRole("button", { name: "open" }));
-    await waitForTaskTitle("Blockierte Aufgabe");
-
-    const blockerBadge = screen.getByRole("button", {
-      name: /Vermieter/,
-    });
-    expect(blockerBadge).toHaveClass("badge", "badge-status-waiting");
-
-    await userEvent.click(blockerBadge);
-
     expect(
-      screen
-        .getByRole("heading", {
-          name: "Wartet diese Aufgabe auf etwas?",
-          level: 3,
-        })
-        .closest("details"),
-    ).toHaveAttribute("open");
+      screen.queryByLabelText("Worauf wartest du?"),
+    ).not.toBeInTheDocument();
   });
 
-  it("does not allow an external wait without a reason", async () => {
+  it("offers waiting as a lightweight affordance that opens the wait workflow", async () => {
     mockedApi.getTask.mockResolvedValue(
-      makeTask({ id: 42, title: "Rechnung prüfen" }),
+      makeTask({ id: 43, title: "Rechnung prüfen" }),
     );
-    renderSheet(42);
+    renderSheet(43);
     await userEvent.click(screen.getByRole("button", { name: "open" }));
-    await userEvent.click(
-      screen.getByRole("heading", {
-        name: "Wartet diese Aufgabe auf etwas?",
-        level: 3,
-      }),
-    );
+    await waitForTaskTitle("Rechnung prüfen");
 
-    expect(
-      await screen.findByRole("button", { name: "Als wartend markieren" }),
-    ).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "+ Warten auf" }));
+
+    // A task with no external wait resolves to the "start waiting" workflow,
+    // whose commit stays disabled until a reason is given.
+    expect(await screen.findByLabelText("Worauf wartest du?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Warten" })).toBeDisabled();
     expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
   });
 
@@ -625,9 +585,13 @@ describe("TaskDetailSheet", () => {
         ],
       }),
     );
-    renderSheet(42, "subtasks");
+    renderSheet(42);
 
     await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Reparaturziel");
+    await userEvent.click(
+      screen.getByRole("heading", { name: "Teilaufgaben", level: 3 }),
+    );
 
     const reopenButtons = screen.getAllByRole("button", { name: "Wieder öffnen" });
     await userEvent.click(
@@ -640,7 +604,7 @@ describe("TaskDetailSheet", () => {
     }
   });
 
-  it("zeigt Projektkontext und flache Zuständigkeitsauswahl mit atomarer Personenzuweisung", async () => {
+  it("zeigt Projektkontext und Zuständigkeit als Werte, die den Zuweisen-Workflow öffnen", async () => {
     const inheritedTag = makeTag({ id: 11, name: "eilig" });
     mockedApi.getMembers.mockResolvedValue([
       makeMember({ id: 1, name: "Mira" }),
@@ -670,40 +634,44 @@ describe("TaskDetailSheet", () => {
 
     renderSheet(42);
     await userEvent.click(screen.getByText("open"));
-
     expect(await waitForTaskTitle("Bericht schreiben")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Jahresbericht" }),
-    ).toHaveAttribute("href", "/projects/7");
-    const ownerSection = screen
-      .getByRole("heading", { name: "Zuständig", level: 3 })
-      .closest("section")!;
-    const ownerChoices = within(ownerSection).getByRole("group", {
-      name: "Zuständig",
-    });
-    const projectContext = screen
-      .getByRole("link", { name: "Jahresbericht" })
-      .closest<HTMLElement>(".task-project-context")!;
-    expect(within(projectContext).getByText("Mira")).toBeInTheDocument();
+
+    expect(screen.getByRole("link", { name: "Jahresbericht" })).toHaveAttribute(
+      "href",
+      "/projects/7",
+    );
     expect(screen.getByText("eilig")).toBeInTheDocument();
+
+    // The inherited owner is shown as an effective value, not as an
+    // inheritance-mode picker the sheet implements itself.
     expect(
-      within(ownerChoices).getByRole("button", { name: "Vom Projekt: Mira" }),
-    ).toHaveAttribute("aria-pressed", "true");
-    expect(
-      within(ownerChoices).getByRole("button", { name: "Gemeinsam" }),
-    ).toHaveAttribute("aria-pressed", "false");
-    expect(
-      within(ownerChoices).getByRole("button", { name: "Mira" }),
-    ).toHaveAttribute("aria-pressed", "false");
+      screen.queryByRole("group", { name: "Zuständig" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Zuständig.*Mira/ }));
 
     await userEvent.click(
-      within(ownerChoices).getByRole("button", { name: "Jonas" }),
+      await screen.findByRole("button", { name: "Jonas" }),
     );
-    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
-      ownerMemberId: 2,
-      ownerInheritanceMode: "explicit",
-      expectedRevision: 1,
-    }));
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
+        ownerMemberId: 2,
+        ownerInheritanceMode: "explicit",
+        expectedRevision: 1,
+      }),
+    );
+  });
+
+  it("closes the sheet when following the project context link", async () => {
+    const task = makeTask({
+      id: 43,
+      title: "Bericht prüfen",
+      projectId: 7,
+      projectTitle: "Jahresbericht",
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderSheet(43);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Bericht prüfen");
 
     await userEvent.click(screen.getByRole("link", { name: "Jahresbericht" }));
     await waitFor(() =>
@@ -711,73 +679,24 @@ describe("TaskDetailSheet", () => {
     );
   });
 
-  it("zeigt bei eigenständigen Aufgaben nur gemeinsam und Personen", async () => {
-    const task = makeTask({
-      id: 57,
-      title: "Verantwortung klären",
-      ownerInheritanceMode: "explicit",
-      ownerMemberId: 1,
-      effectiveOwnerId: 1,
-      effectiveOwnerSource: "task",
-    });
+  it("bietet ohne Zuständige eine leichte Zuweisen-Aufforderung", async () => {
+    const task = makeTask({ id: 57, title: "Verantwortung klären" });
     mockedApi.getTask.mockResolvedValue(task);
 
     renderSheet(57);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Verantwortung klären");
 
-    const ownerChoices = screen.getByRole("group", { name: "Zuständig" });
-    expect(within(ownerChoices).queryByRole("combobox")).not.toBeInTheDocument();
-    expect(within(ownerChoices).getByRole("button", { name: "Mira" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(
-      within(ownerChoices).queryByRole("button", { name: /Vom|Von Aufgabe/ }),
-    ).not.toBeInTheDocument();
-    await userEvent.click(
-      within(ownerChoices).getByRole("button", { name: "Gemeinsam" }),
-    );
+    // A shared task without an owner is valid work, so nothing is shown as
+    // missing beyond the affordance itself.
+    expect(screen.queryByText("Gemeinsam / offen")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "+ Zuweisen" }));
+
+    await userEvent.click(await screen.findByRole("button", { name: "Mira" }));
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(57, {
-        ownerMemberId: null,
-        ownerInheritanceMode: "none",
-        expectedRevision: 1,
-      }),
-    );
-  });
-
-  it("zeigt bei Teilaufgaben die geerbte Person und übernimmt sie atomar", async () => {
-    mockedApi.getMembers.mockResolvedValue([
-      makeMember({ id: 1, name: "Mira" }),
-      makeMember({ id: 2, name: "Jonas" }),
-    ]);
-    const task = makeTask({
-      id: 58,
-      title: "Unterlagen sammeln",
-      projectId: 7,
-      parentTaskId: 8,
-      ownerInheritanceMode: "explicit",
-      ownerMemberId: 1,
-      effectiveOwnerId: 1,
-      effectiveOwnerSource: "task",
-      inheritedOwnerId: 2,
-    });
-    mockedApi.getTask.mockResolvedValue(task);
-
-    renderSheet(58);
-    await userEvent.click(screen.getByText("open"));
-    await waitForTaskTitle("Unterlagen sammeln");
-
-    const inheritChoice = screen.getByRole("button", {
-      name: "Von Aufgabe: Jonas",
-    });
-    expect(inheritChoice).toHaveAttribute("aria-pressed", "false");
-    await userEvent.click(inheritChoice);
-    await waitFor(() =>
-      expect(mockedApi.updateTask).toHaveBeenCalledWith(58, {
-        ownerMemberId: null,
-        ownerInheritanceMode: "inherit",
+        ownerMemberId: 1,
+        ownerInheritanceMode: "explicit",
         expectedRevision: 1,
       }),
     );
@@ -798,7 +717,7 @@ describe("TaskDetailSheet", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("places sharing in the header and uses only the status select for general status changes", async () => {
+  it("places sharing in the header and shows status as a read-only badge", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({ id: 45, title: "Unaufdringliche Details", status: "actionable" }),
     );
@@ -813,11 +732,20 @@ describe("TaskDetailSheet", () => {
     expect(within(header!).getByRole("button", { name: "Schließen" })).toHaveClass(
       "icon-action-button",
     );
-    expect(screen.getByLabelText("Status")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Erledigt" })).not.toBeInTheDocument();
+
+    expect(screen.queryByLabelText("Status")).not.toBeInTheDocument();
+    expect(screen.getByText("Machbar")).toHaveClass("badge");
   });
 
-  it("routes terminal status selections through lifecycle mutations", async () => {
+  async function openStatusChoices() {
+    await userEvent.click(
+      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Status" }));
+    return screen.getByRole("group", { name: "Status" });
+  }
+
+  it("routes a completion through the shared child-policy lifecycle mutation", async () => {
     const task = makeTask({
       id: 46,
       title: "Status korrekt ändern",
@@ -828,16 +756,13 @@ describe("TaskDetailSheet", () => {
     mockedApi.completeTask.mockResolvedValue({ ...task, status: "done" });
     renderSheet(46);
     await userEvent.click(screen.getByText("open"));
-    const status = await screen.findByLabelText("Status");
+    await waitForTaskTitle("Status korrekt ändern");
 
-    await userEvent.selectOptions(status, "done");
+    const statuses = await openStatusChoices();
+    await userEvent.click(within(statuses).getByRole("button", { name: "Erledigt" }));
+
     await waitFor(() =>
-      expect(mockedApi.completeTask).toHaveBeenCalledWith(
-        46,
-        "leave_open",
-        undefined,
-        1,
-      ),
+      expect(mockedApi.completeTask).toHaveBeenCalledWith(46, "leave_open", undefined, 1),
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalledWith(
       46,
@@ -855,8 +780,10 @@ describe("TaskDetailSheet", () => {
     mockedApi.getTask.mockResolvedValue(task);
     renderSheet(47);
     await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Wieder warten");
 
-    await userEvent.selectOptions(await screen.findByLabelText("Status"), "someday");
+    const statuses = await openStatusChoices();
+    await userEvent.click(within(statuses).getByRole("button", { name: "Irgendwann" }));
 
     await waitFor(() =>
       expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(
@@ -877,16 +804,12 @@ describe("TaskDetailSheet", () => {
       cancelledAt: "2026-08-27T10:00:00.000Z",
     });
     mockedApi.getTask.mockResolvedValue(task);
-    mockedApi.reopenTask.mockResolvedValue({
-      ...task,
-      revision: 2,
-      status: "actionable",
-      cancelledAt: null,
-    });
     renderSheet(48);
     await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Doch erledigt");
 
-    await userEvent.selectOptions(await screen.findByLabelText("Status"), "done");
+    const statuses = await openStatusChoices();
+    await userEvent.click(within(statuses).getByRole("button", { name: "Erledigt" }));
 
     await waitFor(() =>
       expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(
@@ -900,137 +823,92 @@ describe("TaskDetailSheet", () => {
     expect(mockedApi.reopenTask).not.toHaveBeenCalled();
   });
 
-  it("shows and locks an in-flight direct status transition", async () => {
-    let resolveTransition!: (task: ReturnType<typeof makeTask>) => void;
-    const transition = new Promise<ReturnType<typeof makeTask>>((resolve) => {
-      resolveTransition = resolve;
-    });
-    const task = makeTask({
-      id: 49,
-      title: "Status bleibt stabil",
-      status: "done",
-      completedAt: "2026-08-27T10:00:00.000Z",
-    });
-    mockedApi.getTask.mockResolvedValue(task);
-    mockedApi.transitionTaskStatus.mockReturnValue(transition);
-    renderSheet(49);
-    await userEvent.click(screen.getByText("open"));
-    const status = await screen.findByLabelText("Status");
-
-    await userEvent.selectOptions(status, "someday");
-
-    expect(status).toHaveValue("someday");
-    expect(status).toBeDisabled();
-    expect(mockedApi.transitionTaskStatus).toHaveBeenCalledWith(
-      49,
-      "someday",
-      undefined,
-      1,
-    );
-    resolveTransition({
-      ...task,
-      revision: 2,
-      status: "actionable",
-      completedAt: null,
-    });
-    await waitFor(() => expect(status).not.toBeDisabled());
-  });
-
-  it("bietet dieselben Schnelloptionen und kann eine Planung entfernen", async () => {
+  it("plans through the one focused planning workflow", async () => {
     const task = makeTask({ id: 56, title: "Wochenplanung", scheduledDate: "2026-09-04" });
     mockedApi.getTask.mockResolvedValue(task);
-
     renderSheet(56);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Wochenplanung");
 
-    const shortcuts = screen.getByRole("group", { name: "Schnell planen" });
-    await userEvent.click(within(shortcuts).getByRole("button", { name: "Nicht geplant" }));
+    // The detail owns no date input; the existing planning value is a
+    // command that reaches the same sheet as the rail and keyboard.
+    expect(screen.queryByLabelText("Einplanen für")).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /Einplanen für.*04\.09\.2026/ }),
+    );
+
+    const shortcuts = await screen.findByRole("group", { name: "Schnell planen" });
+    await userEvent.click(
+      within(shortcuts).getByRole("button", { name: "Nicht geplant" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(56, {
         scheduledDate: null,
+        dueDate: null,
         expectedRevision: 1,
       }),
     );
   });
 
-  it("accepts human-readable scheduling dates and patches ISO values", async () => {
+  it("shows a deadline beside the planned date and edits both in one transaction", async () => {
     mockedApi.getTask.mockResolvedValue(
-      makeTask({ id: 58, title: "Termin planen", scheduledDate: null }),
-    );
-    renderSheet(58);
-    await userEvent.click(screen.getByText("open"));
-    await waitForTaskTitle("Termin planen");
-
-    const scheduledDate = screen.getByLabelText("Einplanen für");
-    fireEvent.change(scheduledDate, { target: { value: "12. September 2026" } });
-    fireEvent.blur(scheduledDate);
-
-    await waitFor(() =>
-      expect(mockedApi.updateTask).toHaveBeenCalledWith(58, {
-        scheduledDate: "2026-09-12",
-        expectedRevision: 1,
+      makeTask({
+        id: 59,
+        title: "Fälligkeit planen",
+        scheduledDate: "2026-09-10",
+        dueDate: "2026-09-20",
       }),
-    );
-  });
-
-  it("uses the same natural-language editor for the due date", async () => {
-    mockedApi.getTask.mockResolvedValue(
-      makeTask({ id: 59, title: "Fälligkeit planen", dueDate: null }),
     );
     renderSheet(59);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Fälligkeit planen");
 
     await userEvent.click(
-      screen.getByRole("button", { name: "+ Fälligkeitsdatum" }),
+      screen.getByRole("button", {
+        name: /Einplanen für.*10\.09\.2026.*Fällig 20\.09\.2026/,
+      }),
     );
-    const dueDate = screen.getByLabelText("Fällig");
-    expect(dueDate).toHaveAttribute("type", "text");
-    expect(dueDate).toHaveAttribute(
-      "placeholder",
-      "z. B. morgen, Freitag, KW 36, 2w",
-    );
+
+    const dueDate = await screen.findByLabelText("Fällig");
     fireEvent.change(dueDate, { target: { value: "13. September 2026" } });
     fireEvent.blur(dueDate);
+    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(59, {
+        scheduledDate: "2026-09-10",
         dueDate: "2026-09-13",
         expectedRevision: 1,
       }),
     );
   });
 
-  it("hides priority and due date when unset and renders them as clickable values once set", async () => {
+  it("shows a set priority as a value that opens the priority workflow", async () => {
     mockedApi.getTask.mockResolvedValue(
-      makeTask({
-        id: 60,
-        title: "Priorisierte Aufgabe",
-        priority: 3,
-        dueDate: "2026-09-20",
-      }),
+      makeTask({ id: 60, title: "Priorisierte Aufgabe", priority: 3 }),
     );
     renderSheet(60);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Priorisierte Aufgabe");
 
-    // Set values render as compact clickable actions, not a permanently open
-    // select/input.
     expect(screen.queryByLabelText("Priorität")).not.toBeInTheDocument();
-    const priorityChip = screen.getByRole("button", { name: "Priorität: 3" });
-    const dueDateChip = screen.getByRole("button", { name: "Fällig: 20.09.2026" });
-    expect(screen.queryByLabelText("Fällig")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Priorität.*3/ }));
 
-    await userEvent.click(priorityChip);
-    expect(screen.getByLabelText("Priorität")).toHaveValue("3");
+    const choices = await screen.findByRole("group", { name: "Priorität" });
+    expect(within(choices).getByRole("button", { name: "2" })).toBeInTheDocument();
+    await userEvent.click(within(choices).getByRole("button", { name: "2" }));
 
-    await userEvent.click(dueDateChip);
-    expect(screen.getByLabelText("Fällig")).toHaveValue("20.09.2026");
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(60, {
+        priority: 2,
+        expectedRevision: 1,
+      }),
+    );
   });
 
-  it("omits the priority and due date controls entirely while unset", async () => {
+  it("omits rare unset properties entirely and keeps them reachable as commands", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({ id: 62, title: "Schlichte Aufgabe" }),
     );
@@ -1038,17 +916,23 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Schlichte Aufgabe");
 
+    // Unset rare properties get no value, no affordance and no empty control.
     expect(screen.queryByLabelText("Priorität")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Fällig")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "+ Priorität" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "+ Priorität" }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Priorität" }));
     expect(
-      screen.getByRole("button", { name: "+ Fälligkeitsdatum" }),
+      await screen.findByRole("group", { name: "Priorität" }),
     ).toBeInTheDocument();
   });
 
-  it("edits recurrence, locks the derived deadline, and retains dates on disable", async () => {
+  it("shows an active recurrence as a value that opens the recurrence workflow", async () => {
     const task = makeTask({
       id: 61,
       title: "Filter wechseln",
@@ -1062,22 +946,13 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Filter wechseln");
 
-    expect(
-      screen
-        .getByRole("heading", { name: "Wiederholung", level: 3 })
-        .closest("details"),
-    ).toHaveAttribute("open");
-    expect(screen.getByLabelText("Fällig")).toBeDisabled();
-    expect(
-      screen.getByRole("checkbox", { name: "Aktiv" }),
-    ).toBeChecked();
-    expect(screen.getByLabelText("Wiederholen nach Tagen")).toHaveValue(7);
-    expect(
-      screen.getByLabelText("Erlaubte Abweichung in Tagen"),
-    ).toHaveValue(2);
-    expect(
-      screen.getByText("Aktuelle inklusive Frist: 12.09.2026"),
-    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Wiederholen nach Tagen")).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /Wiederholung.*Alle 7 Tage/ }),
+    );
+
+    expect(await screen.findByLabelText("Wiederholen nach Tagen")).toHaveValue(7);
+    expect(screen.getByLabelText("Erlaubte Abweichung in Tagen")).toHaveValue(2);
 
     await userEvent.click(screen.getByRole("checkbox", { name: "Aktiv" }));
     await waitFor(() =>
@@ -1149,7 +1024,11 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Angebot prüfen");
 
-    await userEvent.click(screen.getByRole("button", { name: "Ausschließen" }));
+    const metaRow = document.querySelector<HTMLElement>(".detail-meta-row")!;
+    await userEvent.click(within(metaRow).getByRole("button", { name: "Tags" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Ausschließen" }),
+    );
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(43, {
       excludedTagIds: [11],
       expectedRevision: 1,
@@ -1349,9 +1228,11 @@ describe("TaskDetailSheet", () => {
 
     // Trigger an unrelated patch (priority change) which reloads this same task.
     await userEvent.click(
-      screen.getByRole("button", { name: "+ Priorität" }),
+      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
     );
-    await userEvent.selectOptions(screen.getByLabelText("Priorität"), "2");
+    await userEvent.click(screen.getByRole("button", { name: "Priorität" }));
+    const choices = await screen.findByRole("group", { name: "Priorität" });
+    await userEvent.click(within(choices).getByRole("button", { name: "2" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(49, {
       priority: 2,
       expectedRevision: 1,
@@ -1495,6 +1376,15 @@ describe("TaskDetailSheet", () => {
     );
   });
 
+  async function openConversion() {
+    await userEvent.click(
+      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Zum Projekt machen" }),
+    );
+  }
+
   it("shows project conversion for a normal standalone task with subtasks", async () => {
     const task = makeTask({
       id: 58,
@@ -1514,14 +1404,10 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Keller organisieren");
 
-    expect(
-      screen.getByRole("button", { name: "Als Projekt behandeln" }),
-    ).toBeInTheDocument();
-
+    await openConversion();
     await userEvent.click(
-      screen.getByRole("button", { name: "Als Projekt behandeln" }),
+      await screen.findByRole("button", { name: "Ins Backlog" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Ins Backlog" }));
 
     await waitFor(() =>
       expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(58, {
@@ -1531,35 +1417,24 @@ describe("TaskDetailSheet", () => {
     );
   });
 
-  it("does not show project conversion for subtasks or project-contained tasks", async () => {
-    mockedApi.getTask.mockResolvedValueOnce(
-      makeTask({
-        id: 60,
-        title: "Teilaufgabe",
-        parentTaskId: 58,
-      }),
+  it("explains in the one conversion workflow why non-standalone tasks cannot convert", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 60, title: "Teilaufgabe", parentTaskId: 58 }),
     );
     renderSheet(60);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Teilaufgabe");
-    expect(
-      screen.queryByRole("button", { name: "Als Projekt behandeln" }),
-    ).not.toBeInTheDocument();
+    await openConversion();
 
-    mockedApi.getTask.mockResolvedValueOnce(
-      makeTask({
-        id: 61,
-        title: "Projektaufgabe",
-        projectId: 80,
-        projectTitle: "Keller",
-      }),
-    );
-    renderSheet(61);
-    await userEvent.click(screen.getAllByText("open").at(-1)!);
-    await waitForTaskTitle("Projektaufgabe");
     expect(
-      screen.queryByRole("button", { name: "Als Projekt behandeln" }),
+      await screen.findByText(
+        "Nur eigenständige Aufgaben ohne Elternaufgabe und Projekt können zu einem Projekt werden.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Ins Backlog" }),
     ).not.toBeInTheDocument();
+    expect(mockedApi.convertTaskToStory).not.toHaveBeenCalled();
   });
 
   it("uses the explicit active choice for normal task conversion", async () => {
@@ -1576,10 +1451,10 @@ describe("TaskDetailSheet", () => {
     renderSheet(62);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Aktiv machen");
+    await openConversion();
     await userEvent.click(
-      screen.getByRole("button", { name: "Als Projekt behandeln" }),
+      await screen.findByRole("button", { name: "Aktivieren" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Aktivieren" }));
 
     await waitFor(() =>
       expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(62, {
@@ -1607,12 +1482,14 @@ describe("TaskDetailSheet", () => {
     renderSheet(64);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Nicht aktivierbar");
+    await openConversion();
     await userEvent.click(
-      screen.getByRole("button", { name: "Als Projekt behandeln" }),
+      await screen.findByRole("button", { name: "Aktivieren" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Aktivieren" }));
 
-    expect(await screen.findByText("Nicht aktivierbar")).toBeInTheDocument();
+    expect(
+      await screen.findAllByText("Nicht aktivierbar"),
+    ).not.toHaveLength(0);
     expect(
       await screen.findByText(
         "Diese Aufgabe kann erst in ein Projekt umgewandelt werden, wenn widersprechende Aufgaben-Eigenschaften entfernt wurden.",

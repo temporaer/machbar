@@ -4,6 +4,8 @@ import { render } from "@testing-library/react";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
+import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
+import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { RailConfigProvider } from "../lib/railConfigContext";
 import { TaskActionsProvider } from "../lib/useTaskActions";
@@ -36,7 +38,11 @@ function AllProviders({
                       <TaskActionsProvider>
                         <ProjectActionsProvider>
                           <InteractionScopeProvider>
-                            <TaskDetailProvider>{children}</TaskDetailProvider>
+                            <TaskDetailProvider>
+                              <TaskWorkflowProvider>
+                                <ProjectWorkflowProvider>{children}</ProjectWorkflowProvider>
+                              </TaskWorkflowProvider>
+                            </TaskDetailProvider>
                           </InteractionScopeProvider>
                         </ProjectActionsProvider>
                       </TaskActionsProvider>

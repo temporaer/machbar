@@ -6,7 +6,6 @@ import { useTaskActions } from "../lib/useTaskActions";
 import { useSwipeSettings } from "../lib/swipeSettings";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
 import { TaskRow } from "./TaskRow";
-import type { TaskRowWaitingInteraction } from "./TaskRow";
 import { TaskOrganizeBar } from "./TaskOrganizeBar";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import type { MoveMode } from "./MoveTaskSheet";
@@ -27,14 +26,6 @@ export interface TaskOutlineProps {
    * sheet's searchable pickers.
    */
   organizable?: boolean;
-  /**
-   * Host interaction config for "waiting row mode" — currently only passed
-   * by the Warten page. See `TaskRowWaitingInteraction` for exactly what it
-   * changes about a row's primary swipe and chip strip. Left undefined
-   * everywhere else, which keeps every other outline's swipe/chip behavior
-   * completely unchanged.
-   */
-  waitingInteraction?: TaskRowWaitingInteraction | undefined;
   /** Show the root tasks' external-wait revisit date as their follow-up prompt. */
   showRevisitDate?: boolean;
   showSwipeHint?: boolean;
@@ -46,7 +37,6 @@ export function TaskOutline({
   tasks,
   emptyMessage,
   organizable = false,
-  waitingInteraction,
   showRevisitDate = false,
   showSwipeHint = true,
   preserveRootOrder = false,
@@ -109,7 +99,6 @@ export function TaskOutline({
               task={task}
               parentTask={null}
               depth={0}
-              waitingInteraction={waitingInteraction}
               showRevisitDate={showRevisitDate}
             />
           ))}
@@ -124,7 +113,6 @@ export function TaskOutline({
               task={task}
               parentTask={null}
               depth={0}
-              waitingInteraction={waitingInteraction}
               showRevisitDate={showRevisitDate}
             />
           ))}

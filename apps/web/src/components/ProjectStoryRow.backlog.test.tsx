@@ -8,9 +8,12 @@ import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectStoryRow } from "./ProjectStoryRow";
+import { ProjectWorkflowHost } from "./ProjectWorkflowHost";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
+import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
+import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { RailConfigProvider } from "../lib/railConfigContext";
 import { InteractionScopeProvider } from "../lib/interactionScope";
@@ -23,6 +26,7 @@ import "./ProjectStoryRow.css";
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
+    getProject: vi.fn(),
     updateProject: vi.fn(),
     activateProject: vi.fn(),
     archiveProject: vi.fn(),
@@ -45,10 +49,16 @@ async function flushMicrotasks(times = 3) {
 }
 
 function Harness({ story }: { story: ReturnType<typeof makeProject> }) {
+  // Mirrors `App.tsx`: the row only dispatches semantic `story.*` commands,
+  // and every focused workflow they open is rendered by the single host.
+  mockedApi.getProject.mockResolvedValue({ ...story, tasks: [] });
   return (
-    <ul>
-      <ProjectStoryRow story={story} />
-    </ul>
+    <>
+      <ul>
+        <ProjectStoryRow story={story} />
+      </ul>
+      <ProjectWorkflowHost />
+    </>
   );
 }
 
@@ -81,10 +91,14 @@ function renderAtRootWithProjectRoute(ui: ReactElement) {
                 <ProjectActionsProvider>
                   <InteractionScopeProvider>
                     <TaskDetailProvider>
-                      <Routes>
-                        <Route path="/" element={ui} />
-                        <Route path="/projects/:id" element={<ProjectRouteMarker />} />
-                      </Routes>
+                      <TaskWorkflowProvider>
+                        <ProjectWorkflowProvider>
+                          <Routes>
+                            <Route path="/" element={ui} />
+                            <Route path="/projects/:id" element={<ProjectRouteMarker />} />
+                          </Routes>
+                        </ProjectWorkflowProvider>
+                      </TaskWorkflowProvider>
                     </TaskDetailProvider>
                   </InteractionScopeProvider>
                 </ProjectActionsProvider>

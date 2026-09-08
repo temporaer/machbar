@@ -65,12 +65,62 @@ const DEPRECATED_NAMES = new Map([
   ["AssignDriverSheet", "Use MemberSelectionSheet with useProjectActions."],
   ["ActivationReadinessSheet", "Use MemberSelectionSheet and useProjectActions.activate."],
   ["CaptureProjectBreakdownSheet", "Use InlineTaskComposer or the existing capture classification flow."],
+  ["TaskQuickActionSheet", "Dispatch the semantic task command and let TaskWorkflowHost render its focused sheet."],
   ["useProjectWorkflowActions", "Use useProjectActions."],
   ["reorderTask", "Calculate a destination and call api.moveTask."],
   ["indentTask", "Calculate a destination and call api.moveTask."],
   ["outdentTask", "Calculate a destination and call api.moveTask."],
   ["changeTaskParent", "Calculate a destination and call api.moveTask."],
   ["moveSubtreeToProject", "Calculate a destination and call api.moveTask."],
+]);
+
+/**
+ * Focused workflow sheets: the concrete implementation of exactly one
+ * semantic `task.*`/`story.*` command. Only the workflow host may import
+ * one, so "same intent -> same semantic command -> same focused workflow"
+ * cannot be quietly broken by a surface rendering its own copy.
+ *
+ * Generic primitives composed by several workflows (MemberSelectionSheet,
+ * MoveTaskSheet, BottomSheet, HumanDateInput) are deliberately absent: they
+ * implement no command by themselves.
+ */
+const WORKFLOW_SHEET_HOSTS = new Map([
+  ["TaskPlanSheet", "TaskWorkflowHost"],
+  ["TaskWaitSheet", "TaskWorkflowHost"],
+  ["WaitingFollowUpSheet", "TaskWorkflowHost"],
+  ["TaskSplitSheet", "TaskWorkflowHost"],
+  ["TaskSuccessorSheet", "TaskWorkflowHost"],
+  ["TaskRecurrenceSheet", "TaskWorkflowHost"],
+  ["TaskPrioritySheet", "TaskWorkflowHost"],
+  ["TaskTagsSheet", "TaskWorkflowHost"],
+  ["TaskContextsSheet", "TaskWorkflowHost"],
+  ["TaskConvertToProjectSheet", "TaskWorkflowHost"],
+  ["ProjectDeferSheet", "ProjectWorkflowHost"],
+  ["ProjectTagsSheet", "ProjectWorkflowHost"],
+  ["ProjectContextsSheet", "ProjectWorkflowHost"],
+  ["StoryCriteriaSheet", "ProjectWorkflowHost"],
+  ["PlanDatesSheet", "ProjectWorkflowHost"],
+]);
+
+/**
+ * Surfaces allowed to render a focused workflow themselves. It is empty, and
+ * that is the point: every `task.*`/`story.*` workflow is reached only
+ * through `TaskWorkflowHost`/`ProjectWorkflowHost`. Never add to this map —
+ * dispatch the semantic command instead.
+ */
+const WORKFLOW_SHEET_EXCEPTIONS = new Map([]);
+
+/**
+ * Opening a workflow or the task detail sheet is command dispatch, not
+ * something an individual surface decides. Both belong to the one
+ * dispatcher; `InboxPage` is the narrow clarification-queue exception that
+ * `docs/architecture-rules.md` documents.
+ */
+const WORKFLOW_OPENERS = new Set(["taskWorkflow", "projectWorkflow", "taskDetail"]);
+
+const ALLOWED_WORKFLOW_OPENER_CALLERS = new Map([
+  [`${WEB_SOURCE}lib/useWorkItemCommands.ts`, WORKFLOW_OPENERS],
+  [`${WEB_SOURCE}pages/InboxPage.tsx`, new Set(["taskDetail"])],
 ]);
 
 const LEGACY_TASK_ROUTE =
@@ -206,6 +256,31 @@ function isPresentationModule(filePath) {
   );
 }
 
+/** The focused workflow sheet a relative import pulls in, if any. */
+function importedWorkflowSheet(node) {
+  if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) {
+    return null;
+  }
+  const specifier = node.moduleSpecifier.text;
+  if (!specifier.startsWith(".")) return null;
+  const basename = path.posix.basename(specifier).replace(/\.(?:tsx?|jsx?)$/, "");
+  return WORKFLOW_SHEET_HOSTS.has(basename) ? basename : null;
+}
+
+/**
+ * `taskWorkflow.open(...)`, `projectWorkflow.open(...)`,
+ * `taskDetail.open(...)` and `taskDetail.openQueue(...)`.
+ */
+function calledWorkflowOpener(node) {
+  if (!ts.isCallExpression(node)) return null;
+  const expression = node.expression;
+  if (!ts.isPropertyAccessExpression(expression)) return null;
+  if (expression.name.text !== "open" && expression.name.text !== "openQueue") return null;
+  const target = expression.expression;
+  if (!ts.isIdentifier(target) || !WORKFLOW_OPENERS.has(target.text)) return null;
+  return target.text;
+}
+
 function isPureLibraryModule(filePath) {
   if (!filePath.startsWith(`${WEB_SOURCE}lib/`) || !filePath.endsWith(".ts")) return false;
   const basename = path.posix.basename(filePath, ".ts");
@@ -286,6 +361,36 @@ export function checkSource({ filePath, sourceText }) {
             ),
           );
         }
+      }
+
+      const sheet = importedWorkflowSheet(node);
+      if (sheet) {
+        const host = WORKFLOW_SHEET_HOSTS.get(sheet);
+        const isHost = path.posix.basename(normalizedPath, ".tsx") === host;
+        if (!isHost && !WORKFLOW_SHEET_EXCEPTIONS.get(normalizedPath)?.has(sheet)) {
+          diagnostics.push(
+            diagnostic(
+              sourceFile,
+              normalizedPath,
+              node,
+              "canonical-workflow-host",
+              `imports focused workflow ${sheet}. Only ${host} may render it — dispatch the semantic command instead, so every entry point reaches the same workflow. See docs/architecture-rules.md#focused-workflows.`,
+            ),
+          );
+        }
+      }
+
+      const opener = calledWorkflowOpener(node);
+      if (opener && !ALLOWED_WORKFLOW_OPENER_CALLERS.get(normalizedPath)?.has(opener)) {
+        diagnostics.push(
+          diagnostic(
+            sourceFile,
+            normalizedPath,
+            node,
+            "canonical-workflow-routing",
+            `calls ${opener}.open directly. Deciding which workflow implements an intent belongs to useWorkItemCommands(); dispatch the semantic command instead. See docs/architecture-rules.md#focused-workflows.`,
+          ),
+        );
       }
     }
 
