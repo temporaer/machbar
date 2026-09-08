@@ -408,12 +408,62 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px 10px 10px;
-  background: var(--color-surface-alt);
+  /* Tinted to match `.story-row-swipe-bg.chips`, the reveal it continues. */
+  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface-alt));
 }
 
 .story-row-chips .btn {
   min-height: 40px;
   padding: 8px 14px;
+}
+
+/*
+ * Opened either by a right-swipe past the primary threshold or by tapping
+ * the status control directly (see `ProjectDetailPage.tsx`, which renders
+ * this class outside of any `.story-row-accent-*` wrapper — the neutral
+ * base rule below covers that case). Mutually exclusive with
+ * `.story-row-chips`, so both share the same grid auto-flow slot.
+ */
+.story-row-lifecycle {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 10px 10px;
+  /*
+   * Neutral fallback for contexts outside a `.story-row-accent-*` wrapper
+   * (e.g. `ProjectDetailPage`'s standalone status toggle) — the per-accent
+   * `--story-row-*` custom properties below are only defined on `.story-row`
+   * itself and would resolve to nothing here.
+   */
+  background: var(--color-surface-alt);
+}
+
+.story-row-lifecycle .btn {
+  min-height: 40px;
+  padding: 8px 14px;
+}
+
+/* Tinted to match `.story-row-swipe-bg.primary`'s per-accent color, the reveal each continues. */
+.story-row-accent-backlog .story-row-lifecycle {
+  background: color-mix(in srgb, var(--story-row-slate) 12%, var(--color-surface-alt));
+}
+.story-row-accent-active .story-row-lifecycle {
+  background: color-mix(in srgb, var(--color-success) 12%, var(--color-surface-alt));
+}
+.story-row-accent-waiting .story-row-lifecycle {
+  background: color-mix(in srgb, var(--color-info) 12%, var(--color-surface-alt));
+}
+.story-row-accent-stuck .story-row-lifecycle {
+  background: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface-alt));
+}
+.story-row-accent-completed .story-row-lifecycle {
+  background: color-mix(in srgb, var(--story-row-muted-success) 12%, var(--color-surface-alt));
+}
+.story-row-accent-archived .story-row-lifecycle {
+  background: color-mix(in srgb, var(--story-row-gray) 12%, var(--color-surface-alt));
 }
 
 
