@@ -1,19 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import type { ReactElement, ReactNode } from "react";
-import { MemoryRouter, Routes, Route, useParams } from "react-router-dom";
+import type { ReactElement } from "react";
 import { render, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { IdentityProvider } from "../lib/identity";
-import { RefreshProvider } from "../lib/refresh";
-import { TaskDetailProvider } from "../lib/taskDetailContext";
-import { SwipeSettingsProvider } from "../lib/swipeSettings";
-import { TaskActionsProvider } from "../lib/useTaskActions";
-import { ProjectActionsProvider } from "../lib/useProjectActions";
-import { InteractionScopeProvider } from "../lib/interactionScope";
-import { RailConfigProvider } from "../lib/railConfigContext";
 import { TaskOutline } from "./TaskOutline";
+import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
+import { renderWithProviders } from "../test/testUtils";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -32,51 +25,6 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
-/**
- * `renderWithProviders` (src/test/testUtils.tsx) hard-codes its own bare
- * `<MemoryRouter>` with no routes, so it can't observe an actual navigation.
- * This local wrapper mirrors the same provider stack but also declares a
- * `/projects/:id` route with a distinct marker, so clicking the project
- * rail command can be asserted to have really navigated there — not just
- * that `navigate()` was called with the right string.
- */
-function renderAtRootWithProjectRoute(ui: ReactElement) {
-  function ProjectRouteMarker() {
-    const { id } = useParams();
-    return <div data-testid="project-page">Projektseite {id}</div>;
-  }
-  function Providers({ children }: { children: ReactNode }) {
-    return (
-      <IdentityProvider>
-        <RefreshProvider>
-          <SwipeSettingsProvider>
-            <TaskActionsProvider>
-              <ProjectActionsProvider>
-                <RailConfigProvider>
-                  <InteractionScopeProvider>
-                    <TaskDetailProvider>{children}</TaskDetailProvider>
-                  </InteractionScopeProvider>
-                </RailConfigProvider>
-              </ProjectActionsProvider>
-            </TaskActionsProvider>
-          </SwipeSettingsProvider>
-        </RefreshProvider>
-      </IdentityProvider>
-    );
-  }
-
-  return render(
-    <MemoryRouter initialEntries={["/"]}>
-      <Providers>
-        <Routes>
-          <Route path="/" element={ui} />
-          <Route path="/projects/:id" element={<ProjectRouteMarker />} />
-        </Routes>
-      </Providers>
-    </MemoryRouter>,
-  );
-}
-
 async function openTaskRailOverflow() {
   await userEvent.click(screen.getByText("Mehr …"));
 }
@@ -89,7 +37,7 @@ function swipe(container: HTMLElement, deltaX: number) {
   fireEvent.pointerUp(content, { clientX: deltaX, pointerId: 1 });
 }
 
-describe("TaskRow – project rail command (navigate when assigned, assign when projectless)", () => {
+describe("TaskRow – project rail command always opens the canonical MoveTaskSheet picker", () => {
   const umzug = makeProject({ id: 77, title: "Umzug nach Leipzig" });
   const garten = makeProject({ id: 78, title: "Garten winterfest machen" });
 
@@ -101,41 +49,66 @@ describe("TaskRow – project rail command (navigate when assigned, assign when 
   });
 
   describe("task already belongs to a project", () => {
-    it("reveals an enabled overflow 'Projekt ändern' command via a left-swipe and navigates to /projects/:id", async () => {
+    it("reveals an enabled overflow 'Projekt ändern' command via a left-swipe and opens the MoveTaskSheet picker", async () => {
       const task = makeTask({ id: 50, title: "Angebot erstellen", status: "actionable", projectId: 77 });
-      const { container } = renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+      // ensure TaskWorkflowHost is mounted so the canonical workflow can render
+      const { container } = renderWithProviders(
+        <>
+          <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+          <TaskWorkflowHost />
+        </>
+      );
+
+      // Task text appears
       await screen.findByText("Angebot erstellen");
 
+      // reveal rail via swipe and open overflow
       swipe(container, -100);
       await openTaskRailOverflow();
 
       const command = screen.getByRole("button", { name: "Projekt ändern" });
       expect(command).toBeEnabled();
 
+      // clicking the command should open the canonical MoveTaskSheet
+      // which is mounted by TaskWorkflowHost
+      mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(command);
 
-      expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 77");
+      expect(await screen.findByRole("heading", { name: "In anderes Projekt verschieben" })).toBeInTheDocument();
+      // the task's current project should be pre-selected in the picker
+      expect(screen.getByRole("button", { name: "Umzug nach Leipzig" })).toHaveAttribute("aria-pressed", "true");
       // Using the command must also close the rail, same as every other command.
       expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
     });
 
-    it("also navigates when the command rail is opened via the ⋯ kebab (non-gesture access)", async () => {
+    it("also opens the MoveTaskSheet when the command rail is opened via the ⋯ kebab (non-gesture access)", async () => {
       const task = makeTask({ id: 51, title: "Kunde kontaktieren", status: "actionable", projectId: 12 });
-      renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+      renderWithProviders(
+        <>
+          <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+          <TaskWorkflowHost />
+        </>
+      );
       await screen.findByText("Kunde kontaktieren");
 
+      mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
       await openTaskRailOverflow();
       await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
 
-      expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 12");
+      expect(await screen.findByRole("heading", { name: "In anderes Projekt verschieben" })).toBeInTheDocument();
     });
   });
 
   describe("projectless task", () => {
     it("renders the same overflow command enabled instead of a disabled dead end", async () => {
       const task = makeTask({ id: 52, title: "Wäsche waschen", status: "actionable", projectId: null });
-      const { container } = renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+      const { container } = renderWithProviders(
+        <>
+          <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+          <TaskWorkflowHost />
+        </>
+      );
       await screen.findByText("Wäsche waschen");
 
       swipe(container, -100);
@@ -149,9 +122,15 @@ describe("TaskRow – project rail command (navigate when assigned, assign when 
     it("opens the existing searchable/recent MoveTaskSheet project picker on click", async () => {
       window.localStorage.setItem("machbar:recent-destinations:project", JSON.stringify([78]));
       const task = makeTask({ id: 53, title: "Wäsche waschen", status: "actionable", projectId: null });
-      renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+      renderWithProviders(
+        <>
+          <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+          <TaskWorkflowHost />
+        </>
+      );
       await screen.findByText("Wäsche waschen");
 
+      mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
       await openTaskRailOverflow();
       await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
@@ -160,17 +139,21 @@ describe("TaskRow – project rail command (navigate when assigned, assign when 
       expect(screen.getByRole("searchbox", { name: "Ziel suchen" })).toBeInTheDocument();
       expect(screen.getByRole("group", { name: "Zuletzt verwendet" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Garten winterfest machen" })).toBeInTheDocument();
-      // No navigation ever happens for a task that had no project yet.
-      expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
     });
 
     it("assigns the picked project on save, refreshes the list, and returns focus near the row", async () => {
       mockedApi.moveTask.mockResolvedValue(makeTask({ id: 54, projectId: 78 }));
       const task = makeTask({ id: 54, title: "Wäsche waschen", status: "actionable", projectId: null });
-      renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+      renderWithProviders(
+        <>
+          <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+          <TaskWorkflowHost />
+        </>
+      );
       await screen.findByText("Wäsche waschen");
 
       const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
+      mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(kebab);
       await openTaskRailOverflow();
       await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
@@ -193,10 +176,16 @@ describe("TaskRow – project rail command (navigate when assigned, assign when 
 
     it("does nothing and stays projectless when the picker is cancelled", async () => {
       const task = makeTask({ id: 55, title: "Wäsche waschen", status: "actionable", projectId: null });
-      renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+      renderWithProviders(
+        <>
+          <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+          <TaskWorkflowHost />
+        </>
+      );
       await screen.findByText("Wäsche waschen");
 
       const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
+      mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(kebab);
       await openTaskRailOverflow();
       await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
@@ -212,9 +201,15 @@ describe("TaskRow – project rail command (navigate when assigned, assign when 
     it("keeps the picker open and reports the error when the assignment fails", async () => {
       mockedApi.moveTask.mockRejectedValue(new Error("Netzwerkfehler"));
       const task = makeTask({ id: 56, title: "Wäsche waschen", status: "actionable", projectId: null });
-      renderAtRootWithProjectRoute(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+      renderWithProviders(
+        <>
+          <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+          <TaskWorkflowHost />
+        </>
+      );
       await screen.findByText("Wäsche waschen");
 
+      mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
       await openTaskRailOverflow();
       await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
@@ -236,13 +231,19 @@ describe("TaskRow – project rail command (navigate when assigned, assign when 
         projectId: null,
         children: [child],
       });
-      renderAtRootWithProjectRoute(<TaskOutline tasks={[parent]} emptyMessage="Nichts da" />);
+      renderWithProviders(
+        <>
+          <TaskOutline tasks={[parent]} emptyMessage="Nichts da" />
+          <TaskWorkflowHost />
+        </>
+      );
       await screen.findByText("Wäsche waschen");
       await screen.findByText("Wäsche sortieren");
 
       // Open the picker from the parent row specifically (there are two
       // kebabs on screen — one per row).
       const kebabs = screen.getAllByRole("button", { name: "Weitere Aktionen" });
+      mockedApi.getTask.mockResolvedValue(parent);
       await userEvent.click(kebabs[0]!);
       await openTaskRailOverflow();
       await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));

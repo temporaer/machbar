@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { useNavigate } from "react-router-dom";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
@@ -15,14 +14,6 @@ import { useOutlineOrganizeRow } from "../lib/useOutlineOrganize";
 import type { OrganizeDirection } from "../lib/useOutlineOrganize";
 import { INDENT_WIDTH } from "../lib/taskTreeMove";
 import { useIdentity } from "../lib/identity";
-import { MemberSelectionSheet } from "./MemberSelectionSheet";
-import {
-  TaskQuickActionSheet,
-  type TaskQuickAction,
-} from "./TaskQuickActionSheet";
-import { InlineChildComposer } from "./InlineChildComposer";
-import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
-import { MoveTaskSheet } from "./MoveTaskSheet";
 import { MarkdownNotes } from "./MarkdownNotes";
 import {
   formatExactLocalDate,
@@ -54,26 +45,12 @@ const KEY_DIRECTIONS: Record<string, OrganizeDirection> = {
   ArrowLeft: "outdent",
 };
 
-/**
- * Lets blocker-focused views open the external-wait follow-up editor while
- * preserving the normal task-row swipe behavior.
- */
-export interface TaskRowWaitingInteraction {
-  /**
-   * Hands an externally blocked task back to the host so it can open its
-   * timestamped follow-up UI.
-   */
-  onFollowUp: (task: Task) => void;
-}
-
 export interface TaskRowProps {
   task: Task;
   /** The immediate parent task, or null when `task` sits at the project root. */
   parentTask: Task | null;
   /** Nesting level, used for the outline's flat drag/drop projection. */
   depth: number;
-  /** See `TaskRowWaitingInteraction`. Absent everywhere but the Warten page's outline. */
-  waitingInteraction?: TaskRowWaitingInteraction | undefined;
   /** Show this row's external-wait revisit date. */
   showRevisitDate?: boolean;
 }
@@ -101,7 +78,6 @@ export function TaskRow({
   task: taskProp,
   parentTask,
   depth,
-  waitingInteraction,
   showRevisitDate = false,
 }: TaskRowProps) {
   const strings = useStrings();
@@ -116,18 +92,6 @@ export function TaskRow({
     [scope, taskProp.id],
   );
   const chipsOpen = scope.openRailId === taskProp.id;
-  const [quickAction, setQuickAction] = useState<TaskQuickAction | null>(null);
-  const [childComposerOpen, setChildComposerOpen] = useState(false);
-  const [successorComposerOpen, setSuccessorComposerOpen] = useState(false);
-  // Only reachable for a projectless task (see `projectChipClick`) — the
-  // existing searchable/recent project picker, restricted to its
-  // project-only step so no parent picker is shown for a plain assignment.
-  const [assignProjectOpen, setAssignProjectOpen] = useState(false);
-  // The "Teilaufgabe hinzufügen" button itself lives inside the collapsible
-  // chip strip (unmounted whenever the composer replaces it), so focus is
-  // returned to the always-mounted kebab button instead — the closest
-  // stable element in this task's own row ("vicinity" of the task/new
-  // child), which also re-opens the chip strip if pressed again.
   const kebabButtonRef = useRef<HTMLButtonElement>(null);
   const mainButtonRef = useRef<HTMLButtonElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -140,20 +104,12 @@ export function TaskRow({
   const { members, currentMemberId } = useIdentity();
   const { primarySwipeAction } = useSwipeSettings();
   const { taskFavorites } = useRailConfig();
-  const navigate = useNavigate();
   // Structural editing (drag handle, keyboard moves, drop preview) is
   // provided by the surrounding `TaskOutline`; it stays absent — and every
   // handle with it — in views whose row order carries no hierarchy meaning.
   const organize = useOutlineOrganizeRow();
   const dispatch = useWorkItemCommands();
-  const {
-    update,
-    assignOwner,
-    isPending,
-    retained,
-    errors,
-    clearError,
-  } = useTaskActions();
+  const { isPending, retained, errors, clearError } = useTaskActions();
   const outlineRefreshing = organize?.pendingId !== null;
   const busy = isPending(taskProp.id) || outlineRefreshing;
 
@@ -197,14 +153,6 @@ export function TaskRow({
     registerRow(taskProp.id, row, contentRef.current);
     return () => registerRow(taskProp.id, row, null);
   }, [registerRow, taskProp.id, parentTaskId, depth]);
-
-  useEffect(() => {
-    if (!outlineRefreshing) return;
-    setQuickAction(null);
-    setAssignProjectOpen(false);
-    setChildComposerOpen(false);
-    setSuccessorComposerOpen(false);
-  }, [outlineRefreshing]);
 
   // A task dropped into this row while it was collapsed would be invisible
   // right after the move, so the outline asks the destination parent to
@@ -294,127 +242,23 @@ export function TaskRow({
     [busy, task.id, organize, organizeEnabled, cancelSwipe],
   );
 
-  const openQuickAction = (action: TaskQuickAction) => {
-    setQuickAction(action);
-    scope.setOpenRail(null);
-  };
-
-  const reopenChip = () => {
-    dispatch({ type: "task.toggleDone", task });
-    scope.setOpenRail(null);
-  };
-
-  const followUpChip = () => {
-    waitingInteraction?.onFollowUp(task);
-    scope.setOpenRail(null);
-  };
-
-  // A task that already belongs to a project keeps navigating straight
-  // there. A projectless task has nowhere to navigate to, so the very same
-  // icon instead opens the existing project picker (search + recents) —
-  // never a disabled dead end.
-  const goToProjectChip = () => {
-    scope.setOpenRail(null);
-    if (task.projectId) {
-      navigate(`/projects/${task.projectId}`);
-    } else {
-      setAssignProjectOpen(true);
-    }
-  };
-
-  const openChildComposer = () => {
-    scope.setOpenRail(null);
-    setChildComposerOpen(true);
-  };
-
-  const openSuccessorComposer = () => {
-    scope.setOpenRail(null);
-    setSuccessorComposerOpen(true);
-  };
-
   const runRailCommand = (command: (typeof taskFavorites)[number]) => {
+    // Move focus to the kebab before the rail (and any open overflow list)
+    // unmounts, so a focused-workflow sheet's opener-restore targets a
+    // control that stays connected across the close/open transition
+    // instead of losing focus to <body>.
+    kebabButtonRef.current?.focus();
+    scope.setOpenRail(null);
     switch (command) {
-      case "task.plan":
-        openQuickAction("schedule");
-        return;
-      case "task.assignOwner":
-        openQuickAction("owner");
-        return;
-      case "task.split":
-        openChildComposer();
-        return;
-      case "task.addSuccessor":
-        openSuccessorComposer();
-        return;
-      case "task.changeProject":
-        goToProjectChip();
-        return;
-      case "task.waitingLifecycle":
-        if (task.externalWait && waitingInteraction) followUpChip();
-        else dispatch({ type: command, taskId: task.id });
-        return;
-      case "task.recurrence":
-      case "task.priority":
-      case "task.tags":
-      case "task.contexts":
-      case "task.convertToProject":
-        dispatch({ type: command, taskId: task.id });
-        return;
-      case "task.discard":
-        dispatch({ type: "task.discard", task });
-        return;
       case "task.lifecycle":
         dispatch({ type: command, task, status: task.status });
         return;
+      case "task.discard":
+        dispatch({ type: command, task });
+        return;
+      default:
+        dispatch({ type: command, taskId: task.id });
     }
-  };
-
-  // The kebab is `disabled` while a status mutation of this row is in
-  // flight, and focusing a disabled button is a no-op that would drop the
-  // caret to `<body>`. Fall back to the row's first focusable control so
-  // keyboard users always land back inside the task they were editing.
-  const returnFocusToRow = () => {
-    const kebab = kebabButtonRef.current;
-    if (kebab && !kebab.disabled) {
-      kebab.focus();
-      return;
-    }
-    contentRef.current?.querySelector<HTMLElement>("button:not(:disabled), a[href]")?.focus();
-  };
-
-  // Cancel never mutates anything — the composer just unmounts, and focus
-  // returns to the button that opened it (the task/new-child vicinity).
-  const closeChildComposer = () => {
-    setChildComposerOpen(false);
-    returnFocusToRow();
-  };
-
-  const closeSuccessorComposer = () => {
-    setSuccessorComposerOpen(false);
-    returnFocusToRow();
-  };
-
-  // Closing the picker — whether by cancelling or after a successful
-  // assignment (`MoveTaskSheet` calls `onClose` itself once the save
-  // resolves) — returns focus to the row's vicinity, same as every other
-  // sheet opened from this row.
-  const closeAssignProject = () => {
-    setAssignProjectOpen(false);
-    returnFocusToRow();
-  };
-
-  // A freshly created child (nested under a possibly-collapsed row) must
-  // be made visible right here once creation succeeds -- the refresh bus
-  // alone wouldn't reopen it.
-  const handleChildCreated = () => {
-    setCollapsed(false);
-    setChildComposerOpen(false);
-    returnFocusToRow();
-  };
-
-  const handleSuccessorCreated = () => {
-    setSuccessorComposerOpen(false);
-    returnFocusToRow();
   };
 
   return (
@@ -674,51 +518,6 @@ export function TaskRow({
         </div>
       ) : null}
 
-      {childComposerOpen ? (
-        <InlineChildComposer
-          parentId={task.id}
-          onCancel={closeChildComposer}
-          onCreated={handleChildCreated}
-        />
-      ) : null}
-
-      {successorComposerOpen ? (
-        <InlineSuccessorComposer
-          predecessorId={task.id}
-          onCancel={closeSuccessorComposer}
-          onCreated={handleSuccessorCreated}
-        />
-      ) : null}
-
-      {quickAction === "owner" ? (
-        <MemberSelectionSheet
-          title={`${strings.assign}: ${task.title}`}
-          label={strings.owner}
-          idPrefix={`quick-owner-${task.id}`}
-          members={members}
-          value={task.effectiveOwnerId}
-          valueIsExplicit={task.effectiveOwnerSource === "task"}
-          unassignedLabel={strings.shared}
-          onClose={() => setQuickAction(null)}
-          onSelect={async (ownerMemberId) => {
-            await assignOwner(task, ownerMemberId);
-          }}
-        />
-      ) : quickAction ? (
-        <TaskQuickActionSheet
-          task={task}
-          action={quickAction}
-          onClose={() => setQuickAction(null)}
-          onSave={async (patch, optimisticPatch) => {
-            await update(task, patch, optimisticPatch, true);
-          }}
-        />
-      ) : null}
-
-      {assignProjectOpen ? (
-        <MoveTaskSheet task={task} mode="project" onClose={closeAssignProject} />
-      ) : null}
-
       {rowError ? (
         <RowErrorBanner
           classPrefix="task-row"
@@ -739,7 +538,6 @@ export function TaskRow({
               task={child}
               parentTask={task}
               depth={depth + 1}
-              waitingInteraction={waitingInteraction}
             />
           ))}
         </ul>

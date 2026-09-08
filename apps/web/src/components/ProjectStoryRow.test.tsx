@@ -11,6 +11,8 @@ import { ProjectStoryRow } from "./ProjectStoryRow";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
+import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
+import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { RailConfigProvider } from "../lib/railConfigContext";
 import { InteractionScopeProvider } from "../lib/interactionScope";
@@ -104,10 +106,14 @@ function renderWithProjectRoute(ui: ReactElement) {
                 <ProjectActionsProvider>
                   <InteractionScopeProvider>
                     <TaskDetailProvider>
-                      <Routes>
-                        <Route path="/" element={ui} />
-                        <Route path="/projects/:id" element={<ProjectRouteMarker />} />
-                      </Routes>
+                      <TaskWorkflowProvider>
+                        <ProjectWorkflowProvider>
+                          <Routes>
+                            <Route path="/" element={ui} />
+                            <Route path="/projects/:id" element={<ProjectRouteMarker />} />
+                          </Routes>
+                        </ProjectWorkflowProvider>
+                      </TaskWorkflowProvider>
                     </TaskDetailProvider>
                   </InteractionScopeProvider>
                 </ProjectActionsProvider>

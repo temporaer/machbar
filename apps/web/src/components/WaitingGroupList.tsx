@@ -1,8 +1,6 @@
-import { useState } from "react";
 import type { Task, WaitingEntry } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { TaskOutline } from "./TaskOutline";
-import { WaitingFollowUpSheet } from "./WaitingFollowUpSheet";
 import { CollapsibleGroup } from "./CollapsibleGroup";
 
 function uniqueDisplayTasks(tasks: Task[]): Task[] {
@@ -20,7 +18,6 @@ export function WaitingGroupList({
   entries: WaitingEntry[];
 }) {
   const strings = useStrings();
-  const [followUpTask, setFollowUpTask] = useState<Task | null>(null);
   const externalTasks = uniqueDisplayTasks(
     entries
       .filter((entry) =>
@@ -41,12 +38,7 @@ export function WaitingGroupList({
       emptyMessage={strings.waitingEmpty}
       organizable={false}
       preserveRootOrder
-      {...(external
-        ? {
-            waitingInteraction: { onFollowUp: setFollowUpTask },
-            showRevisitDate: true,
-          }
-        : {})}
+      {...(external ? { showRevisitDate: true } : {})}
       showSwipeHint={false}
     />
   );
@@ -67,12 +59,6 @@ export function WaitingGroupList({
       {externalTasks.length === 0 && contextTasks.length === 0
         ? outline([], false)
         : null}
-      {followUpTask ? (
-        <WaitingFollowUpSheet
-          task={followUpTask}
-          onClose={() => setFollowUpTask(null)}
-        />
-      ) : null}
     </>
   );
 }

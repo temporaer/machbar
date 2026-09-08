@@ -2,9 +2,19 @@ import { useState } from "react";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useTaskActions } from "../lib/useTaskActions";
+import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 
+/**
+ * The canonical `task.waitingLifecycle` workflow for a task that already
+ * has an external wait ("Nachhaken") — `TaskWorkflowHost` resolves here
+ * whenever `task.externalWait` is set (see `TaskWaitSheet` for the "start
+ * waiting" case). The decision is structured around the outcome first
+ * ("Was ist passiert?"), then either "Weiter warten" with quick revisit
+ * shortcuts or a separate, equally-weighted "Warten beenden" — not a
+ * generic textarea + date + checkbox + Save form.
+ */
 export function WaitingFollowUpSheet({
   task,
   onClose,
@@ -15,33 +25,37 @@ export function WaitingFollowUpSheet({
   const strings = useStrings();
   const taskActions = useTaskActions();
   const [content, setContent] = useState("");
-  const [revisitDate, setRevisitDate] = useState(
-    task.externalWait?.revisitDate ?? "",
+  const [revisitDate, setRevisitDate] = useState<string | null>(
+    task.externalWait?.revisitDate ?? null,
   );
-  const [resolveWait, setResolveWait] = useState(false);
-  const [revisitDateValid, setRevisitDateValid] = useState(true);
+  const [customDate, setCustomDate] = useState(false);
+  const [dateValid, setDateValid] = useState(true);
   const saving = taskActions.isPending(task.id);
   const error = taskActions.errors[task.id] ?? null;
   const closeIfIdle = () => {
     if (!saving) onClose();
   };
+  const today = () => toIsoCalendarDate(new Date());
 
-  const save = async () => {
+  const continueWaiting = async (nextRevisitDate: string | null) => {
+    if (saving || !dateValid) return;
     taskActions.clearError(task.id);
-    const updated = await taskActions.followUpExternalWait(
-      task,
-      resolveWait
-        ? {
-            action: "resolve",
-            content: content.trim(),
-          }
-        : {
-            action: "continue",
-            content: content.trim(),
-            waitingFor: task.externalWait?.waitingFor ?? null,
-            revisitDate: revisitDate || null,
-          },
-    );
+    const updated = await taskActions.followUpExternalWait(task, {
+      action: "continue",
+      content: content.trim(),
+      waitingFor: task.externalWait?.waitingFor ?? null,
+      revisitDate: nextRevisitDate,
+    });
+    if (updated) onClose();
+  };
+
+  const endWaiting = async () => {
+    if (saving) return;
+    taskActions.clearError(task.id);
+    const updated = await taskActions.followUpExternalWait(task, {
+      action: "resolve",
+      content: content.trim(),
+    });
     if (updated) onClose();
   };
 
@@ -55,7 +69,7 @@ export function WaitingFollowUpSheet({
           <label htmlFor={`follow-up-notes-${task.id}`}>{strings.whatHappened}</label>
           <textarea
             id={`follow-up-notes-${task.id}`}
-            rows={6}
+            rows={4}
             value={content}
             onChange={(event) => setContent(event.target.value)}
             disabled={saving}
@@ -65,28 +79,62 @@ export function WaitingFollowUpSheet({
         </div>
 
         <div className="field">
-          <label htmlFor={`follow-up-date-${task.id}`}>
-            {strings.newRevisitDate}
-          </label>
-          <HumanDateInput
-            id={`follow-up-date-${task.id}`}
-            value={revisitDate}
-            onChange={(date) => setRevisitDate(date ?? "")}
-            onValidityChange={setRevisitDateValid}
-            disabled={saving}
-          />
+          <span className="field-label">{strings.continueWaiting}</span>
+          <div className="choice-group" role="group" aria-label={strings.continueWaiting}>
+            <button
+              type="button"
+              className="choice-chip"
+              disabled={saving}
+              onClick={() => void continueWaiting(addIsoCalendarDays(today(), 1))}
+            >
+              {strings.revisitShortcutLabels.tomorrow}
+            </button>
+            <button
+              type="button"
+              className="choice-chip"
+              disabled={saving}
+              onClick={() => void continueWaiting(addIsoCalendarDays(today(), 3))}
+            >
+              {strings.revisitShortcutLabels.threeDays}
+            </button>
+            <button
+              type="button"
+              className="choice-chip"
+              disabled={saving}
+              onClick={() => void continueWaiting(addIsoCalendarDays(today(), 7))}
+            >
+              {strings.revisitShortcutLabels.oneWeek}
+            </button>
+            <button
+              type="button"
+              className="choice-chip"
+              aria-pressed={customDate}
+              disabled={saving}
+              onClick={() => setCustomDate(true)}
+            >
+              {strings.due} …
+            </button>
+          </div>
+          {customDate ? (
+            <div className="row">
+              <HumanDateInput
+                id={`follow-up-date-${task.id}`}
+                value={revisitDate ?? ""}
+                onChange={(date) => setRevisitDate(date)}
+                onValidityChange={setDateValid}
+                disabled={saving}
+              />
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={saving || !dateValid}
+                onClick={() => void continueWaiting(revisitDate)}
+              >
+                {strings.save}
+              </button>
+            </div>
+          ) : null}
         </div>
-
-        <label className="row">
-          <input
-            type="checkbox"
-            checked={resolveWait}
-            onChange={(event) => setResolveWait(event.target.checked)}
-            disabled={saving}
-          />
-          {strings.endWaiting}
-        </label>
-        {!resolveWait ? <p className="text-muted">{strings.continueWaiting}</p> : null}
 
         {error ? (
           <div className="task-row-error" role="alert">
@@ -100,11 +148,11 @@ export function WaitingFollowUpSheet({
           </button>
           <button
             type="button"
-            className="btn btn-primary"
-            onClick={() => void save()}
-            disabled={saving || content.trim().length === 0 || !revisitDateValid}
+            className="btn btn-primary btn-danger"
+            onClick={() => void endWaiting()}
+            disabled={saving}
           >
-            {strings.save}
+            {strings.endWaiting}
           </button>
         </div>
       </div>

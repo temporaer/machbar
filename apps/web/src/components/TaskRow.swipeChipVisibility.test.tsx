@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { TaskDetailSheet } from "./TaskDetailSheet";
+import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { api } from "../lib/api";
 import { makeMember, makeTag, makeTask } from "../test/fixtures";
 // Real stylesheet, not a mock — vitest's `css: true` lets jsdom actually
@@ -143,6 +144,7 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
       <div>
         <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
         <TaskDetailSheet />
+        <TaskWorkflowHost />
       </div>,
     );
     const row = (await screen.findByText("Vertrag unterschreiben")).closest(".task-row") as HTMLElement;
@@ -161,8 +163,9 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     }
 
     // Actually interactable via a real pointer/click sequence, not just present in the DOM.
+    // "Planen" always opens the one canonical TaskPlanSheet workflow.
     await userEvent.click(screen.getByRole("button", { name: "Planen" }));
-    expect(await screen.findByLabelText("Geplant")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Wann willst du das angehen?")).toBeInTheDocument();
   });
 
   it("closes the command rail predictably when a command is used, hiding the persisted red background again", async () => {

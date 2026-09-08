@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { IdentityProvider, useIdentity } from "./lib/identity";
 import { RefreshProvider } from "./lib/refresh";
 import { TaskDetailProvider, useTaskDetail } from "./lib/taskDetailContext";
+import { TaskWorkflowProvider } from "./lib/taskWorkflowContext";
+import { ProjectWorkflowProvider } from "./lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "./lib/swipeSettings";
 import { RailConfigProvider } from "./lib/railConfigContext";
 import { TaskActionsProvider } from "./lib/useTaskActions";
@@ -11,6 +13,8 @@ import { useGlobalNavigationKeys } from "./lib/useGlobalNavigationKeys";
 import { IdentityGate } from "./components/IdentityGate";
 import { BottomNav } from "./components/BottomNav";
 import { TaskDetailSheet } from "./components/TaskDetailSheet";
+import { TaskWorkflowHost } from "./components/TaskWorkflowHost";
+import { ProjectWorkflowHost } from "./components/ProjectWorkflowHost";
 import { TodayPage } from "./pages/TodayPage";
 import { InboxPage } from "./pages/InboxPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
@@ -93,6 +97,8 @@ function Shell() {
             <Route path="*" element={<Navigate to="/today" replace />} />
           </Routes>
           <TaskDetailHost />
+          <TaskWorkflowHost />
+          <ProjectWorkflowHost />
         </IdentityGate>
       </main>
       {navigationHint.prefixOpen ? (
@@ -124,9 +130,13 @@ export function App() {
                     <TaskActionsProvider>
                       <ProjectActionsProvider>
                         <TaskDetailProvider>
-                          <HashRouter>
-                            <Shell />
-                          </HashRouter>
+                          <TaskWorkflowProvider>
+                            <ProjectWorkflowProvider>
+                              <HashRouter>
+                                <Shell />
+                              </HashRouter>
+                            </ProjectWorkflowProvider>
+                          </TaskWorkflowProvider>
                         </TaskDetailProvider>
                       </ProjectActionsProvider>
                     </TaskActionsProvider>

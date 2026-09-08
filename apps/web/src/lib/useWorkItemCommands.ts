@@ -4,6 +4,8 @@ import type { WorkItemCommand } from "./commands";
 import { useTaskActions } from "./useTaskActions";
 import { useProjectActions } from "./useProjectActions";
 import { useTaskDetail } from "./taskDetailContext";
+import { useTaskWorkflow } from "./taskWorkflowContext";
+import { useProjectWorkflow } from "./projectWorkflowContext";
 import { useSwipeSettings } from "./swipeSettings";
 import { useOptionalInteractionScope } from "./interactionScope";
 
@@ -132,6 +134,8 @@ export function useWorkItemCommands() {
   const taskActions = useTaskActions();
   const projectActions = useProjectActions();
   const taskDetail = useTaskDetail();
+  const taskWorkflow = useTaskWorkflow();
+  const projectWorkflow = useProjectWorkflow();
   const navigate = useNavigate();
   const { primarySwipeAction } = useSwipeSettings();
   const scope = useOptionalInteractionScope();
@@ -145,24 +149,38 @@ export function useWorkItemCommands() {
           taskDetail.open(command.taskId, command.focusField);
           return;
         case "task.plan":
-          taskDetail.open(command.taskId, "schedule");
+          taskWorkflow.open("plan", command.taskId);
           return;
         case "task.waitingLifecycle":
-          taskDetail.open(command.taskId, "waiting");
+          taskWorkflow.open("waitingLifecycle", command.taskId);
           return;
         case "task.split":
-          taskDetail.open(command.taskId, "split");
+          taskWorkflow.open("split", command.taskId);
           return;
         case "task.assignOwner":
-          taskDetail.open(command.taskId, "owner");
+          taskWorkflow.open("assignOwner", command.taskId);
           return;
         case "task.changeProject":
+          taskWorkflow.open("changeProject", command.taskId);
+          return;
         case "task.addSuccessor":
+          taskWorkflow.open("addSuccessor", command.taskId);
+          return;
         case "task.recurrence":
+          taskWorkflow.open("recurrence", command.taskId);
+          return;
         case "task.priority":
+          taskWorkflow.open("priority", command.taskId);
+          return;
         case "task.tags":
+          taskWorkflow.open("tags", command.taskId);
+          return;
         case "task.contexts":
+          taskWorkflow.open("contexts", command.taskId);
+          return;
         case "task.convertToProject":
+          taskWorkflow.open("convertToProject", command.taskId);
+          return;
         case "task.openOverflow":
           scope?.setOpenOverflow(command.taskId);
           return;
@@ -238,12 +256,26 @@ export function useWorkItemCommands() {
           void projectActions.runAction(command.story, "archive");
           return;
         case "story.defer":
+          projectWorkflow.open("defer", command.story.id);
+          return;
         case "story.assignDriver":
-        case "story.planWork":
+          projectWorkflow.open("assignDriver", command.story.id);
+          return;
         case "story.editOutcome":
+          projectWorkflow.open("editOutcome", command.story.id);
+          return;
         case "story.tags":
+          projectWorkflow.open("tags", command.story.id);
+          return;
         case "story.contexts":
+          projectWorkflow.open("contexts", command.story.id);
+          return;
+        case "story.planWork":
+          navigate(`/projects/${command.story.id}?focus=next-action`);
+          return;
         case "story.lifecycle":
+          scope?.setOpenLifecycle(command.story.id);
+          return;
         case "story.openOverflow":
           scope?.setOpenOverflow(command.story.id);
           return;
@@ -279,7 +311,16 @@ export function useWorkItemCommands() {
           return;
       }
     },
-    [taskActions, projectActions, taskDetail, navigate, primarySwipeAction, scope],
+    [
+      taskActions,
+      projectActions,
+      taskDetail,
+      taskWorkflow,
+      projectWorkflow,
+      navigate,
+      primarySwipeAction,
+      scope,
+    ],
   );
 
   return dispatch;
