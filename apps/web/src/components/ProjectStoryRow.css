@@ -254,16 +254,32 @@
   }
 }
 
+/*
+ * `.story-row-main` is a plain `<button>` (navigating via `navigate()` in
+ * its `onClick`), like `.task-row-main`, not a real anchor: an `<a>` is
+ * subject to native browser gestures a button never triggers (HTML5
+ * image/text drag, iOS Safari's long-press link-preview callout,
+ * desktop/Android's "open/copy link" context menu), any of which can
+ * swallow the pointer sequence the swipe gesture relies on before our own
+ * handlers see it.
+ */
 .story-row-main {
   flex: 1;
   min-width: 0;
   display: block;
+  width: 100%;
   text-align: left;
   color: inherit;
-  text-decoration: none;
+  font: inherit;
   background: transparent;
   border: none;
   padding: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.story-row-main:disabled {
+  cursor: default;
 }
 
 .story-row-driver-avatar {

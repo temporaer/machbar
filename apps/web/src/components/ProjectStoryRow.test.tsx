@@ -685,11 +685,16 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(screen.queryAllByRole("combobox")).toHaveLength(0);
     expect(container.querySelector("select")).toBeNull();
 
-    // The status itself is plain, non-interactive text with a spoken label …
+    // The status itself is plain, non-interactive text with a spoken label —
+    // it has no click handler, role, or tabIndex of its own. It happens to
+    // sit inside `.story-row-main` (the row's own "open detail" button, not
+    // a status control), so this checks for its own interactivity rather
+    // than the absence of any button ancestor.
     const badge = container.querySelector(".story-row-status-badge") as HTMLElement;
     expect(badge.tagName).toBe("SPAN");
     expect(badge).toHaveTextContent("Aktiv");
-    expect(badge.closest("button")).toBeNull();
+    expect(badge).not.toHaveAttribute("role");
+    expect(badge).not.toHaveAttribute("tabindex");
     expect(screen.getByText("Status:")).toHaveClass("sr-only");
 
     // … and every status change is an explicitly named lifecycle-rail button.
@@ -719,18 +724,18 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     });
   });
 
-  it("keeps tap-to-detail as a real link, but a swipe never navigates", async () => {
+  it("keeps tap-to-detail working, but a swipe never navigates", async () => {
     const story = makeProject({ id: 52, title: "Tippen öffnet Detail", status: "active", ownerMemberId: 1 });
     mockedApi.completeProject.mockResolvedValue({ ...story, status: "completed" });
     const { container } = renderWithProjectRoute(<Harness story={story} />);
     await screen.findByText("Tippen öffnet Detail");
 
-    const link = container.querySelector(".story-row-main") as HTMLAnchorElement;
-    expect(link.getAttribute("href")).toContain("/projects/52");
+    const mainButton = container.querySelector(".story-row-main") as HTMLButtonElement;
+    expect(mainButton.tagName).toBe("BUTTON");
 
     // Swiping the row must not open the detail page.
     swipe(container, 100);
-    fireEvent.click(link);
+    fireEvent.click(mainButton);
     await act(async () => {
       await flushMicrotasks();
     });

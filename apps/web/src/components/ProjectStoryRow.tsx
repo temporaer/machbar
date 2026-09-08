@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
 import { storyWorkflowCommand } from "../lib/commands";
 import { useStrings } from "../lib/strings";
@@ -208,12 +208,17 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
     dispatch(storyWorkflowCommand(story, action));
   };
 
+  /**
+   * `.story-row-main` navigates via this handler rather than being a real
+   * `<Link>`/`<a>`: a real anchor is subject to native browser gestures a
+   * plain button never triggers (HTML5 image/text drag, iOS Safari's
+   * long-press link-preview callout, desktop/Android's "open/copy link"
+   * context menu). Any of those can swallow the pointer sequence the swipe
+   * gesture relies on before our own handlers see it, independent of the
+   * `suppressNextClick` click-suppression below. `TaskRow`'s equivalent
+   * `.task-row-main` is a button for the same reason.
+   */
   const handleMainClick = () => {
-    scope?.setOpenRail(null);
-    scope?.setActive(story.id, "story");
-  };
-
-  const goToDetail = () => {
     scope?.setOpenRail(null);
     scope?.setActive(story.id, "story");
     navigate(`/projects/${story.id}`);
@@ -269,12 +274,11 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         >
           {primaryAction ? projectWorkflowIcons[primaryAction] : "·"}
         </button>
-        <Link
+        <button
+          type="button"
           className="story-row-main"
-          to={`/projects/${story.id}`}
+          disabled={busy}
           onClick={handleMainClick}
-          draggable={false}
-          onDragStart={(event) => event.preventDefault()}
         >
           <div className="story-row-title">
             {story.title}
@@ -363,7 +367,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
               ) : null}
             </>
           ) : null}
-        </Link>
+        </button>
         {driver ? (
           <span
             className="story-row-driver-avatar"
