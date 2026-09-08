@@ -161,3 +161,108 @@ test("allows reads, unique operations, and explicit exceptions", () => {
     assert.deepEqual(rules(filePath, "api.moveTask(1, {});"), []);
   }
 });
+
+test("rejects a surface rendering a focused workflow sheet itself", () => {
+  const results = checkSource({
+    filePath: "apps/web/src/components/SomeRow.tsx",
+    sourceText: 'import { TaskPlanSheet } from "./TaskPlanSheet";',
+  });
+  assert.deepEqual(results.map((result) => result.rule), ["canonical-workflow-host"]);
+  assert.match(results[0].message, /Only TaskWorkflowHost may render it/);
+});
+
+test("allows the workflow host to import its own focused sheets", () => {
+  assert.deepEqual(
+    rules(
+      "apps/web/src/components/TaskWorkflowHost.tsx",
+      [
+        'import { TaskPlanSheet } from "./TaskPlanSheet";',
+        'import { TaskSplitSheet } from "./TaskSplitSheet";',
+      ].join("\n"),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    rules(
+      "apps/web/src/components/ProjectWorkflowHost.tsx",
+      'import { ProjectDeferSheet } from "./ProjectDeferSheet";',
+    ),
+    [],
+  );
+});
+
+test("treats sheets composed by several workflows as primitives, not workflows", () => {
+  assert.deepEqual(
+    rules(
+      "apps/web/src/components/RefinementTaskRow.tsx",
+      'import { MemberSelectionSheet } from "./MemberSelectionSheet";',
+    ),
+    [],
+  );
+});
+
+test("rejects a surface deciding which workflow implements an intent", () => {
+  const results = checkSource({
+    filePath: "apps/web/src/components/SomeRow.tsx",
+    sourceText: [
+      'const plan = () => taskWorkflow.open("plan", task.id);',
+      'const defer = () => projectWorkflow.open("defer", story.id);',
+    ].join("\n"),
+  });
+  assert.deepEqual(results.map((result) => result.rule), [
+    "canonical-workflow-routing",
+    "canonical-workflow-routing",
+  ]);
+  assert.match(results[0].message, /useWorkItemCommands/);
+});
+
+test("rejects a semantic command borrowing the task detail sheet as its editor", () => {
+  assert.deepEqual(
+    rules(
+      "apps/web/src/pages/ReviewFoo.tsx",
+      'const planTask = () => taskDetail.open(taskId, "schedule");',
+    ),
+    ["canonical-workflow-routing"],
+  );
+});
+
+test("allows the one dispatcher to route intents into workflows and details", () => {
+  assert.deepEqual(
+    rules(
+      "apps/web/src/lib/useWorkItemCommands.ts",
+      [
+        'taskWorkflow.open("plan", command.taskId);',
+        'projectWorkflow.open("defer", command.story.id);',
+        "taskDetail.open(command.taskId, command.focusField);",
+      ].join("\n"),
+    ),
+    [],
+  );
+});
+
+test("keeps the Inbox clarification queue as the documented detail exception", () => {
+  assert.deepEqual(
+    rules(
+      "apps/web/src/pages/InboxPage.tsx",
+      "const clarifyAll = () => taskDetail.openQueue(ids);",
+    ),
+    [],
+  );
+  assert.deepEqual(
+    rules(
+      "apps/web/src/pages/InboxPage.tsx",
+      'const plan = () => taskWorkflow.open("plan", id);',
+    ),
+    ["canonical-workflow-routing"],
+  );
+});
+
+test("rejects reintroducing the generic quick-action sheet", () => {
+  assert.deepEqual(
+    rules(
+      "apps/web/src/components/TaskRow.tsx",
+      "const open = () => setSheet(TaskQuickActionSheet);",
+    ),
+    ["deprecated-architecture"],
+  );
+});

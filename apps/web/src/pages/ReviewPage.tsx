@@ -9,6 +9,10 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useProjectActions } from "../lib/useProjectActions";
+import type { WorkItemCommand } from "../lib/commands";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
+import { useTaskWorkflow } from "../lib/taskWorkflowContext";
+import { useProjectWorkflow } from "../lib/projectWorkflowContext";
 import { useTaskActions } from "../lib/useTaskActions";
 import {
   useTaskDetail,
@@ -46,9 +50,12 @@ export function ReviewPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const taskDetail = useTaskDetail();
+  const taskWorkflow = useTaskWorkflow();
+  const projectWorkflow = useProjectWorkflow();
+  const dispatch = useWorkItemCommands();
   const itemRefs = useRef(new Map<string, HTMLElement>());
-  const [taskReturn, setTaskReturn] = useState<ReviewReturn | null>(null);
-  const [taskSheetOpened, setTaskSheetOpened] = useState(false);
+  const [workflowReturn, setWorkflowReturn] = useState<ReviewReturn | null>(null);
+  const [workflowOpened, setWorkflowOpened] = useState(false);
   const [planningOpen, setPlanningOpen] = useState(false);
   const {
     data: items,
@@ -106,18 +113,28 @@ export function ReviewPage() {
   }, [items, location.pathname, location.state, navigate]);
 
   useEffect(() => {
-    if (!taskReturn) return;
-    if (taskDetail.openTaskId !== null) {
-      setTaskSheetOpened(true);
+    if (!workflowReturn) return;
+    const anyOpen =
+      taskDetail.openTaskId !== null ||
+      taskWorkflow.current !== null ||
+      projectWorkflow.current !== null;
+    if (anyOpen) {
+      setWorkflowOpened(true);
       return;
     }
-    if (!taskSheetOpened) return;
-    const origin = taskReturn;
-    setTaskReturn(null);
-    setTaskSheetOpened(false);
+    if (!workflowOpened) return;
+    const origin = workflowReturn;
+    setWorkflowReturn(null);
+    setWorkflowOpened(false);
     reloadItems();
     focusReturnedItem(origin);
-  }, [taskDetail.openTaskId, taskReturn, taskSheetOpened]);
+  }, [
+    taskDetail.openTaskId,
+    taskWorkflow.current,
+    projectWorkflow.current,
+    workflowReturn,
+    workflowOpened,
+  ]);
 
   const reasonText = (reason: ReviewReason): string => {
     switch (reason) {
@@ -197,59 +214,92 @@ export function ReviewPage() {
     issueIndex: number,
     focus?: TaskDetailFocusField,
   ) => {
-    setTaskReturn({ issueKey: reviewItemKey(item), issueIndex });
-    setTaskSheetOpened(false);
-    taskDetail.open(taskId, focus);
+    dispatchWithReturn(
+      focus ? { type: "task.open", taskId, focusField: focus } : { type: "task.open", taskId },
+      item,
+      issueIndex,
+    );
+  };
+  /**
+   * Dispatches a repair as a semantic command and remembers which review
+   * issue it came from, so closing the focused workflow returns focus to
+   * that row and refreshes the queue. Review owns *which* repair a reason
+   * calls for; it does not own how that repair is edited — that is the
+   * task/project workflow host's job (see `useWorkItemCommands()`).
+   */
+  const dispatchWithReturn = (
+    command: WorkItemCommand,
+    item: ReviewItem,
+    issueIndex: number,
+  ) => {
+    setWorkflowReturn({ issueKey: reviewItemKey(item), issueIndex });
+    setWorkflowOpened(false);
+    dispatch(command);
+  };
+  /** Repairs that genuinely belong on the project page rather than in a sheet. */
+  const openProjectPage = (item: ReviewItem, issueIndex: number, focus?: string) => {
+    const projectId = item.projectId ?? item.entityId;
+    navigate(`/projects/${projectId}${focus ? `?focus=${focus}` : ""}`, {
+      state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
+    });
   };
   const repair = (item: ReviewItem, issueIndex: number) => {
     const targetId = item.suggestedAction.targetEntityId ?? item.entityId;
+    const story = projectById.get(item.projectId ?? item.entityId);
     switch (item.suggestedAction.code) {
       case "assign_driver":
-        navigate(`/projects/${item.projectId ?? item.entityId}?focus=driver`, {
-          state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
-        });
+        if (story) {
+          dispatchWithReturn({ type: "story.assignDriver", story }, item, issueIndex);
+          return;
+        }
+        openProjectPage(item, issueIndex, "driver");
         return;
       case "add_next_action":
-        navigate(`/projects/${item.projectId ?? item.entityId}?focus=next-action`, {
-          state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
-        });
+        openProjectPage(item, issueIndex, "next-action");
         return;
       case "plan_task":
-        openTask(targetId, item, issueIndex, "schedule");
+        dispatchWithReturn({ type: "task.plan", taskId: targetId }, item, issueIndex);
         return;
       case "defer_project":
-        navigate(`/projects/${item.projectId ?? item.entityId}?focus=planning`, {
-          state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
-        });
+        if (story) {
+          dispatchWithReturn({ type: "story.defer", story }, item, issueIndex);
+          return;
+        }
+        openProjectPage(item, issueIndex, "planning");
         return;
       case "activate_project":
       case "project_lifecycle":
-        navigate(`/projects/${item.projectId ?? item.entityId}`, {
-          state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
-        });
+        openProjectPage(item, issueIndex);
         return;
       case "review_completion":
-        navigate(`/projects/${item.projectId ?? item.entityId}?focus=completion`, {
-          state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
-        });
+        if (story) {
+          dispatchWithReturn({ type: "story.editOutcome", story }, item, issueIndex);
+          return;
+        }
+        openProjectPage(item, issueIndex, "completion");
         return;
       case "set_followup":
-        openTask(targetId, item, issueIndex, "waiting");
+        dispatchWithReturn(
+          { type: "task.waitingLifecycle", taskId: targetId },
+          item,
+          issueIndex,
+        );
         return;
       case "resolve_blocker":
+        // Dependencies stay a real collection section of the task document,
+        // so this is a genuine `task.open` intent — not a semantic command
+        // borrowing the detail sheet as an editor.
         openTask(targetId, item, issueIndex, "dependencies");
         return;
       case "add_child":
-        openTask(targetId, item, issueIndex, "split");
+        dispatchWithReturn({ type: "task.split", taskId: targetId }, item, issueIndex);
         return;
       case "review_task":
         openTask(targetId, item, issueIndex);
         return;
       case "review_project":
       default:
-        navigate(`/projects/${item.projectId ?? item.entityId}`, {
-          state: { reviewReturn: { issueKey: reviewItemKey(item), issueIndex } },
-        });
+        openProjectPage(item, issueIndex);
     }
   };
   const openDetails = (item: ReviewItem, issueIndex: number) => {

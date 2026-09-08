@@ -7,6 +7,7 @@ import { api } from "../lib/api";
 import { makeProject, makeTask } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
 import { ReviewPage } from "./ReviewPage";
+import { TaskWorkflowHost } from "../components/TaskWorkflowHost";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -16,6 +17,9 @@ vi.mock("../lib/api", () => ({
       member: null,
     }),
     getMembers: vi.fn().mockResolvedValue([]),
+    getTask: vi.fn(),
+    getTags: vi.fn().mockResolvedValue([]),
+    getPhysicalContexts: vi.fn().mockResolvedValue([]),
     getReviewItems: vi.fn(),
     getProjects: vi.fn(),
     searchTasks: vi.fn(),
@@ -241,4 +245,105 @@ describe("ReviewPage", () => {
     );
   });
 
+  /**
+   * Review decides *which* repair a reason calls for; it must not decide how
+   * that repair is edited. Each of these dispatches a canonical command and
+   * gets the same focused workflow every other entry point (rail, keyboard,
+   * detail value) gets — never the large detail sheet scrolled to a field.
+   */
+  describe("repairs route through canonical focused workflows", () => {
+    const waitingTask = makeTask({
+      id: 30,
+      title: "Angebot einholen",
+      status: "actionable",
+    });
+    const xlTask = makeTask({ id: 31, title: "Umzug", status: "actionable" });
+    const unplannedTask = makeTask({ id: 32, title: "Steuer", status: "actionable" });
+
+    function repairItem(
+      entityId: number,
+      entityTitle: string,
+      reason: ReviewItem["reason"],
+      code: ReviewItem["suggestedAction"]["code"],
+    ): ReviewItem {
+      return {
+        entityType: "task",
+        entityId,
+        entityTitle,
+        projectId: null,
+        projectTitle: null,
+        category: "clarification_repair",
+        reason,
+        suggestedAction: { code },
+      };
+    }
+
+    beforeEach(() => {
+      mockedApi.getProjects.mockResolvedValue([]);
+      mockedApi.searchTasks.mockResolvedValue([waitingTask, xlTask, unplannedTask]);
+      mockedApi.getTask.mockImplementation(async (id: number) =>
+        [waitingTask, xlTask, unplannedTask].find((candidate) => candidate.id === id)!,
+      );
+    });
+
+    it("opens the canonical planning workflow for a plan_task repair", async () => {
+      mockedApi.getReviewItems.mockResolvedValue([
+        repairItem(32, unplannedTask.title, "backlog_planned_work", "plan_task"),
+      ]);
+      renderWithProviders(
+        <>
+          <ReviewPage />
+          <TaskWorkflowHost />
+        </>,
+      );
+      const card = (await screen.findByText(unplannedTask.title)).closest("article")!;
+
+      await userEvent.click(within(card).getByRole("button", { name: "Planen" }));
+
+      const sheet = await screen.findByRole("dialog");
+      expect(within(sheet).getByText("Wann willst du das angehen?")).toBeInTheDocument();
+    });
+
+    it("opens the canonical waiting workflow for a set_followup repair", async () => {
+      mockedApi.getReviewItems.mockResolvedValue([
+        repairItem(30, waitingTask.title, "waiting_without_followup", "set_followup"),
+      ]);
+      renderWithProviders(
+        <>
+          <ReviewPage />
+          <TaskWorkflowHost />
+        </>,
+      );
+      const card = (await screen.findByText(waitingTask.title)).closest("article")!;
+
+      await userEvent.click(
+        within(card).getByRole("button", { name: "Wiedervorlage setzen" }),
+      );
+
+      const sheet = await screen.findByRole("dialog");
+      expect(within(sheet).getByText("Worauf wartest du?")).toBeInTheDocument();
+    });
+
+    it("opens the canonical splitting workflow for an add_child repair", async () => {
+      mockedApi.getReviewItems.mockResolvedValue([
+        repairItem(31, xlTask.title, "xl_without_children", "add_child"),
+      ]);
+      renderWithProviders(
+        <>
+          <ReviewPage />
+          <TaskWorkflowHost />
+        </>,
+      );
+      const card = (await screen.findByText(xlTask.title)).closest("article")!;
+
+      await userEvent.click(
+        within(card).getByRole("button", { name: "Teilaufgabe hinzufügen" }),
+      );
+
+      const sheet = await screen.findByRole("dialog");
+      expect(
+        within(sheet).getByRole("heading", { name: "Aufgabe aufteilen" }),
+      ).toBeInTheDocument();
+    });
+  });
 });

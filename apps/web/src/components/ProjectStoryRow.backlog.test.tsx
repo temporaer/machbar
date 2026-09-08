@@ -51,7 +51,7 @@ async function flushMicrotasks(times = 3) {
 function Harness({ story }: { story: ReturnType<typeof makeProject> }) {
   // Mirrors `App.tsx`: the row only dispatches semantic `story.*` commands,
   // and every focused workflow they open is rendered by the single host.
-  mockedApi.getProject.mockResolvedValue(story);
+  mockedApi.getProject.mockResolvedValue({ ...story, tasks: [] });
   return (
     <>
       <ul>

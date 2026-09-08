@@ -109,6 +109,31 @@ import lower-case domain helpers from React-free modules rather than from hook
 modules. Hooks may compose other hooks. Tests may import hooks to exercise
 behavior.
 
+### Focused workflows
+
+One intent has one semantic command, and one semantic command has one focused
+workflow. A rail, keyboard shortcut, Review repair, post-capture rail, and a
+clicked value in a detail view are five ways to dispatch the same command, not
+five places to decide what that command does.
+
+Surfaces dispatch; they do not choose sheets. Only `TaskWorkflowHost` and
+`ProjectWorkflowHost` import a focused workflow sheet, and only
+`useWorkItemCommands()` may call `taskWorkflow.open`, `projectWorkflow.open`,
+or `taskDetail.open`. State-sensitive resolution belongs there too: whether
+`task.waitingLifecycle` means "start waiting" or "follow up", and whether
+`story.complete` must first show unmet acceptance criteria, is decided once.
+
+`task.open` is the only command whose intent *is* opening task details. No
+other command may open the detail sheet to focus a field; the narrow
+`InboxPage` clarification queue is the documented exception.
+
+Rows keep only genuinely row-specific behavior: gesture mechanics, folding,
+drag/outline manipulation, optimistic row presentation, and rail visibility.
+
+`canonical-workflow-host` and `canonical-workflow-routing` in
+`scripts/check-architecture.mjs` enforce this. Its exception map lists the
+surfaces still rendering their own workflows; shrink it, never extend it.
+
 ## Canonical primitive registry
 
 | Need | Canonical primitive or path |
@@ -151,6 +176,9 @@ behavior.
 | Command descriptors, keyboard help, and prefix hints | `apps/web/src/lib/commandRegistry.ts`, `apps/web/src/components/CommandHelpSheet.tsx`, and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
 | Keyboard navigation (`j/k/h/l`, `Alt+arrows`, `g`-prefix, `?`, `c`, focused task keys) | `apps/web/src/lib/useWorkItemKeyboardNav.ts` and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
 | WorkItem detail-sheet section/disclosure chrome | `apps/web/src/components/WorkItemDetailSection.tsx` |
+| Focused task workflows (one sheet per `task.*` command) | `apps/web/src/components/TaskWorkflowHost.tsx` and `apps/web/src/lib/taskWorkflowContext.tsx` |
+| Focused project workflows (one sheet per `story.*` command) | `apps/web/src/components/ProjectWorkflowHost.tsx` and `apps/web/src/lib/projectWorkflowContext.tsx` |
+| Project lifecycle prerequisites (missing driver, unmet criteria, no progress path) | `lifecyclePrerequisite()` in `apps/web/src/lib/projectWorkflow.ts`, resolved by `useWorkItemCommands()` |
 | Focused waiting/follow-up workflow | `apps/web/src/components/WaitingFollowUpSheet.tsx` and `apps/web/src/lib/useTaskActions.ts` |
 
 Before introducing another primitive for one of these needs, update this table
