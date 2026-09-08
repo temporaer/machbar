@@ -111,41 +111,10 @@ describe("QuickAdd", () => {
       }),
     );
     expect(screen.queryByText("In Eingang abgelegt")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Speichern" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Machbar" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Projekt" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Später klären" })).not.toBeInTheDocument();
     expect(screen.queryByText("In Heute hinzugefügt")).not.toBeInTheDocument();
-  });
-
-  it("legt Machbar ohne Klärungsbedarf ohne Korrektur-Popup an", async () => {
-    mockedApi.getMembers.mockResolvedValue([
-      makeMember({ id: 1, name: "Mira" }),
-      makeMember({ id: 2, name: "Jonas" }),
-    ]);
-    mockedApi.createTask.mockResolvedValue(
-      makeTask({ id: 12, title: "Angebot senden", ownerMemberId: 1, ownerInheritanceMode: "explicit" }),
-    );
-    renderWithProviders(<QuickAdd />);
-    await openCapture();
-    expect(screen.getByText("Erscheint sofort in Heute")).toBeInTheDocument();
-    expect(screen.getByText("In Schritte zerlegen")).toBeInTheDocument();
-
-    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Angebot senden");
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
-
-    await waitFor(() =>
-      expect(mockedApi.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Angebot senden",
-          status: "actionable",
-          projectId: null,
-          dueDate: null,
-          scheduledDate: null,
-          ownerMemberId: 1,
-          ownerInheritanceMode: "explicit",
-        }),
-      ),
-    );
-    expect(screen.queryByText("In Heute hinzugefügt")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Zuständig ändern" })).not.toBeInTheDocument();
   });
 
   it("bewahrt den Projektkontext für schnelle Aufgaben", async () => {
@@ -154,7 +123,7 @@ describe("QuickAdd", () => {
     await openCapture();
 
     await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Angebot senden");
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
@@ -204,7 +173,7 @@ describe("QuickAdd", () => {
     await userEvent.type(input, " %Zu");
     await userEvent.click(await screen.findByRole("button", { name: "Zuhause" }));
     await userEvent.type(input, " !15.9 :S");
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
@@ -223,64 +192,6 @@ describe("QuickAdd", () => {
     );
   });
 
-  it("übergibt ein neues Projekt an leichte nächste-Schritt-, Öffnen- und Fertig-Aktionen", async () => {
-    const project = makeProject({ id: 55, title: "Küche renovieren", status: "backlog", ownerMemberId: 1 });
-    mockedApi.createProject.mockResolvedValue(project);
-    mockedApi.createTask.mockResolvedValue(makeTask({ projectId: 55 }) as never);
-    renderWithProviders(<QuickAdd />);
-    await openCapture();
-
-    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Küche renovieren");
-    await userEvent.click(screen.getByRole("button", { name: "Projekt" }));
-
-    await waitFor(() =>
-      expect(mockedApi.createProject).toHaveBeenCalledWith({
-        title: "Küche renovieren",
-        status: "backlog",
-        ownerMemberId: 1,
-      }),
-    );
-    expect(screen.getByRole("button", { name: "Nächsten Schritt hinzufügen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Projekt öffnen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Erledigt" })).toBeInTheDocument();
-    expect(screen.queryByText("Erledigt, wenn …")).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Nächsten Schritt hinzufügen" }));
-    const nextAction = screen.getByPlaceholderText("Nächsten Schritt hinzufügen");
-    expect(nextAction).toHaveFocus();
-    await userEvent.type(nextAction, "Angebote vergleichen");
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
-    await waitFor(() =>
-      expect(mockedApi.createTask).toHaveBeenCalledWith(
-        {
-          title: "Angebote vergleichen",
-          projectId: 55,
-          status: "actionable",
-          createdByMemberId: 1,
-        },
-      ),
-    );
-    expect(screen.getByRole("button", { name: "Erledigt" })).toBeInTheDocument();
-  });
-
-  it("legt Projekte ohne ausgewählte Identität ungeplant und unzugewiesen ab", async () => {
-    window.localStorage.removeItem("machbar:identity-member-id");
-    mockedApi.createProject.mockResolvedValue(makeProject({ id: 56, status: "backlog", ownerMemberId: null }));
-    renderWithProviders(<QuickAdd />);
-    await openCapture();
-
-    await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Idee sammeln");
-    await userEvent.click(screen.getByRole("button", { name: "Projekt" }));
-
-    await waitFor(() =>
-      expect(mockedApi.createProject).toHaveBeenCalledWith({
-        title: "Idee sammeln",
-        status: "backlog",
-        ownerMemberId: null,
-      }),
-    );
-  });
-
   it("behält Titel und Fehler nach einem fehlgeschlagenen Erfassen", async () => {
     mockedApi.createTask.mockRejectedValue(new Error("Netzwerkfehler"));
     renderWithProviders(<QuickAdd />);
@@ -288,7 +199,7 @@ describe("QuickAdd", () => {
 
     const input = screen.getByPlaceholderText("Was ist zu tun?");
     await userEvent.type(input, "Nicht verlieren");
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Netzwerkfehler");
     expect(input).toHaveValue("Nicht verlieren");
@@ -316,9 +227,9 @@ describe("QuickAdd", () => {
     expect(screen.getByText("receipt.jpg")).toBeInTheDocument();
     expect(mockedApi.uploadPaperlessDocument).not.toHaveBeenCalled();
     await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Receipt");
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Create failed");
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
     expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalledTimes(1);
@@ -386,7 +297,7 @@ describe("QuickAdd", () => {
     expect(await screen.findByText("photo-cropped.jpg")).toBeInTheDocument();
 
     await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Photo");
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
     await waitFor(() => expect(mockedApi.uploadPaperlessDocument).toHaveBeenCalled());
     const uploadedFile = mockedApi.uploadPaperlessDocument.mock.calls[0]?.[0];
     expect(uploadedFile).toBeInstanceOf(File);
@@ -419,7 +330,7 @@ describe("QuickAdd", () => {
     await openCapture();
 
     await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Details");
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
     expect(screen.queryByText("In Heute hinzugefügt")).not.toBeInTheDocument();
     expect(screen.getByTestId("open-task-id")).toHaveTextContent("none");
   });
@@ -431,7 +342,7 @@ describe("QuickAdd", () => {
     await userEvent.keyboard("c");
     await userEvent.click(screen.getByRole("button", { name: "Aufgabe erfassen" }));
     await userEvent.type(screen.getByPlaceholderText("Was ist zu tun?"), "Angebot senden");
-    await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(

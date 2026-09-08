@@ -13,9 +13,10 @@ later.
 ### 1. Capture
 
 Record an idea, request, link, or commitment without completing a form first.
-Unclear captures go to **Eingang** as unclassified items. A concrete action can
-be marked **Machbar** immediately, and a multi-step outcome can start as a
-project.
+Every capture creates a task. Global captures go to **Eingang** as
+unclassified items; captures made inside a project become normal tasks in that
+project. If a captured task later turns out to be a multi-step outcome, use
+the existing **Zum Projekt machen** workflow to promote it.
 
 The title field accepts optional short syntax for faster capture, for example
 `~morgen` for a planned date, `!15.9` for a deadline, `@Hanna` for an owner,
