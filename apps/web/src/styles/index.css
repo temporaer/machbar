@@ -1203,6 +1203,37 @@ details[open] > .disclosure-summary::after {
   resize: vertical;
 }
 
+/*
+ * A rail-favorites slot row (`MorePage`): reuses `.field`'s input styling
+ * but keeps the ordinal number label to the left in a fixed-width column
+ * instead of stacking it above a full-width select, so the label has its
+ * own space and the select doesn't have to claim the entire row width.
+ */
+.rail-favorite-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.rail-favorite-slot label {
+  flex: 0 0 auto;
+  width: 1.5em;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.rail-favorite-slot select {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  background: var(--color-surface);
+}
+
 .segmented {
   display: flex;
   border: 1px solid var(--color-border);
@@ -3498,6 +3529,19 @@ details[open] > .disclosure-summary::after {
   flex-direction: column;
   gap: 8px;
   width: 100%;
+}
+
+/*
+ * The favorites row in `WorkItemCommandRail` is a wrapping flex container
+ * shared with this disclosure's `<summary>` trigger. Without an explicit
+ * full-row basis, a flex item's default `flex-basis: auto` only claims its
+ * content width, so the browser fills the remaining horizontal space on
+ * that line with the *next* favorite chips before wrapping to a new line —
+ * visually sandwiching them between this element's tall opened content and
+ * its own first category group instead of keeping it on its own line.
+ */
+.work-item-command-overflow {
+  flex-basis: 100%;
 }
 
 .command-category-group {

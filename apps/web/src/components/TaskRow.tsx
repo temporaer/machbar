@@ -4,7 +4,7 @@ import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { formatDate, isOverdue } from "../lib/format";
-import { sortByPosition } from "../lib/taskHelpers";
+import { isCapturedInboxItem, sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useInteractionScope } from "../lib/interactionScope";
@@ -497,6 +497,9 @@ export function TaskRow({
           overflowLabel={`${strings.more} …`}
           disabled={busy}
           onCommand={runRailCommand}
+          {...(isCapturedInboxItem(task)
+            ? { hiddenCommands: ["task.changeProject", "task.split"] as const }
+            : {})}
           overflowOpen={scope.openOverflowId === taskProp.id}
           onOverflowChange={(open) => scope.setOpenOverflow(open ? taskProp.id : null)}
         />

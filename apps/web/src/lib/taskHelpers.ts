@@ -4,6 +4,22 @@ function isOpen(task: Task): boolean {
   return task.status !== "done" && task.status !== "cancelled";
 }
 
+/**
+ * An unclassified root capture: still `captured`, never filed under a
+ * project or parent task. The API rejects reparenting/project moves and
+ * child creation for these (`task_promotion_invalid`) until the user
+ * classifies it via the capture-shape actions, so rail/detail UIs must keep
+ * organize commands that require classification (change project, change
+ * parent, split) unavailable for it instead of offering them and failing.
+ */
+export function isCapturedInboxItem(task: Task): boolean {
+  return (
+    task.status === "captured" &&
+    task.projectId === null &&
+    task.parentTaskId === null
+  );
+}
+
 export function hasOpenDescendants(task: Task): boolean {
   return task.children.some(
     (child) => isOpen(child) || hasOpenDescendants(child),
