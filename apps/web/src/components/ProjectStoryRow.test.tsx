@@ -564,7 +564,9 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     expect(
       within(deferSheet).getByText("Bis wann zurückstellen?"),
     ).toBeInTheDocument();
-    await userEvent.click(within(deferSheet).getByRole("button", { name: "Keine" }));
+    await userEvent.click(
+      within(deferSheet).getByRole("button", { name: "+ Deadline hinzufügen" }),
+    );
     await userEvent.type(
       within(deferSheet).getByRole("textbox"),
       "1. Mai 2026",

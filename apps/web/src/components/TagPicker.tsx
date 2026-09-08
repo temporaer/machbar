@@ -48,7 +48,7 @@ export function TagPicker({
             key={kind}
             title={`${strings.tagKindLabels[kind]} (${kindTags.length})`}
             headingLevel={3}
-            defaultOpen={false}
+            defaultOpen
             >
             <div className="tag-choice-group">
               {kindTags.map((tag) => {

@@ -12,20 +12,25 @@ import { LoadingState, ErrorState } from "./AsyncStates";
 import { useLocale } from "../lib/locale";
 import { sortProjectDestinations } from "../lib/sortOrder";
 
-export type MoveMode = "parent" | "project" | "subtree";
+export type MoveMode = "parent" | "subtree";
 
 /**
  * Explicit picker for destinations that are nowhere near on screen: change
- * parent, move to another project, or move a whole subtree (project +
- * parent in one step). Reached from the selected-task toolbar ("Ablegen")
- * and from the task detail sheet, so all three stay available without any
- * drag gesture.
+ * parent, or move to another project (and optionally its parent task, both
+ * in one step). Reached from the selected-task toolbar ("Ablegen") and from
+ * the task detail sheet, so both stay available without any drag gesture.
  *
  * Both destination lists are `DestinationPicker`s: searchable, with the
  * recently used targets on top. The candidate sets are unchanged — the
  * task's own subtree is still excluded client-side, and every mode still
  * goes through the same API call, so the server keeps the final say on
  * hierarchy/cycle validity.
+ *
+ * There is no "just move to project" mode without a subtree step: the data
+ * model (`work_items.parentId`-only hierarchy) means every move already
+ * carries the whole subtree, so `subtree` mode (project picker + optional
+ * parent picker, "Keine" meaning root) is a strict superset and the only
+ * project-move path.
  */
 export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveMode; onClose: () => void }) {
   const strings = useStrings();
@@ -45,7 +50,7 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
   // whole sheet for `ErrorState`.
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const needsProjectStep = mode === "project" || mode === "subtree";
+  const needsProjectStep = mode === "subtree";
   const needsParentStep = mode === "parent" || mode === "subtree";
 
   useEffect(() => {
@@ -106,8 +111,7 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
     return selectableParents.map((t) => ({ id: t.id, title: t.title, subtitle: projectTitle }));
   }, [selectableParents, projects, selectedProjectId, parentProjectTitle]);
 
-  const title =
-    mode === "parent" ? strings.changeParentTitle : mode === "project" ? strings.moveProjectTitle : strings.moveSubtree;
+  const title = mode === "parent" ? strings.changeParentTitle : strings.moveProjectTitle;
 
   const submit = async () => {
     setSaving(true);
@@ -117,12 +121,6 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
         await api.moveTask(task.id, {
           parentTaskId: selectedParentId,
           ...(selectedParentId === null ? { projectId: task.projectId } : {}),
-          expectedRevision: task.revision,
-        });
-      } else if (mode === "project") {
-        await api.moveTask(task.id, {
-          parentTaskId: null,
-          projectId: selectedProjectId,
           expectedRevision: task.revision,
         });
       } else {

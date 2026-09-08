@@ -23,7 +23,6 @@ import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
-import { InlineChildComposer } from "./InlineChildComposer";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { MemberLabel } from "./MemberAvatar";
@@ -101,7 +100,7 @@ export function TaskDetailSheet() {
   const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
-  const [movePrompt, setMovePrompt] = useState<"parent" | "subtree" | null>(null);
+  const [movePrompt, setMovePrompt] = useState<"parent" | null>(null);
   const [depQuery, setDepQuery] = useState("");
   const [depResults, setDepResults] = useState<Task[]>([]);
   const [dependencyError, setDependencyError] = useState<{
@@ -117,7 +116,6 @@ export function TaskDetailSheet() {
   const [titleEditing, setTitleEditing] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
-  const [addingChild, setAddingChild] = useState(false);
   const [addingDependency, setAddingDependency] = useState(false);
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -187,7 +185,6 @@ export function TaskDetailSheet() {
       setTitleEditing(false);
       setNotesEditing(false);
       setAttachmentOpen(false);
-      setAddingChild(false);
       setAddingDependency(false);
       setLifecycleOpen(false);
       setDeleting(false);
@@ -592,8 +589,11 @@ export function TaskDetailSheet() {
           </div>
 
           <div className="detail-meta-row">
-            <span className="sr-only">{strings.status}: </span>
-            <StatusBadge status={task.status} />
+            {isCapturedInboxItem ? <span className="sr-only">{strings.status}: </span> : null}
+            <StatusBadge
+              status={task.status}
+              {...(isCapturedInboxItem ? {} : { onClick: () => runCommand("task.lifecycle") })}
+            />
             {task.projectId !== null && task.projectTitle ? (
               <span className="detail-meta-static">
                 <span className="detail-meta-label">{strings.project}</span>
@@ -710,6 +710,33 @@ export function TaskDetailSheet() {
               </button>
             ) : null}
           </div>
+
+          {lifecycleOpen ? (
+            <div className="task-row-lifecycle" role="group" aria-label={strings.status}>
+              {taskStatuses
+                .filter((status) => status !== "captured" || task.status === "captured")
+                .map((status) => (
+                  <button
+                    key={status}
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={task.status === status}
+                    aria-current={task.status === status ? "true" : undefined}
+                    onClick={() => {
+                      setLifecycleOpen(false);
+                      dispatch({ type: "task.setStatus", task, status });
+                    }}
+                  >
+                    {strings.taskStatusLabels[status]}
+                  </button>
+                ))}
+            </div>
+          ) : null}
+
+          <p className="text-muted task-detail-metadata">
+            {strings.created}: {formatDateTime(task.createdAt, locale)} ·{" "}
+            {strings.updated}: {formatDateTime(task.updatedAt, locale)}
+          </p>
 
           {saveError ?? taskActions.errors[task.id] ? (
             <div className="task-row-error" role="alert">
@@ -847,33 +874,15 @@ export function TaskDetailSheet() {
               ))}
             </ul>
             {task.repeatAfterDays === null && !isCapturedInboxItem ? (
-              addingChild ? (
-                <InlineChildComposer
-                  parentId={task.id}
-                  onCancel={() => setAddingChild(false)}
-                  onCreated={() => {
-                    setAddingChild(false);
-                    reload();
-                  }}
-                />
-              ) : (
-                <div className="row">
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => setAddingChild(true)}
-                  >
-                    {strings.addChild}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => runCommand("task.split")}
-                  >
-                    {strings.splitTask}
-                  </button>
-                </div>
-              )
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => runCommand("task.split")}
+                >
+                  {strings.splitTask}
+                </button>
+              </div>
             ) : task.repeatAfterDays !== null ? (
               <p className="text-muted">{strings.recurringTaskLeafHint}</p>
             ) : null}
@@ -999,7 +1008,7 @@ export function TaskDetailSheet() {
           >
             <div className="row" style={{ flexWrap: "wrap" }}>
               {taskRailCommands
-                .filter((command) => !isCapturedInboxItem || command !== "task.lifecycle")
+                .filter((command) => command !== "task.lifecycle")
                 .map((command) => (
                   <button
                     key={command}
@@ -1011,27 +1020,6 @@ export function TaskDetailSheet() {
                   </button>
                 ))}
             </div>
-            {lifecycleOpen ? (
-              <div className="task-row-lifecycle" role="group" aria-label={strings.status}>
-                {taskStatuses
-                  .filter((status) => status !== "captured" || task.status === "captured")
-                  .map((status) => (
-                    <button
-                      key={status}
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={task.status === status}
-                      aria-current={task.status === status ? "true" : undefined}
-                      onClick={() => {
-                        setLifecycleOpen(false);
-                        dispatch({ type: "task.setStatus", task, status });
-                      }}
-                    >
-                      {strings.taskStatusLabels[status]}
-                    </button>
-                  ))}
-              </div>
-            ) : null}
           </WorkItemDetailDisclosure>
 
           <WorkItemDetailDisclosure
@@ -1051,16 +1039,8 @@ export function TaskDetailSheet() {
               >
                 {strings.moveProject}
               </button>
-              <button type="button" className="btn btn-sm" onClick={() => setMovePrompt("subtree")}>
-                {strings.moveSubtree}
-              </button>
             </div>
             </div>
-
-            <p className="text-muted task-detail-metadata">
-              {strings.created}: {formatDateTime(task.createdAt, locale)} ·{" "}
-              {strings.updated}: {formatDateTime(task.updatedAt, locale)}
-            </p>
           </WorkItemDetailDisclosure>
 
           {task.repeatAfterDays !== null ||

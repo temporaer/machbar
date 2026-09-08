@@ -269,7 +269,7 @@ describe("TaskDetailSheet", () => {
       "Status",
       "Priorität",
       "Fällig",
-      "Einplanen für",
+      "Eingeplant für",
       "Worauf wartet die Aufgabe?",
       "Wiederholen nach Tagen",
     ]) {
@@ -304,6 +304,10 @@ describe("TaskDetailSheet", () => {
       expect(within(meta).getByRole("button", { name: affordance })).toBeVisible();
     }
 
+    // Created/updated timestamps are always visible near the top, not
+    // buried inside the collapsed Organisation disclosure.
+    expect(screen.getByText(/Erstellt:/)).toBeVisible();
+
     const activity = screen
       .getByRole("heading", { name: "Letzte Aktivitäten", level: 2 })
       .closest("details");
@@ -321,7 +325,6 @@ describe("TaskDetailSheet", () => {
       screen.getByRole("heading", { name: "Organisation", level: 3 }),
     );
     expect(screen.getByText("Sortier-Werkzeuge")).toBeVisible();
-    expect(screen.getByText(/Erstellt:/)).toBeVisible();
 
     await userEvent.click(
       screen.getByRole("heading", { name: "Gefahrenbereich", level: 3 }),
@@ -353,7 +356,6 @@ describe("TaskDetailSheet", () => {
       "Kontext",
       "Zum Projekt machen",
       "Verwerfen",
-      "Status",
     ]) {
       expect(screen.getByRole("button", { name: label })).toBeVisible();
     }
@@ -574,14 +576,13 @@ describe("TaskDetailSheet", () => {
     expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
   });
 
-  it("opens the shared child composer via Add child and focuses its input", async () => {
+  it("opens the split workflow from the Teilaufgaben section's Aufteilen button", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({
         id: 42,
         title: "Reparaturziel",
         children: [
           makeTask({ id: 43, parentTaskId: 42, title: "Erledigte Teilaufgabe", status: "done" }),
-          makeTask({ id: 44, parentTaskId: 42, title: "Verworfene Teilaufgabe", status: "cancelled" }),
         ],
       }),
     );
@@ -593,15 +594,10 @@ describe("TaskDetailSheet", () => {
       screen.getByRole("heading", { name: "Teilaufgaben", level: 3 }),
     );
 
-    const reopenButtons = screen.getAllByRole("button", { name: "Wieder öffnen" });
-    await userEvent.click(
-      screen.getByRole("button", { name: "Teilaufgabe hinzufügen" }),
-    );
-    const addChildInput = await screen.findByPlaceholderText("Neue Teilaufgabe");
-    await waitFor(() => expect(addChildInput).toHaveFocus());
-    for (const reopenButton of reopenButtons) {
-      expect(reopenButton).not.toHaveFocus();
-    }
+    await userEvent.click(screen.getByRole("button", { name: "Aufteilen" }));
+    expect(
+      await screen.findByRole("heading", { name: "Aufgabe aufteilen" }),
+    ).toBeInTheDocument();
   });
 
   it("zeigt Projektkontext und Zuständigkeit als Werte, die den Zuweisen-Workflow öffnen", async () => {
@@ -717,7 +713,7 @@ describe("TaskDetailSheet", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("places sharing in the header and shows status as a read-only badge", async () => {
+  it("shows status as a real button that opens the lifecycle chooser, matching the other meta pills", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({ id: 45, title: "Unaufdringliche Details", status: "actionable" }),
     );
@@ -733,15 +729,12 @@ describe("TaskDetailSheet", () => {
       "icon-action-button",
     );
 
-    expect(screen.queryByLabelText("Status")).not.toBeInTheDocument();
-    expect(screen.getByText("Machbar")).toHaveClass("badge");
+    const statusButton = screen.getByRole("button", { name: /Status.*Machbar/ });
+    expect(statusButton).toHaveClass("detail-meta-status-button");
   });
 
   async function openStatusChoices() {
-    await userEvent.click(
-      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Status" }));
+    await userEvent.click(screen.getByRole("button", { name: /Status/ }));
     return screen.getByRole("group", { name: "Status" });
   }
 
@@ -832,9 +825,9 @@ describe("TaskDetailSheet", () => {
 
     // The detail owns no date input; the existing planning value is a
     // command that reaches the same sheet as the rail and keyboard.
-    expect(screen.queryByLabelText("Einplanen für")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Eingeplant für")).not.toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: /Einplanen für.*04\.09\.2026/ }),
+      screen.getByRole("button", { name: /Eingeplant für.*04\.09\.2026/ }),
     );
 
     const shortcuts = await screen.findByRole("group", { name: "Schnell planen" });
@@ -867,7 +860,7 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(
       screen.getByRole("button", {
-        name: /Einplanen für.*10\.09\.2026.*Fällig 20\.09\.2026/,
+        name: /Eingeplant für.*10\.09\.2026.*Fällig 20\.09\.2026/,
       }),
     );
 
