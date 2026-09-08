@@ -123,11 +123,11 @@ export function captureSyntaxSuggestions({
     return [];
   }
   const query = token.query;
-  if (!query) return [];
   switch (token.kind) {
     case "member":
       return members
         .filter((member) => includes(member.name, query, locale))
+        .sort((a, b) => a.name.localeCompare(b.name, locale))
         .map((member) => ({
           key: `member-${member.id}`,
           label: member.name,
@@ -141,6 +141,7 @@ export function captureSyntaxSuggestions({
     case "tag":
       return tags
         .filter((tag) => includes(tag.name, query, locale))
+        .sort((a, b) => a.name.localeCompare(b.name, locale))
         .map((tag) => ({
           key: `tag-${tag.id}`,
           label: tag.name,
@@ -155,6 +156,7 @@ export function captureSyntaxSuggestions({
     case "context":
       return contexts
         .filter((context) => context.active && includes(context.name, query, locale))
+        .sort((a, b) => a.name.localeCompare(b.name, locale))
         .map((context) => ({
           key: `context-${context.id}`,
           label: context.name,
@@ -168,6 +170,7 @@ export function captureSyntaxSuggestions({
     case "story":
       return stories
         .filter((story) => includes(story.title, query, locale))
+        .sort((a, b) => a.title.localeCompare(b.title, locale))
         .map((story) => ({
           key: `story-${story.id}`,
           label: story.title,
