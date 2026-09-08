@@ -1,5 +1,6 @@
 import type { Project, ProjectStatus } from "@machbar/shared";
-import type { ProjectWorkflowAction } from "./api";
+import type { ProjectWithActions, ProjectWorkflowAction } from "./api";
+import { hasProjectProgressPath } from "./projectCommitments";
 import type { Strings } from "./strings";
 
 /**
@@ -132,4 +133,38 @@ export function needsDriverBeforeAction(story: Project, action: ProjectWorkflowA
  */
 export function canClearDriver(story: Project): boolean {
   return story.status === "backlog";
+}
+
+/**
+ * A lifecycle transition the user asked for that cannot be committed yet,
+ * plus the focused workflow that collects what is missing.
+ *
+ * Resolving this centrally (in `useWorkItemCommands()`) rather than inside
+ * every row/page keeps the state-sensitive lifecycle family a single
+ * semantic command: a caller dispatches `story.complete`, and *whether*
+ * that opens the criteria editor first is decided in one place — see
+ * `docs/architecture-rules.md`'s canonical-command invariant.
+ */
+export type LifecyclePrerequisite = "openCriteria" | "progressPath" | "driver" | null;
+
+export function lifecyclePrerequisite(
+  story: ProjectWithActions,
+  action: ProjectWorkflowAction,
+  ownerMemberId?: number | null,
+): LifecyclePrerequisite {
+  if (
+    action === "complete" &&
+    (story.acceptanceCriteria ?? []).some((criterion) => !criterion.checked)
+  ) {
+    return "openCriteria";
+  }
+  if ((action === "activate" || action === "reopen") && !hasProjectProgressPath(story)) {
+    return "progressPath";
+  }
+  // An explicitly supplied driver is exactly what the prompt collects, so a
+  // second pass through it would loop.
+  if (ownerMemberId === undefined && needsDriverBeforeAction(story, action)) {
+    return "driver";
+  }
+  return null;
 }

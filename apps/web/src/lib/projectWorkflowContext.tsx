@@ -12,8 +12,20 @@ import type { ReactNode } from "react";
  * manipulate the interaction scope's `openLifecycleId`/`openOverflowId`
  * directly (see `useWorkItemCommands.ts`), and `story.planWork` is pure
  * navigation to the project's next-action focus, not a sheet.
+ *
+ * `activateWithDriver`/`reopenWithDriver` are not separate user intents:
+ * they are how `story.activate`/`story.reopen` resolve when the story still
+ * needs a driver (see `lifecyclePrerequisite()`), collecting one and
+ * committing the transition atomically in the same call.
  */
-export type ProjectWorkflowKind = "defer" | "assignDriver" | "editOutcome" | "tags" | "contexts";
+export type ProjectWorkflowKind =
+  | "defer"
+  | "assignDriver"
+  | "editOutcome"
+  | "tags"
+  | "contexts"
+  | "activateWithDriver"
+  | "reopenWithDriver";
 
 export interface ProjectWorkflowState {
   kind: ProjectWorkflowKind;

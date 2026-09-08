@@ -8,6 +8,7 @@ import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { renderWithProviders } from "../test/testUtils";
 import { ProjectStoryRow } from "./ProjectStoryRow";
+import { ProjectWorkflowHost } from "./ProjectWorkflowHost";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
@@ -33,6 +34,7 @@ import "./ProjectStoryRow.css";
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
+    getProject: vi.fn(),
     getTags: vi.fn(),
     createTag: vi.fn(),
     updateProject: vi.fn(),
@@ -76,10 +78,16 @@ function Harness({
   story: ProjectWithActions;
   variant?: "compact" | "card";
 }) {
+  // Mirrors `App.tsx`: the row only dispatches semantic `story.*` commands,
+  // and every focused workflow they open is rendered by the single host.
+  mockedApi.getProject.mockResolvedValue(story);
   return (
-    <ul>
-      <ProjectStoryRow story={story} variant={variant} />
-    </ul>
+    <>
+      <ul>
+        <ProjectStoryRow story={story} variant={variant} />
+      </ul>
+      <ProjectWorkflowHost />
+    </>
   );
 }
 
@@ -546,13 +554,24 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await userEvent.click(
       within(chips).getByRole("button", { name: "Wiedervorlegen" }),
     );
+    // `story.defer` opens the canonical Wiedervorlage-first workflow (the
+    // deadline is a secondary constraint behind its own affordance), not a
+    // generic two-date form.
+    const deferSheet = await screen.findByRole("dialog");
     expect(
-      await screen.findByRole("heading", {
-        name: "Wiedervorlage & Fälligkeit",
-      }),
+      within(deferSheet).getByRole("heading", { name: "Wiedervorlegen" }),
     ).toBeInTheDocument();
-    const dueDate = screen.getByLabelText("Fällig");
-    await userEvent.type(dueDate, "1. Mai 2026{Enter}");
+    expect(
+      within(deferSheet).getByText("Bis wann zurückstellen?"),
+    ).toBeInTheDocument();
+    await userEvent.click(within(deferSheet).getByRole("button", { name: "Keine" }));
+    await userEvent.type(
+      within(deferSheet).getByRole("textbox"),
+      "1. Mai 2026",
+    );
+    await userEvent.click(
+      within(deferSheet).getByRole("button", { name: "Speichern" }),
+    );
 
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {

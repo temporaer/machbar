@@ -1,6 +1,8 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import type { ProjectWithActions } from "./api";
 import type { WorkItemCommand } from "./commands";
+import { lifecyclePrerequisite } from "./projectWorkflow";
 import { useTaskActions } from "./useTaskActions";
 import { useProjectActions } from "./useProjectActions";
 import { useTaskDetail } from "./taskDetailContext";
@@ -140,6 +142,39 @@ export function useWorkItemCommands() {
   const { primarySwipeAction } = useSwipeSettings();
   const scope = useOptionalInteractionScope();
 
+  /**
+   * Opens whatever a lifecycle transition still needs before it can be
+   * committed and reports whether the transition itself must wait. Callers
+   * dispatch `story.activate`/`story.complete`/`story.reopen` unconditionally;
+   * only this function decides that e.g. completing a story with open
+   * acceptance criteria means "show me the criteria first".
+   */
+  const resolveStoryPrerequisite = useCallback(
+    (
+      story: ProjectWithActions,
+      action: "activate" | "complete" | "reopen",
+      ownerMemberId?: number | null,
+    ): boolean => {
+      switch (lifecyclePrerequisite(story, action, ownerMemberId)) {
+        case "openCriteria":
+          projectWorkflow.open("editOutcome", story.id);
+          return true;
+        case "progressPath":
+          navigate(`/projects/${story.id}?focus=next-action`);
+          return true;
+        case "driver":
+          projectWorkflow.open(
+            action === "reopen" ? "reopenWithDriver" : "activateWithDriver",
+            story.id,
+          );
+          return true;
+        default:
+          return false;
+      }
+    },
+    [navigate, projectWorkflow],
+  );
+
   const dispatch = useCallback(
     (command: WorkItemCommand) => {
       const workItemId = commandWorkItemId(command);
@@ -241,16 +276,22 @@ export function useWorkItemCommands() {
           }
           return;
         case "story.activate":
-          void projectActions.activate(command.story, command.ownerMemberId);
+          if (!resolveStoryPrerequisite(command.story, "activate", command.ownerMemberId)) {
+            void projectActions.activate(command.story, command.ownerMemberId);
+          }
           return;
         case "story.returnToBacklog":
           void projectActions.runAction(command.story, "return_to_backlog");
           return;
         case "story.complete":
-          void projectActions.runAction(command.story, "complete");
+          if (!resolveStoryPrerequisite(command.story, "complete")) {
+            void projectActions.runAction(command.story, "complete");
+          }
           return;
         case "story.reopen":
-          void projectActions.runAction(command.story, "reopen", command.ownerMemberId);
+          if (!resolveStoryPrerequisite(command.story, "reopen", command.ownerMemberId)) {
+            void projectActions.runAction(command.story, "reopen", command.ownerMemberId);
+          }
           return;
         case "story.archive":
           void projectActions.runAction(command.story, "archive");
@@ -320,6 +361,7 @@ export function useWorkItemCommands() {
       navigate,
       primarySwipeAction,
       scope,
+      resolveStoryPrerequisite,
     ],
   );
 

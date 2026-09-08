@@ -75,6 +75,25 @@ export function ProjectWorkflowHost() {
       );
     case "contexts":
       return <ProjectContextsSheet story={story} onClose={close} />;
+    case "activateWithDriver":
+    case "reopenWithDriver": {
+      const action = workflow.current.kind === "reopenWithDriver" ? "reopen" : "activate";
+      return (
+        <MemberSelectionSheet
+          title={strings.assignDriver}
+          label={strings.driver}
+          idPrefix={`project-workflow-${action}-driver-${story.id}`}
+          members={members}
+          value={story.ownerMemberId}
+          unassignedLabel={null}
+          hint={strings.assignDriverToActivateHint}
+          onClose={close}
+          onSelect={async (ownerMemberId) => {
+            await projectActions.runAction(story, action, ownerMemberId);
+          }}
+        />
+      );
+    }
     default:
       return null;
   }
