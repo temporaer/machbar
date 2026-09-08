@@ -40,6 +40,7 @@ import { projectRailCommands } from "../lib/railConfig";
 import { storyWorkflowCommand } from "../lib/commands";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { WorkItemDetailDisclosure } from "../components/WorkItemDetailSection";
+import { CommandCategoryGrid } from "../components/CommandCategoryGrid";
 import { appendTextBlock } from "../lib/shareTarget";
 import {
   containsPaperlessReference,
@@ -671,24 +672,17 @@ export function ProjectDetailPage() {
               resetKey={project.id}
               className="project-detail-commands"
             >
-              <div className="row" style={{ flexWrap: "wrap" }}>
-                {projectRailCommands.map((command) => (
-                  <button
-                    key={command}
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => {
-                      if (command === "story.lifecycle") {
-                        setLifecycleOpen((open) => !open);
-                        return;
-                      }
-                      dispatch({ type: command, story: project });
-                    }}
-                  >
-                    {strings.railCommandLabels[command]}
-                  </button>
-                ))}
-              </div>
+              <CommandCategoryGrid
+                commands={projectRailCommands}
+                labels={strings.railCommandLabels}
+                onCommand={(command) => {
+                  if (command === "story.lifecycle") {
+                    setLifecycleOpen((open) => !open);
+                    return;
+                  }
+                  dispatch({ type: command, story: project });
+                }}
+              />
               {lifecycleOpen ? (
                 <div
                   className="story-row-lifecycle"

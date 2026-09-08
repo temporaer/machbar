@@ -3,32 +3,100 @@ import type { ProjectRailCommand, TaskRailCommand } from "./commands";
 export type RailWorkItemKind = "task" | "project";
 export type RailCommand = TaskRailCommand | ProjectRailCommand;
 
+// Declared in contiguous category blocks (see `RailCommandCategory` below) so
+// that grouping a list of these commands by category also preserves a
+// sensible within-category order, without a separate sort step.
 export const taskRailCommands: readonly TaskRailCommand[] = [
+  // schedule
   "task.plan",
   "task.waitingLifecycle",
+  "task.recurrence",
+  // organize
   "task.split",
   "task.assignOwner",
   "task.changeProject",
   "task.addSuccessor",
-  "task.recurrence",
+  "task.convertToProject",
+  // classify
   "task.priority",
   "task.tags",
   "task.contexts",
-  "task.convertToProject",
+  // lifecycle
   "task.discard",
   "task.lifecycle",
 ];
 
 export const projectRailCommands: readonly ProjectRailCommand[] = [
+  // schedule
   "story.defer",
+  "story.planDates",
+  // organize
   "story.assignDriver",
   "story.planWork",
   "story.editOutcome",
-  "story.planDates",
+  // classify
   "story.tags",
   "story.contexts",
+  // lifecycle
   "story.lifecycle",
 ];
+
+/**
+ * Coarse grouping used to visually cluster the "more actions"
+ * overflow/disclosure lists (see `CommandCategoryGrid`) so a dozen
+ * identically-styled buttons don't read as one undifferentiated wall.
+ */
+export type RailCommandCategory = "schedule" | "organize" | "classify" | "lifecycle";
+
+const RAIL_COMMAND_CATEGORY: Record<RailCommand, RailCommandCategory> = {
+  "task.plan": "schedule",
+  "task.waitingLifecycle": "schedule",
+  "task.recurrence": "schedule",
+  "task.split": "organize",
+  "task.assignOwner": "organize",
+  "task.changeProject": "organize",
+  "task.addSuccessor": "organize",
+  "task.convertToProject": "organize",
+  "task.priority": "classify",
+  "task.tags": "classify",
+  "task.contexts": "classify",
+  "task.discard": "lifecycle",
+  "task.lifecycle": "lifecycle",
+  "story.defer": "schedule",
+  "story.planDates": "schedule",
+  "story.assignDriver": "organize",
+  "story.planWork": "organize",
+  "story.editOutcome": "organize",
+  "story.tags": "classify",
+  "story.contexts": "classify",
+  "story.lifecycle": "lifecycle",
+};
+
+export function railCommandCategory(command: RailCommand): RailCommandCategory {
+  return RAIL_COMMAND_CATEGORY[command];
+}
+
+/**
+ * Groups commands by category, preserving each command's relative order —
+ * grouping a `taskRailCommands`/`projectRailCommands`-derived list this way
+ * naturally keeps commands within a category together, since both master
+ * lists are declared in contiguous category blocks above.
+ */
+export function groupRailCommandsByCategory<T extends RailCommand>(
+  commands: readonly T[],
+): Array<{ category: RailCommandCategory; commands: T[] }> {
+  const groups: Array<{ category: RailCommandCategory; commands: T[] }> = [];
+  for (const command of commands) {
+    const category = railCommandCategory(command);
+    const group = groups.find((candidate) => candidate.category === category);
+    if (group) {
+      group.commands.push(command);
+    } else {
+      groups.push({ category, commands: [command] });
+    }
+  }
+  return groups;
+}
 
 const TASK_DEFAULT_FAVORITES: readonly TaskRailCommand[] = [
   "task.plan",
