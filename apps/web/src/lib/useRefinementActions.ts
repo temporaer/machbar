@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { TaskSize } from "@machbar/shared";
+import type { InheritanceMode, TaskSize } from "@machbar/shared";
 import { api } from "./api";
 import type { RefinementTaskRow } from "./api";
 import { nextSizeInCycle } from "./refinementHelpers";
@@ -66,22 +66,49 @@ export function useRefinementActions() {
    * resolves.
    */
   const assignOwner = useCallback(
-    (task: RefinementListItem, ownerMemberId: number | null) => {
+    (
+      task: RefinementListItem,
+      ownerMemberId: number | null,
+      ownerInheritanceMode: InheritanceMode = ownerMemberId === null
+        ? "none"
+        : "explicit",
+    ) => {
+      const effectiveOwnerId =
+        ownerInheritanceMode === "inherit"
+          ? task.inheritedOwnerId
+          : ownerMemberId;
+      const effectiveOwnerSource =
+        ownerInheritanceMode === "inherit"
+          ? task.inheritedOwnerId === null
+            ? "none"
+            : task.parentTaskId !== null
+              ? "parent"
+              : "project"
+          : ownerMemberId === null
+            ? "none"
+            : "task";
       const optimistic: RefinementListItem = {
         ...task,
-        effectiveOwnerId: ownerMemberId,
-        effectiveOwnerSource: ownerMemberId === null ? "none" : "task",
+        ownerMemberId,
+        ownerInheritanceMode,
+        effectiveOwnerId,
+        effectiveOwnerSource,
       };
       return run({
         id: task.id,
         optimistic,
         mutate: () =>
-          updateTask(task, ownerAssignmentPatch(ownerMemberId)),
+          updateTask(
+            task,
+            ownerAssignmentPatch(ownerMemberId, ownerInheritanceMode),
+          ),
         confirmed: (confirmed) => ({
           ...task,
           ...confirmed,
-          effectiveOwnerId: ownerMemberId,
-          effectiveOwnerSource: ownerMemberId === null ? "none" : "task",
+          ownerMemberId,
+          ownerInheritanceMode,
+          effectiveOwnerId,
+          effectiveOwnerSource,
         }),
         throwOnError: true,
       });

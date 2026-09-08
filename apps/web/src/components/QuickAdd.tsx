@@ -173,10 +173,11 @@ export function QuickAdd({
               onCaptured={(result) => {
                 bump();
                 close();
-                scope?.setOpenRail(result.task.id);
                 if (projectId === null) {
                   navigate(`/inbox?focus=${result.task.id}`);
+                  return;
                 }
+                scope?.setOpenRail(result.task.id);
               }}
             />
           )}

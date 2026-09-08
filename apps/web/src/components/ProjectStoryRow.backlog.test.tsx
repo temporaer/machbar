@@ -249,7 +249,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     await openRailOverflow(chips);
     expect(within(chips).getByRole("button", { name: "Ergebnis bearbeiten" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Tags" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Kontext" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Ort" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Status" })).toBeInTheDocument();
 
     // Closing and reopening via the kebab (no swipe gesture at all).

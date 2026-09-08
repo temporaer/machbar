@@ -439,7 +439,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await openRailOverflow(chips);
     expect(within(chips).getByRole("button", { name: "Ergebnis bearbeiten" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Tags" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Kontext" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Ort" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Status" })).toBeInTheDocument();
   });
 
@@ -1067,7 +1067,7 @@ describe("ProjectStoryRow – configurable text command rail", () => {
 
     expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
     await openRailOverflow(chips);
-    for (const name of ["Ergebnis bearbeiten", "Tags", "Kontext", "Status"]) {
+    for (const name of ["Ergebnis bearbeiten", "Tags", "Ort", "Status"]) {
       expect(within(chips).getByRole("button", { name })).toBeInTheDocument();
     }
   });

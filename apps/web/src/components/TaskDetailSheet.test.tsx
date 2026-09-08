@@ -353,7 +353,7 @@ describe("TaskDetailSheet", () => {
       "Wiederholung",
       "Priorität",
       "Tags",
-      "Kontext",
+      "Ort",
       "Zum Projekt machen",
       "Verwerfen",
     ]) {
@@ -685,7 +685,7 @@ describe("TaskDetailSheet", () => {
 
     // A shared task without an owner is valid work, so nothing is shown as
     // missing beyond the affordance itself.
-    expect(screen.queryByText("Gemeinsam / offen")).not.toBeInTheDocument();
+    expect(screen.queryByText("Gemeinsam")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "+ Zuweisen" }));
 
     await userEvent.click(await screen.findByRole("button", { name: "Mira" }));
@@ -1007,6 +1007,7 @@ describe("TaskDetailSheet", () => {
     const task = makeTask({
       id: 43,
       title: "Angebot prüfen",
+      inheritedTags: [inheritedTag],
       effectiveTags: [inheritedTag],
       explicitTags: [],
       excludedTagIds: [],

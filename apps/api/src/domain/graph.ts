@@ -45,7 +45,9 @@ export interface ProjectRecord extends SharedProject {
   ancestors: Array<{ id: number; title: string }>;
 }
 
-export interface TaskRecord extends SharedTask {}
+export interface TaskRecord extends SharedTask {
+  inheritedTags: Tag[];
+}
 
 export interface StuckProjectRecord extends ProjectRecord {
   stuckReason: StuckReason;
@@ -506,6 +508,15 @@ export class Graph {
 
       const explicitTags = dedupeTags(explicitTagsByTask.get(raw.id) ?? []);
       const excludedTagIds = excludedByTask.get(raw.id) ?? [];
+      const inheritedTagIds =
+        raw.parentTaskId !== null
+          ? effectiveTagIdsByTask.get(raw.parentTaskId) ?? []
+          : graph.projectsById.get(raw.projectId ?? -1)?.effectiveTags.map((tag) => tag.id) ?? [];
+      const inheritedTags = dedupeTags(
+        inheritedTagIds
+          .map((id) => tagsById.get(id))
+          .filter((tag): tag is Tag => tag !== undefined),
+      );
       const effectiveTagIds = effectiveTagIdsByTask.get(raw.id) ?? [];
       const effectiveTags = dedupeTags(
         effectiveTagIds
@@ -600,6 +611,7 @@ export class Graph {
         effectiveOwnerId,
         effectiveOwnerSource,
         inheritedOwnerId,
+        inheritedTags,
         effectiveTags,
         effectiveAreaTags,
         effectiveActorTags,

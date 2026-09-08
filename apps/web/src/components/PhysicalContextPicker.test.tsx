@@ -18,7 +18,7 @@ describe("PhysicalContextPicker", () => {
       />,
     );
 
-    const group = screen.getByRole("group", { name: "Physische Kontexte" });
+    const group = screen.getByRole("group", { name: "Orte" });
     expect(within(group).getByRole("button", { name: "Küche" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -28,7 +28,7 @@ describe("PhysicalContextPicker", () => {
       "false",
     );
     // Standalone contexts have no inheritance concept, so no "none" chip.
-    expect(screen.queryByRole("button", { name: "Kein Kontext" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Kein Ort" })).toBeNull();
   });
 
   it("calls onChange with explicit mode when selecting a context standalone", async () => {
@@ -58,7 +58,7 @@ describe("PhysicalContextPicker", () => {
 
     expect(screen.queryByText(/Geerbt/)).toBeNull();
     expect(screen.queryByRole("button", { name: "Vom Projekt übernehmen" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Kein Kontext" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Kein Ort" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -105,7 +105,7 @@ describe("PhysicalContextPicker", () => {
     expect(onChange).toHaveBeenCalledWith("inherit", []);
   });
 
-  it("exposes deliberate none as a localized 'Kein Kontext' choice", async () => {
+  it("exposes deliberate none as a localized 'Kein Ort' choice", async () => {
     const onChange = vi.fn();
     render(
       <PhysicalContextPicker
@@ -117,7 +117,7 @@ describe("PhysicalContextPicker", () => {
       />,
     );
 
-    const noneButton = screen.getByRole("button", { name: "Kein Kontext" });
+    const noneButton = screen.getByRole("button", { name: "Kein Ort" });
     expect(noneButton).toHaveAttribute("aria-pressed", "true");
     // Still overridden relative to the project, so restoring inheritance is offered.
     expect(

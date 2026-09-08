@@ -7,6 +7,7 @@ import { useIdentity } from "../lib/identity";
 import { useProjectActions } from "../lib/useProjectActions";
 import {
   classifyProjectListItem,
+  countScopeHiddenMatches,
   filterAndSortProjects,
   type ProjectVisibilityScope,
 } from "../lib/projectListFilter";
@@ -93,6 +94,10 @@ function ProjectsPageContent() {
     currentMemberId,
     locale,
   });
+  const hiddenMatchCount =
+    scope === "mine"
+      ? countScopeHiddenMatches(allProjects, query, currentMemberId)
+      : 0;
   // Keep workflow meaning ahead of tag grouping: actionable and stuck work
   // stays first, active waiting gets its own visible section, and terminal
   // work remains folded at the bottom. The backlog bucket can only contain a
@@ -178,6 +183,18 @@ function ProjectsPageContent() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        {hiddenMatchCount > 0 ? (
+          <div className="row">
+            <p className="text-muted">{strings.projectHiddenMatchesHint(hiddenMatchCount)}</p>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => setScope("all")}
+            >
+              {strings.showAllProjects}
+            </button>
+          </div>
+        ) : null}
         <div className="project-list-options">
           <ListOptionDisclosureTrigger
             label={strings.grouping}

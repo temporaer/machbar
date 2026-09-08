@@ -289,7 +289,7 @@ export function CaptureForm({
             className="btn btn-sm"
             onClick={() => setOpenModifier(openModifier === "context" ? null : "context")}
           >
-            + {strings.physicalContexts}
+            + {strings.context}
           </button>
           <button
             type="button"

@@ -50,7 +50,7 @@ describe("WaitingGroupList", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Extern" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Kontext" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ort" })).toBeInTheDocument();
     expect(screen.getByText("Freigabe abwarten")).toBeInTheDocument();
     expect(screen.getByText("Im Garten arbeiten")).toBeInTheDocument();
   });

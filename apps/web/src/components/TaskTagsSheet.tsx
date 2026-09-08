@@ -20,7 +20,7 @@ export function TaskTagsSheet({ task, onClose }: { task: Task; onClose: () => vo
 
   const inheritedTags = useMemo(() => {
     const explicitIds = new Set(task.explicitTags.map((tag) => tag.id));
-    return task.effectiveTags.filter((tag) => !explicitIds.has(tag.id));
+    return task.inheritedTags.filter((tag) => !explicitIds.has(tag.id));
   }, [task]);
 
   const change = async (tagIds: number[]) => {

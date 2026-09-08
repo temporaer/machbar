@@ -7,13 +7,28 @@ interface RevisionedTask {
   revision: number;
 }
 
-export function ownerAssignmentPatch(ownerMemberId: number | null): {
+export function setOwnerInheritance(
+  ownerInheritanceMode: InheritanceMode,
+): {
+  ownerMemberId: null;
+  ownerInheritanceMode: InheritanceMode;
+} {
+  return {
+    ownerMemberId: null,
+    ownerInheritanceMode,
+  };
+}
+
+export function ownerAssignmentPatch(
+  ownerMemberId: number | null,
+  ownerInheritanceMode: InheritanceMode = ownerMemberId === null ? "none" : "explicit",
+): {
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
 } {
   return {
     ownerMemberId,
-    ownerInheritanceMode: ownerMemberId === null ? "none" : "explicit",
+    ownerInheritanceMode,
   };
 }
 

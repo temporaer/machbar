@@ -473,6 +473,7 @@ export interface Task {
   effectiveOwnerId: number | null;
   effectiveOwnerSource: "task" | "parent" | "project" | "none";
   inheritedOwnerId: number | null;
+  inheritedTags: Tag[];
   effectiveTags: Tag[];
   effectiveAreaTags: Tag[];
   effectiveActorTags: Tag[];

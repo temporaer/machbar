@@ -25,13 +25,17 @@ const mockedApi = vi.mocked(api, true);
 function makeItem(overrides: Partial<RefinementListItem> = {}): RefinementListItem {
   return {
     id: 1,
+    parentTaskId: null,
     title: "Angebot erstellen",
     status: "actionable",
     size: null,
     projectId: null,
     projectTitle: null,
+    ownerMemberId: null,
+    ownerInheritanceMode: "inherit",
     effectiveOwnerId: null,
     effectiveOwnerSource: "none",
+    inheritedOwnerId: null,
     position: 0,
     updatedAt: "2026-01-01T09:00:00.000Z",
     blocked: false,
@@ -334,8 +338,8 @@ describe("RefinementTaskRow", () => {
       within(group)
         .getAllByRole("button")
         .map((b) => b.textContent),
-    ).toEqual(["Gemeinsam / offen", "Jonas", "Mira"]);
-    expect(within(group).getByRole("button", { name: "Gemeinsam / offen" })).toHaveAttribute(
+    ).toEqual(["Gemeinsam", "Jonas", "Mira"]);
+    expect(within(group).getByRole("button", { name: "Gemeinsam" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -355,7 +359,13 @@ describe("RefinementTaskRow", () => {
   });
 
   it("clears the owner back to the shared bucket from the same popup", async () => {
-    const task = makeItem({ id: 32, effectiveOwnerId: 2, effectiveOwnerSource: "task" });
+    const task = makeItem({
+      id: 32,
+      ownerMemberId: 2,
+      ownerInheritanceMode: "explicit",
+      effectiveOwnerId: 2,
+      effectiveOwnerSource: "task",
+    });
     mockedApi.updateTask.mockResolvedValue({ ...task, effectiveOwnerId: null } as never);
     const { container } = renderRow(task);
 
@@ -367,8 +377,8 @@ describe("RefinementTaskRow", () => {
       "aria-pressed",
       "true",
     );
-    await userEvent.click(within(group).getByRole("button", { name: "Gemeinsam / offen" }));
-    await userEvent.click(within(group).getByRole("button", { name: "Gemeinsam / offen" }));
+    await userEvent.click(within(group).getByRole("button", { name: "Gemeinsam" }));
+    await userEvent.click(within(group).getByRole("button", { name: "Gemeinsam" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(32, {

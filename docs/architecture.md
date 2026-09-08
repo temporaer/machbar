@@ -90,8 +90,11 @@ Two kinds of values cascade down the task tree:
 - `explicit` — override with the task's own value and stop propagation
 - `none` — explicitly clear the value (no further upward lookup)
 
-The resolved values are exposed as `effectiveOwnerId`, `effectiveTags`, and
-`effectiveContexts` on `Task`. Physical contexts are Home Assistant-owned
+The resolved values are exposed as `effectiveOwnerId`, `effectiveTags`,
+`inheritedTags`, and `effectiveContexts` on `Task`. `inheritedTags` is the
+ancestor/project union *before this task's own exclusions are applied*, so the
+UI can keep inherited tags visible and reversible even while they are currently
+excluded from `effectiveTags`. Physical contexts are Home Assistant-owned
 entities rather than a tag kind.
 
 Tag selection is a reusable compact chip picker in both task and project
@@ -119,7 +122,8 @@ The API computes several derived fields before returning tasks to the client:
 | Field | Computed as |
 |-------|-------------|
 | `effectiveOwnerId` / `effectiveOwnerSource` | Walk parent chain; source ∈ `{task, parent, project, none}` |
-| `effectiveTags` | Ancestor tag union minus excluded IDs |
+| `inheritedTags` | Ancestor/project tag union before this task's own exclusions |
+| `effectiveTags` | `inheritedTags` minus excluded IDs, plus this task's explicit tags |
 | `effectiveAreaTags` / `effectiveActorTags` | Kind-filtered views of `effectiveTags` |
 | `explicitContexts` / `inheritedContexts` / `effectiveContexts` | Stable physical-context requirements |
 | `explicitTags` | Tags directly on this task |
@@ -485,7 +489,7 @@ tasks. Healthy future waiting suppresses generic active inactivity.
 Review decisions execute through `useProjectActions` and `useTaskActions`.
 Expected revisions, optimistic retention, stale conflicts, and refresh remain
 inside those canonical hooks. Focused repair reuses project/task detail,
-`MemberSelectionSheet`, `InlineTaskComposer`, and
+`TaskOwnerSheet`, `MemberSelectionSheet`, `InlineTaskComposer`, and
 `AcceptanceCriteriaEditor`. The owner/effort matrix and sizing list remain
 available as optional secondary planning tools rather than a separate
 Refinement workflow.
@@ -575,7 +579,14 @@ backed by `GET /api/refinement/owners` and `GET /api/refinement/tasks`.
   `S → M → L → XL → (none)` cycle; swipe and tap execute it through
   `useRefinementActions.cycleSize`/`setSize`/`clearSize`. `XL` with no open
   child produces `too_large_without_children` and suggests adding a child.
-- **Assignment** — the *Zuweisen* chip opens `MemberSelectionSheet`, **not** the full task detail sheet. `useRefinementActions.assignOwner` optimistically retains the row and rethrows on failure so the still-open sheet renders the error.
+- **Assignment** — the *Zuweisen* chip opens `TaskOwnerSheet` with the
+  `TaskOwnerChoiceGroup`, **not** the full task detail sheet. The owner picker
+  keeps the three persistence semantics distinct without exposing raw
+  `inherit` / `explicit` / `none` storage terms: inherited owner (when one
+  exists), deliberate shared/unassigned, or an explicit member. Standalone
+  tasks omit a meaningless inherit option. `useRefinementActions.assignOwner`
+  optimistically retains the row and rethrows on failure so the still-open
+  sheet renders the error.
 
 Task metadata execution and owner-assignment semantics live in the non-React
 `lib/taskMutations.ts`. `useTaskActions` and `useRefinementActions` both use
@@ -637,7 +648,9 @@ Interactions target one field at a time instead of opening the full detail sheet
 | Component | Purpose |
 |-----------|---------|
 | `TaskQuickActionSheet` | Focused task schedule or notes editing; execution is supplied by `useTaskActions` |
-| `MemberSelectionSheet` | Reusable task-owner/project-driver picker, including assign-and-activate intent |
+| `TaskOwnerSheet` | Focused task-owner chooser that preserves inherit / explicit / none semantics without exposing storage terminology |
+| `TaskOwnerChoiceGroup` | Task-owner chips for inherited owner, shared/unassigned, and explicit members |
+| `MemberSelectionSheet` | Reusable household-member picker for project-driver and other non-inheritable member choices |
 | `MemberChoiceGroup` | The tap-chip choice group rendered by assignment surfaces |
 | `AcceptanceCriteriaEditor` | Reusable ordered criteria editor, rendered by `StoryCriteriaSheet` |
 | `StoryCriteriaSheet` | Targeted criteria popup for a story row |
