@@ -158,7 +158,10 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     for (const [title, label] of expected) {
       const row = rowFor(container, title);
       expect(row.querySelector(".story-row-primary")).toHaveAttribute("aria-label", label);
-      expect((row.querySelector(".story-row-status-badge") as HTMLElement).closest("button")).toBeNull();
+      const badge = row.querySelector(".story-row-status-badge") as HTMLElement;
+      expect(badge.tagName).toBe("SPAN");
+      expect(badge).not.toHaveAttribute("role");
+      expect(badge).not.toHaveAttribute("tabindex");
       fireEvent.click(within(row).getByRole("button", { name: "Weitere Aktionen" }));
       const chips = within(row).getByRole("group", { name: "Weitere Aktionen" });
       expect(within(chips).getAllByRole("button").length).toBeGreaterThan(0);
