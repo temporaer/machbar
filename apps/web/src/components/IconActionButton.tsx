@@ -136,7 +136,10 @@ export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
           <path d="M17 4.5v3h-3M7 19.5v-3h3" {...common} />
         </>
       ) : kind === "discard" ? (
-        <path d="M5 7h14M9.5 7V4.5h5V7M7 7l1 13h8l1-13" {...common} />
+        <>
+          <path d="M19.5 10a7.5 7.5 0 10.2 3.5" {...common} />
+          <path d="M19.5 4.5V10H14" {...common} />
+        </>
       ) : kind === "places" ? (
         <>
           <path d="M12 21s7-6.2 7-11.5A7 7 0 105 9.5C5 14.8 12 21 12 21z" {...common} />

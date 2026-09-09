@@ -1,6 +1,5 @@
 import type { ProjectRailCommand, TaskRailCommand } from "../lib/commands";
 import { overflowRailCommands } from "../lib/railConfig";
-import { CommandCategoryGrid } from "./CommandCategoryGrid";
 
 type Props<T extends TaskRailCommand | ProjectRailCommand> = {
   kind: "task" | "project";
@@ -25,44 +24,61 @@ type Props<T extends TaskRailCommand | ProjectRailCommand> = {
 
 export function WorkItemCommandRail<T extends TaskRailCommand | ProjectRailCommand>(props: Props<T>) {
   const { kind, labels, groupLabel, overflowLabel, disabled = false, hiddenCommands = [] } = props;
-  const overflow: readonly T[] = (
+  const configuredOverflow: readonly T[] = (
     kind === "task"
       ? overflowRailCommands("task", props.favorites as readonly TaskRailCommand[]) as readonly T[]
       : overflowRailCommands("project", props.favorites as readonly ProjectRailCommand[]) as readonly T[]
   ).filter((command) => !hiddenCommands.includes(command));
-  const commands = props.favorites.filter((command) => !hiddenCommands.includes(command));
+  const visibleFavorites = [
+    ...props.favorites.filter((command) => !hiddenCommands.includes(command)),
+    ...configuredOverflow,
+  ].slice(0, 3);
+  const overflow = configuredOverflow.filter((command) => !visibleFavorites.includes(command));
 
   return (
     <div
-      className={`${kind === "task" ? "task" : "story"}-row-chips`}
+      className="work-item-command-rail"
+      data-kind={kind}
       role="group"
       aria-label={groupLabel}
     >
-      {commands.map((command) => (
+      <div className="rail-main-grid">
+        {visibleFavorites.map((command) => (
+          <button
+            key={command}
+            type="button"
+            className="btn btn-sm"
+            disabled={disabled}
+            onClick={() => props.onCommand(command)}
+          >
+            {props.labelForCommand?.(command) ?? labels[command]}
+          </button>
+        ))}
         <button
-          key={command}
           type="button"
-          className="btn btn-sm"
+          className="btn btn-sm rail-overflow-toggle"
           disabled={disabled}
-          onClick={() => props.onCommand(command)}
+          aria-expanded={props.overflowOpen ?? false}
+          onClick={() => props.onOverflowChange?.(!(props.overflowOpen ?? false))}
         >
-          {props.labelForCommand?.(command) ?? labels[command]}
+          {overflowLabel}
         </button>
-      ))}
-      <details
-        className="work-item-command-overflow"
-        open={props.overflowOpen}
-        onToggle={(event) => props.onOverflowChange?.(event.currentTarget.open)}
-      >
-        <summary className="btn btn-sm">{overflowLabel}</summary>
-        <CommandCategoryGrid
-          commands={overflow}
-          labels={labels}
-          labelForCommand={props.labelForCommand}
-          onCommand={props.onCommand}
-          disabled={disabled}
-        />
-      </details>
+      </div>
+      {props.overflowOpen ? (
+        <div className="rail-overflow-grid" role="group" aria-label={overflowLabel}>
+          {overflow.map((command) => (
+            <button
+              key={command}
+              type="button"
+              className="btn btn-sm"
+              disabled={disabled}
+              onClick={() => props.onCommand(command)}
+            >
+              {props.labelForCommand?.(command) ?? labels[command]}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

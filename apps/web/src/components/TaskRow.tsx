@@ -256,13 +256,7 @@ export function TaskRow({
     // instead of losing focus to <body>.
     kebabButtonRef.current?.focus();
     scope.setOpenRail(null);
-    switch (command) {
-      case "task.discard":
-        dispatch({ type: command, task });
-        return;
-      default:
-        dispatch({ type: command, taskId: task.id });
-    }
+    dispatch({ type: command, taskId: task.id });
   };
 
   return (

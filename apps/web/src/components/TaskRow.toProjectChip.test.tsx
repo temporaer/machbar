@@ -67,7 +67,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       swipe(container, -100);
       await openTaskRailOverflow();
 
-      const command = screen.getByRole("button", { name: "Projekt ändern" });
+      const command = screen.getByRole("button", { name: "In Projekt verschieben" });
       expect(command).toBeEnabled();
 
       // clicking the command should open the canonical MoveTaskSheet
@@ -95,7 +95,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
       await openTaskRailOverflow();
-      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
+      await userEvent.click(screen.getByRole("button", { name: "In Projekt verschieben" }));
 
       expect(await screen.findByRole("heading", { name: "In anderes Projekt verschieben" })).toBeInTheDocument();
     });
@@ -115,7 +115,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       swipe(container, -100);
       await openTaskRailOverflow();
 
-      const command = screen.getByRole("button", { name: "Projekt ändern" });
+      const command = screen.getByRole("button", { name: "In Projekt verschieben" });
       expect(command).toBeEnabled();
       expect(command).not.toHaveAttribute("aria-disabled", "true");
     });
@@ -134,7 +134,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
       await openTaskRailOverflow();
-      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
+      await userEvent.click(screen.getByRole("button", { name: "In Projekt verschieben" }));
 
       expect(await screen.findByRole("heading", { name: "In anderes Projekt verschieben" })).toBeInTheDocument();
       expect(screen.getAllByRole("searchbox", { name: "Ziel suchen" }).length).toBeGreaterThan(0);
@@ -157,7 +157,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(kebab);
       await openTaskRailOverflow();
-      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
+      await userEvent.click(screen.getByRole("button", { name: "In Projekt verschieben" }));
 
       await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
@@ -189,7 +189,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(kebab);
       await openTaskRailOverflow();
-      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
+      await userEvent.click(screen.getByRole("button", { name: "In Projekt verschieben" }));
       await screen.findByRole("heading", { name: "In anderes Projekt verschieben" });
 
       await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
@@ -213,7 +213,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
       await openTaskRailOverflow();
-      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
+      await userEvent.click(screen.getByRole("button", { name: "In Projekt verschieben" }));
       await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
 
@@ -247,7 +247,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       mockedApi.getTask.mockResolvedValue(parent);
       await userEvent.click(kebabs[0]!);
       await openTaskRailOverflow();
-      await userEvent.click(screen.getByRole("button", { name: "Projekt ändern" }));
+      await userEvent.click(screen.getByRole("button", { name: "In Projekt verschieben" }));
       await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
 

@@ -2720,7 +2720,7 @@ details[open] > .disclosure-summary::after {
    * 8px padding. Match that here, or these panels are left with a large,
    * unjustified left margin under nothing.
    */
-  .task-row-chips,
+  .work-item-command-rail[data-kind="task"],
   .task-row-lifecycle,
   .inline-child-composer,
   .task-row-error {
@@ -2762,31 +2762,50 @@ details[open] > .disclosure-summary::after {
  * backgrounds. `position: relative` + `z-index` is kept defensively so it
  * always paints above them even if that layout assumption ever changes.
  */
-.task-row-chips {
+.work-item-command-rail {
   position: relative;
   z-index: 1;
-  /*
-   * A grid (matching `.command-category-group` below) rather than a
-   * wrapping flex row: fixed-width flex chips wrap unpredictably (e.g. two
-   * short chips then one long one alone on the next line, with ragged
-   * trailing space), while equal-width grid cells settle into tidy,
-   * evenly-filled rows regardless of each label's length.
-   */
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
-  align-items: center;
-  gap: 8px;
-  padding: 8px 8px 10px 44px;
-  /* Tinted to match `.task-row-swipe-bg.cancel`, the reveal it continues. */
+  padding: 8px 10px 10px;
   background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface-alt));
 }
 
-.task-row-chips > .btn {
+.work-item-command-rail[data-kind="task"] {
+  padding-left: 44px;
+}
+
+.rail-main-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rail-main-grid .btn,
+.rail-overflow-grid .btn {
   width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 6px;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.rail-overflow-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+@media (max-width: 360px) {
+  .rail-overflow-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /*
- * Auto-flows the same way as `.task-row-chips` above (they are mutually
+ * Auto-flows beneath `.work-item-command-rail` (they are mutually
  * exclusive, only one mounts at a time), opened either by a deep
  * right-swipe or by tapping the status pill directly.
  */
@@ -3136,7 +3155,7 @@ details[open] > .disclosure-summary::after {
 
 /*
  * Auto-flows into its own grid row of `.task-row`, exactly like
- * `.task-row-chips` above — rendered directly beneath the task instead of
+ * `.work-item-command-rail` above — rendered directly beneath the task instead of
  * a full sheet, so adding a subtask never covers/replaces the row itself.
  */
 .inline-child-composer {
@@ -3561,87 +3580,6 @@ details[open] > .disclosure-summary::after {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-/*
- * Shared by `CommandCategoryGrid` (the rail's "More…" overflow, and the
- * "Weitere Aktionen" disclosures in TaskDetailSheet/ProjectDetailPage): a
- * dozen identically-styled command buttons in one flat row/wrap read as
- * clutter, so they're grouped into a grid per `RailCommandCategory` and
- * each group gets a subtle, category-specific tint.
- */
-.command-category-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-}
-
-/*
- * `WorkItemCommandRail`'s favorites row (`.task-row-chips` for tasks) is a
- * grid shared with this disclosure's `<summary>` trigger. While
- * *closed*, the trigger is just a small chip and sits in a grid cell like
- * any other favorite. Once *opened*, its content is the tall category
- * grid below, so it needs to span every column -- otherwise it would only
- * claim its own single cell, leaving the *next* favorite chips to fill
- * the rest of that row and visually sandwiching them between this
- * element's tall opened content and its own first category group instead
- * of giving it the full row.
- */
-.work-item-command-overflow {
-  position: relative;
-}
-
-.work-item-command-overflow[open] {
-  grid-column: 1 / -1;
-}
-
-/*
- * Once expanded, the "More …" label has nothing left to do -- the grid
- * below it is the whole point, and the rail (or the row itself) can
- * always be dismissed to re-collapse it. Rather than leave it sitting on
- * its own row with a lot of empty trailing space, collapse it visually to
- * nothing while it's open, but keep it in the accessibility tree so
- * keyboard/screen-reader users can still reach and toggle it.
- */
-.work-item-command-overflow[open] > summary {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-
-.command-category-group {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
-  gap: 6px;
-  padding: 8px;
-  border-radius: 10px;
-}
-
-.command-category-group .btn {
-  width: 100%;
-}
-
-.command-category-schedule {
-  background: color-mix(in srgb, var(--color-info) 8%, transparent);
-}
-
-.command-category-organize {
-  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
-}
-
-.command-category-classify {
-  background: color-mix(in srgb, var(--color-warning) 8%, transparent);
-}
-
-.command-category-lifecycle {
-  background: color-mix(in srgb, var(--color-danger) 7%, transparent);
 }
 
 .list-option-field {
