@@ -10,8 +10,7 @@ export interface ActionTileDescriptor {
 
 /**
  * Genuine-action surface for Task/Project detail views: unlike
- * `CommandCategoryGrid` (a flat command dump still used by the swipe
- * rail's own "More…" overflow, see `WorkItemCommandRail`), this renders
+ * the compact command rail overflow (see `WorkItemCommandRail`), this renders
  * each item as a large tappable tile with a mnemonic icon *and* an
  * always-visible verb label -- never icon-only -- sized for a ~44-52px
  * target. Detail views pass only commands that are not already directly

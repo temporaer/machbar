@@ -200,7 +200,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     swipeRow(row, -100);
     const chips = within(row).getByRole("group", { name: "Weitere Aktionen" });
     expect(within(chips).getByRole("button", { name: "Wiedervorlegen" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Verantwortliche Person" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Person ändern" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Arbeit planen" })).toBeInTheDocument();
     expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
     expect(within(chips).queryByRole("button", { name: "Auf später verschieben" })).not.toBeInTheDocument();

@@ -81,6 +81,21 @@ describe("rail configuration", () => {
     ]);
   });
 
+  it("falls back to defaults when an old stored favorite is task.discard", () => {
+    window.localStorage.setItem(
+      "machbar:rail-favorites:1",
+      JSON.stringify({
+        task: ["task.plan", "task.waitingLifecycle", "task.discard"],
+      }),
+    );
+
+    expect(readRailFavorites("task", 1)).toEqual([
+      "task.plan",
+      "task.waitingLifecycle",
+      "task.split",
+    ]);
+  });
+
   it("rejects cross-kind commands even when three values are stored", () => {
     window.localStorage.setItem(
       "machbar:rail-favorites",

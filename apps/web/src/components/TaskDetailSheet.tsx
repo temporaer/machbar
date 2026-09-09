@@ -469,7 +469,9 @@ export function TaskDetailSheet() {
         .join(" · ")
     : "";
 
-  const runCommand = (command: (typeof taskRailCommands)[number] | "task.changeParent") => {
+  const runCommand = (
+    command: (typeof taskRailCommands)[number] | "task.changeParent" | "task.discard",
+  ) => {
     if (!task) return;
     if (command === "task.lifecycle") {
       setLifecycleOpen((current) => !current);

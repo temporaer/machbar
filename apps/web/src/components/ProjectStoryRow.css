@@ -399,30 +399,12 @@
   background: var(--color-surface-alt);
 }
 
-/* Auto-flows into grid row 2 of `.story-row`, below the swipe/content cell — see `.task-row-chips` for the same pattern. */
-.story-row-chips {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px 10px 10px;
-  /* Tinted to match `.story-row-swipe-bg.chips`, the reveal it continues. */
-  background: color-mix(in srgb, var(--color-danger) 10%, var(--color-surface-alt));
-}
-
-.story-row-chips .btn {
-  min-height: 40px;
-  padding: 8px 14px;
-}
-
 /*
  * Opened either by a right-swipe past the primary threshold or by tapping
  * the status control directly (see `ProjectDetailPage.tsx`, which renders
  * this class outside of any `.story-row-accent-*` wrapper — the neutral
  * base rule below covers that case). Mutually exclusive with
- * `.story-row-chips`, so both share the same grid auto-flow slot.
+ * `.work-item-command-rail`, so both share the same grid auto-flow slot.
  */
 .story-row-lifecycle {
   position: relative;

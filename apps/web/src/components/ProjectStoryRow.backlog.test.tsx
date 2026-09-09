@@ -242,15 +242,15 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     swipe(container, -100);
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
     expect(within(chips).getByRole("button", { name: "Wiedervorlegen" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Verantwortliche Person" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Person ändern" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Arbeit planen" })).toBeInTheDocument();
     expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
 
     await openRailOverflow(chips);
     expect(within(chips).getByRole("button", { name: "Ergebnis bearbeiten" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Tags" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Ort" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Status" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Tags bearbeiten" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Orte bearbeiten" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Status ändern" })).toBeInTheDocument();
 
     // Closing and reopening via the kebab (no swipe gesture at all).
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
@@ -259,14 +259,14 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
   });
 
-  it("assigns a driver via the 'Verantwortliche Person' rail command without activating the story", async () => {
+  it("assigns a driver via the 'Person ändern' rail command without activating the story", async () => {
     const story = makeProject({ id: 15, title: "Keller aufräumen", status: "backlog", ownerMemberId: null });
     mockedApi.updateProject.mockResolvedValue({ ...story, ownerMemberId: 2 });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Keller aufräumen");
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Verantwortliche Person" }));
+    await userEvent.click(screen.getByRole("button", { name: "Person ändern" }));
 
     // Clearing the driver is legal while the story sits in the backlog, so the
     // "Niemand zugewiesen" chip is offered and starts pressed.

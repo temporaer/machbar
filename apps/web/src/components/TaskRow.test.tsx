@@ -425,12 +425,18 @@ describe("TaskRow – primary swipe direction mapping", () => {
       expect(button).toHaveClass("btn", "btn-sm");
       expect(button.textContent).toBe(name);
     }
-    expect(screen.getByText("Mehr …")).toBeInTheDocument();
+    const mainGrid = screen.getByRole("group", { name: "Weitere Aktionen" }).querySelector(".rail-main-grid");
+    expect(mainGrid).toHaveClass("rail-main-grid");
+    expect(mainGrid?.querySelectorAll("button")).toHaveLength(4);
+    expect(screen.queryByRole("group", { name: "Mehr …" })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByText("Mehr …"));
-    for (const name of ["Zuweisen", "Projekt ändern", "Folgeaufgabe anlegen", "Status"]) {
+    expect(mainGrid?.querySelectorAll("button")).toHaveLength(4);
+    expect(screen.getByRole("group", { name: "Mehr …" })).toHaveClass("rail-overflow-grid");
+    for (const name of ["Person ändern", "In Projekt verschieben", "Nächsten Schritt hinzufügen", "Status ändern"]) {
       expect(screen.getByRole("button", { name })).toBeInTheDocument();
     }
+    expect(screen.queryByRole("button", { name: "Verwerfen" })).not.toBeInTheDocument();
   });
 
   it("adds a successor from the rail overflow and returns focus to the task", async () => {
@@ -459,7 +465,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await userEvent.click(screen.getByText("Mehr …"));
     await userEvent.click(
       screen.getByRole("button", {
-        name: "Folgeaufgabe anlegen",
+        name: "Nächsten Schritt hinzufügen",
       }),
     );
     await userEvent.type(
@@ -648,7 +654,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByText("Mehr …"));
-    await userEvent.click(screen.getByRole("button", { name: "Zuweisen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Person ändern" }));
 
     const group = await screen.findByRole("group", { name: "Zuständig" });
     expect(group.closest(".sheet-backdrop")?.parentElement).toBe(document.body);
@@ -688,7 +694,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByText("Mehr …"));
-    await userEvent.click(screen.getByRole("button", { name: "Zuweisen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Person ändern" }));
     await userEvent.click(
       within(await screen.findByRole("group", { name: "Zuständig" })).getByRole(
         "button",
@@ -754,8 +760,8 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByText("Mehr …"));
 
-    expect(screen.getByRole("button", { name: "Zuweisen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Status" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Person ändern" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Status ändern" })).toBeInTheDocument();
   });
 
 });

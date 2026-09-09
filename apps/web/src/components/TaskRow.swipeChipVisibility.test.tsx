@@ -55,7 +55,7 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     swipe(container, -100);
 
     const row = container.querySelector(".task-row") as HTMLElement;
-    const chips = container.querySelector(".task-row-chips") as HTMLElement;
+    const chips = container.querySelector(".work-item-command-rail") as HTMLElement;
     const content = container.querySelector(".task-row-content") as HTMLElement;
     expect(chips).toBeInTheDocument();
     // Chips are a direct child of the row, never nested inside the
@@ -94,7 +94,7 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
 
     // And the chip strip itself (a separate grid row, not the swipe cell)
     // must never adopt the danger/cancel background class used for the row.
-    const chips = container.querySelector(".task-row-chips") as HTMLElement;
+    const chips = container.querySelector(".work-item-command-rail") as HTMLElement;
     expect(chips.className).not.toContain("task-row-swipe-bg");
     expect(chips.className).not.toContain("cancel");
   });

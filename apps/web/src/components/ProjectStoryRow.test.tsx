@@ -432,15 +432,19 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     swipe(container, -100);
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
     expect(within(chips).getByRole("button", { name: "Wiedervorlegen" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Verantwortliche Person" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Person ändern" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Arbeit planen" })).toBeInTheDocument();
     expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
+    const mainGrid = chips.querySelector(".rail-main-grid");
+    expect(mainGrid?.querySelectorAll("button")).toHaveLength(4);
 
     await openRailOverflow(chips);
+    expect(mainGrid?.querySelectorAll("button")).toHaveLength(4);
+    expect(within(chips).getByRole("group", { name: "Mehr …" })).toHaveClass("rail-overflow-grid");
     expect(within(chips).getByRole("button", { name: "Ergebnis bearbeiten" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Tags" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Ort" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Status" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Tags bearbeiten" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Orte bearbeiten" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Status ändern" })).toBeInTheDocument();
   });
 
   it("offers only legal transitions in the lifecycle rail for a completed and an archived story", async () => {
@@ -487,7 +491,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await screen.findByText("Driver-Regel");
 
     const chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Verantwortliche Person" }));
+    await userEvent.click(within(chips).getByRole("button", { name: "Person ändern" }));
 
     const group = screen.getByRole("group", { name: "Verantwortlich" });
     expect(within(group).queryByRole("button", { name: "Niemand zugewiesen" })).not.toBeInTheDocument();
@@ -513,7 +517,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await screen.findByText("Backlog-Driver");
 
     const chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Verantwortliche Person" }));
+    await userEvent.click(within(chips).getByRole("button", { name: "Person ändern" }));
 
     const group = screen.getByRole("group", { name: "Verantwortlich" });
     expect(within(group).getByRole("button", { name: "Niemand zugewiesen" })).toBeInTheDocument();
@@ -620,12 +624,12 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     await userEvent.click(within(firstRow).getByRole("button", { name: "Weitere Aktionen" }));
     await openRailOverflow(within(firstRow).getByRole("group", { name: "Weitere Aktionen" }));
-    expect(within(firstRow).getByRole("button", { name: "Tags" })).toBeInTheDocument();
+    expect(within(firstRow).getByRole("button", { name: "Tags bearbeiten" })).toBeInTheDocument();
 
     await userEvent.click(within(secondRow).getByRole("button", { name: "Weitere Aktionen" }));
     expect(within(secondRow).getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
     expect(within(firstRow).queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
-    expect(secondRow.querySelector(".work-item-command-overflow")).not.toHaveAttribute("open");
+    expect(secondRow.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
   });
 
   it("navigates to the project page through the explicit 'Arbeit planen' action", async () => {
@@ -1059,7 +1063,7 @@ describe("ProjectStoryRow – configurable text command rail", () => {
     await screen.findByText("Kompakte Chips");
 
     const chips = openChips();
-    for (const name of ["Wiedervorlegen", "Verantwortliche Person", "Arbeit planen"]) {
+    for (const name of ["Wiedervorlegen", "Person ändern", "Arbeit planen"]) {
       const button = within(chips).getByRole("button", { name });
       expect(button).toHaveClass("btn", "btn-sm");
       expect(button.textContent).toBe(name);
@@ -1067,7 +1071,7 @@ describe("ProjectStoryRow – configurable text command rail", () => {
 
     expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
     await openRailOverflow(chips);
-    for (const name of ["Ergebnis bearbeiten", "Tags", "Ort", "Status"]) {
+    for (const name of ["Ergebnis bearbeiten", "Tags bearbeiten", "Orte bearbeiten", "Status ändern"]) {
       expect(within(chips).getByRole("button", { name })).toBeInTheDocument();
     }
   });
