@@ -44,6 +44,18 @@ function addDaysIso(dateIso: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+function descendantIds(task: TaskRecord): number[] {
+  const ids: number[] = [];
+  const walk = (children: TaskRecord[]) => {
+    for (const child of children) {
+      ids.push(child.id);
+      if (child.children.length > 0) walk(child.children);
+    }
+  };
+  walk(task.children);
+  return ids;
+}
+
 export function createAgendaSelection(
   graph: Graph,
   options: AgendaSelectionOptions = {},
@@ -158,6 +170,9 @@ export function selectCurrentAvailableWork(
       task.externalWait.revisitDate <= options.today
     ) {
       takenByCurrentAttention.add(task.id);
+      for (const descendantId of descendantIds(task)) {
+        takenByCurrentAttention.add(descendantId);
+      }
       continue;
     }
     if (
@@ -170,6 +185,9 @@ export function selectCurrentAvailableWork(
         (!!task.dueDate && task.dueDate <= soonLimit))
     ) {
       takenByCurrentAttention.add(task.id);
+      for (const descendantId of descendantIds(task)) {
+        takenByCurrentAttention.add(descendantId);
+      }
     }
   }
 

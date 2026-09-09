@@ -121,6 +121,25 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Machbar ohne Termin")).toEqual(["unscheduled"]);
   });
 
+  it("does not duplicate an unscheduled child already visible under a selected parent", async () => {
+    const parent = await createTask({
+      title: "Heute ausgewählte Elternaufgabe",
+      scheduledDate: today,
+    });
+    await createTask({
+      title: "Nur als Unteraufgabe sichtbar",
+      parentTaskId: parent.id,
+    });
+
+    const agenda = await getAgenda();
+    expect(titlesOf(agenda.unscheduled)).not.toContain("Nur als Unteraufgabe sichtbar");
+    expect(
+      agenda.planned.flatMap((task: { children: Array<{ title: string }> }) =>
+        task.children.map((child) => child.title),
+      ),
+    ).toContain("Nur als Unteraufgabe sichtbar");
+  });
+
   it("keeps executable tasks discoverable before their deadline enters due soon", async () => {
     const ownerRes = await ctx.app.inject({
       method: "POST",
