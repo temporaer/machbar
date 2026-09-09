@@ -104,13 +104,21 @@ describe("effective owner and typed-tag inheritance", () => {
         payload: { title: "Nachfolger" },
       })
     ).json();
-    const sequence = (
+    const sequenceFirst = (
       await ctx.app.inject({
         method: "POST",
-        url: `/api/projects/${project.id}/task-sequence`,
-        payload: { titles: ["Ablauf eins", "Ablauf zwei"] },
+        url: "/api/tasks",
+        payload: { projectId: project.id, title: "Ablauf eins" },
       })
     ).json();
+    const sequenceSecond = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        payload: { projectId: project.id, title: "Ablauf zwei" },
+      })
+    ).json();
+    const sequence = [sequenceFirst, sequenceSecond];
     const captured = (
       await ctx.app.inject({
         method: "POST",

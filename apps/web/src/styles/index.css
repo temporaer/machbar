@@ -295,19 +295,6 @@ a {
   margin: 0;
 }
 
-.project-detail-criteria-button {
-  border-radius: 16px;
-  align-items: stretch;
-  flex-direction: column;
-  min-width: 150px;
-}
-
-.project-detail-criteria-button .criteria-progress {
-  display: block;
-  width: 100%;
-  margin-top: 2px;
-}
-
 @media (min-width: 560px) {
   .project-page-title-row {
     align-items: center;
@@ -2683,11 +2670,6 @@ details[open] > .disclosure-summary::after {
   opacity: 0.85;
 }
 
-/* The task the single selected-task toolbar currently acts on. */
-.task-row-content.organize-selected {
-  border-color: var(--color-primary);
-}
-
 /* A structural move is in flight; the row already shows its new place. */
 .task-row-content.moving {
   opacity: 0.7;
@@ -2845,6 +2827,45 @@ details[open] > .disclosure-summary::after {
 .icon-action-button svg {
   width: 19px;
   height: 19px;
+}
+
+.action-tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.action-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: left;
+}
+
+.action-tile:hover {
+  background: var(--color-surface-alt);
+}
+
+.action-tile:disabled {
+  opacity: 0.45;
+}
+
+.action-tile svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.action-tile-label {
+  font-size: 0.92rem;
+  line-height: 1.2;
 }
 
 .quick-capture-choices {
@@ -3235,6 +3256,19 @@ details[open] > .disclosure-summary::after {
   font-weight: 600;
 }
 
+.task-row-next-action-badge {
+  font-weight: 600;
+}
+
+.task-row-next-action-canonical,
+.task-row-next-action-additional {
+  color: var(--color-primary);
+}
+
+.task-row-next-action-marked {
+  color: var(--color-text-muted);
+}
+
 .task-row-notes {
   display: -webkit-box;
   margin-top: 6px;
@@ -3360,8 +3394,7 @@ details[open] > .disclosure-summary::after {
   touch-action: none;
 }
 
-.task-row-drag-handle:hover,
-.task-row-drag-handle[aria-pressed="true"] {
+.task-row-drag-handle:hover {
   background: var(--color-surface-alt);
   color: var(--color-primary);
 }
@@ -3390,38 +3423,6 @@ details[open] > .disclosure-summary::after {
   height: 8px;
   border-radius: 50%;
   background: var(--color-primary);
-}
-
-.task-organize-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-  padding: 8px;
-  background: var(--color-surface-alt);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-}
-
-.task-organize-bar-title {
-  font-size: 0.8rem;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-organize-bar-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.task-organize-bar-actions .btn {
-  min-height: 40px;
 }
 
 .visually-hidden {
@@ -4019,6 +4020,33 @@ details[open] > .disclosure-summary::after {
   width: 18px;
   height: 18px;
   flex: none;
+}
+
+.criteria-checklist-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.criteria-checklist-row label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.criteria-checklist-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.criteria-checklist-text-done {
+  text-decoration: line-through;
+  color: var(--color-text-muted);
 }
 
 .lifecycle-actions {

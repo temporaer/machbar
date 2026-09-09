@@ -118,6 +118,8 @@ const en = {
   addPlan: "+ Plan",
   addWaiting: "+ Waiting for",
   addOwner: "+ Assign",
+  addTags: "+ Tags",
+  addContexts: "+ Places",
   dependencies: "Dependencies",
   subtasks: "Subtasks",
   waitingFor: "Waiting for",
@@ -130,10 +132,6 @@ const en = {
   cancelled: "Discarded",
   clarify: "Clarify",
   organize: "Reorder",
-  moveUp: "Move up",
-  moveDown: "Move down",
-  indent: "Indent",
-  outdent: "Outdent",
   keyboardHelp: "Keyboard help",
   commandGroupLabels: {
     navigation: "Views",
@@ -142,8 +140,6 @@ const en = {
     structure: "Structure",
     help: "Help",
   },
-  changeParent: "Change parent task",
-  moveProject: "Move to project",
   search: "Search",
   filter: "Filter",
   noItems: "Nothing needs your attention here.",
@@ -262,7 +258,6 @@ const en = {
   removeDependency: "Remove",
   resolved: "Resolved",
   unresolved: "Open",
-  exitOrganizeMode: "Done",
   moveTask: "Move",
   dragHint: "Drag the handle or press and hold to move the task",
   moveFailed: "Could not move task",
@@ -272,7 +267,6 @@ const en = {
   selectParent: "Choose parent task",
   selectProject: "Choose project",
   noParent: "None (top level)",
-  refile: "File",
   collapse: "Collapse",
   expand: "Expand",
   taskDetails: "Details",
@@ -282,7 +276,6 @@ const en = {
   subtaskSummary: (count: number) =>
     `${count} ${count === 1 ? "subtask" : "subtasks"}`,
   noSubtasks: "No subtasks",
-  taskOrganizationSection: "Organization",
   taskDangerSection: "Danger zone",
   created: "Created",
   updated: "Updated",
@@ -391,7 +384,6 @@ const en = {
   onlyThisTaskCancel: "Discard only this task",
   addChild: "Add subtask",
   moveHere: "Move here",
-  organizeControls: "Reordering tools",
   subtreeHint: "Moves this task together with all its subtasks.",
   changeParentTitle: "New parent task",
   moveProjectTitle: "Move to another project",
@@ -443,14 +435,6 @@ const en = {
     count === 1 ? "Create 1 subtask" : `Create ${count} subtasks`,
   addSuccessor: "Add the next step after this",
   successorPlaceholder: "Next step",
-  addSequence: "Add a sequence",
-  sequenceSteps: "Steps in order",
-  sequencePlaceholder:
-    "Get a quote\nBook an appointment\nCheck the work\nPay the invoice",
-  sequenceHint:
-    "One step per line. Each later step waits for the previous one.",
-  addSequenceCount: (count: number) =>
-    count < 2 ? "At least two steps" : `Add ${count} steps`,
   deleteTaskConfirm: "Permanently delete this task?",
   deleteProject: "Delete project",
   deleteProjectConfirm:
@@ -504,6 +488,24 @@ const en = {
     "story.contexts": "Place",
     "story.lifecycle": "Status",
   },
+  actionTileLabels: {
+    "task.split": "Split into steps",
+    "task.addSuccessor": "Add next step",
+    "task.changeProject": "Move to project",
+    "task.changeParent": "Change parent task",
+    "task.convertToProject": "Make project",
+    "task.priority": "Set priority",
+    "task.recurrence": "Set up recurrence",
+    "task.discard": "Discard",
+    "story.planWork": "Capture next task",
+    "story.assignDriver": "Change driver",
+    "story.planDates": "Plan dates",
+    "story.defer": "Resurface",
+    "story.editOutcome": "Edit outcome",
+    "story.tags": "Edit tags",
+    "story.contexts": "Edit places",
+    "story.lifecycle": "Change status",
+  },
   swipeCoachHint: (rightAction: string) =>
     `Swipe: right for “${rightAction}”, left for more. Or tap ⋯.`,
   swipeCoachDismiss: "Dismiss swipe hint",
@@ -520,6 +522,11 @@ const en = {
     weekend: "Weekend",
   },
   moreActions: "More actions",
+  nextActionBadgeCanonical: "Next Action",
+  nextActionBadgeAdditional: "Next Action · parallel",
+  nextActionBadgeMarked: "parallel",
+  markAdditionalNextAction: "Mark as additional next action",
+  unmarkAdditionalNextAction: "Unmark as additional next action",
   toProject: "Project",
   noProjectChipHint: "No project assigned",
   primarySwipeActionLabels: {
@@ -605,6 +612,9 @@ const en = {
     "The project lead can only be removed after moving the project back to “Later / not active yet.”",
   noDriver: "Unassigned",
   criteria: "Done when…",
+  outcomeSectionTitle: "Outcome",
+  outcomeSectionCount: (done: number, total: number) => `${done}/${total}`,
+  outcomeSectionEmpty: "It has not been decided what done looks like yet.",
   planDates: "Set revisit",
   planDatesTitle: "Revisit & deadline",
   taskSummary: "Tasks",
@@ -1031,7 +1041,6 @@ const en = {
       "This inbox item cannot be converted to a project in its current state.",
     role_conversion_invalid:
       "Remove conflicting task-only details before converting this task to a project.",
-    task_sequence_too_short: "A task sequence needs at least two steps.",
     task_title_required: "Enter a task title.",
     external_wait_reason_required: "Enter what this task is waiting for.",
     waiting_query_invalid: "The Waiting query is invalid.",
@@ -1048,12 +1057,6 @@ const en = {
     `The tag “${name}” already exists with a different type.`,
   apiErrorOidcNameConflict: (name: string) =>
     `The Pocket ID name “${name}” is already in use.`,
-  apiErrorTaskSequenceTooShort: (minimum: number, provided?: number) =>
-    `A task sequence needs at least ${minimum} named steps${
-      provided === undefined
-        ? "."
-        : `; ${provided} ${provided === 1 ? "was" : "were"} provided.`
-    }`,
   apiErrorProjectTransitionInvalid: (
     currentStatus: string,
     action: string,

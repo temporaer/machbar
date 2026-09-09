@@ -20,6 +20,7 @@ import { TaskOutline } from "../components/TaskOutline";
 import { filterAndSortProjects } from "../lib/projectListFilter";
 import { useLocale } from "../lib/locale";
 import { sortInventoryTasks } from "../lib/sortOrder";
+import { recencyRankLookup } from "../lib/recentlyViewed";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 
@@ -40,7 +41,7 @@ export function AllPage() {
     loading: tasksLoading,
     error: tasksError,
     reload: reloadTasks,
-  } = useAsync(() => api.searchTasks(filters), [filtersKey]);
+  } = useAsync(() => api.searchTasks({ ...filters, includeTerminal: true }), [filtersKey]);
   const filteredProjects = useMemo(
     () =>
       filterAndSortProjects(filterInventoryProjects(projects ?? [], filters), {
@@ -60,6 +61,7 @@ export function AllPage() {
         ),
     filters.text ?? "",
     locale,
+    { recencyRank: recencyRankLookup("task") },
   );
   const loading = projectsLoading || tasksLoading;
   const error = projectsError ?? tasksError;

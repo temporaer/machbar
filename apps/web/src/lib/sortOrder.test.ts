@@ -29,7 +29,7 @@ describe("presentation ordering", () => {
     ]);
   });
 
-  it("orders project destinations by lifecycle before title", () => {
+  it("orders project destinations by lifecycle before title, excluding completed/archived", () => {
     const projects = [
       makeProject({ id: 1, title: "A", status: "archived" }),
       makeProject({ id: 2, title: "Z", status: "active" }),
@@ -39,7 +39,7 @@ describe("presentation ordering", () => {
 
     expect(
       sortProjectDestinations(projects, "de").map((project) => project.id),
-    ).toEqual([2, 3, 4, 1]);
+    ).toEqual([2, 3]);
   });
 
   it("sorts inventory tasks by match quality, lifecycle, and title", () => {
@@ -58,7 +58,7 @@ describe("presentation ordering", () => {
     ]);
   });
 
-  it("ranks dependency candidates by match, project, open state, and title", () => {
+  it("ranks dependency candidates by match, project, and title, excluding terminal tasks", () => {
     const existing = makeTask({ id: 8, title: "Existing" });
     const current = makeTask({
       id: 10,
@@ -86,7 +86,66 @@ describe("presentation ordering", () => {
       sortDependencyCandidates(candidates, current, "Freigabe", "de").map(
         (task) => task.id,
       ),
-    ).toEqual([2, 1, 3, 4]);
+    ).toEqual([2, 3, 4]);
+  });
+
+  it("orders by temporal relevance after text quality, without letting a distant date win", () => {
+    const today = "2026-06-15";
+    const tasks = [
+      makeTask({ id: 1, title: "Termin weit weg", scheduledDate: "2027-01-01" }),
+      makeTask({ id: 2, title: "Termin bald", scheduledDate: "2026-06-20" }),
+      makeTask({ id: 3, title: "Termin heute", scheduledDate: today }),
+      makeTask({ id: 4, title: "Ohne Termin" }),
+    ];
+
+    expect(
+      sortInventoryTasks(tasks, "", "de", { today }).map((task) => task.id),
+    ).toEqual([3, 2, 4, 1]);
+
+    // A weaker text match with a near-term date still loses to a clearly
+    // better title match with no date at all.
+    const withBetterMatch = [
+      makeTask({ id: 5, title: "Farbe", scheduledDate: "2027-01-01" }),
+      makeTask({ id: 6, title: "Farbe bestellen bald", scheduledDate: today }),
+    ];
+    expect(
+      sortInventoryTasks(withBetterMatch, "Farbe", "de", { today }).map(
+        (task) => task.id,
+      ),
+    ).toEqual([5, 6]);
+  });
+
+  it("uses recent-use as a soft tiebreaker that never beats text quality", () => {
+    const tasks = [
+      makeTask({ id: 1, title: "Farbe kaufen" }),
+      makeTask({ id: 2, title: "Farbe bestellen" }),
+      makeTask({ id: 3, title: "Wandfarbe wählen" }),
+    ];
+    const recencyRank = (id: number) => (id === 2 ? 0 : Number.POSITIVE_INFINITY);
+
+    // Tie between id 1 and id 2 (both title-prefix matches) is broken by
+    // recency; id 3 is a weaker (substring-only) match and stays last
+    // regardless of any recency boost.
+    expect(
+      sortInventoryTasks(tasks, "Farbe", "de", { recencyRank }).map(
+        (task) => task.id,
+      ),
+    ).toEqual([2, 1, 3]);
+  });
+
+  it("excludes done/cancelled tasks from dependency candidates entirely", () => {
+    const current = makeTask({ id: 10, projectId: 5 });
+    const candidates = [
+      makeTask({ id: 1, title: "Freigabe", status: "done", projectId: 5 }),
+      makeTask({ id: 2, title: "Freigabe", status: "cancelled", projectId: 5 }),
+      makeTask({ id: 3, title: "Freigabe", status: "actionable", projectId: 5 }),
+    ];
+
+    expect(
+      sortDependencyCandidates(candidates, current, "", "de").map(
+        (task) => task.id,
+      ),
+    ).toEqual([3]);
   });
 
   it("lists unresolved dependencies first and then by localized title", () => {

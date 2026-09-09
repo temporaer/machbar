@@ -330,6 +330,11 @@ export const workItems = sqliteTable(
     repeatAfterDays: integer("repeat_after_days"), // task-only
     allowedDeviationDays: integer("allowed_deviation_days"), // task-only
     reminderAt: text("reminder_at"), // task-only
+    additionalNextAction: integer("additional_next_action", {
+      mode: "boolean",
+    })
+      .notNull()
+      .default(false), // task-only, explicit opt-in for extra concurrent next-action eligibility
     createdAt: text("created_at")
       .notNull()
       .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),

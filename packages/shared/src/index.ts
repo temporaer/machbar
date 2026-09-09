@@ -181,7 +181,6 @@ export type ApiErrorCode =
   | "task_parent_self"
   | "task_promotion_invalid"
   | "role_conversion_invalid"
-  | "task_sequence_too_short"
   | "task_title_required"
   | "external_wait_reason_required"
   | "waiting_query_invalid"
@@ -412,6 +411,15 @@ export interface Project {
   openCount?: number;
   doneCount?: number;
   nextAction?: Task | null;
+  /**
+   * Tasks explicitly opted in via `additionalNextAction` that are currently
+   * genuinely eligible (active, unblocked) alongside the canonical
+   * `nextAction` — see `Graph.additionalSelectedNextActionsFor`. Stored
+   * intent (`task.additionalNextAction === true`) survives even when a task
+   * is not currently in this list (e.g. blocked); this list only reflects
+   * current derived eligibility.
+   */
+  additionalNextActions?: Task[];
   stuckReason?: StuckReason | null;
   waitingOn?: string[];
   waitingUntil?: string | null;
@@ -467,6 +475,7 @@ export interface Task {
   repeatAfterDays: number | null;
   allowedDeviationDays: number | null;
   reminderAt: string | null;
+  additionalNextAction: boolean;
   createdAt: string;
   updatedAt: string;
   reviewedAt: string | null;
@@ -542,6 +551,7 @@ export interface ProjectAgendaEntry {
   qualification: ProjectAgendaQualification;
   nextAction: Task | null;
   nextActionContextAvailability: ContextAvailability | null;
+  additionalNextActions: Task[];
   stuck: {
     reason: StuckReason;
   } | null;
@@ -779,4 +789,11 @@ export interface SearchFilters {
   scheduledTo?: string;
   blocked?: boolean;
   externalWait?: boolean;
+  /**
+   * Opts an exhaustive-inventory view (e.g. the All page) into seeing
+   * done/cancelled tasks without the caller picking a specific `status`.
+   * Focused pickers (dependency selection, move destinations, etc.) omit
+   * this and get done/cancelled excluded by default.
+   */
+  includeTerminal?: boolean;
 }

@@ -179,6 +179,11 @@ export function buildAgenda(
       )[0] ?? null;
       const canonicalNextAction = graph.nextActionFor(project.id);
       const nextAction = availableNextAction ?? canonicalNextAction;
+      const additionalNextActions = graph.additionalSelectedNextActionsFor(
+        project.id,
+        selection.laneSelection,
+        isContextAvailable,
+      );
       const stuckProject = canonicalNextAction
         ? undefined
         : stuckByProject.get(project.id);
@@ -190,6 +195,7 @@ export function buildAgenda(
           nextActionContextAvailability: nextAction
             ? contextAvailability(nextAction)
             : null,
+          additionalNextActions,
           stuck: stuckProject
             ? {
                 reason: stuckProject.stuckReason,

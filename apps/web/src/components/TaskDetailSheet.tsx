@@ -24,7 +24,6 @@ import { LoadingState, ErrorState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
-import { MoveTaskSheet } from "./MoveTaskSheet";
 import { MemberLabel } from "./MemberAvatar";
 import { TaskCardTags } from "./TaskCardTags";
 import {
@@ -48,6 +47,7 @@ import {
   sortDependencies,
   sortDependencyCandidates,
 } from "../lib/sortOrder";
+import { recencyRankLookup, recordRecentlyViewed } from "../lib/recentlyViewed";
 import {
   containsPaperlessReference,
   extractPaperlessReferences,
@@ -57,7 +57,7 @@ import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
 import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
 import { WorkItemDetailDisclosure } from "./WorkItemDetailSection";
 import { taskRailCommands } from "../lib/railConfig";
-import { CommandCategoryGrid } from "./CommandCategoryGrid";
+import { ActionTileGrid } from "./ActionTileGrid";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -101,7 +101,6 @@ export function TaskDetailSheet() {
   const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
   const taskWorkflow = useTaskWorkflow();
-  const [movePrompt, setMovePrompt] = useState<"parent" | null>(null);
   const [depQuery, setDepQuery] = useState("");
   const [depResults, setDepResults] = useState<Task[]>([]);
   const [dependencyError, setDependencyError] = useState<{
@@ -142,6 +141,12 @@ export function TaskDetailSheet() {
   const task = loadedTask
     ? (taskActions.retained.get(loadedTask.id) ?? loadedTask)
     : null;
+
+  // Recency is a soft ranking boost for search/pickers, not domain state —
+  // record it once per genuine open, not on every re-render/reload.
+  useEffect(() => {
+    if (openTaskId) recordRecentlyViewed("task", openTaskId);
+  }, [openTaskId]);
   const {
     data: recurrenceHistory,
     loading: recurrenceHistoryLoading,
@@ -395,7 +400,9 @@ export function TaskDetailSheet() {
       const results = await api.searchTasks({ text: value });
       setDepResults(
         task
-          ? sortDependencyCandidates(results, task, value, locale).slice(0, 8)
+          ? sortDependencyCandidates(results, task, value, locale, {
+              recencyRank: recencyRankLookup("task"),
+            }).slice(0, 8)
           : [],
       );
     } catch (err) {
@@ -462,7 +469,7 @@ export function TaskDetailSheet() {
         .join(" · ")
     : "";
 
-  const runCommand = (command: (typeof taskRailCommands)[number]) => {
+  const runCommand = (command: (typeof taskRailCommands)[number] | "task.changeParent") => {
     if (!task) return;
     if (command === "task.lifecycle") {
       setLifecycleOpen((current) => !current);
@@ -681,32 +688,42 @@ export function TaskDetailSheet() {
                 <span>{task.priority}</span>
               </button>
             ) : null}
-            {task.effectiveTags.length > 0 ||
-            task.effectiveContexts.length > 0 ? (
+            {task.effectiveTags.length > 0 ? (
               <button
                 type="button"
                 className="detail-meta-button detail-meta-label-button"
-                aria-label={
-                  task.effectiveContexts.length > 0 &&
-                  task.effectiveTags.length === 0
-                    ? strings.physicalContexts
-                    : strings.tags
-                }
-                onClick={() =>
-                  runCommand(
-                    task.effectiveContexts.length > 0 &&
-                      task.effectiveTags.length === 0
-                      ? "task.contexts"
-                      : "task.tags",
-                  )
-                }
+                aria-label={strings.tags}
+                onClick={() => runCommand("task.tags")}
               >
-                <TaskCardTags
-                  tags={task.effectiveTags}
-                  contexts={task.effectiveContexts}
-                />
+                <TaskCardTags tags={task.effectiveTags} />
               </button>
-            ) : null}
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost task-detail-add-property"
+                onClick={() => runCommand("task.tags")}
+              >
+                {strings.addTags}
+              </button>
+            )}
+            {task.effectiveContexts.length > 0 ? (
+              <button
+                type="button"
+                className="detail-meta-button detail-meta-label-button"
+                aria-label={strings.physicalContexts}
+                onClick={() => runCommand("task.contexts")}
+              >
+                <TaskCardTags tags={[]} contexts={task.effectiveContexts} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost task-detail-add-property"
+                onClick={() => runCommand("task.contexts")}
+              >
+                {strings.addContexts}
+              </button>
+            )}
           </div>
 
           {lifecycleOpen ? (
@@ -1004,67 +1021,103 @@ export function TaskDetailSheet() {
             resetKey={task.id}
             className="task-detail-commands"
           >
-            <CommandCategoryGrid
-              commands={taskRailCommands.filter(
-                (command) =>
-                  command !== "task.lifecycle" &&
-                  // Reparenting/filing into a project and splitting into
-                  // steps both require a classified task server-side
-                  // (`task_promotion_invalid`); an unclassified capture must
-                  // go through the capture-shape actions above instead.
-                  (!taskIsCapturedInboxItem ||
-                    (command !== "task.changeProject" && command !== "task.split")),
-              )}
-              labels={strings.railCommandLabels}
-              onCommand={runCommand}
+            <ActionTileGrid
+              items={[
+                ...(!taskIsCapturedInboxItem
+                  ? ([
+                      {
+                        key: "task.split",
+                        icon: "split" as const,
+                        label: strings.actionTileLabels["task.split"],
+                        onClick: () => runCommand("task.split"),
+                      },
+                      {
+                        key: "task.changeProject",
+                        icon: "project" as const,
+                        label: strings.actionTileLabels["task.changeProject"],
+                        onClick: () => runCommand("task.changeProject"),
+                      },
+                      {
+                        key: "task.changeParent",
+                        icon: "child" as const,
+                        label: strings.actionTileLabels["task.changeParent"],
+                        onClick: () => runCommand("task.changeParent"),
+                      },
+                      {
+                        key: "task.convertToProject",
+                        icon: "openProject" as const,
+                        label: strings.actionTileLabels["task.convertToProject"],
+                        onClick: () => runCommand("task.convertToProject"),
+                      },
+                    ] as const)
+                  : []),
+                {
+                  key: "task.addSuccessor",
+                  icon: "successor" as const,
+                  label: strings.actionTileLabels["task.addSuccessor"],
+                  onClick: () => runCommand("task.addSuccessor"),
+                },
+                ...(task.priority === null
+                  ? [
+                      {
+                        key: "task.priority",
+                        icon: "priority" as const,
+                        label: strings.actionTileLabels["task.priority"],
+                        onClick: () => runCommand("task.priority"),
+                      },
+                    ]
+                  : []),
+                ...(task.repeatAfterDays === null
+                  ? [
+                      {
+                        key: "task.recurrence",
+                        icon: "recurrence" as const,
+                        label: strings.actionTileLabels["task.recurrence"],
+                        onClick: () => runCommand("task.recurrence"),
+                      },
+                    ]
+                  : []),
+                {
+                  key: "task.discard",
+                  icon: "discard" as const,
+                  label: strings.actionTileLabels["task.discard"],
+                  onClick: () => runCommand("task.discard"),
+                },
+                ...(!taskIsCapturedInboxItem && task.projectId !== null
+                  ? [
+                      {
+                        key: "task.toggleAdditionalNextAction",
+                        icon: "actionable" as const,
+                        label: task.additionalNextAction
+                          ? strings.unmarkAdditionalNextAction
+                          : strings.markAdditionalNextAction,
+                        onClick: () =>
+                          dispatch({ type: "task.toggleAdditionalNextAction", task }),
+                      },
+                    ]
+                  : []),
+              ]}
             />
           </WorkItemDetailDisclosure>
 
-          {!taskIsCapturedInboxItem ? (
-            <WorkItemDetailDisclosure
-              title={strings.taskOrganizationSection}
-              resetKey={task.id}
-            >
-              <div className="field">
-              <label>{strings.organizeControls}</label>
-              <div className="row" style={{ flexWrap: "wrap" }}>
-                <button type="button" className="btn btn-sm" onClick={() => setMovePrompt("parent")}>
-                  {strings.changeParent}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  onClick={() => runCommand("task.changeProject")}
-                >
-                  {strings.moveProject}
-                </button>
-              </div>
-              </div>
-            </WorkItemDetailDisclosure>
-          ) : null}
-
           {task.repeatAfterDays !== null ||
           (recurrenceHistory?.summary.totalCount ?? 0) > 0 ? (
-            <section
-              className="recurrence-history"
-              aria-labelledby="recurrence-history-title"
-            >
-              <div className="row-between">
-                <h3 id="recurrence-history-title">
-                  {strings.recurrenceHistory}
-                </h3>
-                {recurrenceHistory &&
-                recurrenceHistory.summary.totalCount > 0 ? (
-                  <strong>
-                    {strings.recurrenceHitRate(
+            <WorkItemDetailDisclosure
+              title={strings.recurrenceHistory}
+              summary={
+                recurrenceHistory && recurrenceHistory.summary.totalCount > 0
+                  ? strings.recurrenceHitRate(
                       new Intl.NumberFormat(locale, {
                         style: "percent",
                         maximumFractionDigits: 0,
                       }).format(recurrenceHistory.summary.hitRate ?? 0),
-                    )}
-                  </strong>
-                ) : null}
-              </div>
+                    )
+                  : undefined
+              }
+              defaultOpen={task.repeatAfterDays !== null}
+              resetKey={task.id}
+              className="recurrence-history"
+            >
               {recurrenceHistoryLoading && !recurrenceHistory ? (
                 <p className="text-muted">{strings.loading}</p>
               ) : null}
@@ -1127,7 +1180,7 @@ export function TaskDetailSheet() {
                   </ul>
                 </>
               ) : null}
-            </section>
+            </WorkItemDetailDisclosure>
           ) : null}
 
           <RecentActivity
@@ -1177,17 +1230,6 @@ export function TaskDetailSheet() {
             reload();
           }}
           onClose={() => taskActions.cancelPrompt()}
-        />
-      ) : null}
-
-      {movePrompt && task ? (
-        <MoveTaskSheet
-          task={task}
-          mode={movePrompt}
-          onClose={() => {
-            setMovePrompt(null);
-            reload();
-          }}
         />
       ) : null}
     </BottomSheet>

@@ -37,6 +37,7 @@ vi.mock("../lib/api", () => ({
     getHomeAssistantStatus: vi.fn(),
     getTask: vi.fn(),
     updateTask: vi.fn(),
+    checkCriterion: vi.fn(),
     updateProject: vi.fn(),
     completeProject: vi.fn(),
     getActivity: vi.fn(),
@@ -277,12 +278,20 @@ describe("ProjectDetailPage task explanations", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      within(overview).getByRole("button", {
-        name: /Erledigt, wenn ….*0\/1/,
-      }),
-    ).toBeInTheDocument();
+      within(overview).queryByText(/Erledigt, wenn ….*0\/1/),
+    ).not.toBeInTheDocument();
     expect(within(overview).getByText("büro")).toBeInTheDocument();
     expect(within(overview).getByText("Zuhause")).toBeInTheDocument();
+    const outcome = screen
+      .getByRole("heading", { name: /^Ergebnis/, level: 2 })
+      .closest("section")!;
+    expect(within(outcome).getByText("0/1")).toBeInTheDocument();
+    expect(within(outcome).getByRole("checkbox", { name: "Ort steht" })).toBeInTheDocument();
+    expect(
+      within(outcome).getByRole("button", {
+        name: strings.actionTileLabels["story.editOutcome"],
+      }),
+    ).toBeInTheDocument();
 
     await userEvent.click(
       within(overview).getByRole("button", {
@@ -296,6 +305,70 @@ describe("ProjectDetailPage task explanations", () => {
       }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Wiedervorlage")).toHaveValue("10.09.2026");
+  });
+
+  it("checks outcome criteria directly and opens the canonical structural editor explicitly", async () => {
+    const criterion = makeCriterion({
+      id: 4,
+      projectId: 42,
+      text: "Ort steht",
+      checked: false,
+    });
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
+      acceptanceCriteria: [criterion],
+      tasks: [],
+    });
+    mockedApi.checkCriterion.mockResolvedValue(
+      makeProject({ id: 42, acceptanceCriteria: [{ ...criterion, checked: true }] }),
+    );
+    renderProjectRoute("/projects/42");
+
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Ort steht" }));
+    expect(mockedApi.checkCriterion).toHaveBeenCalledWith(42, 4, true);
+
+    const outcome = screen
+      .getByRole("heading", { name: /^Ergebnis/, level: 2 })
+      .closest("section")!;
+    await userEvent.click(
+      within(outcome).getByRole("button", {
+        name: strings.actionTileLabels["story.editOutcome"],
+      }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByPlaceholderText(strings.addCriterionPlaceholder)).toBeInTheDocument();
+  });
+
+  it("uses verb-labeled action tiles instead of a raw property-command dump", async () => {
+    renderProjectRoute("/projects/42");
+    await screen.findByText("Ort reservieren");
+
+    const actions = screen
+      .getByRole("heading", { name: strings.moreActions, level: 3 })
+      .closest("details")!;
+    await userEvent.click(
+      within(actions).getByRole("heading", {
+        name: strings.moreActions,
+        level: 3,
+      }),
+    );
+    for (const label of [
+      strings.actionTileLabels["story.planWork"],
+      strings.actionTileLabels["story.assignDriver"],
+      strings.actionTileLabels["story.planDates"],
+      strings.actionTileLabels["story.defer"],
+      strings.actionTileLabels["story.editOutcome"],
+      strings.actionTileLabels["story.tags"],
+      strings.actionTileLabels["story.contexts"],
+      strings.actionTileLabels["story.lifecycle"],
+    ]) {
+      expect(within(actions).getByRole("button", { name: label })).toBeVisible();
+    }
+    expect(
+      within(actions).queryByRole("button", {
+        name: strings.railCommandLabels["story.assignDriver"],
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("omits optional project facts when they have no value", async () => {
@@ -429,6 +502,49 @@ describe("ProjectDetailPage task explanations", () => {
     expect(await screen.findByText("Neue Notiz")).toBeInTheDocument();
   });
 
+  it("marks the derived canonical Next Action, an eligible additional one, and a merely-marked-but-blocked task distinctly", async () => {
+    const canonical = makeTask({ id: 7, projectId: 42, title: "Ort reservieren" });
+    const additional = makeTask({
+      id: 8,
+      projectId: 42,
+      title: "Menü abstimmen",
+      additionalNextAction: true,
+    });
+    const markedButBlocked = makeTask({
+      id: 9,
+      projectId: 42,
+      title: "Getränke bestellen",
+      additionalNextAction: true,
+      externalWait: { waitingFor: "Lieferant", revisitDate: null },
+    });
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
+      tasks: [canonical, additional, markedButBlocked],
+      nextAction: canonical,
+      additionalNextActions: [additional],
+    });
+
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByText("Ort reservieren");
+
+    const canonicalRow = screen.getByText("Ort reservieren").closest("li")!;
+    expect(within(canonicalRow).getByText(strings.nextActionBadgeCanonical)).toBeInTheDocument();
+
+    const additionalRow = screen.getByText("Menü abstimmen").closest("li")!;
+    expect(
+      within(additionalRow).getByText(strings.nextActionBadgeAdditional),
+    ).toBeInTheDocument();
+
+    const blockedRow = screen.getByText("Getränke bestellen").closest("li")!;
+    expect(within(blockedRow).getByText(strings.nextActionBadgeMarked)).toBeInTheDocument();
+    expect(
+      within(blockedRow).queryByText(strings.nextActionBadgeCanonical),
+    ).not.toBeInTheDocument();
+    expect(
+      within(blockedRow).queryByText(strings.nextActionBadgeAdditional),
+    ).not.toBeInTheDocument();
+  });
+
   it("restores a cancelled draft without writing", async () => {
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByText("Ort reservieren");
@@ -466,7 +582,7 @@ describe("ProjectDetailPage task explanations", () => {
     );
     await userEvent.click(
       screen.getByRole("button", {
-        name: strings.railCommandLabels["story.lifecycle"],
+        name: strings.actionTileLabels["story.lifecycle"],
       }),
     );
 

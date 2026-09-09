@@ -1,0 +1,1 @@
+ALTER TABLE `work_items` ADD `additional_next_action` integer DEFAULT false NOT NULL;

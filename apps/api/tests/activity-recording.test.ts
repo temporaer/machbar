@@ -318,22 +318,6 @@ describe("atomic activity recording", () => {
       payload: { title: "Kind" },
     });
     expect(events()).toHaveLength(beforeChild + 1);
-
-    const beforeSequence = events().length;
-    await ctx.app.inject({
-      method: "POST",
-      url: `/api/projects/${project.id}/task-sequence`,
-      payload: { titles: ["Eins", "Zwei", "Drei"] },
-    });
-    const sequenceEvents = events().slice(beforeSequence);
-    expect(sequenceEvents).toHaveLength(1);
-    expect(sequenceEvents[0]).toMatchObject({
-      kind: "project_updated",
-      metadata: {
-        changedFields: ["taskSequence"],
-        affectedCount: 3,
-      },
-    });
   });
 
   it("attributes route mutations to the resolved local actor", async () => {

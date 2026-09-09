@@ -24,7 +24,6 @@ import {
   reopenProject,
   returnProjectToBacklog,
 } from "../domain/storyWorkflow.js";
-import { createProjectTaskSequence } from "../domain/taskCrud.js";
 import {
   acknowledgeReviewSchema,
   activateProjectSchema,
@@ -32,7 +31,6 @@ import {
   appendNotesSchema,
   checkCriterionSchema,
   createProjectSchema,
-  createTaskSequenceSchema,
   convertStoryToTaskSchema,
   projectLifecycleSchema,
   reorderCriteriaSchema,
@@ -112,28 +110,6 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       });
       const graph = Graph.load(db);
       return projectWithIssues(graph, id);
-    },
-  );
-
-  app.post<{ Params: { id: string } }>(
-    "/api/projects/:id/task-sequence",
-    async (request, reply) => {
-      const id = parseId(request.params.id);
-      const body = parseOrThrow(createTaskSequenceSchema, request.body);
-      const created = createProjectTaskSequence(
-        db,
-        id,
-        {
-          ...body,
-          ...(request.authMember
-            ? { createdByMemberId: request.authMember.id }
-            : {}),
-        },
-        { actorMemberId: request.activityActor?.id ?? null },
-      );
-      const graph = Graph.load(db);
-      reply.status(201);
-      return created.map((task) => graph.tasksById.get(task.id)!);
     },
   );
 

@@ -438,22 +438,20 @@ the cause rather than every downstream task.
 Once all blockers close, normal next-action or completion-review semantics
 take over.
 
-### Entering task sequences
+### Entering successive tasks
 
-Sequence entry has two lightweight surfaces:
+**Nächsten Schritt danach hinzufügen** on a task creates one actionable
+sibling at the same outline level and makes it depend on the source task —
+the one lightweight bulk-entry surface. `POST /api/tasks/:id/successors`
+performs creation and dependency insertion in one SQLite transaction. It
+intentionally collects only a title; existing focused actions handle
+external waits, dependencies, Wiedervorlage, ownership, notes, and dates.
 
-- **Ablauf hinzufügen** on a project accepts one title per line. The API
-  creates top-level actionable tasks in that order and links each later task
-  to its predecessor.
-- **Nächsten Schritt danach hinzufügen** on a task creates one actionable
-  sibling at the same outline level and makes it depend on the source task.
-
-`POST /api/projects/:id/task-sequence` and
-`POST /api/tasks/:id/successors` perform creation and dependency insertion in
-one SQLite transaction. A failed request therefore never leaves a partial
-chain. The entry surfaces intentionally collect titles only; existing focused
-actions handle external waits, dependencies, Wiedervorlage, ownership, notes,
-and dates.
+Outline position (likely work order) and dependencies (genuinely blocked
+work) remain distinct: a project's ordinary task list needs neither a
+sequence-entry bulk feature nor automatic dependencies between adjacent
+outline rows, since Today already derives the next useful project action
+from outline order and eligibility.
 
 ---
 
@@ -544,7 +542,7 @@ nicht aktiv** section, and completed/archived stories remain folded.
 
 The four targeted actions render as icon-only 44 px buttons (`.story-row-chip-icon`) with inline, `aria-hidden`/`focusable="false"` SVG glyphs; the German `aria-label` **and** `title` carry the accessible name, so nothing is conveyed by the glyph alone. Workflow transitions stay labelled text chips.
 
-The row shows **one** progress bar — task completion, marked up as a real `role="progressbar"` with `aria-valuenow/min/max` and `aria-valuetext` (`2/4`). The second, unlabelled criteria bar was removed from the row; the criteria *count* stays in the meta line, and `.criteria-progress` still serves the labelled bars on `ProjectDetailPage` and in `AcceptanceCriteriaEditor`.
+The row shows **one** progress bar — task completion, marked up as a real `role="progressbar"` with `aria-valuenow/min/max` and `aria-valuetext` (`2/4`). Acceptance-criteria progress is core outcome content instead: `ProjectDetailPage` renders a visible **Ergebnis** checklist with its `done/total` count, direct check/uncheck, and an explicit `story.editOutcome` entry into the structural editor.
 
 ### Status is a badge, transitions are buttons
 
@@ -685,26 +683,30 @@ chooser under `Weitere Aktionen`.
 
 `ProjectDetailPage` is the same shape for stories, and `ProjectEditSheet` is
 gone. The page edits only its authored title and notes in place; driver,
-dates, tags, contexts and outcome are meta-row values that dispatch
-`story.assignDriver`/`story.planDates`/`story.tags`/`story.contexts`/
-`story.editOutcome`. Deleting the sheet also deleted its private copies of
+dates, tags and contexts are meta-row values that dispatch
+`story.assignDriver`/`story.planDates`/`story.tags`/`story.contexts`.
+Outcome is visible **Ergebnis** content: `AcceptanceCriteriaChecklist` shares
+the direct `useCriterionCheck` mutation with `AcceptanceCriteriaEditor`, while
+the explicit `story.editOutcome` action is the sole route for changing
+criterion structure. Its genuine non-property commands appear as
+verb-labelled `ActionTileGrid` tiles rather than a generic command dump.
+Deleting the sheet also deleted its private copies of
 activation-driver, activation-progress and completion-criteria prerequisite
 handling, which `resolveStoryPrerequisite()` already decides once. Review
 repair links (`?focus=driver|completion|outcome`) dispatch those same
 commands rather than scrolling a form to a field. Filters
 (`SearchFilterBar`) and settings (`MorePage`) are unaffected.
 
-### Outline structure editing: drag, keyboard, one toolbar
+### Outline structure editing: drag and keyboard
 
-The old global "Sortiermodus" and its seven-button panel under *every* row are gone. Structural editing now lives in three files:
+The old global "Sortiermodus" and its seven-button panel under *every* row — and later, the intermediate single selected-task toolbar — are gone. Structural editing now lives in two files:
 
 | Module | Responsibility |
 |--------|----------------|
 | `lib/taskTreeMove.ts` | Pure, React-free geometry and tree maths: `slotFromPointer`, `projectDrop`, `locateTask`, `planMove`, `applyMove`, `outlineRootGroup`. Unit-tested on its own |
-| `lib/useOutlineOrganize.tsx` | The drag session, the equivalent keyboard/toolbar moves, the optimistic tree and its rollback; publishes an `OutlineOrganizeValue` through context |
-| `components/TaskOrganizeBar.tsx` | The single selected-task toolbar (↑ ↓ → ← plus `Ablegen`) |
+| `lib/useOutlineOrganize.tsx` | The drag session, the equivalent keyboard moves, the optimistic tree and its rollback; publishes an `OutlineOrganizeValue` through context |
 
-`TaskRow` renders exactly one structural control — the ⠿ handle. Pressing it starts a drag (a row long-press is the touch shortcut into the same drag); activating it selects the task and shows the toolbar; arrow keys on the focused handle move the task directly. `consumeDragClick()` swallows the click a real drag ends with, so a drag never also toggles the selection.
+`TaskRow` renders exactly one structural control — the ⠿ handle. Pressing it starts a drag (a row long-press is the touch shortcut into the same drag); arrow keys on the focused handle move the task directly, and `Alt+ArrowUp/Down/Left/Right` moves the interaction scope's active task the same way from anywhere in the row (`lib/useWorkItemKeyboardNav.ts`). A plain click/tap on the handle opens no separate mode. `consumeDragClick()` swallows the click a real drag ends with, so a drag never also fires a stray click.
 
 **Projection.** Rows register themselves (`registerRow`) so the rendered — i.e. currently *visible*, non-collapsed — tree becomes a flat ordered list. The list and its rects are snapshotted once when the drag starts (rows do not move while dragging). `projectDrop` bounds the target depth by the neighbours: at most one level deeper than the row above, never shallower than the row below. All traversals in `taskTreeMove.ts` are iterative and identity-preserving, so a 30-level outline neither blows the stack nor re-renders untouched branches.
 
@@ -727,7 +729,7 @@ the moved task, matching the backend contract.
 - Dropping into a **collapsed** parent would hide the moved row, so the hook publishes an `expandRequest` the addressed row reacts to (collapse state is per row).
 - A drag is announced through a `role="status"` live region, since the gesture has no meaning for assistive tech.
 
-`MoveTaskSheet` backs both explicit moves — `parent` and `subtree` — and renders each destination list through `DestinationPicker`. It is opened from the outline's selected-task toolbar (`Ablegen`, `subtree` mode, which offers both pickers) and from `TaskDetailSheet`:
+`MoveTaskSheet` backs both explicit moves — `parent` and `subtree` — and renders each destination list through `DestinationPicker`. It is opened from `task.changeProject` (`subtree` mode, which offers both pickers, dispatched via `TaskWorkflowHost`) and from `TaskDetailSheet`:
 
 - **Search** is an always-visible filter over the candidate list, matched case-insensitively (`toLocaleLowerCase`, so German umlauts fold correctly) as a substring of `title + subtitle`. For parent-task candidates the subtitle is the owning project's title, so typing a project name finds its tasks. In `parent` mode the project list is never fetched, so the title comes from the `GET /api/projects/:id` response the sheet already loads.
 - **Recents** (`lib/recentDestinations.ts`) are shown first while the query is empty, in a `Zuletzt verwendet` group, with the remaining candidates under `Alle Ziele`. Once a query is typed the grouping collapses to plain results.

@@ -17,8 +17,9 @@ export type MoveMode = "parent" | "subtree";
 /**
  * Explicit picker for destinations that are nowhere near on screen: change
  * parent, or move to another project (and optionally its parent task, both
- * in one step). Reached from the selected-task toolbar ("Ablegen") and from
- * the task detail sheet, so both stay available without any drag gesture.
+ * in one step). Reached from `task.changeProject` and `task.changeParent`
+ * (both via `TaskWorkflowHost`), so both stay available as canonical
+ * semantic commands without any drag gesture or local component state.
  *
  * Both destination lists are `DestinationPicker`s: searchable, with the
  * recently used targets on top. The candidate sets are unchanged — the

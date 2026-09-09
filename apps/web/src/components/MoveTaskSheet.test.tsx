@@ -108,7 +108,7 @@ describe("MoveTaskSheet", () => {
     expect(rowNames(rest)).toEqual(["Umzug nach Leipzig"]);
   });
 
-  it("orders non-recent project destinations by lifecycle and title", async () => {
+  it("orders non-recent project destinations by lifecycle and title, excluding completed/archived", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({ id: 6, title: "Zulu", status: "backlog" }),
       makeProject({ id: 5, title: "Archiv", status: "archived" }),
@@ -126,12 +126,7 @@ describe("MoveTaskSheet", () => {
     const destinations = await screen.findByRole("group", {
       name: "Projekt wählen",
     });
-    expect(rowNames(destinations)).toEqual([
-      "Änderung",
-      "Zulu",
-      "Abschluss",
-      "Archiv",
-    ]);
+    expect(rowNames(destinations)).toEqual(["Änderung", "Zulu"]);
   });
 
   it("discards recent destinations that no longer exist", async () => {

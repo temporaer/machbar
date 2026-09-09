@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AcceptanceCriterion } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { sortByPosition } from "../lib/taskHelpers";
+import { useCriterionCheck } from "../lib/useCriterionCheck";
 
 /**
  * The ordered acceptance-criteria list of a story — progress, per-criterion
@@ -38,14 +39,24 @@ export function AcceptanceCriteriaEditor({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
+  const {
+    check: checkCriterion,
+    pendingId: checkingCriterionId,
+    error: criterionCheckError,
+  } = useCriterionCheck(projectId);
 
   const criteria = sortByPosition(criteriaProp);
   const total = criteria.length;
   const done = criteria.filter((c) => c.checked).length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  const busy = pending || checkingCriterionId !== null;
+
+  useEffect(() => {
+    if (criterionCheckError) onError(criterionCheckError);
+  }, [criterionCheckError, onError]);
 
   const run = async (job: () => Promise<unknown>) => {
-    if (pendingRef.current) return false;
+    if (pendingRef.current || checkingCriterionId !== null) return false;
     pendingRef.current = true;
     setPending(true);
     onError(null);
@@ -114,7 +125,7 @@ export function AcceptanceCriteriaEditor({
   const editing = editingId !== null;
 
   return (
-    <div className="field" aria-busy={pending}>
+    <div className="field" aria-busy={busy}>
       <label>{strings.criteria}</label>
       {total > 0 ? (
         <>
@@ -135,9 +146,9 @@ export function AcceptanceCriteriaEditor({
             type="checkbox"
             aria-label={criterion.text}
             checked={criterion.checked}
-            disabled={pending || editing}
+            disabled={busy || editing}
             onChange={() =>
-              void run(() => api.checkCriterion(projectId, criterion.id, !criterion.checked))
+              void checkCriterion(criterion.id, !criterion.checked)
             }
           />
           <input
@@ -145,11 +156,11 @@ export function AcceptanceCriteriaEditor({
             aria-label={`${strings.criteria} ${index + 1}`}
             value={editingId === criterion.id ? draftFor(criterion) : criterion.text}
             readOnly={editingId !== criterion.id}
-            disabled={pending && editingId === criterion.id}
+            disabled={busy && editingId === criterion.id}
             autoFocus={editingId === criterion.id}
             onChange={(e) => setDrafts((prev) => ({ ...prev, [criterion.id]: e.target.value }))}
             onKeyDown={(event) => {
-              if (event.key === "Escape" && !pending && editingId === criterion.id) {
+              if (event.key === "Escape" && !busy && editingId === criterion.id) {
                 event.preventDefault();
                 cancelEditing(criterion.id);
               }
@@ -161,7 +172,7 @@ export function AcceptanceCriteriaEditor({
                 type="button"
                 className="btn btn-sm"
                 disabled={
-                  pending ||
+                  busy ||
                   !draftFor(criterion).trim() ||
                   draftFor(criterion).trim() === criterion.text
                 }
@@ -172,7 +183,7 @@ export function AcceptanceCriteriaEditor({
               <button
                 type="button"
                 className="btn btn-sm btn-ghost"
-                disabled={pending}
+                disabled={busy}
                 onClick={() => cancelEditing(criterion.id)}
               >
                 {strings.cancel}
@@ -182,7 +193,7 @@ export function AcceptanceCriteriaEditor({
             <button
               type="button"
               className="btn btn-sm btn-ghost"
-              disabled={pending || editing}
+              disabled={busy || editing}
               onClick={() => {
                 onError(null);
                 setDrafts((previous) => ({ ...previous, [criterion.id]: criterion.text }));
@@ -196,7 +207,7 @@ export function AcceptanceCriteriaEditor({
             type="button"
             className="icon-btn"
             aria-label={strings.moveCriterionUp}
-            disabled={pending || editing || index === 0}
+            disabled={busy || editing || index === 0}
             onClick={() => void moveCriterion(index, -1)}
           >
             ↑
@@ -205,7 +216,7 @@ export function AcceptanceCriteriaEditor({
             type="button"
             className="icon-btn"
             aria-label={strings.moveCriterionDown}
-            disabled={pending || editing || index === criteria.length - 1}
+            disabled={busy || editing || index === criteria.length - 1}
             onClick={() => void moveCriterion(index, 1)}
           >
             ↓
@@ -214,7 +225,7 @@ export function AcceptanceCriteriaEditor({
             type="button"
             className="icon-btn"
             aria-label={strings.removeCriterion}
-            disabled={pending || editing}
+            disabled={busy || editing}
             onClick={() => void run(() => api.removeCriterion(projectId, criterion.id))}
           >
             ×
@@ -230,10 +241,10 @@ export function AcceptanceCriteriaEditor({
           placeholder={strings.addCriterionPlaceholder}
           aria-label={strings.addCriterionPlaceholder}
           value={newCriterionText}
-          disabled={pending || editing}
+          disabled={busy || editing}
           onChange={(e) => setNewCriterionText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !pending && !editing) {
+            if (e.key === "Enter" && !busy && !editing) {
               e.preventDefault();
               void addCriterion();
             }
@@ -242,7 +253,7 @@ export function AcceptanceCriteriaEditor({
         <button
           type="button"
           className="btn btn-sm"
-          disabled={pending || editing || !newCriterionText.trim()}
+          disabled={busy || editing || !newCriterionText.trim()}
           onClick={() => void addCriterion()}
         >
           {strings.addCriterion}

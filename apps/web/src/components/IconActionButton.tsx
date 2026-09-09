@@ -22,7 +22,12 @@ export type IconActionKind =
   | "upload"
   | "edit"
   | "close"
-  | "more";
+  | "more"
+  | "split"
+  | "priority"
+  | "recurrence"
+  | "discard"
+  | "places";
 
 export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
   const common = {
@@ -118,6 +123,25 @@ export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
         </>
       ) : kind === "close" ? (
         <path d="M6 6l12 12M18 6L6 18" {...common} />
+      ) : kind === "split" ? (
+        <>
+          <path d="M6 4v6c0 3 2.5 4 4.5 5.5M18 4v6c0 3-2.5 4-4.5 5.5" {...common} />
+          <path d="M10.5 15.5v4.5M13.5 15.5v4.5" {...common} />
+        </>
+      ) : kind === "priority" ? (
+        <path d="M6 3.5v17M6 4.5h11l-2.6 3.5L17 11.5H6" {...common} />
+      ) : kind === "recurrence" ? (
+        <>
+          <path d="M4.5 12a7.5 7.5 0 0113-5M19.5 12a7.5 7.5 0 01-13 5" {...common} />
+          <path d="M17 4.5v3h-3M7 19.5v-3h3" {...common} />
+        </>
+      ) : kind === "discard" ? (
+        <path d="M5 7h14M9.5 7V4.5h5V7M7 7l1 13h8l1-13" {...common} />
+      ) : kind === "places" ? (
+        <>
+          <path d="M12 21s7-6.2 7-11.5A7 7 0 105 9.5C5 14.8 12 21 12 21z" {...common} />
+          <circle cx="12" cy="9.5" r="2.3" {...common} />
+        </>
       ) : (
         <>
           <path d="M4 6h16M4 12h16M4 18h16" {...common} />

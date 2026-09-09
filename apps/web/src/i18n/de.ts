@@ -94,6 +94,8 @@ const base = {
   addPlan: "+ Planen",
   addWaiting: "+ Warten auf",
   addOwner: "+ Zuweisen",
+  addTags: "+ Tags",
+  addContexts: "+ Orte",
   dependencies: "Abhängigkeiten",
   subtasks: "Teilaufgaben",
   waitingFor: "Wartet auf",
@@ -106,10 +108,6 @@ const base = {
   cancelled: "Verworfen",
   clarify: "Klären",
   organize: "Sortieren",
-  moveUp: "Nach oben",
-  moveDown: "Nach unten",
-  indent: "Einrücken",
-  outdent: "Ausrücken",
   keyboardHelp: "Tastaturhilfe",
   commandGroupLabels: {
     navigation: "Ansichten",
@@ -118,8 +116,6 @@ const base = {
     structure: "Struktur",
     help: "Hilfe",
   },
-  changeParent: "Übergeordnete Aufgabe ändern",
-  moveProject: "In Projekt verschieben",
   search: "Suchen",
   filter: "Filtern",
   noItems: "Hier ist gerade nichts zu tun.",
@@ -239,11 +235,11 @@ const extra = {
   removeDependency: "Entfernen",
   resolved: "Erledigt",
   unresolved: "Offen",
-  exitOrganizeMode: "Fertig",
   /**
    * Drag editing replaced the old global organize mode: there is no
    * "Sortiermodus" toggle and no control panel under every row any more —
-   * one handle per row, one insertion line, one selected-task toolbar.
+   * one handle per row, one insertion line, direct keyboard moves while
+   * the handle has focus.
    */
   moveTask: "Verschieben",
   dragHint: "Griff ziehen oder lange drücken: Aufgabe verschieben",
@@ -254,7 +250,6 @@ const extra = {
   selectParent: "Übergeordnete Aufgabe wählen",
   selectProject: "Projekt wählen",
   noParent: "Keine (oberste Ebene)",
-  refile: "Ablegen",
   collapse: "Einklappen",
   expand: "Ausklappen",
   taskDetails: "Details",
@@ -264,7 +259,6 @@ const extra = {
   subtaskSummary: (count: number) =>
     `${count} ${count === 1 ? "Teilaufgabe" : "Teilaufgaben"}`,
   noSubtasks: "Keine Teilaufgaben",
-  taskOrganizationSection: "Organisation",
   taskDangerSection: "Gefahrenbereich",
   created: "Erstellt",
   updated: "Aktualisiert",
@@ -376,7 +370,6 @@ const extra = {
   onlyThisTaskCancel: "Nur diese Aufgabe verwerfen",
   addChild: "Teilaufgabe hinzufügen",
   moveHere: "Hierher verschieben",
-  organizeControls: "Sortier-Werkzeuge",
   subtreeHint: "Verschiebt die Aufgabe inklusive aller Teilaufgaben.",
   changeParentTitle: "Neue übergeordnete Aufgabe",
   moveProjectTitle: "In anderes Projekt verschieben",
@@ -424,14 +417,6 @@ const extra = {
     count === 1 ? "1 Teilaufgabe anlegen" : `${count} Teilaufgaben anlegen`,
   addSuccessor: "Nächsten Schritt danach hinzufügen",
   successorPlaceholder: "Nächster Schritt",
-  addSequence: "Ablauf hinzufügen",
-  sequenceSteps: "Schritte in Reihenfolge",
-  sequencePlaceholder:
-    "Angebot einholen\nTermin vereinbaren\nArbeit abnehmen\nRechnung bezahlen",
-  sequenceHint:
-    "Eine Zeile pro Schritt. Jeder spätere Schritt wartet auf den vorherigen.",
-  addSequenceCount: (count: number) =>
-    count < 2 ? "Mindestens zwei Schritte" : `${count} Schritte hinzufügen`,
   deleteTaskConfirm: "Aufgabe endgültig löschen?",
   deleteProject: "Projekt löschen",
   deleteProjectConfirm:
@@ -485,6 +470,31 @@ const extra = {
     "story.contexts": "Ort",
     "story.lifecycle": "Status",
   },
+  /**
+   * Verb-phrased labels for the action-tile grid in Task/Project detail
+   * views (see `ActionTileGrid`) -- deliberately separate from
+   * `railCommandLabels` (the swipe rail's shorter labels) so the two
+   * projections of the same semantic commands can each read naturally in
+   * their own context without forcing one string onto both.
+   */
+  actionTileLabels: {
+    "task.split": "Aufteilen",
+    "task.addSuccessor": "Nächsten Schritt hinzufügen",
+    "task.changeProject": "In Projekt verschieben",
+    "task.changeParent": "Übergeordnete Aufgabe ändern",
+    "task.convertToProject": "Zum Projekt machen",
+    "task.priority": "Priorität setzen",
+    "task.recurrence": "Wiederholung einrichten",
+    "task.discard": "Verwerfen",
+    "story.planWork": "Nächste Aufgabe erfassen",
+    "story.assignDriver": "Verantwortliche Person ändern",
+    "story.planDates": "Termine planen",
+    "story.defer": "Wiedervorlegen",
+    "story.editOutcome": "Ergebnis bearbeiten",
+    "story.tags": "Tags bearbeiten",
+    "story.contexts": "Orte bearbeiten",
+    "story.lifecycle": "Status ändern",
+  },
   swipeCoachHint: (rightAction: string) =>
     `Wischen: rechts „${rightAction}“, links mehr. Oder ⋯ tippen.`,
   swipeCoachDismiss: "Wischhinweis schließen",
@@ -501,6 +511,17 @@ const extra = {
     weekend: "Wochenende",
   },
   moreActions: "Weitere Aktionen",
+  /**
+   * Next Action badge for the project outline (section 7): distinguishes
+   * a currently *derived* Next Action from a task merely *marked* as an
+   * additional-next-action candidate (stored intent, independent of
+   * current eligibility -- see `additionalNextAction` on `Task`).
+   */
+  nextActionBadgeCanonical: "Nächste Aktion",
+  nextActionBadgeAdditional: "Nächste Aktion · parallel",
+  nextActionBadgeMarked: "parallel",
+  markAdditionalNextAction: "Als weitere nächste Aktion markieren",
+  unmarkAdditionalNextAction: "Nicht mehr als weitere nächste Aktion markieren",
   toProject: "Zum Projekt",
   noProjectChipHint: "Kein Projekt zugeordnet",
   primarySwipeActionLabels: {
@@ -585,6 +606,9 @@ const extra = {
     "Die verantwortliche Person kann erst entfernt werden, wenn das Projekt wieder auf „Später / noch nicht aktiv“ steht.",
   noDriver: "Niemand zugewiesen",
   criteria: "Erledigt, wenn …",
+  outcomeSectionTitle: "Ergebnis",
+  outcomeSectionCount: (done: number, total: number) => `${done}/${total}`,
+  outcomeSectionEmpty: "Noch nicht festgelegt, wann das Projekt erledigt ist.",
   planDates: "Wiedervorlegen",
   planDatesTitle: "Wiedervorlage & Fälligkeit",
   taskSummary: "Aufgaben",
@@ -1022,8 +1046,6 @@ const extra = {
       "Dieser Eingangseintrag kann in seinem aktuellen Zustand nicht in ein Projekt umgewandelt werden.",
     role_conversion_invalid:
       "Diese Aufgabe kann erst in ein Projekt umgewandelt werden, wenn widersprechende Aufgaben-Eigenschaften entfernt wurden.",
-    task_sequence_too_short:
-      "Eine Aufgabenfolge braucht mindestens zwei Schritte.",
     task_title_required: "Bitte gib einen Aufgabentitel ein.",
     external_wait_reason_required:
       "Bitte gib an, worauf diese Aufgabe wartet.",
@@ -1041,12 +1063,6 @@ const extra = {
     `Der Tag „${name}“ ist bereits mit einem anderen Typ vorhanden.`,
   apiErrorOidcNameConflict: (name: string) =>
     `Der Pocket-ID-Name „${name}“ wird bereits verwendet.`,
-  apiErrorTaskSequenceTooShort: (minimum: number, provided?: number) =>
-    `Eine Aufgabenfolge braucht mindestens ${minimum} benannte Schritte${
-      provided === undefined
-        ? "."
-        : `; angegeben ${provided === 1 ? "wurde" : "wurden"} ${provided}.`
-    }`,
   apiErrorProjectTransitionInvalid: (
     currentStatus: string,
     action: string,
