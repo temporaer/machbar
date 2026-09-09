@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "../components/TaskOutline";
+import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { useInteractionScope } from "./interactionScope";
 import { api } from "./api";
 import { makeMember, makeTask } from "../test/fixtures";
@@ -26,8 +27,9 @@ beforeEach(() => {
   mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
 });
 
-function handleFor(title: string): HTMLElement {
-  return screen.getByRole("button", { name: `Verschieben: ${title}` });
+function ActiveIdProbe() {
+  const scope = useInteractionScope();
+  return <output data-testid="active-id">{String(scope.activeId)}</output>;
 }
 
 describe("useInteractionScope", () => {
@@ -44,34 +46,33 @@ describe("useInteractionScope", () => {
     // by side, as e.g. a future zoomed subtree view or a page rendering
     // several outlines at once would. Before this consolidation each
     // `useOutlineOrganize` instance kept its own private `selectedId`, so
-    // selecting a row in one outline never affected the other. They must
+    // moving the cursor in one outline never affected the other. They must
     // now share exactly one active item, sourced from the interaction
-    // scope both are rendered inside.
+    // scope both are rendered inside -- demonstrated here via the shared
+    // `j` keyboard cursor rather than the removed selection toolbar.
     const outlineA = [makeTask({ id: 1, title: "Alpha", position: 0, projectId: 5 })];
     const outlineB = [makeTask({ id: 2, title: "Delta", position: 0, projectId: 6 })];
     renderWithProviders(
       <>
+        <WorkItemKeyboardNavMount />
         <TaskOutline tasks={outlineA} emptyMessage="Nichts da" organizable />
         <TaskOutline tasks={outlineB} emptyMessage="Nichts da" organizable />
+        <ActiveIdProbe />
       </>,
     );
     await screen.findByText("Alpha");
     await screen.findByText("Delta");
 
-    expect(screen.queryByRole("toolbar")).toBeNull();
+    expect(screen.getByTestId("active-id")).toHaveTextContent("null");
 
-    // Selecting Alpha (outline A) shows exactly one toolbar, owned by A.
-    await userEvent.click(handleFor("Alpha"));
-    expect(screen.getAllByRole("toolbar")).toHaveLength(1);
+    // Moving the cursor with `j` lands on Alpha (outline A) first, then on
+    // Delta (outline B) -- proving the two outlines read and advance one
+    // shared active id rather than each keeping an independent selection.
+    await userEvent.keyboard("j");
+    expect(screen.getByTestId("active-id")).toHaveTextContent("1");
 
-    // Selecting Delta (outline B) moves the *same* shared active item to
-    // B's task -- A's own toolbar must disappear (Alpha is not part of
-    // B's sibling group), proving the two outlines read one active id
-    // rather than each keeping an independent selection.
-    await userEvent.click(handleFor("Delta"));
-    const toolbars = screen.getAllByRole("toolbar");
-    expect(toolbars).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "Verschieben: Alpha" })).not.toBeNull();
+    await userEvent.keyboard("j");
+    expect(screen.getByTestId("active-id")).toHaveTextContent("2");
   });
 
   it("declares structural capability from the mounted outline's own organizable prop", async () => {

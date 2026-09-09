@@ -4,6 +4,17 @@ import type { Graph, TaskRecord } from "./graph.js";
 export function searchTasks(graph: Graph, filters: SearchFilters): TaskRecord[] {
   let results = graph.allTasks();
 
+  // Default interactive search focuses on live work: terminal tasks (done,
+  // cancelled) are excluded unless the caller explicitly asked for one via
+  // `filters.status`, or opted the whole view into exhaustive inventory via
+  // `filters.includeTerminal` (e.g. the All page) — either way terminal
+  // tasks stay fully reachable, just not by default in focused pickers.
+  if (filters.status === undefined && !filters.includeTerminal) {
+    results = results.filter(
+      (task) => task.status !== "done" && task.status !== "cancelled",
+    );
+  }
+
   if (filters.text && filters.text.trim() !== "") {
     const needle = filters.text.trim().toLowerCase();
     results = results.filter(

@@ -445,82 +445,6 @@ export function createChildTask(
   });
 }
 
-export interface CreateTaskSequenceInput {
-  titles: string[];
-  createdByMemberId?: number | null;
-}
-
-function normalizedSequenceTitles(titles: string[]): string[] {
-  const normalized = titles.map((title) => title.trim()).filter(Boolean);
-  if (normalized.length < 2) {
-    throw AppError.badRequest(
-      "task_sequence_too_short",
-      "A task sequence requires at least two named steps.",
-      { minimum: 2, provided: normalized.length },
-    );
-  }
-  return normalized;
-}
-
-/** Creates a self-contained top-level project chain atomically. */
-export function createProjectTaskSequence(
-  db: Db,
-  projectId: number,
-  input: CreateTaskSequenceInput,
-  context?: MutationContext,
-) {
-  const titles = normalizedSequenceTitles(input.titles);
-  return db.transaction((tx) => {
-    const txDb = tx as unknown as Db;
-    const project = getProjectOrThrow(txDb, projectId);
-    const hadNextAction = projectHasNextAction(txDb, projectId);
-    const created: ReturnType<typeof insertTask>[] = [];
-
-    for (const title of titles) {
-      const task = insertTask(txDb, {
-        projectId,
-        title,
-        status: "actionable",
-        createdByMemberId: input.createdByMemberId ?? null,
-      });
-      const predecessor = created.at(-1);
-      if (predecessor) {
-        tx
-          .insert(schema.taskDependencies)
-          .values({ taskId: task.id, dependsOnTaskId: predecessor.id })
-          .run();
-      }
-      created.push(task);
-    }
-
-    const activityEventId = recordActivity(txDb, {
-      actorMemberId: actor(context),
-      kind: "project_updated",
-      entityType: "project",
-      entityTitle: project.title,
-      projectId,
-      metadata: {
-        changedFields: ["taskSequence"],
-        affectedCount: created.length,
-        relatedTaskIds: created.map((task) => task.id),
-        relatedTaskTitles: created.map((task) => task.title),
-      },
-    });
-    if (!hadNextAction && projectHasNextAction(txDb, projectId)) {
-      recordContribution(txDb, {
-        activityEventId,
-        actorMemberId: actor(context),
-        category: "planning",
-        reason: "project_next_action_added",
-        entityType: "project",
-        entityId: projectId,
-        personalEligible: true,
-      });
-    }
-    return created;
-  });
-}
-
 /** Creates one sibling immediately downstream of an existing task. */
 export function createTaskSuccessor(
   db: Db,
@@ -632,6 +556,7 @@ export interface UpdateTaskInput {
   allowedDeviationDays?: number | null;
   completedOn?: string;
   reminderAt?: string | null;
+  additionalNextAction?: boolean;
   tagIds?: number[];
   excludedTagIds?: number[];
   contextIds?: number[];
@@ -820,7 +745,12 @@ export function updateTask(
       patch.scheduledDate = input.scheduledDate;
       changedFields.push("scheduledDate");
     }
-    for (const field of ["priority", "size", "reminderAt"] as const) {
+    for (const field of [
+      "priority",
+      "size",
+      "reminderAt",
+      "additionalNextAction",
+    ] as const) {
       if (input[field] !== undefined && input[field] !== currentTask[field]) {
         patch[field] = input[field] as never;
         changedFields.push(field);

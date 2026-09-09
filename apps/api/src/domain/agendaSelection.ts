@@ -105,11 +105,18 @@ export function createAgendaSelection(
   const selectedProjectTaskIds = new Set(
     [...graph.projectsById.values()]
       .filter((project) => project.status === "active")
-      .flatMap((project) =>
-        graph
+      .flatMap((project) => [
+        ...graph
           .selectedNextActionsFor(project.id, laneSelection, isContextAvailable)
           .map((task) => task.id),
-      ),
+        ...graph
+          .additionalSelectedNextActionsFor(
+            project.id,
+            laneSelection,
+            isContextAvailable,
+          )
+          .map((task) => task.id),
+      ]),
   );
   const isSelectedOrdinaryWork = (task: TaskRecord) =>
     task.projectId === null || selectedProjectTaskIds.has(task.id);

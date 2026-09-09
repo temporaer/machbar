@@ -28,6 +28,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
+    case "task.changeParent":
     case "task.addSuccessor":
     case "task.recurrence":
     case "task.priority":
@@ -38,6 +39,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.setStatus":
     case "task.openOverflow":
     case "task.toggleDone":
+    case "task.toggleAdditionalNextAction":
     case "task.primaryAction":
     case "task.discard":
       return "task" in command ? command.task.id : command.taskId;
@@ -79,6 +81,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
+    case "task.changeParent":
     case "task.addSuccessor":
     case "task.recurrence":
     case "task.priority":
@@ -89,6 +92,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.setStatus":
     case "task.openOverflow":
     case "task.toggleDone":
+    case "task.toggleAdditionalNextAction":
     case "task.primaryAction":
     case "task.discard":
       return "task";
@@ -200,6 +204,9 @@ export function useWorkItemCommands() {
         case "task.changeProject":
           taskWorkflow.open("changeProject", command.taskId);
           return;
+        case "task.changeParent":
+          taskWorkflow.open("changeParent", command.taskId);
+          return;
         case "task.addSuccessor":
           taskWorkflow.open("addSuccessor", command.taskId);
           return;
@@ -257,6 +264,15 @@ export function useWorkItemCommands() {
         case "task.toggleDone":
           taskActions.requestToggle(command.task);
           return;
+        case "task.toggleAdditionalNextAction": {
+          const nextValue = !command.task.additionalNextAction;
+          taskActions.update(
+            command.task,
+            { additionalNextAction: nextValue },
+            { additionalNextAction: nextValue },
+          );
+          return;
+        }
         case "task.primaryAction":
           // The configured primary swipe action (someday/cancel/complete);
           // `requestPrimarySwipe` already resolves reopen/clarify first.

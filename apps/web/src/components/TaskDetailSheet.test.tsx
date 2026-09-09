@@ -16,7 +16,7 @@ import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
-import { makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
+import { makeMember, makePhysicalContext, makeProject, makeTag, makeTask } from "../test/fixtures";
 import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({
@@ -305,26 +305,23 @@ describe("TaskDetailSheet", () => {
     }
 
     // Created/updated timestamps are always visible near the top, not
-    // buried inside the collapsed Organisation disclosure.
+    // buried inside a collapsed disclosure.
     expect(screen.getByText(/Erstellt:/)).toBeVisible();
 
     const activity = screen
       .getByRole("heading", { name: "Letzte Aktivitäten", level: 2 })
       .closest("details");
-    const organization = screen
-      .getByRole("heading", { name: "Organisation", level: 3 })
-      .closest("details");
     const danger = screen
       .getByRole("heading", { name: "Gefahrenbereich", level: 3 })
       .closest("details");
     expect(activity).not.toHaveAttribute("open");
-    expect(organization).not.toHaveAttribute("open");
     expect(danger).not.toHaveAttribute("open");
 
-    await userEvent.click(
-      screen.getByRole("heading", { name: "Organisation", level: 3 }),
-    );
-    expect(screen.getByText("Sortier-Werkzeuge")).toBeVisible();
+    // There is no separate "Organisation" disclosure duplicating
+    // change-project/change-parent — those live once, in "Weitere Aktionen".
+    expect(
+      screen.queryByRole("heading", { name: "Organisation", level: 3 }),
+    ).not.toBeInTheDocument();
 
     await userEvent.click(
       screen.getByRole("heading", { name: "Gefahrenbereich", level: 3 }),
@@ -344,21 +341,67 @@ describe("TaskDetailSheet", () => {
       screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
     );
     for (const label of [
-      "Planen",
-      "Warten / Nachhaken",
       "Aufteilen",
-      "Zuweisen",
-      "Projekt ändern",
-      "Folgeaufgabe anlegen",
-      "Wiederholung",
-      "Priorität",
-      "Tags",
-      "Ort",
+      "In Projekt verschieben",
+      "Übergeordnete Aufgabe ändern",
+      "Nächsten Schritt hinzufügen",
+      "Priorität setzen",
+      "Wiederholung einrichten",
       "Zum Projekt machen",
       "Verwerfen",
     ]) {
       expect(screen.getByRole("button", { name: label })).toBeVisible();
     }
+  });
+
+  it("offers to mark or unmark a project task as an additional Next Action, but only when it has a project", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({
+        id: 42,
+        title: "Menü abstimmen",
+        projectId: 7,
+        additionalNextAction: false,
+      }),
+    );
+    mockedApi.updateTask.mockImplementation(async (id, input) =>
+      makeTask({ id, title: "Menü abstimmen", projectId: 7, ...input }),
+    );
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Menü abstimmen");
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Als weitere nächste Aktion markieren" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
+        additionalNextAction: true,
+        expectedRevision: 1,
+      }),
+    );
+    await screen.findByRole("button", {
+      name: "Nicht mehr als weitere nächste Aktion markieren",
+    });
+  });
+
+  it("does not offer the additional-Next-Action toggle for a standalone (no-project) task", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 42, title: "Vollständige Aufgabe", projectId: null }),
+    );
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Vollständige Aufgabe");
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Als weitere nächste Aktion markieren" }),
+    ).not.toBeInTheDocument();
   });
 
   it("loads task activity only after its collapsed disclosure is opened", async () => {
@@ -455,7 +498,7 @@ describe("TaskDetailSheet", () => {
     expect(result).toBeInTheDocument();
   });
 
-  it("ranks dependency matches before limiting and shows their project context", async () => {
+  it("ranks dependency matches before limiting, excludes done candidates, and shows their project context", async () => {
     const existing = makeTask({ id: 18, title: "Schon verknüpft" });
     const task = makeTask({
       id: 42,
@@ -518,7 +561,6 @@ describe("TaskDetailSheet", () => {
     });
     expect(results.map((result) => result.textContent)).toEqual([
       "Abhängigkeit hinzufügen: Freigabe · Küche",
-      "Abhängigkeit hinzufügen: Freigabe · Bad",
       "Abhängigkeit hinzufügen: Bau Freigabe · Küche",
       "Abhängigkeit hinzufügen: Notiz · Küche",
     ]);
@@ -655,6 +697,53 @@ describe("TaskDetailSheet", () => {
         expectedRevision: 1,
       }),
     );
+  });
+
+  it("shows Tags and Orte as two independently clickable values dispatching their own command", async () => {
+    const tag = makeTag({ id: 21, name: "Garten" });
+    const context = makePhysicalContext({ externalId: "zone.baumarkt", name: "Baumarkt" });
+    const task = makeTask({
+      id: 44,
+      title: "Erde kaufen",
+      effectiveTags: [tag],
+      effectiveContexts: [context],
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderSheet(44);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Erde kaufen");
+
+    const tagsButton = screen.getByRole("button", { name: /Tags/ });
+    const contextsButton = screen.getByRole("button", { name: /Orte/ });
+    expect(tagsButton).not.toBe(contextsButton);
+    expect(within(tagsButton).getByText("Garten")).toBeInTheDocument();
+    expect(within(contextsButton).getByText("Baumarkt")).toBeInTheDocument();
+
+    await userEvent.click(contextsButton);
+    expect(
+      await screen.findByRole("heading", { name: "Orte" }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers lightweight + Tags / + Orte affordances when unset, each opening its own command", async () => {
+    const task = makeTask({
+      id: 45,
+      title: "Nackte Aufgabe",
+      effectiveTags: [],
+      effectiveContexts: [],
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderSheet(45);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Nackte Aufgabe");
+
+    expect(screen.getByRole("button", { name: "+ Tags" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Orte" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "+ Orte" }));
+    expect(
+      await screen.findByRole("heading", { name: "Orte" }),
+    ).toBeInTheDocument();
   });
 
   it("closes the sheet when following the project context link", async () => {
@@ -919,7 +1008,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(
       screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Priorität" }));
+    await userEvent.click(screen.getByRole("button", { name: "Priorität setzen" }));
     expect(
       await screen.findByRole("group", { name: "Priorität" }),
     ).toBeInTheDocument();
@@ -1224,7 +1313,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(
       screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Priorität" }));
+    await userEvent.click(screen.getByRole("button", { name: "Priorität setzen" }));
     const choices = await screen.findByRole("group", { name: "Priorität" });
     await userEvent.click(within(choices).getByRole("button", { name: "2" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledWith(49, {

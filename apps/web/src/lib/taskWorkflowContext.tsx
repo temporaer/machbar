@@ -21,6 +21,7 @@ export type TaskWorkflowKind =
   | "split"
   | "assignOwner"
   | "changeProject"
+  | "changeParent"
   | "addSuccessor"
   | "recurrence"
   | "priority"

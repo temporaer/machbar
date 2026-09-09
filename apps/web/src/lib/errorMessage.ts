@@ -33,16 +33,6 @@ function stringDetail(
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function numberDetail(
-  details: Record<string, unknown> | undefined,
-  key: string,
-): number | undefined {
-  const value = details?.[key];
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
-}
-
 function isProjectStatus(value: string | null): value is ProjectStatus {
   return (
     value === "backlog" ||
@@ -95,16 +85,6 @@ export function localizedApiErrorMessage(
     }
     if (code === "oidc_name_conflict") {
       return strings.apiErrorOidcNameConflict(name);
-    }
-  }
-
-  if (code === "task_sequence_too_short") {
-    const minimum = numberDetail(details, "minimum");
-    if (minimum !== undefined) {
-      return strings.apiErrorTaskSequenceTooShort(
-        minimum,
-        numberDetail(details, "provided"),
-      );
     }
   }
 

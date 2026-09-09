@@ -310,28 +310,15 @@ describe("TaskOutline Ziehen und Umbauen", () => {
     expect(mockedApi.moveTask).not.toHaveBeenCalled();
   });
 
-  it("bietet eine einzige Werkzeugleiste für die ausgewählte Aufgabe statt Bedienfelder je Zeile", async () => {
-    mockedApi.moveTask.mockResolvedValue(makeTask({ id: 2 }));
+  it("öffnet bei einem gewöhnlichen Klick auf den Ziehgriff keinen eigenen Modus", async () => {
     renderWithProviders(<TaskOutline tasks={outlineTasks()} emptyMessage="Nichts da" organizable />);
     await screen.findByText("Beta");
 
     expect(screen.queryByRole("toolbar")).toBeNull();
     await userEvent.click(handleFor("Beta"));
 
-    const toolbars = screen.getAllByRole("toolbar");
-    expect(toolbars).toHaveLength(1);
-    expect(screen.getByRole("button", { name: "Ablegen" })).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Nach oben" }));
-    await waitFor(() =>
-      expect(mockedApi.moveTask).toHaveBeenCalledWith(2, {
-        parentTaskId: null,
-        projectId: 5,
-        position: 0,
-        expectedRevision: 1,
-      }),
-    );
-    expect(renderedOrder()).toEqual(["Beta", "Alpha", "Gamma"]);
+    expect(screen.queryByRole("toolbar")).toBeNull();
+    expect(mockedApi.moveTask).not.toHaveBeenCalled();
   });
 
   it("verschiebt per Tastatur direkt am Ziehgriff", async () => {

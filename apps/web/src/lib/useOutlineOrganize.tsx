@@ -18,7 +18,7 @@ import {
 } from "./taskTreeMove";
 import type { DropProjection, OutlineRow } from "./taskTreeMove";
 
-/** Movements the non-pointer (keyboard / selected-task toolbar) path offers. */
+/** Movements the non-pointer (keyboard) path offers. */
 export type OrganizeDirection = "up" | "down" | "indent" | "outdent";
 
 /** Pointer travel before a press on the drag handle becomes an actual drag. */
@@ -28,7 +28,6 @@ export interface OutlineOrganizeValue {
   /** False for compiled views, where screen order carries no hierarchy meaning. */
   enabled: boolean;
   activeId: number | null;
-  selectedId: number | null;
   /** Task whose structural mutation is in flight. */
   pendingId: number | null;
   projection: DropProjection | null;
@@ -46,8 +45,7 @@ export interface OutlineOrganizeValue {
   beginDrag: (taskId: number, clientX: number, clientY: number) => void;
   /** Starts a drag immediately (touch long press), using the press origin. */
   beginLongPressDrag: (taskId: number, clientX: number, clientY: number) => void;
-  toggleSelect: (taskId: number) => void;
-  /** True exactly once after a real drag, so the handle's click never toggles selection too. */
+  /** True exactly once after a real drag, so the handle's click never re-triggers anything else. */
   consumeDragClick: () => boolean;
   moveBy: (taskId: number, direction: OrganizeDirection) => void;
   clearError: (taskId: number) => void;
@@ -115,8 +113,6 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
   // `organizable` value into the scope rather than the page declaring a
   // separate flag that could drift out of sync with it.
   const scope = useInteractionScope();
-  const selectedId = scope.activeId;
-  const setSelectedId = scope.setActive;
   const [override, setOverride] = useState<{
     tasks: Task[];
     taskId: number;
@@ -456,13 +452,6 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     return suppressed;
   }, []);
 
-  const toggleSelect = useCallback(
-    (taskId: number) => {
-      setSelectedId(selectedId === taskId ? null : taskId);
-    },
-    [selectedId, setSelectedId],
-  );
-
   const moveBy = useCallback(
     (taskId: number, direction: OrganizeDirection) => {
       const { effectiveTasks: current, rootGroup: group } = latest.current;
@@ -542,7 +531,6 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     () => ({
       enabled,
       activeId,
-      selectedId,
       pendingId,
       projection,
       dragDepthDelta,
@@ -551,7 +539,6 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       registerRow,
       beginDrag,
       beginLongPressDrag,
-      toggleSelect,
       consumeDragClick,
       moveBy,
       clearError,
@@ -559,7 +546,6 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     [
       enabled,
       activeId,
-      selectedId,
       pendingId,
       projection,
       dragDepthDelta,
@@ -568,25 +554,11 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
       registerRow,
       beginDrag,
       beginLongPressDrag,
-      toggleSelect,
       consumeDragClick,
       moveBy,
       clearError,
     ],
   );
-
-  const selected = useMemo(() => {
-    if (selectedId === null || !rootGroup) return null;
-    const located = locateTask(effectiveTasks, selectedId, rootGroup.parentId);
-    if (!located) return null;
-    return {
-      task: located.task,
-      canMoveUp: located.index > 0,
-      canMoveDown: located.index < located.siblings.length - 1,
-      canIndent: located.index > 0,
-      canOutdent: located.parentId !== rootGroup.parentId && located.parentId !== null,
-    };
-  }, [selectedId, effectiveTasks, rootGroup]);
 
   return {
     /** The tree to render: server data, or the optimistic tree while a move is pending. */
@@ -598,9 +570,7 @@ export function useOutlineOrganize(tasks: Task[], organizable: boolean) {
     indicatorTop,
     indentWidth: INDENT_WIDTH,
     announcement,
-    selected,
     pendingId,
     moveBy,
-    select: setSelectedId,
   };
 }

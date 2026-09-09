@@ -46,6 +46,41 @@ describe("search/filter and project CRUD/archive", () => {
     return { ...project, status: "active" };
   }
 
+  it("excludes done/cancelled tasks by default, but includes them when explicitly requested", async () => {
+    const done = createTask(ctx.handle.db, { title: "Erledigte Suchaufgabe" });
+    ctx.handle.sqlite
+      .prepare("UPDATE work_items SET status = 'done' WHERE id = ?")
+      .run(done.id);
+    const cancelled = createTask(ctx.handle.db, { title: "Verworfene Suchaufgabe" });
+    ctx.handle.sqlite
+      .prepare("UPDATE work_items SET status = 'cancelled' WHERE id = ?")
+      .run(cancelled.id);
+
+    const byDefault = (
+      await ctx.app.inject({ method: "GET", url: "/api/search?text=Suchaufgabe" })
+    ).json() as Array<{ id: number }>;
+    expect(byDefault.map((task) => task.id)).not.toContain(done.id);
+    expect(byDefault.map((task) => task.id)).not.toContain(cancelled.id);
+
+    const explicitStatus = (
+      await ctx.app.inject({
+        method: "GET",
+        url: "/api/search?text=Suchaufgabe&status=done",
+      })
+    ).json() as Array<{ id: number }>;
+    expect(explicitStatus.map((task) => task.id)).toEqual([done.id]);
+
+    const exhaustive = (
+      await ctx.app.inject({
+        method: "GET",
+        url: "/api/search?text=Suchaufgabe&includeTerminal=true",
+      })
+    ).json() as Array<{ id: number }>;
+    expect(exhaustive.map((task) => task.id)).toEqual(
+      expect.arrayContaining([done.id, cancelled.id]),
+    );
+  });
+
   it("filters search results by canonical external-wait state", async () => {
     const res = await ctx.app.inject({
       method: "GET",

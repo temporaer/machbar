@@ -167,7 +167,9 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task owner selection | `apps/web/src/components/TaskOwnerSheet.tsx` and `apps/web/src/components/TaskOwnerChoiceGroup.tsx` |
 | Household member selection | `apps/web/src/components/MemberSelectionSheet.tsx` |
 | Single-task composition | `apps/web/src/components/InlineTaskComposer.tsx` |
-| Acceptance criteria editing | `apps/web/src/components/AcceptanceCriteriaEditor.tsx` |
+| Acceptance criteria direct check/uncheck | `apps/web/src/lib/useCriterionCheck.ts` |
+| Acceptance criteria structural editing | `apps/web/src/components/AcceptanceCriteriaEditor.tsx` via `story.editOutcome` |
+| Detail action projection | `apps/web/src/components/ActionTileGrid.tsx` |
 | Destination selection | `apps/web/src/components/DestinationPicker.tsx` |
 | Horizontal row swipe | `apps/web/src/lib/useHorizontalSwipe.ts` |
 | Paperless document access | `apps/api/src/integrations/paperless/` and `apps/api/src/routes/paperless.ts` |

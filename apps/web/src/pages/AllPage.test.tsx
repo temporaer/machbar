@@ -99,6 +99,7 @@ describe("AllPage", () => {
     await waitFor(() =>
       expect(mockedApi.searchTasks).toHaveBeenLastCalledWith({
         text: "Projektfarbe",
+        includeTerminal: true,
       }),
     );
     expect(await screen.findByText("Projektfarbe auswählen")).toBeInTheDocument();

@@ -90,6 +90,8 @@ export function TaskWorkflowHost() {
       );
     case "changeProject":
       return <MoveTaskSheet task={task} mode="subtree" onClose={close} />;
+    case "changeParent":
+      return <MoveTaskSheet task={task} mode="parent" onClose={close} />;
     case "addSuccessor":
       return <TaskSuccessorSheet task={task} onClose={close} />;
     case "recurrence":

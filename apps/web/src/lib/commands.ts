@@ -39,6 +39,7 @@ export type WorkItemCommand =
   | { type: "task.split"; taskId: number }
   | { type: "task.assignOwner"; taskId: number }
   | { type: "task.changeProject"; taskId: number }
+  | { type: "task.changeParent"; taskId: number }
   | { type: "task.addSuccessor"; taskId: number }
   | { type: "task.recurrence"; taskId: number }
   | { type: "task.priority"; taskId: number }
@@ -49,6 +50,7 @@ export type WorkItemCommand =
   | { type: "task.setStatus"; task: Task; status: Task["status"] }
   | { type: "task.openOverflow"; taskId: number }
   | { type: "task.toggleDone"; task: Task }
+  | { type: "task.toggleAdditionalNextAction"; task: Task }
   | { type: "task.primaryAction"; task: Task }
   | { type: "task.discard"; task: Task }
   | { type: "workItem.schedule"; item: WeekPlanningItem; date: string | null }

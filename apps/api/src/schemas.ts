@@ -103,13 +103,6 @@ export const createChildTaskSchema = createTaskSchema.omit({
   parentTaskId: true,
 });
 
-export const createTaskSequenceSchema = z.object({
-  titles: z
-    .array(z.string().trim().min(1, "Every step requires a title."))
-    .min(2, "A sequence requires at least two steps."),
-  createdByMemberId: z.number().int().nullable().optional(),
-});
-
 export const updateTaskSchema = z.object({
   title: z.string().min(1).optional(),
   notes: z.string().optional(),
@@ -125,6 +118,7 @@ export const updateTaskSchema = z.object({
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
   allowedDeviationDays: z.number().int().min(0).nullable().optional(),
   reminderAt: isoDateTime.nullable().optional(),
+  additionalNextAction: z.boolean().optional(),
   tagIds: z.array(z.number().int()).optional(),
   excludedTagIds: z.array(z.number().int()).optional(),
   contextIds: z.array(z.number().int().positive()).optional(),
@@ -299,6 +293,7 @@ export const searchQuerySchema = z.object({
   scheduledTo: isoDate.optional(),
   blocked: queryBoolean.optional(),
   externalWait: queryBoolean.optional(),
+  includeTerminal: queryBoolean.optional(),
 });
 
 export const activityQuerySchema = z.object({

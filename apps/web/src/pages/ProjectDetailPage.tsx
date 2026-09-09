@@ -17,7 +17,6 @@ import { countTasks, flattenTasks } from "../lib/taskHelpers";
 import { useIdentity } from "../lib/identity";
 import { formatDate } from "../lib/format";
 import { ProjectStuckNotice } from "../components/ProjectStuckNotice";
-import { TaskSequenceSheet } from "../components/TaskSequenceSheet";
 import { MarkdownNotes } from "../components/MarkdownNotes";
 import { NativeShareButton } from "../components/NativeShareButton";
 import { CalendarExportButton } from "../components/CalendarExportButton";
@@ -33,14 +32,15 @@ import { useTaskDetail } from "../lib/taskDetailContext";
 import { useProjectWorkflow } from "../lib/projectWorkflowContext";
 import { RecentActivity } from "../components/RecentActivity";
 import { useLocale } from "../lib/locale";
+import { recordRecentlyViewed } from "../lib/recentlyViewed";
 import type { ProjectWithActions } from "../lib/api";
 import { useProjectActions } from "../lib/useProjectActions";
 import { projectWorkflowLabel } from "../lib/projectWorkflow";
-import { projectRailCommands } from "../lib/railConfig";
 import { storyWorkflowCommand } from "../lib/commands";
 import { MarkdownEditor } from "../components/MarkdownEditor";
+import { AcceptanceCriteriaChecklist } from "../components/AcceptanceCriteriaChecklist";
 import { WorkItemDetailDisclosure } from "../components/WorkItemDetailSection";
-import { CommandCategoryGrid } from "../components/CommandCategoryGrid";
+import { ActionTileGrid } from "../components/ActionTileGrid";
 import { appendTextBlock } from "../lib/shareTarget";
 import {
   containsPaperlessReference,
@@ -65,7 +65,6 @@ export function ProjectDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const focus = searchParams.get("focus");
   const { members } = useIdentity();
-  const [addingSequence, setAddingSequence] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
   const [titleEditing, setTitleEditing] = useState(false);
@@ -110,6 +109,11 @@ export function ProjectDetailPage() {
     error: projectError,
     reload: reloadProject,
   } = useAsync(() => api.getProject(projectId), [projectId]);
+  // Recency is a soft ranking boost for search/pickers, not domain state —
+  // record it once per genuine open, not on every re-render/reload.
+  useEffect(() => {
+    if (Number.isFinite(projectId)) recordRecentlyViewed("project", projectId);
+  }, [projectId]);
   useEffect(() => {
     setConfirmedProject((current) => {
       if (!current || current.id !== loadedProject?.id) return null;
@@ -144,11 +148,7 @@ export function ProjectDetailPage() {
   const hasProjectLabels =
     Boolean(project?.tags.length) || Boolean(project?.contexts.length);
   const hasProjectMeta =
-    Boolean(owner) ||
-    Boolean(dueDate) ||
-    Boolean(scheduledDate) ||
-    hasProjectLabels ||
-    criteriaTotal > 0;
+    Boolean(owner) || Boolean(dueDate) || Boolean(scheduledDate) || hasProjectLabels;
 
   const reviewReturn = (
     location.state as {
@@ -550,22 +550,6 @@ export function ProjectDetailPage() {
                         />
                       </button>
                     ) : null}
-                    {criteriaTotal > 0 ? (
-                      <button
-                        type="button"
-                        className="detail-meta-button project-detail-criteria-button"
-                        onClick={() =>
-                          dispatch({ type: "story.editOutcome", story: project })
-                        }
-                      >
-                        <span>
-                          {strings.criteria}: {criteriaDone}/{criteriaTotal}
-                        </span>
-                        <span className="criteria-progress" aria-hidden="true">
-                          <span style={{ width: `${criteriaPct}%` }} />
-                        </span>
-                      </button>
-                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -638,19 +622,37 @@ export function ProjectDetailPage() {
                 <p className="text-muted">{strings.noNotes}</p>
               )}
             </section>
+            <section className="section project-outcome-section">
+              <div className="row-between">
+                <h2 className="section-title" id="project-outcome-label">
+                  {strings.outcomeSectionTitle}
+                  {criteriaTotal > 0 ? (
+                    <span className="project-outcome-count">
+                      {" "}
+                      {strings.outcomeSectionCount(criteriaDone, criteriaTotal)}
+                    </span>
+                  ) : null}
+                </h2>
+                <IconActionButton
+                  kind="criteria"
+                  label={strings.actionTileLabels["story.editOutcome"]}
+                  onClick={() => dispatch({ type: "story.editOutcome", story: project })}
+                />
+              </div>
+              {criteriaTotal > 0 ? (
+                <span className="criteria-progress" aria-hidden="true">
+                  <span style={{ width: `${criteriaPct}%` }} />
+                </span>
+              ) : null}
+              <AcceptanceCriteriaChecklist
+                projectId={project.id}
+                criteria={project.acceptanceCriteria}
+              />
+            </section>
             <section className="section">
               <PageHeader
                 title={strings.taskSummary}
                 headingLevel={2}
-                actions={
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    onClick={() => setAddingSequence(true)}
-                  >
-                    {strings.addSequence}
-                  </button>
-                }
                 hints={[{ text: strings.projectTasksHint }]}
               />
               {project.childStories?.length ? (
@@ -665,6 +667,12 @@ export function ProjectDetailPage() {
                 emptyMessage={strings.noTasks}
                 organizable
                 showSwipeHint={false}
+                nextActionInfo={{
+                  canonicalId: project.nextAction?.id ?? null,
+                  additionalSelectedIds: new Set(
+                    (project.additionalNextActions ?? []).map((t) => t.id),
+                  ),
+                }}
               />
             </section>
             <WorkItemDetailDisclosure
@@ -672,16 +680,57 @@ export function ProjectDetailPage() {
               resetKey={project.id}
               className="project-detail-commands"
             >
-              <CommandCategoryGrid
-                commands={projectRailCommands}
-                labels={strings.railCommandLabels}
-                onCommand={(command) => {
-                  if (command === "story.lifecycle") {
-                    setLifecycleOpen((open) => !open);
-                    return;
-                  }
-                  dispatch({ type: command, story: project });
-                }}
+              <ActionTileGrid
+                items={[
+                  {
+                    key: "story.planWork",
+                    icon: "successor",
+                    label: strings.actionTileLabels["story.planWork"],
+                    onClick: () => dispatch({ type: "story.planWork", story: project }),
+                  },
+                  {
+                    key: "story.assignDriver",
+                    icon: "owner",
+                    label: strings.actionTileLabels["story.assignDriver"],
+                    onClick: () => dispatch({ type: "story.assignDriver", story: project }),
+                  },
+                  {
+                    key: "story.planDates",
+                    icon: "schedule",
+                    label: strings.actionTileLabels["story.planDates"],
+                    onClick: () => dispatch({ type: "story.planDates", story: project }),
+                  },
+                  {
+                    key: "story.defer",
+                    icon: "followUp",
+                    label: strings.actionTileLabels["story.defer"],
+                    onClick: () => dispatch({ type: "story.defer", story: project }),
+                  },
+                  {
+                    key: "story.editOutcome",
+                    icon: "criteria",
+                    label: strings.actionTileLabels["story.editOutcome"],
+                    onClick: () => dispatch({ type: "story.editOutcome", story: project }),
+                  },
+                  {
+                    key: "story.tags",
+                    icon: "tags",
+                    label: strings.actionTileLabels["story.tags"],
+                    onClick: () => dispatch({ type: "story.tags", story: project }),
+                  },
+                  {
+                    key: "story.contexts",
+                    icon: "places",
+                    label: strings.actionTileLabels["story.contexts"],
+                    onClick: () => dispatch({ type: "story.contexts", story: project }),
+                  },
+                  {
+                    key: "story.lifecycle",
+                    icon: "actionable",
+                    label: strings.actionTileLabels["story.lifecycle"],
+                    onClick: () => setLifecycleOpen((open) => !open),
+                  },
+                ]}
               />
               {lifecycleOpen ? (
                 <div
@@ -739,12 +788,6 @@ export function ProjectDetailPage() {
           autoOpen={focus === "next-action"}
           onAutoOpenClose={clearRouteFocus}
         />
-        {addingSequence ? (
-          <TaskSequenceSheet
-            projectId={projectId}
-            onClose={() => setAddingSequence(false)}
-          />
-        ) : null}
         {attachmentOpen && project ? (
           <MarkdownAttachmentSheet
             onClose={() => setAttachmentOpen(false)}

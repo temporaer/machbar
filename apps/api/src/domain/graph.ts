@@ -84,6 +84,7 @@ interface RawTask {
   repeatAfterDays: number | null;
   allowedDeviationDays: number | null;
   reminderAt: string | null;
+  additionalNextAction: boolean;
   createdAt: string;
   updatedAt: string;
   reviewedAt: string | null;
@@ -268,6 +269,7 @@ export class Graph {
         repeatAfterDays: row.repeatAfterDays,
         allowedDeviationDays: row.allowedDeviationDays,
         reminderAt: row.reminderAt,
+        additionalNextAction: row.additionalNextAction,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         reviewedAt: row.reviewedAt,
@@ -605,6 +607,7 @@ export class Graph {
         repeatAfterDays: raw.repeatAfterDays,
         allowedDeviationDays: raw.allowedDeviationDays,
         reminderAt: raw.reminderAt,
+        additionalNextAction: raw.additionalNextAction,
         createdAt: raw.createdAt,
         updatedAt: raw.updatedAt,
         reviewedAt: raw.reviewedAt,
@@ -751,6 +754,40 @@ export class Graph {
     });
   }
 
+  /**
+   * Tasks explicitly opted in via `additionalNextAction` that are already
+   * outline-eligible next-action candidates (active, unblocked) and pass
+   * the same owner/availability rules as `selectedNextActionsFor`, minus
+   * whatever that canonical selection already returned for this call. This
+   * never changes the canonical single/lane-based selection — it only adds
+   * further genuinely-eligible tasks alongside it.
+   */
+  additionalSelectedNextActionsFor(
+    projectId: number,
+    selection:
+      | { scope: "mine"; memberId: number }
+      | { scope: "all" },
+    isAvailable: (task: TaskRecord) => boolean = () => true,
+  ): TaskRecord[] {
+    const canonical = new Set(
+      this.selectedNextActionsFor(projectId, selection, isAvailable).map(
+        (task) => task.id,
+      ),
+    );
+    return this.nextActionCandidatesFor(projectId).filter((task) => {
+      if (!task.additionalNextAction) return false;
+      if (canonical.has(task.id)) return false;
+      if (!isAvailable(task)) return false;
+      if (selection.scope === "mine") {
+        return (
+          task.effectiveOwnerId === selection.memberId ||
+          task.effectiveOwnerId === null
+        );
+      }
+      return true;
+    });
+  }
+
   stuckReasonFor(projectId: number): StuckReason | null {
     return this.stuckReasonByProject.get(projectId) ?? null;
   }
@@ -823,6 +860,10 @@ export class Graph {
       openCount,
       doneCount,
       nextAction: this.nextActionFor(projectId),
+      additionalNextActions: this.additionalSelectedNextActionsFor(
+        projectId,
+        { scope: "all" },
+      ),
       stuckReason: this.stuckReasonFor(projectId),
       waitingOn,
       waitingUntil,

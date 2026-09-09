@@ -12,6 +12,7 @@ import { useSwipeSettings } from "../lib/swipeSettings";
 import type { PrimarySwipeAction } from "../lib/swipeSettings";
 import { useOutlineOrganizeRow } from "../lib/useOutlineOrganize";
 import type { OrganizeDirection } from "../lib/useOutlineOrganize";
+import { useNextActionBadge } from "../lib/nextActionBadge";
 import { INDENT_WIDTH } from "../lib/taskTreeMove";
 import { useIdentity } from "../lib/identity";
 import { MarkdownNotes } from "./MarkdownNotes";
@@ -121,6 +122,7 @@ export function TaskRow({
   // state cycle (for example erledigt -> wieder offen).
   const retainedTask = retained.get(taskProp.id);
   const task = retainedTask ?? taskProp;
+  const nextActionBadge = useNextActionBadge(task);
   const attachments = useMemo(
     () => extractPaperlessReferences(task.notes),
     [task.notes],
@@ -136,7 +138,6 @@ export function TaskRow({
 
   const organizeEnabled = organize?.enabled ?? false;
   const isDragged = organize?.activeId === taskProp.id;
-  const isSelectedForOrganize = organize?.selectedId === taskProp.id;
   const isMoving = organize?.pendingId === taskProp.id;
   // While dragging, the row itself previews the projected level so the drop
   // depth is obvious even before the insertion line is read.
@@ -283,7 +284,7 @@ export function TaskRow({
       />
       <div
         ref={contentRef}
-        className={`task-row-content${ownerMember ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isSelectedForOrganize ? " organize-selected" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
+        className={`task-row-content${ownerMember ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
         style={
           dragX || dragDepthShift
             ? { transform: `translateX(${dragX + dragDepthShift}px)` }
@@ -315,15 +316,14 @@ export function TaskRow({
       >
         {organizeEnabled ? (
           // The one always-visible structural control per row: press and
-          // drag it to move the task, or activate it (mouse, tap or
-          // keyboard) to open the single selected-task toolbar. Arrow keys
-          // move the task directly, without any pointer at all.
+          // drag it to move the task. Arrow keys move the task directly
+          // while it has focus, without any pointer at all — a plain
+          // click/tap does not open any separate mode.
           <button
             type="button"
             className="task-row-drag-handle"
             aria-label={`${strings.moveTask}: ${task.title}`}
             title={strings.moveTask}
-            aria-pressed={isSelectedForOrganize}
             aria-busy={isMoving}
             disabled={outlineRefreshing}
             onPointerDown={(e) => {
@@ -331,10 +331,9 @@ export function TaskRow({
               organize?.beginDrag(taskProp.id, e.clientX, e.clientY);
             }}
             onClick={() => {
-              // A real drag ends with a click on the handle; that click must
-              // not also toggle the selection.
-              if (organize?.consumeDragClick()) return;
-              organize?.toggleSelect(taskProp.id);
+              // A real drag ends with a click on the handle; swallow it so
+              // it has no further effect.
+              organize?.consumeDragClick();
             }}
             onKeyDown={(e) => {
               const direction = KEY_DIRECTIONS[e.key];
@@ -397,6 +396,17 @@ export function TaskRow({
               </div>
             </div>
             <div className="task-row-meta">
+              {nextActionBadge ? (
+                <span
+                  className={`task-row-meta-item task-row-next-action-badge task-row-next-action-${nextActionBadge}`}
+                >
+                  {nextActionBadge === "canonical"
+                    ? strings.nextActionBadgeCanonical
+                    : nextActionBadge === "additional"
+                      ? strings.nextActionBadgeAdditional
+                      : strings.nextActionBadgeMarked}
+                </span>
+              ) : null}
               {task.status !== "actionable" ? (
                 <span className={`task-row-meta-item task-row-state task-row-state-${task.status}`}>
                   {strings.taskStatusLabels[task.status]}

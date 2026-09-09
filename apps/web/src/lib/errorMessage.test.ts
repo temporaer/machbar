@@ -47,17 +47,6 @@ describe("localizedErrorMessage", () => {
       ),
     ).toBe("Eine Person mit dem Namen „Mira“ ist bereits vorhanden.");
 
-    expect(
-      localizedErrorMessage(
-        new ApiError(
-          400,
-          "A task sequence requires at least two named steps.",
-          "task_sequence_too_short",
-          { minimum: 2, provided: 1 },
-        ),
-        en,
-      ),
-    ).toBe("A task sequence needs at least 2 named steps; 1 was provided.");
   });
 
   it("localizes status and action details for invalid project transitions", () => {

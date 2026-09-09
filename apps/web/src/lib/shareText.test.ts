@@ -26,6 +26,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     repeatAfterDays: null,
     allowedDeviationDays: null,
     reminderAt: null,
+    additionalNextAction: false,
     createdAt: "2026-08-27T00:00:00.000Z",
     updatedAt: "2026-08-27T00:00:00.000Z",
     reviewedAt: null,

@@ -1,14 +1,12 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { flattenTasks, sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useSwipeSettings } from "../lib/swipeSettings";
 import { OutlineOrganizeProvider, useOutlineOrganize } from "../lib/useOutlineOrganize";
+import { NextActionBadgeProvider, type NextActionBadgeInfo } from "../lib/nextActionBadge";
 import { TaskRow } from "./TaskRow";
-import { TaskOrganizeBar } from "./TaskOrganizeBar";
-import { MoveTaskSheet } from "./MoveTaskSheet";
-import type { MoveMode } from "./MoveTaskSheet";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { EmptyState } from "./AsyncStates";
 
@@ -16,14 +14,14 @@ export interface TaskOutlineProps {
   tasks: Task[];
   emptyMessage: string;
   /**
-   * Opt in to structural editing (drag handle, keyboard moves, selected-task
-   * toolbar). Only true where `tasks` is a *complete* sibling group whose
-   * screen order is the stored order — i.e. a project's own outline.
-   * Compiled views (Heute, Eingang, Suche) show a filtered subset of tasks
-   * from unrelated groups, so a position taken from screen order would be
-   * applied to the full group on the server and silently shuffle rows the
-   * user never saw. Refiling stays available there through the task detail
-   * sheet's searchable pickers.
+   * Opt in to structural editing (drag handle, keyboard moves). Only true
+   * where `tasks` is a *complete* sibling group whose screen order is the
+   * stored order — i.e. a project's own outline. Compiled views (Heute,
+   * Eingang, Suche) show a filtered subset of tasks from unrelated groups,
+   * so a position taken from screen order would be applied to the full
+   * group on the server and silently shuffle rows the user never saw.
+   * Refiling stays available there through the task detail sheet's
+   * searchable pickers.
    */
   organizable?: boolean;
   /** Show the root tasks' external-wait revisit date as their follow-up prompt. */
@@ -31,6 +29,11 @@ export interface TaskOutlineProps {
   showSwipeHint?: boolean;
   /** Preserve a compiled queue's root order instead of applying outline positions. */
   preserveRootOrder?: boolean;
+  /**
+   * Project-scoped derived/stored Next Action state (section 7). Only the
+   * project's own outline passes this — see `ProjectDetailPage`.
+   */
+  nextActionInfo?: NextActionBadgeInfo;
 }
 
 export function TaskOutline({
@@ -40,15 +43,14 @@ export function TaskOutline({
   showRevisitDate = false,
   showSwipeHint = true,
   preserveRootOrder = false,
+  nextActionInfo,
 }: TaskOutlineProps) {
   const strings = useStrings();
-  const [movePrompt, setMovePrompt] = useState<{ taskId: number; mode: MoveMode } | null>(null);
   const taskActions = useTaskActions();
   const { primarySwipeAction } = useSwipeSettings();
   const rightSwipeAction = strings.primarySwipeActionLabels[primarySwipeAction];
-  // Structural editing (drag gesture and the selected-task toolbar) keeps
-  // its own optimistic view of the tree, so render what it hands back
-  // rather than the raw prop.
+  // Structural editing (the drag gesture) keeps its own optimistic view of
+  // the tree, so render what it hands back rather than the raw prop.
   const organize = useOutlineOrganize(tasks, organizable);
 
   // Root-level rows that just transitioned may no longer be present in
@@ -75,13 +77,10 @@ export function TaskOutline({
     const stillRetained = [...taskActions.retained.values()].filter((t) => !presentIds.has(t.id));
     return { roots: sorted, ghosts: stillRetained };
   }, [organize.tasks, preserveRootOrder, taskActions.retained]);
-  const movePromptTask = movePrompt
-    ? flattenTasks(organize.tasks).find((task) => task.id === movePrompt.taskId) ?? null
-    : null;
 
   if (roots.length === 0 && ghosts.length === 0) return <EmptyState message={emptyMessage} />;
 
-  return (
+  const content = (
     <div className="task-outline" ref={organize.containerRef}>
       {showSwipeHint ? (
         <div className="row-between" style={{ marginBottom: 8 }}>
@@ -134,19 +133,6 @@ export function TaskOutline({
       <p className="visually-hidden" role="status" aria-live="polite">
         {organize.announcement}
       </p>
-      {organize.selected ? (
-        <TaskOrganizeBar
-          task={organize.selected.task}
-          canMoveUp={organize.selected.canMoveUp}
-          canMoveDown={organize.selected.canMoveDown}
-          canIndent={organize.selected.canIndent}
-          canOutdent={organize.selected.canOutdent}
-          busy={organize.pendingId !== null}
-          onMove={(direction) => organize.moveBy(organize.selected!.task.id, direction)}
-          onRefile={() => setMovePrompt({ taskId: organize.selected!.task.id, mode: "subtree" })}
-          onClose={() => organize.select(null)}
-        />
-      ) : null}
       {taskActions.pendingTask ? (
         <ChildPolicyPrompt
           taskTitle={taskActions.pendingTask.title}
@@ -155,9 +141,12 @@ export function TaskOutline({
           onClose={taskActions.cancelPrompt}
         />
       ) : null}
-      {movePrompt && movePromptTask ? (
-        <MoveTaskSheet task={movePromptTask} mode={movePrompt.mode} onClose={() => setMovePrompt(null)} />
-      ) : null}
     </div>
+  );
+
+  return nextActionInfo ? (
+    <NextActionBadgeProvider value={nextActionInfo}>{content}</NextActionBadgeProvider>
+  ) : (
+    content
   );
 }
