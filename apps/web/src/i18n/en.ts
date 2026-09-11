@@ -550,6 +550,7 @@ const en = {
           ? "1 day before"
           : `${days} days before`,
   reminderInHours: (hours: number) => (hours === 1 ? "In 1 hour" : `In ${hours} hours`),
+  reminderInMinutes: (minutes: number) => (minutes === 1 ? "In 1 minute" : `In ${minutes} minutes`),
   reminderRemove: "Remove reminder",
   reminderDaysBeforeFieldLabel: "Days before",
   moreActions: "More actions",
