@@ -92,6 +92,32 @@ describe("reminderLabels", () => {
       expect(label).toMatch(/Sept?\.?/);
     });
 
+    it("labels a reminder due in under an hour with live minute granularity, not a frozen hour rounding", () => {
+      // Regression: an "In 1 Stunde" preset reminder must count down through
+      // minutes as it approaches, instead of staying "In 1 Stunde" for the
+      // entire 30–90 minute window that would otherwise round to one hour.
+      const dueIn40Minutes = new Date(now.getTime() + 40 * 60 * 1000);
+      expect(formatReminderLabel({ kind: "absolute", at: dueIn40Minutes.toISOString() }, null, de, "de", now)).toBe(
+        "In 40 Minuten",
+      );
+
+      const dueIn1Minute = new Date(now.getTime() + 60 * 1000);
+      expect(formatReminderLabel({ kind: "absolute", at: dueIn1Minute.toISOString() }, null, de, "de", now)).toBe(
+        "In 1 Minute",
+      );
+    });
+
+    it("labels a reminder due in one to six hours with hour granularity", () => {
+      const morningNow = new Date(2026, 8, 1, 10, 0, 0);
+      const dueIn3Hours = new Date(morningNow.getTime() + 3 * 60 * 60 * 1000);
+      expect(
+        formatReminderLabel({ kind: "absolute", at: dueIn3Hours.toISOString() }, null, de, "de", morningNow),
+      ).toBe("In 3 Stunden");
+      expect(
+        formatReminderLabel({ kind: "absolute", at: dueIn3Hours.toISOString() }, null, en, "en", morningNow),
+      ).toBe("In 3 hours");
+    });
+
     it("labels a deadline-relative preset match (2 days before) with its resolved time", () => {
       const label = formatReminderLabel(
         { kind: "deadline_relative", daysBefore: 2, time: "09:00", timezone: "UTC" },

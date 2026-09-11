@@ -72,7 +72,12 @@ function formatAbsoluteReminderLabel(at: string, strings: Strings, locale: Local
   const mm = String(target.getMinutes()).padStart(2, "0");
   const time = `${hh}:${mm}`;
 
-  const diffHours = (target.getTime() - now.getTime()) / (60 * 60 * 1000);
+  // Minute-level granularity below one hour so a reminder due soon visibly
+  // counts down across reloads instead of sitting on the same rounded
+  // "In 1 hour" label for the entire 30–90 minute window that would round
+  // to one hour.
+  const diffMinutes = (target.getTime() - now.getTime()) / (60 * 1000);
+  const diffHours = diffMinutes / 60;
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
 
@@ -85,7 +90,10 @@ function formatAbsoluteReminderLabel(at: string, strings: Strings, locale: Local
   if (sameCalendarDay(target, tomorrow) && target.getHours() >= 18) {
     return `${strings.reminderPresetLabels.tomorrowEvening} · ${time}`;
   }
-  if (diffHours > 0 && diffHours < 6) {
+  if (diffMinutes > 0 && diffMinutes < 60) {
+    return strings.reminderInMinutes(Math.max(1, Math.round(diffMinutes)));
+  }
+  if (diffHours >= 1 && diffHours < 6) {
     return strings.reminderInHours(Math.round(diffHours));
   }
   return `${shortDateLabel(at, locale)} · ${time}`;
