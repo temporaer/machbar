@@ -1008,6 +1008,7 @@ describe("Heute agenda: compiled project prompts", () => {
         scheduledDate: string | null;
       };
       qualification: "due" | "scheduled" | "both";
+      attentionBucket: "overdue" | "dueToday" | "dueSoon" | "planned";
       nextAction: { id: number; title: string } | null;
       stuck: { reason: string } | null;
     }>;
@@ -1032,6 +1033,48 @@ describe("Heute agenda: compiled project prompts", () => {
     expect(ids).toContain(boundary.id);
     expect(ids).toContain(overdue.id);
     expect(ids).not.toContain(outside.id);
+  });
+
+  it("classifies each due project into the matching overdue/dueToday/dueSoon bucket", async () => {
+    const today = localTodayIso();
+    const overdue = await createActiveProject({
+      title: "Überfälliges Projekt",
+      dueDate: addDaysIso(today, -1),
+    });
+    const dueToday = await createActiveProject({
+      title: "Heute fälliges Projekt",
+      dueDate: today,
+    });
+    const dueSoon = await createActiveProject({
+      title: "Bald fälliges Projekt",
+      dueDate: addDaysIso(today, 3),
+    });
+
+    const prompts = await projectPrompts();
+    const bucketOf = (id: number) =>
+      prompts.find((entry) => entry.project.id === id)?.attentionBucket;
+    expect(bucketOf(overdue.id)).toBe("overdue");
+    expect(bucketOf(dueToday.id)).toBe("dueToday");
+    expect(bucketOf(dueSoon.id)).toBe("dueSoon");
+  });
+
+  it("classifies a reached scheduledDate as planned even when a due date also qualifies", async () => {
+    const today = localTodayIso();
+    const scheduledOnly = await createActiveProject({
+      title: "Nur Wiedervorlage",
+      scheduledDate: addDaysIso(today, -2),
+    });
+    const both = await createActiveProject({
+      title: "Fällig und in Wiedervorlage",
+      dueDate: addDaysIso(today, -1),
+      scheduledDate: today,
+    });
+
+    const prompts = await projectPrompts();
+    const bucketOf = (id: number) =>
+      prompts.find((entry) => entry.project.id === id)?.attentionBucket;
+    expect(bucketOf(scheduledOnly.id)).toBe("planned");
+    expect(bucketOf(both.id)).toBe("planned");
   });
 
   it("persists reached schedules until rescheduled or completed", async () => {
@@ -1107,6 +1150,9 @@ describe("Heute agenda: compiled project prompts", () => {
     expect(
       prompts.find((entry) => entry.project.id === both.id)?.qualification,
     ).toBe("both");
+    expect(
+      prompts.find((entry) => entry.project.id === both.id)?.attentionBucket,
+    ).toBe("planned");
     expect(prompts.map((entry) => entry.project.id)).toContain(shared.id);
     expect(prompts.map((entry) => entry.project.id)).not.toContain(other.id);
   });

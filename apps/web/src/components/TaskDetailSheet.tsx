@@ -22,7 +22,10 @@ import { isCapturedInboxItem, sortByPosition } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
 import { StatusBadge } from "./StatusBadge";
+import { DetailPropertyPill } from "./DetailPropertyPill";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
+import { ConfirmDeleteSheet } from "./ConfirmDeleteSheet";
+import { WorkItemInlineError } from "./WorkItemInlineError";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 import { MemberLabel } from "./MemberAvatar";
 import { TaskCardTags } from "./TaskCardTags";
@@ -121,6 +124,7 @@ export function TaskDetailSheet() {
   const [addingDependency, setAddingDependency] = useState(false);
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [classificationBusy, setClassificationBusy] = useState(false);
   const [convertedProject, setConvertedProject] =
@@ -545,20 +549,11 @@ export function TaskDetailSheet() {
           style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}
         >
           <div className="field" ref={titleFieldRef}>
-            <div className="row-between">
-              <label className="field-label" htmlFor="task-title">
-                {strings.title}
-              </label>
-              {!titleEditing ? (
-                <IconActionButton
-                  kind="edit"
-                  label={strings.edit}
-                  onClick={() => setTitleEditing(true)}
-                />
-              ) : null}
-            </div>
             {titleEditing ? (
               <>
+                <label className="field-label" htmlFor="task-title">
+                  {strings.title}
+                </label>
                 <input
                   ref={titleInputRef}
                   id="task-title"
@@ -589,7 +584,16 @@ export function TaskDetailSheet() {
                 </div>
               </>
             ) : (
-              <strong>{task.title}</strong>
+              <div className="task-detail-title-row">
+                <h1>
+                  {task.title}
+                  <IconActionButton
+                    kind="edit"
+                    label={strings.edit}
+                    onClick={() => setTitleEditing(true)}
+                  />
+                </h1>
+              </div>
             )}
           </div>
 
@@ -615,135 +619,103 @@ export function TaskDetailSheet() {
               </span>
             ) : null}
             {effectiveOwner ? (
-              <button
-                type="button"
-                className="detail-meta-button"
+              <DetailPropertyPill
+                label={strings.owner}
                 onClick={() => runCommand("task.assignOwner")}
               >
-                <span className="detail-meta-label">{strings.owner}</span>
                 <MemberLabel member={effectiveOwner} size="xs" />
-              </button>
+              </DetailPropertyPill>
             ) : (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost task-detail-add-property"
+              <DetailPropertyPill
+                variant="unset"
                 onClick={() => runCommand("task.assignOwner")}
               >
                 {strings.addOwner}
-              </button>
+              </DetailPropertyPill>
             )}
             {planValue ? (
-              <button
-                type="button"
-                className="detail-meta-button"
+              <DetailPropertyPill
+                label={strings.taskPlanFor}
                 onClick={() => runCommand("task.plan")}
               >
-                <span className="detail-meta-label">{strings.taskPlanFor}</span>
                 <span>{planValue}</span>
-              </button>
+              </DetailPropertyPill>
             ) : (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost task-detail-add-property"
-                onClick={() => runCommand("task.plan")}
-              >
+              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.plan")}>
                 {strings.addPlan}
-              </button>
+              </DetailPropertyPill>
             )}
             {task.reminders.length > 0 && reminderSummary ? (
-              <button
-                type="button"
-                className="detail-meta-button"
+              <DetailPropertyPill
+                label={strings.reminders}
                 onClick={() => runCommand("task.reminders")}
               >
-                <span className="detail-meta-label">{strings.reminders}</span>
                 <span>
                   {reminderSummary.label}
                   {reminderSummary.overflowCount > 0 ? ` +${reminderSummary.overflowCount}` : ""}
                 </span>
-              </button>
+              </DetailPropertyPill>
             ) : !taskIsCapturedInboxItem ? (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost task-detail-add-property"
-                onClick={() => runCommand("task.reminders")}
-              >
+              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.reminders")}>
                 {strings.addReminder}
-              </button>
+              </DetailPropertyPill>
             ) : null}
             {task.externalWait ? (
-              <button
-                type="button"
-                className="detail-meta-button"
+              <DetailPropertyPill
+                label={strings.waitingFor}
                 onClick={() => runCommand("task.waitingLifecycle")}
               >
-                <span className="detail-meta-label">{strings.waitingFor}</span>
                 <span>{waitValue}</span>
-              </button>
+              </DetailPropertyPill>
             ) : (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost task-detail-add-property"
+              <DetailPropertyPill
+                variant="unset"
                 onClick={() => runCommand("task.waitingLifecycle")}
               >
                 {strings.addWaiting}
-              </button>
+              </DetailPropertyPill>
             )}
             {task.repeatAfterDays !== null ? (
-              <button
-                type="button"
-                className="detail-meta-button"
+              <DetailPropertyPill
+                label={strings.recurrence}
                 onClick={() => runCommand("task.recurrence")}
               >
-                <span className="detail-meta-label">{strings.recurrence}</span>
                 <span>{strings.recurrenceEveryDays(task.repeatAfterDays)}</span>
-              </button>
+              </DetailPropertyPill>
             ) : null}
             {task.priority !== null ? (
-              <button
-                type="button"
-                className="detail-meta-button"
+              <DetailPropertyPill
+                label={strings.priority}
                 onClick={() => runCommand("task.priority")}
               >
-                <span className="detail-meta-label">{strings.priority}</span>
                 <span>{task.priority}</span>
-              </button>
+              </DetailPropertyPill>
             ) : null}
             {task.effectiveTags.length > 0 ? (
-              <button
-                type="button"
-                className="detail-meta-button detail-meta-label-button"
-                aria-label={strings.tags}
+              <DetailPropertyPill
+                ariaLabel={strings.tags}
+                extraClassName="detail-meta-label-button"
                 onClick={() => runCommand("task.tags")}
               >
                 <TaskCardTags tags={task.effectiveTags} />
-              </button>
+              </DetailPropertyPill>
             ) : (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost task-detail-add-property"
-                onClick={() => runCommand("task.tags")}
-              >
+              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.tags")}>
                 {strings.addTags}
-              </button>
+              </DetailPropertyPill>
             )}
             {task.effectiveContexts.length > 0 ? (
-              <button
-                type="button"
-                className="detail-meta-button detail-meta-label-button"
-                aria-label={strings.physicalContexts}
+              <DetailPropertyPill
+                ariaLabel={strings.physicalContexts}
+                extraClassName="detail-meta-label-button"
                 onClick={() => runCommand("task.contexts")}
               >
                 <TaskCardTags tags={[]} contexts={task.effectiveContexts} />
-              </button>
+              </DetailPropertyPill>
             ) : (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost task-detail-add-property"
-                onClick={() => runCommand("task.contexts")}
-              >
+              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.contexts")}>
                 {strings.addContexts}
-              </button>
+              </DetailPropertyPill>
             )}
           </div>
 
@@ -775,12 +747,7 @@ export function TaskDetailSheet() {
           </p>
 
           {saveError ?? taskActions.errors[task.id] ? (
-            <div className="task-row-error" role="alert">
-              <span>{strings.error}</span>
-              <span className="text-muted">
-                {saveError ?? taskActions.errors[task.id]}
-              </span>
-            </div>
+            <WorkItemInlineError message={saveError ?? taskActions.errors[task.id]!} />
           ) : null}
 
           <PaperlessAttachmentStrip attachments={attachments} />
@@ -814,9 +781,9 @@ export function TaskDetailSheet() {
             </div>
           ) : null}
 
-          <div className="field task-notes-field">
+          <section className="section task-notes-section">
             <div className="row-between">
-              <label className="field-label" htmlFor="task-notes">{strings.notes}</label>
+              <h2 className="section-title" id="task-notes-label">{strings.notes}</h2>
               {!notesEditing ? (
                 <IconActionButton
                   kind="edit"
@@ -827,6 +794,7 @@ export function TaskDetailSheet() {
             </div>
             {notesEditing ? (
               <>
+                <label className="sr-only" htmlFor="task-notes">{strings.notes}</label>
                 <MarkdownEditor
                   id="task-notes"
                   ref={notesRef}
@@ -863,7 +831,7 @@ export function TaskDetailSheet() {
             ) : (
               <p className="text-muted">{strings.noNotes}</p>
             )}
-          </div>
+          </section>
 
           <WorkItemDetailDisclosure
             title={strings.subtasks}
@@ -983,24 +951,14 @@ export function TaskDetailSheet() {
                             ) : null}
                           </button>
                           {dependencyError?.candidateTaskId === candidate.id ? (
-                            <div className="task-row-error" role="alert">
-                              <span>{strings.error}</span>
-                              <span className="text-muted">
-                                {dependencyError.message}
-                              </span>
-                            </div>
+                            <WorkItemInlineError message={dependencyError.message} />
                           ) : null}
                         </li>
                       ))}
                     </ul>
                   ) : null}
                   {dependencyError?.candidateTaskId === null ? (
-                    <div className="task-row-error" role="alert">
-                      <span>{strings.error}</span>
-                      <span className="text-muted">
-                        {dependencyError.message}
-                      </span>
-                    </div>
+                    <WorkItemInlineError message={dependencyError.message} />
                   ) : null}
                   <button
                     type="button"
@@ -1036,12 +994,6 @@ export function TaskDetailSheet() {
               items={[
                 ...(!taskIsCapturedInboxItem
                   ? ([
-                      {
-                        key: "task.split",
-                        icon: "split" as const,
-                        label: strings.actionTileLabels["task.split"],
-                        onClick: () => runCommand("task.split"),
-                      },
                       {
                         key: "task.changeProject",
                         icon: "project" as const,
@@ -1203,33 +1155,42 @@ export function TaskDetailSheet() {
           <WorkItemDetailDisclosure
             title={strings.taskDangerSection}
             resetKey={task.id}
-            className="task-detail-danger"
+            className="detail-danger-section"
           >
             <button
               type="button"
               className="btn btn-danger btn-block"
               disabled={deleting}
-              onClick={() => {
-                if (window.confirm(strings.deleteTaskConfirm)) {
-                  setDeleting(true);
-                  setSaveError(null);
-                  void api
-                    .deleteTask(task.id)
-                    .then(() => {
-                      bump();
-                      close();
-                    })
-                    .catch((cause) => {
-                      setSaveError(localizedErrorMessage(cause, strings));
-                      setDeleting(false);
-                    });
-                }
-              }}
+              onClick={() => setConfirmingDelete(true)}
             >
               {strings.delete}
             </button>
           </WorkItemDetailDisclosure>
         </fieldset>
+      ) : null}
+
+      {confirmingDelete && task ? (
+        <ConfirmDeleteSheet
+          title={strings.deleteTaskConfirmTitle}
+          itemTitle={task.title}
+          prompt={strings.deleteTaskConfirm}
+          busy={deleting}
+          onConfirm={() => {
+            setDeleting(true);
+            setSaveError(null);
+            void api
+              .deleteTask(task.id)
+              .then(() => {
+                bump();
+                close();
+              })
+              .catch((cause) => {
+                setSaveError(localizedErrorMessage(cause, strings));
+                setDeleting(false);
+              });
+          }}
+          onClose={() => setConfirmingDelete(false)}
+        />
       ) : null}
 
       {taskActions.pendingTask ? (

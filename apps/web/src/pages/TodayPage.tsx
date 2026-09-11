@@ -11,7 +11,7 @@ import {
 } from "../components/AsyncStates";
 import { TaskOutline } from "../components/TaskOutline";
 import { QuickAdd } from "../components/QuickAdd";
-import { ProjectAgendaCard } from "../components/ProjectAgendaCard";
+import { ProjectAgendaRow } from "../components/ProjectAgendaRow";
 import { PageHeader, type PageHint } from "../components/PageHeader";
 import { ContributionPulse } from "../components/ContributionPulse";
 import { readTodayScope, writeTodayScope } from "../lib/todayScope";
@@ -66,6 +66,22 @@ export function TodayPage() {
     ...(agenda?.unscheduled ?? []),
   ];
   const projectAgenda = agenda?.projects ?? [];
+  const projectsByBucket: Record<
+    "planned" | "overdue" | "dueToday" | "dueSoon",
+    typeof projectAgenda
+  > = {
+    planned: [],
+    overdue: [],
+    dueToday: [],
+    dueSoon: [],
+  };
+  for (const entry of projectAgenda) {
+    projectsByBucket[entry.attentionBucket].push(entry);
+  }
+  const resolveProjectOwner = (ownerMemberId: number | null) =>
+    scope === "all" && ownerMemberId !== null
+      ? (members.find((member) => member.id === ownerMemberId) ?? null)
+      : null;
   const pageHints: PageHint[] = [
     { text: strings.todayExplanation },
     { text: strings.todayScopeHint },
@@ -118,44 +134,36 @@ export function TodayPage() {
                 return <EmptyState message={strings.todayEmpty} />;
               return (
                 <>
-                  {projectAgenda.length > 0 ? (
-                    <section
-                      className="section"
-                      aria-labelledby="today-projects-heading"
-                    >
-                      <h2 className="section-title" id="today-projects-heading">
-                        {strings.projectAgenda}
-                      </h2>
-                      <div className="list">
-                        {projectAgenda.map((entry) => (
-                          <ProjectAgendaCard
-                            key={entry.project.id}
-                            entry={entry}
-                            owner={
-                              scope === "all" &&
-                              entry.project.ownerMemberId !== null
-                                ? (members.find(
-                                    (member) =>
-                                      member.id === entry.project.ownerMemberId,
-                                  ) ?? null)
-                                : null
-                            }
-                          />
-                        ))}
-                      </div>
-                    </section>
-                  ) : null}
                   {sections
-                    .filter((s) => agenda[s.key].length > 0)
+                    .filter(
+                      (s) =>
+                        agenda[s.key].length > 0 ||
+                        projectsByBucket[s.key].length > 0,
+                    )
                     .map((s) => (
                       <div className="section" key={s.key}>
                         <div className="section-title">{s.label}</div>
-                        <TaskOutline
-                          tasks={agenda[s.key]}
-                          emptyMessage={strings.noItems}
-                          preserveRootOrder
-                          showSwipeHint={false}
-                        />
+                        {agenda[s.key].length > 0 ? (
+                          <TaskOutline
+                            tasks={agenda[s.key]}
+                            emptyMessage={strings.noItems}
+                            preserveRootOrder
+                            showSwipeHint={false}
+                          />
+                        ) : null}
+                        {projectsByBucket[s.key].length > 0 ? (
+                          <div className="list">
+                            {projectsByBucket[s.key].map((entry) => (
+                              <ProjectAgendaRow
+                                key={entry.project.id}
+                                entry={entry}
+                                owner={resolveProjectOwner(
+                                  entry.project.ownerMemberId,
+                                )}
+                              />
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     ))}
                   {revisitTasks.length > 0 ? (

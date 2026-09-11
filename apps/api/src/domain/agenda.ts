@@ -1,6 +1,7 @@
 import type {
   Agenda,
   ContextAvailability,
+  ProjectAgendaBucket,
   ProjectAgendaEntry,
 } from "@machbar/shared";
 import type { Graph } from "./graph.js";
@@ -170,6 +171,19 @@ export function buildAgenda(
         project.scheduledDate <= today;
       if (!due && !scheduled) return [];
 
+      // `planned` wins whenever the reached `scheduledDate` applies, matching
+      // Task's own bucket priority (`planned` resolved before its due-date
+      // buckets). Otherwise classify the due date exactly like a Task's own
+      // overdue/dueToday/dueSoon buckets, reusing the same `today` boundary
+      // already computed above for tasks.
+      const attentionBucket: ProjectAgendaBucket = scheduled
+        ? "planned"
+        : project.dueDate! < today
+          ? "overdue"
+          : project.dueDate === today
+            ? "dueToday"
+            : "dueSoon";
+
       const computed = graph.projectWithComputed(project.id);
       if (!computed) return [];
       const availableNextAction = graph.selectedNextActionsFor(
@@ -191,6 +205,7 @@ export function buildAgenda(
         {
           project: computed,
           qualification: due && scheduled ? "both" : due ? "due" : "scheduled",
+          attentionBucket,
           nextAction,
           nextActionContextAvailability: nextAction
             ? contextAvailability(nextAction)

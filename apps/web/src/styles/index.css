@@ -193,7 +193,8 @@ a {
   flex-direction: column;
 }
 
-.project-page-title-row h1 {
+.project-page-title-row h1,
+.task-detail-title-row h1 {
   min-width: 0;
   overflow-wrap: anywhere;
   display: flex;
@@ -288,6 +289,33 @@ a {
 .detail-meta-status-button .detail-meta-label {
   color: inherit;
   opacity: 0.75;
+}
+
+/* Project's four lifecycle statuses, sharing the same pill grammar as
+   Task's five statuses above (`.detail-meta-status-button.status-*`). */
+.detail-meta-status-button.status-backlog {
+  background: var(--color-info-surface);
+  color: var(--color-info);
+  border-color: var(--color-info-surface);
+}
+.detail-meta-status-button.status-active {
+  background: var(--color-success-surface);
+  color: var(--color-success);
+  border-color: var(--color-success-surface);
+}
+.detail-meta-status-button.status-completed {
+  background: var(--color-status-neutral-surface);
+  color: var(--color-status-neutral);
+  border-color: var(--color-status-neutral-surface);
+}
+.detail-meta-status-button.status-archived {
+  background: var(--color-status-neutral-surface);
+  color: var(--color-status-neutral);
+  border-color: var(--color-status-neutral-surface);
+}
+
+.detail-meta-add-button {
+  color: var(--color-text-muted);
 }
 
 .detail-meta-label-button .task-card-tags,
@@ -980,52 +1008,50 @@ details[open] > .disclosure-summary::after {
   }
 }
 
-.project-agenda-card {
-  display: grid;
-  gap: 8px;
-  border: 1px solid color-mix(in srgb, var(--color-primary) 12%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface));
-  box-shadow: none;
-}
-
-.project-agenda-meta,
-.project-agenda-dates {
+.project-agenda-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
   align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
 }
 
-.project-agenda-meta .task-card-tags {
-  float: none;
-  max-width: 100%;
-  margin: 0;
-  justify-content: flex-start;
-}
-
-.project-agenda-owner {
+.project-agenda-row-icon {
   display: inline-flex;
-  margin-left: auto;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--color-text-muted);
 }
 
-.project-agenda-link {
+.project-agenda-row-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.project-agenda-row-link {
   color: var(--color-text);
-  font-size: 1rem;
-  font-weight: 650;
+  font-weight: 600;
   text-decoration: none;
 }
 
-.project-agenda-link:hover {
+.project-agenda-row-link:hover {
   color: var(--color-primary);
   text-decoration: underline;
 }
 
-.project-agenda-date {
+.project-agenda-row-date {
   color: var(--color-text-muted);
   font-size: 0.82rem;
 }
 
-.project-agenda-context {
+.project-agenda-row-owner {
+  display: inline-flex;
+  margin-left: auto;
+}
+
+.project-agenda-row-stuck {
+  flex-basis: 100%;
   margin: 0;
   color: var(--color-text-muted);
   font-size: 0.82rem;
@@ -1558,10 +1584,6 @@ details[open] > .disclosure-summary::after {
   font-weight: 600;
 }
 
-.badge-button {
-  border: none;
-}
-
 .task-detail-add-property {
   color: var(--color-text-muted);
 }
@@ -1817,26 +1839,6 @@ details[open] > .disclosure-summary::after {
   color: var(--color-danger);
 }
 
-.project-detail-status-badge {
-  cursor: pointer;
-}
-.project-detail-status-badge-backlog {
-  background: var(--color-info-surface);
-  color: var(--color-info);
-}
-.project-detail-status-badge-active {
-  background: var(--color-success-surface);
-  color: var(--color-success);
-}
-.project-detail-status-badge-completed {
-  background: var(--color-status-neutral-surface);
-  color: var(--color-status-neutral);
-}
-.project-detail-status-badge-archived {
-  background: var(--color-status-neutral-surface);
-  color: var(--color-status-neutral);
-}
-
 .recurrence-editor,
 .recurrence-history {
   display: grid;
@@ -2010,11 +2012,11 @@ details[open] > .disclosure-summary::after {
   font-size: 0.8rem;
 }
 
-.task-detail-danger {
+.detail-danger-section {
   border-color: color-mix(in srgb, var(--color-danger) 35%, var(--color-border));
 }
 
-.task-detail-danger > .task-detail-section-title {
+.detail-danger-section > .task-detail-section-title {
   color: var(--color-danger);
 }
 
@@ -3211,6 +3213,16 @@ details[open] > .disclosure-summary::after {
   flex-wrap: wrap;
   padding: 0 8px 8px 44px;
   font-size: 0.78rem;
+  color: var(--color-danger);
+}
+
+.detail-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: 0.85rem;
   color: var(--color-danger);
 }
 

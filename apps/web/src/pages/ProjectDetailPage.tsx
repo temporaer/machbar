@@ -26,6 +26,8 @@ import { PageHeader } from "../components/PageHeader";
 import { MemberLabel } from "../components/MemberAvatar";
 import { IconActionButton } from "../components/IconActionButton";
 import { TaskCardTags } from "../components/TaskCardTags";
+import { ProjectStatusBadge } from "../components/StatusBadge";
+import { DetailPropertyPill } from "../components/DetailPropertyPill";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useTaskDetail } from "../lib/taskDetailContext";
@@ -37,7 +39,7 @@ import type { ProjectWithActions } from "../lib/api";
 import { useProjectActions } from "../lib/useProjectActions";
 import { projectWorkflowLabel } from "../lib/projectWorkflow";
 import { storyWorkflowCommand } from "../lib/commands";
-import { MarkdownEditor } from "../components/MarkdownEditor";
+import { MarkdownEditor, insertMarkdownAtSelection } from "../components/MarkdownEditor";
 import { AcceptanceCriteriaChecklist } from "../components/AcceptanceCriteriaChecklist";
 import { WorkItemDetailDisclosure } from "../components/WorkItemDetailSection";
 import { ActionTileGrid } from "../components/ActionTileGrid";
@@ -47,6 +49,7 @@ import {
   extractPaperlessReferences,
 } from "../lib/paperlessAttachments";
 import { MarkdownAttachmentSheet } from "../components/MarkdownAttachmentSheet";
+import { WorkItemInlineError } from "../components/WorkItemInlineError";
 import { PaperlessAttachmentStrip } from "../components/PaperlessAttachmentStrip";
 import {
   isStaleWriteConflict,
@@ -80,10 +83,12 @@ export function ProjectDetailPage() {
     title: string;
     notes: string;
   } | null>(null);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
   const [confirmedProject, setConfirmedProject] =
     useState<ProjectWithActions | null>(null);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [shareStatus, setShareStatus] = useState<string | null>(null);
   const planningTaskRef = useRef<number | null>(null);
   const storyFocusDispatchedRef = useRef<string | null>(null);
   const storyFocusSheetOpenedRef = useRef(false);
@@ -147,10 +152,7 @@ export function ProjectDetailPage() {
   const scheduledDate = project
     ? formatDate(project.scheduledDate, locale)
     : null;
-  const hasProjectLabels =
-    Boolean(project?.tags.length) || Boolean(project?.contexts.length);
-  const hasProjectMeta =
-    Boolean(owner) || Boolean(dueDate) || Boolean(scheduledDate) || hasProjectLabels;
+  const hasProjectDates = Boolean(dueDate) || Boolean(scheduledDate);
 
   const reviewReturn = (
     location.state as {
@@ -186,6 +188,8 @@ export function ProjectDetailPage() {
 
   const titleDirty = titleDraft !== (contentBaselineRef.current?.title ?? "");
   const notesDirty = notesDraft !== (contentBaselineRef.current?.notes ?? "");
+  const projectMutationPending =
+    savingContent || deleting || (project ? projectActions.isPending(project.id) : false);
 
   const saveContentField = async (field: "title" | "notes") => {
     if (!project || savingContent) return false;
@@ -405,7 +409,7 @@ export function ProjectDetailPage() {
                       <button
                         type="button"
                         className="btn btn-sm"
-                        disabled={savingContent}
+                        disabled={projectMutationPending}
                         onClick={() => {
                           setTitleDraft(project.title);
                           setTitleEditing(false);
@@ -417,7 +421,7 @@ export function ProjectDetailPage() {
                         type="button"
                         className="btn btn-sm btn-primary"
                         disabled={
-                          !titleDirty || !titleDraft.trim() || savingContent
+                          !titleDirty || !titleDraft.trim() || projectMutationPending
                         }
                         onClick={() =>
                           void saveContentField("title").then((saved) => {
@@ -435,6 +439,7 @@ export function ProjectDetailPage() {
                     <IconActionButton
                       kind="edit"
                       label={strings.edit}
+                      disabled={projectMutationPending}
                       onClick={() => setTitleEditing(true)}
                     />
                   </h1>
@@ -444,6 +449,8 @@ export function ProjectDetailPage() {
                     title={project.title}
                     text={serializeProjectForShare(project, locale)}
                     url={buildProjectShareUrl(project.id)}
+                    showStatus={false}
+                    onStatusChange={setShareStatus}
                   />
                   <CalendarExportButton
                     item={{
@@ -453,11 +460,13 @@ export function ProjectDetailPage() {
                       notes: project.notes,
                       dueDate: project.dueDate,
                     }}
+                    showStatus={false}
+                    onStatusChange={setShareStatus}
                   />
                   <IconActionButton
                     kind="attachment"
                     label={strings.attach}
-                    disabled={projectActions.isPending(project.id)}
+                    disabled={projectMutationPending}
                     onClick={() => {
                       setAttachmentError(null);
                       setAttachmentOpen(true);
@@ -465,19 +474,24 @@ export function ProjectDetailPage() {
                   />
                 </div>
               </div>
+              {shareStatus ? (
+                <div className="sheet-header-status project-page-header-status">
+                  <span className="text-muted native-share-status" role="status">
+                    {shareStatus}
+                  </span>
+                </div>
+              ) : null}
               <div
                 className="project-detail-overview"
                 aria-label={strings.projectOverview}
               >
                 <div className="project-detail-overview-row">
                   <span className="sr-only">{strings.projectStatus}: </span>
-                  <button
-                    type="button"
-                    className={`badge badge-button project-detail-status-badge project-detail-status-badge-${project.status}`}
+                  <ProjectStatusBadge
+                    status={project.status}
+                    disabled={projectMutationPending}
                     onClick={() => setLifecycleOpen((current) => !current)}
-                  >
-                    {strings.projectStatusLabels[project.status]}
-                  </button>
+                  />
                   <span className="project-detail-task-progress">
                     {strings.taskProgress}: {taskCounts.open}{" "}
                     {strings.openTasks.toLowerCase()} · {taskCounts.done}{" "}
@@ -503,7 +517,7 @@ export function ProjectDetailPage() {
                         key={action}
                         type="button"
                         className="btn btn-sm"
-                        disabled={projectActions.isPending(project.id)}
+                        disabled={projectMutationPending}
                         data-workflow-action={action}
                         onClick={() => {
                           setLifecycleOpen(false);
@@ -515,96 +529,107 @@ export function ProjectDetailPage() {
                     ))}
                   </div>
                 ) : null}
-                {hasProjectMeta ? (
-                  <div className="detail-meta-row">
-                    {owner ? (
-                      <button
-                        type="button"
-                        className="detail-meta-button"
-                        onClick={() => dispatch({ type: "story.assignDriver", story: project })}
-                      >
-                        <span className="detail-meta-label">
-                          {strings.driver}
-                        </span>
-                        <MemberLabel member={owner} size="xs" />
-                      </button>
-                    ) : null}
-                    {dueDate ? (
-                      <button
-                        type="button"
-                        className="detail-meta-button"
-                        onClick={() =>
-                          dispatch({ type: "story.planDates", story: project })
-                        }
-                      >
-                        <span className="detail-meta-label">
-                          {strings.due}
-                        </span>
-                        <span>{dueDate}</span>
-                      </button>
-                    ) : null}
-                    {scheduledDate ? (
-                      <button
-                        type="button"
-                        className="detail-meta-button"
-                        onClick={() =>
-                          dispatch({ type: "story.planDates", story: project })
-                        }
-                      >
-                        <span className="detail-meta-label">
-                          {strings.projectRevisitDate}
-                        </span>
-                        <span>{scheduledDate}</span>
-                      </button>
-                    ) : null}
-                    {hasProjectLabels ? (
-                      <button
-                        type="button"
-                        className="detail-meta-button project-detail-label-button"
-                        aria-label={
-                          project.contexts.length > 0 && project.tags.length === 0
-                            ? strings.physicalContexts
-                            : strings.tags
-                        }
-                        onClick={() =>
-                          dispatch({
-                            type:
-                              project.contexts.length > 0 &&
-                              project.tags.length === 0
-                                ? "story.contexts"
-                                : "story.tags",
-                            story: project,
-                          })
-                        }
-                      >
-                        <span className="detail-meta-label">
-                          {project.contexts.length > 0
-                            ? strings.cardLabels
-                            : strings.tags}
-                        </span>
-                        <TaskCardTags
-                          tags={project.tags}
-                          contexts={project.contexts}
-                        />
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
+                <div className="detail-meta-row">
+                  {owner ? (
+                    <DetailPropertyPill
+                      label={strings.driver}
+                      disabled={projectMutationPending}
+                      onClick={() => dispatch({ type: "story.assignDriver", story: project })}
+                    >
+                      <MemberLabel member={owner} size="xs" />
+                    </DetailPropertyPill>
+                  ) : (
+                    <DetailPropertyPill
+                      variant="unset"
+                      disabled={projectMutationPending}
+                      onClick={() => dispatch({ type: "story.assignDriver", story: project })}
+                    >
+                      {strings.addDriver}
+                    </DetailPropertyPill>
+                  )}
+                  {dueDate ? (
+                    <DetailPropertyPill
+                      label={strings.due}
+                      disabled={projectMutationPending}
+                      onClick={() =>
+                        dispatch({ type: "story.planDates", story: project })
+                      }
+                    >
+                      <span>{dueDate}</span>
+                    </DetailPropertyPill>
+                  ) : null}
+                  {scheduledDate ? (
+                    <DetailPropertyPill
+                      label={strings.projectRevisitDate}
+                      disabled={projectMutationPending}
+                      onClick={() =>
+                        dispatch({ type: "story.planDates", story: project })
+                      }
+                    >
+                      <span>{scheduledDate}</span>
+                    </DetailPropertyPill>
+                  ) : null}
+                  {!hasProjectDates ? (
+                    <DetailPropertyPill
+                      variant="unset"
+                      disabled={projectMutationPending}
+                      onClick={() =>
+                        dispatch({ type: "story.planDates", story: project })
+                      }
+                    >
+                      {strings.addPlan}
+                    </DetailPropertyPill>
+                  ) : null}
+                  {project.tags.length > 0 ? (
+                    <DetailPropertyPill
+                      ariaLabel={strings.tags}
+                      extraClassName="project-detail-label-button"
+                      disabled={projectMutationPending}
+                      onClick={() => dispatch({ type: "story.tags", story: project })}
+                    >
+                      <TaskCardTags tags={project.tags} />
+                    </DetailPropertyPill>
+                  ) : (
+                    <DetailPropertyPill
+                      variant="unset"
+                      disabled={projectMutationPending}
+                      onClick={() => dispatch({ type: "story.tags", story: project })}
+                    >
+                      {strings.addTags}
+                    </DetailPropertyPill>
+                  )}
+                  {project.contexts.length > 0 ? (
+                    <DetailPropertyPill
+                      ariaLabel={strings.physicalContexts}
+                      extraClassName="project-detail-label-button"
+                      disabled={projectMutationPending}
+                      onClick={() => dispatch({ type: "story.contexts", story: project })}
+                    >
+                      <TaskCardTags tags={[]} contexts={project.contexts} />
+                    </DetailPropertyPill>
+                  ) : (
+                    <DetailPropertyPill
+                      variant="unset"
+                      disabled={projectMutationPending}
+                      onClick={() => dispatch({ type: "story.contexts", story: project })}
+                    >
+                      {strings.addContexts}
+                    </DetailPropertyPill>
+                  )}
+                </div>
               </div>
             </div>
             <PaperlessAttachmentStrip attachments={attachments} />
             {attachmentError ? (
-              <p className="capture-error" role="alert">
-                {attachmentError}
-              </p>
+              <WorkItemInlineError message={attachmentError} />
             ) : null}
             {project.stuckReason ? (
               <ProjectStuckNotice reason={project.stuckReason} />
             ) : null}
             {contentError ?? projectActions.errors[project.id] ? (
-              <p className="capture-error" role="alert">
-                {contentError ?? projectActions.errors[project.id]}
-              </p>
+              <WorkItemInlineError
+                message={contentError ?? projectActions.errors[project.id]!}
+              />
             ) : null}
             <section className="section project-notes-section">
               <div className="row-between">
@@ -615,6 +640,7 @@ export function ProjectDetailPage() {
                   <IconActionButton
                     kind="edit"
                     label={strings.edit}
+                    disabled={projectMutationPending}
                     onClick={() => setNotesEditing(true)}
                   />
                 ) : null}
@@ -623,6 +649,7 @@ export function ProjectDetailPage() {
                 <>
                   <MarkdownEditor
                     id="project-notes"
+                    ref={notesRef}
                     value={notesDraft}
                     onChange={setNotesDraft}
                     toolbarLabel={strings.markdownToolbar}
@@ -632,7 +659,7 @@ export function ProjectDetailPage() {
                     <button
                       type="button"
                       className="btn btn-sm"
-                      disabled={savingContent}
+                      disabled={projectMutationPending}
                       onClick={() => {
                         setNotesDraft(project.notes);
                         setNotesEditing(false);
@@ -643,7 +670,7 @@ export function ProjectDetailPage() {
                     <button
                       type="button"
                       className="btn btn-sm btn-primary"
-                      disabled={!notesDirty || savingContent}
+                      disabled={!notesDirty || projectMutationPending}
                       onClick={() =>
                         void saveContentField("notes").then((saved) => {
                           if (saved) setNotesEditing(false);
@@ -674,6 +701,7 @@ export function ProjectDetailPage() {
                 <IconActionButton
                   kind="criteria"
                   label={strings.actionTileLabels["story.editOutcome"]}
+                  disabled={projectMutationPending}
                   onClick={() => dispatch({ type: "story.editOutcome", story: project })}
                 />
               </div>
@@ -724,43 +752,15 @@ export function ProjectDetailPage() {
                     key: "story.planWork",
                     icon: "successor",
                     label: strings.actionTileLabels["story.planWork"],
+                    disabled: projectMutationPending,
                     onClick: () => dispatch({ type: "story.planWork", story: project }),
-                  },
-                  {
-                    key: "story.assignDriver",
-                    icon: "owner",
-                    label: strings.actionTileLabels["story.assignDriver"],
-                    onClick: () => dispatch({ type: "story.assignDriver", story: project }),
-                  },
-                  {
-                    key: "story.planDates",
-                    icon: "schedule",
-                    label: strings.actionTileLabels["story.planDates"],
-                    onClick: () => dispatch({ type: "story.planDates", story: project }),
                   },
                   {
                     key: "story.defer",
                     icon: "followUp",
                     label: strings.actionTileLabels["story.defer"],
+                    disabled: projectMutationPending,
                     onClick: () => dispatch({ type: "story.defer", story: project }),
-                  },
-                  {
-                    key: "story.editOutcome",
-                    icon: "criteria",
-                    label: strings.actionTileLabels["story.editOutcome"],
-                    onClick: () => dispatch({ type: "story.editOutcome", story: project }),
-                  },
-                  {
-                    key: "story.tags",
-                    icon: "tags",
-                    label: strings.actionTileLabels["story.tags"],
-                    onClick: () => dispatch({ type: "story.tags", story: project }),
-                  },
-                  {
-                    key: "story.contexts",
-                    icon: "places",
-                    label: strings.actionTileLabels["story.contexts"],
-                    onClick: () => dispatch({ type: "story.contexts", story: project }),
                   },
                 ]}
               />
@@ -773,11 +773,12 @@ export function ProjectDetailPage() {
             <WorkItemDetailDisclosure
               title={strings.projectDangerSection}
               resetKey={project.id}
+              className="detail-danger-section"
             >
               <button
                 type="button"
-                className="btn btn-danger"
-                disabled={deleting}
+                className="btn btn-danger btn-block"
+                disabled={projectMutationPending}
                 onClick={() => setConfirmingDelete(true)}
               >
                 {strings.deleteProject}
@@ -801,6 +802,24 @@ export function ProjectDetailPage() {
           <MarkdownAttachmentSheet
             onClose={() => setAttachmentOpen(false)}
             onInsert={async (markdown) => {
+              if (notesEditing) {
+                const current = notesRef.current;
+                const transform = insertMarkdownAtSelection(
+                  current?.value ?? notesDraft,
+                  current?.selectionStart ?? notesDraft.length,
+                  current?.selectionEnd ?? notesDraft.length,
+                  markdown,
+                );
+                setNotesDraft(transform.value);
+                queueMicrotask(() => {
+                  notesRef.current?.focus();
+                  notesRef.current?.setSelectionRange(
+                    transform.selectionStart,
+                    transform.selectionEnd,
+                  );
+                });
+                return;
+              }
               if (containsPaperlessReference(project.notes, markdown)) return;
               const nextNotes = appendTextBlock(project.notes, markdown);
               setAttachmentError(null);

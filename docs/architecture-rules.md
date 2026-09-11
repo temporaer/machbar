@@ -194,6 +194,9 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Legal project transition to `story.*` command | `storyWorkflowCommand()` in `apps/web/src/lib/commands.ts` |
 | Authored project title/notes editing | `apps/web/src/pages/ProjectDetailPage.tsx` |
 | Focused waiting/follow-up workflow | `apps/web/src/components/WaitingFollowUpSheet.tsx` and `apps/web/src/lib/useTaskActions.ts` |
+| Task/Project scalar-property pill (set and unset states) | `apps/web/src/components/DetailPropertyPill.tsx` |
+| Task/Project inline work-item error presentation | `apps/web/src/components/WorkItemInlineError.tsx` |
+| In-app single-choice delete confirmation | `apps/web/src/components/ConfirmDeleteSheet.tsx` (project deletion's task-cascade choice remains `apps/web/src/components/ProjectDeleteChoiceSheet.tsx`) |
 
 Before introducing another primitive for one of these needs, update this table
 and explain why the existing primitive is insufficient.
