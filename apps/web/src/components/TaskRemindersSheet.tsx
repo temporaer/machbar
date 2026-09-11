@@ -120,6 +120,88 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
     else openCustomRelative(entry);
   };
 
+  /** The draft key currently being edited inline as a row (`null` for a new, not-yet-appended reminder; `undefined` when no row is being edited). */
+  const editingRowKey =
+    editor.mode === "customAbsolute" || editor.mode === "customRelative" ? editor.key : undefined;
+
+  const confirmEditor = () => {
+    if (editor.mode === "customAbsolute") {
+      const at = new Date(`${editor.date}T${editor.time}:00`).toISOString();
+      upsertReminder(editor.key, { kind: "absolute", at });
+    } else if (editor.mode === "customRelative") {
+      upsertReminder(editor.key, {
+        kind: "deadline_relative",
+        daysBefore: editor.daysBefore,
+        time: editor.time,
+        timezone: editor.timezone,
+      });
+    }
+  };
+
+  /**
+   * Renders the currently-open custom editor (date+time, or days-before+time)
+   * as one compact row of the reminder list/table itself -- editing happens
+   * in place rather than in a separate panel below. `HumanDateInput` and
+   * `ClockTimePicker` are themselves the pop-up "tools" for picking a date
+   * or time, so this row only needs one small confirm action; there is no
+   * separate cancel for the row, only for the whole sheet (`Abbrechen`
+   * below discards the entire draft, including an in-progress row).
+   */
+  const renderEditorRow = (rowKey: string) => {
+    if (editor.mode !== "customAbsolute" && editor.mode !== "customRelative") return null;
+    return (
+      <li key={rowKey} className="reminder-row reminder-row-editing">
+        {editor.mode === "customAbsolute" ? (
+          <>
+            <label htmlFor={`reminder-date-${rowKey}`} className="visually-hidden">
+              {strings.due}
+            </label>
+            <HumanDateInput
+              id={`reminder-date-${rowKey}`}
+              value={editor.date}
+              onChange={(date) => setEditor({ ...editor, date: date ?? editor.date })}
+            />
+            <ClockTimePicker
+              id={`reminder-time-${rowKey}`}
+              value={editor.time}
+              onChange={(time) => setEditor({ ...editor, time })}
+            />
+          </>
+        ) : (
+          <>
+            <label htmlFor={`reminder-days-${rowKey}`} className="visually-hidden">
+              {strings.reminderDaysBeforeFieldLabel}
+            </label>
+            <input
+              id={`reminder-days-${rowKey}`}
+              type="number"
+              min={0}
+              className="reminder-days-before-input"
+              value={editor.daysBefore}
+              onChange={(event) =>
+                setEditor({ ...editor, daysBefore: Math.max(0, Number(event.target.value) || 0) })
+              }
+            />
+            <span className="reminder-editor-unit">{strings.reminderDaysBeforeFieldLabel}</span>
+            <ClockTimePicker
+              id={`reminder-relative-time-${rowKey}`}
+              value={editor.time}
+              onChange={(time) => setEditor({ ...editor, time })}
+            />
+          </>
+        )}
+        <button
+          type="button"
+          className="btn btn-sm btn-primary reminder-row-confirm"
+          aria-label={strings.reminderRowConfirm}
+          onClick={confirmEditor}
+        >
+          ✓
+        </button>
+      </li>
+    );
+  };
+
   const commit = async () => {
     if (saving) return;
     setSaving(true);
@@ -144,26 +226,31 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
     >
       <div className="stack">
         <ul className="reminder-list">
-          {orderedDraft.map((entry) => (
-            <li key={entry.key} className="reminder-row">
-              <button
-                type="button"
-                className="detail-meta-button reminder-row-label"
-                onClick={() => openEditorForRow(entry)}
-              >
-                {formatReminderLabel(entry.reminder, task.dueDate, strings, locale)}
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost reminder-row-remove"
-                aria-label={strings.reminderRemove}
-                onClick={() => removeReminder(entry.key)}
-                disabled={saving}
-              >
-                ×
-              </button>
-            </li>
-          ))}
+          {orderedDraft.map((entry) =>
+            entry.key === editingRowKey ? (
+              renderEditorRow(entry.key)
+            ) : (
+              <li key={entry.key} className="reminder-row">
+                <button
+                  type="button"
+                  className="detail-meta-button reminder-row-label"
+                  onClick={() => openEditorForRow(entry)}
+                >
+                  {formatReminderLabel(entry.reminder, task.dueDate, strings, locale)}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost reminder-row-remove"
+                  aria-label={strings.reminderRemove}
+                  onClick={() => removeReminder(entry.key)}
+                  disabled={saving}
+                >
+                  ×
+                </button>
+              </li>
+            ),
+          )}
+          {editingRowKey === null ? renderEditorRow("new") : null}
         </ul>
 
         {editor.mode === "choosing" ? (
@@ -199,77 +286,7 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
               </button>
             ) : null}
           </div>
-        ) : editor.mode === "customAbsolute" ? (
-          <div className="stack">
-            <div className="field">
-              <label htmlFor="reminder-custom-date">{strings.due}</label>
-              <HumanDateInput
-                id="reminder-custom-date"
-                value={editor.date}
-                onChange={(date) => setEditor({ ...editor, date: date ?? editor.date })}
-              />
-            </div>
-            <ClockTimePicker
-              id="reminder-custom-time"
-              value={editor.time}
-              onChange={(time) => setEditor({ ...editor, time })}
-            />
-            <div className="row">
-              <button type="button" className="btn" onClick={() => setEditor({ mode: "closed" })}>
-                {strings.cancel}
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => {
-                  const at = new Date(`${editor.date}T${editor.time}:00`).toISOString();
-                  upsertReminder(editor.key, { kind: "absolute", at });
-                }}
-              >
-                {strings.confirmDone}
-              </button>
-            </div>
-          </div>
-        ) : editor.mode === "customRelative" ? (
-          <div className="stack">
-            <div className="field">
-              <label htmlFor="reminder-days-before">{strings.reminderDaysBeforeFieldLabel}</label>
-              <input
-                id="reminder-days-before"
-                type="number"
-                min={0}
-                value={editor.daysBefore}
-                onChange={(event) =>
-                  setEditor({ ...editor, daysBefore: Math.max(0, Number(event.target.value) || 0) })
-                }
-              />
-            </div>
-            <ClockTimePicker
-              id="reminder-custom-relative-time"
-              value={editor.time}
-              onChange={(time) => setEditor({ ...editor, time })}
-            />
-            <div className="row">
-              <button type="button" className="btn" onClick={() => setEditor({ mode: "closed" })}>
-                {strings.cancel}
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() =>
-                  upsertReminder(editor.key, {
-                    kind: "deadline_relative",
-                    daysBefore: editor.daysBefore,
-                    time: editor.time,
-                    timezone: editor.timezone,
-                  })
-                }
-              >
-                {strings.confirmDone}
-              </button>
-            </div>
-          </div>
-        ) : (
+        ) : editor.mode === "closed" ? (
           <button
             type="button"
             className="btn btn-sm btn-ghost task-detail-add-property"
@@ -277,7 +294,7 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
           >
             {strings.addReminder}
           </button>
-        )}
+        ) : null}
 
         {error ? (
           <div className="task-row-error" role="alert">

@@ -4028,3 +4028,36 @@ details[open] > .disclosure-summary::after {
   line-height: 1;
   padding: 4px 10px;
 }
+
+.reminder-row-editing {
+  flex-wrap: wrap;
+}
+
+.reminder-row-editing .human-date-field,
+.reminder-row-editing .clock-time-picker-input {
+  flex: 1 1 120px;
+  min-width: 100px;
+}
+
+.reminder-days-before-input {
+  flex: 0 0 auto;
+  width: 56px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 9px 6px;
+  background: var(--color-surface);
+  text-align: center;
+}
+
+.reminder-editor-unit {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.reminder-row-confirm {
+  flex: 0 0 auto;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px 10px;
+}

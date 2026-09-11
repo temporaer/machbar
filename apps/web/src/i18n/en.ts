@@ -552,6 +552,7 @@ const en = {
   reminderInHours: (hours: number) => (hours === 1 ? "In 1 hour" : `In ${hours} hours`),
   reminderInMinutes: (minutes: number) => (minutes === 1 ? "In 1 minute" : `In ${minutes} minutes`),
   reminderRemove: "Remove reminder",
+  reminderRowConfirm: "Confirm",
   reminderDaysBeforeFieldLabel: "Days before",
   moreActions: "More actions",
   nextActionBadgeCanonical: "Next Action",

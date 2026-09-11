@@ -133,4 +133,50 @@ describe("TaskRemindersSheet", () => {
     expect(screen.queryByRole("button", { name: "Heute Abend" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "+ Erinnerung" })).toBeInTheDocument();
   });
+
+  it("adds a custom absolute reminder inline as one confirmable row, without a separate cancel/done pair", async () => {
+    const task = makeTask({ id: 18, title: "Benutzerdefiniert", reminders: [] });
+    renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Benutzerdefiniert …" }));
+
+    // The date/time inputs render inline as a row of the reminder list/table,
+    // with a single small confirm action -- no inline Abbrechen/Fertig pair.
+    expect(screen.getByLabelText("Fällig")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bestätigen" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Bestätigen" }));
+
+    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
+    const [, patch] = mockedApi.updateTask.mock.calls[0]!;
+    const reminders = (patch as { reminders: Array<{ kind: string }> }).reminders;
+    expect(reminders).toHaveLength(1);
+    expect(reminders[0]!.kind).toBe("absolute");
+  });
+
+  it("adds a custom deadline-relative reminder inline as one confirmable row", async () => {
+    const task = makeTask({
+      id: 19,
+      title: "Mit Deadline",
+      dueDate: "2026-09-20",
+      reminders: [],
+    });
+    renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Benutzerdefiniert vor Deadline …" }));
+
+    expect(screen.getByLabelText("Tage vorher")).toBeInTheDocument();
+    const confirmButton = screen.getByRole("button", { name: "Bestätigen" });
+    expect(confirmButton).toBeInTheDocument();
+
+    await userEvent.click(confirmButton);
+    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
+    const [, patch] = mockedApi.updateTask.mock.calls[0]!;
+    const reminders = (patch as { reminders: Array<{ kind: string }> }).reminders;
+    expect(reminders).toHaveLength(1);
+    expect(reminders[0]!.kind).toBe("deadline_relative");
+  });
 });

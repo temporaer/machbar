@@ -541,6 +541,7 @@ const extra = {
   reminderInHours: (hours: number) => (hours === 1 ? "In 1 Stunde" : `In ${hours} Stunden`),
   reminderInMinutes: (minutes: number) => (minutes === 1 ? "In 1 Minute" : `In ${minutes} Minuten`),
   reminderRemove: "Erinnerung entfernen",
+  reminderRowConfirm: "Bestätigen",
   reminderDaysBeforeFieldLabel: "Tage vorher",
   moreActions: "Weitere Aktionen",
   /**
