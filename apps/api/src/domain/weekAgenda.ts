@@ -49,10 +49,6 @@ function isWeekDirectExternalWaitAttention(
   );
 }
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function compareItems(
   a: WeekWorkItemSummary,
   b: WeekWorkItemSummary,
@@ -215,7 +211,11 @@ export function buildWeekAgenda(
 
   const available = selectCurrentAvailableWork(graph, {
     ...options,
-    today: options.today ?? todayIso(),
+    // Availability for the unplanned pool is evaluated as of this week's
+    // own start, not the real wall-clock date, so a week view keeps
+    // showing consistent results regardless of when it happens to be
+    // requested relative to the (test or real) calendar dates involved.
+    today: options.today ?? options.start,
     ignoreContextAvailability: true,
   });
   unplanned.push(
