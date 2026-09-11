@@ -25,7 +25,7 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
           unresolvedDependencyCount > 0 ||
           task.repeatAfterDays !== null ||
           task.allowedDeviationDays !== null ||
-          task.reminderAt !== null
+          task.reminders.length > 0
         ? strings.convertToProjectTaskOnlyRelations
         : null;
 

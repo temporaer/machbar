@@ -180,6 +180,7 @@ export type ApiErrorCode =
   | "task_not_found"
   | "task_parent_self"
   | "task_promotion_invalid"
+  | "task_reminder_invalid"
   | "role_conversion_invalid"
   | "task_title_required"
   | "external_wait_reason_required"
@@ -451,6 +452,49 @@ export type TaskBlockerSummary =
       resolved: boolean;
     };
 
+/**
+ * One explicit reminder for a task. `absolute` fires at a fixed instant
+ * and never moves. `deadline_relative` fires `daysBefore` calendar days
+ * before the task's `dueDate`, at the local wall-clock `time` in
+ * `timezone`; it is dormant while the task has no `dueDate` and
+ * automatically repositions if the deadline changes — its occurrence is
+ * never resolved/stored ahead of time. `id` is stable across edits so it
+ * can double as the notification dedup/cancellation key.
+ */
+export type TaskReminder =
+  | {
+      id: number;
+      kind: "absolute";
+      at: string;
+    }
+  | {
+      id: number;
+      kind: "deadline_relative";
+      daysBefore: number;
+      time: string;
+      timezone: string;
+    };
+
+/**
+ * Same shape as `TaskReminder`, but `id` is optional: a reminder being
+ * added in this write has no id yet, while a reminder carried over
+ * unchanged (or edited) from `Task.reminders` keeps its existing id so
+ * the server can diff instead of delete-and-recreate. See `taskCrud.ts`.
+ */
+export type TaskReminderInput =
+  | {
+      id?: number;
+      kind: "absolute";
+      at: string;
+    }
+  | {
+      id?: number;
+      kind: "deadline_relative";
+      daysBefore: number;
+      time: string;
+      timezone: string;
+    };
+
 export interface Task {
   id: number;
   revision: number;
@@ -474,7 +518,7 @@ export interface Task {
   cancelledAt: string | null;
   repeatAfterDays: number | null;
   allowedDeviationDays: number | null;
-  reminderAt: string | null;
+  reminders: TaskReminder[];
   additionalNextAction: boolean;
   createdAt: string;
   updatedAt: string;
@@ -483,6 +527,7 @@ export interface Task {
   effectiveOwnerSource: "task" | "parent" | "project" | "none";
   inheritedOwnerId: number | null;
   inheritedTags: Tag[];
+
   effectiveTags: Tag[];
   effectiveAreaTags: Tag[];
   effectiveActorTags: Tag[];

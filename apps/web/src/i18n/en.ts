@@ -520,6 +520,37 @@ const en = {
     nextWeek: "Next week",
     weekend: "Weekend",
   },
+  reminders: "Reminders",
+  addReminder: "+ Reminder",
+  reminderPresetLabels: {
+    tonight: "Tonight",
+    tomorrowMorning: "Tomorrow morning",
+    tomorrowEvening: "Tomorrow evening",
+    in1Hour: "In 1 hour",
+    in3Hours: "In 3 hours",
+  },
+  reminderCustomAbsolute: "Custom …",
+  reminderRelativePresetLabels: {
+    sameDay: "Same day",
+    eveningBefore: "Evening before",
+    twoDaysBefore: "2 days before",
+    oneWeekBefore: "1 week before",
+  },
+  reminderCustomRelative: "Custom before deadline …",
+  reminderNoDeadline: "no deadline",
+  reminderDaysBeforeLabel: (days: number) =>
+    days === 0
+      ? "Same day"
+      : days % 7 === 0
+        ? days === 7
+          ? "1 week before"
+          : `${days / 7} weeks before`
+        : days === 1
+          ? "1 day before"
+          : `${days} days before`,
+  reminderInHours: (hours: number) => (hours === 1 ? "In 1 hour" : `In ${hours} hours`),
+  reminderRemove: "Remove reminder",
+  reminderDaysBeforeFieldLabel: "Days before",
   moreActions: "More actions",
   nextActionBadgeCanonical: "Next Action",
   nextActionBadgeAdditional: "Next Action · parallel",
@@ -864,7 +895,7 @@ const en = {
       recurrenceRule: "recurrence",
       repeatAfterDays: "repeat interval",
       allowedDeviationDays: "allowed deviation",
-      reminderAt: "reminder",
+      reminders: "reminder",
       notesAppended: "notes",
       taskSequence: "task sequence",
     },
@@ -1047,6 +1078,7 @@ const en = {
       "Recurring tasks cannot have an external wait.",
     external_wait_status_invalid:
       "An external wait is not allowed for this task status.",
+    task_reminder_invalid: "This reminder is invalid.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `A person named “${name}” already exists.`,

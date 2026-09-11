@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
+import type { Task } from "@machbar/shared";
 import { MemoryRouter } from "react-router-dom";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
@@ -364,7 +365,7 @@ describe("TaskDetailSheet", () => {
       }),
     );
     mockedApi.updateTask.mockImplementation(async (id, input) =>
-      makeTask({ id, title: "Menü abstimmen", projectId: 7, ...input }),
+      makeTask({ id, title: "Menü abstimmen", projectId: 7, ...(input as Partial<Task>) }),
     );
     renderSheet(42);
     await userEvent.click(screen.getByRole("button", { name: "open" }));
@@ -743,6 +744,67 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "+ Orte" }));
     expect(
       await screen.findByRole("heading", { name: "Orte" }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers a + Erinnerung affordance when there are no reminders yet, opening the reminders workflow", async () => {
+    const task = makeTask({
+      id: 46,
+      title: "Ohne Erinnerung",
+      status: "actionable",
+      reminders: [],
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderSheet(46);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Ohne Erinnerung");
+
+    const addButton = screen.getByRole("button", { name: "+ Erinnerung" });
+    await userEvent.click(addButton);
+    expect(
+      await screen.findByRole("heading", { name: /Erinnerungen/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not offer the + Erinnerung affordance for captured inbox items", async () => {
+    const task = makeTask({
+      id: 47,
+      title: "Erfassung",
+      status: "captured",
+      projectId: null,
+      parentTaskId: null,
+      reminders: [],
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderSheet(47);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Erfassung");
+
+    expect(screen.queryByRole("button", { name: "+ Erinnerung" })).not.toBeInTheDocument();
+  });
+
+  it("shows a compact reminder summary with overflow count and dispatches the reminders command", async () => {
+    const task = makeTask({
+      id: 48,
+      title: "Mehrere Erinnerungen",
+      status: "actionable",
+      reminders: [
+        { id: 1, kind: "absolute", at: "2026-09-01T19:00:00.000Z" },
+        { id: 2, kind: "absolute", at: "2026-09-02T08:00:00.000Z" },
+        { id: 3, kind: "absolute", at: "2026-09-03T08:00:00.000Z" },
+      ],
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderSheet(48);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Mehrere Erinnerungen");
+
+    const remindersButton = screen.getByRole("button", { name: /Erinnerungen/ });
+    expect(remindersButton).toHaveTextContent("+2");
+
+    await userEvent.click(remindersButton);
+    expect(
+      await screen.findByRole("heading", { name: /Erinnerungen/ }),
     ).toBeInTheDocument();
   });
 

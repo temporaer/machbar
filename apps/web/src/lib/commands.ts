@@ -35,6 +35,7 @@ import type { ProjectWorkflowAction } from "./api";
 export type WorkItemCommand =
   | { type: "task.open"; taskId: number; focusField?: TaskDetailFocusField }
   | { type: "task.plan"; taskId: number }
+  | { type: "task.reminders"; taskId: number }
   | { type: "task.waitingLifecycle"; taskId: number }
   | { type: "task.split"; taskId: number }
   | { type: "task.assignOwner"; taskId: number }

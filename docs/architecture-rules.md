@@ -188,6 +188,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Keyboard navigation (`j/k/h/l`, `Alt+arrows`, `g`-prefix, `?`, `c`, focused task keys) | `apps/web/src/lib/useWorkItemKeyboardNav.ts` and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
 | WorkItem detail disclosure chrome | `apps/web/src/components/WorkItemDetailSection.tsx` |
 | Focused task workflows (one sheet per `task.*` command) | `apps/web/src/components/TaskWorkflowHost.tsx` and `apps/web/src/lib/taskWorkflowContext.tsx` |
+| Explicit task reminders (multiple absolute/deadline-relative reminders per task) | `apps/api/src/db/schema.ts` (`taskReminders`), `apps/api/src/domain/taskCrud.ts`, `apps/api/src/notifications/outbox.ts`, and `apps/web/src/components/TaskRemindersSheet.tsx` reached via the `task.reminders` command |
 | Focused project workflows (one sheet per `story.*` command) | `apps/web/src/components/ProjectWorkflowHost.tsx` and `apps/web/src/lib/projectWorkflowContext.tsx` |
 | Project lifecycle prerequisites (missing driver, unmet criteria, no progress path) | `lifecyclePrerequisite()` in `apps/web/src/lib/projectWorkflow.ts`, resolved by `useWorkItemCommands()` |
 | Legal project transition to `story.*` command | `storyWorkflowCommand()` in `apps/web/src/lib/commands.ts` |

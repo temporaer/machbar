@@ -6,6 +6,7 @@
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type {
   InheritanceMode,
+  TaskReminderInput,
   TaskSize,
   TaskStatus,
 } from "@machbar/shared";
@@ -21,6 +22,7 @@ import {
 } from "../repo/index.js";
 import { addCalendarDays, isIsoCalendarDate } from "./calendarDate.js";
 import { Graph } from "./graph.js";
+import { deletePendingTaskReminderEvents } from "../notifications/outbox.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import {
   MutationContext,
@@ -80,9 +82,149 @@ export interface CreateTaskInput {
   size?: TaskSize | null;
   repeatAfterDays?: number | null;
   allowedDeviationDays?: number | null;
-  reminderAt?: string | null;
+  reminders?: TaskReminderInput[];
   tagIds?: number[];
   contextIds?: number[];
+}
+
+const REMINDER_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function isValidIanaTimezone(value: string): boolean {
+  try {
+    // Throws a RangeError for an unrecognized IANA zone name.
+    Intl.DateTimeFormat(undefined, { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function assertValidReminderInput(input: TaskReminderInput): void {
+  if (input.kind === "absolute") {
+    if (!input.at) {
+      throw AppError.badRequest(
+        "task_reminder_invalid",
+        "An absolute reminder requires an instant.",
+        { reminder: input },
+      );
+    }
+    return;
+  }
+  if (!Number.isInteger(input.daysBefore) || input.daysBefore < 0) {
+    throw AppError.badRequest(
+      "task_reminder_invalid",
+      "A deadline-relative reminder requires a non-negative whole number of days.",
+      { reminder: input },
+    );
+  }
+  if (!REMINDER_TIME_PATTERN.test(input.time)) {
+    throw AppError.badRequest(
+      "task_reminder_invalid",
+      "A deadline-relative reminder requires an HH:mm time.",
+      { reminder: input },
+    );
+  }
+  if (!isValidIanaTimezone(input.timezone)) {
+    throw AppError.badRequest(
+      "task_reminder_invalid",
+      "A deadline-relative reminder requires a valid IANA timezone.",
+      { reminder: input },
+    );
+  }
+}
+
+function reminderFieldValues(input: TaskReminderInput) {
+  return {
+    kind: input.kind,
+    at: input.kind === "absolute" ? input.at : null,
+    daysBefore: input.kind === "deadline_relative" ? input.daysBefore : null,
+    time: input.kind === "deadline_relative" ? input.time : null,
+    timezone: input.kind === "deadline_relative" ? input.timezone : null,
+  };
+}
+
+/** Insert-only reminder persistence for task creation: every reminder is
+ * new, so there is nothing to diff against. */
+function insertReminders(
+  db: Db,
+  taskId: number,
+  reminders: TaskReminderInput[],
+): void {
+  for (const reminder of reminders) assertValidReminderInput(reminder);
+  const now = nowIso();
+  for (const reminder of reminders) {
+    db.insert(schema.taskReminders)
+      .values({ taskId, ...reminderFieldValues(reminder), createdAt: now, updatedAt: now })
+      .run();
+  }
+}
+
+/**
+ * Diffs `nextReminders` against the task's current `task_reminders` rows:
+ * reminders carrying an existing id are updated in place (ids stay
+ * stable, since they double as the notification dedup/cancellation key),
+ * reminders without an id are inserted, and existing rows omitted from
+ * `nextReminders` are deleted. Returns whether the persisted set actually
+ * changed, so callers can record one "reminders" activity field and clear
+ * stale pending notifications only when something really moved.
+ */
+function applyReminderDiff(
+  db: Db,
+  taskId: number,
+  nextReminders: TaskReminderInput[],
+): boolean {
+  for (const reminder of nextReminders) assertValidReminderInput(reminder);
+  const existing = db
+    .select()
+    .from(schema.taskReminders)
+    .where(eq(schema.taskReminders.taskId, taskId))
+    .all();
+  const existingById = new Map(existing.map((row) => [row.id, row]));
+  const keptIds = new Set<number>();
+  let changed = false;
+  const now = nowIso();
+  for (const reminder of nextReminders) {
+    if (reminder.id !== undefined) {
+      const current = existingById.get(reminder.id);
+      if (!current) {
+        throw AppError.badRequest(
+          "task_reminder_invalid",
+          "A reminder id does not belong to this task.",
+          { taskId, reminderId: reminder.id },
+        );
+      }
+      keptIds.add(reminder.id);
+      const fields = reminderFieldValues(reminder);
+      const unchanged =
+        current.kind === fields.kind &&
+        current.at === fields.at &&
+        current.daysBefore === fields.daysBefore &&
+        current.time === fields.time &&
+        current.timezone === fields.timezone;
+      if (!unchanged) {
+        changed = true;
+        db.update(schema.taskReminders)
+          .set({ ...fields, updatedAt: now })
+          .where(eq(schema.taskReminders.id, reminder.id))
+          .run();
+      }
+    } else {
+      changed = true;
+      db.insert(schema.taskReminders)
+        .values({ taskId, ...reminderFieldValues(reminder), createdAt: now, updatedAt: now })
+        .run();
+    }
+  }
+  const removedIds = existing
+    .filter((row) => !keptIds.has(row.id))
+    .map((row) => row.id);
+  if (removedIds.length > 0) {
+    changed = true;
+    db.delete(schema.taskReminders)
+      .where(inArray(schema.taskReminders.id, removedIds))
+      .run();
+  }
+  return changed;
 }
 
 function assertRecurrenceNumbers(
@@ -180,12 +322,12 @@ function assertCapturedTaskShape(
   status: TaskStatus,
   input: {
     repeatAfterDays: number | null;
-    reminderAt: string | null;
+    hasReminders: boolean;
   },
 ): void {
   if (
     status === "captured" &&
-    (input.repeatAfterDays !== null || input.reminderAt !== null)
+    (input.repeatAfterDays !== null || input.hasReminders)
   ) {
     throw AppError.conflict(
       "task_promotion_invalid",
@@ -252,7 +394,7 @@ function insertTask(
   );
   assertCapturedTaskShape(status, {
     repeatAfterDays,
-    reminderAt: input.reminderAt ?? null,
+    hasReminders: (input.reminders ?? []).length > 0,
   });
   if (recurrence.enabled && status === "done") {
     throw AppError.badRequest(
@@ -280,12 +422,14 @@ function insertTask(
       size: input.size ?? null,
       repeatAfterDays,
       allowedDeviationDays,
-      reminderAt: input.reminderAt ?? null,
       position,
     })
     .returning()
     .get();
 
+  if (input.reminders && input.reminders.length > 0) {
+    insertReminders(db, task.id, input.reminders);
+  }
   if (input.tagIds && input.tagIds.length > 0) {
     for (const tagId of input.tagIds) {
       db.insert(schema.workItemTags).values({ workItemId: task.id, tagId }).run();
@@ -555,7 +699,7 @@ export interface UpdateTaskInput {
   repeatAfterDays?: number | null;
   allowedDeviationDays?: number | null;
   completedOn?: string;
-  reminderAt?: string | null;
+  reminders?: TaskReminderInput[];
   additionalNextAction?: boolean;
   tagIds?: number[];
   excludedTagIds?: number[];
@@ -632,10 +776,10 @@ export function updateTask(
     if ((nextStatus ?? currentTask.status) === "captured") {
       assertCapturedTaskShape("captured", {
         repeatAfterDays: nextRepeatAfterDays,
-        reminderAt:
-          input.reminderAt !== undefined
-            ? input.reminderAt
-            : currentTask.reminderAt,
+        hasReminders:
+          input.reminders !== undefined
+            ? input.reminders.length > 0
+            : currentTask.reminders.length > 0,
       });
       const hasDependency = tx
         .select({ id: schema.taskDependencies.id })
@@ -748,7 +892,6 @@ export function updateTask(
     for (const field of [
       "priority",
       "size",
-      "reminderAt",
       "additionalNextAction",
     ] as const) {
       if (input[field] !== undefined && input[field] !== currentTask[field]) {
@@ -879,20 +1022,37 @@ export function updateTask(
           .run();
       }
     }
+    const remindersChanged =
+      input.reminders !== undefined
+        ? applyReminderDiff(txDb, id, input.reminders)
+        : false;
     if (
       Object.keys(patch).length > 0 ||
       tagsChanged ||
       excludedTagsChanged ||
-      contextsChanged
+      contextsChanged ||
+      remindersChanged
     ) {
       touchTask(txDb, id);
     }
     const updated = getTaskOrThrow(txDb, id);
+    const effectiveOwnerAfter = effectiveOwnerId(txDb, id);
+    // Editing reminders, or an effective-ownership change (which changes
+    // who the current/future reminder recipients are), can make an
+    // already-enqueued-but-undelivered `task_reminder` event stale: clear
+    // it so the next runner pass re-resolves recipients/occurrences from
+    // scratch instead of firing with obsolete recipient or timing.
+    // Already-delivered events are untouched (they are just dedup/history
+    // state); this only ever removes still-pending ones.
+    if (remindersChanged || effectiveOwnerBefore !== effectiveOwnerAfter) {
+      deletePendingTaskReminderEvents(txDb, id);
+    }
     const coalescedChangedFields = [
       ...changedFields,
       ...(tagsChanged ? ["tags"] : []),
       ...(excludedTagsChanged ? ["excludedTags"] : []),
       ...(contextsChanged ? ["contexts"] : []),
+      ...(remindersChanged ? ["reminders"] : []),
     ];
     if (recurringCompletion && occurrence) {
       const updatedScheduledDate = updated.scheduledDate!;
@@ -1034,7 +1194,6 @@ export function updateTask(
         projectId: updated.projectId,
         metadata: { changedFields: coalescedChangedFields },
       });
-      const effectiveOwnerAfter = effectiveOwnerId(txDb, id);
       if (
         effectiveOwnerBefore === null &&
         effectiveOwnerAfter !== null &&

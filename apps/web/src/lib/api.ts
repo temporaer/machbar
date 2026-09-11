@@ -29,6 +29,7 @@ import type {
   TagKind,
   Task,
   TaskRecurrenceHistory,
+  TaskReminderInput,
   TaskSize,
   TaskStatus,
   WaitingEntry,
@@ -185,7 +186,7 @@ export interface CreateTaskInput {
   size?: TaskSize | null;
   repeatAfterDays?: number | null;
   allowedDeviationDays?: number | null;
-  reminderAt?: string | null;
+  reminders?: TaskReminderInput[];
   tagIds?: number[];
   contextIds?: number[];
   contextInheritanceMode?: InheritanceMode;

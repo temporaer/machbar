@@ -58,6 +58,7 @@ import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
 import { WorkItemDetailDisclosure } from "./WorkItemDetailSection";
 import { taskRailCommands } from "../lib/railConfig";
 import { ActionTileGrid } from "./ActionTileGrid";
+import { formatReminderSummary } from "../lib/reminderLabels";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -458,6 +459,9 @@ export function TaskDetailSheet() {
         .filter((value): value is string => value !== null)
         .join(" · ")
     : "";
+  const reminderSummary = task
+    ? formatReminderSummary(task.reminders, task.dueDate, strings, locale)
+    : null;
   const waitValue = task?.externalWait
     ? [
         task.externalWait.waitingFor?.trim() ?? null,
@@ -470,7 +474,7 @@ export function TaskDetailSheet() {
     : "";
 
   const runCommand = (
-    command: (typeof taskRailCommands)[number] | "task.changeParent" | "task.discard",
+    command: (typeof taskRailCommands)[number] | "task.changeParent" | "task.discard" | "task.reminders",
   ) => {
     if (!task) return;
     if (command === "task.lifecycle") {
@@ -652,6 +656,27 @@ export function TaskDetailSheet() {
                 {strings.addPlan}
               </button>
             )}
+            {task.reminders.length > 0 && reminderSummary ? (
+              <button
+                type="button"
+                className="detail-meta-button"
+                onClick={() => runCommand("task.reminders")}
+              >
+                <span className="detail-meta-label">{strings.reminders}</span>
+                <span>
+                  {reminderSummary.label}
+                  {reminderSummary.overflowCount > 0 ? ` +${reminderSummary.overflowCount}` : ""}
+                </span>
+              </button>
+            ) : !taskIsCapturedInboxItem ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost task-detail-add-property"
+                onClick={() => runCommand("task.reminders")}
+              >
+                {strings.addReminder}
+              </button>
+            ) : null}
             {task.externalWait ? (
               <button
                 type="button"

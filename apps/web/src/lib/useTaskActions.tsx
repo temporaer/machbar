@@ -241,7 +241,14 @@ function useTaskActionsState() {
     (
       task: Task,
       patch: UpdateTaskInput,
-      optimisticPatch: Partial<Task> = patch,
+      // `patch.reminders` (if present) may contain not-yet-created entries
+      // without an `id`; the server assigns real ids on commit, so the
+      // optimistic snapshot fills in placeholder ones. This is cosmetic:
+      // the snapshot is only shown for the brief retention window before
+      // the authoritative refetch replaces it.
+      optimisticPatch: Partial<Task> = patch.reminders
+        ? { ...patch, reminders: patch.reminders.map((r, i) => ({ ...r, id: r.id ?? -1 - i })) }
+        : (patch as Partial<Task>),
       throwOnError = false,
     ) => {
       const optimistic: Task = {

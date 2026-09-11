@@ -4001,3 +4001,30 @@ details[open] > .disclosure-summary::after {
   text-decoration: underline;
   color: var(--color-primary);
 }
+
+.reminder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.reminder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reminder-row-label {
+  flex: 1;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.reminder-row-remove {
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 4px 10px;
+}

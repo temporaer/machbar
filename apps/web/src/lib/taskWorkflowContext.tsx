@@ -17,6 +17,7 @@ import type { ReactNode } from "react";
  */
 export type TaskWorkflowKind =
   | "plan"
+  | "reminders"
   | "waitingLifecycle"
   | "split"
   | "assignOwner"

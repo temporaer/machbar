@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { Task } from "@machbar/shared";
 import { Route, Routes, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import {
@@ -186,7 +187,7 @@ describe("ProjectDetailPage task explanations", () => {
       }),
     );
     mockedApi.updateTask.mockImplementation(async (id, input) =>
-      makeTask({ id, projectId: 42, ...input }),
+      makeTask({ id, projectId: 42, ...(input as Partial<Task>) }),
     );
     mockedApi.getActivity.mockResolvedValue({ items: [], nextCursor: null });
     mockedApi.uploadPaperlessDocument.mockResolvedValue({
@@ -808,7 +809,7 @@ describe("ProjectDetailPage task explanations", () => {
 
   it("keeps the initial planning target open until its planning workflow commits", async () => {
     mockedApi.updateTask.mockImplementation(async (id, input) =>
-      makeTask({ id, projectId: 42, ...input }),
+      makeTask({ id, projectId: 42, ...(input as Partial<Task>) }),
     );
 
     renderProjectRoute("/projects/42?focus=planning");
