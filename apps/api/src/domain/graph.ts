@@ -9,6 +9,7 @@ import type {
   StuckReason,
   Tag,
   Task as SharedTask,
+  TaskReminder,
   TaskSize,
   TaskStatus,
 } from "@machbar/shared";
@@ -83,7 +84,7 @@ interface RawTask {
   cancelledAt: string | null;
   repeatAfterDays: number | null;
   allowedDeviationDays: number | null;
-  reminderAt: string | null;
+  reminders: TaskReminder[];
   additionalNextAction: boolean;
   createdAt: string;
   updatedAt: string;
@@ -218,6 +219,23 @@ export class Graph {
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
     const taskProjectIds = getTaskProjectIds(db);
     const workItemRows = db.select().from(schema.workItems).all();
+    const reminderRows = db.select().from(schema.taskReminders).all();
+    const remindersByTask = new Map<number, TaskReminder[]>();
+    for (const row of reminderRows) {
+      const list = remindersByTask.get(row.taskId) ?? [];
+      list.push(
+        row.kind === "absolute"
+          ? { id: row.id, kind: "absolute", at: row.at! }
+          : {
+              id: row.id,
+              kind: "deadline_relative",
+              daysBefore: row.daysBefore!,
+              time: row.time!,
+              timezone: row.timezone!,
+            },
+      );
+      remindersByTask.set(row.taskId, list);
+    }
     const rawProjects = workItemRows
       .filter((row) => row.role === "story")
       .map((row): RawProject => ({
@@ -268,7 +286,7 @@ export class Graph {
         cancelledAt: row.cancelledAt,
         repeatAfterDays: row.repeatAfterDays,
         allowedDeviationDays: row.allowedDeviationDays,
-        reminderAt: row.reminderAt,
+        reminders: remindersByTask.get(row.id) ?? [],
         additionalNextAction: row.additionalNextAction,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -606,7 +624,7 @@ export class Graph {
         cancelledAt: raw.cancelledAt,
         repeatAfterDays: raw.repeatAfterDays,
         allowedDeviationDays: raw.allowedDeviationDays,
-        reminderAt: raw.reminderAt,
+        reminders: raw.reminders,
         additionalNextAction: raw.additionalNextAction,
         createdAt: raw.createdAt,
         updatedAt: raw.updatedAt,

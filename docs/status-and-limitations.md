@@ -61,8 +61,10 @@ Backups are file/database operations managed by the operator.
 
 ### Recurrence, reminders, and notifications
 
-Recurring task completion advances the next occurrence. Explicit task
-`reminderAt` values can produce server-triggered Web Push notifications when
+Recurring task completion advances the next occurrence. A task can carry
+multiple explicit reminders, each either an absolute instant or a number of
+calendar days before the task's deadline at a local wall-clock time in an
+IANA timezone. These can produce server-triggered Web Push notifications when
 the installation has VAPID configured and the member opted in in that browser.
 Each browser or installed PWA has an independent subscription, and delivery
 fans out to every subscription for the member. Notifications are shown by the
@@ -111,7 +113,6 @@ Potential directions include:
 - additional interface languages;
 - live client updates;
 - offline caching and synchronization;
-- broader reminder schedules;
 - published releases for the Home Assistant integration.
 
 These are directions, not release commitments.

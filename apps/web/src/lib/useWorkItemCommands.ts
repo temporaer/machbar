@@ -24,6 +24,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
   switch (command.type) {
     case "task.open":
     case "task.plan":
+    case "task.reminders":
     case "task.waitingLifecycle":
     case "task.split":
     case "task.assignOwner":
@@ -77,6 +78,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
   switch (command.type) {
     case "task.open":
     case "task.plan":
+    case "task.reminders":
     case "task.waitingLifecycle":
     case "task.split":
     case "task.assignOwner":
@@ -191,6 +193,9 @@ export function useWorkItemCommands() {
           return;
         case "task.plan":
           taskWorkflow.open("plan", command.taskId);
+          return;
+        case "task.reminders":
+          taskWorkflow.open("reminders", command.taskId);
           return;
         case "task.waitingLifecycle":
           taskWorkflow.open("waitingLifecycle", command.taskId);

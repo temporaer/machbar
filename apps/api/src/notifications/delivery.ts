@@ -10,10 +10,19 @@ import type { VapidConfig } from "../env.js";
 import { hasOpenDescendants } from "./outbox.js";
 import { notificationCatalog } from "./locales.js";
 
+export interface PushSendOptions {
+  /** Web Push TTL in seconds — how long the push service should retain an
+   * undelivered notification for the browser to pick up. Applied to real
+   * notification events (see `dispatchNotificationEvents`), not the
+   * interactive test-push send in `routes/push.ts`. */
+  ttl?: number;
+}
+
 export interface PushTransport {
   send(
     subscription: webpush.PushSubscription,
     payload: string,
+    options?: PushSendOptions,
   ): Promise<void>;
 }
 
@@ -21,11 +30,20 @@ export interface PushLogger {
   error(message: string, context?: Record<string, unknown>): void;
 }
 
+/** Real (non-test) notifications are retained by the push service for up
+ * to a week so a temporarily offline device still receives them on
+ * reconnect, while very stale reminders are eventually discarded. */
+const NOTIFICATION_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 export function createWebPushTransport(config: VapidConfig): PushTransport {
   webpush.setVapidDetails(config.subject, config.publicKey, config.privateKey);
   return {
-    async send(subscription, payload) {
-      await webpush.sendNotification(subscription, payload);
+    async send(subscription, payload, options) {
+      await webpush.sendNotification(
+        subscription,
+        payload,
+        options?.ttl !== undefined ? { TTL: options.ttl } : undefined,
+      );
     },
   };
 }
@@ -156,6 +174,29 @@ export async function dispatchNotificationEvents(
     .all();
 
   for (const event of events) {
+    if (event.kind === "task_reminder") {
+      const task = db
+        .select({ status: schema.workItems.status })
+        .from(schema.workItems)
+        .where(
+          and(
+            eq(schema.workItems.id, event.entityId),
+            eq(schema.workItems.role, "task"),
+          ),
+        )
+        .get();
+      // The task became done/cancelled (or was deleted) after this
+      // reminder was enqueued: the reminder is intentionally moot, not a
+      // delivery failure, so mark it processed without sending or
+      // retrying.
+      if (!task || task.status === "done" || task.status === "cancelled") {
+        db.update(schema.notificationEvents)
+          .set({ processedAt: now.toISOString() })
+          .where(eq(schema.notificationEvents.id, event.id))
+          .run();
+        continue;
+      }
+    }
     const preferences = db
       .select()
       .from(schema.pushNotificationPreferences)
@@ -173,12 +214,37 @@ export async function dispatchNotificationEvents(
         preferences?.taskReminder === false) ||
       (event.kind === "context_entered" &&
         preferences?.contextEntered === false);
+    // The recipient opted out: also not a delivery failure, so mark
+    // processed immediately rather than retrying.
+    if (disabled) {
+      db.update(schema.notificationEvents)
+        .set({ processedAt: now.toISOString() })
+        .where(eq(schema.notificationEvents.id, event.id))
+        .run();
+      continue;
+    }
     const subscriptions = db
       .select()
       .from(schema.pushSubscriptions)
       .where(eq(schema.pushSubscriptions.memberId, event.recipientMemberId))
       .all();
-    for (const subscription of disabled ? [] : subscriptions) {
+    const alreadyDelivered = new Set(
+      db
+        .select({
+          subscriptionId: schema.notificationDeliveries.pushSubscriptionId,
+        })
+        .from(schema.notificationDeliveries)
+        .where(eq(schema.notificationDeliveries.notificationEventId, event.id))
+        .all()
+        .map((row) => row.subscriptionId),
+    );
+    let hadTransientFailure = false;
+    for (const subscription of subscriptions) {
+      // Idempotent retry: a subscription that already has a delivery
+      // record succeeded on a prior pass and must not be sent to again,
+      // even though the event as a whole is still pending because a
+      // different subscription is still failing.
+      if (alreadyDelivered.has(subscription.id)) continue;
       const payload = buildNotificationPayload(db, event, subscription.locale);
       try {
         await transport.send(
@@ -190,14 +256,34 @@ export async function dispatchNotificationEvents(
             },
           },
           JSON.stringify(payload),
+          { ttl: NOTIFICATION_TTL_SECONDS },
         );
+        db.insert(schema.notificationDeliveries)
+          .values({
+            notificationEventId: event.id,
+            pushSubscriptionId: subscription.id,
+            deliveredAt: now.toISOString(),
+          })
+          .onConflictDoNothing({
+            target: [
+              schema.notificationDeliveries.notificationEventId,
+              schema.notificationDeliveries.pushSubscriptionId,
+            ],
+          })
+          .run();
       } catch (error) {
         const code = webPushStatusCode(error);
         if (code === 404 || code === 410) {
+          // Permanently resolved: the subscription is gone, so there is
+          // nothing left to retry for it.
           db.delete(schema.pushSubscriptions)
             .where(eq(schema.pushSubscriptions.id, subscription.id))
             .run();
         } else {
+          // Transient/network/5xx failure: leave the event unprocessed so
+          // a later runner pass retries this subscription (and only this
+          // one — see the `alreadyDelivered` check above).
+          hadTransientFailure = true;
           logger.error("Web Push delivery failed.", {
             notificationEventId: event.id,
             subscriptionId: subscription.id,
@@ -206,10 +292,12 @@ export async function dispatchNotificationEvents(
         }
       }
     }
-    db.update(schema.notificationEvents)
-      .set({ processedAt: now.toISOString() })
-      .where(eq(schema.notificationEvents.id, event.id))
-      .run();
+    if (!hadTransientFailure) {
+      db.update(schema.notificationEvents)
+        .set({ processedAt: now.toISOString() })
+        .where(eq(schema.notificationEvents.id, event.id))
+        .run();
+    }
   }
   return events.length;
 }

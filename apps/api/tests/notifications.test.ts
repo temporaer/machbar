@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { eq, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
 import { createProject, updateProject } from "../src/domain/storyCrud.js";
@@ -414,34 +414,314 @@ describe("reminders and Push delivery", () => {
     await closeTestContext(ctx);
   });
 
-  it("emits due reminders idempotently and respects changed, cleared, and closed tasks", () => {
+  it("fires multiple absolute reminders for one task independently and dedupes repeated passes", () => {
     const hannes = addMember(ctx, "Hannes");
-    const due = createTask(ctx.handle.db, {
+    const task = createTask(ctx.handle.db, {
       title: "Paket abholen",
       status: "actionable",
       ownerMemberId: hannes.id,
       ownerInheritanceMode: "explicit",
-      reminderAt: "2026-08-30T08:00:00.000Z",
+      reminders: [
+        { kind: "absolute", at: "2026-08-30T08:00:00.000Z" },
+        { kind: "absolute", at: "2026-09-01T08:00:00.000Z" },
+      ],
     });
-    const future = createTask(ctx.handle.db, {
-      title: "Später",
-      status: "actionable",
-      ownerMemberId: hannes.id,
-      ownerInheritanceMode: "explicit",
-      reminderAt: "2026-09-01T08:00:00.000Z",
-    });
+    expect(task.reminders).toHaveLength(2);
     ctx.handle.db.delete(schema.notificationEvents).run();
 
     expect(enqueueDueReminders(ctx.handle.db, new Date("2026-08-30T09:00:00Z"))).toBe(1);
     expect(enqueueDueReminders(ctx.handle.db, new Date("2026-08-30T09:00:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-01T09:00:00Z"))).toBe(1);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-01T09:00:00Z"))).toBe(0);
+  });
 
-    updateTask(ctx.handle.db, due.id, {
-      reminderAt: "2026-08-30T08:30:00.000Z",
+  it("does not fire an absolute reminder when the task is done or cancelled", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, {
+      title: "Später",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      reminders: [{ kind: "absolute", at: "2026-09-01T08:00:00.000Z" }],
     });
-    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-08-30T09:00:00Z"))).toBe(1);
-    updateTask(ctx.handle.db, due.id, { reminderAt: null });
-    updateTask(ctx.handle.db, future.id, { status: "done", completedOn: "2026-08-30" });
+    ctx.handle.db.delete(schema.notificationEvents).run();
+    updateTask(ctx.handle.db, task.id, { status: "done", completedOn: "2026-08-30" });
     expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-02T09:00:00Z"))).toBe(0);
+  });
+
+  it("fires multiple deadline-relative reminders for one deadline independently, at their own local targets", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, {
+      title: "Steuererklärung",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      dueDate: "2026-09-20",
+      reminders: [
+        { kind: "deadline_relative", daysBefore: 2, time: "09:00", timezone: "Europe/Berlin" },
+        { kind: "deadline_relative", daysBefore: 0, time: "08:00", timezone: "Europe/Berlin" },
+      ],
+    });
+    expect(task.reminders).toHaveLength(2);
+    ctx.handle.db.delete(schema.notificationEvents).run();
+
+    // 2026-09-18T09:00 Europe/Berlin (CEST, UTC+2) = 07:00Z.
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-18T06:59:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-18T07:00:00Z"))).toBe(1);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-18T07:00:00Z"))).toBe(0);
+
+    // 2026-09-20T08:00 Europe/Berlin (CEST) = 06:00Z.
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-20T05:59:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-20T06:00:00Z"))).toBe(1);
+  });
+
+  it("supports daysBefore: 0 (reminds on the deadline day itself)", () => {
+    const hannes = addMember(ctx, "Hannes");
+    createTask(ctx.handle.db, {
+      title: "Geburtstag",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      dueDate: "2026-09-20",
+      reminders: [{ kind: "deadline_relative", daysBefore: 0, time: "08:00", timezone: "UTC" }],
+    });
+    ctx.handle.db.delete(schema.notificationEvents).run();
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-20T07:59:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-20T08:00:00Z"))).toBe(1);
+  });
+
+  it("keeps a deadline-relative reminder dormant while the task has no deadline, and reactivates/repositions it once a deadline is (re)set", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, {
+      title: "Anmeldung",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      dueDate: "2026-09-20",
+      reminders: [{ kind: "deadline_relative", daysBefore: 1, time: "09:00", timezone: "UTC" }],
+    });
+    ctx.handle.db.delete(schema.notificationEvents).run();
+
+    updateTask(ctx.handle.db, task.id, { dueDate: null });
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-19T09:00:00Z"))).toBe(0);
+
+    updateTask(ctx.handle.db, task.id, { dueDate: "2026-09-25" });
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-19T09:00:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-24T09:00:00Z"))).toBe(1);
+  });
+
+  it("produces a new occurrence when the deadline moves after a previous relative reminder already fired", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, {
+      title: "Abgabe",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      dueDate: "2026-09-20",
+      reminders: [{ kind: "deadline_relative", daysBefore: 0, time: "09:00", timezone: "UTC" }],
+    });
+    ctx.handle.db.delete(schema.notificationEvents).run();
+
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-20T09:00:00Z"))).toBe(1);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-20T09:00:00Z"))).toBe(0);
+
+    updateTask(ctx.handle.db, task.id, { dueDate: "2026-09-27" });
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-20T09:00:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-27T09:00:00Z"))).toBe(1);
+  });
+
+  it("does not move an absolute reminder when the deadline changes", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, {
+      title: "Rechnung",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      dueDate: "2026-09-20",
+      reminders: [{ kind: "absolute", at: "2026-09-15T08:00:00.000Z" }],
+    });
+    const updated = updateTask(ctx.handle.db, task.id, { dueDate: "2026-10-01" });
+    expect(updated.reminders).toEqual([
+      expect.objectContaining({ kind: "absolute", at: "2026-09-15T08:00:00.000Z" }),
+    ]);
+    ctx.handle.db.delete(schema.notificationEvents).run();
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-15T09:00:00Z"))).toBe(1);
+  });
+
+  it("handles a DST spring-forward nonexistent local wall time by firing once local time has advanced past it", () => {
+    const hannes = addMember(ctx, "Hannes");
+    // Europe/Berlin jumps 02:00 CET -> 03:00 CEST at 2026-03-29T01:00Z; 02:30 never
+    // occurs on the local wall clock that day.
+    createTask(ctx.handle.db, {
+      title: "Uhrenumstellung",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      dueDate: "2026-03-30",
+      reminders: [{ kind: "deadline_relative", daysBefore: 1, time: "02:30", timezone: "Europe/Berlin" }],
+    });
+    ctx.handle.db.delete(schema.notificationEvents).run();
+
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-03-29T00:30:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-03-29T01:05:00Z"))).toBe(1);
+  });
+
+  it("handles a DST fall-back duplicated local wall time without duplicating the reminder", () => {
+    const hannes = addMember(ctx, "Hannes");
+    // Europe/Berlin falls back 03:00 CEST -> 02:00 CET at 2026-10-25T01:00Z; 02:30
+    // occurs twice on the local wall clock that day.
+    createTask(ctx.handle.db, {
+      title: "Uhrenumstellung",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      dueDate: "2026-10-26",
+      reminders: [{ kind: "deadline_relative", daysBefore: 1, time: "02:30", timezone: "Europe/Berlin" }],
+    });
+    ctx.handle.db.delete(schema.notificationEvents).run();
+
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-10-25T00:30:00Z"))).toBe(1);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-10-25T01:30:00Z"))).toBe(0);
+  });
+
+  it("keeps reminder ids stable when editing one reminder alongside unrelated ones", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, {
+      title: "Mehrere Erinnerungen",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      reminders: [
+        { kind: "absolute", at: "2026-09-01T08:00:00.000Z" },
+        { kind: "absolute", at: "2026-09-02T08:00:00.000Z" },
+      ],
+    });
+    const [first, second] = task.reminders;
+    const firstAt = first && first.kind === "absolute" ? first.at : "";
+    const updated = updateTask(ctx.handle.db, task.id, {
+      reminders: [
+        { id: first!.id, kind: "absolute", at: firstAt },
+        { id: second!.id, kind: "absolute", at: "2026-09-02T09:30:00.000Z" },
+      ],
+    });
+    expect(updated.reminders.map((r) => r.id).sort()).toEqual([first!.id, second!.id].sort());
+    expect(
+      ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, task.id)).all(),
+    ).toHaveLength(2);
+  });
+
+  it("deleting a reminder removes its still-pending notification", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, {
+      title: "Löschen",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      reminders: [{ kind: "absolute", at: "2026-09-01T08:00:00.000Z" }],
+    });
+    ctx.handle.db.delete(schema.notificationEvents).run();
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-01T09:00:00Z"))).toBe(1);
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.notificationEvents)
+        .where(and(eq(schema.notificationEvents.kind, "task_reminder"), isNull(schema.notificationEvents.processedAt)))
+        .all(),
+    ).toHaveLength(1);
+
+    updateTask(ctx.handle.db, task.id, { reminders: [] });
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.notificationEvents)
+        .where(and(eq(schema.notificationEvents.kind, "task_reminder"), isNull(schema.notificationEvents.processedAt)))
+        .all(),
+    ).toEqual([]);
+  });
+
+  it("prevents stale delivery of an already-enqueued reminder once the task is completed or cancelled", async () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, {
+      title: "Fertig davor",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      reminders: [{ kind: "absolute", at: "2026-09-01T08:00:00.000Z" }],
+    });
+    ctx.handle.db.insert(schema.pushSubscriptions).values({
+      endpoint: "https://push.example/device",
+      memberId: hannes.id,
+      p256dh: "key",
+      auth: "auth",
+      locale: "de",
+    }).run();
+    ctx.handle.db.delete(schema.notificationEvents).run();
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-01T09:00:00Z"))).toBe(1);
+
+    updateTask(ctx.handle.db, task.id, { status: "done", completedOn: "2026-09-01" });
+    const send = vi.fn<PushTransport["send"]>().mockResolvedValue(undefined);
+    await dispatchNotificationEvents(ctx.handle.db, { send }, { error: vi.fn() });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.notificationEvents)
+        .where(isNull(schema.notificationEvents.processedAt))
+        .all(),
+    ).toEqual([]);
+  });
+
+  it("notifies every member (Gemeinsam) when an ownerless task's reminder is due", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const sarah = addMember(ctx, "Sarah");
+    createTask(ctx.handle.db, {
+      title: "Gemeinsame Aufgabe",
+      status: "actionable",
+      reminders: [{ kind: "absolute", at: "2026-09-01T08:00:00.000Z" }],
+    });
+    ctx.handle.db.delete(schema.notificationEvents).run();
+
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-01T09:00:00Z"))).toBe(2);
+    const recipients = ctx.handle.db
+      .select({ recipientMemberId: schema.notificationEvents.recipientMemberId })
+      .from(schema.notificationEvents)
+      .all()
+      .map((row) => row.recipientMemberId)
+      .sort();
+    expect(recipients).toEqual([hannes.id, sarah.id].sort());
+  });
+
+  it("clears a pending reminder event and re-resolves the recipient when effective ownership changes", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const sarah = addMember(ctx, "Sarah");
+    const task = createTask(ctx.handle.db, {
+      title: "Zuständigkeit ändert sich",
+      status: "actionable",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      reminders: [{ kind: "absolute", at: "2026-09-01T08:00:00.000Z" }],
+    });
+    ctx.handle.db.delete(schema.notificationEvents).run();
+    const now = new Date("2026-09-01T09:00:00Z");
+    expect(enqueueDueReminders(ctx.handle.db, now)).toBe(1);
+    expect(
+      ctx.handle.db.select().from(schema.notificationEvents).all()[0]!.recipientMemberId,
+    ).toBe(hannes.id);
+
+    updateTask(ctx.handle.db, task.id, { ownerMemberId: sarah.id });
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.notificationEvents)
+        .where(isNull(schema.notificationEvents.processedAt))
+        .all(),
+    ).toEqual([]);
+
+    expect(enqueueDueReminders(ctx.handle.db, now)).toBe(1);
+    expect(
+      ctx.handle.db.select().from(schema.notificationEvents).all()[0]!.recipientMemberId,
+    ).toBe(sarah.id);
   });
 
   it("localizes context-entry notifications", () => {
@@ -467,7 +747,35 @@ describe("reminders and Push delivery", () => {
     );
   });
 
-  it("fans out to every recipient subscription, removes dead endpoints, and isolates failures", async () => {
+  it("sends real notifications with the explicit 7-day TTL", async () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, { title: "Paket abholen" });
+    ctx.handle.db.insert(schema.pushSubscriptions).values({
+      endpoint: "https://push.example/device",
+      memberId: hannes.id,
+      p256dh: "key",
+      auth: "auth",
+      locale: "de",
+    }).run();
+    enqueueNotification(ctx.handle.db, {
+      kind: "context_entered",
+      recipientMemberId: hannes.id,
+      actorMemberId: null,
+      entityType: "task",
+      entityId: task.id,
+      entityTitle: task.title,
+      sourceKey: "ttl-check",
+    });
+    const send = vi.fn<PushTransport["send"]>().mockResolvedValue(undefined);
+    await dispatchNotificationEvents(ctx.handle.db, { send }, { error: vi.fn() });
+    expect(send).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      { ttl: 7 * 24 * 60 * 60 },
+    );
+  });
+
+  it("retries a transiently-failed subscription on a later pass without resending to one that already succeeded, while a 404/410 subscription is removed permanently", async () => {
     const hannes = addMember(ctx, "Hannes");
     const sarah = addMember(ctx, "Sarah");
     const task = createTask(ctx.handle.db, { title: "Paket abholen" });
@@ -510,25 +818,23 @@ describe("reminders and Push delivery", () => {
       entityTitle: task.title,
       sourceKey: "delivery",
     });
+    let failShouldSucceed = false;
     const send = vi.fn(async (subscription: { endpoint: string }) => {
       if (subscription.endpoint.endsWith("/dead")) {
         throw { statusCode: 410 };
       }
-      if (subscription.endpoint.endsWith("/fail")) {
+      if (subscription.endpoint.endsWith("/fail") && !failShouldSucceed) {
         throw new Error("temporary");
       }
     });
     const logger = { error: vi.fn() };
 
-    await expect(
-      dispatchNotificationEvents(ctx.handle.db, { send }, logger),
-    ).resolves.toBe(1);
+    await dispatchNotificationEvents(ctx.handle.db, { send }, logger);
     expect(send).toHaveBeenCalledTimes(3);
     expect(send).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        endpoint: "https://push.example/other-member",
-      }),
+      expect.objectContaining({ endpoint: "https://push.example/other-member" }),
       expect.any(String),
+      expect.anything(),
     );
     expect(logger.error).toHaveBeenCalledTimes(1);
     expect(
@@ -538,6 +844,60 @@ describe("reminders and Push delivery", () => {
         .where(eq(schema.pushSubscriptions.endpoint, "https://push.example/dead"))
         .get(),
     ).toBeUndefined();
+    // The event as a whole is not yet processed: the "/fail" subscription
+    // still needs a retry pass.
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.notificationEvents)
+        .where(isNull(schema.notificationEvents.processedAt))
+        .all(),
+    ).toHaveLength(1);
+
+    send.mockClear();
+    failShouldSucceed = true;
+    await dispatchNotificationEvents(ctx.handle.db, { send }, logger);
+    // Only the still-outstanding "/fail" subscription is retried; "/ok"
+    // already has a delivery record and must not be sent to again.
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: "https://push.example/fail" }),
+      expect.any(String),
+      expect.anything(),
+    );
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.notificationEvents)
+        .where(isNull(schema.notificationEvents.processedAt))
+        .all(),
+    ).toEqual([]);
+  });
+
+  it("marks a single-subscription event processed once a 404/410 permanently removes it", async () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, { title: "Paket abholen" });
+    ctx.handle.db.insert(schema.pushSubscriptions).values({
+      endpoint: "https://push.example/dead",
+      memberId: hannes.id,
+      p256dh: "key",
+      auth: "auth",
+      locale: "de",
+    }).run();
+    enqueueNotification(ctx.handle.db, {
+      kind: "context_entered",
+      recipientMemberId: hannes.id,
+      actorMemberId: null,
+      entityType: "task",
+      entityId: task.id,
+      entityTitle: task.title,
+      sourceKey: "dead-only",
+    });
+    const send = vi.fn().mockRejectedValue({ statusCode: 404 });
+    await dispatchNotificationEvents(ctx.handle.db, { send }, { error: vi.fn() });
+    expect(
+      ctx.handle.db.select().from(schema.pushSubscriptions).all(),
+    ).toEqual([]);
     expect(
       ctx.handle.db
         .select()

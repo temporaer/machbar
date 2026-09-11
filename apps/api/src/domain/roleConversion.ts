@@ -125,7 +125,7 @@ export function convertTaskToStory(
         .get() !== undefined ||
       task.repeatAfterDays !== null ||
       task.allowedDeviationDays !== null ||
-      task.reminderAt !== null;
+      task.reminders.length > 0;
     if (hasTaskOnlyRelation) {
       reject(
         "task_only_relations",
@@ -153,7 +153,6 @@ export function convertTaskToStory(
         recurrenceRuleLegacy: null,
         repeatAfterDays: null,
         allowedDeviationDays: null,
-        reminderAt: null,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })

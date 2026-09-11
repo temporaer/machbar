@@ -1,0 +1,45 @@
+/*
+ * Overrides `timepicker-ui`'s "basic" theme CSS custom properties so the
+ * picker's modal/clock visually matches Machbar's existing controls and
+ * `BottomSheet` instead of showing a visibly separate Material look.
+ * Scoped to `.clock-time-picker-input` (applied to the underlying
+ * `<input>`) so it does not affect any other timepicker instance.
+ */
+.clock-time-picker-input {
+  --tp-primary: var(--color-primary);
+  --tp-on-primary: var(--color-primary-contrast);
+  --tp-primary-container: var(--color-surface-alt);
+  --tp-on-primary-container: var(--color-text);
+  --tp-surface: var(--color-surface);
+  --tp-surface-container: var(--color-surface-alt);
+  --tp-surface-hover: var(--color-surface-alt);
+  --tp-on-surface: var(--color-text);
+  --tp-on-surface-variant: var(--color-text-muted);
+  --tp-border: var(--color-border);
+  --tp-outline: var(--color-border);
+  --tp-outline-variant: var(--color-border);
+  --tp-text: var(--color-text);
+  --tp-text-secondary: var(--color-text-muted);
+  --tp-input-bg: var(--color-surface);
+  --tp-bg: var(--color-surface);
+  --tp-backdrop: var(--color-overlay);
+  --tp-border-radius: var(--radius-md);
+  --tp-btn-radius: var(--radius-sm);
+  --tp-am-pm-active: var(--color-primary);
+  --tp-am-pm-text-selected: var(--color-primary-contrast);
+  --tp-am-pm-text-unselected: var(--color-text-muted);
+
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 10px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.clock-time-picker-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

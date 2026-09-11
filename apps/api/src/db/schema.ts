@@ -17,6 +17,7 @@ import {
   sqliteTable,
   text,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 const activityEventKinds = [
@@ -329,7 +330,12 @@ export const workItems = sqliteTable(
     recurrenceRuleLegacy: text("recurrence_rule"), // task-only
     repeatAfterDays: integer("repeat_after_days"), // task-only
     allowedDeviationDays: integer("allowed_deviation_days"), // task-only
-    reminderAt: text("reminder_at"), // task-only
+    // Legacy storage only. Superseded by the `task_reminders` relation
+    // (multiple explicit reminders per task); domain/API code no longer
+    // reads or writes this column. Kept physically present, and nulled
+    // out during the migration that introduced `task_reminders`, so this
+    // large unified table does not need to be rebuilt just to drop it.
+    reminderAt: text("reminder_at"), // task-only, legacy
     additionalNextAction: integer("additional_next_action", {
       mode: "boolean",
     })
@@ -348,6 +354,8 @@ export const workItems = sqliteTable(
     index("work_items_role_idx").on(t.role),
     index("work_items_status_idx").on(t.status),
     index("work_items_size_idx").on(t.size),
+    // Legacy index for the retired `reminder_at` column; unused by any
+    // query after the `task_reminders` migration but harmless to keep.
     index("work_items_reminder_idx").on(t.reminderAt, t.status),
   ],
 );
@@ -627,5 +635,77 @@ export const taskDependencies = sqliteTable(
     unique("task_dependencies_unique").on(t.taskId, t.dependsOnTaskId),
     index("task_dependencies_task_idx").on(t.taskId),
     index("task_dependencies_depends_on_idx").on(t.dependsOnTaskId),
+  ],
+);
+
+/**
+ * One explicit reminder for a task. A task may have any number of these,
+ * of two kinds:
+ *
+ * - `absolute`: fires at a fixed instant (`at`); unaffected by later
+ *   changes to the task's deadline.
+ * - `deadline_relative`: fires `daysBefore` calendar days before the
+ *   task's `dueDate`, at the local wall-clock `time` in `timezone`.
+ *   Dormant (never enqueued) while the task has no `dueDate`; reactivates
+ *   and repositions automatically if a deadline is later set/changed. Its
+ *   occurrence is always recomputed from the current deadline, never
+ *   stored as a resolved instant.
+ *
+ * Reminder ids are stable across edits (see `taskCrud.ts`'s update diff)
+ * because they double as the notification dedup/cancellation key.
+ */
+export const taskReminders = sqliteTable(
+  "task_reminders",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    taskId: integer("task_id")
+      .notNull()
+      .references(() => workItems.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["absolute", "deadline_relative"] }).notNull(),
+    at: text("at"), // absolute only: ISO instant
+    daysBefore: integer("days_before"), // deadline_relative only
+    time: text("time"), // deadline_relative only: "HH:mm" local wall-clock
+    timezone: text("timezone"), // deadline_relative only: IANA zone name
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (t) => [
+    index("task_reminders_task_idx").on(t.taskId),
+    index("task_reminders_absolute_due_idx").on(t.kind, t.at),
+  ],
+);
+
+/**
+ * Per-(notification event, push subscription) delivery marker. Exists
+ * purely so `dispatchNotificationEvents` can retry a transiently-failed
+ * Web Push send on a later runner pass without re-sending to
+ * subscriptions that already succeeded — see `notifications/delivery.ts`.
+ * A row here means "this event has already been successfully pushed to
+ * this subscription"; it carries no other meaning and is never read
+ * outside delivery/retry bookkeeping.
+ */
+export const notificationDeliveries = sqliteTable(
+  "notification_deliveries",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    notificationEventId: integer("notification_event_id")
+      .notNull()
+      .references(() => notificationEvents.id, { onDelete: "cascade" }),
+    pushSubscriptionId: integer("push_subscription_id")
+      .notNull()
+      .references(() => pushSubscriptions.id, { onDelete: "cascade" }),
+    deliveredAt: text("delivered_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (t) => [
+    uniqueIndex("notification_deliveries_event_subscription_idx").on(
+      t.notificationEventId,
+      t.pushSubscriptionId,
+    ),
   ],
 );

@@ -78,7 +78,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     cancelledAt: null,
     repeatAfterDays: null,
     allowedDeviationDays: null,
-    reminderAt: null,
+    reminders: [],
     additionalNextAction: false,
     createdAt: new Date("2026-01-01T09:00:00Z").toISOString(),
     updatedAt: new Date("2026-01-01T09:00:00Z").toISOString(),

@@ -21,6 +21,37 @@ const queryBoolean = z
   .union([z.boolean(), z.enum(["true", "false"])])
   .transform((value) => value === true || value === "true");
 
+function isValidIanaTimezone(value: string): boolean {
+  try {
+    // Throws a RangeError for an unrecognized IANA zone name.
+    Intl.DateTimeFormat(undefined, { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const taskReminderInputSchema = z.discriminatedUnion("kind", [
+  z.object({
+    id: z.number().int().positive().optional(),
+    kind: z.literal("absolute"),
+    at: isoDateTime,
+  }),
+  z.object({
+    id: z.number().int().positive().optional(),
+    kind: z.literal("deadline_relative"),
+    daysBefore: z.number().int().min(0),
+    time: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Time must use HH:mm format."),
+    timezone: z
+      .string()
+      .min(1)
+      .refine(isValidIanaTimezone, "Timezone must be a valid IANA zone name."),
+  }),
+]);
+const taskRemindersSchema = z.array(taskReminderInputSchema);
+
 export const createProjectSchema = z.object({
   title: z.string().min(1, "Project title must not be empty."),
   notes: z.string().optional(),
@@ -93,7 +124,7 @@ export const createTaskSchema = z.object({
   size: z.enum(taskSizes).nullable().optional(),
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
   allowedDeviationDays: z.number().int().min(0).nullable().optional(),
-  reminderAt: isoDateTime.nullable().optional(),
+  reminders: taskRemindersSchema.optional(),
   tagIds: z.array(z.number().int()).optional(),
   contextIds: z.array(z.number().int().positive()).optional(),
 });
@@ -117,7 +148,7 @@ export const updateTaskSchema = z.object({
   size: z.enum(taskSizes).nullable().optional(),
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
   allowedDeviationDays: z.number().int().min(0).nullable().optional(),
-  reminderAt: isoDateTime.nullable().optional(),
+  reminders: taskRemindersSchema.optional(),
   additionalNextAction: z.boolean().optional(),
   tagIds: z.array(z.number().int()).optional(),
   excludedTagIds: z.array(z.number().int()).optional(),

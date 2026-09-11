@@ -21,7 +21,8 @@
     "react-router-dom": "^7.18.2",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
-    "sugar-date": "2.0.6"
+    "sugar-date": "2.0.6",
+    "timepicker-ui-react": "^1.4.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

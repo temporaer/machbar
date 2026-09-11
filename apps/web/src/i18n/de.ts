@@ -509,6 +509,37 @@ const extra = {
     nextWeek: "Nächste Woche",
     weekend: "Wochenende",
   },
+  reminders: "Erinnerungen",
+  addReminder: "+ Erinnerung",
+  reminderPresetLabels: {
+    tonight: "Heute Abend",
+    tomorrowMorning: "Morgen früh",
+    tomorrowEvening: "Morgen Abend",
+    in1Hour: "In 1 Stunde",
+    in3Hours: "In 3 Stunden",
+  },
+  reminderCustomAbsolute: "Benutzerdefiniert …",
+  reminderRelativePresetLabels: {
+    sameDay: "Am selben Tag",
+    eveningBefore: "Am Vorabend",
+    twoDaysBefore: "2 Tage vorher",
+    oneWeekBefore: "1 Woche vorher",
+  },
+  reminderCustomRelative: "Benutzerdefiniert vor Deadline …",
+  reminderNoDeadline: "keine Deadline",
+  reminderDaysBeforeLabel: (days: number) =>
+    days === 0
+      ? "Am selben Tag"
+      : days % 7 === 0
+        ? days === 7
+          ? "1 Woche vorher"
+          : `${days / 7} Wochen vorher`
+        : days === 1
+          ? "1 Tag vorher"
+          : `${days} Tage vorher`,
+  reminderInHours: (hours: number) => (hours === 1 ? "In 1 Stunde" : `In ${hours} Stunden`),
+  reminderRemove: "Erinnerung entfernen",
+  reminderDaysBeforeFieldLabel: "Tage vorher",
   moreActions: "Weitere Aktionen",
   /**
    * Next Action badge for the project outline (section 7): distinguishes
@@ -860,7 +891,7 @@ const extra = {
       recurrenceRule: "Wiederholung",
       repeatAfterDays: "Wiederholungsabstand",
       allowedDeviationDays: "erlaubte Abweichung",
-      reminderAt: "Erinnerung",
+      reminders: "Erinnerung",
       notesAppended: "Notizen",
       taskSequence: "Aufgabenfolge",
     },
@@ -1053,6 +1084,7 @@ const extra = {
       "Wiederkehrende Aufgaben können keinen externen Wartepunkt haben.",
     external_wait_status_invalid:
       "Ein externer Wartepunkt ist für diesen Aufgabenstatus nicht möglich.",
+    task_reminder_invalid: "Diese Erinnerung ist ungültig.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `Eine Person mit dem Namen „${name}“ ist bereits vorhanden.`,

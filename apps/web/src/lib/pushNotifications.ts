@@ -1,6 +1,7 @@
 import type {
   PushSubscriptionRegistration,
 } from "@machbar/shared";
+import { browserTimezone } from "./browserTimezone";
 
 export function urlBase64ToUint8Array(value: string): ArrayBuffer {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
@@ -25,7 +26,7 @@ export function serializePushSubscription(
     p256dh: json.keys.p256dh,
     auth: json.keys.auth,
     locale,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+    timezone: browserTimezone(),
   };
 }
 

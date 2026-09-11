@@ -474,9 +474,14 @@ describe("task <-> story role conversion", () => {
       })
     ).json();
     ctx.handle.db
-      .update(schema.workItems)
-      .set({ reminderAt: "2030-01-01T09:00:00.000Z" })
-      .where(eq(schema.workItems.id, reminder.id))
+      .insert(schema.taskReminders)
+      .values({
+        taskId: reminder.id,
+        kind: "absolute",
+        at: "2030-01-01T09:00:00.000Z",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
       .run();
 
     for (const task of [waiting, dependencyTask, blocker, recurring, reminder]) {
