@@ -112,7 +112,6 @@ Potential directions include:
 - live client updates;
 - offline caching and synchronization;
 - broader reminder schedules;
-- published releases for the Home Assistant integration;
-- conversion between a captured task and a multi-step project.
+- published releases for the Home Assistant integration.
 
 These are directions, not release commitments.

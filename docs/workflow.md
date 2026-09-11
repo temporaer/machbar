@@ -209,8 +209,7 @@ Responsibility and tags can flow down from a project or parent task. A child
 can override or explicitly exclude inherited values when the general context
 does not apply.
 
-Dependencies express execution order across tasks. A sequence helper can
-create several steps where each later step waits for the preceding one.
+Dependencies express execution order across tasks.
 
 ## Tags and effort
 

@@ -29,21 +29,33 @@ steps, and work that is intentionally waiting.
 
 ### Capture now, clarify when ready
 
-Get an obligation out of your head before deciding exactly what it means. The
-Inbox is a short refinement queue: turn a capture into a concrete action, place
-it in a project, delegate it, or set it aside deliberately.
+Get an obligation out of your head before deciding exactly what it means.
+Capture always creates a task—never an ambiguous scrap—so it is immediately
+real, ownable, and findable. Add metadata or a project destination directly if
+you already know them, or leave a plain task in the Inbox for later
+refinement. If a captured task turns out to describe an outcome with several
+steps, promote it to a project when that becomes clear, instead of having to
+decide up front.
 
 ### See what is genuinely actionable
 
 Today brings together planned and due work, reached follow-ups, and the next
-useful step from active projects. Personal and household-wide views keep
-individual focus without hiding shared responsibilities.
+useful action—or explicitly parallel next actions—from active projects.
+Personal and household-wide views keep individual focus without hiding shared
+responsibilities.
 
 ### Give projects direction
 
 A project connects a desired outcome with the path toward it. Keep possible
 projects in the backlog, define what “done” means when that helps, and start
 only when there is a real next step or an intentional wait.
+
+### Plan the week without building a calendar
+
+Spread actionable work across the next seven days while keeping planned work,
+real deadlines, and waiting follow-ups distinct. Week planning uses the same
+eligibility rules as Today, so it stays one more lens on the same work
+instead of turning tasks into calendar appointments.
 
 ### Treat waiting as part of the work
 
@@ -53,16 +65,20 @@ instead of leaving it to disappear in a note or clutter Today too early.
 
 ### Review decisions, not everything
 
-Review contains work that needs judgment: clarify it, continue it, park it, or
-finish it. Healthy work stays out of the way, while **All** keeps the complete
-inventory searchable whenever you need it.
+Inbox owns clarifying new captures, so Review is not a general processing
+queue. It surfaces organized work whose structure or state now needs a
+decision: a stuck project, a wait with no future follow-up, aging Someday or
+backlog work, or a project whose tasks are done but the outcome itself hasn’t
+been reviewed. Healthy work stays out of the way, while **All** keeps the
+complete inventory searchable whenever you need it.
 
 ### Keep useful structure lightweight
 
-Use owners, areas, Home Assistant physical contexts, tags, deadlines, dependencies, and completion
+Use owners, areas, places, tags, deadlines, dependencies, and completion
 criteria where they improve a decision. Recurring tasks can schedule their next
 occurrence from actual completion, which works well for maintenance that never
-happens on a perfect calendar.
+happens on a perfect calendar. Due-dated work can be exported as a one-off ICS
+file for an external calendar, without ongoing synchronization.
 
 ## For people who enjoy systems—but do not want to manage one
 
@@ -96,7 +112,7 @@ database, with optional Pocket ID authentication. No hosted account or external
 database is required. An optional Paperless-ngx integration stores images and
 documents referenced from Markdown notes; Paperless owns the files and its API
 token remains on the Machbar server. An optional push-only Home Assistant
-integration can filter Today by a household member's current zone.
+integration can filter Today by a household member's current place.
 
 ## Run it yourself in minutes
 
