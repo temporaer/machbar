@@ -3,7 +3,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type { Task } from "@machbar/shared";
 import { taskStatuses } from "@machbar/shared";
 import { api } from "../lib/api";
@@ -96,6 +96,7 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
 export function TaskDetailSheet() {
   const strings = useStrings();
   const { locale } = useLocale();
+  const navigate = useNavigate();
   const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
@@ -361,24 +362,17 @@ export function TaskDetailSheet() {
     }
   };
 
-  const convertTaskToStory = async (
-    status: "active" | "backlog",
-    options: { openHandoff?: boolean } = {},
-  ) => {
+  const convertTaskToProject = async () => {
     if (!task || classificationBusy || contentDirty) return;
     setClassificationBusy(true);
     setSaveError(null);
     try {
       const project = await api.convertTaskToStory(task.id, {
-        status,
+        status: "backlog",
         expectedRevision: revisionRef.current ?? task.revision,
       });
       bump();
-      if (options.openHandoff) {
-        setConvertedProject(project);
-      } else {
-        finishClassification();
-      }
+      setConvertedProject(project);
     } catch (err) {
       if (isStaleWriteConflict(err)) {
         bump();
@@ -805,17 +799,7 @@ export function TaskDetailSheet() {
                 type="button"
                 className="btn btn-primary capture-shape-action"
                 disabled={classificationBusy || contentDirty}
-                onClick={() =>
-                  void convertTaskToStory("backlog", { openHandoff: true })
-                }
-              >
-                {strings.classifyAsProjectSteps}
-              </button>
-              <button
-                type="button"
-                className="btn capture-shape-action"
-                disabled={classificationBusy || contentDirty}
-                onClick={() => void convertTaskToStory("backlog")}
+                onClick={() => void convertTaskToProject()}
               >
                 {strings.classifyAsBacklog}
               </button>
@@ -1308,9 +1292,22 @@ export function TaskDetailSheet() {
     {convertedProject ? (
       <CapturedProjectHandoff
         project={convertedProject}
-        onDone={() => {
+        onDone={(options) => {
+          const finishedProjectId = convertedProject.id;
           setConvertedProject(null);
-          finishClassification();
+          if (queueActive) {
+            // Stay in the review queue so triage of the remaining Inbox
+            // items isn't interrupted by a page change.
+            finishClassification();
+            return;
+          }
+          close();
+          if (options?.openedProjectDirectly) return;
+          // Land on Projects with the new backlog project auto-expanded and
+          // highlighted instead of just closing back to wherever the sheet
+          // was opened from, which is what made a converted item feel like
+          // it had silently vanished.
+          navigate("/projects", { state: { highlightProjectId: finishedProjectId } });
         }}
       />
     ) : null}

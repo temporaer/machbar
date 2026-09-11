@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import type { Task } from "@machbar/shared";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { TaskActionsProvider } from "../lib/useTaskActions";
@@ -35,6 +35,7 @@ vi.mock("../lib/api", () => ({
     updateTask: vi.fn(),
     convertTaskToStory: vi.fn(),
     createTask: vi.fn(),
+    getProject: vi.fn(),
     setExternalWait: vi.fn(),
     addCriterion: vi.fn(),
     updateProject: vi.fn(),
@@ -143,6 +144,10 @@ describe("TaskDetailSheet", () => {
       makeProject({ id: 80, title: "Projekt aus Erfassung" }),
     );
     mockedApi.createTask.mockResolvedValue(makeTask());
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 80, title: "Projekt aus Erfassung" }),
+      tasks: [],
+    });
     mockedApi.addCriterion.mockResolvedValue(makeProject());
     mockedApi.updateProject.mockResolvedValue(makeProject());
     mockedApi.setExternalWait.mockResolvedValue(makeTask());
@@ -1483,7 +1488,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open queue"));
     await waitForTaskTitle("Kinderzimmer renovieren");
     await userEvent.click(
-      screen.getByRole("button", { name: "In Schritte zerlegen" }),
+      screen.getByRole("button", { name: "Backlog" }),
     );
 
     await waitFor(() =>
@@ -1500,24 +1505,45 @@ describe("TaskDetailSheet", () => {
     ).toBeInTheDocument();
   });
 
-  it("converts a captured item directly into the backlog", async () => {
+  it("navigates to Projects with the new backlog project highlighted once the handoff finishes outside a review queue", async () => {
     const task = makeTask({
-      id: 57,
-      title: "Vielleicht umziehen",
+      id: 65,
+      title: "Garage aufräumen",
       needsClarification: true,
     });
+    const project = makeProject({ id: 81, title: "Garage aufräumen" });
     mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.convertTaskToStory.mockResolvedValue(project);
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
 
-    renderSheet(57);
+    function LocationProbe() {
+      const location = useLocation();
+      return (
+        <output data-testid="location">
+          {location.pathname}
+          {JSON.stringify(location.state)}
+        </output>
+      );
+    }
+
+    renderWithProviders(
+      <OpenerHarness taskId={65}>
+        <TaskDetailSheet />
+        <TaskWorkflowHost />
+        <LocationProbe />
+      </OpenerHarness>,
+    );
     await userEvent.click(screen.getByText("open"));
-    await waitForTaskTitle("Vielleicht umziehen");
+    await waitForTaskTitle("Garage aufräumen");
     await userEvent.click(screen.getByRole("button", { name: "Backlog" }));
 
+    const handoff = await screen.findByRole("dialog", { name: "Garage aufräumen" });
+    await userEvent.click(within(handoff).getByRole("button", { name: strings.done }));
+
     await waitFor(() =>
-      expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(57, {
-        status: "backlog",
-        expectedRevision: 1,
-      }),
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        `/projects{"highlightProjectId":81}`,
+      ),
     );
   });
 

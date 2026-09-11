@@ -54,15 +54,35 @@ An inbox item leaves clarification through one explicit classification:
 
 - **Machbar** keeps it as a task and makes it actionable.
 - **Irgendwann** keeps it as a task outside the current action lists.
-- **In Schritte zerlegen** converts it to a project/story and opens the lightweight
-  handoff for adding a first action. Starting the project remains an explicit
-  decision once it has a driver and a viable progress or future-waiting path.
-- **Backlog** converts it to a backlog project/story.
+- **Backlog** converts it to a backlog project/story and opens a handoff sheet
+  showing the project's steps as a persistent, always-visible list -- each
+  added step is created immediately as a real task, so what's there and what
+  just got added is never in doubt. Starting the project ("Aktivieren")
+  remains a strictly later, explicit decision made once it has a driver and a
+  viable progress or future-waiting path: a raw Inbox capture can never
+  satisfy that precondition immediately (no driver is inherited by default,
+  and it has no children yet), so no instant "activate" option is offered at
+  classification time. From the handoff, or later from the project itself,
+  the driver and progress path can be set up and the project started
+  explicitly.
 
 Conversion preserves the item's identity, title, notes, dates, tags, physical
 contexts, and sensible ownership, so activity history and links stay attached.
 Existing child tasks become story-root steps while deeper task nesting stays
-intact.
+intact. Once a project is in `backlog` status, every task under it --
+including ones added afterward from the handoff -- is automatically excluded
+from Today/executable views regardless of the task's own status, so parking a
+capture as a backlog project never leaks unplanned work onto Today.
+
+A project converted this way, and its whole **Später / noch nicht aktiv**
+section on the Projekte tab, does not silently disappear: leaving the handoff
+(rather than opening the project directly) navigates to Projekte with that
+section auto-expanded and the new project briefly highlighted.
+
+The project's status is a clickable badge in its detail view (mirroring the
+task detail view's clickable status), not a hidden control several taps deep
+-- it opens the same legal-transitions panel used elsewhere, right where the
+status is shown.
 
 ### 3. Execute
 
@@ -197,6 +217,10 @@ reviews the outcome against its acceptance criteria. Criteria are optional, but
 once present they are binding: every remaining criterion must be checked before
 completion. Starting a project requires a driver plus an executable progress
 path or intentional healthy future waiting.
+
+Deleting a project always asks explicitly what should happen to its tasks:
+keep them as standalone tasks detached from the deleted project, or delete
+the whole task tree along with it. Neither choice is a silent default.
 
 ![Machbar's mobile Projects view with active and stuck household projects](images/projects-mobile.png)
 

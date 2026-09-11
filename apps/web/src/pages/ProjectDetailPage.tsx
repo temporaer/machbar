@@ -54,6 +54,7 @@ import {
 } from "../lib/errorMessage";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
+import { ProjectDeleteChoiceSheet } from "../components/ProjectDeleteChoiceSheet";
 
 export function ProjectDetailPage() {
   const strings = useStrings();
@@ -73,6 +74,7 @@ export function ProjectDetailPage() {
   const [contentError, setContentError] = useState<string | null>(null);
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const contentBaselineRef = useRef<{
     id: number;
     title: string;
@@ -210,12 +212,13 @@ export function ProjectDetailPage() {
     }
   };
 
-  const removeProject = async () => {
-    if (!project || !window.confirm(strings.deleteProjectConfirm)) return;
+  const removeProject = async (deleteTasks: boolean) => {
+    if (!project) return;
     setDeleting(true);
     setContentError(null);
     try {
-      await api.deleteProject(project.id);
+      await api.deleteProject(project.id, { deleteTasks });
+      setConfirmingDelete(false);
       navigate(reviewReturn ? "/more/review" : "/projects", {
         ...(reviewReturn ? { state: { reviewReturn } } : {}),
       });
@@ -468,15 +471,50 @@ export function ProjectDetailPage() {
               >
                 <div className="project-detail-overview-row">
                   <span className="sr-only">{strings.projectStatus}: </span>
-                  <span className="badge project-detail-status-badge">
+                  <button
+                    type="button"
+                    className={`badge badge-button project-detail-status-badge project-detail-status-badge-${project.status}`}
+                    onClick={() => setLifecycleOpen((current) => !current)}
+                  >
                     {strings.projectStatusLabels[project.status]}
-                  </span>
+                  </button>
                   <span className="project-detail-task-progress">
                     {strings.taskProgress}: {taskCounts.open}{" "}
                     {strings.openTasks.toLowerCase()} · {taskCounts.done}{" "}
                     {strings.doneTasks.toLowerCase()}
                   </span>
                 </div>
+                {lifecycleOpen ? (
+                  <div
+                    className="story-row-lifecycle"
+                    role="group"
+                    aria-label={strings.status}
+                  >
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      disabled
+                      aria-current="true"
+                    >
+                      {strings.projectStatusLabels[project.status]}
+                    </button>
+                    {project.availableActions.map((action) => (
+                      <button
+                        key={action}
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={projectActions.isPending(project.id)}
+                        data-workflow-action={action}
+                        onClick={() => {
+                          setLifecycleOpen(false);
+                          dispatch(storyWorkflowCommand(project, action));
+                        }}
+                      >
+                        {projectWorkflowLabel(action, strings)}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 {hasProjectMeta ? (
                   <div className="detail-meta-row">
                     {owner ? (
@@ -724,45 +762,8 @@ export function ProjectDetailPage() {
                     label: strings.actionTileLabels["story.contexts"],
                     onClick: () => dispatch({ type: "story.contexts", story: project }),
                   },
-                  {
-                    key: "story.lifecycle",
-                    icon: "actionable",
-                    label: strings.actionTileLabels["story.lifecycle"],
-                    onClick: () => setLifecycleOpen((open) => !open),
-                  },
                 ]}
               />
-              {lifecycleOpen ? (
-                <div
-                  className="story-row-lifecycle"
-                  role="group"
-                  aria-label={strings.status}
-                >
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled
-                    aria-current="true"
-                  >
-                    {strings.projectStatusLabels[project.status]}
-                  </button>
-                  {project.availableActions.map((action) => (
-                    <button
-                      key={action}
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={projectActions.isPending(project.id)}
-                      data-workflow-action={action}
-                      onClick={() => {
-                        setLifecycleOpen(false);
-                        dispatch(storyWorkflowCommand(project, action));
-                      }}
-                    >
-                      {projectWorkflowLabel(action, strings)}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
             </WorkItemDetailDisclosure>
             <RecentActivity
               key={`project-activity-${project.id}`}
@@ -777,12 +778,20 @@ export function ProjectDetailPage() {
                 type="button"
                 className="btn btn-danger"
                 disabled={deleting}
-                onClick={() => void removeProject()}
+                onClick={() => setConfirmingDelete(true)}
               >
                 {strings.deleteProject}
               </button>
             </WorkItemDetailDisclosure>
           </>
+        ) : null}
+        {confirmingDelete && project ? (
+          <ProjectDeleteChoiceSheet
+            projectTitle={project.title}
+            busy={deleting}
+            onChoose={(deleteTasks) => void removeProject(deleteTasks)}
+            onClose={() => setConfirmingDelete(false)}
+          />
         ) : null}
         <QuickAdd
           autoOpen={focus === "next-action"}

@@ -1,4 +1,4 @@
-import type { ReactElement, ReactNode } from "react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { render } from "@testing-library/react";
 import { IdentityProvider } from "../lib/identity";
@@ -22,7 +22,7 @@ function AllProviders({
   locale,
 }: {
   children: ReactNode;
-  initialEntries?: string[] | undefined;
+  initialEntries?: ComponentProps<typeof MemoryRouter>["initialEntries"];
   locale: Locale;
 }) {
   return (
@@ -61,7 +61,7 @@ function AllProviders({
 export function renderWithProviders(
   ui: ReactElement,
   options: {
-    initialEntries?: string[] | undefined;
+    initialEntries?: ComponentProps<typeof MemoryRouter>["initialEntries"];
     locale?: Locale | undefined;
   } = {},
 ) {

@@ -28,27 +28,50 @@ describe("CapturedProjectHandoff", () => {
     });
   });
 
-  it("creates a next action through the standard task composer", async () => {
+  it("creates a next action through the always-available step composer", async () => {
     const project = makeProject({ id: 42, title: "Küche" });
     renderWithProviders(
       <CapturedProjectHandoff project={project} onDone={vi.fn()} />,
     );
 
+    await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Material bestellen");
     await userEvent.click(
       screen.getByRole("button", { name: "Nächsten Schritt hinzufügen" }),
     );
-    await userEvent.type(
-      screen.getByPlaceholderText("Nächsten Schritt hinzufügen"),
-      "Material bestellen",
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
-    expect(mockedApi.createTask).toHaveBeenCalledWith({
-      title: "Material bestellen",
-      projectId: 42,
-      status: "actionable",
-      createdByMemberId: null,
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith({
+        title: "Material bestellen",
+        projectId: 42,
+        status: "actionable",
+        createdByMemberId: null,
+      }),
+    );
+  });
+
+  it("shows an added step in the visible list right away", async () => {
+    const project = makeProject({ id: 42, title: "Küche" });
+    const created = makeTask({ id: 99, projectId: 42, title: "Material bestellen" });
+    mockedApi.createTask.mockResolvedValue(created);
+    mockedApi.getProject.mockResolvedValueOnce({
+      ...makeProject({ id: 42, status: "backlog", ownerMemberId: 1 }),
+      tasks: [],
     });
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, status: "backlog", ownerMemberId: 1 }),
+      tasks: [created],
+    });
+    renderWithProviders(
+      <CapturedProjectHandoff project={project} onDone={vi.fn()} />,
+    );
+
+    await userEvent.type(screen.getByPlaceholderText("Schritt …"), "Material bestellen");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Nächsten Schritt hinzufügen" }),
+    );
+
+    expect(await screen.findByText("Material bestellen")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Schritt …")).toHaveValue("");
   });
 
   it("finishes without opening another editing workbench", async () => {
