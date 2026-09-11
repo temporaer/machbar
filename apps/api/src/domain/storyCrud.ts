@@ -3,12 +3,13 @@
  * Lifecycle transitions live in `storyWorkflow.ts`; acceptance criteria live
  * in `storyCapabilities.ts`.
  */
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { ProjectStatus } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import {
+  getDescendantIds as repoGetDescendantIds,
   neutralizeContribution,
   neutralizeEntityContributions,
   recordActivity,
@@ -413,33 +414,89 @@ export function appendProjectNotes(
 }
 
 /**
- * Permanently removes a project while preserving its tasks. The projects FK
- * uses ON DELETE SET NULL for tasks, while project tags and completion
- * criteria cascade with the deleted project.
+ * Permanently removes a project. By default it preserves the project's
+ * tasks: the project's own `work_items` row is deleted while direct
+ * children are first detached (`parentId = null`), leaving them as
+ * standalone root tasks — `work_items.parentId` has `ON DELETE CASCADE`, so
+ * without this detach step they would be removed along with the project.
+ *
+ * `options.deleteTasks` instead removes the whole task subtree together
+ * with the project, mirroring `deleteTask`'s subtree-delete shape: gather
+ * descendant ids, delete the whole `[id, ...descendantIds]` set together,
+ * clean up their recurrence-occurrence rows, and neutralize contributions
+ * per deleted task id so removed work doesn't silently keep contribution
+ * credit.
  */
-export function deleteProject(db: Db, id: number, context?: MutationContext) {
+export function deleteProject(
+  db: Db,
+  id: number,
+  options: { deleteTasks?: boolean } = {},
+  context?: MutationContext,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
-    tx.update(schema.workItems)
-      .set({
-        parentId: null,
-        updatedAt: nowIso(),
-      })
-      .where(eq(schema.workItems.parentId, id))
+
+    if (!options.deleteTasks) {
+      tx.update(schema.workItems)
+        .set({
+          parentId: null,
+          updatedAt: nowIso(),
+        })
+        .where(eq(schema.workItems.parentId, id))
+        .run();
+      tx.delete(schema.workItems).where(eq(schema.workItems.id, id)).run();
+      const activityEventId = recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "project_deleted",
+        entityType: "project",
+        entityTitle: project.title,
+        metadata: {},
+      });
+      neutralizeEntityContributions(txDb, {
+        activityEventId,
+        entityType: "project",
+        entityId: id,
+      });
+      return;
+    }
+
+    const descendantIds = repoGetDescendantIds(txDb, id);
+    const recurrenceOccurrenceIds = txDb
+      .select({ id: schema.taskRecurrenceOccurrences.id })
+      .from(schema.taskRecurrenceOccurrences)
+      .where(inArray(schema.taskRecurrenceOccurrences.taskId, descendantIds))
+      .all()
+      .map((row) => row.id);
+    tx.delete(schema.workItems)
+      .where(inArray(schema.workItems.id, [id, ...descendantIds]))
       .run();
-    tx.delete(schema.workItems).where(eq(schema.workItems.id, id)).run();
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_deleted",
       entityType: "project",
       entityTitle: project.title,
-      metadata: {},
+      metadata: descendantIds.length > 0 ? { affectedCount: descendantIds.length + 1 } : {},
     });
     neutralizeEntityContributions(txDb, {
       activityEventId,
       entityType: "project",
       entityId: id,
     });
+    for (const taskId of descendantIds) {
+      neutralizeEntityContributions(txDb, {
+        activityEventId,
+        entityType: "task",
+        entityId: taskId,
+      });
+    }
+    for (const occurrenceId of recurrenceOccurrenceIds) {
+      neutralizeEntityContributions(txDb, {
+        activityEventId,
+        entityType: "task_occurrence",
+        entityId: occurrenceId,
+      });
+    }
   });
 }
+

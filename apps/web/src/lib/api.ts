@@ -477,8 +477,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ content }),
     }),
-  deleteProject: (id: number) =>
-    request<void>(`/projects/${id}`, { method: "DELETE" }),
+  deleteProject: (id: number, options?: { deleteTasks?: boolean }) =>
+    request<void>(
+      `/projects/${id}${options?.deleteTasks ? "?deleteTasks=true" : ""}`,
+      { method: "DELETE" },
+    ),
 
   // --- explicit workflow transitions (see `ProjectWorkflowAction` above) --
   activateProject: (id: number, input?: ActivateProjectInput) =>

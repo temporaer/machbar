@@ -128,6 +128,26 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(badges).toEqual(["Aktiv", "Später / noch nicht aktiv", "Abgeschlossen", "Archiviert"]);
   });
 
+  it("auto-expands and highlights a just-created backlog project handed off via router state", async () => {
+    const { container } = renderWithProviders(<ProjectsPage />, {
+      initialEntries: [{ pathname: "/projects", state: { highlightProjectId: 70 } }],
+    });
+    await screen.findByText("Aktive Geschichte");
+
+    const backlogSection = container.querySelector<HTMLDetailsElement>(
+      '[data-project-section="backlog"]',
+    );
+    expect(backlogSection).toHaveAttribute("open");
+    expect(screen.getByText("Backlog-Geschichte")).toBeVisible();
+
+    const row = container.querySelector('[data-workitem-id="70"]');
+    expect(row).not.toBeNull();
+    await waitFor(() => expect(row).toHaveClass("project-row-highlight"));
+    await waitFor(() => expect(row).not.toHaveClass("project-row-highlight"), {
+      timeout: 3000,
+    });
+  });
+
   it("opens project creation from the bottom-right plus button", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Aktive Geschichte");

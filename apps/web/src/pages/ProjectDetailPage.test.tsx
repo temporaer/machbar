@@ -231,7 +231,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.getByText("Wände vorbereiten")).toBeInTheDocument();
   });
 
-  it("renders present project facts as direct controls and keeps status read-only", async () => {
+  it("renders present project facts as direct controls including the clickable status badge", async () => {
     const office = makeTag({ id: 10, name: "büro" });
     mockedApi.getTags.mockResolvedValue([office]);
     mockedApi.getProject.mockResolvedValue({
@@ -266,7 +266,7 @@ describe("ProjectDetailPage task explanations", () => {
     const overview = await screen.findByLabelText(strings.projectOverview);
     const statusBadge = within(overview).getByText("Aktiv");
     expect(statusBadge).toHaveClass("badge");
-    expect(statusBadge.closest("button")).toBeNull();
+    expect(statusBadge.closest("button")).not.toBeNull();
     expect(
       within(overview).getByRole("button", { name: /Verantwortlich.*Mira/ }),
     ).toBeInTheDocument();
@@ -361,7 +361,6 @@ describe("ProjectDetailPage task explanations", () => {
       strings.actionTileLabels["story.editOutcome"],
       strings.actionTileLabels["story.tags"],
       strings.actionTileLabels["story.contexts"],
-      strings.actionTileLabels["story.lifecycle"],
     ]) {
       expect(within(actions).getByRole("button", { name: label })).toBeVisible();
     }
@@ -567,24 +566,15 @@ describe("ProjectDetailPage task explanations", () => {
     expect(within(notesSection).queryByRole("textbox")).not.toBeInTheDocument();
   });
 
-  it("shows status as a read-only badge and only its legal transitions", async () => {
+  it("shows status as a clickable badge that reveals only legal transitions", async () => {
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByText("Ort reservieren");
 
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
-    expect(
-      screen.getByText(strings.projectStatusLabels.active, {
-        selector: ".badge",
-      }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: strings.status })).not.toBeInTheDocument();
 
     await userEvent.click(
-      screen.getByRole("heading", { name: strings.moreActions, level: 3 }),
-    );
-    await userEvent.click(
-      screen.getByRole("button", {
-        name: strings.actionTileLabels["story.lifecycle"],
-      }),
+      screen.getByRole("button", { name: strings.projectStatusLabels.active }),
     );
 
     const statuses = screen.getByRole("group", { name: strings.status });
@@ -596,11 +586,7 @@ describe("ProjectDetailPage task explanations", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("deletes a project only after confirmation", async () => {
-    const confirmSpy = vi
-      .spyOn(window, "confirm")
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
+  it("asks explicitly whether to keep or delete tasks before deleting a project", async () => {
     mockedApi.deleteProject.mockResolvedValue(undefined);
     renderWithProviders(<ProjectDetailPage />);
     await screen.findByText("Ort reservieren");
@@ -609,13 +595,42 @@ describe("ProjectDetailPage task explanations", () => {
       screen.getByRole("heading", { name: strings.projectDangerSection, level: 3 }),
     );
     const deleteButton = screen.getByRole("button", { name: strings.deleteProject });
-
     await userEvent.click(deleteButton);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: strings.deleteProjectChoiceTitle,
+    });
     expect(mockedApi.deleteProject).not.toHaveBeenCalled();
 
-    await userEvent.click(deleteButton);
-    await waitFor(() => expect(mockedApi.deleteProject).toHaveBeenCalledWith(42));
-    confirmSpy.mockRestore();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: new RegExp(strings.deleteProjectOnlyLabel) }),
+    );
+    await waitFor(() =>
+      expect(mockedApi.deleteProject).toHaveBeenCalledWith(42, { deleteTasks: false }),
+    );
+  });
+
+  it("deletes a project's tasks too when that choice is made explicitly", async () => {
+    mockedApi.deleteProject.mockResolvedValue(undefined);
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByText("Ort reservieren");
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: strings.projectDangerSection, level: 3 }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: strings.deleteProject }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: strings.deleteProjectChoiceTitle,
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", {
+        name: new RegExp(strings.deleteProjectWithTasksLabel),
+      }),
+    );
+    await waitFor(() =>
+      expect(mockedApi.deleteProject).toHaveBeenCalledWith(42, { deleteTasks: true }),
+    );
   });
 
   it("shows Calendar export beside Share only for a dated Project", async () => {

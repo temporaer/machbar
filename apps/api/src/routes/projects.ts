@@ -113,13 +113,18 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     },
   );
 
-  app.delete<{ Params: { id: string } }>(
+  app.delete<{ Params: { id: string }; Querystring: { deleteTasks?: string } }>(
     "/api/projects/:id",
     async (request, reply) => {
       const id = parseId(request.params.id);
-      deleteProject(db, id, {
-        actorMemberId: request.activityActor?.id ?? null,
-      });
+      deleteProject(
+        db,
+        id,
+        { deleteTasks: request.query.deleteTasks === "true" },
+        {
+          actorMemberId: request.activityActor?.id ?? null,
+        },
+      );
       reply.status(204);
       return null;
     },

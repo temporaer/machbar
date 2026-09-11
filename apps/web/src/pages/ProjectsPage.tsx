@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useRefresh } from "../lib/refresh";
@@ -46,6 +47,8 @@ export function ProjectsPage() {
 function ProjectsPageContent() {
   const strings = useStrings();
   const { locale } = useLocale();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { data: projects, loading, error, reload } = useAsync(() => api.getProjects(), []);
   const { bump } = useRefresh();
   const { currentMemberId } = useIdentity();
@@ -57,7 +60,41 @@ function ProjectsPageContent() {
   const [scope, setScope] = useState<ProjectVisibilityScope>("mine");
   const [groupBy, setGroupBy] = useState<GroupableTagKind | null>(null);
   const [groupingOpen, setGroupingOpen] = useState(false);
+  // A just-created project handed off via `navigate(..., { state: { highlightProjectId } })`
+  // (e.g. right after converting an Inbox item to a backlog project) so its
+  // section auto-expands and the row scrolls into view instead of the
+  // project silently landing in a folded, invisible section. `pendingHighlightId`
+  // is captured once and never cleared -- it keeps the backlog section open
+  // for the rest of this page visit -- while `pulseActive` only drives the
+  // temporary visual pulse on the row and is cleared after it plays.
+  const [pendingHighlightId] = useState<number | null>(
+    () => (location.state as { highlightProjectId?: number } | null)?.highlightProjectId ?? null,
+  );
+  const [pulseActive, setPulseActive] = useState(pendingHighlightId !== null);
   const groupingTriggerRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    // Consume the router-handoff state once so a later Back/Forward
+    // navigation to this route doesn't re-trigger the highlight.
+    if (pendingHighlightId === null) return;
+    navigate(location.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!pulseActive || pendingHighlightId === null || !projects) return;
+    const row = document.querySelector<HTMLElement>(
+      `[data-workitem-id="${pendingHighlightId}"]`,
+    );
+    if (!row) return;
+    row.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    row.classList.add("project-row-highlight");
+    const timeout = setTimeout(() => {
+      row.classList.remove("project-row-highlight");
+      setPulseActive(false);
+    }, 2500);
+    return () => clearTimeout(timeout);
+  }, [pulseActive, pendingHighlightId, projects]);
 
   const submit = async () => {
     const trimmed = title.trim();
@@ -155,6 +192,9 @@ function ProjectsPageContent() {
   // it automatically instead of hiding a real match behind a fold; with no
   // search (or no terminal matches) the section stays folded by default.
   const revealTerminalProjects = query.trim() !== "" && terminalProjects.length > 0;
+  const revealBacklogProjects =
+    pendingHighlightId !== null &&
+    backlogProjects.some((project) => project.id === pendingHighlightId);
 
   return (
     <div className="projects-page">
@@ -253,6 +293,7 @@ function ProjectsPageContent() {
                 className="section"
                 data-project-section="backlog"
                 aria-labelledby="backlog-projects-heading"
+                open={revealBacklogProjects}
               >
                 <summary className="section-title disclosure-summary">
                   <span id="backlog-projects-heading" role="heading" aria-level={2}>
