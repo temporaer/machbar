@@ -467,6 +467,7 @@ const en = {
   projectRailFavorites: "Projects",
   railCommandLabels: {
     "task.plan": "Plan",
+    "task.reminders": "Add reminder",
     "task.waitingLifecycle": "Wait / Follow up",
     "task.split": "Break down",
     "task.assignOwner": "Change person",

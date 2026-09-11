@@ -53,8 +53,7 @@ describe("TaskRemindersSheet", () => {
     const task = makeTask({ id: 11, title: "Ohne Erinnerung", reminders: [] });
     renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "+ Erinnerung" }));
-    await userEvent.click(screen.getByRole("button", { name: "Heute Abend" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Heute Abend" }));
 
     expect(screen.getByText(/Heute Abend/)).toBeInTheDocument();
 
@@ -69,15 +68,14 @@ describe("TaskRemindersSheet", () => {
   it("only offers deadline-relative presets when the task currently has a deadline", async () => {
     const withoutDeadline = makeTask({ id: 12, title: "Ohne Deadline", dueDate: null, reminders: [] });
     renderWithProviders(<TaskRemindersSheet task={withoutDeadline} onClose={vi.fn()} />);
-    await userEvent.click(await screen.findByRole("button", { name: "+ Erinnerung" }));
+    await screen.findByRole("button", { name: "Heute Abend" });
     expect(screen.queryByRole("button", { name: "Am selben Tag" })).not.toBeInTheDocument();
   });
 
   it("offers deadline-relative presets once the task has a deadline", async () => {
     const withDeadline = makeTask({ id: 13, title: "Mit Deadline", dueDate: "2026-09-20", reminders: [] });
     renderWithProviders(<TaskRemindersSheet task={withDeadline} onClose={vi.fn()} />);
-    await userEvent.click(await screen.findByRole("button", { name: "+ Erinnerung" }));
-    await userEvent.click(screen.getByRole("button", { name: "Am selben Tag" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Am selben Tag" }));
 
     expect(screen.getByText(/Am selben Tag/)).toBeInTheDocument();
 
@@ -113,5 +111,26 @@ describe("TaskRemindersSheet", () => {
     });
     renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
     expect(await screen.findByText(/keine Deadline/)).toBeInTheDocument();
+  });
+
+  it("opens straight to the preset choices when the task has no reminders yet", async () => {
+    const task = makeTask({ id: 16, title: "Frisch ohne Erinnerung", reminders: [] });
+    renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
+
+    expect(await screen.findByRole("button", { name: "Heute Abend" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "+ Erinnerung" })).not.toBeInTheDocument();
+  });
+
+  it("opens to the reminder list, not the preset choices, when the task already has reminders", async () => {
+    const task = makeTask({
+      id: 17,
+      title: "Bereits mit Erinnerung",
+      reminders: [{ id: 1, kind: "absolute", at: "2026-09-01T19:00:00.000Z" }],
+    });
+    renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
+
+    expect(await screen.findByRole("button", { name: "Erinnerung entfernen" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Heute Abend" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "+ Erinnerung" })).toBeInTheDocument();
   });
 });

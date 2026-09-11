@@ -387,6 +387,7 @@ export function TaskRow({
               <div className={`task-row-title${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}>
                 {task.title}
                 {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
+                {task.reminders.length > 0 ? <span aria-label={strings.reminders}> 🔔</span> : null}
               </div>
             </div>
             <div className="task-row-meta">
@@ -502,7 +503,7 @@ export function TaskRow({
           disabled={busy}
           onCommand={runRailCommand}
           {...(isCapturedInboxItem(task)
-            ? { hiddenCommands: ["task.changeProject", "task.split"] as const }
+            ? { hiddenCommands: ["task.changeProject", "task.split", "task.reminders"] as const }
             : {})}
           overflowOpen={scope.openOverflowId === taskProp.id}
           onOverflowChange={(open) => scope.setOpenOverflow(open ? taskProp.id : null)}

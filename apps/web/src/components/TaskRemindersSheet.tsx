@@ -52,7 +52,9 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
   const { locale } = useLocale();
   const taskActions = useTaskActions();
   const [draft, setDraft] = useState<DraftReminder[]>(() => toDraft(task.reminders));
-  const [editor, setEditor] = useState<EditorState>({ mode: "closed" });
+  const [editor, setEditor] = useState<EditorState>(() =>
+    task.reminders.length === 0 ? { mode: "choosing" } : { mode: "closed" },
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -87,6 +87,7 @@ export type WorkItemCommand =
 /** Canonical semantic commands that may be promoted into a row command rail. */
 export type TaskRailCommand =
   | "task.plan"
+  | "task.reminders"
   | "task.waitingLifecycle"
   | "task.split"
   | "task.assignOwner"
