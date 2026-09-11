@@ -108,8 +108,8 @@ function renderQueueSheet(taskIds: number[]) {
 
 async function openNotesEditor(): Promise<HTMLTextAreaElement> {
   const notesField = screen
-    .getByText("Notizen", { selector: "label" })
-    .closest<HTMLElement>(".task-notes-field")!;
+    .getByRole("heading", { name: "Notizen", level: 2 })
+    .closest<HTMLElement>(".task-notes-section")!;
   const editButton = within(notesField).getByRole("button", {
     name: "Bearbeiten",
   });
@@ -122,7 +122,7 @@ async function openNotesEditor(): Promise<HTMLTextAreaElement> {
 
 async function openTitleEditor(): Promise<HTMLInputElement> {
   const titleField = screen
-    .getByText("Titel", { selector: "label" })
+    .getByRole("heading", { level: 1 })
     .closest<HTMLElement>(".field")!;
   await userEvent.click(
     within(titleField).getByRole("button", { name: "Bearbeiten" }),
@@ -131,7 +131,7 @@ async function openTitleEditor(): Promise<HTMLInputElement> {
 }
 
 async function waitForTaskTitle(title: string) {
-  return screen.findByText(title, { selector: "strong" });
+  return screen.findByText(title, { selector: "h1" });
 }
 
 describe("TaskDetailSheet", () => {
@@ -261,10 +261,15 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "open" }));
     await waitForTaskTitle("Strukturierte Aufgabe");
 
-    // Authored content and the two real collections stay; every scalar
-    // property is a command, not an embedded editor.
-    expect(screen.getByText("Titel", { selector: "label" })).toBeVisible();
-    expect(screen.getByText("Notizen", { selector: "label" })).toBeVisible();
+    // Authored content and the two real collections stay; title and notes
+    // read as document headings, not embedded form fields, and every scalar
+    // property is a command, not an editor.
+    expect(
+      screen.getByRole("heading", { name: /Strukturierte Aufgabe/, level: 1 }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "Notizen", level: 2 }),
+    ).toBeVisible();
     for (const heading of ["Teilaufgaben", "Abhängigkeiten"]) {
       expect(
         screen.getByRole("heading", { name: heading, level: 3 }),
@@ -335,6 +340,42 @@ describe("TaskDetailSheet", () => {
     expect(screen.getByRole("button", { name: "Löschen" })).toBeVisible();
   });
 
+  it("deletes a task only after an in-app confirm, not window.confirm", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 42, title: "Nutzloses Ding" }),
+    );
+    mockedApi.deleteTask.mockResolvedValue(undefined);
+    const confirmSpy = vi.spyOn(window, "confirm");
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Nutzloses Ding");
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: "Gefahrenbereich", level: 3 }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Löschen" }));
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    const confirmDialog = await screen.findByRole("dialog", {
+      name: "Aufgabe löschen",
+    });
+    expect(within(confirmDialog).getByText("Nutzloses Ding")).toBeVisible();
+
+    // Cancelling must not delete anything.
+    await userEvent.click(
+      within(confirmDialog).getByRole("button", { name: "Abbrechen" }),
+    );
+    expect(screen.queryByRole("dialog", { name: "Aufgabe löschen" })).not.toBeInTheDocument();
+    expect(mockedApi.deleteTask).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Löschen" }));
+    const reopened = await screen.findByRole("dialog", { name: "Aufgabe löschen" });
+    await userEvent.click(within(reopened).getByRole("button", { name: "Löschen" }));
+
+    await waitFor(() => expect(mockedApi.deleteTask).toHaveBeenCalledWith(42));
+    confirmSpy.mockRestore();
+  });
+
   it("reaches every task command from the detail's own command list", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({ id: 42, title: "Vollständige Aufgabe" }),
@@ -347,7 +388,6 @@ describe("TaskDetailSheet", () => {
       screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
     );
     for (const label of [
-      "Aufteilen",
       "In Projekt verschieben",
       "Übergeordnete Aufgabe ändern",
       "Nächsten Schritt hinzufügen",
@@ -358,6 +398,32 @@ describe("TaskDetailSheet", () => {
     ]) {
       expect(screen.getByRole("button", { name: label })).toBeVisible();
     }
+  });
+
+  it("exposes Split only from the Teilaufgaben section, not duplicated in Weitere Aktionen", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({
+        id: 42,
+        title: "Reparaturziel",
+        children: [
+          makeTask({ id: 43, parentTaskId: 42, title: "Erledigte Teilaufgabe", status: "done" }),
+        ],
+      }),
+    );
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    await waitForTaskTitle("Reparaturziel");
+
+    expect(
+      screen.getByRole("button", { name: "Aufgabe aufteilen" }),
+    ).toBeVisible();
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
+    );
+    expect(
+      screen.getAllByRole("button", { name: "Aufgabe aufteilen" }),
+    ).toHaveLength(1);
   });
 
   it("offers to mark or unmark a project task as an additional Next Action, but only when it has a project", async () => {
@@ -642,7 +708,9 @@ describe("TaskDetailSheet", () => {
       screen.getByRole("heading", { name: "Teilaufgaben", level: 3 }),
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Aufteilen" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Aufgabe aufteilen" }),
+    );
     expect(
       await screen.findByRole("heading", { name: "Aufgabe aufteilen" }),
     ).toBeInTheDocument();
@@ -1194,7 +1262,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Wäsche waschen");
 
     const notesField = await openNotesEditor();
-    const notesContainer = notesField.closest<HTMLElement>(".task-notes-field")!;
+    const notesContainer = notesField.closest<HTMLElement>(".task-notes-section")!;
     const saveButton = within(notesContainer).getByRole("button", {
       name: "Notizen speichern",
     });
@@ -1221,7 +1289,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Ausflug planen");
 
     const notesField = await openNotesEditor();
-    const notesContainer = notesField.closest<HTMLElement>(".task-notes-field")!;
+    const notesContainer = notesField.closest<HTMLElement>(".task-notes-section")!;
     await userEvent.clear(notesField);
     await userEvent.type(notesField, "Neue Notiz");
     await userEvent.click(
@@ -1296,7 +1364,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Gemeinsame Aufgabe");
     const notesField = await openNotesEditor();
-    const notesContainer = notesField.closest<HTMLElement>(".task-notes-field")!;
+    const notesContainer = notesField.closest<HTMLElement>(".task-notes-section")!;
     await userEvent.clear(notesField);
     await userEvent.type(notesField, "Mein lokaler Entwurf");
     await userEvent.click(
@@ -1310,7 +1378,7 @@ describe("TaskDetailSheet", () => {
     );
     await waitFor(() => expect(mockedApi.getTask.mock.calls.length).toBeGreaterThan(1));
     expect(
-      screen.getByText("Remote umbenannt", { selector: "strong" }),
+      screen.getByText("Remote umbenannt", { selector: "h1" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Notizen")).toHaveValue("Mein lokaler Entwurf");
 
@@ -1337,7 +1405,7 @@ describe("TaskDetailSheet", () => {
 
     const notesField = await openNotesEditor();
     const saveButton = within(
-      notesField.closest<HTMLElement>(".task-notes-field")!,
+      notesField.closest<HTMLElement>(".task-notes-section")!,
     ).getByRole("button", { name: "Notizen speichern" });
 
     await userEvent.type(notesField, "Beleg suchen");
@@ -1424,7 +1492,8 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Machbar" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Speichern fehlgeschlagen");
-    expect(screen.getByText("Nicht verlieren", { selector: "strong" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveClass("detail-inline-error");
+    expect(screen.getByText("Nicht verlieren", { selector: "h1" })).toBeInTheDocument();
     expect(mockedApi.getTask).toHaveBeenCalledWith(52);
     expect(mockedApi.getTask).not.toHaveBeenCalledWith(53);
   });

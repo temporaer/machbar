@@ -265,7 +265,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     const overview = await screen.findByLabelText(strings.projectOverview);
     const statusBadge = within(overview).getByText("Aktiv");
-    expect(statusBadge).toHaveClass("badge");
+    expect(statusBadge.closest("button")).toHaveClass("detail-meta-status-button");
     expect(statusBadge.closest("button")).not.toBeNull();
     expect(
       within(overview).getByRole("button", { name: /Verantwortlich.*Mira/ }),
@@ -355,15 +355,34 @@ describe("ProjectDetailPage task explanations", () => {
     );
     for (const label of [
       strings.actionTileLabels["story.planWork"],
-      strings.actionTileLabels["story.assignDriver"],
-      strings.actionTileLabels["story.planDates"],
       strings.actionTileLabels["story.defer"],
-      strings.actionTileLabels["story.editOutcome"],
-      strings.actionTileLabels["story.tags"],
-      strings.actionTileLabels["story.contexts"],
     ]) {
       expect(within(actions).getByRole("button", { name: label })).toBeVisible();
     }
+  });
+
+  it("omits property-command tiles from More actions once they have a direct pill", async () => {
+    renderProjectRoute("/projects/42");
+    await screen.findByText("Ort reservieren");
+
+    const actions = screen
+      .getByRole("heading", { name: strings.moreActions, level: 3 })
+      .closest("details")!;
+    await userEvent.click(
+      within(actions).getByRole("heading", {
+        name: strings.moreActions,
+        level: 3,
+      }),
+    );
+    expect(
+      within(actions).queryByText(strings.actionTileLabels["story.planWork"]),
+    ).toBeInTheDocument();
+    expect(
+      within(actions).queryByText("Verantwortliche Person ändern"),
+    ).not.toBeInTheDocument();
+    expect(within(actions).queryByText("Termine planen")).not.toBeInTheDocument();
+    expect(within(actions).queryByText("Tags bearbeiten")).not.toBeInTheDocument();
+    expect(within(actions).queryByText("Orte bearbeiten")).not.toBeInTheDocument();
     expect(
       within(actions).queryByRole("button", {
         name: strings.railCommandLabels["story.assignDriver"],
@@ -371,7 +390,7 @@ describe("ProjectDetailPage task explanations", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("omits optional project facts when they have no value", async () => {
+  it("shows direct add affordances for unset common properties, keeping rare ones in More actions", async () => {
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({
         id: 42,
@@ -389,19 +408,27 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42");
 
     const overview = await screen.findByLabelText(strings.projectOverview);
-    expect(within(overview).getByText("Aktiv")).toHaveClass("badge");
+    expect(within(overview).getByText("Aktiv").closest("button")).toHaveClass(
+      "detail-meta-status-button",
+    );
     expect(within(overview).queryByText("Niemand zugewiesen")).not.toBeInTheDocument();
     expect(
-      within(overview).queryByRole("button", { name: /Verantwortlich/ }),
-    ).not.toBeInTheDocument();
+      within(overview).getByRole("button", { name: strings.addDriver }),
+    ).toBeInTheDocument();
+    expect(
+      within(overview).getByRole("button", { name: strings.addPlan }),
+    ).toBeInTheDocument();
+    expect(
+      within(overview).getByRole("button", { name: strings.addTags }),
+    ).toBeInTheDocument();
+    expect(
+      within(overview).getByRole("button", { name: strings.addContexts }),
+    ).toBeInTheDocument();
     expect(
       within(overview).queryByRole("button", { name: /Fällig/ }),
     ).not.toBeInTheDocument();
     expect(
       within(overview).queryByRole("button", { name: /Wiedervorlage/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(overview).queryByRole("button", { name: /Tags/ }),
     ).not.toBeInTheDocument();
   });
 
@@ -502,6 +529,70 @@ describe("ProjectDetailPage task explanations", () => {
     expect(await screen.findByText("Neue Notiz")).toBeInTheDocument();
   });
 
+  it("shows a title-save failure with the shared inline error treatment", async () => {
+    mockedApi.updateProject.mockRejectedValueOnce(new Error("Speichern fehlgeschlagen"));
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByText("Ort reservieren");
+
+    const projectHeader = screen
+      .getByRole("heading", { level: 1, name: /Sommerfest planen/ })
+      .closest<HTMLElement>(".page-header")!;
+    await userEvent.click(
+      within(projectHeader).getByRole("button", { name: "Bearbeiten" }),
+    );
+    const titleInput = screen.getByDisplayValue("Sommerfest planen");
+    await userEvent.clear(titleInput);
+    await userEvent.type(titleInput, "Sommerfest 2027");
+    await userEvent.click(screen.getByRole("button", { name: strings.save }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Speichern fehlgeschlagen");
+    expect(screen.getByRole("alert")).toHaveClass("detail-inline-error");
+  });
+
+  it("disables other mutating controls while a canonical project mutation is pending", async () => {
+    let resolveUpdate: ((value: ReturnType<typeof makeProject>) => void) | undefined;
+    mockedApi.updateProject.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUpdate = (value) => resolve(value);
+        }),
+    );
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByText("Ort reservieren");
+
+    const notesSection = screen
+      .getByRole("heading", { name: "Notizen" })
+      .closest("section")!;
+    await userEvent.click(
+      within(notesSection).getByRole("button", { name: "Bearbeiten" }),
+    );
+    const notesInput = within(notesSection).getByRole("textbox");
+    await userEvent.type(notesInput, "Neue Notiz");
+    await userEvent.click(screen.getByRole("button", { name: strings.saveNotes }));
+
+    // While the canonical notes save is in flight, other mutating controls
+    // for the same project are locked — but navigation stays usable.
+    expect(
+      screen.getByRole("button", { name: /Verantwortlich/ }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Status.*Aktiv/ }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Ort reservieren" })).toBeEnabled();
+
+    resolveUpdate?.({
+      ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
+      notes: "Neue Notiz",
+      revision: 2,
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Verantwortlich/ }),
+      ).toBeEnabled(),
+    );
+  });
+
   it("marks the derived canonical Next Action, an eligible additional one, and a merely-marked-but-blocked task distinctly", async () => {
     const canonical = makeTask({ id: 7, projectId: 42, title: "Ort reservieren" });
     const additional = makeTask({
@@ -574,7 +665,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(screen.queryByRole("group", { name: strings.status })).not.toBeInTheDocument();
 
     await userEvent.click(
-      screen.getByRole("button", { name: strings.projectStatusLabels.active }),
+      screen.getByRole("button", { name: new RegExp(`Status.*${strings.projectStatusLabels.active}`) }),
     );
 
     const statuses = screen.getByRole("group", { name: strings.status });
@@ -633,6 +724,22 @@ describe("ProjectDetailPage task explanations", () => {
     );
   });
 
+  it("styles the danger-zone disclosure and delete button like Task's", async () => {
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByText("Ort reservieren");
+
+    const dangerSection = screen
+      .getByRole("heading", { name: strings.projectDangerSection, level: 3 })
+      .closest("details")!;
+    expect(dangerSection).toHaveClass("detail-danger-section");
+
+    await userEvent.click(
+      screen.getByRole("heading", { name: strings.projectDangerSection, level: 3 }),
+    );
+    const deleteButton = screen.getByRole("button", { name: strings.deleteProject });
+    expect(deleteButton).toHaveClass("btn-danger", "btn-block");
+  });
+
   it("shows Calendar export beside Share only for a dated Project", async () => {
     mockedApi.getProject.mockResolvedValue({
       ...makeProject({
@@ -669,6 +776,65 @@ describe("ProjectDetailPage task explanations", () => {
     expect(
       screen.queryByRole("button", { name: "In Kalender" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("surfaces share/calendar feedback in one shared header status slot, not per-button", async () => {
+    Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    renderWithProviders(<ProjectDetailPage />);
+
+    const shareButton = await screen.findByRole("button", { name: "Teilen" });
+    await userEvent.click(shareButton);
+
+    const slot = await waitFor(() => {
+      const element = document.querySelector(".sheet-header-status");
+      expect(element).not.toBeNull();
+      return element as HTMLElement;
+    });
+    expect(within(slot).getByRole("status")).toHaveTextContent(
+      "In die Zwischenablage kopiert",
+    );
+    expect(
+      shareButton.closest(".native-share-control")?.querySelector("[role='status']"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("inserts a header attachment at the active notes cursor without saving", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({
+        id: 42,
+        title: "Sommerfest planen",
+        ownerMemberId: 1,
+        notes: "Vorher Nachher",
+      }),
+      tasks: [],
+    });
+    renderWithProviders(<ProjectDetailPage />);
+    await screen.findByText("Sommerfest planen");
+
+    const notesSection = screen
+      .getByRole("heading", { name: "Notizen" })
+      .closest("section")!;
+    await userEvent.click(
+      within(notesSection).getByRole("button", { name: "Bearbeiten" }),
+    );
+    const notes = within(notesSection).getByRole("textbox") as HTMLTextAreaElement;
+    notes.setSelectionRange(7, 7);
+
+    await userEvent.click(screen.getByRole("button", { name: "Anhang hinzufügen" }));
+    await userEvent.upload(
+      screen.getByLabelText("Datei auswählen"),
+      new File(["pdf"], "receipt.pdf", { type: "application/pdf" }),
+    );
+
+    await waitFor(() =>
+      expect(notes).toHaveValue("Vorher [receipt.pdf](paperless:73)Nachher"),
+    );
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
   });
 
   it("appends attachments through canonical project actions", async () => {
@@ -910,7 +1076,7 @@ describe("ProjectDetailPage task explanations", () => {
     const userDialog = await screen.findByRole("dialog", { name: strings.taskDetails });
     expect(
       await within(userDialog).findByText("Catering bestätigen", {
-        selector: "strong",
+        selector: "h1",
       }),
     ).toBeInTheDocument();
 
@@ -918,7 +1084,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(await screen.findByText("Sommerfest planen")).toBeInTheDocument();
     expect(
       within(userDialog).getByText("Catering bestätigen", {
-        selector: "strong",
+        selector: "h1",
       }),
     ).toBeInTheDocument();
     expect(mockedApi.getTask).not.toHaveBeenCalledWith(7);

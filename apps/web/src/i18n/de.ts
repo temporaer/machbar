@@ -94,6 +94,7 @@ const base = {
   addPlan: "+ Planen",
   addWaiting: "+ Warten auf",
   addOwner: "+ Zuweisen",
+  addDriver: "+ Verantwortlich",
   addTags: "+ Tags",
   addContexts: "+ Orte",
   dependencies: "Abhängigkeiten",
@@ -418,6 +419,7 @@ const extra = {
   addSuccessor: "Nächsten Schritt danach hinzufügen",
   successorPlaceholder: "Nächster Schritt",
   deleteTaskConfirm: "Aufgabe endgültig löschen?",
+  deleteTaskConfirmTitle: "Aufgabe löschen",
   deleteProject: "Projekt löschen",
   deleteProjectChoiceTitle: "Projekt löschen",
   deleteProjectChoicePrompt: "Was soll mit den Aufgaben dieses Projekts passieren?",
@@ -482,7 +484,6 @@ const extra = {
    * their own context without forcing one string onto both.
    */
   actionTileLabels: {
-    "task.split": "Aufteilen",
     "task.addSuccessor": "Nächsten Schritt hinzufügen",
     "task.changeProject": "In Projekt verschieben",
     "task.changeParent": "Übergeordnete Aufgabe ändern",
@@ -491,12 +492,8 @@ const extra = {
     "task.recurrence": "Wiederholung einrichten",
     "task.discard": "Verwerfen",
     "story.planWork": "Nächste Aufgabe erfassen",
-    "story.assignDriver": "Verantwortliche Person ändern",
-    "story.planDates": "Termine planen",
     "story.defer": "Wiedervorlegen",
     "story.editOutcome": "Ergebnis bearbeiten",
-    "story.tags": "Tags bearbeiten",
-    "story.contexts": "Orte bearbeiten",
   },
   swipeCoachHint: (rightAction: string) =>
     `Wischen: rechts „${rightAction}“, links mehr. Oder ⋯ tippen.`,
@@ -727,7 +724,6 @@ const extra = {
   moveCriterionUp: "Kriterium nach oben",
   moveCriterionDown: "Kriterium nach unten",
   noCriteria: "Noch nicht festgelegt, wann das Projekt erledigt ist.",
-  projectAgenda: "Projekte",
   projectDue: "Projekt fällig",
   review: "Prüfen",
   shareWithMachbar: "Mit Machbar teilen",

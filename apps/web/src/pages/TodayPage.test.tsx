@@ -308,7 +308,7 @@ describe("TodayPage", () => {
     expect(screen.getByText("Keller aufräumen")).toBeVisible();
   });
 
-  it("zeigt Projekttermine in einem eigenen Abschnitt der Heute-Ansicht", async () => {
+  it("zeigt keinen eigenen Projekte-Abschnitt mehr in der Heute-Ansicht", async () => {
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
       projects: [
@@ -319,6 +319,7 @@ describe("TodayPage", () => {
             dueDate: "2026-09-01",
           }),
           qualification: "due",
+          attentionBucket: "dueSoon",
           nextAction: makeTask({ title: "Transporter reservieren" }),
           nextActionContextAvailability: null,
           additionalNextActions: [],
@@ -328,12 +329,135 @@ describe("TodayPage", () => {
     });
     renderWithProviders(<TodayPage />);
 
-    expect(await screen.findByRole("heading", { name: "Projekte" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Umzug organisieren" })).toHaveAttribute(
-      "href",
-      "/projects/77",
-    );
-    expect(screen.getByText(/Transporter reservieren/)).toBeInTheDocument();
+    await screen.findByRole("link", { name: "Umzug organisieren" });
+    expect(
+      screen.queryByRole("heading", { name: "Projekte" }),
+    ).not.toBeInTheDocument();
+    // The Next Action must never be duplicated inside the project row.
+    expect(screen.queryByText(/Transporter reservieren/)).not.toBeInTheDocument();
+  });
+
+  it("zeigt ein heute fälliges Projekt unter der Überschrift 'Heute fällig'", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      dueToday: [makeTask({ id: 1, title: "Fällige Aufgabe" })],
+      projects: [
+        {
+          project: makeProject({ id: 78, title: "Heute fälliges Projekt", dueDate: "2026-08-25" }),
+          qualification: "due",
+          attentionBucket: "dueToday",
+          nextAction: null,
+          nextActionContextAvailability: null,
+          additionalNextActions: [],
+          stuck: null,
+        },
+      ],
+    });
+    renderWithProviders(<TodayPage />);
+
+    const projectLink = await screen.findByRole("link", {
+      name: "Heute fälliges Projekt",
+    });
+    const section = projectLink.closest(".section");
+    expect(section).not.toBeNull();
+    expect(within(section as HTMLElement).getByText("Heute fällig")).toBeInTheDocument();
+  });
+
+  it("zeigt ein bald fälliges Projekt unter der Überschrift 'Bald fällig'", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      projects: [
+        {
+          project: makeProject({ id: 79, title: "Bald fälliges Projekt", dueDate: "2026-08-28" }),
+          qualification: "due",
+          attentionBucket: "dueSoon",
+          nextAction: null,
+          nextActionContextAvailability: null,
+          additionalNextActions: [],
+          stuck: null,
+        },
+      ],
+    });
+    renderWithProviders(<TodayPage />);
+
+    const projectLink = await screen.findByRole("link", {
+      name: "Bald fälliges Projekt",
+    });
+    const section = projectLink.closest(".section");
+    expect(within(section as HTMLElement).getByText("Bald fällig")).toBeInTheDocument();
+  });
+
+  it("zeigt ein überfälliges Projekt unter der Überschrift 'Überfällig'", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      projects: [
+        {
+          project: makeProject({ id: 80, title: "Überfälliges Projekt", dueDate: "2026-08-01" }),
+          qualification: "due",
+          attentionBucket: "overdue",
+          nextAction: null,
+          nextActionContextAvailability: null,
+          additionalNextActions: [],
+          stuck: null,
+        },
+      ],
+    });
+    renderWithProviders(<TodayPage />);
+
+    const projectLink = await screen.findByRole("link", {
+      name: "Überfälliges Projekt",
+    });
+    const section = projectLink.closest(".section");
+    expect(within(section as HTMLElement).getByText("Überfällig")).toBeInTheDocument();
+  });
+
+  it("zeigt ein geplantes Projekt unter derselben Überschrift wie geplante Aufgaben", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      planned: [makeTask({ id: 2, title: "Geplante Aufgabe" })],
+      projects: [
+        {
+          project: makeProject({ id: 81, title: "Geplantes Projekt", scheduledDate: "2026-08-20" }),
+          qualification: "scheduled",
+          attentionBucket: "planned",
+          nextAction: null,
+          nextActionContextAvailability: null,
+          additionalNextActions: [],
+          stuck: null,
+        },
+      ],
+    });
+    renderWithProviders(<TodayPage />);
+
+    const projectLink = await screen.findByRole("link", {
+      name: "Geplantes Projekt",
+    });
+    const section = projectLink.closest(".section");
+    expect(within(section as HTMLElement).getByText("Für heute geplant")).toBeInTheDocument();
+    expect(within(section as HTMLElement).getByText("Geplante Aufgabe")).toBeInTheDocument();
+  });
+
+  it("zeigt weiterhin den kompakten Hinweis für ein blockiertes Projekt", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      projects: [
+        {
+          project: makeProject({ id: 82, title: "Blockiertes Projekt", dueDate: "2026-08-01" }),
+          qualification: "due",
+          attentionBucket: "overdue",
+          nextAction: null,
+          nextActionContextAvailability: null,
+          additionalNextActions: [],
+          stuck: { reason: "blocked_without_clear_path" },
+        },
+      ],
+    });
+    renderWithProviders(<TodayPage />);
+
+    await screen.findByRole("link", { name: "Blockiertes Projekt" });
+    expect(
+      screen.getByText(/Prüfe die konkret blockierenden Voraussetzungen/),
+    ).toBeInTheDocument();
   });
 
   it("fragt die Agenda ausschließlich für die aktuell ausgewählte Identität ab", async () => {

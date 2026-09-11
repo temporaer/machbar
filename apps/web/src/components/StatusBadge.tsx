@@ -1,4 +1,4 @@
-import type { TaskStatus } from "@machbar/shared";
+import type { ProjectStatus, TaskStatus } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 
 /**
@@ -29,4 +29,37 @@ export function StatusBadge({
     );
   }
   return <span className={`badge badge-status-${status}`}>{text}</span>;
+}
+
+/**
+ * Project-status counterpart to `StatusBadge` above, sharing the exact same
+ * `detail-meta-button`/`detail-meta-status-button` pill grammar (see the CSS
+ * rules colocated with Task's `status-*` variants) parameterized for
+ * `ProjectStatus`'s four values instead of `TaskStatus`'s five. Project
+ * status has one call site (the `ProjectDetailPage` overview badge) and is
+ * always clickable there, unlike Task's status which is read-only for
+ * captured Inbox items.
+ */
+export function ProjectStatusBadge({
+  status,
+  onClick,
+  disabled,
+}: {
+  status: ProjectStatus;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  const strings = useStrings();
+  const text = strings.projectStatusLabels[status];
+  return (
+    <button
+      type="button"
+      className={`detail-meta-button detail-meta-status-button status-${status}`}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <span className="detail-meta-label">{strings.status}</span>
+      <span>{text}</span>
+    </button>
+  );
 }

@@ -591,9 +591,27 @@ export interface StuckProject extends Project {
 
 export type ProjectAgendaQualification = "due" | "scheduled" | "both";
 
+/**
+ * Which existing Today temporal section a project's attention entry belongs
+ * in, mirroring the Task bucket vocabulary (`overdue`/`dueToday`/`dueSoon`/
+ * `planned`) so the client can place a project alongside matching tasks
+ * without recomputing date math itself. Independent of `qualification`,
+ * which governs whether/why a project is selected at all; `attentionBucket`
+ * only says where the one resulting entry is displayed. When a project
+ * qualifies via both a due-date window and a reached `scheduledDate`,
+ * `planned` wins (matching how Task's own `planned` bucket is resolved
+ * before its due-date buckets).
+ */
+export type ProjectAgendaBucket =
+  | "overdue"
+  | "dueToday"
+  | "dueSoon"
+  | "planned";
+
 export interface ProjectAgendaEntry {
   project: Project;
   qualification: ProjectAgendaQualification;
+  attentionBucket: ProjectAgendaBucket;
   nextAction: Task | null;
   nextActionContextAvailability: ContextAvailability | null;
   additionalNextActions: Task[];
