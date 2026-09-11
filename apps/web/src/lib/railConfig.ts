@@ -16,6 +16,7 @@ export const taskRailCommands: readonly TaskRailCommand[] = [
   "task.tags",
   "task.contexts",
   "task.lifecycle",
+  "task.reminders",
 ];
 
 export const projectRailCommands: readonly ProjectRailCommand[] = [

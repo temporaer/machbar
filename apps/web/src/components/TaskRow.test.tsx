@@ -764,4 +764,61 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     expect(screen.getByRole("button", { name: "Status ändern" })).toBeInTheDocument();
   });
 
+  it("offers the reminders command from the rail overflow", async () => {
+    const task = makeTask({ id: 34, title: "Rauchmelder prüfen", status: "actionable" });
+    renderOutlineWithDetail(task);
+    await screen.findByText("Rauchmelder prüfen");
+
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    await userEvent.click(screen.getByText("Mehr …"));
+
+    expect(screen.getByRole("button", { name: "Erinnerung hinzufügen" })).toBeInTheDocument();
+  });
+
+  it("hides the reminders rail command for a captured inbox item", async () => {
+    const task = makeTask({
+      id: 36,
+      title: "Unklarer Einfall",
+      status: "captured",
+      projectId: null,
+      parentTaskId: null,
+    });
+    renderOutlineWithDetail(task);
+    await screen.findByText("Unklarer Einfall");
+
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    await userEvent.click(screen.getByText("Mehr …"));
+
+    expect(screen.queryByRole("button", { name: "Erinnerung hinzufügen" })).not.toBeInTheDocument();
+  });
+
+});
+
+describe("TaskRow – reminder indicator", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
+  });
+
+  it("shows a bell indicator on the card when the task has reminders", async () => {
+    const task = makeTask({
+      id: 40,
+      title: "Miete überweisen",
+      status: "actionable",
+      reminders: [{ id: 1, kind: "absolute", at: "2026-09-12T17:00:00.000Z" }],
+    });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Miete überweisen");
+
+    expect(screen.getByLabelText("Erinnerungen")).toBeInTheDocument();
+  });
+
+  it("shows no bell indicator when the task has no reminders", async () => {
+    const task = makeTask({ id: 41, title: "Ohne Erinnerung", status: "actionable", reminders: [] });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Ohne Erinnerung");
+
+    expect(screen.queryByLabelText("Erinnerungen")).not.toBeInTheDocument();
+  });
 });

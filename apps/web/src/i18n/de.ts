@@ -449,6 +449,7 @@ const extra = {
   projectRailFavorites: "Projekte",
   railCommandLabels: {
     "task.plan": "Planen",
+    "task.reminders": "Erinnerung hinzufügen",
     "task.waitingLifecycle": "Warten / Nachhaken",
     "task.split": "Aufteilen",
     "task.assignOwner": "Person ändern",

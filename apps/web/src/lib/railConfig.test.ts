@@ -13,6 +13,10 @@ describe("rail configuration", () => {
     window.localStorage.clear();
   });
 
+  it("includes reminders in the task rail command vocabulary", () => {
+    expect(taskRailCommands).toContain("task.reminders");
+  });
+
   it("uses the requested three-slot task defaults", () => {
     expect(readRailFavorites("task")).toEqual([
       "task.plan",
@@ -55,6 +59,7 @@ describe("rail configuration", () => {
     expect(overflow).not.toContain("task.plan");
     expect(overflow).not.toContain("task.priority");
     expect(overflow).not.toContain("task.tags");
+    expect(overflow).toContain("task.reminders");
     expect(overflow).toEqual(
       taskRailCommands.filter((command) => !favorites.includes(command)),
     );
