@@ -1009,11 +1009,28 @@ details[open] > .disclosure-summary::after {
 }
 
 .project-agenda-row {
+  --project-agenda-border: color-mix(in srgb, var(--color-primary) 20%, var(--color-border));
+  --project-agenda-surface: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 6px 2px;
+  padding: 7px 10px;
+  border: 1px solid var(--project-agenda-border);
+  border-radius: 10px;
+  background: var(--project-agenda-surface);
+  transition: box-shadow 140ms ease, translate 140ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .project-agenda-row:hover {
+    translate: 0 -1px;
+    box-shadow: 0 1px 3px rgba(20, 30, 25, 0.08);
+  }
+}
+
+.project-agenda-row:active {
+  translate: 0 1px;
 }
 
 .project-agenda-row-icon {
