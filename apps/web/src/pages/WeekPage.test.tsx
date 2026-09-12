@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WeekAgendaResponse, WeekPlanningItem } from "../lib/api";
 import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
@@ -128,6 +128,8 @@ function card(title: string): HTMLElement {
 
 describe("WeekPage", () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 8, 7, 9));
     vi.clearAllMocks();
     window.localStorage.setItem("machbar:identity-member-id", "1");
     mockedApi.getMembers.mockResolvedValue([member]);
@@ -143,6 +145,10 @@ describe("WeekPage", () => {
       people: [],
       contexts: [],
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("renders seven days plus scheduled task/story and unplanned items", async () => {
@@ -506,5 +512,154 @@ describe("WeekPage", () => {
     );
     expect(await screen.findByRole("alert")).toHaveTextContent("stale_write_conflict");
     expect(within(screen.getByLabelText("Do., 10.")).getByRole("button", { name: /^Paket/ })).toBeInTheDocument();
+  });
+
+  it("uses a rolling today-based title without KW/calendar-week framing", async () => {
+    mockedApi.getWeekAgenda.mockResolvedValue(agenda());
+    renderWithProviders(<WeekPage />);
+
+    await screen.findByLabelText("Mo., 7.");
+    expect(screen.getByRole("heading", { name: "Wochenplanung" })).toBeInTheDocument();
+    expect(screen.queryByText(/KW\s*\d/)).not.toBeInTheDocument();
+  });
+
+  it("does not allow generic drag to move a due-placement card", async () => {
+    const item = taskItem({
+      id: 81,
+      title: "Steuererklaerung",
+      dueDate: "2026-09-11",
+      placement: "due",
+    });
+    mockedApi.getWeekAgenda.mockResolvedValue(
+      agenda({
+        days: [
+          day("2026-09-07"),
+          day("2026-09-08"),
+          day("2026-09-09"),
+          day("2026-09-10"),
+          day("2026-09-11", [item]),
+          day("2026-09-12"),
+          day("2026-09-13"),
+        ],
+      }),
+    );
+    renderWithProviders(<WeekPage />);
+    await screen.findByRole("button", { name: /^Steuererklaerung/ });
+
+    expect(card("Steuererklaerung")).toHaveAttribute("draggable", "false");
+
+    const transfer = dataTransfer();
+    fireEvent.dragStart(card("Steuererklaerung"), { dataTransfer: transfer });
+    fireEvent.drop(screen.getByLabelText("Mo., 7."), { dataTransfer: transfer });
+
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
+    expect(
+      within(screen.getByLabelText("Fr., 11.")).getByRole("button", {
+        name: /^Steuererklaerung/,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("dropping to unplanned clears scheduledDate and falls back to an in-week due date instead of unplanned", async () => {
+    const item = taskItem({
+      id: 82,
+      title: "Formular einreichen",
+      scheduledDate: "2026-09-08",
+      dueDate: "2026-09-11",
+    });
+    mockedApi.getWeekAgenda.mockResolvedValue(
+      agenda({
+        days: [
+          day("2026-09-07"),
+          day("2026-09-08", [item]),
+          day("2026-09-09"),
+          day("2026-09-10"),
+          day("2026-09-11"),
+          day("2026-09-12"),
+          day("2026-09-13"),
+        ],
+      }),
+    );
+    mockedApi.updateTask.mockResolvedValue(
+      makeTask({ id: 82, scheduledDate: null, dueDate: "2026-09-11" }),
+    );
+    renderWithProviders(<WeekPage />);
+    await screen.findByRole("button", { name: /^Formular einreichen/ });
+
+    const transfer = dataTransfer();
+    fireEvent.dragStart(card("Formular einreichen"), { dataTransfer: transfer });
+    fireEvent.drop(screen.getByLabelText("Ohne Planung"), { dataTransfer: transfer });
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(82, {
+        scheduledDate: null,
+        expectedRevision: 1,
+      }),
+    );
+    expect(
+      within(screen.getByLabelText("Fr., 11.")).getByRole("button", {
+        name: /^Formular einreichen/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Ohne Planung")).queryByRole("button", {
+        name: /^Formular einreichen/,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("routes a drag drop by the item's current placement (scheduled vs revisit)", async () => {
+    const scheduled = taskItem({ id: 91, title: "Rasen maehen", scheduledDate: "2026-09-08" });
+    const revisit = taskItem({
+      id: 92,
+      title: "Anbieter nachhaken",
+      externalWait: { waitingFor: "Anbieter", revisitDate: "2026-09-09" },
+      placement: "revisit",
+    });
+    mockedApi.getWeekAgenda.mockResolvedValue(
+      agenda({
+        days: [
+          day("2026-09-07"),
+          day("2026-09-08", [scheduled]),
+          day("2026-09-09", [revisit]),
+          day("2026-09-10"),
+          day("2026-09-11"),
+          day("2026-09-12"),
+          day("2026-09-13"),
+        ],
+      }),
+    );
+    mockedApi.updateTask.mockResolvedValue(
+      makeTask({ id: 91, scheduledDate: "2026-09-10" }),
+    );
+    mockedApi.setExternalWait.mockResolvedValue(
+      makeTask({ id: 92, externalWait: { waitingFor: "Anbieter", revisitDate: "2026-09-10" } }),
+    );
+    renderWithProviders(<WeekPage />);
+    await screen.findByRole("button", { name: /^Rasen maehen/ });
+
+    const scheduledTransfer = dataTransfer();
+    fireEvent.dragStart(card("Rasen maehen"), { dataTransfer: scheduledTransfer });
+    fireEvent.drop(screen.getByLabelText("Do., 10."), { dataTransfer: scheduledTransfer });
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(91, {
+        scheduledDate: "2026-09-10",
+        expectedRevision: 1,
+      }),
+    );
+    expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
+
+    const revisitTransfer = dataTransfer();
+    fireEvent.dragStart(card("Anbieter nachhaken"), { dataTransfer: revisitTransfer });
+    fireEvent.drop(screen.getByLabelText("Do., 10."), { dataTransfer: revisitTransfer });
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(92, {
+        waitingFor: "Anbieter",
+        revisitDate: "2026-09-10",
+        expectedRevision: 1,
+      }),
+    );
+    expect(mockedApi.updateTask).toHaveBeenCalledTimes(1);
   });
 });

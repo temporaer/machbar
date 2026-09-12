@@ -170,43 +170,61 @@ reached revisit stay out.
 
 The **Week planning** view is another read-only WorkItem projection:
 `apps/api/src/domain/weekAgenda.ts` builds `/api/agenda/week` from `Graph` into
-one compact seven-day list with chips, plus an **Ohne Planung** unplanned pool.
-It is not an hourly calendar and does not persist a planning model of its own.
-Week uses `agendaSelection.ts` for ownership, executable available work, and
-project next-action lane selection. Exact dated task attention
-(`scheduledDate`, `dueDate`, or direct `externalWait.revisitDate`) can surface
-from any open story, including backlog stories, because an explicit calendar
-date is a planning commitment for that task. The **Ohne Planung** pool remains
+one compact rolling `today..today+6` list with chips, plus an **Ohne Planung**
+unplanned pool. It is a rolling attention horizon, not an ISO/calendar week or
+an hourly calendar, and does not persist a planning model of its own. Week uses
+`agendaSelection.ts` for ownership, executable available work, and
+project next-action lane selection. Dated task attention (`scheduledDate`,
+`dueDate`, or direct `externalWait.revisitDate`) can surface from any open
+story, including backlog stories, because an explicit calendar date is a
+planning commitment for that task. The **Ohne Planung** pool remains
 stricter: it contains standalone work and selected next actions from active
 projects only. Week deliberately disables current physical-context availability
 when filling that planning pool: Week plans across places; Today answers what is
-actionable where the household is now. Week otherwise differs only in temporal
-projection: day columns show exact-date attention, with no Heute-style
-carry-over or overdue replication. The week still uses one compact day list with
-chips rather than separate day or wait sections.
+actionable where the household is now. Unlike a plain exact-date projection,
+Week now carries unfinished attention forward the same way Today does: each
+item's applicable source dates are clamped to today when they have passed,
+and the item is placed on the earliest clamped date, so overdue attention
+shows up under today's column instead of disappearing off the front of the
+window. The stored source date is never mutated by this projection. The week
+still uses one compact day list with chips rather than separate day or wait
+sections.
 
-There are three distinct attention dates for a card:
+There are three distinct source attention dates for a card:
 - `scheduledDate` = intended work date;
 - `dueDate` = deadline or constraint;
 - `externalWait.revisitDate` = follow-up date for a direct external wait.
 
-Direct external waits with an in-week revisit appear as `revisit` placement for
-that exact date. If there is no in-week revisit, the same blocked item can fall
-back to `due` placement when its real deadline falls exactly in range; waiting
-tasks never enter the unplanned pool merely because they are blocked. Dependency
-blocker attention, through `nextBlockerAttentionDate`, is derived metadata only
-and is not treated as Week revisit placement. **Ohne Planung** is derived from
+From these, `projectWeekAttention` (in `@machbar/shared`, reused by both the
+backend projection and the frontend's optimistic drag/clear recompute)
+derives one explicit `attentionDate` + `placement` per item: the earliest
+applicable candidate date, clamped forward to today when it is in the past.
+Ties between candidates landing on the same clamped date break
+`scheduled > revisit > due`, but a genuinely earlier due date still wins the
+placement over a later scheduled/revisit date - a due-driven `attentionDate`
+is never silently deprioritized just because a scheduled or revisit date also
+exists. A direct external wait considers its revisit date and due date (not
+its scheduled date, since a schedule is not a meaningful planning signal for a
+blocked task); waiting tasks never enter the unplanned pool merely because
+they are blocked. Dependency blocker attention, through
+`nextBlockerAttentionDate`, is derived metadata only and is not treated as
+Week revisit placement. **Ohne Planung** is derived from
 the same current available-work selection as Heute's `shared` and
 `unscheduled` buckets: standalone executable work and selected project next
 actions only, never unscheduled stories/projects, waiting work, dependency
 blocked work, captured work, someday/backlog work, or already scheduled work.
 Current physical context does not remove a task from Week's planning pool.
-Dragging a normal week card changes only
-`scheduledDate`; dragging a `revisit` card changes only
-`externalWait.revisitDate`. Deadline chips are passive Week attention metadata;
-`workItem.setDeadline` remains the semantic deadline command for surfaces that
-offer due-date editing. Story dates mean story-level attention and never
-propagate to descendants.
+Dragging a card edits whichever date is responsible for its *current*
+placement, not simply its task-vs-project role: a `scheduled` card changes
+`scheduledDate`; a `revisit` card changes `externalWait.revisitDate`; a
+project resurface card uses the project scheduling command. A `due`-placement
+card is never movable by generic drag - its deadline is a hard constraint, so
+day-column drop is rejected for it instead. Clearing a `scheduled`/`revisit`
+date (including via the **Ohne Planung** drop) recomputes placement rather
+than assuming `unplanned`: if an in-week due (or revisit) date still applies,
+the item lands there instead. `workItem.setDeadline` remains the semantic
+deadline command for surfaces that offer due-date editing. Story dates mean
+story-level attention and never propagate to descendants.
 
 Active projects have a separate compiled `projects` bucket. A project enters
 Heute seven local calendar days before its `dueDate`, or once its

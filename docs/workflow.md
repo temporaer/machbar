@@ -104,24 +104,36 @@ by the selected person or shared with the household, while **Alle** can preserve
 one independent owner/shared lane per project. A real task date still surfaces
 that task even when it is not the structural next action.
 
-**Wochenplanung** shows the next seven calendar days as a single compact
-planning list with chips, not as a separate page per date or an hourly
-calendar. The same compact list holds the scheduled, due, and direct external-wait
-revisit chips for the week. It uses the same agenda eligibility rules as Heute;
-Week differs by projecting exact dates instead of carrying overdue attention
-forward. Explicit dates on tasks inside open backlog projects still appear in
-Week because they are intentional planning signals; unscheduled backlog-project
-tasks stay out of **Ohne Planung** until the project is active.
+**Wochenplanung** shows a rolling seven-day attention horizon, `today..today+6`,
+as a single compact planning list with chips, not an ISO/calendar week and not
+a separate page per date or an hourly calendar. The same compact list holds
+the scheduled, due, and direct external-wait revisit chips for the week, plus
+project resurface dates. It uses the same agenda eligibility rules as Heute;
+unlike Heute's "today" framing, Week's window can be paged forward/back, but
+like Heute it carries unfinished attention forward: a scheduled date, due
+date, direct external-wait revisit date, or project resurface date that has
+already passed is projected onto today's column instead of disappearing off
+the front of the visible window. The stored source date is never mutated by
+this projection and stays visible on the card as metadata. Explicit dates on
+tasks inside open backlog projects still appear in Week because they are
+intentional planning signals; unscheduled backlog-project tasks stay out of
+**Ohne Planung** until the project is active.
 
-Each item has three distinct attention dates: `scheduledDate` records when the
-household intends to work on it, `dueDate` records the real deadline or
-constraint, and `externalWait.revisitDate` records the follow-up date for a direct
-external wait. A direct external wait with an in-week revisit appears as a
-`revisit` placement; if there is no in-week revisit, the same blocked item can
-fall back to a `due` placement when its real deadline falls in range. Waiting
-tasks do not enter the **Ohne Planung** pool merely because they are blocked.
-Dependency blocker attention (`nextBlockerAttentionDate`) is derived metadata only
-and is not treated as a Week revisit placement.
+Each item has three distinct source attention dates: `scheduledDate` records
+when the household intends to work on it, `dueDate` records the real deadline
+or constraint, and `externalWait.revisitDate` records the follow-up date for a
+direct external wait. From these, Week derives one explicit projected
+`attentionDate` (and matching `placement`) per item: the earliest applicable
+date, clamped forward to today when it has passed. This means a due date that
+is chronologically earlier than a scheduled/revisit date wins the placement
+even though `scheduled`/`revisit` normally take priority on ties - an
+approaching deadline is never silently deprioritized behind a later planned
+or follow-up date. A direct external wait considers its revisit date and due
+date (not its scheduled date, which is not a meaningful planning signal for a
+blocked task); non-waiting tasks and projects consider their scheduled and due
+dates. Waiting tasks do not enter the **Ohne Planung** pool merely because
+they are blocked. Dependency blocker attention (`nextBlockerAttentionDate`) is
+derived metadata only and is not treated as a Week revisit placement.
 
 **Ohne Planung** means executable planning work that has no planned date yet:
 standalone tasks and the selected next action(s) from active projects. Unlike
@@ -131,12 +143,17 @@ project descendants, unscheduled backlog-project tasks, waiting or
 dependency-blocked tasks, captures, someday/backlog tasks, or already scheduled
 tasks.
 
-Dragging a task or project card to a day normally changes `scheduledDate`; a
-`revisit` card instead changes `externalWait.revisitDate`. Deadline chips are
-read-only in Week, so rescheduling work never silently moves a constraint. The
-**Ohne Planung** area clears the planned work date for normal cards or clears the
-revisit date for `revisit` cards. Projects can appear when their own dates need
-attention, but their dates do not cascade to child tasks.
+Dragging a card edits whichever date field is responsible for its current
+placement, not simply its task-vs-project role: a `scheduled` card changes
+`scheduledDate`, a `revisit` card changes `externalWait.revisitDate`, and a
+project resurface card uses the project scheduling command. A `due`-placement
+card's deadline is a hard constraint and is never moved by generic drag; the
+day columns reject the drop for it. Dropping a `scheduled` or `revisit` card
+onto **Ohne Planung** clears that date field; if the item still has an
+in-week due date (or, for a waiting task, still needs its due date), the
+recomputed placement falls back to `due` rather than actually landing in
+**Ohne Planung**. Projects can appear when their own dates need attention, but
+their dates do not cascade to child tasks.
 
 ### 4. Wait and follow up
 

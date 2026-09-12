@@ -158,6 +158,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Review decisions | `apps/web/src/lib/useProjectActions.ts` and `apps/web/src/lib/useTaskActions.ts` |
 | Agenda eligibility and available work selection | `apps/api/src/domain/agendaSelection.ts` |
 | Week planning projection | `apps/api/src/domain/weekAgenda.ts`, `/api/agenda/week`, and `apps/web/src/pages/WeekPage.tsx` |
+| Week attention-date/placement projection | `projectWeekAttention` in `packages/shared/src/index.ts`, shared by backend `weekAgenda.ts` and frontend `WeekPage.tsx` optimistic updates |
 | Exhaustive inventory filtering | `apps/web/src/lib/allInventory.ts` |
 | Refinement sizing semantics | `apps/web/src/lib/refinementHelpers.ts` |
 | Refinement optimistic projection | `apps/web/src/lib/useRefinementActions.ts` |
