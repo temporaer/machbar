@@ -399,7 +399,7 @@ describe("project workflow (HTTP routes)", () => {
       await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/archive` })
     ).json();
     expect(archived.status).toBe("archived");
-    expect(archived.availableActions.sort()).toEqual(["activate", "return_to_backlog"].sort());
+    expect(archived.availableActions.sort()).toEqual(["return_to_backlog"]);
 
     const res = await ctx.app.inject({
       method: "POST",
@@ -527,16 +527,25 @@ describe("project workflow (service layer)", () => {
     ).toEqual([]);
   });
 
-  it("re-activates an archived, previously-active project without requiring the driver again", () => {
+  it("re-activates a project restored from archive to backlog without requiring the driver again", () => {
     const anna = createMember(handle.db, "Anna");
     const project = createProject(handle.db, { title: "Aktiviert", ownerMemberId: anna.id });
     createTask(handle.db, { title: "Next action", projectId: project.id });
     activateProject(handle.db, project.id);
     archiveProject(handle.db, project.id);
+    returnProjectToBacklog(handle.db, project.id);
 
     const reactivated = activateProject(handle.db, project.id);
     expect(reactivated.status).toBe("active");
     expect(reactivated.ownerMemberId).toBe(anna.id);
+  });
+
+  it("rejects activating an archived project directly, requiring return-to-backlog first", () => {
+    const anna = createMember(handle.db, "Anna");
+    const project = createProject(handle.db, { title: "Archiviert", ownerMemberId: anna.id });
+    archiveProject(handle.db, project.id);
+
+    expect(() => activateProject(handle.db, project.id)).toThrow(/not allowed/);
   });
 
   it("lets return-to-backlog pull an archived project back too", () => {

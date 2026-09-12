@@ -88,7 +88,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
         title: "Aktive Geschichte",
         status: "active",
         ownerMemberId: 1,
-        openCount: 1,
+        openCount: 0,
         doneCount: 1,
         nextAction: makeTask({ id: 710, title: "Nächster Schritt" }),
       }),
@@ -169,15 +169,24 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(container.querySelector("select")).toBeNull();
 
     // Every row exposes its next workflow step as an explicitly labelled
-    // control, and the status badge itself is not interactive.
-    const expected: [string, string][] = [
+    // control, and the status badge itself is not interactive. Terminal
+    // statuses (completed/archived) have no primary/forward action — their
+    // transitions live in the lifecycle rail instead.
+    const expected: [string, string | null][] = [
       ["Aktive Geschichte", "Abschließen"],
-      ["Fertige Geschichte", "Wieder öffnen"],
-      ["Archivierte Geschichte", "Aktiv machen"],
+      ["Fertige Geschichte", null],
+      ["Archivierte Geschichte", null],
     ];
     for (const [title, label] of expected) {
       const row = rowFor(container, title);
-      expect(row.querySelector(".story-row-primary")).toHaveAttribute("aria-label", label);
+      const primary = row.querySelector(".story-row-primary") as HTMLElement;
+      if (label) {
+        expect(primary).toHaveAttribute("aria-label", label);
+        expect(primary).not.toBeDisabled();
+      } else {
+        expect(primary).toHaveAttribute("aria-label", "Workflow-Schritt");
+        expect(primary).toBeDisabled();
+      }
       const badge = row.querySelector(".story-row-status-badge") as HTMLElement;
       expect(badge.tagName).toBe("SPAN");
       expect(badge).not.toHaveAttribute("role");
@@ -228,8 +237,8 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
 
     swipeRow(row, 100);
     const lifecycle = within(row).getByRole("group", { name: "Status" });
-    expect(within(lifecycle).getByRole("button", { name: "Aktiv machen" })).toBeInTheDocument();
     expect(within(lifecycle).getByRole("button", { name: "Auf später verschieben" })).toBeInTheDocument();
+    expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
 

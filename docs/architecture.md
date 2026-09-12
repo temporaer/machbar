@@ -351,15 +351,19 @@ Tasks in `done` or `cancelled` are retained in the database and visible in searc
 ### Projects
 
 `ProjectStatus`: `backlog → active → completed`, with `archived` reachable
-from any non-archived state. Completed work reopens to active; archived work
-can either return to backlog or activate directly when ready.
+from any non-archived state. Completed work reopens to active. `backlog` is
+the one reversible "later" state; `archived` is terminal retirement and only
+returns through `backlog`, so the same driver/progress-path checks apply
+before it can be active again.
 
 ```
 backlog ──activate──► active ──complete──► completed
    ▲                    │           reopen ─────┘
    └────return──────────┘
    ▲
-archived ──activate──► active
+   │ return_to_backlog
+   │
+archived ◄──archive── (backlog | active | completed)
 ```
 
 `availableProjectWorkflowActions()` in `apps/api/src/domain/storyWorkflow.ts` is the **single source of truth** for legal transitions and is surfaced on every project response as `availableActions`. Rules:
@@ -370,6 +374,9 @@ archived ──activate──► active
 - Nothing auto-completes a story; completion is always an explicit human decision.
 - Acceptance criteria are optional. When none exist, completion is allowed;
   when one or more exist, every remaining criterion must be checked first.
+- `archived` only exposes `return_to_backlog`; there is no `archived → active`
+  transition. Reactivating an archived project always goes through backlog
+  first.
 - `DELETE /api/projects/:id` permanently removes the project, its tag links,
   and its “Erledigt, wenn …” rows. Existing tasks are preserved and detached
   (`tasks.project_id = NULL`) by the foreign key's `ON DELETE SET NULL`.
@@ -417,6 +424,16 @@ stories are not "stuck" — they are simply not started).
 | `waiting_without_followup` | An external blocker path has no Wiedervorlage |
 | `blocked_without_clear_path` | A dependency path ends in captured/someday/non-operational work, a missing task, or a corrupt cycle |
 | *(healthy)* | At least one meaningful path reaches executable work or an intentional external wait with a revisit |
+
+`completion_review` is a distinct classification from the other three
+reasons: a project with no remaining open tasks is **not** stuck — it is
+healthy and simply ready for a completion decision. The backend still reports
+it through `stuckReason` (Review needs to surface it as maintenance work), but
+the frontend's `apps/web/src/lib/projectListFilter.ts` maps it to its own
+`"active-review"` presentation classification (sorted with active work, styled
+with a distinct accent) rather than folding it into `"active-stuck"`.
+`ProjectStuckNotice`/`ProjectStoryRow`/`ProjectAgendaRow` all branch on this
+same distinction to avoid framing "ready to complete" as a blocked project.
 
 A reached external-wait revisit remains a task-level attention signal and
 returns to Today. It does not make an otherwise valid waiting project
@@ -467,10 +484,14 @@ Review contains structural decisions: missing project driver or progress path,
 due-without-plan, malformed waiting, broken blocker paths, XL work without
 breakdown, completion review, and age-based reconsideration. It also flags
 semantic contradictions between a project's own dates/status and its child
-tasks: a backlog project already carrying actionable, scheduled, or due open
-work; a task scheduled or due before its project's own resurface
-(`scheduledDate`) date; a project whose deadline precedes its own resurface
-date; and a completed/archived project that still has open child tasks. It
+tasks: a backlog project already carrying genuinely executable/actionable open
+work (an intentionally scheduled or due date alone is not flagged — backlog
+dates are an allowed planning signal that Week already surfaces); a task
+scheduled or due before its project's own resurface (`scheduledDate`) date; a
+project whose deadline precedes its own resurface date; and a completed/archived
+project that still has open child tasks (a repair signal for legacy/corrupt or
+externally-created data — normal completion no longer creates this state, since
+completion asks the driver to resolve remaining open tasks first). It
 deliberately excludes valid shared tasks, absent optional acceptance criteria,
 Inbox captures, reached follow-ups, and past planning dates already owned by
 Today. More's badge is the exact number of current derived items.
@@ -509,13 +530,23 @@ backlog, completed, and archived projects. Active stories stay primary, backlog
 stories render in their own visible but collapsed-by-default **Später / noch
 nicht aktiv** section, and completed/archived stories remain folded.
 
-- **Right swipe / primary button** runs the status-appropriate next step: `active → abschließen`, `completed → wieder öffnen`, `archived → aktivieren`. Backlog activation is offered from Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action) is the explicit non-gesture equivalent and stays available on touch.
+- **Right swipe / primary button** runs the status-appropriate next step: only `active → abschließen` and `backlog → aktivieren` have a primary/forward action. Completed and archived projects are terminal and offer no primary swipe — reopening and restoring are deliberate actions from the status rail/chip strip instead, never the one-tap default. Backlog activation is also offered from Review, Alles, and project detail where applicable. The button (`.story-row-primary`, `aria-label` = the action, or the disabled generic "Workflow-Schritt" glyph for terminal statuses) is the explicit non-gesture equivalent and stays available on touch.
 - **Left swipe / ⋯** reveals the chip strip: the targeted popups above plus every *remaining* legal transition from the row's `availableActions` (e.g. `In Backlog zurücklegen`, `Archivieren`).
-- The candidate action is always intersected with `availableActions`; `lib/projectWorkflow.ts` mirrors the backend's `workflowActionsByStatus` map (and is reused by the test fixtures) so the UI never offers an illegal step.
+- The candidate action is always intersected with `availableActions`; `lib/projectWorkflow.ts` mirrors the backend's `workflowActionsByStatus` map (and is reused by the test fixtures) so the UI never offers an illegal step. `archived` only ever offers `return_to_backlog`; there is no direct `archived → active` shortcut anywhere in the UI.
 - Activation requires a driver plus an executable progress path or intentional
   healthy future wait. Focused preflight opens `MemberSelectionSheet` or the
   existing task composer for the missing decision and then uses the canonical
   project action.
+- Completion is intercepted centrally by `lifecyclePrerequisite()` in
+  `lib/projectWorkflow.ts`, not by special-casing individual buttons: unchecked
+  acceptance criteria open `CompleteWithCriteriaSheet` (the focused checklist,
+  never the structural `StoryCriteriaSheet`/`editOutcome` editor), and — once
+  criteria are satisfied or absent — remaining open child tasks open
+  `CompleteWithOpenTasksSheet`, which lets the driver cancel or move each one
+  (reusing `useTaskActions().requestCancel` and the canonical
+  `task.changeProject` command) before the primary "Projekt abschließen"
+  action becomes enabled. Every entry point still dispatches the same semantic
+  `story.complete` command.
 - Every row shows its status; inside the retention window the same badge shows what just happened (`Aktiviert`, `Abgeschlossen`, `Wieder geöffnet`, `Zurück im Backlog`, `Archiviert`).
 
 #### Filtering and ordering the list
@@ -524,10 +555,11 @@ nicht aktiv** section, and completed/archived stories remain folded.
 
 - **Search** folds diacritics (`NFD` + combining-mark strip) and lower-cases both sides, then substring-matches the title **and** every `acceptanceCriteria[].text`. The list endpoint already returns criteria (`Graph.load`), so no extra request is needed.
 - **Scope** is `mine` by default — the selected member's stories plus `ownerMemberId === null`. With no identity selected there is no "mine", so it collapses to unassigned-only rather than to everything. `all` disables the filter.
-- **Sort buckets**, in order: active & healthy, active & `stuckReason`, active
-  with a future-scheduled next action, active waiting, backlog, completed,
-  archived; ties break on `position`, then `title.localeCompare(…, "de")`, then
-  `id`, so the order is stable across reloads and retentions.
+- **Sort buckets**, in order: active & healthy, active & ready-to-complete
+  (`completion_review`), active & `stuckReason`, active with a future-scheduled
+  next action, active waiting, backlog, completed, archived; ties break on
+  `position`, then `title.localeCompare(…, "de")`, then `id`, so the order is
+  stable across reloads and retentions.
 - Active rows form the primary list. Backlog rows form a visible **Später /
   noch nicht aktiv** disclosure that starts closed by default. Completed and
   archived rows keep that same deterministic order inside the folded
@@ -538,7 +570,7 @@ nicht aktiv** section, and completed/archived stories remain folded.
 
 #### Status accents and a single progress bar
 
-`statusAccent(story)` collapses status + `stuckReason` into five values — `backlog | active | stuck | completed | archived` — and every colour-carrying element keys off that one class (`.story-row-accent-*`, `.story-row-status-badge--*`, `.story-row-primary--*`, and the primary swipe background). An `active` story with a `stuckReason` therefore reads as a warning, not as healthy progress, and `backlog` is deliberately not green.
+`statusAccent(story)` collapses status + `stuckReason` into six values — `backlog | active | review | stuck | completed | archived` — and every colour-carrying element keys off that one class (`.story-row-accent-*`, `.story-row-status-badge--*`, `.story-row-primary--*`, and the primary swipe background). An `active` story with a `stuckReason` therefore reads as a warning, not as healthy progress, except `completion_review`, which renders as the distinct `review` accent — ready to complete, not stuck — and `backlog` is deliberately not green.
 
 The four targeted actions render as icon-only 44 px buttons (`.story-row-chip-icon`) with inline, `aria-hidden`/`focusable="false"` SVG glyphs; the German `aria-label` **and** `title` carry the accessible name, so nothing is conveyed by the glyph alone. Workflow transitions stay labelled text chips.
 
@@ -653,6 +685,7 @@ Interactions target one field at a time instead of opening the full detail sheet
 | `AcceptanceCriteriaEditor` | Reusable ordered criteria editor, rendered by `StoryCriteriaSheet` |
 | `StoryCriteriaSheet` | Targeted criteria popup for a story row |
 | `CompleteWithCriteriaSheet` | Focused `story.complete` continuation when criteria remain unchecked: shares the `AcceptanceCriteriaChecklist` check/uncheck UI and commits the same completion transition once all criteria are checked |
+| `CompleteWithOpenTasksSheet` | Focused `story.complete` continuation when criteria are satisfied/absent but open child tasks remain: lets the driver cancel or move each task (reusing `useTaskActions().requestCancel` and `task.changeProject`) and commits the same completion transition once no open tasks remain |
 | `PlanDatesSheet` | Due/scheduled dates only |
 | `WaitingFollowUpSheet` | Owns follow-up drafts; delegates the atomic command, pending state, errors, and refresh to `useTaskActions` |
 | `DestinationPicker` | Searchable refile destination list with recents (see below) |

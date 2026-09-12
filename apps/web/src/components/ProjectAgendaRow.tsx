@@ -71,7 +71,7 @@ export function ProjectAgendaRow({
       ) : null}
       {stuck ? (
         <p className="project-agenda-row-stuck">
-          <span className="badge badge-stuck">
+          <span className={`badge ${stuck.reason === "completion_review" ? "badge-review" : "badge-stuck"}`}>
             {strings.stuckReasonLabels[stuck.reason]}
           </span>{" "}
           {strings.stuckRepairLabels[stuck.reason]}

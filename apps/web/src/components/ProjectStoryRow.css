@@ -90,6 +90,9 @@
 .story-row-accent-waiting {
   border-left-color: var(--color-info);
 }
+.story-row-accent-review {
+  border-left-color: var(--color-clarification);
+}
 .story-row-accent-stuck {
   border-left-color: var(--color-warning);
 }
@@ -132,6 +135,9 @@
 }
 .story-row-accent-waiting .story-row-swipe-bg.primary {
   background: var(--color-info-strong);
+}
+.story-row-accent-review .story-row-swipe-bg.primary {
+  background: var(--color-clarification);
 }
 .story-row-accent-stuck .story-row-swipe-bg.primary {
   background: var(--color-warning-strong);
@@ -221,6 +227,10 @@
 .story-row-primary--waiting {
   border-color: var(--color-info);
   color: var(--color-info);
+}
+.story-row-primary--review {
+  border-color: var(--color-clarification);
+  color: var(--color-clarification);
 }
 .story-row-primary--stuck {
   border-color: var(--color-warning);
@@ -330,6 +340,10 @@
   background: color-mix(in srgb, var(--color-info) 12%, var(--color-surface));
   color: var(--color-info);
 }
+.story-row-status-badge--review {
+  background: color-mix(in srgb, var(--color-clarification) 15%, var(--color-surface));
+  color: var(--color-clarification);
+}
 .story-row-status-badge--stuck {
   background: var(--color-warning-surface);
   color: var(--color-warning);
@@ -437,6 +451,9 @@
 }
 .story-row-accent-waiting .story-row-lifecycle {
   background: color-mix(in srgb, var(--color-info) 12%, var(--color-surface-alt));
+}
+.story-row-accent-review .story-row-lifecycle {
+  background: color-mix(in srgb, var(--color-clarification) 12%, var(--color-surface-alt));
 }
 .story-row-accent-stuck .story-row-lifecycle {
   background: color-mix(in srgb, var(--color-warning) 12%, var(--color-surface-alt));

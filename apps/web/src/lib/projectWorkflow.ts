@@ -18,7 +18,7 @@ export const workflowActionsByStatus: Record<ProjectStatus, ProjectWorkflowActio
   backlog: ["activate", "archive"],
   active: ["return_to_backlog", "complete", "archive"],
   completed: ["reopen", "archive"],
-  archived: ["activate", "return_to_backlog"],
+  archived: ["return_to_backlog"],
 };
 
 /** Status a story ends up in after a given transition (mirrors the backend). */
@@ -76,14 +76,13 @@ export const projectWorkflowIcons: Record<ProjectWorkflowAction, string> = {
  *
  * - `backlog` → activate (start work; asks for a driver first if missing)
  * - `active` → complete
- * - `completed` → reopen
- * - `archived` → activate (bring it back into play; driver rule applies again)
+ * - `completed` / `archived` → no primary/forward action. These are
+ *   terminal states; reopening or restoring is a deliberate lifecycle
+ *   choice made from the status rail, never the swipe default.
  */
-const preferredPrimaryByStatus: Record<ProjectStatus, ProjectWorkflowAction> = {
+const preferredPrimaryByStatus: Partial<Record<ProjectStatus, ProjectWorkflowAction>> = {
   backlog: "activate",
   active: "complete",
-  completed: "reopen",
-  archived: "activate",
 };
 
 function legalActions(story: Project & { availableActions?: ProjectWorkflowAction[] }): ProjectWorkflowAction[] {
@@ -93,13 +92,16 @@ function legalActions(story: Project & { availableActions?: ProjectWorkflowActio
 /**
  * Primary transition for a story, always validated against the actions the
  * backend actually advertises, so the UI can never offer an illegal step.
+ * Terminal statuses (`completed`, `archived`) deliberately have no primary
+ * action — see `preferredPrimaryByStatus`.
  */
 export function primaryWorkflowAction(
   story: Project & { availableActions?: ProjectWorkflowAction[] },
 ): ProjectWorkflowAction | null {
+  if (story.status === "completed" || story.status === "archived") return null;
   const actions = legalActions(story);
   const preferred = preferredPrimaryByStatus[story.status];
-  if (actions.includes(preferred)) return preferred;
+  if (preferred && actions.includes(preferred)) return preferred;
   return actions[0] ?? null;
 }
 
@@ -145,7 +147,7 @@ export function canClearDriver(story: Project): boolean {
  * that opens the criteria editor first is decided in one place — see
  * `docs/architecture-rules.md`'s canonical-command invariant.
  */
-export type LifecyclePrerequisite = "openCriteria" | "progressPath" | "driver" | null;
+export type LifecyclePrerequisite = "openCriteria" | "openTasks" | "progressPath" | "driver" | null;
 
 export function lifecyclePrerequisite(
   story: ProjectWithActions,
@@ -160,6 +162,15 @@ export function lifecyclePrerequisite(
     // workflow (`completeWithCriteria`), not the structural editor — see
     // `resolveStoryPrerequisite()` in `useWorkItemCommands.ts`.
     return "openCriteria";
+  }
+  if (action === "complete" && (story.openCount ?? 0) > 0) {
+    // Completion is outcome-based — not every child task must be Done —
+    // but leaving open tasks attached silently is exactly how legacy data
+    // ends up flagged as `completed_project_open_work`. The focused
+    // `completeWithOpenTasks` workflow lets the user cancel or move the
+    // remaining open work before completing, instead of the normal path
+    // ever creating that inconsistency.
+    return "openTasks";
   }
   if ((action === "activate" || action === "reopen") && !hasProjectProgressPath(story)) {
     return "progressPath";

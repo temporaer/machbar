@@ -144,7 +144,11 @@ function ProjectsPageContent() {
   );
   const activeProjects = filteredProjects.filter((project) => {
     const classification = classifications.get(project.id);
-    return classification === "active-actionable" || classification === "active-stuck";
+    return (
+      classification === "active-actionable" ||
+      classification === "active-review" ||
+      classification === "active-stuck"
+    );
   });
   const waitingProjects = filteredProjects.filter(
     (project) => classifications.get(project.id) === "active-waiting",

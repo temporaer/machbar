@@ -167,6 +167,9 @@ export function useWorkItemCommands() {
         case "openCriteria":
           projectWorkflow.open("completeWithCriteria", story.id);
           return true;
+        case "openTasks":
+          projectWorkflow.open("completeWithOpenTasks", story.id);
+          return true;
         case "progressPath":
           navigate(`/projects/${story.id}?focus=next-action`);
           return true;

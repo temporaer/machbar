@@ -213,12 +213,10 @@ export function buildReviewItems(
 
     if (project.status === "backlog") {
       const openTasks = tasks.filter(isOpen);
-      const hasPlannedWork = openTasks.some(
-        (task) =>
-          task.status === "actionable" ||
-          task.scheduledDate !== null ||
-          task.dueDate !== null,
-      );
+      // Backlog dates are intentional planning/constraint signals (Week
+      // already surfaces them) and are not by themselves a repair issue.
+      // Only genuinely executable work leaking from a parked project counts.
+      const hasPlannedWork = openTasks.some((task) => task.status === "actionable");
       if (hasPlannedWork) {
         items.push(
           projectItem(

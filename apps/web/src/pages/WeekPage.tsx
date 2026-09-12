@@ -209,7 +209,13 @@ function WeekCard({
       className: "week-card-chip week-card-chip-waiting",
     });
   }
-  if (item.stuckReason) {
+  if (item.stuckReason === "completion_review") {
+    chipList.push({
+      key: "review",
+      label: strings.readyToComplete,
+      className: "week-card-chip week-card-chip-review",
+    });
+  } else if (item.stuckReason) {
     chipList.push({
       key: "stuck",
       label: strings.stuck,
