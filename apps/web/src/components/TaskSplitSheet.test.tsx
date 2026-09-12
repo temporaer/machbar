@@ -1,9 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
 import { makeTask } from "../test/fixtures";
+import { IdentityProvider } from "../lib/identity";
+import { LocaleProvider } from "../lib/locale";
+import { ProjectActionsProvider } from "../lib/useProjectActions";
+import { RailConfigProvider } from "../lib/railConfigContext";
+import { RefreshProvider } from "../lib/refresh";
+import { SwipeCoachProvider } from "../lib/swipeCoach";
+import { SwipeSettingsProvider } from "../lib/swipeSettings";
+import { TaskActionsProvider } from "../lib/useTaskActions";
+import { TaskDetailProvider } from "../lib/taskDetailContext";
+import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
+import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
+import { ThemeProvider } from "../lib/theme";
 import { TaskSplitSheet } from "./TaskSplitSheet";
 
 vi.mock("../lib/api", () => ({
@@ -133,5 +146,46 @@ describe("TaskSplitSheet", () => {
         expect.objectContaining({ parentTaskId: 7, position: 1 }),
       ),
     );
+  });
+
+  it("renders the existing-subtasks outline without a page-level InteractionScopeProvider", () => {
+    // `TaskWorkflowHost` (which actually mounts this sheet in production)
+    // sits outside every page's own `InteractionScopeProvider` -- unlike
+    // `renderWithProviders`, which always wraps in one and would mask a
+    // missing-context crash. Reproduce the real mount tree here instead.
+    const first = makeTask({ id: 101, parentTaskId: 7, position: 0, title: "Kisten kaufen" });
+    const second = makeTask({ id: 102, parentTaskId: 7, position: 1, title: "Klebeband besorgen" });
+    render(
+      <ThemeProvider>
+        <LocaleProvider initialLocale="de">
+          <MemoryRouter>
+            <IdentityProvider>
+              <RefreshProvider>
+                <SwipeSettingsProvider>
+                  <RailConfigProvider>
+                    <SwipeCoachProvider>
+                      <TaskActionsProvider>
+                        <ProjectActionsProvider>
+                          <TaskDetailProvider>
+                            <TaskWorkflowProvider>
+                              <ProjectWorkflowProvider>
+                                <TaskSplitSheet parentId={7} existingChildren={[first, second]} onClose={vi.fn()} />
+                              </ProjectWorkflowProvider>
+                            </TaskWorkflowProvider>
+                          </TaskDetailProvider>
+                        </ProjectActionsProvider>
+                      </TaskActionsProvider>
+                    </SwipeCoachProvider>
+                  </RailConfigProvider>
+                </SwipeSettingsProvider>
+              </RefreshProvider>
+            </IdentityProvider>
+          </MemoryRouter>
+        </LocaleProvider>
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByText("Vorhandene Teilaufgaben")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verschieben: Kisten kaufen" })).toBeInTheDocument();
   });
 });

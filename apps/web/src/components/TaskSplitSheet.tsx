@@ -3,6 +3,7 @@ import type { Task } from "@machbar/shared";
 import { api } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useIdentity } from "../lib/identity";
+import { InteractionScopeProvider } from "../lib/interactionScope";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { sortByPosition } from "../lib/taskHelpers";
@@ -96,12 +97,21 @@ export function TaskSplitSheet({
         {existingChildren.length > 0 ? (
           <div className="stack">
             <h3 className="task-split-section-heading">{strings.splitTaskExistingHeading}</h3>
-            <TaskOutline
-              tasks={sortByPosition(existingChildren)}
-              emptyMessage={strings.noSubtasks}
-              organizable
-              showSwipeHint={false}
-            />
+            {/*
+              `TaskWorkflowHost` mounts this sheet outside any page's own
+              `InteractionScopeProvider` (see `interactionScope.tsx`), but
+              `organizable` `TaskOutline` requires one. Give this outline its
+              own self-contained scope rather than depending on whichever
+              page happened to open the workflow.
+            */}
+            <InteractionScopeProvider>
+              <TaskOutline
+                tasks={sortByPosition(existingChildren)}
+                emptyMessage={strings.noSubtasks}
+                organizable
+                showSwipeHint={false}
+              />
+            </InteractionScopeProvider>
           </div>
         ) : null}
         <form
