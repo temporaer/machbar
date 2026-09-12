@@ -197,6 +197,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Project lifecycle prerequisites (missing driver, unmet criteria, no progress path) | `lifecyclePrerequisite()` in `apps/web/src/lib/projectWorkflow.ts`, resolved by `useWorkItemCommands()` |
 | Legal project transition to `story.*` command | `storyWorkflowCommand()` in `apps/web/src/lib/commands.ts` |
 | Authored project title/notes editing | `apps/web/src/pages/ProjectDetailPage.tsx` |
+| Compiled-view (Today) compact descendant presentation and terminal-descendant hiding | `apps/web/src/components/TaskOutline.tsx` (`compactDescendants` prop) and `apps/web/src/components/TaskRow.tsx` |
 | Focused waiting/follow-up workflow | `apps/web/src/components/WaitingFollowUpSheet.tsx` and `apps/web/src/lib/useTaskActions.ts` |
 | Task/Project scalar-property pill (set and unset states) | `apps/web/src/components/DetailPropertyPill.tsx` |
 | Task/Project inline work-item error presentation | `apps/web/src/components/WorkItemInlineError.tsx` |
