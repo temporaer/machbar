@@ -169,6 +169,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Single-task composition | `apps/web/src/components/InlineTaskComposer.tsx` |
 | Acceptance criteria direct check/uncheck | `apps/web/src/lib/useCriterionCheck.ts` |
 | Acceptance criteria structural editing | `apps/web/src/components/AcceptanceCriteriaEditor.tsx` via `story.editOutcome` |
+| Completion-with-open-criteria continuation | `apps/web/src/components/CompleteWithCriteriaSheet.tsx`, opened as the `completeWithCriteria` workflow |
 | Detail action projection | `apps/web/src/components/ActionTileGrid.tsx` |
 | Destination selection | `apps/web/src/components/DestinationPicker.tsx` |
 | Horizontal row swipe | `apps/web/src/lib/useHorizontalSwipe.ts` |

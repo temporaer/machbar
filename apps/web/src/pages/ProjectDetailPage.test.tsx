@@ -930,12 +930,15 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42?focus=completion");
 
     // `story.complete` resolves its own prerequisite: with an open criterion
-    // the repair link lands in the criteria editor, never in a status form.
+    // the repair link lands in the focused completion checklist, never in
+    // the structural criteria editor or a status form.
+    const dialog = await screen.findByRole("dialog", {
+      name: `${strings.completeWithCriteriaTitle}: Sommerfest planen`,
+    });
+    expect(within(dialog).getByRole("checkbox", { name: "Location gebucht" })).not.toBeChecked();
     expect(
-      await screen.findByRole("dialog", {
-        name: `${strings.criteria}: Sommerfest planen`,
-      }),
-    ).toBeInTheDocument();
+      within(dialog).getByRole("button", { name: strings.completeProjectAction }),
+    ).toBeDisabled();
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
     expect(mockedApi.completeProject).not.toHaveBeenCalled();
   });

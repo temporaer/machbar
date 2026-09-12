@@ -156,6 +156,9 @@ export function lifecyclePrerequisite(
     action === "complete" &&
     (story.acceptanceCriteria ?? []).some((criterion) => !criterion.checked)
   ) {
+    // Completing with unchecked criteria needs the focused checklist
+    // workflow (`completeWithCriteria`), not the structural editor — see
+    // `resolveStoryPrerequisite()` in `useWorkItemCommands.ts`.
     return "openCriteria";
   }
   if ((action === "activate" || action === "reopen") && !hasProjectProgressPath(story)) {

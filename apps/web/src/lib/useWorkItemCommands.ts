@@ -165,7 +165,7 @@ export function useWorkItemCommands() {
     ): boolean => {
       switch (lifecyclePrerequisite(story, action, ownerMemberId)) {
         case "openCriteria":
-          projectWorkflow.open("editOutcome", story.id);
+          projectWorkflow.open("completeWithCriteria", story.id);
           return true;
         case "progressPath":
           navigate(`/projects/${story.id}?focus=next-action`);
