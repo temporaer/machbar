@@ -144,7 +144,7 @@ Projects additionally carry:
 | `notes` | Free-form project context, independent from completion criteria |
 | `acceptanceCriteria` | Ordered “Erledigt, wenn …” rows with `checked` state |
 | `openCount` / `doneCount` | Task rollups |
-| `nextAction` | First actionable, unblocked task in canonical outline order |
+| `nextAction` | First actionable, unblocked, *leaf* task in canonical outline order — a task with any open (not `done`/`cancelled`) child is a container and is skipped in favor of its subtree |
 | `stuckReason` | Diagnosis for `active` projects only (see §6) |
 
 These views are **read-only projections** — they are not stored in SQLite; they are assembled per-request.
@@ -161,7 +161,16 @@ secondary `shared` / `unscheduled` buckets. Ordinary unscheduled project work
 enters those buckets only through the canonical selector in
 `agendaSelection.ts`/`nextActionRepo.ts`: member scope chooses the first
 candidate effectively owned by the member or shared, while household scope
-preserves at most one candidate per independent effective-owner/shared lane. A
+preserves at most one candidate per independent effective-owner/shared lane.
+`nextActionRepo.ts`'s depth-first pre-order (sibling `position` order at every
+level) treats an otherwise-eligible task with any open (not `done`/`cancelled`)
+child as a **container**, not a candidate — it never competes with its own
+children. Pre-order therefore naturally descends into the subtree and selects
+the first eligible leaf; a blocked/waiting parent never hides an eligible
+child, and a parent becomes a candidate again once every child is terminal.
+This is decided once, centrally, in the repository query, so `Graph`, Today,
+Week/unplanned, and project readiness all agree without any consumer
+special-casing it. A
 real task deadline or planning date remains an execution signal even when that
 task is not the structural next action. The first matching bucket wins, so a
 task never appears twice. Future-scheduled work, captured work,

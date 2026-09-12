@@ -11,6 +11,16 @@ import type { Db } from "../db/client.js";
  * nearest ancestor story id as the legacy project id. Keeping every eligible
  * candidate lets Today pick the first canonical item for a selected member or
  * for each ownership lane.
+ *
+ * An otherwise-eligible task with any open (not `done`/`cancelled`) child
+ * task is treated as a container, not a candidate: it never competes with
+ * its own children for selection. This is what lets pre-order naturally
+ * descend into the subtree and surface the first eligible leaf instead of
+ * the parent, and it is intentionally central here rather than layered on
+ * by any consumer (`Graph`, Today, Week/unplanned, project readiness) --
+ * they all read this one map. A blocked/waiting parent still does not
+ * prevent an eligible child from being reached, and a parent whose
+ * children have all become terminal is free to become a candidate again.
  */
 export function getNextActionTaskIdsByProject(db: Db): Map<number, number[]> {
   const rows = db.all<{ project_id: number; task_id: number }>(sql`
@@ -38,6 +48,12 @@ export function getNextActionTaskIdsByProject(db: Db): Map<number, number[]> {
         )
         AND NOT EXISTS (
           SELECT 1 FROM task_external_waits ew WHERE ew.task_id = t.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM work_items child
+          WHERE child.parent_id = t.id
+            AND child.role = 'task'
+            AND child.status NOT IN ('done', 'cancelled')
         )
     )
     SELECT project_id, task_id FROM eligible ORDER BY project_id, key

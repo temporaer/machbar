@@ -268,8 +268,117 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(getNextActionTaskIdsByProject(handle.db).get(project.id)?.[0]).toBe(rootChild.id);
 
       updateTask(handle.db, blocker.id, { status: "done" });
-      // Once unblocked, root itself comes first in pre-order.
+      // root has an open child, so it remains a container even once
+      // unblocked -- rootChild still wins, never the parent.
+      expect(getNextActionTaskIdsByProject(handle.db).get(project.id)?.[0]).toBe(rootChild.id);
+
+      updateTask(handle.db, rootChild.id, { status: "done" });
+      // Once every child of root is terminal, root itself is free to
+      // become a candidate again.
       expect(getNextActionTaskIdsByProject(handle.db).get(project.id)?.[0]).toBe(root.id);
+    });
+
+    it("suppresses a parent as a candidate while it has any open child (container semantics)", () => {
+      const project = createProject(handle.db, { title: "Container" });
+      const parent = createTask(handle.db, {
+        projectId: project.id,
+        title: "Elternaufgabe",
+        status: "actionable",
+      });
+      const child = createTask(handle.db, {
+        parentTaskId: parent.id,
+        title: "Offenes Kind",
+        status: "actionable",
+      });
+
+      const ids = getNextActionTaskIdsByProject(handle.db).get(project.id) ?? [];
+      expect(ids).toContain(child.id);
+      expect(ids).not.toContain(parent.id);
+    });
+
+    it("selects the first eligible leaf across multiple open descendants in outline order", () => {
+      const project = createProject(handle.db, { title: "Tiefe Struktur" });
+      const root = createTask(handle.db, {
+        projectId: project.id,
+        title: "Wurzel",
+        status: "actionable",
+      });
+      const child = createTask(handle.db, {
+        parentTaskId: root.id,
+        title: "Kind",
+        status: "actionable",
+      });
+      const grandchild = createTask(handle.db, {
+        parentTaskId: child.id,
+        title: "Enkelkind",
+        status: "actionable",
+      });
+      const laterGrandchild = createTask(handle.db, {
+        parentTaskId: child.id,
+        title: "Späteres Enkelkind",
+        status: "actionable",
+      });
+
+      // root and child are both containers (each has an open child), so
+      // the first genuine leaf in pre-order -- the grandchild -- wins.
+      expect(getNextActionTaskIdsByProject(handle.db).get(project.id)?.[0]).toBe(
+        grandchild.id,
+      );
+
+      updateTask(handle.db, grandchild.id, { status: "cancelled" });
+      // With the first grandchild terminal, child still has an open
+      // child (laterGrandchild), so it remains a container too.
+      expect(getNextActionTaskIdsByProject(handle.db).get(project.id)?.[0]).toBe(
+        laterGrandchild.id,
+      );
+    });
+
+    it("makes a parent a candidate again once every child is done/cancelled", () => {
+      const project = createProject(handle.db, { title: "Abgeschlossene Kinder" });
+      const parent = createTask(handle.db, {
+        projectId: project.id,
+        title: "Elternaufgabe",
+        status: "actionable",
+      });
+      const doneChild = createTask(handle.db, {
+        parentTaskId: parent.id,
+        title: "Erledigtes Kind",
+        status: "actionable",
+      });
+      const cancelledChild = createTask(handle.db, {
+        parentTaskId: parent.id,
+        title: "Storniertes Kind",
+        status: "actionable",
+      });
+      updateTask(handle.db, doneChild.id, { status: "done" });
+      updateTask(handle.db, cancelledChild.id, { status: "cancelled" });
+
+      expect(getNextActionTaskIdsByProject(handle.db).get(project.id)?.[0]).toBe(parent.id);
+    });
+
+    it("reaches an eligible child even while its parent is blocked/waiting", () => {
+      const project = createProject(handle.db, { title: "Blockierte Eltern" });
+      const blockingDependency = createTask(handle.db, {
+        projectId: project.id,
+        title: "Abhängigkeit",
+        status: "actionable",
+      });
+      const waitingParent = createTask(handle.db, {
+        projectId: project.id,
+        title: "Wartende Elternaufgabe",
+        status: "actionable",
+      });
+      addDependency(handle.db, waitingParent.id, blockingDependency.id);
+      addExternalWait(waitingParent.id);
+      const child = createTask(handle.db, {
+        parentTaskId: waitingParent.id,
+        title: "Erreichbares Kind",
+        status: "actionable",
+      });
+
+      const ids = getNextActionTaskIdsByProject(handle.db).get(project.id) ?? [];
+      expect(ids).toContain(child.id);
+      expect(ids).not.toContain(waitingParent.id);
     });
 
     it("omits a project with no actionable candidates from the result map", () => {
@@ -309,6 +418,30 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(getNextActionTaskIdsByProject(handle.db).get(project.id)?.[0]).toBe(
         laterChild.id,
       );
+    });
+
+    it("keeps depth-first sibling `position` ordering unchanged among leaf candidates", () => {
+      const project = createProject(handle.db, { title: "Reihenfolge" });
+      const first = createTask(handle.db, {
+        projectId: project.id,
+        title: "Erste Wurzel",
+        status: "actionable",
+      });
+      const second = createTask(handle.db, {
+        projectId: project.id,
+        title: "Zweite Wurzel",
+        status: "actionable",
+      });
+      const firstChild = createTask(handle.db, {
+        parentTaskId: first.id,
+        title: "Kind der ersten Wurzel",
+        status: "actionable",
+      });
+
+      // first is a container (open child), so its child comes before the
+      // later top-level sibling, exactly as pre-order/position dictate.
+      const ids = getNextActionTaskIdsByProject(handle.db).get(project.id) ?? [];
+      expect(ids).toEqual([firstChild.id, second.id]);
     });
   });
 
