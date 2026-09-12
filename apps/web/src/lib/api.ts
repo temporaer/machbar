@@ -36,6 +36,7 @@ import type {
   WeekAgenda,
   WeekAgendaDay,
   WeekWorkItemSummary,
+  WorkItemAncestor,
 } from "@machbar/shared";
 import { readRequestActorMemberId } from "./identityStorage";
 import { getClientId } from "./clientId";
@@ -262,8 +263,11 @@ export type StuckProjectWithActions = StuckProject & {
 export type ProjectDetail = ProjectWithActions & {
   tasks: Task[];
   childStories?: ProjectWithActions[];
-  ancestors?: Array<{ id: number; title: string }>;
+  ancestors?: WorkItemAncestor[];
 };
+
+/** Detail-only task response (`GET /api/tasks/:id`); list/tree tasks never carry ancestors. */
+export type TaskDetail = Task & { ancestors?: WorkItemAncestor[] };
 
 export type WeekPlanningItem = Omit<WeekWorkItemSummary, "task" | "project"> &
   (
@@ -656,7 +660,7 @@ export const api = {
       })}`,
     ),
 
-  getTask: (id: number) => request<Task>(`/tasks/${id}`),
+  getTask: (id: number) => request<TaskDetail>(`/tasks/${id}`),
   acknowledgeTaskReview: (id: number, expectedRevision: number) =>
     request<Task>(`/tasks/${id}/review`, {
       method: "POST",

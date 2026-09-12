@@ -28,6 +28,7 @@ import { IconActionButton } from "../components/IconActionButton";
 import { TaskCardTags } from "../components/TaskCardTags";
 import { ProjectStatusBadge } from "../components/StatusBadge";
 import { DetailPropertyPill } from "../components/DetailPropertyPill";
+import { WorkItemBreadcrumbs } from "../components/WorkItemBreadcrumbs";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useTaskDetail } from "../lib/taskDetailContext";
@@ -374,18 +375,7 @@ export function ProjectDetailPage() {
         >
           ← {reviewReturn ? strings.reviewTitle : strings.projects}
         </Link>
-        {project?.ancestors?.length ? (
-          <nav className="row text-muted" aria-label="Breadcrumb">
-            {project.ancestors.map((ancestor, index) => (
-              <span key={ancestor.id} className="row">
-                {index > 0 ? <span aria-hidden="true">›</span> : null}
-                <Link to={`/projects/${ancestor.id}`} className="link-plain">
-                  {ancestor.title}
-                </Link>
-              </span>
-            ))}
-          </nav>
-        ) : null}
+        {project?.ancestors?.length ? <WorkItemBreadcrumbs ancestors={project.ancestors} /> : null}
         {projectLoading ? <LoadingState /> : null}
         {projectError ? (
           <ErrorState message={projectError} onRetry={reloadProject} />

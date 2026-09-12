@@ -135,6 +135,17 @@ The API computes several derived fields before returning tasks to the client:
 | `children` | Direct sub-tasks (recursive to arbitrary depth) |
 | `dependencies` | Outgoing dependency edges with their resolution state |
 
+`GET /api/tasks/:id` (and only that single-task detail endpoint — never list
+or tree responses) additionally attaches `ancestors: WorkItemAncestor[]`, the
+complete outermost-first chain of containing projects and parent tasks
+(`Graph.taskAncestorsFor()`). Projects carry the analogous chain of containing
+parent projects (`role: "story"`) via `Graph`'s private `ancestorsFor()`. Both
+share the `WorkItemAncestor = { id, role: "story" | "task", title }` shape from
+`@machbar/shared`, and both are rendered by the one generic
+`apps/web/src/components/WorkItemBreadcrumbs.tsx` above the detail title —
+task detail and project detail do not maintain separate breadcrumb
+implementations.
+
 Projects additionally carry:
 
 | Field | Computed as |

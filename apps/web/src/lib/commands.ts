@@ -57,6 +57,7 @@ export type WorkItemCommand =
   | { type: "workItem.schedule"; item: WeekPlanningItem; date: string | null }
   | { type: "workItem.setDeadline"; item: WeekPlanningItem; date: string | null }
   | { type: "workItem.setRevisitDate"; item: WeekPlanningItem; date: string | null }
+  | { type: "workItem.open"; workItem: { id: number; role: "story" | "task" } }
   | { type: "story.activate"; story: ProjectWithActions; ownerMemberId?: number | null }
   | { type: "story.returnToBacklog"; story: ProjectWithActions }
   | { type: "story.complete"; story: ProjectWithActions }

@@ -202,6 +202,8 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task/Project scalar-property pill (set and unset states) | `apps/web/src/components/DetailPropertyPill.tsx` |
 | Task/Project inline work-item error presentation | `apps/web/src/components/WorkItemInlineError.tsx` |
 | In-app single-choice delete confirmation | `apps/web/src/components/ConfirmDeleteSheet.tsx` (project deletion's task-cascade choice remains `apps/web/src/components/ProjectDeleteChoiceSheet.tsx`) |
+| Task/story hierarchy ancestor chain (source of truth) | `Graph.taskAncestorsFor()` and `Graph`'s private `ancestorsFor()` in `apps/api/src/domain/graph.ts`, exposed on `GET /api/tasks/:id` (`TaskDetailRecord`) and `GET /api/projects/:id` (`ProjectRecord.ancestors`) |
+| Detail-view hierarchy breadcrumbs | `apps/web/src/components/WorkItemBreadcrumbs.tsx`, dispatching the generic `workItem.open` command so no routing/sheet logic lives in the component itself |
 
 Before introducing another primitive for one of these needs, update this table
 and explain why the existing primitive is insufficient.

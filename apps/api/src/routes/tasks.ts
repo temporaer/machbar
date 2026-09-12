@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
-import { Graph } from "../domain/graph.js";
+import { Graph, type TaskDetailRecord } from "../domain/graph.js";
 import { getTaskRecurrenceHistory } from "../repo/recurrenceRepo.js";
 import { convertTaskToStory } from "../domain/roleConversion.js";
 import { moveTask } from "../domain/structuralMoves.js";
@@ -63,7 +63,7 @@ function parseId(raw: string): number {
   return id;
 }
 
-function taskOrThrow(db: Db, id: number) {
+function taskOrThrow(db: Db, id: number): TaskDetailRecord {
   const graph = Graph.load(db);
   const task = graph.tasksById.get(id);
   if (!task) {
@@ -73,7 +73,7 @@ function taskOrThrow(db: Db, id: number) {
       { taskId: id },
     );
   }
-  return task;
+  return { ...task, ancestors: graph.taskAncestorsFor(id) };
 }
 
 export function registerTaskRoutes(app: FastifyInstance, db: Db) {

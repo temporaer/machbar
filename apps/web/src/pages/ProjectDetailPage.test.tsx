@@ -199,22 +199,30 @@ describe("ProjectDetailPage task explanations", () => {
   });
 
   it("renders nested stories and ancestor breadcrumbs", async () => {
-    mockedApi.getProject.mockResolvedValue({
-      ...makeProject({
-        id: 42,
-        title: "Gästezimmer renovieren",
-        parentId: 3,
-      }),
-      ancestors: [{ id: 3, title: "Haus verbessern" }],
-      childStories: [
-        makeProject({
-          id: 73,
-          parentId: 42,
-          title: "Wände vorbereiten",
-          status: "backlog",
+    mockedApi.getProject.mockImplementation(async (id: number) => {
+      if (id === 3) {
+        return {
+          ...makeProject({ id: 3, title: "Haus verbessern" }),
+          tasks: [],
+        };
+      }
+      return {
+        ...makeProject({
+          id: 42,
+          title: "Gästezimmer renovieren",
+          parentId: 3,
         }),
-      ],
-      tasks: [],
+        ancestors: [{ id: 3, role: "story" as const, title: "Haus verbessern" }],
+        childStories: [
+          makeProject({
+            id: 73,
+            parentId: 42,
+            title: "Wände vorbereiten",
+            status: "backlog",
+          }),
+        ],
+        tasks: [],
+      };
     });
 
     renderProjectRoute("/projects/42");
@@ -224,11 +232,13 @@ describe("ProjectDetailPage task explanations", () => {
         name: "Gästezimmer renovieren",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Haus verbessern" })).toHaveAttribute(
-      "href",
-      "/projects/3",
-    );
     expect(screen.getByText("Wände vorbereiten")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Haus verbessern" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Haus verbessern" }),
+    ).toBeInTheDocument();
   });
 
   it("renders present project facts as direct controls including the clickable status badge", async () => {

@@ -15,6 +15,7 @@ import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { WorkItemBreadcrumbs } from "./WorkItemBreadcrumbs";
 import { useStrings } from "../lib/strings";
 import { formatDateTime } from "../lib/format";
 import { formatExactLocalDate } from "../lib/relativeDate";
@@ -548,6 +549,9 @@ export function TaskDetailSheet() {
           aria-busy={taskMutationPending}
           style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}
         >
+          {loadedTask?.ancestors?.length ? (
+            <WorkItemBreadcrumbs ancestors={loadedTask.ancestors} />
+          ) : null}
           <div className="field" ref={titleFieldRef}>
             {titleEditing ? (
               <>
