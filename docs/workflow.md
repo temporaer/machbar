@@ -102,7 +102,10 @@ The goal is not to display every open task. Ordinary unscheduled project work
 is pulled in canonical outline order: **Meine** selects the first action owned
 by the selected person or shared with the household, while **Alle** can preserve
 one independent owner/shared lane per project. A real task date still surfaces
-that task even when it is not the structural next action.
+that task even when it is not the structural next action. An actionable task
+with open (not done/cancelled) subtasks is treated as a **container** for this
+selection, not a candidate itself — the first eligible leaf beneath it wins
+instead.
 
 **Wochenplanung** shows a rolling seven-day attention horizon, `today..today+6`,
 as a single compact planning list with chips, not an ISO/calendar week and not

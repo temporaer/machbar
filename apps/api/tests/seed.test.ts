@@ -60,7 +60,12 @@ describe("seed data", () => {
     const res = await ctx.app.inject({ method: "GET", url: "/api/projects" });
     const projects = res.json() as Array<{ title: string; nextAction: { title: string } | null }>;
     const umzug = projects.find((p) => p.title === "Umzug nach Leipzig")!;
-    expect(umzug.nextAction?.title).toBe("Umzugsunternehmen beauftragen");
+    // "Umzugsunternehmen beauftragen" has an open child ("Vertrag
+    // unterschreiben") so it is a container, not a candidate; that child
+    // is itself excluded by its own direct external wait, so the whole
+    // subtree yields nothing and the next actionable top-level sibling,
+    // "Kartons besorgen", is the canonical next action.
+    expect(umzug.nextAction?.title).toBe("Kartons besorgen");
   });
 
   it("lists the Eingang (inbox) items", async () => {
