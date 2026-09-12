@@ -313,7 +313,7 @@ export function TaskRow({
       />
       <div
         ref={contentRef}
-        className={`task-row-content${ownerMember ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}`}
+        className={`task-row-content${ownerMember ? " has-owner" : ""}${isDragged ? " dragging" : ""}${isMoving ? " moving" : ""}${isRetained ? " retained" : ""}${swipeCoach.animate ? " swipe-coach-preview" : ""}${isCompact ? " compact" : ""}`}
         style={
           dragX || dragDepthShift
             ? { transform: `translateX(${dragX + dragDepthShift}px)` }
@@ -508,7 +508,7 @@ export function TaskRow({
             aria-label={`${strings.owner}: ${ownerLabel}`}
             title={ownerLabel}
           >
-            <MemberAvatar member={ownerMember} size="sm" />
+            <MemberAvatar member={ownerMember} size={isCompact ? "xs" : "sm"} />
           </span>
         ) : null}
         <RowKebabButton

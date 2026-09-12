@@ -64,7 +64,14 @@ export function TaskWorkflowHost() {
         <TaskWaitSheet task={task} onClose={close} />
       );
     case "split":
-      return <TaskSplitSheet parentId={task.id} parentTitle={task.title} onClose={close} />;
+      return (
+        <TaskSplitSheet
+          parentId={task.id}
+          parentTitle={task.title}
+          existingChildren={task.children}
+          onClose={close}
+        />
+      );
     case "assignOwner":
       return (
         <TaskOwnerSheet

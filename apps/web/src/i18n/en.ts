@@ -439,6 +439,8 @@ const en = {
   splitTask: "Break down task",
   splitTaskCount: (count: number) =>
     count === 1 ? "Create 1 subtask" : `Create ${count} subtasks`,
+  splitTaskExistingHeading: "Existing subtasks",
+  splitTaskAddHeading: "Add subtasks",
   addSuccessor: "Add the next step after this",
   successorPlaceholder: "Next step",
   deleteTaskConfirm: "Permanently delete this task?",
