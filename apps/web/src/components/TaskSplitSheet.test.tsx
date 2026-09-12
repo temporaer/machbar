@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api } from "../lib/api";
 import { renderWithProviders } from "../test/testUtils";
+import { makeTask } from "../test/fixtures";
 import { TaskSplitSheet } from "./TaskSplitSheet";
 
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
+    getTags: vi.fn(),
     createChildTask: vi.fn(),
+    moveTask: vi.fn(),
   },
 }));
 
@@ -18,6 +21,7 @@ describe("TaskSplitSheet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([]);
+    mockedApi.getTags.mockResolvedValue([]);
   });
 
   it("creates one child task per filled row, always keeping one empty trailing row", async () => {
@@ -47,7 +51,13 @@ describe("TaskSplitSheet", () => {
       createdByMemberId: null,
       status: "actionable",
     });
-    expect(onClose).toHaveBeenCalled();
+    // The sheet stays open after creating: it is now a persistent
+    // reorganize-and-add workspace, not a one-shot form, so the newly
+    // created subtasks can immediately be reordered alongside existing
+    // ones instead of requiring the user to reopen the workflow.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(rows()).toHaveLength(1);
+    expect((rows()[0] as HTMLInputElement).value).toBe("");
   });
 
   it("removes a filled row without affecting the others", async () => {
@@ -77,5 +87,51 @@ describe("TaskSplitSheet", () => {
       "Zweiter Schritt",
       "",
     ]);
+  });
+
+  it("has no existing-subtasks outline when the task has no children yet", () => {
+    renderWithProviders(<TaskSplitSheet parentId={7} onClose={vi.fn()} />);
+    expect(screen.queryByText("Vorhandene Teilaufgaben")).not.toBeInTheDocument();
+  });
+
+  it("shows existing subtasks in a reorganizable outline with drag handles", () => {
+    const first = makeTask({ id: 101, parentTaskId: 7, position: 0, title: "Kisten kaufen" });
+    const second = makeTask({ id: 102, parentTaskId: 7, position: 1, title: "Klebeband besorgen" });
+    renderWithProviders(
+      <TaskSplitSheet
+        parentId={7}
+        existingChildren={[first, second]}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Vorhandene Teilaufgaben")).toBeInTheDocument();
+    expect(screen.getByText("Teilaufgaben hinzufügen")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verschieben: Kisten kaufen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verschieben: Klebeband besorgen" })).toBeInTheDocument();
+  });
+
+  it("reorders existing subtasks via the same structural move used in Project Detail", async () => {
+    mockedApi.moveTask.mockResolvedValue({} as never);
+    const first = makeTask({ id: 101, parentTaskId: 7, position: 0, title: "Kisten kaufen" });
+    const second = makeTask({ id: 102, parentTaskId: 7, position: 1, title: "Klebeband besorgen" });
+    renderWithProviders(
+      <TaskSplitSheet
+        parentId={7}
+        existingChildren={[first, second]}
+        onClose={vi.fn()}
+      />,
+    );
+
+    const handle = screen.getByRole("button", { name: "Verschieben: Kisten kaufen" });
+    handle.focus();
+    fireEvent.keyDown(handle, { key: "ArrowDown" });
+
+    await waitFor(() =>
+      expect(mockedApi.moveTask).toHaveBeenCalledWith(
+        101,
+        expect.objectContaining({ parentTaskId: 7, position: 1 }),
+      ),
+    );
   });
 });

@@ -1,28 +1,36 @@
 import { useRef, useState } from "react";
+import type { Task } from "@machbar/shared";
 import { api } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
+import { sortByPosition } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { IconActionButton } from "./IconActionButton";
+import { TaskOutline } from "./TaskOutline";
 
 /**
- * The one canonical `task.split` workflow — a small mini-outliner, not a
- * multiline textarea. One row per child task; `Enter` on the last
- * non-empty row opens the next empty row, an always-available empty
- * trailing row lets typing continue, and each populated row can be
- * removed individually. Submitting creates every child as one coherent
- * user transaction (sequential `createChildTask` calls under the hood,
- * since the API has no batch-create endpoint).
+ * The one canonical `task.split` workflow. It combines the existing
+ * subtree — shown as a normal `organizable` `TaskOutline` scoped to this
+ * task's own children, so existing subtasks can be reordered, indented, and
+ * de-indented with the same drag/keyboard editor used in Project Detail —
+ * with a small mini-outliner below it for adding new subtasks: one row per
+ * new title, `Enter` on the last non-empty row opens the next empty row, an
+ * always-available empty trailing row lets typing continue, and each
+ * populated row can be removed individually. Submitting creates every new
+ * child as one coherent user transaction (sequential `createChildTask`
+ * calls under the hood, since the API has no batch-create endpoint).
  */
 export function TaskSplitSheet({
   parentId,
   parentTitle,
+  existingChildren = [],
   onClose,
 }: {
   parentId: number;
   parentTitle?: string;
+  existingChildren?: Task[];
   onClose: () => void;
 }) {
   const strings = useStrings();
@@ -72,9 +80,10 @@ export function TaskSplitSheet({
         });
       }
       bump();
-      onClose();
+      setRows([""]);
     } catch (err) {
       setError(localizedErrorMessage(err, strings));
+    } finally {
       savingRef.current = false;
       setSaving(false);
     }
@@ -82,65 +91,82 @@ export function TaskSplitSheet({
 
   return (
     <BottomSheet title={strings.splitTask} onClose={() => !saving && onClose()}>
-      <form
-        className="stack task-split-outliner"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
+      <div className="stack task-split-outliner">
         {parentTitle ? <p className="text-muted">{parentTitle}</p> : null}
-        {rows.map((row, index) => (
-          <div className="row task-split-row" key={index}>
-            <input
-              ref={(el) => {
-                inputRefs.current[index] = el;
-              }}
-              type="text"
-              value={row}
-              autoFocus={index === 0}
-              placeholder={strings.splitTaskRowPlaceholder}
-              disabled={saving}
-              onChange={(event) => setRow(index, event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  if (row.trim() !== "" && index === rows.length - 1) {
-                    setRows((prev) => [...prev, ""]);
-                    focusRow(index + 1);
-                  } else if (index < rows.length - 1) {
-                    focusRow(index + 1);
-                  }
-                } else if (event.key === "Backspace" && row === "" && rows.length > 1) {
-                  event.preventDefault();
-                  removeRow(index);
-                }
-              }}
+        {existingChildren.length > 0 ? (
+          <div className="stack">
+            <h3 className="task-split-section-heading">{strings.splitTaskExistingHeading}</h3>
+            <TaskOutline
+              tasks={sortByPosition(existingChildren)}
+              emptyMessage={strings.noSubtasks}
+              organizable
+              showSwipeHint={false}
             />
-            {row.trim() !== "" ? (
-              <IconActionButton
-                kind="close"
-                label={strings.removeStep}
-                onClick={() => removeRow(index)}
-              />
-            ) : null}
-          </div>
-        ))}
-        {error ? (
-          <div className="task-row-error" role="alert">
-            <span>{strings.error}</span>
-            <span className="text-muted">{error}</span>
           </div>
         ) : null}
-        <div className="row">
-          <button type="button" className="btn" disabled={saving} onClick={onClose}>
-            {strings.cancel}
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={saving || titles.length === 0}>
-            {strings.splitTaskCount(titles.length)}
-          </button>
-        </div>
-      </form>
+        <form
+          className="stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
+          {existingChildren.length > 0 ? (
+            <h3 className="task-split-section-heading">{strings.splitTaskAddHeading}</h3>
+          ) : null}
+          {rows.map((row, index) => (
+            <div className="row task-split-row" key={index}>
+              <input
+                ref={(el) => {
+                  inputRefs.current[index] = el;
+                }}
+                type="text"
+                value={row}
+                autoFocus={index === 0}
+                placeholder={strings.splitTaskRowPlaceholder}
+                disabled={saving}
+                onChange={(event) => setRow(index, event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    if (row.trim() !== "" && index === rows.length - 1) {
+                      setRows((prev) => [...prev, ""]);
+                      focusRow(index + 1);
+                    } else if (index < rows.length - 1) {
+                      focusRow(index + 1);
+                    }
+                  } else if (event.key === "Backspace" && row === "" && rows.length > 1) {
+                    event.preventDefault();
+                    removeRow(index);
+                  }
+                }}
+              />
+              {row.trim() !== "" ? (
+                <IconActionButton
+                  kind="close"
+                  label={strings.removeStep}
+                  onClick={() => removeRow(index)}
+                />
+              ) : null}
+            </div>
+          ))}
+          {error ? (
+            <div className="task-row-error" role="alert">
+              <span>{strings.error}</span>
+              <span className="text-muted">{error}</span>
+            </div>
+          ) : null}
+          <div className="row">
+            <button type="button" className="btn" disabled={saving} onClick={onClose}>
+              {strings.cancel}
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={saving || titles.length === 0}>
+              {strings.splitTaskCount(titles.length)}
+            </button>
+          </div>
+        </form>
+      </div>
     </BottomSheet>
   );
 }
+

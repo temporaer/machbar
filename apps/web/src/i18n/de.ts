@@ -419,6 +419,8 @@ const extra = {
   splitTask: "Aufgabe aufteilen",
   splitTaskCount: (count: number) =>
     count === 1 ? "1 Teilaufgabe anlegen" : `${count} Teilaufgaben anlegen`,
+  splitTaskExistingHeading: "Vorhandene Teilaufgaben",
+  splitTaskAddHeading: "Teilaufgaben hinzufügen",
   addSuccessor: "Nächsten Schritt danach hinzufügen",
   successorPlaceholder: "Nächster Schritt",
   deleteTaskConfirm: "Aufgabe endgültig löschen?",

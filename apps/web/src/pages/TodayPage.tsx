@@ -153,7 +153,14 @@ export function TodayPage() {
                           />
                         ) : null}
                         {projectsByBucket[s.key].length > 0 ? (
-                          <div className="list">
+                          <div
+                            className={`list${
+                              agenda[s.key].length > 0
+                                ? " today-project-agenda-list"
+                                : ""
+                            }`}
+                          >
+
                             {projectsByBucket[s.key].map((entry) => (
                               <ProjectAgendaRow
                                 key={entry.project.id}

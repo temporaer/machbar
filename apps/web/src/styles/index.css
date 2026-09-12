@@ -1014,6 +1014,10 @@ details[open] > .disclosure-summary::after {
   }
 }
 
+.today-project-agenda-list {
+  margin-top: 8px;
+}
+
 .project-agenda-row {
   --project-agenda-border: color-mix(in srgb, var(--color-primary) 20%, var(--color-border));
   --project-agenda-surface: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
@@ -2748,6 +2752,15 @@ details[open] > .disclosure-summary::after {
   min-height: 76px;
 }
 
+.task-row-content.compact {
+  padding: 6px 8px;
+  gap: 8px;
+}
+
+.task-row-content.compact.has-owner {
+  min-height: 0;
+}
+
 /*
  * The row currently being dragged. It stays in place (the insertion line
  * below shows where it would land) but is dimmed and outlined so it is
@@ -3480,6 +3493,10 @@ details[open] > .disclosure-summary::after {
   margin-top: 6px;
 }
 
+.task-row-children:has(> .task-row .task-row-content.compact) {
+  gap: 4px;
+}
+
 .task-row-toggle {
   border: none;
   background: transparent;
@@ -3674,6 +3691,15 @@ details[open] > .disclosure-summary::after {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.task-split-section-heading {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .row {
@@ -4128,6 +4154,7 @@ details[open] > .disclosure-summary::after {
   padding: 0;
   text-decoration: underline;
   color: var(--color-primary);
+  text-align: left;
 }
 
 .reminder-list {
