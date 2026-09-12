@@ -755,6 +755,30 @@ the moved task, matching the backend contract.
 
 **Where it is offered.** `TaskOutline` takes an explicit `organizable` prop and only `ProjectDetailPage` passes it: `GET /api/projects/:id` returns `graph.rootsByProject`, the complete stored sibling group. Compiled views (`TodayPage`, `InboxPage`, `AllPage`) show a filtered slice of tasks from unrelated groups, where a position read off the screen would be applied to the *full* group on the server and silently shuffle rows the user never saw. `outlineRootGroup` is then applied on top as a structural second guard (all roots must share `parentTaskId` **and** `projectId`). Retention ghosts are rendered outside the organize provider, so they get no handle and never shift a drop index.
 
+### Compact descendant presentation (Today)
+
+`TaskOutline`'s `compactDescendants` prop is a presentation-only mode, not a
+different data path. `TodayPage` passes it on every `TaskOutline` it mounts;
+`ProjectDetailPage` never sets it, so the full outline is unchanged there.
+
+`TaskRow` derives its own compactness as `depth > 0 && compactDescendants`: the
+root row of any Today card always keeps its full metadata stack (tags, notes,
+attachment preview, next-action badge, scheduled/revisit/project-due chips),
+while every nested descendant renders only the title, its status control, and
+the high-value signals (owner, due date, waiting/blocked) — this keeps
+execution context legible without duplicating Project Detail's authoring view.
+
+Entirely-terminal descendant subtrees (a `done`/`cancelled` task whose own
+children are all likewise entirely terminal) collapse behind an inline
+"N erledigt anzeigen" affordance instead of rendering by default; expanding it
+reveals them inline and it can be collapsed again. The prune is recursive but
+never hides a path to open work: a terminal task with a still-open descendant
+stays visible so that descendant remains reachable. A task currently held by
+`useTaskActions`'s `retained` map is always exempt from the prune, so a
+just-completed child stays visible through its existing retention window
+instead of vanishing straight into the summary. The parent's `done/total`
+progress count is always computed against the full, unpruned `children` array.
+
 **Details that are easy to get wrong, and are covered by tests:**
 
 - Window `pointermove`/`up`/`cancel`/`keydown` listeners are installed through *stable* dispatchers that forward to a ref, so a re-render mid-drag cannot leave a stale listener attached.

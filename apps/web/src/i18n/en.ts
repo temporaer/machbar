@@ -400,6 +400,10 @@ const en = {
   taskTags: "Tags",
   moreTaskTags: (count: number) =>
     `${count} more ${count === 1 ? "tag" : "tags"}`,
+  showCompletedDescendants: (count: number) =>
+    `Show ${count} completed`,
+  hideCompletedDescendants: (count: number) =>
+    `Hide ${count} completed`,
   cardLabels: "Tags and places",
   moreCardLabels: (count: number) =>
     `${count} more ${count === 1 ? "label" : "labels"}`,

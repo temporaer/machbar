@@ -149,6 +149,7 @@ export function TodayPage() {
                             emptyMessage={strings.noItems}
                             preserveRootOrder
                             showSwipeHint={false}
+                            compactDescendants
                           />
                         ) : null}
                         {projectsByBucket[s.key].length > 0 ? (
@@ -175,6 +176,7 @@ export function TodayPage() {
                         preserveRootOrder
                         showRevisitDate
                         showSwipeHint={false}
+                        compactDescendants
                       />
                     </div>
                   ) : null}
@@ -186,6 +188,7 @@ export function TodayPage() {
                         emptyMessage={strings.noItems}
                         preserveRootOrder
                         showSwipeHint={false}
+                        compactDescendants
                       />
                     </div>
                   ) : null}

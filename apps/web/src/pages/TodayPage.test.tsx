@@ -519,4 +519,30 @@ describe("TodayPage", () => {
     // previous member's id must never be requested again after switching.
     expect(mockedApi.getAgenda.mock.calls.at(-1)).toEqual([2, "mine"]);
   });
+
+  it("renders task subtrees compactly, hiding terminal descendants behind an inline summary", async () => {
+    const doneChild = makeTask({ id: 401, title: "Erledigter Nachkomme", status: "done" });
+    const openChild = makeTask({ id: 402, title: "Offener Nachkomme", status: "actionable" });
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      dueToday: [
+        makeTask({
+          id: 400,
+          title: "Wurzelaufgabe",
+          status: "actionable",
+          children: [doneChild, openChild],
+        }),
+      ],
+    });
+    renderWithProviders(<TodayPage />);
+
+    await screen.findByText("Wurzelaufgabe");
+    expect(await screen.findByText("Offener Nachkomme")).toBeInTheDocument();
+    // Compact Today presentation hides done/cancelled descendants by
+    // default, behind a "N erledigt anzeigen" affordance.
+    expect(screen.queryByText("Erledigter Nachkomme")).not.toBeInTheDocument();
+    const toggle = await screen.findByRole("button", { name: "1 erledigt anzeigen" });
+    await userEvent.click(toggle);
+    expect(await screen.findByText("Erledigter Nachkomme")).toBeInTheDocument();
+  });
 });

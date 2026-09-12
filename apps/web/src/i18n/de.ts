@@ -385,6 +385,8 @@ const extra = {
   effectiveTags: "Wirksame Tags",
   taskTags: "Tags",
   moreTaskTags: (count: number) => `${count} weitere Tags`,
+  showCompletedDescendants: (count: number) => `${count} erledigt anzeigen`,
+  hideCompletedDescendants: (count: number) => `${count} erledigt ausblenden`,
   cardLabels: "Tags und Orte",
   moreCardLabels: (count: number) => `${count} weitere Kennzeichnungen`,
   identityRequiredBody: "Machbar merkt sich, wer du bist, damit Zuständigkeiten und die Heute-Ansicht stimmen.",

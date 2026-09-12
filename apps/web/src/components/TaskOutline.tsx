@@ -34,6 +34,15 @@ export interface TaskOutlineProps {
    * project's own outline passes this — see `ProjectDetailPage`.
    */
   nextActionInfo?: NextActionBadgeInfo;
+  /**
+   * Compiled-view presentation: root tasks stay full-featured, but every
+   * *descendant* (any depth below the outline's own roots) renders as a
+   * compact row (title + status control + only high-value signals) and
+   * hides entirely-terminal (done/cancelled) descendant subtrees behind an
+   * inline "N erledigt anzeigen" affordance. Used on Today; Project Detail
+   * keeps the default `false` full outline.
+   */
+  compactDescendants?: boolean;
 }
 
 export function TaskOutline({
@@ -44,6 +53,7 @@ export function TaskOutline({
   showSwipeHint = true,
   preserveRootOrder = false,
   nextActionInfo,
+  compactDescendants = false,
 }: TaskOutlineProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
@@ -99,6 +109,7 @@ export function TaskOutline({
               parentTask={null}
               depth={0}
               showRevisitDate={showRevisitDate}
+              compactDescendants={compactDescendants}
             />
           ))}
         </ul>
@@ -113,6 +124,7 @@ export function TaskOutline({
               parentTask={null}
               depth={0}
               showRevisitDate={showRevisitDate}
+              compactDescendants={compactDescendants}
             />
           ))}
         </ul>

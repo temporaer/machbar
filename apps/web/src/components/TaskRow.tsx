@@ -54,6 +54,15 @@ export interface TaskRowProps {
   depth: number;
   /** Show this row's external-wait revisit date. */
   showRevisitDate?: boolean;
+  /**
+   * Compiled-view (Today) presentation: every row below the outline's own
+   * root (`depth > 0`) renders compactly, and entirely-terminal descendant
+   * subtrees collapse behind an inline reveal affordance. Propagated
+   * unchanged to descendant `TaskRow`s so the setting applies at every
+   * depth, not just direct children. Project Detail's full outline never
+   * sets this.
+   */
+  compactDescendants?: boolean;
 }
 
 /** Short, status-like label for the primary-swipe reveal background. */
@@ -75,11 +84,26 @@ function primaryActionBgLabel(
   }
 }
 
+/**
+ * A task's whole subtree is done/cancelled history: itself and every
+ * descendant. Used to decide what the compact Today presentation may
+ * collapse behind an "N erledigt anzeigen" affordance. A task that was
+ * *just* completed/cancelled stays excluded (`retainedIds`) so the
+ * existing optimistic-retention window (undo/Reopen) keeps it visible
+ * instead of vanishing straight into the summary.
+ */
+function isEntirelyTerminal(task: Task, retainedIds: ReadonlySet<number>): boolean {
+  if (retainedIds.has(task.id)) return false;
+  if (task.status !== "done" && task.status !== "cancelled") return false;
+  return task.children.every((child) => isEntirelyTerminal(child, retainedIds));
+}
+
 export function TaskRow({
   task: taskProp,
   parentTask,
   depth,
   showRevisitDate = false,
+  compactDescendants = false,
 }: TaskRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
@@ -164,6 +188,17 @@ export function TaskRow({
   }, [expandRequest, taskProp.id, setCollapsed]);
 
   const children = sortByPosition(task.children);
+  // Compact presentation applies to every row below the outline's own
+  // root; the root itself (depth 0) always stays full-featured.
+  const isCompact = compactDescendants && depth > 0;
+  const retainedIds = useMemo(() => new Set(retained.keys()), [retained]);
+  const visibleChildren = compactDescendants
+    ? children.filter((child) => !isEntirelyTerminal(child, retainedIds))
+    : children;
+  const hiddenTerminalChildren = compactDescendants
+    ? children.filter((child) => isEntirelyTerminal(child, retainedIds))
+    : [];
+  const [showHiddenTerminal, setShowHiddenTerminal] = useState(false);
   const isDone = task.status === "done";
   const isCancelled = task.status === "cancelled";
   const overdue = isOverdue(task.dueDate, task.status);
@@ -380,10 +415,12 @@ export function TaskRow({
             onClick={() => dispatch({ type: "task.open", taskId: task.id })}
           >
             <div className="task-row-header">
-              <TaskCardTags
-                tags={task.effectiveTags}
-                contexts={task.effectiveContexts}
-              />
+              {isCompact ? null : (
+                <TaskCardTags
+                  tags={task.effectiveTags}
+                  contexts={task.effectiveContexts}
+                />
+              )}
               <div className={`task-row-title${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}>
                 {task.title}
                 {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
@@ -391,7 +428,7 @@ export function TaskRow({
               </div>
             </div>
             <div className="task-row-meta">
-              {nextActionBadge ? (
+              {isCompact ? null : nextActionBadge ? (
                 <span
                   className={`task-row-meta-item task-row-next-action-badge task-row-next-action-${nextActionBadge}`}
                 >
@@ -402,7 +439,7 @@ export function TaskRow({
                       : strings.nextActionBadgeMarked}
                 </span>
               ) : null}
-              {task.status !== "actionable" ? (
+              {isCompact ? null : task.status !== "actionable" ? (
                 <span className={`task-row-meta-item task-row-state task-row-state-${task.status}`}>
                   {strings.taskStatusLabels[task.status]}
                 </span>
@@ -424,12 +461,12 @@ export function TaskRow({
                   {strings.due}: {due}
                 </span>
               ) : null}
-              {scheduled ? (
+              {isCompact ? null : scheduled ? (
                 <span className="task-row-meta-item">
                   {strings.scheduled}: {scheduled}
                 </span>
               ) : null}
-              {revisitRelative && revisitExact ? (
+              {isCompact ? null : revisitRelative && revisitExact ? (
                 <span
                   className="task-row-meta-item"
                   title={`${strings.revisitDate}: ${revisitExact}`}
@@ -438,7 +475,7 @@ export function TaskRow({
                   {strings.revisitDate}: {revisitRelative}
                 </span>
               ) : null}
-              {projectDueRelative && projectDueExact ? (
+              {isCompact ? null : projectDueRelative && projectDueExact ? (
                 <span
                   className="task-row-meta-item task-row-project-due"
                   title={`${strings.projectDue}: ${projectDueExact}`}
@@ -453,7 +490,7 @@ export function TaskRow({
                 </span>
               ) : null}
             </div>
-            {attachments[0] ? (
+            {isCompact ? null : attachments[0] ? (
               <TaskRowAttachmentPreview
                 key={attachments[0].id}
                 attachment={attachments[0]}
@@ -461,7 +498,7 @@ export function TaskRow({
               />
             ) : null}
           </button>
-          {notesWithoutAttachments ? (
+          {isCompact ? null : notesWithoutAttachments ? (
             <MarkdownNotes value={notesWithoutAttachments} className="task-row-notes" />
           ) : null}
         </div>
@@ -541,16 +578,41 @@ export function TaskRow({
         />
       ) : null}
 
-      {!collapsed && children.length > 0 ? (
+      {!collapsed && (visibleChildren.length > 0 || hiddenTerminalChildren.length > 0) ? (
         <ul className="task-row-children">
-          {children.map((child) => (
+          {visibleChildren.map((child) => (
             <TaskRow
               key={child.id}
               task={child}
               parentTask={task}
               depth={depth + 1}
+              compactDescendants={compactDescendants}
             />
           ))}
+          {hiddenTerminalChildren.length > 0 && showHiddenTerminal
+            ? hiddenTerminalChildren.map((child) => (
+                <TaskRow
+                  key={child.id}
+                  task={child}
+                  parentTask={task}
+                  depth={depth + 1}
+                  compactDescendants={compactDescendants}
+                />
+              ))
+            : null}
+          {hiddenTerminalChildren.length > 0 ? (
+            <li className="task-row-terminal-summary" style={{ listStyle: "none" }}>
+              <button
+                type="button"
+                className="task-row-terminal-toggle"
+                onClick={() => setShowHiddenTerminal((value) => !value)}
+              >
+                {showHiddenTerminal
+                  ? strings.hideCompletedDescendants(hiddenTerminalChildren.length)
+                  : strings.showCompletedDescendants(hiddenTerminalChildren.length)}
+              </button>
+            </li>
+          ) : null}
         </ul>
       ) : null}
     </li>
