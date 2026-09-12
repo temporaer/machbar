@@ -9,6 +9,7 @@ import { ProjectTagsSheet } from "./ProjectTagsSheet";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { ProjectContextsSheet } from "./ProjectContextsSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
+import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
 import { useStrings } from "../lib/strings";
 import { canClearDriver } from "../lib/projectWorkflow";
 
@@ -64,6 +65,16 @@ export function ProjectWorkflowHost() {
       );
     case "editOutcome":
       return <StoryCriteriaSheet story={story} onClose={close} />;
+    case "completeWithCriteria":
+      return (
+        <CompleteWithCriteriaSheet
+          story={story}
+          onClose={close}
+          onComplete={async () => {
+            await projectActions.runAction(story, "complete");
+          }}
+        />
+      );
     case "planDates":
       return (
         <PlanDatesSheet

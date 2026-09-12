@@ -203,6 +203,115 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
   });
 
+  it("completes an active story from the status rail whose criteria are all checked", async () => {
+    const story = makeProject({
+      id: 27,
+      title: "Küche renovieren",
+      status: "active",
+      ownerMemberId: 1,
+      acceptanceCriteria: [
+        makeCriterion({ id: 1, text: "Fliesen verlegt", checked: true }),
+        makeCriterion({ id: 2, text: "Möbel montiert", checked: true }),
+      ],
+    });
+    mockedApi.completeProject.mockResolvedValue({ ...story, status: "completed" });
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Küche renovieren");
+
+    const lifecycle = openLifecycleRail(container);
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(27, {
+      expectedRevision: 1,
+    });
+    expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
+  });
+
+  it("opens the focused completion checklist — not the structural editor — for unchecked criteria", async () => {
+    const story = makeProject({
+      id: 28,
+      title: "Gartenparty",
+      status: "active",
+      ownerMemberId: 1,
+      acceptanceCriteria: [
+        makeCriterion({ id: 1, text: "Zelt gemietet", checked: true }),
+        makeCriterion({ id: 2, text: "Getränke besorgt", checked: false }),
+      ],
+    });
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Gartenparty");
+
+    const lifecycle = openLifecycleRail(container);
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Projekt abschließen: Gartenparty",
+    });
+    // The structural editor (add/rename/reorder criteria) must not open here.
+    expect(within(dialog).queryByPlaceholderText("Neues Kriterium")).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("checkbox", { name: "Zelt gemietet" })).toBeChecked();
+    expect(within(dialog).getByRole("checkbox", { name: "Getränke besorgt" })).not.toBeChecked();
+    expect(
+      within(dialog).getByRole("button", { name: "Projekt abschließen" }),
+    ).toBeDisabled();
+    expect(mockedApi.completeProject).not.toHaveBeenCalled();
+  });
+
+  it("enables and performs completion once the last criterion is checked in the focused workflow", async () => {
+    const story = makeProject({
+      id: 29,
+      title: "Gartenparty fertig",
+      status: "active",
+      ownerMemberId: 1,
+      acceptanceCriteria: [
+        makeCriterion({ id: 1, text: "Zelt gemietet", checked: true }),
+        makeCriterion({ id: 2, text: "Getränke besorgt", checked: false }),
+      ],
+    });
+    mockedApi.completeProject.mockResolvedValue({ ...story, status: "completed" });
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Gartenparty fertig");
+
+    const lifecycle = openLifecycleRail(container);
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Projekt abschließen: Gartenparty fertig",
+    });
+    const completeButton = within(dialog).getByRole("button", { name: "Projekt abschließen" });
+    expect(completeButton).toBeDisabled();
+
+    // The checklist re-reads the project via the refresh bus (`useAsync` +
+    // `bump()`), so the mocked fetch is switched to the now-fully-checked
+    // project before triggering the check, mirroring what the real API
+    // response would look like once the write lands.
+    const allChecked = {
+      ...story,
+      tasks: [],
+      acceptanceCriteria: story.acceptanceCriteria!.map((criterion) => ({
+        ...criterion,
+        checked: true,
+      })),
+    };
+    mockedApi.checkCriterion.mockResolvedValue(allChecked);
+    mockedApi.getProject.mockResolvedValue(allChecked);
+
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: "Getränke besorgt" }));
+    expect(mockedApi.checkCriterion).toHaveBeenCalledWith(29, 2, true);
+
+    await waitFor(() => expect(completeButton).toBeEnabled());
+    await userEvent.click(completeButton);
+
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(29, {
+      expectedRevision: 1,
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("reopens a completed story", async () => {
     const story = makeProject({
       id: 22,

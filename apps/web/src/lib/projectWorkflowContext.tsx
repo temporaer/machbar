@@ -17,6 +17,12 @@ import type { ReactNode } from "react";
  * they are how `story.activate`/`story.reopen` resolve when the story still
  * needs a driver (see `lifecyclePrerequisite()`), collecting one and
  * committing the transition atomically in the same call.
+ *
+ * `completeWithCriteria` is the analogous continuation for `story.complete`
+ * when acceptance criteria remain unchecked: it opens the focused checklist
+ * (`CompleteWithCriteriaSheet`), not the structural `editOutcome` editor, and
+ * commits the same `story.complete` transition once every criterion is
+ * checked.
  */
 export type ProjectWorkflowKind =
   | "defer"
@@ -26,7 +32,8 @@ export type ProjectWorkflowKind =
   | "tags"
   | "contexts"
   | "activateWithDriver"
-  | "reopenWithDriver";
+  | "reopenWithDriver"
+  | "completeWithCriteria";
 
 export interface ProjectWorkflowState {
   kind: ProjectWorkflowKind;

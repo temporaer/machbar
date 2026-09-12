@@ -652,6 +652,7 @@ Interactions target one field at a time instead of opening the full detail sheet
 | `MemberChoiceGroup` | The tap-chip choice group rendered by assignment surfaces |
 | `AcceptanceCriteriaEditor` | Reusable ordered criteria editor, rendered by `StoryCriteriaSheet` |
 | `StoryCriteriaSheet` | Targeted criteria popup for a story row |
+| `CompleteWithCriteriaSheet` | Focused `story.complete` continuation when criteria remain unchecked: shares the `AcceptanceCriteriaChecklist` check/uncheck UI and commits the same completion transition once all criteria are checked |
 | `PlanDatesSheet` | Due/scheduled dates only |
 | `WaitingFollowUpSheet` | Owns follow-up drafts; delegates the atomic command, pending state, errors, and refresh to `useTaskActions` |
 | `DestinationPicker` | Searchable refile destination list with recents (see below) |
