@@ -1,9 +1,11 @@
 import type {
   ContextAvailability,
   WeekAgenda,
+  WeekAttentionProjection,
   WeekWorkItemPlacement,
   WeekWorkItemSummary,
 } from "@machbar/shared";
+import { projectWeekAttention } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
 import {
   createAgendaSelection,
@@ -14,6 +16,10 @@ function addDaysIso(dateIso: string, days: number): string {
   const date = new Date(`${dateIso}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function isOpenStory(story: ProjectRecord): boolean {
@@ -53,13 +59,8 @@ function compareItems(
   a: WeekWorkItemSummary,
   b: WeekWorkItemSummary,
 ): number {
-  const placementDate = (item: WeekWorkItemSummary) => {
-    if (item.placement === "scheduled") return item.scheduledDate;
-    if (item.placement === "revisit") return item.externalWait?.revisitDate;
-    return item.dueDate;
-  };
-  const dateA = placementDate(a) ?? "9999-99-99";
-  const dateB = placementDate(b) ?? "9999-99-99";
+  const dateA = a.attentionDate ?? "9999-99-99";
+  const dateB = b.attentionDate ?? "9999-99-99";
   if (dateA !== dateB) return dateA.localeCompare(dateB);
   const placementOrder: Record<WeekWorkItemPlacement, number> = {
     scheduled: 0,
@@ -78,6 +79,7 @@ function taskSummary(
   task: TaskRecord,
   graph: Graph,
   placement: WeekWorkItemPlacement,
+  attentionDate: string | null,
 ): WeekWorkItemSummary {
   const parent =
     task.parentTaskId !== null ? graph.tasksById.get(task.parentTaskId) ?? null : null;
@@ -92,6 +94,7 @@ function taskSummary(
     dueDate: task.dueDate,
     externalWait: task.externalWait,
     placement,
+    attentionDate,
     projectId: task.projectId,
     projectTitle: task.projectTitle ?? null,
     parentId: task.parentTaskId,
@@ -110,6 +113,7 @@ function storySummary(
   story: ProjectRecord,
   graph: Graph,
   placement: WeekWorkItemPlacement,
+  attentionDate: string | null,
 ): WeekWorkItemSummary {
   const parent =
     story.parentId !== null ? graph.projectsById.get(story.parentId) ?? null : null;
@@ -124,6 +128,7 @@ function storySummary(
     dueDate: story.dueDate,
     externalWait: null,
     placement,
+    attentionDate,
     projectId: story.id,
     projectTitle: story.title,
     parentId: story.parentId,
@@ -153,6 +158,7 @@ export function buildWeekAgenda(
   graph: Graph,
   options: BuildWeekAgendaOptions,
 ): WeekAgenda {
+  const today = options.today ?? todayIso();
   const days = Array.from({ length: 7 }, (_, index) => ({
     date: addDaysIso(options.start, index),
     items: [] as WeekWorkItemSummary[],
@@ -163,50 +169,51 @@ export function buildWeekAgenda(
   const selection = createAgendaSelection(graph, options);
   const placedIds = new Set<number>();
 
-  const place = (item: WeekWorkItemSummary) => {
-    if (item.placement === "scheduled" && item.scheduledDate) {
-      dayByDate.get(item.scheduledDate)?.items.push(item);
-      placedIds.add(item.id);
-      return;
-    }
-    if (item.placement === "due" && item.dueDate) {
-      dayByDate.get(item.dueDate)?.items.push(item);
-      placedIds.add(item.id);
-      return;
-    }
-    if (item.placement === "revisit" && item.externalWait?.revisitDate) {
-      dayByDate.get(item.externalWait.revisitDate)?.items.push(item);
-      placedIds.add(item.id);
-    }
+  const place = (
+    item: WeekWorkItemSummary,
+    projection: WeekAttentionProjection,
+  ) => {
+    dayByDate.get(projection.attentionDate)?.items.push(item);
+    placedIds.add(item.id);
   };
 
   for (const task of graph.allTasks()) {
     if (!isWeekDatedTask(task, graph, selection)) continue;
-    if (isWeekDirectExternalWaitAttention(task, graph, selection)) {
-      if (
-        task.externalWait?.revisitDate &&
-        dateSet.has(task.externalWait.revisitDate)
-      ) {
-        place(taskSummary(task, graph, "revisit"));
-      } else if (task.dueDate && dateSet.has(task.dueDate)) {
-        place(taskSummary(task, graph, "due"));
-      }
-    } else if (task.scheduledDate && dateSet.has(task.scheduledDate)) {
-      place(taskSummary(task, graph, "scheduled"));
-    } else if (task.dueDate && dateSet.has(task.dueDate)) {
-      place(taskSummary(task, graph, "due"));
-    }
+    const waiting = isWeekDirectExternalWaitAttention(task, graph, selection);
+    // Directly-waiting tasks ignore scheduledDate: a wait's revisit date
+    // (or its deadline) drives attention, not an incidental schedule.
+    const projection = projectWeekAttention(
+      {
+        scheduledDate: waiting ? null : task.scheduledDate,
+        revisitDate: waiting ? task.externalWait?.revisitDate ?? null : null,
+        dueDate: task.dueDate,
+      },
+      today,
+    );
+    if (!projection || !dateSet.has(projection.attentionDate)) continue;
+    place(
+      taskSummary(task, graph, projection.placement, projection.attentionDate),
+      projection,
+    );
   }
 
   for (const story of graph.listProjectsWithComputed()) {
     if (!isOpenStory(story) || !selection.matchesOwnerId(story.ownerMemberId)) {
       continue;
     }
-    if (story.scheduledDate && dateSet.has(story.scheduledDate)) {
-      place(storySummary(story, graph, "scheduled"));
-    } else if (story.dueDate && dateSet.has(story.dueDate)) {
-      place(storySummary(story, graph, "due"));
-    }
+    const projection = projectWeekAttention(
+      {
+        scheduledDate: story.scheduledDate,
+        revisitDate: null,
+        dueDate: story.dueDate,
+      },
+      today,
+    );
+    if (!projection || !dateSet.has(projection.attentionDate)) continue;
+    place(
+      storySummary(story, graph, projection.placement, projection.attentionDate),
+      projection,
+    );
   }
 
   const available = selectCurrentAvailableWork(graph, {
@@ -221,7 +228,7 @@ export function buildWeekAgenda(
   unplanned.push(
     ...[...available.shared, ...available.unscheduled]
       .filter((task) => !placedIds.has(task.id))
-      .map((task) => taskSummary(task, graph, "unplanned")),
+      .map((task) => taskSummary(task, graph, "unplanned", null)),
   );
 
   for (const day of days) day.items.sort(compareItems);
@@ -234,3 +241,4 @@ export function buildWeekAgenda(
     unplanned,
   };
 }
+

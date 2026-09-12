@@ -19,26 +19,8 @@ import { QuickAdd } from "../components/QuickAdd";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 
-function weekStart(date: Date): string {
-  const copy = new Date(date);
-  const day = (copy.getDay() + 6) % 7;
-  copy.setDate(copy.getDate() - day);
-  return toIsoCalendarDate(copy);
-}
-
-function isoWeek(dateIso: string): number {
-  const date = new Date(`${dateIso}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + 3 - ((date.getUTCDay() + 6) % 7));
-  const weekOne = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
-  return (
-    1 +
-    Math.round(
-      ((date.getTime() - weekOne.getTime()) / 86400000 -
-        3 +
-        ((weekOne.getUTCDay() + 6) % 7)) /
-        7,
-    )
-  );
+function weekWindowStart(date: Date): string {
+  return toIsoCalendarDate(date);
 }
 
 function weekdayLabel(dateIso: string, locale: string): string {
@@ -63,37 +45,68 @@ function addItem(
   agenda: WeekAgendaResponse,
   item: WeekPlanningItem,
 ): WeekAgendaResponse {
-  if (item.placement === "unplanned") {
+  if (item.placement === "unplanned" || item.attentionDate === null) {
     return { ...agenda, unplanned: [...agenda.unplanned, item] };
   }
-  const placementDate =
-    item.placement === "scheduled"
-      ? item.scheduledDate
-      : item.placement === "revisit"
-        ? item.externalWait?.revisitDate
-        : item.dueDate;
   return {
     ...agenda,
     days: agenda.days.map((day) =>
-      day.date === placementDate
+      day.date === item.attentionDate
         ? { ...day, items: [...day.items, item] }
         : day,
     ),
   };
 }
 
+/**
+ * Projects an item's current placement + attention date from its (possibly
+ * just-mutated) source dates, mirroring the shared backend algorithm in
+ * `projectWeekAttention` so optimistic frontend updates match the server.
+ * `today` is the window's start when it equals the real rolling anchor;
+ * callers only invoke this for items already visible in the current week.
+ */
+function projectAttention(
+  item: WeekPlanningItem,
+  today: string,
+): { placement: WeekPlanningItem["placement"]; attentionDate: string } | null {
+  const waiting = item.role === "task" && item.externalWait !== null;
+  const candidates = {
+    scheduledDate: waiting ? null : item.scheduledDate,
+    revisitDate: waiting ? item.externalWait?.revisitDate ?? null : null,
+    dueDate: item.dueDate,
+  };
+  const options: Array<{ placement: "scheduled" | "revisit" | "due"; raw: string }> = [];
+  if (candidates.scheduledDate) options.push({ placement: "scheduled", raw: candidates.scheduledDate });
+  if (candidates.revisitDate) options.push({ placement: "revisit", raw: candidates.revisitDate });
+  if (candidates.dueDate) options.push({ placement: "due", raw: candidates.dueDate });
+  if (options.length === 0) return null;
+  const priority = { scheduled: 0, revisit: 1, due: 2 } as const;
+  const projected = options
+    .map((option) => ({
+      placement: option.placement,
+      attentionDate: option.raw < today ? today : option.raw,
+    }))
+    .sort(
+      (a, b) =>
+        a.attentionDate.localeCompare(b.attentionDate) ||
+        priority[a.placement] - priority[b.placement],
+    );
+  return projected[0]!;
+}
+
 function moveScheduled(
   agenda: WeekAgendaResponse,
   item: WeekPlanningItem,
   date: string | null,
+  today: string,
 ): WeekAgendaResponse {
-  const next: WeekPlanningItem = {
-    ...item,
-    scheduledDate: date,
-    placement: date === null ? "unplanned" : "scheduled",
-    task: item.task ? { ...item.task, scheduledDate: date } : item.task,
-    project: item.project ? { ...item.project, scheduledDate: date } : item.project,
-  } as WeekPlanningItem;
+  const task = item.task ? { ...item.task, scheduledDate: date } : item.task;
+  const project = item.project ? { ...item.project, scheduledDate: date } : item.project;
+  const withDate: WeekPlanningItem = { ...item, scheduledDate: date, task, project } as WeekPlanningItem;
+  const projected = projectAttention(withDate, today);
+  const next: WeekPlanningItem = projected
+    ? { ...withDate, placement: projected.placement, attentionDate: projected.attentionDate }
+    : { ...withDate, placement: "unplanned", attentionDate: null };
   return addItem(removeItem(agenda, item.id), next);
 }
 
@@ -101,42 +114,20 @@ function moveRevisit(
   agenda: WeekAgendaResponse,
   item: WeekPlanningItem,
   date: string | null,
+  today: string,
 ): WeekAgendaResponse {
   if (item.role !== "task" || !item.externalWait) return agenda;
   const externalWait = { ...item.externalWait, revisitDate: date };
   const task = { ...item.task, externalWait };
-  if (date !== null) {
-    return addItem(
-      removeItem(agenda, item.id),
-      {
-        ...item,
-        placement: "revisit",
-        externalWait,
-        task,
-      } as WeekPlanningItem,
-    );
-  }
-  if (item.dueDate && agenda.days.some((day) => day.date === item.dueDate)) {
-    return addItem(
-      removeItem(agenda, item.id),
-      {
-        ...item,
-        placement: "due",
-        externalWait,
-        task,
-      } as WeekPlanningItem,
-    );
-  }
-  return removeItem(agenda, item.id);
+  const withDate: WeekPlanningItem = { ...item, externalWait, task } as WeekPlanningItem;
+  const projected = projectAttention(withDate, today);
+  const next: WeekPlanningItem = projected
+    ? { ...withDate, placement: projected.placement, attentionDate: projected.attentionDate }
+    : { ...withDate, placement: "unplanned", attentionDate: null };
+  return addItem(removeItem(agenda, item.id), next);
 }
 
 function sortAgenda(agenda: WeekAgendaResponse): WeekAgendaResponse {
-  const placementDate = (item: WeekPlanningItem) =>
-    item.placement === "scheduled"
-      ? item.scheduledDate
-      : item.placement === "revisit"
-        ? item.externalWait?.revisitDate
-        : item.dueDate;
   const placementOrder: Record<WeekPlanningItem["placement"], number> = {
     scheduled: 0,
     revisit: 1,
@@ -144,9 +135,7 @@ function sortAgenda(agenda: WeekAgendaResponse): WeekAgendaResponse {
     unplanned: 3,
   };
   const sort = (a: WeekPlanningItem, b: WeekPlanningItem) =>
-    (placementDate(a) ?? "9999-99-99").localeCompare(
-      placementDate(b) ?? "9999-99-99",
-    ) ||
+    (a.attentionDate ?? "9999-99-99").localeCompare(b.attentionDate ?? "9999-99-99") ||
     placementOrder[a.placement] - placementOrder[b.placement] ||
     (a.role !== b.role ? (a.role === "story" ? -1 : 1) : 0) ||
     a.title.localeCompare(b.title, "de") ||
@@ -231,9 +220,10 @@ function WeekCard({
   return (
     <article
       className={`week-card week-card-${item.role}`}
-      draggable
+      draggable={item.placement !== "due"}
       data-workitem-id={item.id}
       data-workitem-role={item.role}
+      data-workitem-placement={item.placement}
       onDragStart={(event) => {
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("text/plain", String(item.id));
@@ -297,7 +287,8 @@ function WeekDropZone({
   const strings = useStrings();
   const drop = (event: DragEvent) => {
     event.preventDefault();
-    if (dragged) onDropItem(dragged, date);
+    // A deadline is a hard constraint: generic drag never moves it.
+    if (dragged && dragged.placement !== "due") onDropItem(dragged, date);
   };
   return (
     <section
@@ -333,7 +324,10 @@ export function WeekPage() {
   const dispatch = useWorkItemCommands();
   const navigate = useNavigate();
   const [scope, setScope] = useState<AgendaScope>(readTodayScope);
-  const [start, setStart] = useState(() => weekStart(new Date()));
+  const [start, setStart] = useState(() => weekWindowStart(new Date()));
+  // Real wall-clock today, independent of `start` paging, used to clamp
+  // overdue attention dates forward when recomputing placement optimistically.
+  const today = useMemo(() => toIsoCalendarDate(new Date()), []);
   const [agenda, setAgenda] = useState<WeekAgendaResponse | null>(null);
   const [dragged, setDragged] = useState<WeekPlanningItem | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
@@ -355,7 +349,7 @@ export function WeekPage() {
     if (!agenda) return;
     const previous = agenda;
     setMutationError(null);
-    setAgenda(sortAgenda(moveScheduled(agenda, item, date)));
+    setAgenda(sortAgenda(moveScheduled(agenda, item, date, today)));
     try {
       await dispatch({ type: "workItem.schedule", item, date });
     } catch (cause) {
@@ -371,7 +365,7 @@ export function WeekPage() {
     if (!agenda || item.role !== "task" || !item.externalWait) return;
     const previous = agenda;
     setMutationError(null);
-    setAgenda(sortAgenda(moveRevisit(agenda, item, date)));
+    setAgenda(sortAgenda(moveRevisit(agenda, item, date, today)));
     try {
       await dispatch({ type: "workItem.setRevisitDate", item, date });
     } catch (cause) {
@@ -380,8 +374,19 @@ export function WeekPage() {
     }
   };
 
+  // Drag routes to whichever date field is responsible for the item's
+  // current placement: a deadline (`due`) is never moved by generic drag.
+  const handleDropItem = (item: WeekPlanningItem, date: string | null) => {
+    if (item.placement === "due") return;
+    if (item.placement === "revisit") {
+      void applyRevisitDate(item, date);
+      return;
+    }
+    void applySchedule(item, date);
+  };
+
   const currentAgenda = agenda;
-  const title = `${strings.weekPlanning} · ${strings.calendarWeekShort} ${isoWeek(start)}`;
+  const title = strings.weekPlanning;
   const formattedRange = useMemo(() => {
     const end = addIsoCalendarDays(start, 6);
     return `${formatDate(start, locale) ?? start}–${formatDate(end, locale) ?? end}`;
@@ -451,11 +456,7 @@ export function WeekPage() {
                   items={day.items}
                   members={members}
                   dragged={dragged}
-                  onDropItem={(item, date) =>
-                    void (item.placement === "revisit"
-                      ? applyRevisitDate(item, date)
-                      : applySchedule(item, date))
-                  }
+                  onDropItem={handleDropItem}
                   onDragStart={setDragged}
                   onOpen={(item) => {
                     if (item.role === "task") {
@@ -473,11 +474,7 @@ export function WeekPage() {
               items={currentAgenda.unplanned}
               members={members}
               dragged={dragged}
-              onDropItem={(item, date) =>
-                void (item.placement === "revisit"
-                  ? applyRevisitDate(item, date)
-                  : applySchedule(item, date))
-              }
+              onDropItem={handleDropItem}
               onDragStart={setDragged}
               onOpen={(item) => {
                 if (item.role === "task") {
