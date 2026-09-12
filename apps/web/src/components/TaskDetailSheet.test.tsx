@@ -205,6 +205,46 @@ describe("TaskDetailSheet", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("renders ancestor breadcrumbs and swaps the sheet to the clicked task ancestor", async () => {
+    mockedApi.getTask.mockImplementation(async (id: number) => {
+      if (id === 10) {
+        return { ...makeTask({ id: 10, title: "Elternaufgabe" }), ancestors: [] };
+      }
+      return {
+        ...makeTask({ id: 62, title: "Kindaufgabe" }),
+        ancestors: [{ id: 10, role: "task" as const, title: "Elternaufgabe" }],
+      };
+    });
+    renderSheet(62);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+
+    expect(await waitForTaskTitle("Kindaufgabe")).toBeInTheDocument();
+    const breadcrumbNav = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(
+      within(breadcrumbNav).getByRole("button", { name: "Elternaufgabe" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      within(breadcrumbNav).getByRole("button", { name: "Elternaufgabe" }),
+    );
+
+    expect(await waitForTaskTitle("Elternaufgabe")).toBeInTheDocument();
+  });
+
+  it("renders no breadcrumb navigation for a root task with no ancestors", async () => {
+    mockedApi.getTask.mockResolvedValue({
+      ...makeTask({ id: 42, title: "Alleinstehend" }),
+      ancestors: [],
+    });
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+
+    expect(await waitForTaskTitle("Alleinstehend")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", { name: "Breadcrumb" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("appends a direct attachment through the revision-safe task action", async () => {
     const task = makeTask({ id: 42, title: "Beleg prüfen", notes: "Vorhanden" });
     mockedApi.getTask.mockResolvedValue(task);

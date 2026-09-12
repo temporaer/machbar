@@ -48,6 +48,8 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "workItem.setDeadline":
     case "workItem.setRevisitDate":
       return command.item.id;
+    case "workItem.open":
+      return command.workItem.id;
     case "story.activate":
     case "story.returnToBacklog":
     case "story.complete":
@@ -116,6 +118,8 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "workItem.setDeadline":
     case "workItem.setRevisitDate":
       return command.item.role;
+    case "workItem.open":
+      return command.workItem.role;
     default:
       return null;
   }
@@ -193,6 +197,13 @@ export function useWorkItemCommands() {
       switch (command.type) {
         case "task.open":
           taskDetail.open(command.taskId, command.focusField);
+          return;
+        case "workItem.open":
+          if (command.workItem.role === "task") {
+            taskDetail.open(command.workItem.id);
+          } else {
+            navigate(`/projects/${command.workItem.id}`);
+          }
           return;
         case "task.plan":
           taskWorkflow.open("plan", command.taskId);

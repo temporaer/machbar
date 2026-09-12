@@ -547,6 +547,20 @@ export interface Task {
   projectDueDate?: string | null;
 }
 
+/**
+ * One entry in a task's or project's hierarchy chain, ordered
+ * outermost-first (see `Graph.taskAncestorsFor`/`Graph.ancestorsFor` in
+ * `apps/api/src/domain/graph.ts`). `role` distinguishes a containing
+ * project/story from a containing parent task so breadcrumb navigation can
+ * route each kind through its own canonical open path (`workItem.open`).
+ * Never includes the item itself, only its ancestors.
+ */
+export interface WorkItemAncestor {
+  id: number;
+  role: "story" | "task";
+  title: string;
+}
+
 export type RecurrenceOccurrenceResult = "hit" | "miss";
 
 export interface TaskRecurrenceConfig {

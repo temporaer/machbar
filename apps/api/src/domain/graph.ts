@@ -12,6 +12,7 @@ import type {
   TaskReminder,
   TaskSize,
   TaskStatus,
+  WorkItemAncestor,
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -43,11 +44,21 @@ export interface ProjectRecord extends SharedProject {
   availableActions: ProjectWorkflowAction[];
   activationReadiness: ProjectActivationReadiness;
   childStories: ProjectRecord[];
-  ancestors: Array<{ id: number; title: string }>;
+  ancestors: WorkItemAncestor[];
 }
 
 export interface TaskRecord extends SharedTask {
   inheritedTags: Tag[];
+}
+
+/**
+ * The single-task detail response shape (`GET /api/tasks/:id` and the
+ * mutation endpoints that echo the updated task back) — never used for
+ * list/tree endpoints, which return plain `TaskRecord`s without an
+ * ancestor chain. See `Graph.taskAncestorsFor`.
+ */
+export interface TaskDetailRecord extends TaskRecord {
+  ancestors: WorkItemAncestor[];
 }
 
 export interface StuckProjectRecord extends ProjectRecord {
@@ -814,18 +825,47 @@ export class Graph {
     return this.blockerAnalysisByTask.get(taskId) ?? null;
   }
 
-  private ancestorsFor(projectId: number): Array<{ id: number; title: string }> {
-    const ancestors: Array<{ id: number; title: string }> = [];
+  private ancestorsFor(projectId: number): WorkItemAncestor[] {
+    const ancestors: WorkItemAncestor[] = [];
     let parentId = this.projectsById.get(projectId)?.parentId ?? null;
     const seen = new Set<number>([projectId]);
     while (parentId !== null && !seen.has(parentId)) {
       seen.add(parentId);
       const parent = this.projectsById.get(parentId);
       if (!parent) break;
-      ancestors.unshift({ id: parent.id, title: parent.title });
+      ancestors.unshift({ id: parent.id, role: "story", title: parent.title });
       parentId = parent.parentId;
     }
     return ancestors;
+  }
+
+  /**
+   * The full ordered ancestor chain for a task, outermost-first: any
+   * containing project chain (via `ancestorsFor`, plus the immediately
+   * containing project itself) followed by any containing parent-task
+   * chain. Never includes the task itself. Backs `TaskDetailRecord.ancestors`
+   * (see `routes/tasks.ts`'s `taskOrThrow`) and `WorkItemBreadcrumbs` on the
+   * frontend — the hierarchy is derived here, once, from the graph's own
+   * `parentTaskId`/`projectId` edges, not reconstructed from whatever
+   * partial tree happens to be rendered on a given page.
+   */
+  taskAncestorsFor(taskId: number): WorkItemAncestor[] {
+    const taskAncestors: WorkItemAncestor[] = [];
+    const seenTasks = new Set<number>([taskId]);
+    let current = this.tasksById.get(taskId) ?? null;
+    while (current && current.parentTaskId !== null && !seenTasks.has(current.parentTaskId)) {
+      const parent = this.tasksById.get(current.parentTaskId);
+      if (!parent) break;
+      seenTasks.add(parent.id);
+      taskAncestors.unshift({ id: parent.id, role: "task", title: parent.title });
+      current = parent;
+    }
+    const rootProjectId = current?.projectId ?? null;
+    const project = rootProjectId !== null ? this.projectsById.get(rootProjectId) : undefined;
+    const projectAncestors: WorkItemAncestor[] = project
+      ? [...this.ancestorsFor(project.id), { id: project.id, role: "story", title: project.title }]
+      : [];
+    return [...projectAncestors, ...taskAncestors];
   }
 
   projectWithComputed(
