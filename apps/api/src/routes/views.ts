@@ -53,6 +53,13 @@ const weekQuerySchema = z.object({
         parsed.getUTCDate() === day
       );
     }, "Invalid calendar date"),
+  // `today` overrides the real wall-clock date used to clamp overdue
+  // attention forward. Intended for tests; production clients omit it and
+  // the server uses the actual current date.
+  today: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
 });
 
 /**
@@ -120,7 +127,7 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
         validationDetails(result.error),
       );
     }
-    const { memberId: requestedMemberId, scope, start } = result.data;
+    const { memberId: requestedMemberId, scope, start, today } = result.data;
     const memberId =
       scope === "all"
         ? undefined
@@ -128,6 +135,7 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
     if (memberId !== undefined) getMemberOrThrow(db, memberId);
     return buildWeekAgenda(Graph.load(db, start), {
       start,
+      today,
       memberId,
       scope: scope === "all" || memberId === undefined ? "all" : "mine",
       contextAvailability: (task, target) =>

@@ -49,7 +49,6 @@ const en = {
   weekPlanningDescription: "Spread work across the next seven days",
   weekPlanningHint:
     "Drag cards to a day to schedule work. The flag field changes only the deadline.",
-  calendarWeekShort: "CW",
   previousWeek: "Previous week",
   nextWeek: "Next week",
   unplanned: "Unplanned",

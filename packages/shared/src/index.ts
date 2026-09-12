@@ -716,6 +716,15 @@ export interface WeekWorkItemSummary {
   dueDate: string | null;
   externalWait: Task["externalWait"];
   placement: WeekWorkItemPlacement;
+  /**
+   * The projected/display date this item is shown under. This is the
+   * semantic source date (scheduledDate/dueDate/externalWait.revisitDate,
+   * matching `placement`) clamped forward to "today" when it has passed,
+   * so unfinished attention keeps showing up instead of disappearing off
+   * the front of the rolling window. The original source date stays
+   * untouched and visible as metadata/chips.
+   */
+  attentionDate: string | null;
   projectId: number | null;
   projectTitle: string | null;
   parentId: number | null;
@@ -739,6 +748,77 @@ export interface WeekAgenda {
   end: string;
   days: WeekAgendaDay[];
   unplanned: WeekWorkItemSummary[];
+}
+
+export interface WeekAttentionCandidates {
+  scheduledDate: string | null;
+  dueDate: string | null;
+  revisitDate: string | null;
+}
+
+export interface WeekAttentionProjection {
+  placement: Exclude<WeekWorkItemPlacement, "unplanned">;
+  attentionDate: string;
+}
+
+const weekAttentionPlacementPriority: Record<
+  Exclude<WeekWorkItemPlacement, "unplanned">,
+  number
+> = {
+  scheduled: 0,
+  revisit: 1,
+  due: 2,
+};
+
+/**
+ * Projects a work item's current single attention placement + display date
+ * from its raw source dates (scheduledDate/dueDate/externalWait.revisitDate).
+ * Any candidate date before `today` is clamped forward to `today` so
+ * unfinished attention carries forward into view instead of disappearing
+ * once its stored date falls before the visible window - without mutating
+ * the stored date itself. When multiple candidates land on the same
+ * (clamped) day, ties break scheduled > revisit > due; but a candidate that
+ * is genuinely earlier after clamping always wins, so an earlier deadline
+ * is not silently deprioritized behind a later scheduled/revisit date.
+ *
+ * Pass only the candidates that are semantically applicable for the item
+ * (e.g. a directly-waiting task should omit `scheduledDate`; a non-waiting
+ * task should omit `revisitDate`). Returns null when no candidate date
+ * exists at all.
+ */
+export function projectWeekAttention(
+  candidates: WeekAttentionCandidates,
+  today: string,
+): WeekAttentionProjection | null {
+  const options: Array<{
+    placement: Exclude<WeekWorkItemPlacement, "unplanned">;
+    raw: string;
+  }> = [];
+  if (candidates.scheduledDate) {
+    options.push({ placement: "scheduled", raw: candidates.scheduledDate });
+  }
+  if (candidates.revisitDate) {
+    options.push({ placement: "revisit", raw: candidates.revisitDate });
+  }
+  if (candidates.dueDate) {
+    options.push({ placement: "due", raw: candidates.dueDate });
+  }
+  if (options.length === 0) return null;
+
+  const projected = options.map((option) => ({
+    placement: option.placement,
+    attentionDate: option.raw < today ? today : option.raw,
+  }));
+  projected.sort((a, b) => {
+    if (a.attentionDate !== b.attentionDate) {
+      return a.attentionDate.localeCompare(b.attentionDate);
+    }
+    return (
+      weekAttentionPlacementPriority[a.placement] -
+      weekAttentionPlacementPriority[b.placement]
+    );
+  });
+  return projected[0]!;
 }
 
 export interface MoreCounts {

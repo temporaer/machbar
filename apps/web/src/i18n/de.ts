@@ -25,7 +25,6 @@ const base = {
   weekPlanningDescription: "Arbeit auf die nächsten sieben Tage verteilen",
   weekPlanningHint:
     "Ziehe Karten auf einen Tag, um sie zu planen. Das Fähnchen-Feld ändert nur die Fälligkeit.",
-  calendarWeekShort: "KW",
   previousWeek: "Vorherige Woche",
   nextWeek: "Nächste Woche",
   unplanned: "Ohne Planung",

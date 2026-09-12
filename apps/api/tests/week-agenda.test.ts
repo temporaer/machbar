@@ -89,7 +89,7 @@ describe("week planning agenda", () => {
   async function getWeek() {
     const res = await ctx.app.inject({
       method: "GET",
-      url: `/api/agenda/week?start=${monday}`,
+      url: `/api/agenda/week?start=${monday}&today=${monday}`,
     });
     expect(res.statusCode).toBe(200);
     return res.json();
@@ -112,6 +112,30 @@ describe("week planning agenda", () => {
       friday,
       "2026-09-12",
       "2026-09-13",
+    ]);
+  });
+
+  it("uses a rolling today..today+6 window, not the calendar/ISO week", async () => {
+    // Anchoring the window at a mid-week date (a Wednesday) proves this is
+    // a plain rolling range starting on the requested day, not something
+    // that snaps back to Monday.
+    const res = await ctx.app.inject({
+      method: "GET",
+      url: `/api/agenda/week?start=${wednesday}&today=${wednesday}`,
+    });
+    expect(res.statusCode).toBe(200);
+    const week = res.json();
+
+    expect(week.start).toBe(wednesday);
+    expect(week.end).toBe("2026-09-15");
+    expect(week.days.map((day: { date: string }) => day.date)).toEqual([
+      wednesday,
+      thursday,
+      friday,
+      "2026-09-12",
+      "2026-09-13",
+      "2026-09-14",
+      "2026-09-15",
     ]);
   });
 
@@ -370,7 +394,7 @@ describe("week planning agenda", () => {
     });
   });
 
-  it("uses exact dates for week placement without Today-style carry-over", async () => {
+  it("carries an overdue attention date forward to today instead of dropping it", async () => {
     const scheduled = await createTask({
       title: "Montag geplant",
       scheduledDate: monday,
@@ -381,7 +405,10 @@ describe("week planning agenda", () => {
       revisitDate: tuesday,
     });
     await createTask({ title: "Mittwoch faellig", dueDate: wednesday });
-    await createTask({ title: "Vorwoche faellig", dueDate: "2026-09-05" });
+    const overdue = await createTask({
+      title: "Vorwoche faellig",
+      dueDate: "2026-09-05",
+    });
 
     const week = await getWeek();
 
@@ -390,10 +417,143 @@ describe("week planning agenda", () => {
     expect(titles(week.days[1].items)).toContain("Dienstag nachhaken");
     expect(titles(week.days[2].items)).not.toContain("Dienstag nachhaken");
     expect(titles(week.days[2].items)).toContain("Mittwoch faellig");
-    for (const day of week.days) {
+    // The overdue due date carries forward onto today (the window's first
+    // day) instead of disappearing, and the original date stays visible.
+    expect(week.days[0].items).toContainEqual(
+      expect.objectContaining({
+        title: "Vorwoche faellig",
+        placement: "due",
+        attentionDate: monday,
+        dueDate: "2026-09-05",
+      }),
+    );
+    for (const day of week.days.slice(1)) {
       expect(titles(day.items)).not.toContain("Vorwoche faellig");
     }
+    expect(overdue.id).toBeDefined();
   });
+
+  it("carries an overdue scheduled date forward to today, preserving the original date", async () => {
+    await createTask({
+      title: "Laengst geplant",
+      scheduledDate: "2026-09-01",
+    });
+
+    const week = await getWeek();
+
+    expect(week.days[0].items).toContainEqual(
+      expect.objectContaining({
+        title: "Laengst geplant",
+        placement: "scheduled",
+        attentionDate: monday,
+        scheduledDate: "2026-09-01",
+      }),
+    );
+  });
+
+  it("carries an overdue revisit date forward to today, preserving the original date", async () => {
+    const task = await createTask({ title: "Laengst faellig zum Nachhaken" });
+    await setExternalWait(task, {
+      waitingFor: "Amt",
+      revisitDate: "2026-09-02",
+    });
+
+    const week = await getWeek();
+
+    expect(week.days[0].items).toContainEqual(
+      expect.objectContaining({
+        title: "Laengst faellig zum Nachhaken",
+        placement: "revisit",
+        attentionDate: monday,
+        externalWait: expect.objectContaining({ revisitDate: "2026-09-02" }),
+      }),
+    );
+  });
+
+  it("carries an overdue project resurface (scheduled) date forward to today", async () => {
+    await createProject({
+      title: "Laengst faelliges Projekt",
+      scheduledDate: "2026-09-01",
+    });
+
+    const week = await getWeek();
+
+    expect(week.days[0].items).toContainEqual(
+      expect.objectContaining({
+        title: "Laengst faelliges Projekt",
+        role: "story",
+        placement: "scheduled",
+        attentionDate: monday,
+        scheduledDate: "2026-09-01",
+      }),
+    );
+  });
+
+  it("places a task at its due date when due is chronologically earlier than its scheduled date", async () => {
+    await createTask({
+      title: "Frueher faellig als geplant",
+      scheduledDate: friday,
+      dueDate: wednesday,
+    });
+
+    const week = await getWeek();
+
+    expect(week.days[2].items).toContainEqual(
+      expect.objectContaining({
+        title: "Frueher faellig als geplant",
+        placement: "due",
+        attentionDate: wednesday,
+      }),
+    );
+    expect(titles(week.days[4].items)).not.toContain(
+      "Frueher faellig als geplant",
+    );
+  });
+
+  it("places a waiting task at its due date when due is chronologically earlier than its revisit date", async () => {
+    const task = await createTask({
+      title: "Frueher faellig als Nachhaken",
+      dueDate: tuesday,
+    });
+    await setExternalWait(task, {
+      waitingFor: "Anbieter",
+      revisitDate: friday,
+    });
+
+    const week = await getWeek();
+
+    expect(week.days[1].items).toContainEqual(
+      expect.objectContaining({
+        title: "Frueher faellig als Nachhaken",
+        placement: "due",
+        attentionDate: tuesday,
+      }),
+    );
+    expect(titles(week.days[4].items)).not.toContain(
+      "Frueher faellig als Nachhaken",
+    );
+  });
+
+  it("keeps a single card carrying multiple date metadata chips", async () => {
+    const task = await createTask({
+      title: "Mehrfach terminiert",
+      scheduledDate: tuesday,
+      dueDate: friday,
+    });
+
+    const week = await getWeek();
+    const occurrences = week.days.flatMap((day: { items: Array<{ id: number }> }) =>
+      day.items.filter((item) => item.id === task.id),
+    );
+
+    expect(occurrences).toHaveLength(1);
+    expect(occurrences[0]).toMatchObject({
+      placement: "scheduled",
+      scheduledDate: tuesday,
+      dueDate: friday,
+    });
+  });
+
 
   it("prefers the revisit date over the due date when both fall within the week", async () => {
     const task = await createTask({
