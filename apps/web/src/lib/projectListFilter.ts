@@ -18,6 +18,7 @@ export interface ProjectListFilterOptions {
 
 export type ProjectListClassification =
   | "active-actionable"
+  | "active-review"
   | "active-stuck"
   | "active-waiting"
   | "backlog"
@@ -73,6 +74,11 @@ export function countScopeHiddenMatches(
  * Classifies a project for the list without changing its persisted workflow
  * status. Active waiting is the narrow active state with neither a next
  * action nor a stuck reason; any active stuck reason takes precedence.
+ *
+ * `completion_review` is deliberately not "stuck": an active project with
+ * zero remaining open tasks is healthy and ready for a completion decision,
+ * not blocked. It gets its own `active-review` classification so the UI can
+ * present it distinctly from a genuine `active-stuck` blocker.
  */
 export function classifyProjectListItem(project: ProjectWithActions): ProjectListClassification {
   if (
@@ -83,6 +89,7 @@ export function classifyProjectListItem(project: ProjectWithActions): ProjectLis
     return "active-waiting";
   }
   if (project.status === "active") {
+    if (project.stuckReason === "completion_review") return "active-review";
     if (project.stuckReason != null) return "active-stuck";
     return "active-actionable";
   }
@@ -91,11 +98,12 @@ export function classifyProjectListItem(project: ProjectWithActions): ProjectLis
 
 const projectListClassificationOrder: Record<ProjectListClassification, number> = {
   "active-actionable": 0,
-  "active-stuck": 1,
-  "active-waiting": 3,
-  backlog: 4,
-  completed: 5,
-  archived: 6,
+  "active-review": 1,
+  "active-stuck": 2,
+  "active-waiting": 4,
+  backlog: 5,
+  completed: 6,
+  archived: 7,
 };
 
 function projectListSortOrder(
@@ -108,7 +116,7 @@ function projectListSortOrder(
     project.nextAction?.scheduledDate &&
     isFutureCalendarDate(project.nextAction.scheduledDate, now)
   ) {
-    return 2;
+    return 3;
   }
   return projectListClassificationOrder[classification];
 }
@@ -128,11 +136,12 @@ export function isTerminalProjectStatus(project: ProjectWithActions): boolean {
  * Projekte tab's story list. Filtering always runs before sorting so a
  * bucket never contains a story the current search/scope would hide.
  *
- * Sort buckets, in order: active & actionable, active & stuck, active with a
- * future-scheduled next action, active waiting, backlog, completed, archived.
- * Within a bucket, ties break on the backend-assigned `position`, then the
- * locale-aware title, then the id, so the order stays stable and reproducible
- * across reloads/retentions.
+ * Sort buckets, in order: active & actionable, active & ready-to-complete
+ * (`completion_review`), active & stuck, active with a future-scheduled next
+ * action, active waiting, backlog, completed, archived. Within a bucket,
+ * ties break on the backend-assigned `position`, then the locale-aware
+ * title, then the id, so the order stays stable and reproducible across
+ * reloads/retentions.
  */
 export function filterAndSortProjects(
   projects: ProjectWithActions[],

@@ -10,6 +10,7 @@ import { PlanDatesSheet } from "./PlanDatesSheet";
 import { ProjectContextsSheet } from "./ProjectContextsSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
+import { CompleteWithOpenTasksSheet } from "./CompleteWithOpenTasksSheet";
 import { useStrings } from "../lib/strings";
 import { canClearDriver } from "../lib/projectWorkflow";
 
@@ -69,6 +70,19 @@ export function ProjectWorkflowHost() {
       return (
         <CompleteWithCriteriaSheet
           story={story}
+          onClose={close}
+          onComplete={async () => {
+            await projectActions.runAction(story, "complete");
+          }}
+        />
+      );
+    case "completeWithOpenTasks":
+      // Needs the full task list, which only the fetched `ProjectDetail`
+      // carries -- the optimistic `retained` projection does not.
+      if (!fetchedProject) return null;
+      return (
+        <CompleteWithOpenTasksSheet
+          story={fetchedProject}
           onClose={close}
           onComplete={async () => {
             await projectActions.runAction(story, "complete");

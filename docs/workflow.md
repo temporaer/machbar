@@ -163,7 +163,8 @@ structure or continued state needs an intentional decision, for example:
 - an active project has no driver or useful progress path;
 - an external wait has no future revisit;
 - a dependency chain has no useful path forward;
-- all tasks are finished but the project itself has not been reviewed;
+- all tasks are finished and the project is ready for the driver to accept or
+  complete it (this is a healthy completion decision, not a stuck project);
 - active, backlog, or standalone Someday work has reached its review age.
 
 Ordinary shared tasks, missing acceptance criteria, Inbox captures, reached
@@ -215,8 +216,23 @@ Projects move through backlog, active, completed, and archived states. Machbar
 does not automatically complete a project when its tasks are done; a person
 reviews the outcome against its acceptance criteria. Criteria are optional, but
 once present they are binding: every remaining criterion must be checked before
-completion. Starting a project requires a driver plus an executable progress
+completion. If open tasks remain when completion is requested, Machbar asks the
+driver to explicitly cancel or move each one first rather than silently leaving
+inconsistent work attached to a finished project — completion stays
+outcome-based, so not every task must be Done, but nothing open is left behind
+unremarked. Starting a project requires a driver plus an executable progress
 path or intentional healthy future waiting.
+
+**Backlog** is the one reversible "later / not active" state; normal
+activation rules apply whenever a backlog project is picked back up.
+**Archived** means retired: abandoned or historical work that is not expected
+to return to activity. A completed project may still be archived. Restoring an
+archived project always returns it to backlog first — there is no direct
+archived-to-active shortcut — so the same driver/progress-path checks apply
+before it can be active again. Because completed and archived projects have no
+further forward step, they show no primary swipe action; reopening or
+restoring is a deliberate action from the status controls rather than the
+one-tap default.
 
 Deleting a project always asks explicitly what should happen to its tasks:
 keep them as standalone tasks detached from the deleted project, or delete

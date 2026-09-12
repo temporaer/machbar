@@ -273,7 +273,7 @@ export function ReviewPage() {
         return;
       case "review_completion":
         if (story) {
-          dispatchWithReturn({ type: "story.editOutcome", story }, item, issueIndex);
+          dispatchWithReturn({ type: "story.complete", story }, item, issueIndex);
           return;
         }
         openProjectPage(item, issueIndex, "completion");

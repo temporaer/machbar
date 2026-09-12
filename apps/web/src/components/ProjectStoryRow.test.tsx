@@ -3,7 +3,7 @@ import type { ReactElement } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useParams } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
-import type { ProjectStatus } from "@machbar/shared";
+import type { ProjectStatus, Task } from "@machbar/shared";
 import { IdentityProvider } from "../lib/identity";
 import { RefreshProvider } from "../lib/refresh";
 import { renderWithProviders } from "../test/testUtils";
@@ -48,6 +48,7 @@ vi.mock("../lib/api", () => ({
     updateCriterion: vi.fn(),
     reorderCriteria: vi.fn(),
     removeCriterion: vi.fn(),
+    cancelTask: vi.fn(),
   },
 }));
 
@@ -74,13 +75,15 @@ function localDateAfter(days: number): string {
 function Harness({
   story,
   variant = "card",
+  tasks = [],
 }: {
   story: ProjectWithActions;
   variant?: "compact" | "card";
+  tasks?: Task[];
 }) {
   // Mirrors `App.tsx`: the row only dispatches semantic `story.*` commands,
   // and every focused workflow they open is rendered by the single host.
-  mockedApi.getProject.mockResolvedValue({ ...story, tasks: [] });
+  mockedApi.getProject.mockResolvedValue({ ...story, tasks });
   return (
     <>
       <ul>
@@ -312,6 +315,95 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("opens the focused open-tasks reconciliation — not the structural editor — when open tasks remain", async () => {
+    const story = makeProject({
+      id: 30,
+      title: "Umzug",
+      status: "active",
+      ownerMemberId: 1,
+      openCount: 1,
+      doneCount: 1,
+    });
+    const task = makeTask({ id: 300, projectId: 30, title: "Kisten packen", status: "actionable" });
+    const { container } = renderWithProviders(<Harness story={story} tasks={[task]} />);
+    await screen.findByText("Umzug");
+
+    const lifecycle = openLifecycleRail(container);
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Offene Aufgaben klären: Umzug" });
+    // The structural editor must not open here; this is the task list, not
+    // the acceptance-criteria editor.
+    expect(within(dialog).queryByPlaceholderText("Neues Kriterium")).not.toBeInTheDocument();
+    expect(within(dialog).getByText("Kisten packen")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Projekt abschließen" })).toBeDisabled();
+    expect(mockedApi.completeProject).not.toHaveBeenCalled();
+  });
+
+  it("enables completion once the last open task is cancelled in the focused workflow", async () => {
+    const story = makeProject({
+      id: 31,
+      title: "Umzug fertig",
+      status: "active",
+      ownerMemberId: 1,
+      openCount: 1,
+      doneCount: 1,
+    });
+    const task = makeTask({ id: 310, projectId: 31, title: "Kisten packen", status: "actionable" });
+    mockedApi.completeProject.mockResolvedValue({ ...story, status: "completed" });
+    mockedApi.cancelTask.mockResolvedValue({ ...task, status: "cancelled" });
+    const { container } = renderWithProviders(<Harness story={story} tasks={[task]} />);
+    await screen.findByText("Umzug fertig");
+
+    const lifecycle = openLifecycleRail(container);
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Offene Aufgaben klären: Umzug fertig" });
+    const completeButton = within(dialog).getByRole("button", { name: "Projekt abschließen" });
+    expect(completeButton).toBeDisabled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Verwerfen" }));
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    await waitFor(() => expect(within(dialog).getByText("Keine offenen Aufgaben mehr — bereit zum Abschließen.")).toBeInTheDocument());
+    expect(completeButton).toBeEnabled();
+
+    await userEvent.click(completeButton);
+
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(31, {
+      expectedRevision: 1,
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("completes immediately when the project has no open tasks left, straight from the status rail", async () => {
+    const story = makeProject({
+      id: 32,
+      title: "Projekt ohne Reste",
+      status: "active",
+      ownerMemberId: 1,
+      openCount: 0,
+      doneCount: 3,
+    });
+    mockedApi.completeProject.mockResolvedValue({ ...story, status: "completed" });
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Projekt ohne Reste");
+
+    const lifecycle = openLifecycleRail(container);
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Abschließen" }));
+    await act(async () => {
+      await flushMicrotasks();
+    });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockedApi.completeProject).toHaveBeenCalledWith(32, {
+      expectedRevision: 1,
+    });
+    expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
+  });
+
   it("reopens a completed story", async () => {
     const story = makeProject({
       id: 22,
@@ -343,10 +435,12 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
       status: "completed",
       ownerMemberId: 1,
     });
-    renderWithProjectRoute(<Harness story={story} />);
+    const { container } = renderWithProjectRoute(<Harness story={story} />);
+    await screen.findByText("Abgeschlossen ohne nächsten Schritt");
 
+    const lifecycle = openLifecycleRail(container);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Wieder öffnen" }),
+      within(lifecycle).getByRole("button", { name: "Wieder öffnen" }),
     );
 
     expect(await screen.findByTestId("project-page")).toHaveTextContent(
@@ -385,7 +479,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     });
   });
 
-  it("activates an archived story that still has its driver", async () => {
+  it("restores an archived story to backlog from the lifecycle rail", async () => {
     const story = makeProject({
       id: 23,
       title: "Gartenhaus streichen",
@@ -393,20 +487,21 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
       ownerMemberId: 2,
       nextAction: makeTask({ projectId: 23 }),
     });
-    mockedApi.activateProject.mockResolvedValue({ ...story, status: "active" });
+    mockedApi.returnProjectToBacklog.mockResolvedValue({ ...story, status: "backlog" });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Gartenhaus streichen");
 
     const lifecycle = openLifecycleRail(container);
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Aktiv machen" }));
+    expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Auf später verschieben" }));
     await act(async () => {
       await flushMicrotasks();
     });
 
-    expect(mockedApi.activateProject).toHaveBeenCalledWith(23, {
+    expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(23, {
       expectedRevision: 1,
     });
-    expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
+    expect(screen.getByText("Auf später verschoben")).toBeInTheDocument();
   });
 
   it("never offers a transition the backend does not advertise", async () => {
@@ -480,7 +575,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
   });
 
-  it("keeps the focused driver sheet for archived activation", async () => {
+  it("restores an archived story to backlog without requiring a driver", async () => {
     const story = makeProject({
       id: 31,
       title: "Ohne Driver archived",
@@ -488,22 +583,23 @@ describe("ProjectStoryRow – activation preparation", () => {
       ownerMemberId: null,
       nextAction: makeTask({ projectId: 31 }),
     });
-    mockedApi.activateProject.mockResolvedValue({
+    mockedApi.returnProjectToBacklog.mockResolvedValue({
       ...story,
-      status: "active",
-      ownerMemberId: 2,
+      status: "backlog",
     });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Ohne Driver archived");
 
     const lifecycle = openLifecycleRail(container);
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Aktiv machen" }));
+    expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Auf später verschieben" }));
+    await act(async () => {
+      await flushMicrotasks();
+    });
 
-    expect(
-      await screen.findByRole("heading", {
-        name: "Verantwortliche Person zuweisen",
-      }),
-    ).toBeInTheDocument();
+    expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(31, {
+      expectedRevision: 1,
+    });
   });
 
   it("asks for a driver when activating via the lifecycle rail of an archived story too", async () => {
@@ -570,8 +666,8 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     const { container } = renderWithProviders(<Harness story={archived} />);
     await screen.findByText("Archivierte Geschichte");
     lifecycle = openLifecycleRail(container);
-    expect(within(lifecycle).getByRole("button", { name: "Aktiv machen" })).toBeInTheDocument();
     expect(within(lifecycle).getByRole("button", { name: "Auf später verschieben" })).toBeInTheDocument();
+    expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
 
@@ -762,8 +858,6 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
   it.each<[ProjectStatus, string, string]>([
     ["backlog", "Später / noch nicht aktiv", "Aktiv machen"],
     ["active", "Aktiv", "Abschließen"],
-    ["completed", "Abgeschlossen", "Wieder öffnen"],
-    ["archived", "Archiviert", "Aktiv machen"],
   ])(
     "shows the current status (%s) and a labelled non-gesture primary control",
     async (status, statusLabel, actionLabel) => {
@@ -782,6 +876,23 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
       fireEvent.click(kebab);
       expect(kebab).toHaveAttribute("aria-expanded", "true");
       expect(screen.getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
+    },
+  );
+
+  it.each<[ProjectStatus, string]>([
+    ["completed", "Abgeschlossen"],
+    ["archived", "Archiviert"],
+  ])(
+    "shows the current status (%s) with no primary/forward action — reopen/restore live in the lifecycle rail",
+    async (status, statusLabel) => {
+      const story = makeProject({ id: 50, title: `Status ${status}`, status, ownerMemberId: 1 });
+      const { container } = renderWithProviders(<Harness story={story} />);
+      await screen.findByText(`Status ${status}`);
+
+      expect(container.querySelector(".story-row-status-badge")).toHaveTextContent(statusLabel);
+      const primary = container.querySelector(".story-row-primary") as HTMLElement;
+      expect(primary).toHaveAttribute("aria-label", "Workflow-Schritt");
+      expect(primary).toBeDisabled();
     },
   );
 
@@ -1054,11 +1165,17 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
 
   it("keeps a transitioned row visible for the retention window and disables it only while the request is in flight", async () => {
     vi.useFakeTimers();
-    const story = makeProject({ id: 60, title: "Retention", status: "active", ownerMemberId: 1 });
-    let resolveComplete: (value: ProjectWithActions) => void = () => {};
-    mockedApi.completeProject.mockReturnValue(
+    const story = makeProject({
+      id: 60,
+      title: "Retention",
+      status: "backlog",
+      ownerMemberId: 1,
+      nextAction: makeTask({ projectId: 60 }),
+    });
+    let resolveActivate: (value: ProjectWithActions) => void = () => {};
+    mockedApi.activateProject.mockReturnValue(
       new Promise<ProjectWithActions>((resolve) => {
-        resolveComplete = resolve;
+        resolveActivate = resolve;
       }),
     );
     const { container } = renderWithProviders(<Harness story={story} />);
@@ -1072,11 +1189,11 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
     // In flight: optimistic, muted — and locked so the same story cannot be
     // mutated twice concurrently.
     expect(container.querySelector(".story-row-content.retained")).toBeInTheDocument();
-    expect(screen.getByText("Abgeschlossen")).toBeInTheDocument();
+    expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
     expect(container.querySelector(".story-row-primary")).toBeDisabled();
 
     await act(async () => {
-      resolveComplete({ ...story, status: "completed", availableActions: ["reopen", "archive"] });
+      resolveActivate({ ...story, status: "active", availableActions: ["return_to_backlog", "complete", "archive"] });
       await flushMicrotasks();
     });
 
@@ -1098,7 +1215,7 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
     expect(container.querySelector(".story-row-content.retained")).not.toBeInTheDocument();
   });
 
-  it("lets the workflow be cycled immediately: complete, then reopen the very same retained row", async () => {
+  it("lets the workflow be cycled immediately: complete, then reopen the very same retained row via the lifecycle rail", async () => {
     const story = makeProject({
       id: 61,
       title: "Zyklus",
@@ -1123,12 +1240,11 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
       expectedRevision: 1,
     });
 
-    // The retained row already advertises the *next* step of the cycle.
-    await waitFor(() =>
-      expect(container.querySelector(".story-row-primary")).toHaveAttribute("aria-label", "Wieder öffnen"),
-    );
-
-    fireEvent.click(container.querySelector(".story-row-primary") as HTMLElement);
+    // Completed is terminal: no primary/forward action — reopen lives in the
+    // lifecycle rail instead.
+    await waitFor(() => expect(container.querySelector(".story-row-primary")).toBeDisabled());
+    const lifecycle = openLifecycleRail(container);
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Wieder öffnen" }));
     await act(async () => {
       await flushMicrotasks();
     });

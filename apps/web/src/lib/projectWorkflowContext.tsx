@@ -23,6 +23,12 @@ import type { ReactNode } from "react";
  * (`CompleteWithCriteriaSheet`), not the structural `editOutcome` editor, and
  * commits the same `story.complete` transition once every criterion is
  * checked.
+ *
+ * `completeWithOpenTasks` is a further continuation for `story.complete`:
+ * when criteria are satisfied (or absent) but open child tasks remain, it
+ * opens `CompleteWithOpenTasksSheet` so the user explicitly cancels or moves
+ * the remaining open work — completion never silently leaves that
+ * inconsistency behind — then commits the same `story.complete` transition.
  */
 export type ProjectWorkflowKind =
   | "defer"
@@ -33,7 +39,8 @@ export type ProjectWorkflowKind =
   | "contexts"
   | "activateWithDriver"
   | "reopenWithDriver"
-  | "completeWithCriteria";
+  | "completeWithCriteria"
+  | "completeWithOpenTasks";
 
 export interface ProjectWorkflowState {
   kind: ProjectWorkflowKind;

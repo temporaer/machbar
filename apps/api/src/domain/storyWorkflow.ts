@@ -1,6 +1,7 @@
 /**
  * Story lifecycle transitions (`backlog -> active -> done`, with `archived`
- * escapable from any point) and the review-acknowledgement timestamp.
+ * a terminal retirement reachable from any non-archived point) and the
+ * review-acknowledgement timestamp.
  */
 import { and, eq, or, sql } from "drizzle-orm";
 import type { ProjectStatus } from "@machbar/shared";
@@ -26,12 +27,14 @@ import {
 // Explicit workflow transitions
 // ---------------------------------------------------------------------------
 //
-// A story moves through `backlog -> active -> completed`, with `archived`
-// reachable (and, symmetrically, escapable back into `backlog`/`active`)
-// from any point. Every transition is its own small, transactional
-// function; `availableProjectWorkflowActions` is the single source of
-// truth both for validating a requested transition and for advertising
-// which actions are currently legal in API responses.
+// A story moves through `backlog -> active -> completed`. `archived` is a
+// terminal retirement state reachable from any non-archived status, but it
+// is not itself another parking state: the only way out is an explicit
+// `return_to_backlog`, after which normal activation rules apply again.
+// There is no direct `archived -> active` transition. Every transition is
+// its own small, transactional function; `availableProjectWorkflowActions`
+// is the single source of truth both for validating a requested transition
+// and for advertising which actions are currently legal in API responses.
 
 export type ProjectWorkflowAction =
   | "activate"
@@ -44,7 +47,7 @@ const workflowActionsByStatus: Record<ProjectStatus, ProjectWorkflowAction[]> = 
   backlog: ["activate", "archive"],
   active: ["return_to_backlog", "complete", "archive"],
   completed: ["reopen", "archive"],
-  archived: ["activate", "return_to_backlog"],
+  archived: ["return_to_backlog"],
 };
 
 export function availableProjectWorkflowActions(
@@ -78,10 +81,11 @@ export interface ActivateProjectInput {
 }
 
 /**
- * `backlog`/`archived` -> `active`. A story can only ever become active
- * once it has a driver: either already set on the project, or supplied
- * here in the same call (which also lets activation double as "assign the
- * driver and start work" in one step).
+ * `backlog` -> `active`. A story can only ever become active once it has a
+ * driver: either already set on the project, or supplied here in the same
+ * call (which also lets activation double as "assign the driver and start
+ * work" in one step). An archived story cannot activate directly; it must
+ * first `return_to_backlog`.
  */
 export function activateProject(
   db: Db,

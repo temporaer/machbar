@@ -31,6 +31,7 @@ const base = {
   unplanned: "Ohne Planung",
   blocked: "Blockiert",
   stuck: "Festgefahren",
+  readyToComplete: "Bereit zum Abschließen",
   plannedToday: "Für heute geplant",
   overdue: "Überfällig",
   dueToday: "Heute fällig",
@@ -167,6 +168,7 @@ const extra = {
   dateInputPlaceholder: "z. B. morgen, Freitag, KW 36, 2w",
   invalidDate: "Datum nicht erkannt",
   stuckProjectHeading: "Dieses Projekt ist festgefahren",
+  readyToCompleteHeading: "Bereit für eine Entscheidung",
   stuckRepairLabels: {
     no_next_action:
       "Lege einen nächsten Schritt fest: Wische eine Aufgabe im Eingang nach rechts, um sie als Machbar zu markieren.",
@@ -645,6 +647,11 @@ const extra = {
   completeWithCriteriaTitle: "Projekt abschließen",
   completeWithCriteriaHint: "Alle Kriterien müssen abgehakt sein, bevor das Projekt abgeschlossen werden kann.",
   completeProjectAction: "Projekt abschließen",
+  completeWithOpenTasksTitle: "Offene Aufgaben klären",
+  completeWithOpenTasksHint:
+    "Verschiebe oder verwirf jede verbleibende offene Aufgabe, bevor das Projekt abgeschlossen wird.",
+  completeWithOpenTasksResolved: "Keine offenen Aufgaben mehr — bereit zum Abschließen.",
+  cancelTask: "Verwerfen",
   planDates: "Wiedervorlegen",
   planDatesTitle: "Wiedervorlage & Fälligkeit",
   taskSummary: "Aufgaben",

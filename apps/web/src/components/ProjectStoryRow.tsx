@@ -40,14 +40,16 @@ import { WorkItemCommandRail } from "./WorkItemCommandRail";
 
 /**
  * Semantic accent driving the row's status badge, left-edge stripe, primary
- * swipe background and dedicated primary button: six distinguishable looks
- * instead of one blanket "green means go" treatment, so an active story that
- * is waiting or stuck does not read as actionable progress.
+ * swipe background and dedicated primary button: seven distinguishable
+ * looks instead of one blanket "green means go" treatment, so an active
+ * story that is waiting or stuck does not read as actionable progress, and
+ * a healthy "ready to complete" project does not read as a genuine blocker.
  */
-type StatusAccent = "backlog" | "active" | "waiting" | "stuck" | "completed" | "archived";
+type StatusAccent = "backlog" | "active" | "waiting" | "review" | "stuck" | "completed" | "archived";
 
 const statusAccentByClassification: Record<ProjectListClassification, StatusAccent> = {
   "active-actionable": "active",
+  "active-review": "review",
   "active-stuck": "stuck",
   "active-waiting": "waiting",
   backlog: "backlog",
@@ -285,7 +287,13 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
             <span className="sr-only">{strings.projectStatus}: </span>
             <span className={`story-row-status-badge story-row-status-badge--${accent}`}>{statusLabel}</span>
             {story.stuckReason ? (
-              <span className="badge badge-stuck">{strings.stuckReasonLabels[story.stuckReason]}</span>
+              <span
+                className={`badge ${
+                  story.stuckReason === "completion_review" ? "badge-review" : "badge-stuck"
+                }`}
+              >
+                {strings.stuckReasonLabels[story.stuckReason]}
+              </span>
             ) : null}
           </div>
           {variant !== "card" ||

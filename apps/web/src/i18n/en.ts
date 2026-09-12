@@ -55,6 +55,7 @@ const en = {
   unplanned: "Unplanned",
   blocked: "Blocked",
   stuck: "Stuck",
+  readyToComplete: "Ready to complete",
   plannedToday: "Planned for today",
   overdue: "Overdue",
   dueToday: "Due today",
@@ -189,6 +190,7 @@ const en = {
   dateInputPlaceholder: "e.g. tomorrow, Friday, week 36, 2w",
   invalidDate: "Date not recognized",
   stuckProjectHeading: "This project is stuck",
+  readyToCompleteHeading: "Ready for a decision",
   stuckRepairLabels: {
     no_next_action:
       "Choose a next step: swipe an inbox task right to mark it as ready.",
@@ -651,6 +653,11 @@ const en = {
   completeWithCriteriaTitle: "Complete project",
   completeWithCriteriaHint: "All criteria must be checked before the project can be completed.",
   completeProjectAction: "Complete project",
+  completeWithOpenTasksTitle: "Resolve open tasks",
+  completeWithOpenTasksHint:
+    "Move or cancel every remaining open task before completing the project.",
+  completeWithOpenTasksResolved: "No open tasks left — ready to complete.",
+  cancelTask: "Cancel",
   planDates: "Set revisit",
   planDatesTitle: "Revisit & deadline",
   taskSummary: "Tasks",

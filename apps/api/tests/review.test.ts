@@ -697,7 +697,7 @@ describe("review queue", () => {
     ]);
   });
 
-  it("flags a backlog project that already carries actionable/scheduled/due open work", () => {
+  it("flags a backlog project that already carries actionable open work, not merely scheduled/due dates", () => {
     const actionableWork = ctx.handle.db
       .insert(schema.workItems)
       .values({ role: "story", status: "backlog", title: "Backlog with actionable work" })
@@ -708,6 +708,8 @@ describe("review queue", () => {
       .values({ role: "task", status: "active", parentId: actionableWork.id, title: "Do now" })
       .run();
 
+    // Backlog dates are intentional planning/constraint signals (Week already
+    // surfaces them) and must not by themselves flag repair debt.
     const scheduledWork = ctx.handle.db
       .insert(schema.workItems)
       .values({ role: "story", status: "backlog", title: "Backlog with scheduled task" })
@@ -753,12 +755,10 @@ describe("review queue", () => {
     const flagged = reviewItems().filter(
       (item) => item.reason === "backlog_planned_work",
     );
-    expect(flagged.map((item) => item.entityId).sort()).toEqual(
-      [actionableWork.id, scheduledWork.id, dueWork.id].sort(),
-    );
-    expect(flagged.some((item) => item.entityId === cleanBacklog.id)).toBe(
-      false,
-    );
+    expect(flagged.map((item) => item.entityId)).toEqual([actionableWork.id]);
+    expect(flagged.some((item) => item.entityId === scheduledWork.id)).toBe(false);
+    expect(flagged.some((item) => item.entityId === dueWork.id)).toBe(false);
+    expect(flagged.some((item) => item.entityId === cleanBacklog.id)).toBe(false);
   });
 
   it("flags a task scheduled or due before its project's resurface date", () => {

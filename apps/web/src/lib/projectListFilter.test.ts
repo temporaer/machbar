@@ -30,7 +30,6 @@ describe("classifyProjectListItem", () => {
   it.each([
     ["blocked active project", "blocked_without_clear_path", makeTask()],
     ["active project with no task", "no_next_action", null],
-    ["active project awaiting completion review", "completion_review", null],
   ] as const)("classifies a %s as stuck rather than waiting", (_label, stuckReason, nextAction) => {
     const project = makeProject({
       status: "active",
@@ -39,6 +38,16 @@ describe("classifyProjectListItem", () => {
     });
 
     expect(classifyProjectListItem(project)).toBe("active-stuck");
+  });
+
+  it("classifies an active project awaiting completion review as ready-to-complete, not stuck", () => {
+    const project = makeProject({
+      status: "active",
+      nextAction: null,
+      stuckReason: "completion_review",
+    });
+
+    expect(classifyProjectListItem(project)).toBe("active-review");
   });
 
   it("only classifies an active project with no next action and no stuck reason as active waiting", () => {
@@ -93,6 +102,41 @@ describe("filterAndSortProjects", () => {
     );
 
     expect(result.map((p) => p.id)).toEqual([6, 5, 4, 3, 2, 1]);
+  });
+
+  it("sorts active-review (ready-to-complete) between actionable and stuck active work", () => {
+    const activeStuck = makeProject({
+      id: 1,
+      title: "Festgefahren",
+      status: "active",
+      position: 0,
+      nextAction: null,
+      stuckReason: "no_next_action",
+    });
+    const activeReview = makeProject({
+      id: 2,
+      title: "Bereit zum Abschließen",
+      status: "active",
+      position: 0,
+      nextAction: null,
+      stuckReason: "completion_review",
+    });
+    const activeActionable = makeProject({
+      id: 3,
+      title: "Läuft",
+      status: "active",
+      position: 0,
+      nextAction: makeTask(),
+      stuckReason: null,
+    });
+
+    const result = filterAndSortProjects([activeStuck, activeActionable, activeReview], {
+      query: "",
+      scope: "all",
+      currentMemberId: null,
+    });
+
+    expect(result.map((p) => p.id)).toEqual([3, 2, 1]);
   });
 
   it("sorts future-scheduled next actions to the bottom of the active section", () => {
