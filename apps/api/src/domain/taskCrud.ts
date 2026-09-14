@@ -384,12 +384,21 @@ function insertTask(
   } else {
     scope = input.scope ?? "household";
   }
+  const isRoot = parentTaskId === null && projectId === null;
   // A "work" item is always owner-only; a root item with nobody set as
   // owner would be invisible to everyone including whoever just created
-  // it, so default the owner to the creator when none was given explicitly.
-  const ownerMemberId =
-    input.ownerMemberId ??
-    (scope === "work" ? input.createdByMemberId ?? null : null);
+  // it, so default the owner to the creator when none was given
+  // explicitly, and mark it "explicit" so effective-ownership derivations
+  // (which a root task's default "inherit" mode would otherwise resolve
+  // to nobody) actually see it.
+  const autoAssignedOwner =
+    isRoot && scope === "work" && input.ownerMemberId === undefined
+      ? input.createdByMemberId ?? null
+      : null;
+  const ownerMemberId = input.ownerMemberId ?? autoAssignedOwner;
+  const ownerInheritanceMode =
+    input.ownerInheritanceMode ??
+    (autoAssignedOwner !== null ? "explicit" : "inherit");
 
   const position =
     positionOverride ?? nextPositionForGroup(db, parentTaskId, projectId);
@@ -428,7 +437,7 @@ function insertTask(
       status: taskStatusToStored(status),
       needsClarification: status === "captured",
       ownerMemberId,
-      ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
+      ownerInheritanceMode,
       physicalContextInheritanceMode: input.contextInheritanceMode ?? "inherit",
       createdByMemberId: input.createdByMemberId ?? null,
       scope,
@@ -708,6 +717,10 @@ export interface UpdateTaskInput {
   ownerMemberId?: number | null;
   ownerInheritanceMode?: InheritanceMode;
   contextInheritanceMode?: InheritanceMode;
+  /** Only legal on a root task (no parent/project); cascades to the whole
+   * subtree. Converting to "work" auto-assigns the acting member as owner
+   * when no owner is set, since a work item is always owner-only. */
+  scope?: WorkItemScope;
   dueDate?: string | null;
   scheduledDate?: string | null;
   priority?: number | null;
@@ -886,6 +899,44 @@ export function updateTask(
       changedFields.push("contextInheritanceMode");
       patch.physicalContextInheritanceMode = input.contextInheritanceMode;
     }
+    if (input.scope !== undefined && input.scope !== currentTask.scope) {
+      if (currentTask.parentTaskId !== null || currentTask.projectId !== null) {
+        throw AppError.conflict(
+          "scope_edit_root_only",
+          "Only a root task's scope can be changed; it always cascades to the whole subtree.",
+          { taskId: id },
+        );
+      }
+      patch.scope = input.scope;
+      changedFields.push("scope");
+      // A "work" item is always owner-only; default the owner to the
+      // acting member if converting to "work" leaves nobody owning it,
+      // and mark it "explicit" so effective-ownership derivations (which
+      // "inherit" with no parent would otherwise resolve to nobody)
+      // actually see it.
+      const actingMemberId = actor(context);
+      if (
+        input.scope === "work" &&
+        actingMemberId !== null &&
+        (patch.ownerMemberId !== undefined
+          ? patch.ownerMemberId
+          : currentTask.ownerMemberId) === null
+      ) {
+        patch.ownerMemberId = actingMemberId;
+        if (!changedFields.includes("ownerMemberId")) {
+          changedFields.push("ownerMemberId");
+        }
+        if (
+          input.ownerInheritanceMode === undefined &&
+          currentTask.ownerInheritanceMode !== "explicit"
+        ) {
+          patch.ownerInheritanceMode = "explicit";
+          if (!changedFields.includes("ownerInheritanceMode")) {
+            changedFields.push("ownerInheritanceMode");
+          }
+        }
+      }
+    }
     if (recurrence.enabled) {
       if (recurrence.dueDate !== currentTask.dueDate) {
         patch.dueDate = recurrence.dueDate;
@@ -1007,6 +1058,15 @@ export function updateTask(
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = nowIso();
       tx.update(schema.workItems).set(patch).where(eq(schema.workItems.id, id)).run();
+    }
+    if (patch.scope !== undefined) {
+      const descendantIds = repoGetDescendantIds(txDb, id);
+      if (descendantIds.length > 0) {
+        tx.update(schema.workItems)
+          .set({ scope: patch.scope, updatedAt: nowIso() })
+          .where(inArray(schema.workItems.id, descendantIds))
+          .run();
+      }
     }
     if (removingExternalWait) {
       tx.delete(schema.taskExternalWaits)

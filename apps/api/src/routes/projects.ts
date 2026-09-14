@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
@@ -51,8 +51,15 @@ function parseId(raw: string): number {
   return id;
 }
 
-function projectOrThrow(db: Db, id: number) {
-  const graph = Graph.load(db);
+// See tasks.ts's identical helper: the authenticated member (or the
+// activity actor) is the viewer used to hide other members' "work"-scope
+// items, while still letting an owner's own items round-trip.
+function viewerMemberId(request: FastifyRequest): number | undefined {
+  return request.authMember?.id ?? request.activityActor?.id ?? undefined;
+}
+
+function projectOrThrow(db: Db, id: number, viewerMemberId?: number) {
+  const graph = Graph.load(db, undefined, viewerMemberId);
   const project = graph.projectWithComputed(id);
   if (!project) {
     throw AppError.notFound(
@@ -69,14 +76,14 @@ function projectWithIssues(graph: Graph, id: number) {
 }
 
 export function registerProjectRoutes(app: FastifyInstance, db: Db) {
-  app.get("/api/projects", async () => {
-    const graph = Graph.load(db);
+  app.get("/api/projects", async (request) => {
+    const graph = Graph.load(db, undefined, viewerMemberId(request));
     return graph.listProjectsWithComputed();
   });
 
   app.get<{ Params: { id: string } }>("/api/projects/:id", async (request) => {
     const id = parseId(request.params.id);
-    const { graph, project } = projectOrThrow(db, id);
+    const { graph, project } = projectOrThrow(db, id, viewerMemberId(request));
     return { ...project, tasks: graph.rootsByProject.get(id) ?? [] };
   });
 
@@ -85,7 +92,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     const project = createProject(db, body, {
       actorMemberId: request.activityActor?.id ?? null,
     });
-    const graph = Graph.load(db);
+    const graph = Graph.load(db, undefined, viewerMemberId(request));
     reply.status(201);
     return projectWithIssues(graph, project.id);
   });
@@ -96,7 +103,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     updateProject(db, id, body, {
       actorMemberId: request.activityActor?.id ?? null,
     });
-    const graph = Graph.load(db);
+    const graph = Graph.load(db, undefined, viewerMemberId(request));
     return projectWithIssues(graph, id);
   });
 
@@ -108,7 +115,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       appendProjectNotes(db, id, body.content, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
     },
   );
@@ -142,7 +149,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       activateProject(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
     },
   );
@@ -158,7 +165,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null },
         body.expectedRevision,
       );
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
     },
   );
@@ -174,7 +181,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null },
         body.expectedRevision,
       );
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
     },
   );
@@ -191,7 +198,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
         body.expectedRevision,
         body.ownerMemberId,
       );
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
     },
   );
@@ -207,7 +214,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null },
         body.expectedRevision,
       );
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
     },
   );
@@ -220,7 +227,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const task = convertStoryToTask(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       reply.status(201);
       return graph.allTasks().find((t) => t.id === task.id) ?? null;
     },
@@ -236,7 +243,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       addCriterion(db, id, body.text, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       reply.status(201);
       return projectWithIssues(graph, id);
     },
@@ -248,7 +255,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       const id = parseId(request.params.id);
       const body = parseOrThrow(reorderCriteriaSchema, request.body);
       reorderCriteria(db, id, body.orderedCriterionIds);
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
     },
   );
@@ -262,7 +269,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       updateCriterionText(db, id, criterionId, body.text, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
     },
   );
@@ -276,7 +283,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       setCriterionChecked(db, id, criterionId, body.checked, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
     },
   );
@@ -289,7 +296,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       removeCriterion(db, id, criterionId, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);
     },
   );
@@ -302,7 +309,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
       acknowledgeProjectReview(db, id, body.expectedRevision, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      return projectWithIssues(Graph.load(db), id);
+      return projectWithIssues(Graph.load(db, undefined, viewerMemberId(request)), id);
     },
   );
 }

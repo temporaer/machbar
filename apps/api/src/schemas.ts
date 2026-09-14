@@ -121,6 +121,9 @@ export const createTaskSchema = z.object({
   ownerInheritanceMode: z.enum(inheritanceModes).optional(),
   contextInheritanceMode: z.enum(inheritanceModes).optional(),
   createdByMemberId: z.number().int().nullable().optional(),
+  /** Only meaningful for a root task (no parent/project); a child/
+   * successor always inherits its parent's scope regardless. */
+  scope: z.enum(workItemScopes).optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   priority: z.number().int().nullable().optional(),
@@ -145,6 +148,7 @@ export const updateTaskSchema = z.object({
   ownerMemberId: z.number().int().nullable().optional(),
   ownerInheritanceMode: z.enum(inheritanceModes).optional(),
   contextInheritanceMode: z.enum(inheritanceModes).optional(),
+  scope: z.enum(workItemScopes).optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   priority: z.number().int().nullable().optional(),

@@ -34,7 +34,8 @@ function isWeekDatedTask(
   if (
     task.status !== "actionable" ||
     task.needsClarification ||
-    !selection.matchesOwner(task)
+    !selection.matchesOwner(task) ||
+    !selection.matchesScope(task)
   ) {
     return false;
   }
@@ -146,7 +147,7 @@ function storySummary(
 export interface BuildWeekAgendaOptions {
   start: string;
   memberId?: number;
-  scope?: "mine" | "all";
+  scope?: "mine" | "all" | "work";
   today?: string;
   contextAvailability?: (
     task: TaskRecord,
@@ -198,7 +199,11 @@ export function buildWeekAgenda(
   }
 
   for (const story of graph.listProjectsWithComputed()) {
-    if (!isOpenStory(story) || !selection.matchesOwnerId(story.ownerMemberId)) {
+    if (
+      !isOpenStory(story) ||
+      !selection.matchesOwnerId(story.ownerMemberId) ||
+      !selection.matchesScope(story)
+    ) {
       continue;
     }
     const projection = projectWeekAttention(

@@ -11,7 +11,11 @@ export function registerSearchRoutes(app: FastifyInstance, db: Db) {
       code: "search_query_invalid",
       message: "The search query parameters are invalid.",
     });
-    const graph = Graph.load(db);
+    const graph = Graph.load(
+      db,
+      undefined,
+      request.authMember?.id ?? request.activityActor?.id ?? undefined,
+    );
     return searchTasks(graph, query);
   });
 }

@@ -17,7 +17,7 @@ import {
 
 const agendaQuerySchema = z.object({
   memberId: z.coerce.number().int().positive().optional(),
-  scope: z.enum(["mine", "all"]).optional(),
+  scope: z.enum(["mine", "all", "work"]).optional(),
   date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -35,12 +35,12 @@ const agendaQuerySchema = z.object({
 
 const waitingQuerySchema = z.object({
   memberId: z.coerce.number().int().positive().optional(),
-  scope: z.enum(["mine", "all"]).optional(),
+  scope: z.enum(["mine", "all", "work"]).optional(),
 });
 
 const weekQuerySchema = z.object({
   memberId: z.coerce.number().int().positive().optional(),
-  scope: z.enum(["mine", "all"]).optional(),
+  scope: z.enum(["mine", "all", "work"]).optional(),
   start: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -83,14 +83,17 @@ function parseAgendaQuery(query: unknown): z.infer<typeof agendaQuerySchema> {
 
 export function registerViewRoutes(app: FastifyInstance, db: Db) {
   app.get("/api/views/more-counts", async () => {
-    const graph = Graph.load(db);
+    // Deliberately household-only: Review has no scope toggle, so pass an
+    // explicit (always-absent) viewer to keep every "work" item excluded
+    // rather than defaulting to `Graph.load`'s unrestricted internal mode.
+    const graph = Graph.load(db, undefined, undefined);
     return {
       review: buildReviewItems(graph).length,
     };
   });
 
   app.get("/api/review", async () => {
-    return buildReviewItems(Graph.load(db));
+    return buildReviewItems(Graph.load(db, undefined, undefined));
   });
 
   app.get("/api/agenda/today", async (request) => {
@@ -99,18 +102,23 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       scope,
       date,
     } = parseAgendaQuery(request.query);
-    const memberId =
-      scope === "all"
-        ? undefined
-        : request.authMember?.id ?? requestedMemberId;
+    const viewerMemberId =
+      request.authMember?.id ?? requestedMemberId ?? request.activityActor?.id;
+    if (scope === "work" && viewerMemberId === undefined) {
+      throw AppError.badRequest(
+        "agenda_query_invalid",
+        "The work scope requires a known member.",
+      );
+    }
+    const memberId = scope === "all" ? undefined : viewerMemberId;
     if (memberId !== undefined) {
       getMemberOrThrow(db, memberId);
     }
-    const graph = Graph.load(db);
+    const graph = Graph.load(db, undefined, viewerMemberId);
     return buildAgenda(graph, {
       memberId,
       today: date,
-      scope: scope === "all" || memberId === undefined ? "all" : "mine",
+      scope: scope === "work" ? "work" : memberId === undefined ? "all" : "mine",
       contextAvailability: (task, target) =>
         target === "household"
           ? contextAvailabilityForHousehold(db, task.effectiveContexts)
@@ -128,16 +136,21 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       );
     }
     const { memberId: requestedMemberId, scope, start, today } = result.data;
-    const memberId =
-      scope === "all"
-        ? undefined
-        : request.authMember?.id ?? requestedMemberId;
+    const viewerMemberId =
+      request.authMember?.id ?? requestedMemberId ?? request.activityActor?.id;
+    if (scope === "work" && viewerMemberId === undefined) {
+      throw AppError.badRequest(
+        "agenda_query_invalid",
+        "The work scope requires a known member.",
+      );
+    }
+    const memberId = scope === "all" ? undefined : viewerMemberId;
     if (memberId !== undefined) getMemberOrThrow(db, memberId);
-    return buildWeekAgenda(Graph.load(db, start), {
+    return buildWeekAgenda(Graph.load(db, start, viewerMemberId), {
       start,
       today,
       memberId,
-      scope: scope === "all" || memberId === undefined ? "all" : "mine",
+      scope: scope === "work" ? "work" : memberId === undefined ? "all" : "mine",
       contextAvailability: (task, target) =>
         target === "household"
           ? contextAvailabilityForHousehold(db, task.effectiveContexts)
@@ -146,7 +159,8 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
   });
 
   app.get("/api/inbox", async () => {
-    const graph = Graph.load(db);
+    // Deliberately household-only, matching Review (see its comment above).
+    const graph = Graph.load(db, undefined, undefined);
     const projectStatusById = new Map(
       [...graph.projectsById.values()].map((project) => [
         project.id,
@@ -186,14 +200,25 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
         validationDetails(parsed.error),
       );
     }
-    const memberId =
-      parsed.data.scope === "all"
-        ? undefined
-        : request.authMember?.id ?? parsed.data.memberId;
+    const viewerMemberId =
+      request.authMember?.id ??
+      parsed.data.memberId ??
+      request.activityActor?.id;
+    if (parsed.data.scope === "work" && viewerMemberId === undefined) {
+      throw AppError.badRequest(
+        "waiting_query_invalid",
+        "The work scope requires a known member.",
+      );
+    }
+    const memberId = parsed.data.scope === "all" ? undefined : viewerMemberId;
     if (memberId !== undefined) getMemberOrThrow(db, memberId);
     const scope =
-      parsed.data.scope === "all" || memberId === undefined ? "all" : "mine";
-    return buildWaitingEntries(Graph.load(db), {
+      parsed.data.scope === "work"
+        ? "work"
+        : memberId === undefined
+          ? "all"
+          : "mine";
+    return buildWaitingEntries(Graph.load(db, undefined, viewerMemberId), {
       memberId,
       scope,
       contextAvailability: (task, target) =>

@@ -8,17 +8,17 @@ import { isTaskInWorkingSystem } from "./workEligibility.js";
 
 export interface BuildWaitingOptions {
   memberId?: number;
-  scope: "mine" | "all";
+  scope: "mine" | "all" | "work";
   contextAvailability: (
     task: TaskRecord,
     target: number | "household",
   ) => ContextAvailability;
 }
 
-function matchesScope(
+function matchesOwnerScope(
   task: TaskRecord,
   memberId: number | undefined,
-  scope: "mine" | "all",
+  scope: "mine" | "all" | "work",
 ): boolean {
   return (
     scope === "all" ||
@@ -26,6 +26,15 @@ function matchesScope(
     task.effectiveOwnerId === null ||
     task.effectiveOwnerId === memberId
   );
+}
+
+// Household views ("mine"/"all") never show work items, even the viewer's
+// own; the "work" view shows only work items.
+function matchesItemScope(
+  task: TaskRecord,
+  scope: "mine" | "all" | "work",
+): boolean {
+  return scope === "work" ? task.scope === "work" : task.scope !== "work";
 }
 
 export function buildWaitingEntries(
@@ -45,7 +54,8 @@ export function buildWaitingEntries(
       (task) =>
         task.status === "actionable" &&
         isTaskInWorkingSystem(task, projectStatusById) &&
-        matchesScope(task, options.memberId, options.scope),
+        matchesOwnerScope(task, options.memberId, options.scope) &&
+        matchesItemScope(task, options.scope),
     )
     .flatMap((task): WaitingEntry[] => {
       const reasons: WaitingReason[] = [];
@@ -58,7 +68,8 @@ export function buildWaitingEntries(
       } else if (task.executable && task.effectiveContexts.length > 0) {
         const target =
           task.effectiveOwnerId ??
-          (options.scope === "mine" && options.memberId !== undefined
+          ((options.scope === "mine" || options.scope === "work") &&
+          options.memberId !== undefined
             ? options.memberId
             : "household");
         const availability = options.contextAvailability(task, target);

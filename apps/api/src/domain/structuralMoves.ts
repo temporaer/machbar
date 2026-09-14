@@ -123,8 +123,25 @@ export function moveTask(
         );
       }
       newProjectId = newParent.projectId;
+      if (newParent.scope !== task.scope) {
+        throw AppError.conflict(
+          "scope_mismatch",
+          "A task cannot be moved across household/work scope.",
+          { taskId, parentTaskId: newParentTaskId },
+        );
+      }
     } else {
       newProjectId = "projectId" in input ? input.projectId ?? null : task.projectId;
+      if (newProjectId !== null && newProjectId !== task.projectId) {
+        const newProject = getProjectOrThrow(txDb, newProjectId);
+        if (newProject.scope !== task.scope) {
+          throw AppError.conflict(
+            "scope_mismatch",
+            "A task cannot be moved across household/work scope.",
+            { taskId, projectId: newProjectId },
+          );
+        }
+      }
     }
     if (
       task.status === "captured" &&

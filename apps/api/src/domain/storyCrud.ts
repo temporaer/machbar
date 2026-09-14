@@ -197,6 +197,10 @@ export interface UpdateProjectInput {
   title?: string;
   notes?: string;
   ownerMemberId?: number | null;
+  /** Only legal on a root project (no `parentId`); cascades to the whole
+   * subtree. Converting to "work" auto-assigns the acting member as owner
+   * when no owner is set, since a work item is always owner-only. */
+  scope?: WorkItemScope;
   dueDate?: string | null;
   scheduledDate?: string | null;
   position?: number;
@@ -275,6 +279,30 @@ export function updateProject(
     if (input.position !== undefined && input.position !== project.position) {
       patch.position = input.position;
     }
+    if (input.scope !== undefined && input.scope !== project.scope) {
+      if (project.parentId !== null) {
+        throw AppError.conflict(
+          "scope_edit_root_only",
+          "Only a root project's scope can be changed; it always cascades to the whole subtree.",
+          { projectId: id },
+        );
+      }
+      patch.scope = input.scope;
+      changedFields.push("scope");
+      // A "work" project is always owner-only; default the owner to the
+      // acting member if converting to "work" leaves nobody owning it.
+      if (
+        input.scope === "work" &&
+        (patch.ownerMemberId !== undefined
+          ? patch.ownerMemberId
+          : project.ownerMemberId) === null
+      ) {
+        patch.ownerMemberId = actor(context);
+        if (!changedFields.includes("ownerMemberId")) {
+          changedFields.push("ownerMemberId");
+        }
+      }
+    }
 
     const existingTagIds = sortedIds(
       tx
@@ -305,6 +333,15 @@ export function updateProject(
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = nowIso();
       tx.update(schema.workItems).set(patch).where(eq(schema.workItems.id, id)).run();
+    }
+    if (patch.scope !== undefined) {
+      const descendantIds = repoGetDescendantIds(txDb, id);
+      if (descendantIds.length > 0) {
+        tx.update(schema.workItems)
+          .set({ scope: patch.scope, updatedAt: nowIso() })
+          .where(inArray(schema.workItems.id, descendantIds))
+          .run();
+      }
     }
 
     if (tagsChanged) {

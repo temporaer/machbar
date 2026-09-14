@@ -2,7 +2,7 @@ import type { ContextAvailability, ProjectStatus } from "@machbar/shared";
 import type { Graph, TaskRecord } from "./graph.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
 
-export type AgendaScope = "mine" | "all";
+export type AgendaScope = "mine" | "all" | "work";
 export type AgendaLaneSelection =
   | { scope: "mine"; memberId: number }
   | { scope: "all" };
@@ -62,8 +62,10 @@ export function createAgendaSelection(
 ) {
   const { memberId } = options;
   const scope = options.scope ?? (memberId === undefined ? "all" : "mine");
+  // "work" reuses the same ownership lane as "mine" (owner-only); the
+  // household/work split itself is enforced separately via `matchesScope`.
   const laneSelection: AgendaLaneSelection =
-    scope === "mine" && memberId !== undefined
+    (scope === "mine" || scope === "work") && memberId !== undefined
       ? { scope: "mine", memberId }
       : { scope: "all" };
   const projectStatusById = new Map<number, ProjectStatus>(
@@ -94,6 +96,11 @@ export function createAgendaSelection(
     ownerId === null ||
     ownerId === memberId;
   const matchesOwner = (task: TaskRecord) => matchesOwnerId(task.effectiveOwnerId);
+  // Household views ("mine"/"all") never show work items, even the
+  // viewer's own; the "work" view shows only work items. Other members'
+  // work items are already excluded at the Graph level.
+  const matchesScope = (item: { scope: TaskRecord["scope"] }) =>
+    scope === "work" ? item.scope === "work" : item.scope !== "work";
   const isOperationalTask = (task: TaskRecord) =>
     isTaskInWorkingSystem(task, projectStatusById);
   const isAgendaTask = (task: TaskRecord) =>
@@ -101,7 +108,8 @@ export function createAgendaSelection(
     task.status === "actionable" &&
     !task.needsClarification &&
     isOperationalTask(task) &&
-    matchesOwner(task);
+    matchesOwner(task) &&
+    matchesScope(task);
   const selectedProjectTaskIds = new Set(
     [...graph.projectsById.values()]
       .filter((project) => project.status === "active")
@@ -153,6 +161,7 @@ export function createAgendaSelection(
     isContextAvailable,
     matchesOwnerId,
     matchesOwner,
+    matchesScope,
     isOperationalTask,
     isAgendaTask,
     isExecutableWork,
