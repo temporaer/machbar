@@ -43,7 +43,6 @@ import { storyWorkflowCommand } from "../lib/commands";
 import { MarkdownEditor, insertMarkdownAtSelection } from "../components/MarkdownEditor";
 import { AcceptanceCriteriaChecklist } from "../components/AcceptanceCriteriaChecklist";
 import { WorkItemDetailDisclosure } from "../components/WorkItemDetailSection";
-import { ActionTileGrid } from "../components/ActionTileGrid";
 import { appendTextBlock } from "../lib/shareTarget";
 import {
   containsPaperlessReference,
@@ -690,7 +689,7 @@ export function ProjectDetailPage() {
                 </h2>
                 <IconActionButton
                   kind="criteria"
-                  label={strings.actionTileLabels["story.editOutcome"]}
+                  label={strings.structureEditOutcome}
                   disabled={projectMutationPending}
                   onClick={() => dispatch({ type: "story.editOutcome", story: project })}
                 />
@@ -731,30 +730,6 @@ export function ProjectDetailPage() {
                 }}
               />
             </section>
-            <WorkItemDetailDisclosure
-              title={strings.moreActions}
-              resetKey={project.id}
-              className="project-detail-commands"
-            >
-              <ActionTileGrid
-                items={[
-                  {
-                    key: "story.planWork",
-                    icon: "successor",
-                    label: strings.actionTileLabels["story.planWork"],
-                    disabled: projectMutationPending,
-                    onClick: () => dispatch({ type: "story.planWork", story: project }),
-                  },
-                  {
-                    key: "story.defer",
-                    icon: "followUp",
-                    label: strings.actionTileLabels["story.defer"],
-                    disabled: projectMutationPending,
-                    onClick: () => dispatch({ type: "story.defer", story: project }),
-                  },
-                ]}
-              />
-            </WorkItemDetailDisclosure>
             <RecentActivity
               key={`project-activity-${project.id}`}
               filters={{ projectId: project.id }}

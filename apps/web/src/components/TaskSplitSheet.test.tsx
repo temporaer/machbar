@@ -8,7 +8,6 @@ import { makeTask } from "../test/fixtures";
 import { IdentityProvider } from "../lib/identity";
 import { LocaleProvider } from "../lib/locale";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
-import { RailConfigProvider } from "../lib/railConfigContext";
 import { RefreshProvider } from "../lib/refresh";
 import { SwipeCoachProvider } from "../lib/swipeCoach";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
@@ -162,7 +161,6 @@ describe("TaskSplitSheet", () => {
             <IdentityProvider>
               <RefreshProvider>
                 <SwipeSettingsProvider>
-                  <RailConfigProvider>
                     <SwipeCoachProvider>
                       <TaskActionsProvider>
                         <ProjectActionsProvider>
@@ -176,7 +174,6 @@ describe("TaskSplitSheet", () => {
                         </ProjectActionsProvider>
                       </TaskActionsProvider>
                     </SwipeCoachProvider>
-                  </RailConfigProvider>
                 </SwipeSettingsProvider>
               </RefreshProvider>
             </IdentityProvider>

@@ -29,9 +29,14 @@ import type { ReactNode } from "react";
  * opens `CompleteWithOpenTasksSheet` so the user explicitly cancels or moves
  * the remaining open work — completion never silently leaves that
  * inconsistency behind — then commits the same `story.complete` transition.
+ *
+ * `structure` backs the fixed row rail's `Struktur` button: it opens
+ * `ProjectStructureSheet`, which only ever dispatches `story.planWork`/
+ * `story.editOutcome` rather than rendering a sheet of its own.
  */
 export type ProjectWorkflowKind =
   | "defer"
+  | "structure"
   | "assignDriver"
   | "editOutcome"
   | "planDates"

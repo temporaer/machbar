@@ -416,9 +416,9 @@ describe("TaskDetailSheet", () => {
     confirmSpy.mockRestore();
   });
 
-  it("reaches every task command from the detail's own command list", async () => {
+  it("keeps Weitere Aktionen trimmed to priority/recurrence/additional-next-action, not movement or lifecycle", async () => {
     mockedApi.getTask.mockResolvedValue(
-      makeTask({ id: 42, title: "Vollständige Aufgabe" }),
+      makeTask({ id: 42, title: "Vollständige Aufgabe", projectId: 7 }),
     );
     renderSheet(42);
     await userEvent.click(screen.getByRole("button", { name: "open" }));
@@ -427,16 +427,20 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(
       screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
     );
+    for (const label of ["Priorität setzen", "Wiederholung einrichten"]) {
+      expect(screen.getByRole("button", { name: label })).toBeVisible();
+    }
+    // Movement (split/move/convert/successor) now lives in the row rail's
+    // Struktur sheet, and lifecycle in the status rail — neither reappears
+    // as an action tile here.
     for (const label of [
       "In Projekt verschieben",
       "Übergeordnete Aufgabe ändern",
       "Nächsten Schritt hinzufügen",
-      "Priorität setzen",
-      "Wiederholung einrichten",
       "Zum Projekt machen",
       "Verwerfen",
     ]) {
-      expect(screen.getByRole("button", { name: label })).toBeVisible();
+      expect(screen.queryByRole("button", { name: label })).not.toBeInTheDocument();
     }
   });
 
@@ -1656,124 +1660,7 @@ describe("TaskDetailSheet", () => {
     );
   });
 
-  async function openConversion() {
-    await userEvent.click(
-      screen.getByRole("heading", { name: "Weitere Aktionen", level: 3 }),
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Zum Projekt machen" }),
-    );
-  }
-
-  it("shows project conversion for a normal standalone task with subtasks", async () => {
-    const task = makeTask({
-      id: 58,
-      title: "Keller organisieren",
-      status: "actionable",
-      children: [
-        makeTask({
-          id: 59,
-          parentTaskId: 58,
-          title: "Regale ausmessen",
-        }),
-      ],
-    });
-    mockedApi.getTask.mockResolvedValue(task);
-
-    renderSheet(58);
-    await userEvent.click(screen.getByText("open"));
-    await waitForTaskTitle("Keller organisieren");
-
-    await openConversion();
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Ins Backlog" }),
-    );
-
-    await waitFor(() =>
-      expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(58, {
-        status: "backlog",
-        expectedRevision: 1,
-      }),
-    );
-  });
-
-  it("explains in the one conversion workflow why non-standalone tasks cannot convert", async () => {
-    mockedApi.getTask.mockResolvedValue(
-      makeTask({ id: 60, title: "Teilaufgabe", parentTaskId: 58 }),
-    );
-    renderSheet(60);
-    await userEvent.click(screen.getByText("open"));
-    await waitForTaskTitle("Teilaufgabe");
-    await openConversion();
-
-    expect(
-      await screen.findByText(
-        "Nur eigenständige Aufgaben ohne Elternaufgabe und Projekt können zu einem Projekt werden.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Ins Backlog" }),
-    ).not.toBeInTheDocument();
-    expect(mockedApi.convertTaskToStory).not.toHaveBeenCalled();
-  });
-
-  it("uses the explicit active choice for normal task conversion", async () => {
-    const task = makeTask({
-      id: 62,
-      title: "Aktiv machen",
-      status: "actionable",
-      ownerMemberId: 1,
-      ownerInheritanceMode: "explicit",
-      children: [makeTask({ id: 63, parentTaskId: 62 })],
-    });
-    mockedApi.getTask.mockResolvedValue(task);
-
-    renderSheet(62);
-    await userEvent.click(screen.getByText("open"));
-    await waitForTaskTitle("Aktiv machen");
-    await openConversion();
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Aktivieren" }),
-    );
-
-    await waitFor(() =>
-      expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(62, {
-        status: "active",
-        expectedRevision: 1,
-      }),
-    );
-  });
-
-  it("keeps the task detail open and displays conversion errors", async () => {
-    const task = makeTask({
-      id: 64,
-      title: "Nicht aktivierbar",
-      status: "actionable",
-    });
-    mockedApi.getTask.mockResolvedValue(task);
-    mockedApi.convertTaskToStory.mockRejectedValueOnce(
-      Object.assign(new Error("invalid conversion"), {
-        name: "ApiError",
-        code: "role_conversion_invalid",
-        details: { reason: "task_only_relations" },
-      }),
-    );
-
-    renderSheet(64);
-    await userEvent.click(screen.getByText("open"));
-    await waitForTaskTitle("Nicht aktivierbar");
-    await openConversion();
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Aktivieren" }),
-    );
-
-    expect(
-      await screen.findAllByText("Nicht aktivierbar"),
-    ).not.toHaveLength(0);
-    expect(
-      await screen.findByText(
-        "Diese Aufgabe kann erst in ein Projekt umgewandelt werden, wenn widersprechende Aufgaben-Eigenschaften entfernt wurden.",
-      ),
-    ).toBeInTheDocument();
-  });
+  // The `Zum Projekt machen` conversion workflow is now reached only via the
+  // row rail's Struktur sheet, not from the task detail's own commands — see
+  // `TaskStructureSheet.test.tsx` for its conversion-flow coverage.
 });

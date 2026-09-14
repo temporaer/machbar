@@ -35,8 +35,7 @@ import { SwipeCoachHint } from "./SwipeCoachHint";
 import { RowSwipeBackgrounds, RowKebabButton, RowErrorBanner } from "./WorkItemRowChrome";
 import { useHorizontalSwipe } from "../lib/useHorizontalSwipe";
 import { TaskCardTags } from "./TaskCardTags";
-import { useRailConfig } from "../lib/railConfigContext";
-import { WorkItemCommandRail } from "./WorkItemCommandRail";
+import { WorkItemActionRail } from "./WorkItemActionRail";
 
 /**
  * Semantic accent driving the row's status badge, left-edge stripe, primary
@@ -197,7 +196,6 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const { dragX } = swipe;
   const chipsOpen = scope?.openRailId === storyProp.id;
   const lifecycleOpen = scope?.openLifecycleId === storyProp.id;
-  const { projectFavorites } = useRailConfig();
   const showPrimaryBg = dragX > 0;
   const showChipsBg = dragX < 0 || chipsOpen;
   const swipeCoach = useSwipeCoach(
@@ -226,10 +224,11 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
     navigate(`/projects/${story.id}`);
   };
 
-  const runRailCommand = (command: (typeof projectFavorites)[number]) => {
+  const runRailCommand = (command: "story.defer" | "story.structure") => {
     scope?.setOpenRail(null);
     dispatch({ type: command, story });
   };
+
 
   const runLifecycleAction = (action: ProjectWorkflowAction) => {
     scope?.setOpenLifecycle(null);
@@ -377,13 +376,16 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           ) : null}
         </button>
         {driver ? (
-          <span
+          <button
+            type="button"
             className="story-row-driver-avatar"
-            aria-label={`${strings.driver}: ${driver.name}`}
+            aria-label={`${strings.assignDriver}: ${driver.name}`}
             title={driver.name}
+            disabled={busy}
+            onClick={() => dispatch({ type: "story.assignDriver", story })}
           >
             <MemberAvatar member={driver} size="sm" />
-          </span>
+          </button>
         ) : null}
         {isActiveWaiting ? (
           <span className="story-row-waiting-qualifier" role="img" aria-label={strings.waiting}>
@@ -404,16 +406,16 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
       ) : null}
 
       {chipsOpen ? (
-        <WorkItemCommandRail
+        <WorkItemActionRail
           kind="project"
-          favorites={projectFavorites}
-          labels={strings.railCommandLabels}
-          groupLabel={strings.moreActions}
-          overflowLabel={`${strings.more} …`}
           disabled={busy}
-          onCommand={runRailCommand}
-          overflowOpen={scope.openOverflowId === story.id}
-          onOverflowChange={(open) => scope.setOpenOverflow(open ? story.id : null)}
+          groupLabel={strings.moreActions}
+          laterLabel={strings.railLater}
+          structureLabel={strings.railStructure}
+          moreLabel={strings.railMore}
+          onLater={() => runRailCommand("story.defer")}
+          onStructure={() => runRailCommand("story.structure")}
+          onMore={handleMainClick}
         />
       ) : null}
       {lifecycleOpen ? (

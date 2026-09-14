@@ -60,7 +60,6 @@ import { appendTextBlock } from "../lib/shareTarget";
 import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
 import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
 import { WorkItemDetailDisclosure } from "./WorkItemDetailSection";
-import { taskRailCommands } from "../lib/railConfig";
 import { ActionTileGrid } from "./ActionTileGrid";
 import { formatReminderSummary } from "../lib/reminderLabels";
 
@@ -86,16 +85,19 @@ function textFieldsSnapshot(task: Task): TextFieldsSnapshot {
  * a compact value that dispatches its canonical semantic command
  * (`task.plan`, `task.assignOwner`, `task.waitingLifecycle`, …), which
  * `useWorkItemCommands()` routes into the one focused workflow that also
- * serves the row rail, the keyboard, and Review's repairs. Properties that
- * are unset stay invisible unless they are common enough to deserve a
- * lightweight affordance; everything else is reachable through
- * `Weitere Aktionen`.
+ * serves the fixed row rail (`Später`/`Struktur`), the keyboard, and
+ * Review's repairs. Properties that are unset stay invisible unless they
+ * are common enough to deserve a lightweight affordance. Movement
+ * (`task.changeProject`), split (`task.split`), and convert-to-project
+ * (`task.convertToProject`) now live in the row rail's `Struktur` sheet, not
+ * here — `Weitere Aktionen` only holds genuinely uncommon actions that have
+ * no other affordance (priority/recurrence when unset, the additional-
+ * next-action toggle).
  *
  * What remains here is genuinely document-shaped and has no other home:
  * authored text (title/notes, with explicit Edit/Save/Cancel), the subtask
- * and dependency collections, activity/recurrence history, the explicit
- * refile/move tools (`Sortier-Werkzeuge`) that compiled views cannot reach
- * through outline drag editing, and permanent deletion.
+ * and dependency collections, activity/recurrence history, and permanent
+ * deletion.
  */
 export function TaskDetailSheet() {
   const strings = useStrings();
@@ -473,15 +475,21 @@ export function TaskDetailSheet() {
     : "";
 
   const runCommand = (
-    command: (typeof taskRailCommands)[number] | "task.changeParent" | "task.discard" | "task.reminders",
+    command:
+      | "task.lifecycle"
+      | "task.assignOwner"
+      | "task.plan"
+      | "task.reminders"
+      | "task.waitingLifecycle"
+      | "task.recurrence"
+      | "task.priority"
+      | "task.tags"
+      | "task.contexts"
+      | "task.split",
   ) => {
     if (!task) return;
     if (command === "task.lifecycle") {
       setLifecycleOpen((current) => !current);
-      return;
-    }
-    if (command === "task.discard") {
-      dispatch({ type: command, task });
       return;
     }
     dispatch({ type: command, taskId: task.id });
@@ -989,83 +997,51 @@ export function TaskDetailSheet() {
             </div>
           </WorkItemDetailDisclosure>
 
-          <WorkItemDetailDisclosure
-            title={strings.moreActions}
-            resetKey={task.id}
-            className="task-detail-commands"
-          >
-            <ActionTileGrid
-              items={[
-                ...(!taskIsCapturedInboxItem
-                  ? ([
-                      {
-                        key: "task.changeProject",
-                        icon: "project" as const,
-                        label: strings.actionTileLabels["task.changeProject"],
-                        onClick: () => runCommand("task.changeProject"),
-                      },
-                      {
-                        key: "task.changeParent",
-                        icon: "child" as const,
-                        label: strings.actionTileLabels["task.changeParent"],
-                        onClick: () => runCommand("task.changeParent"),
-                      },
-                      {
-                        key: "task.convertToProject",
-                        icon: "openProject" as const,
-                        label: strings.actionTileLabels["task.convertToProject"],
-                        onClick: () => runCommand("task.convertToProject"),
-                      },
-                    ] as const)
-                  : []),
-                {
-                  key: "task.addSuccessor",
-                  icon: "successor" as const,
-                  label: strings.actionTileLabels["task.addSuccessor"],
-                  onClick: () => runCommand("task.addSuccessor"),
-                },
-                ...(task.priority === null
-                  ? [
-                      {
-                        key: "task.priority",
-                        icon: "priority" as const,
-                        label: strings.actionTileLabels["task.priority"],
-                        onClick: () => runCommand("task.priority"),
-                      },
-                    ]
-                  : []),
-                ...(task.repeatAfterDays === null
-                  ? [
-                      {
-                        key: "task.recurrence",
-                        icon: "recurrence" as const,
-                        label: strings.actionTileLabels["task.recurrence"],
-                        onClick: () => runCommand("task.recurrence"),
-                      },
-                    ]
-                  : []),
-                {
-                  key: "task.discard",
-                  icon: "discard" as const,
-                  label: strings.actionTileLabels["task.discard"],
-                  onClick: () => runCommand("task.discard"),
-                },
-                ...(!taskIsCapturedInboxItem && task.projectId !== null
-                  ? [
-                      {
-                        key: "task.toggleAdditionalNextAction",
-                        icon: "actionable" as const,
-                        label: task.additionalNextAction
-                          ? strings.unmarkAdditionalNextAction
-                          : strings.markAdditionalNextAction,
-                        onClick: () =>
-                          dispatch({ type: "task.toggleAdditionalNextAction", task }),
-                      },
-                    ]
-                  : []),
-              ]}
-            />
-          </WorkItemDetailDisclosure>
+          {task.priority === null || task.repeatAfterDays === null || (!taskIsCapturedInboxItem && task.projectId !== null) ? (
+            <WorkItemDetailDisclosure
+              title={strings.moreActions}
+              resetKey={task.id}
+              className="task-detail-commands"
+            >
+              <ActionTileGrid
+                items={[
+                  ...(task.priority === null
+                    ? [
+                        {
+                          key: "task.priority",
+                          icon: "priority" as const,
+                          label: strings.actionTileLabels["task.priority"],
+                          onClick: () => runCommand("task.priority"),
+                        },
+                      ]
+                    : []),
+                  ...(task.repeatAfterDays === null
+                    ? [
+                        {
+                          key: "task.recurrence",
+                          icon: "recurrence" as const,
+                          label: strings.actionTileLabels["task.recurrence"],
+                          onClick: () => runCommand("task.recurrence"),
+                        },
+                      ]
+                    : []),
+                  ...(!taskIsCapturedInboxItem && task.projectId !== null
+                    ? [
+                        {
+                          key: "task.toggleAdditionalNextAction",
+                          icon: "actionable" as const,
+                          label: task.additionalNextAction
+                            ? strings.unmarkAdditionalNextAction
+                            : strings.markAdditionalNextAction,
+                          onClick: () =>
+                            dispatch({ type: "task.toggleAdditionalNextAction", task }),
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            </WorkItemDetailDisclosure>
+          ) : null}
 
           {task.repeatAfterDays !== null ||
           (recurrenceHistory?.summary.totalCount ?? 0) > 0 ? (

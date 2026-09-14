@@ -7,11 +7,12 @@ import { useIdentity } from "../lib/identity";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
 import { TaskPlanSheet } from "./TaskPlanSheet";
+import { TaskLaterSheet } from "./TaskLaterSheet";
+import { TaskStructureSheet } from "./TaskStructureSheet";
 import { TaskRemindersSheet } from "./TaskRemindersSheet";
 import { TaskWaitSheet } from "./TaskWaitSheet";
 import { WaitingFollowUpSheet } from "./WaitingFollowUpSheet";
 import { TaskSplitSheet } from "./TaskSplitSheet";
-import { TaskSuccessorSheet } from "./TaskSuccessorSheet";
 import { TaskRecurrenceSheet } from "./TaskRecurrenceSheet";
 import { TaskPrioritySheet } from "./TaskPrioritySheet";
 import { TaskTagsSheet } from "./TaskTagsSheet";
@@ -55,6 +56,10 @@ export function TaskWorkflowHost() {
   switch (workflow.current.kind) {
     case "plan":
       return <TaskPlanSheet task={task} onClose={close} />;
+    case "later":
+      return <TaskLaterSheet task={task} onClose={close} />;
+    case "structure":
+      return <TaskStructureSheet task={task} onClose={close} />;
     case "reminders":
       return <TaskRemindersSheet task={task} onClose={close} />;
     case "waitingLifecycle":
@@ -99,11 +104,7 @@ export function TaskWorkflowHost() {
         />
       );
     case "changeProject":
-      return <MoveTaskSheet task={task} mode="subtree" onClose={close} />;
-    case "changeParent":
-      return <MoveTaskSheet task={task} mode="parent" onClose={close} />;
-    case "addSuccessor":
-      return <TaskSuccessorSheet task={task} onClose={close} />;
+      return <MoveTaskSheet task={task} onClose={close} />;
     case "recurrence":
       return <TaskRecurrenceSheet task={task} onClose={close} />;
     case "priority":

@@ -300,7 +300,7 @@ describe("ProjectDetailPage task explanations", () => {
     expect(within(outcome).getByRole("checkbox", { name: "Ort steht" })).toBeInTheDocument();
     expect(
       within(outcome).getByRole("button", {
-        name: strings.actionTileLabels["story.editOutcome"],
+        name: strings.structureEditOutcome,
       }),
     ).toBeInTheDocument();
 
@@ -343,61 +343,11 @@ describe("ProjectDetailPage task explanations", () => {
       .closest("section")!;
     await userEvent.click(
       within(outcome).getByRole("button", {
-        name: strings.actionTileLabels["story.editOutcome"],
+        name: strings.structureEditOutcome,
       }),
     );
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByPlaceholderText(strings.addCriterionPlaceholder)).toBeInTheDocument();
-  });
-
-  it("uses verb-labeled action tiles instead of a raw property-command dump", async () => {
-    renderProjectRoute("/projects/42");
-    await screen.findByText("Ort reservieren");
-
-    const actions = screen
-      .getByRole("heading", { name: strings.moreActions, level: 3 })
-      .closest("details")!;
-    await userEvent.click(
-      within(actions).getByRole("heading", {
-        name: strings.moreActions,
-        level: 3,
-      }),
-    );
-    for (const label of [
-      strings.actionTileLabels["story.planWork"],
-      strings.actionTileLabels["story.defer"],
-    ]) {
-      expect(within(actions).getByRole("button", { name: label })).toBeVisible();
-    }
-  });
-
-  it("omits property-command tiles from More actions once they have a direct pill", async () => {
-    renderProjectRoute("/projects/42");
-    await screen.findByText("Ort reservieren");
-
-    const actions = screen
-      .getByRole("heading", { name: strings.moreActions, level: 3 })
-      .closest("details")!;
-    await userEvent.click(
-      within(actions).getByRole("heading", {
-        name: strings.moreActions,
-        level: 3,
-      }),
-    );
-    expect(
-      within(actions).queryByText(strings.actionTileLabels["story.planWork"]),
-    ).toBeInTheDocument();
-    expect(
-      within(actions).queryByText("Verantwortliche Person ändern"),
-    ).not.toBeInTheDocument();
-    expect(within(actions).queryByText("Termine planen")).not.toBeInTheDocument();
-    expect(within(actions).queryByText("Tags bearbeiten")).not.toBeInTheDocument();
-    expect(within(actions).queryByText("Orte bearbeiten")).not.toBeInTheDocument();
-    expect(
-      within(actions).queryByRole("button", {
-        name: strings.railCommandLabels["story.assignDriver"],
-      }),
-    ).not.toBeInTheDocument();
   });
 
   it("shows direct add affordances for unset common properties, keeping rare ones in More actions", async () => {
@@ -992,7 +942,7 @@ describe("ProjectDetailPage task explanations", () => {
     // same focused workflow as the rail, keyboard and detail value — not a
     // route-specific inspector or a focus field inside the task details.
     const dialog = await screen.findByRole("dialog", {
-      name: `${strings.railCommandLabels["task.plan"]}: Ort reservieren`,
+      name: `${strings.plan}: Ort reservieren`,
     });
     await waitFor(() =>
       expect(within(dialog).getByLabelText(strings.taskPlanQuestion)).toHaveFocus(),
@@ -1009,7 +959,7 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42?focus=planning");
 
     const dialog = await screen.findByRole("dialog", {
-      name: `${strings.railCommandLabels["task.plan"]}: Ort reservieren`,
+      name: `${strings.plan}: Ort reservieren`,
     });
     await userEvent.click(
       within(dialog).getByRole("button", {
@@ -1063,7 +1013,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     expect(
       await screen.findByRole("dialog", {
-        name: `${strings.railCommandLabels["task.plan"]}: Ort reservieren`,
+        name: `${strings.plan}: Ort reservieren`,
       }),
     ).toBeInTheDocument();
 
@@ -1073,7 +1023,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     expect(
       await screen.findByRole("dialog", {
-        name: `${strings.railCommandLabels["task.plan"]}: Catering bestätigen`,
+        name: `${strings.plan}: Catering bestätigen`,
       }),
     ).toBeInTheDocument();
     await waitFor(() =>

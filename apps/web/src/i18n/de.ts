@@ -453,52 +453,35 @@ const extra = {
   swipeSettingTitle: "Wischgeste",
   swipeSettingHint:
     "Bestimmt, was ein Wisch nach rechts in Aufgabenlisten auslöst. Nach links wischen zeigt immer Zuweisen, Planen, Notizen sowie Warten/Mehr. Bereits erledigte oder verworfene Aufgaben werden durch die Wischgeste immer wieder geöffnet.",
-  railFavoritesTitle: "Favoriten für Wischleisten",
-  railFavoritesHint:
-    "Die drei sichtbaren Befehle pro Zeile sind frei wählbar. „Mehr …“ bleibt immer das vierte Feld und enthält die übrigen Befehle.",
-  taskRailFavorites: "Aufgaben",
-  projectRailFavorites: "Projekte",
-  railCommandLabels: {
-    "task.plan": "Planen",
-    "task.reminders": "Erinnerung hinzufügen",
-    "task.waitingLifecycle": "Warten / Nachhaken",
-    "task.split": "Aufteilen",
-    "task.assignOwner": "Person ändern",
-    "task.changeProject": "In Projekt verschieben",
-    "task.addSuccessor": "Nächsten Schritt hinzufügen",
-    "task.recurrence": "Wiederholung einrichten",
-    "task.priority": "Priorität setzen",
-    "task.tags": "Tags bearbeiten",
-    "task.contexts": "Orte bearbeiten",
-    "task.convertToProject": "Zum Projekt machen",
-    "task.lifecycle": "Status ändern",
-    "story.defer": "Wiedervorlegen",
-    "story.assignDriver": "Person ändern",
-    "story.planWork": "Arbeit planen",
-    "story.planDates": "Termine planen",
-    "story.editOutcome": "Ergebnis bearbeiten",
-    "story.tags": "Tags bearbeiten",
-    "story.contexts": "Orte bearbeiten",
-    "story.lifecycle": "Status ändern",
-  },
+  railLater: "Später",
+  railStructure: "Struktur",
+  railMore: "Mehr",
+  later: "Später",
+  laterSameDayHint: "Heute später noch einmal melden:",
+  laterSameDayGroup: "Am selben Tag",
+  laterInAWhile: "In einer Weile",
+  laterTonight: "Heute Abend",
+  laterFutureHint: "Oder erst an einem anderen Tag:",
+  laterFutureGroup: "Zukünftig planen",
+  laterCustomDate: "Anderes Datum",
+  laterMorePlanningOptions: "Weitere Planungsoptionen …",
+  structure: "Struktur",
+  structureSplit: "Aufteilen",
+  structureMove: "Verschieben …",
+  structureConvertToProject: "Zum Projekt machen",
+  structurePlanWork: "Nächste Aufgabe erfassen",
+  structureEditOutcome: "Ergebnis bearbeiten",
+  insertSuccessorLabel: "Aufgabe danach hinzufügen",
   /**
    * Verb-phrased labels for the action-tile grid in Task/Project detail
-   * views (see `ActionTileGrid`) -- deliberately separate from
-   * `railCommandLabels` (the swipe rail's shorter labels) so the two
-   * projections of the same semantic commands can each read naturally in
-   * their own context without forcing one string onto both.
+   * views (see `ActionTileGrid`) -- covers only the genuinely uncommon
+   * actions that remain in `Weitere Aktionen` once movement/split/convert/
+   * successor creation and lifecycle live in the fixed rail, contextual
+   * avatar clicks, and the successor "+".
    */
   actionTileLabels: {
-    "task.addSuccessor": "Nächsten Schritt hinzufügen",
-    "task.changeProject": "In Projekt verschieben",
-    "task.changeParent": "Übergeordnete Aufgabe ändern",
-    "task.convertToProject": "Zum Projekt machen",
     "task.priority": "Priorität setzen",
     "task.recurrence": "Wiederholung einrichten",
-    "task.discard": "Verwerfen",
-    "story.planWork": "Nächste Aufgabe erfassen",
-    "story.defer": "Wiedervorlegen",
-    "story.editOutcome": "Ergebnis bearbeiten",
   },
   swipeCoachHint: (rightAction: string) =>
     `Wischen: rechts „${rightAction}“, links mehr. Oder ⋯ tippen.`,

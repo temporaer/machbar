@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { screen, fireEvent } from "@testing-library/react";
 import { renderWithProviders } from "../test/testUtils";
 import { WaitingGroupList } from "./WaitingGroupList";
 import { api } from "../lib/api";
@@ -56,7 +55,7 @@ describe("WaitingGroupList", () => {
   });
 
   it("offers follow-up only for an external wait", async () => {
-    renderWithProviders(
+    const { container } = renderWithProviders(
       <WaitingGroupList
         entries={[
           {
@@ -76,9 +75,13 @@ describe("WaitingGroupList", () => {
         ]}
       />,
     );
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Weitere Aktionen" }),
-    );
+    await screen.findByText("Rückruf");
+    // Waiting/follow-up lives in the status/lifecycle rail (swipe right),
+    // not the fixed Später/Struktur/Mehr action rail.
+    const content = container.querySelector(".task-row-content") as HTMLElement;
+    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: 150, pointerId: 1 });
+    fireEvent.pointerUp(content, { clientX: 150, pointerId: 1 });
     expect(screen.getByRole("button", { name: "Nachhaken" })).toBeInTheDocument();
   });
 });

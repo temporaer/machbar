@@ -12,28 +12,23 @@ import { LoadingState, ErrorState } from "./AsyncStates";
 import { useLocale } from "../lib/locale";
 import { sortProjectDestinations } from "../lib/sortOrder";
 
-export type MoveMode = "parent" | "subtree";
-
 /**
- * Explicit picker for destinations that are nowhere near on screen: change
- * parent, or move to another project (and optionally its parent task, both
- * in one step). Reached from `task.changeProject` and `task.changeParent`
- * (both via `TaskWorkflowHost`), so both stay available as canonical
- * semantic commands without any drag gesture or local component state.
+ * Explicit picker for destinations that are nowhere near on screen: move a
+ * task (and its whole subtree) to another project and, optionally, another
+ * parent task within it — both in one step. Reached from `task.changeProject`
+ * via `TaskWorkflowHost`, and offered as the Struktur sheet's single
+ * "Verschieben …" entry, so refiling stays available as one canonical
+ * semantic command without any drag gesture or local component state.
  *
  * Both destination lists are `DestinationPicker`s: searchable, with the
- * recently used targets on top. The candidate sets are unchanged — the
- * task's own subtree is still excluded client-side, and every mode still
- * goes through the same API call, so the server keeps the final say on
- * hierarchy/cycle validity.
- *
- * There is no "just move to project" mode without a subtree step: the data
- * model (`work_items.parentId`-only hierarchy) means every move already
- * carries the whole subtree, so `subtree` mode (project picker + optional
- * parent picker, "Keine" meaning root) is a strict superset and the only
- * project-move path.
+ * recently used targets on top. The task's own subtree is excluded
+ * client-side; the server keeps the final say on hierarchy/cycle validity.
+ * There is no project-only move without the parent step: the data model
+ * (`work_items.parentId`-only hierarchy) means every move already carries
+ * the whole subtree, so this is the only project-move path — a project
+ * picker plus an optional parent picker ("Keine" meaning root).
  */
-export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveMode; onClose: () => void }) {
+export function MoveTaskSheet({ task, onClose }: { task: Task; onClose: () => void }) {
   const strings = useStrings();
   const { locale } = useLocale();
   const { bump } = useRefresh();
@@ -51,24 +46,18 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
   // whole sheet for `ErrorState`.
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const needsProjectStep = mode === "subtree";
-  const needsParentStep = mode === "parent" || mode === "subtree";
-
   useEffect(() => {
     setLoading(true);
     setError(null);
-    const jobs: Promise<unknown>[] = [];
-    if (needsProjectStep) jobs.push(api.getProjects().then(setProjects));
-    if (needsParentStep && selectedProjectId != null) {
+    const jobs: Promise<unknown>[] = [api.getProjects().then(setProjects)];
+    if (selectedProjectId != null) {
       jobs.push(
         api.getProject(selectedProjectId).then((p) => {
           setProjectTasks(p.tasks);
-          // Kept so parent candidates stay searchable by their project even
-          // in `parent` mode, where the full project list is never fetched.
           setParentProjectTitle(p.title);
         }),
       );
-    } else if (needsParentStep) {
+    } else {
       setProjectTasks([]);
       setParentProjectTitle(null);
     }
@@ -78,7 +67,7 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
       )
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needsProjectStep, needsParentStep, selectedProjectId]);
+  }, [selectedProjectId]);
 
   const excludedIds = useMemo(() => {
     const ids = new Set<number>([task.id]);
@@ -112,28 +101,18 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
     return selectableParents.map((t) => ({ id: t.id, title: t.title, subtitle: projectTitle }));
   }, [selectableParents, projects, selectedProjectId, parentProjectTitle]);
 
-  const title = mode === "parent" ? strings.changeParentTitle : strings.moveProjectTitle;
-
   const submit = async () => {
     setSaving(true);
     setSubmitError(null);
     try {
-      if (mode === "parent") {
-        await api.moveTask(task.id, {
-          parentTaskId: selectedParentId,
-          ...(selectedParentId === null ? { projectId: task.projectId } : {}),
-          expectedRevision: task.revision,
-        });
-      } else {
-        await api.moveTask(task.id, {
-          projectId: selectedProjectId,
-          parentTaskId: selectedParentId,
-          expectedRevision: task.revision,
-        });
-      }
+      await api.moveTask(task.id, {
+        projectId: selectedProjectId,
+        parentTaskId: selectedParentId,
+        expectedRevision: task.revision,
+      });
       // Only a move the server accepted is worth offering as a shortcut.
-      if (needsProjectStep) rememberDestination("project", selectedProjectId);
-      if (needsParentStep) rememberDestination("parent", selectedParentId);
+      rememberDestination("project", selectedProjectId);
+      rememberDestination("parent", selectedParentId);
       bump();
       onClose();
     } catch (err) {
@@ -145,38 +124,34 @@ export function MoveTaskSheet({ task, mode, onClose }: { task: Task; mode: MoveM
   };
 
   return (
-    <BottomSheet title={title} onClose={onClose} labelledBy="move-task-title">
+    <BottomSheet title={strings.moveProjectTitle} onClose={onClose} labelledBy="move-task-title">
       <p className="text-muted">{task.title}</p>
-      {mode === "subtree" ? <p className="text-muted">{strings.subtreeHint}</p> : null}
+      <p className="text-muted">{strings.subtreeHint}</p>
       {loading ? (
         <LoadingState />
       ) : error ? (
         <ErrorState message={error} />
       ) : (
         <div className="stack">
-          {needsProjectStep ? (
-            <DestinationPicker
-              kind="project"
-              label={strings.selectProject}
-              options={projectOptions}
-              value={selectedProjectId}
-              onChange={(id) => {
-                setSelectedProjectId(id);
-                setSelectedParentId(null);
-              }}
-              noneLabel={strings.noProject}
-            />
-          ) : null}
-          {needsParentStep ? (
-            <DestinationPicker
-              kind="parent"
-              label={strings.selectParent}
-              options={parentOptions}
-              value={selectedParentId}
-              onChange={setSelectedParentId}
-              noneLabel={strings.noParent}
-            />
-          ) : null}
+          <DestinationPicker
+            kind="project"
+            label={strings.selectProject}
+            options={projectOptions}
+            value={selectedProjectId}
+            onChange={(id) => {
+              setSelectedProjectId(id);
+              setSelectedParentId(null);
+            }}
+            noneLabel={strings.noProject}
+          />
+          <DestinationPicker
+            kind="parent"
+            label={strings.selectParent}
+            options={parentOptions}
+            value={selectedParentId}
+            onChange={setSelectedParentId}
+            noneLabel={strings.noParent}
+          />
           {submitError ? (
             <p className="text-muted" role="alert">
               {strings.moveFailed}: {submitError}

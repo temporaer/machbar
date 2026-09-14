@@ -24,13 +24,13 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
   switch (command.type) {
     case "task.open":
     case "task.plan":
+    case "task.later":
+    case "task.structure":
     case "task.reminders":
     case "task.waitingLifecycle":
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
-    case "task.changeParent":
-    case "task.addSuccessor":
     case "task.recurrence":
     case "task.priority":
     case "task.tags":
@@ -38,11 +38,9 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.convertToProject":
     case "task.lifecycle":
     case "task.setStatus":
-    case "task.openOverflow":
     case "task.toggleDone":
     case "task.toggleAdditionalNextAction":
     case "task.primaryAction":
-    case "task.discard":
       return "task" in command ? command.task.id : command.taskId;
     case "workItem.schedule":
     case "workItem.setDeadline":
@@ -56,13 +54,13 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "story.reopen":
     case "story.archive":
     case "story.defer":
+    case "story.structure":
     case "story.assignDriver":
     case "story.planWork":
     case "story.editOutcome":
     case "story.tags":
     case "story.contexts":
     case "story.lifecycle":
-    case "story.openOverflow":
       return command.story.id;
     case "outline.collapse":
     case "outline.expand":
@@ -80,13 +78,13 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
   switch (command.type) {
     case "task.open":
     case "task.plan":
+    case "task.later":
+    case "task.structure":
     case "task.reminders":
     case "task.waitingLifecycle":
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
-    case "task.changeParent":
-    case "task.addSuccessor":
     case "task.recurrence":
     case "task.priority":
     case "task.tags":
@@ -94,11 +92,9 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.convertToProject":
     case "task.lifecycle":
     case "task.setStatus":
-    case "task.openOverflow":
     case "task.toggleDone":
     case "task.toggleAdditionalNextAction":
     case "task.primaryAction":
-    case "task.discard":
       return "task";
     case "story.activate":
     case "story.returnToBacklog":
@@ -106,13 +102,13 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "story.reopen":
     case "story.archive":
     case "story.defer":
+    case "story.structure":
     case "story.assignDriver":
     case "story.planWork":
     case "story.editOutcome":
     case "story.tags":
     case "story.contexts":
     case "story.lifecycle":
-    case "story.openOverflow":
       return "story";
     case "workItem.schedule":
     case "workItem.setDeadline":
@@ -208,6 +204,12 @@ export function useWorkItemCommands() {
         case "task.plan":
           taskWorkflow.open("plan", command.taskId);
           return;
+        case "task.later":
+          taskWorkflow.open("later", command.taskId);
+          return;
+        case "task.structure":
+          taskWorkflow.open("structure", command.taskId);
+          return;
         case "task.reminders":
           taskWorkflow.open("reminders", command.taskId);
           return;
@@ -223,12 +225,6 @@ export function useWorkItemCommands() {
         case "task.changeProject":
           taskWorkflow.open("changeProject", command.taskId);
           return;
-        case "task.changeParent":
-          taskWorkflow.open("changeParent", command.taskId);
-          return;
-        case "task.addSuccessor":
-          taskWorkflow.open("addSuccessor", command.taskId);
-          return;
         case "task.recurrence":
           taskWorkflow.open("recurrence", command.taskId);
           return;
@@ -243,9 +239,6 @@ export function useWorkItemCommands() {
           return;
         case "task.convertToProject":
           taskWorkflow.open("convertToProject", command.taskId);
-          return;
-        case "task.openOverflow":
-          scope?.setOpenOverflow(command.taskId);
           return;
         case "task.lifecycle":
           scope?.setOpenLifecycle(command.taskId);
@@ -296,9 +289,6 @@ export function useWorkItemCommands() {
           // The configured primary swipe action (someday/cancel/complete);
           // `requestPrimarySwipe` already resolves reopen/clarify first.
           taskActions.requestPrimarySwipe(command.task, primarySwipeAction);
-          return;
-        case "task.discard":
-          taskActions.requestCancel(command.task);
           return;
         case "workItem.schedule":
           if (command.item.role === "task") {
@@ -358,6 +348,9 @@ export function useWorkItemCommands() {
         case "story.defer":
           projectWorkflow.open("defer", command.story.id);
           return;
+        case "story.structure":
+          projectWorkflow.open("structure", command.story.id);
+          return;
         case "story.assignDriver":
           projectWorkflow.open("assignDriver", command.story.id);
           return;
@@ -378,9 +371,6 @@ export function useWorkItemCommands() {
           return;
         case "story.lifecycle":
           scope?.setOpenLifecycle(command.story.id);
-          return;
-        case "story.openOverflow":
-          scope?.setOpenOverflow(command.story.id);
           return;
         case "outline.collapse":
           scope?.setCollapsed(command.workItemId, true);

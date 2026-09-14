@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "../components/TaskOutline";
@@ -293,6 +293,7 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
         <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
         <TaskWorkflowHost />
         <OpenWorkflowProbe />
+        <OpenTaskProbe />
       </>,
     );
     await screen.findByText("Fokussierte Aufgabe");
@@ -311,10 +312,7 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     await waitFor(() => expect(screen.getByTestId("open-workflow")).toHaveTextContent("none|none"));
 
     await userEvent.keyboard("m");
-    const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(chips).getByRole("button", { name: "Planen" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Warten / Nachhaken" })).toBeInTheDocument();
-    expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
+    expect(screen.getByTestId("open-task-id")).toHaveTextContent("42|none");
 
     await userEvent.keyboard("w");
     expect(screen.getByTestId("open-workflow")).toHaveTextContent("42|waitingLifecycle");
