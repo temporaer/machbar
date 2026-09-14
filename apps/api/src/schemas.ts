@@ -8,6 +8,7 @@ import {
   tagKinds,
   taskSizes,
   taskStatuses,
+  workItemScopes,
 } from "@machbar/shared";
 
 const isoDate = z
@@ -58,6 +59,7 @@ export const createProjectSchema = z.object({
   parentId: z.number().int().nullable().optional(),
   status: z.enum(projectStatuses).optional(),
   ownerMemberId: z.number().int().nullable().optional(),
+  scope: z.enum(workItemScopes).optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
@@ -68,6 +70,7 @@ export const updateProjectSchema = z.object({
   title: z.string().min(1).optional(),
   notes: z.string().optional(),
   ownerMemberId: z.number().int().nullable().optional(),
+  scope: z.enum(workItemScopes).optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   position: z.number().int().optional(),

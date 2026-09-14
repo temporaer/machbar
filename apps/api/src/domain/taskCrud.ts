@@ -9,6 +9,7 @@ import type {
   TaskReminderInput,
   TaskSize,
   TaskStatus,
+  WorkItemScope,
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -76,6 +77,9 @@ export interface CreateTaskInput {
   ownerInheritanceMode?: InheritanceMode;
   contextInheritanceMode?: InheritanceMode;
   createdByMemberId?: number | null;
+  /** Only meaningful for a root task (no parent/project); a child/successor
+   * always inherits its parent's scope regardless of this field. */
+  scope?: WorkItemScope;
   dueDate?: string | null;
   scheduledDate?: string | null;
   priority?: number | null;
@@ -367,14 +371,25 @@ function insertTask(
   }
   let projectId = input.projectId ?? null;
   const parentTaskId = input.parentTaskId ?? null;
+  let scope: WorkItemScope;
 
   if (parentTaskId !== null) {
     const parent = getTaskOrThrow(db, parentTaskId);
     assertParentAcceptsChildren(db, parentTaskId);
     projectId = parent.projectId;
+    scope = parent.scope;
   } else if (projectId !== null) {
-    getProjectOrThrow(db, projectId);
+    const project = getProjectOrThrow(db, projectId);
+    scope = project.scope as WorkItemScope;
+  } else {
+    scope = input.scope ?? "household";
   }
+  // A "work" item is always owner-only; a root item with nobody set as
+  // owner would be invisible to everyone including whoever just created
+  // it, so default the owner to the creator when none was given explicitly.
+  const ownerMemberId =
+    input.ownerMemberId ??
+    (scope === "work" ? input.createdByMemberId ?? null : null);
 
   const position =
     positionOverride ?? nextPositionForGroup(db, parentTaskId, projectId);
@@ -412,10 +427,11 @@ function insertTask(
       notes: input.notes ?? "",
       status: taskStatusToStored(status),
       needsClarification: status === "captured",
-      ownerMemberId: input.ownerMemberId ?? null,
+      ownerMemberId,
       ownerInheritanceMode: input.ownerInheritanceMode ?? "inherit",
       physicalContextInheritanceMode: input.contextInheritanceMode ?? "inherit",
       createdByMemberId: input.createdByMemberId ?? null,
+      scope,
       dueDate: recurrence.enabled ? recurrence.dueDate : input.dueDate ?? null,
       scheduledDate,
       priority: input.priority ?? null,

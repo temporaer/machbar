@@ -13,6 +13,7 @@ export const projectStatuses = [
   "archived",
 ] as const;
 export const inheritanceModes = ["inherit", "explicit", "none"] as const;
+export const workItemScopes = ["household", "work"] as const;
 export const taskSizes = ["S", "M", "L", "XL"] as const;
 export const tagKinds = ["area", "actor", "plain"] as const;
 export const tagGroupingModes = ["auto", "pinned", "hidden"] as const;
@@ -76,6 +77,9 @@ export const pushLocales = ["de", "en"] as const;
 export type TaskStatus = (typeof taskStatuses)[number];
 export type ProjectStatus = (typeof projectStatuses)[number];
 export type InheritanceMode = (typeof inheritanceModes)[number];
+/** household = shared with the household; work = owner-only, never
+ * contributes to household points. Uniform down an item's whole subtree. */
+export type WorkItemScope = (typeof workItemScopes)[number];
 export type TaskSize = (typeof taskSizes)[number];
 export type TagKind = (typeof tagKinds)[number];
 export type TagGroupingMode = (typeof tagGroupingModes)[number];
@@ -397,6 +401,7 @@ export interface Project {
   status: ProjectStatus;
   archivedAt: string | null;
   ownerMemberId: number | null;
+  scope: WorkItemScope;
   dueDate: string | null;
   scheduledDate: string | null;
   position: number;
@@ -507,6 +512,7 @@ export interface Task {
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
   contextInheritanceMode: InheritanceMode;
+  scope: WorkItemScope;
   createdByMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
