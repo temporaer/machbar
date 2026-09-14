@@ -1,4 +1,5 @@
 import type { InheritanceMode, PhysicalContext } from "@machbar/shared";
+import { updatePhysicalContextSelection } from "../lib/physicalContextSelection";
 import { useStrings } from "../lib/strings";
 
 function visibleContexts(
@@ -39,10 +40,14 @@ export function PhysicalContextPicker({
   const noContextActive = mode !== undefined && activeIds.size === 0;
 
   const selectContext = (contextId: number) => {
-    const next = new Set(activeIds);
-    if (next.has(contextId)) next.delete(contextId);
-    else next.add(contextId);
-    onChange(mode === undefined ? undefined : "explicit", [...next]);
+    const next = updatePhysicalContextSelection(
+      contextId,
+      selected,
+      inherited,
+      mode,
+      !activeIds.has(contextId),
+    );
+    onChange(next.mode, next.contextIds);
   };
 
   return (

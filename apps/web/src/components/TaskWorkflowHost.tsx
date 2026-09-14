@@ -66,7 +66,7 @@ export function TaskWorkflowHost() {
       return task.externalWait ? (
         <WaitingFollowUpSheet task={task} onClose={close} />
       ) : (
-        <TaskWaitSheet task={task} onClose={close} />
+        <TaskWaitSheet task={task} members={members} onClose={close} />
       );
     case "split":
       return (
@@ -82,6 +82,7 @@ export function TaskWorkflowHost() {
         <TaskOwnerSheet
           title={`${strings.assign}: ${task.title}`}
           taskTitle={task.title}
+          createdAt={task.createdAt}
           members={members}
           ownerMemberId={task.ownerMemberId}
           ownerInheritanceMode={task.ownerInheritanceMode}
@@ -94,11 +95,14 @@ export function TaskWorkflowHost() {
                 : "project"
           }
           onClose={close}
-          onSelect={async ({ ownerMemberId, ownerInheritanceMode }) => {
+          onSelect={async ({ ownerMemberId, ownerInheritanceMode }, cleanedTitle) => {
             await taskActions.assignOwner(
               task,
               ownerMemberId,
               ownerInheritanceMode,
+              cleanedTitle && cleanedTitle !== task.title
+                ? { title: cleanedTitle }
+                : {},
             );
           }}
         />

@@ -198,8 +198,15 @@ export function RefinementTaskRow({ task: taskProp, ownerName, actions }: Refine
                 : "project"
           }
           onClose={() => setAssigning(false)}
-          onSelect={async ({ ownerMemberId, ownerInheritanceMode }) => {
-            await assignOwner(task, ownerMemberId, ownerInheritanceMode);
+          onSelect={async ({ ownerMemberId, ownerInheritanceMode }, cleanedTitle) => {
+            await assignOwner(
+              task,
+              ownerMemberId,
+              ownerInheritanceMode,
+              cleanedTitle && cleanedTitle !== task.title
+                ? { title: cleanedTitle }
+                : {},
+            );
           }}
         />
       ) : null}
