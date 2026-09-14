@@ -424,7 +424,12 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     await waitFor(() =>
       expect(screen.queryByText("Theos Geschichte")).not.toBeInTheDocument(),
     );
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(toggle);
+    await waitFor(() =>
+      expect(toggle).toHaveAttribute("aria-pressed", "false"),
+    );
   });
 
   it("searches title, criteria, and waiting reasons case-insensitively and diacritic-tolerantly", async () => {
