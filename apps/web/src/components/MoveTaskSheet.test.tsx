@@ -49,7 +49,7 @@ describe("MoveTaskSheet", () => {
 
   it("filters projects case-insensitively as you type — no native select", async () => {
     const task = makeTask({ id: 40, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={vi.fn()} />);
+    renderWithProviders(<MoveTaskSheet task={task} onClose={vi.fn()} />);
 
     const [search] = await screen.findAllByRole("searchbox", { name: "Ziel suchen" });
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
@@ -65,7 +65,7 @@ describe("MoveTaskSheet", () => {
 
   it("reports an empty result set instead of an empty list", async () => {
     const task = makeTask({ id: 41, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={vi.fn()} />);
+    renderWithProviders(<MoveTaskSheet task={task} onClose={vi.fn()} />);
 
     const [search] = await screen.findAllByRole("searchbox", { name: "Ziel suchen" });
     await userEvent.type(search!, "zzz");
@@ -76,7 +76,7 @@ describe("MoveTaskSheet", () => {
   it("moves to the tapped project and remembers it as a recent destination", async () => {
     const onClose = vi.fn();
     const task = makeTask({ id: 42, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={onClose} />);
+    renderWithProviders(<MoveTaskSheet task={task} onClose={onClose} />);
 
     const target = await screen.findByRole("button", { name: "Garten winterfest machen" });
     await userEvent.click(target);
@@ -98,7 +98,7 @@ describe("MoveTaskSheet", () => {
   it("lists recently used destinations first when no query is typed", async () => {
     window.localStorage.setItem("machbar:recent-destinations:project", JSON.stringify([3, 2]));
     const task = makeTask({ id: 43, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={vi.fn()} />);
+    renderWithProviders(<MoveTaskSheet task={task} onClose={vi.fn()} />);
 
     const recents = await screen.findByRole("group", { name: "Zuletzt verwendet" });
     expect(rowNames(recents)).toEqual(["Steuererklärung 2025", "Garten winterfest machen"]);
@@ -118,7 +118,6 @@ describe("MoveTaskSheet", () => {
     renderWithProviders(
       <MoveTaskSheet
         task={makeTask({ id: 46, projectId: 4 })}
-        mode="subtree"
         onClose={vi.fn()}
       />,
     );
@@ -133,7 +132,7 @@ describe("MoveTaskSheet", () => {
     // 99 was archived/deleted since it was last used.
     window.localStorage.setItem("machbar:recent-destinations:project", JSON.stringify([99, 2]));
     const task = makeTask({ id: 44, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={vi.fn()} />);
+    renderWithProviders(<MoveTaskSheet task={task} onClose={vi.fn()} />);
 
     const recents = await screen.findByRole("group", { name: "Zuletzt verwendet" });
     expect(rowNames(recents)).toEqual(["Garten winterfest machen"]);
@@ -142,7 +141,7 @@ describe("MoveTaskSheet", () => {
   it("hides the recents section entirely once a query is typed", async () => {
     window.localStorage.setItem("machbar:recent-destinations:project", JSON.stringify([3]));
     const task = makeTask({ id: 45, title: "Kartons besorgen", projectId: 1 });
-    renderWithProviders(<MoveTaskSheet task={task} mode="subtree" onClose={vi.fn()} />);
+    renderWithProviders(<MoveTaskSheet task={task} onClose={vi.fn()} />);
 
     const [search] = await screen.findAllByRole("searchbox", { name: "Ziel suchen" });
     expect(screen.getByRole("group", { name: "Zuletzt verwendet" })).toBeInTheDocument();
@@ -167,7 +166,7 @@ describe("MoveTaskSheet", () => {
     });
 
     it("excludes the moved task and its descendants from the candidates", async () => {
-      renderWithProviders(<MoveTaskSheet task={moved} mode="parent" onClose={vi.fn()} />);
+      renderWithProviders(<MoveTaskSheet task={moved} onClose={vi.fn()} />);
 
       expect(await screen.findByRole("button", { name: /Möbelwagen mieten/ })).toBeInTheDocument();
       // Neither the task itself nor its child may become its own parent.
@@ -176,10 +175,10 @@ describe("MoveTaskSheet", () => {
     });
 
     it("finds parent candidates by their project title, not just their own", async () => {
-      renderWithProviders(<MoveTaskSheet task={moved} mode="parent" onClose={vi.fn()} />);
+      renderWithProviders(<MoveTaskSheet task={moved} onClose={vi.fn()} />);
 
-      const search = await screen.findByRole("searchbox", { name: "Ziel suchen" });
-      await userEvent.type(search, "leipzig");
+      const [, parentSearch] = await screen.findAllByRole("searchbox", { name: "Ziel suchen" });
+      await userEvent.type(parentSearch!, "leipzig");
 
       // "Möbelwagen mieten" has no match in its own title — it survives
       // because it sits in "Umzug nach Leipzig".
@@ -187,7 +186,7 @@ describe("MoveTaskSheet", () => {
     });
 
     it("keeps the top-level choice and records the chosen parent as recent", async () => {
-      renderWithProviders(<MoveTaskSheet task={moved} mode="parent" onClose={vi.fn()} />);
+      renderWithProviders(<MoveTaskSheet task={moved} onClose={vi.fn()} />);
 
       expect(await screen.findByRole("button", { name: "Keine (oberste Ebene)" })).toBeInTheDocument();
 
@@ -196,6 +195,7 @@ describe("MoveTaskSheet", () => {
 
       await waitFor(() =>
         expect(mockedApi.moveTask).toHaveBeenCalledWith(50, {
+          projectId: 1,
           parentTaskId: 60,
           expectedRevision: 1,
         }),
@@ -204,7 +204,7 @@ describe("MoveTaskSheet", () => {
     });
 
     it("moves a whole subtree through both pickers at once", async () => {
-      renderWithProviders(<MoveTaskSheet task={moved} mode="subtree" onClose={vi.fn()} />);
+      renderWithProviders(<MoveTaskSheet task={moved} onClose={vi.fn()} />);
 
       await screen.findByRole("button", { name: "Garten winterfest machen" });
       const [projectSearch, parentSearch] = screen.getAllByRole("searchbox", {

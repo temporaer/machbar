@@ -7,9 +7,9 @@ import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
-import { RailConfigProvider } from "../lib/railConfigContext";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
+import { TaskSnoozeProvider } from "../lib/taskSnoozeContext";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { LocaleProvider, type Locale } from "../lib/locale";
 import { ThemeProvider } from "../lib/theme";
@@ -33,21 +33,21 @@ function AllProviders({
             <IdentityProvider>
               <RefreshProvider>
                 <SwipeSettingsProvider>
-                  <RailConfigProvider>
                     <SwipeCoachProvider>
                       <TaskActionsProvider>
                         <ProjectActionsProvider>
-                          <InteractionScopeProvider>
-                            <TaskDetailProvider>
-                              <TaskWorkflowProvider>
-                                <ProjectWorkflowProvider>{children}</ProjectWorkflowProvider>
-                              </TaskWorkflowProvider>
-                            </TaskDetailProvider>
-                          </InteractionScopeProvider>
+                          <TaskSnoozeProvider>
+                            <InteractionScopeProvider>
+                              <TaskDetailProvider>
+                                <TaskWorkflowProvider>
+                                  <ProjectWorkflowProvider>{children}</ProjectWorkflowProvider>
+                                </TaskWorkflowProvider>
+                              </TaskDetailProvider>
+                            </InteractionScopeProvider>
+                          </TaskSnoozeProvider>
                         </ProjectActionsProvider>
                       </TaskActionsProvider>
                     </SwipeCoachProvider>
-                  </RailConfigProvider>
                 </SwipeSettingsProvider>
               </RefreshProvider>
             </IdentityProvider>

@@ -35,13 +35,13 @@ import type { ProjectWorkflowAction } from "./api";
 export type WorkItemCommand =
   | { type: "task.open"; taskId: number; focusField?: TaskDetailFocusField }
   | { type: "task.plan"; taskId: number }
+  | { type: "task.later"; taskId: number }
+  | { type: "task.structure"; taskId: number }
   | { type: "task.reminders"; taskId: number }
   | { type: "task.waitingLifecycle"; taskId: number }
   | { type: "task.split"; taskId: number }
   | { type: "task.assignOwner"; taskId: number }
   | { type: "task.changeProject"; taskId: number }
-  | { type: "task.changeParent"; taskId: number }
-  | { type: "task.addSuccessor"; taskId: number }
   | { type: "task.recurrence"; taskId: number }
   | { type: "task.priority"; taskId: number }
   | { type: "task.tags"; taskId: number }
@@ -49,11 +49,9 @@ export type WorkItemCommand =
   | { type: "task.convertToProject"; taskId: number }
   | { type: "task.lifecycle"; taskId: number }
   | { type: "task.setStatus"; task: Task; status: Task["status"] }
-  | { type: "task.openOverflow"; taskId: number }
   | { type: "task.toggleDone"; task: Task }
   | { type: "task.toggleAdditionalNextAction"; task: Task }
   | { type: "task.primaryAction"; task: Task }
-  | { type: "task.discard"; task: Task }
   | { type: "workItem.schedule"; item: WeekPlanningItem; date: string | null }
   | { type: "workItem.setDeadline"; item: WeekPlanningItem; date: string | null }
   | { type: "workItem.setRevisitDate"; item: WeekPlanningItem; date: string | null }
@@ -64,6 +62,7 @@ export type WorkItemCommand =
   | { type: "story.reopen"; story: ProjectWithActions; ownerMemberId?: number | null }
   | { type: "story.archive"; story: ProjectWithActions }
   | { type: "story.defer"; story: ProjectWithActions }
+  | { type: "story.structure"; story: ProjectWithActions }
   | { type: "story.assignDriver"; story: ProjectWithActions }
   | { type: "story.planWork"; story: ProjectWithActions }
   | { type: "story.editOutcome"; story: ProjectWithActions }
@@ -71,7 +70,6 @@ export type WorkItemCommand =
   | { type: "story.tags"; story: ProjectWithActions }
   | { type: "story.contexts"; story: ProjectWithActions }
   | { type: "story.lifecycle"; story: ProjectWithActions }
-  | { type: "story.openOverflow"; story: ProjectWithActions }
   | { type: "outline.collapse"; workItemId: number }
   | { type: "outline.expand"; workItemId: number }
   | { type: "outline.moveUp"; workItemId: number }
@@ -84,32 +82,6 @@ export type WorkItemCommand =
   | { type: "navigate.projects" }
   | { type: "navigate.waiting" }
   | { type: "navigate.more" };
-
-/** Canonical semantic commands that may be promoted into a row command rail. */
-export type TaskRailCommand =
-  | "task.plan"
-  | "task.reminders"
-  | "task.waitingLifecycle"
-  | "task.split"
-  | "task.assignOwner"
-  | "task.changeProject"
-  | "task.addSuccessor"
-  | "task.recurrence"
-  | "task.priority"
-  | "task.tags"
-  | "task.contexts"
-  | "task.convertToProject"
-  | "task.lifecycle";
-
-export type ProjectRailCommand =
-  | "story.defer"
-  | "story.assignDriver"
-  | "story.planWork"
-  | "story.editOutcome"
-  | "story.planDates"
-  | "story.tags"
-  | "story.contexts"
-  | "story.lifecycle";
 
 /**
  * Maps a legal `ProjectWorkflowAction` onto its `story.*` semantic command

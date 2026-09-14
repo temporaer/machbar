@@ -47,7 +47,7 @@ const TASK_COMMAND_KEYS: Record<string, (taskId: number) => WorkItemCommand> = {
   s: (taskId) => ({ type: "task.plan", taskId }),
   w: (taskId) => ({ type: "task.waitingLifecycle", taskId }),
   a: (taskId) => ({ type: "task.assignOwner", taskId }),
-  m: (taskId) => ({ type: "task.openOverflow", taskId }),
+  m: (taskId) => ({ type: "task.open", taskId }),
 };
 
 /**

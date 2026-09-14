@@ -4,7 +4,7 @@ import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { formatDate, isOverdue } from "../lib/format";
-import { isCapturedInboxItem, sortByPosition } from "../lib/taskHelpers";
+import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { useInteractionScope } from "../lib/interactionScope";
@@ -33,8 +33,8 @@ import {
   markdownWithoutPaperlessReferences,
 } from "../lib/paperlessAttachments";
 import { TaskRowAttachmentPreview } from "./TaskRowAttachmentPreview";
-import { useRailConfig } from "../lib/railConfigContext";
-import { WorkItemCommandRail } from "./WorkItemCommandRail";
+import { WorkItemActionRail } from "./WorkItemActionRail";
+import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 
 const LONG_PRESS_MS = 480;
 
@@ -128,7 +128,6 @@ export function TaskRow({
   const contentRef = useRef<HTMLDivElement | null>(null);
   const { members, currentMemberId } = useIdentity();
   const { primarySwipeAction } = useSwipeSettings();
-  const { taskFavorites } = useRailConfig();
   // Structural editing (drag handle, keyboard moves, drop preview) is
   // provided by the surrounding `TaskOutline`; it stays absent — and every
   // handle with it — in views whose row order carries no hierarchy meaning.
@@ -284,17 +283,20 @@ export function TaskRow({
     [busy, task.id, organize, organizeEnabled, cancelSwipe],
   );
 
-  const runRailCommand = (command: (typeof taskFavorites)[number]) => {
-    // Move focus to the kebab before the rail (and any open overflow list)
-    // unmounts, so a focused-workflow sheet's opener-restore targets a
-    // control that stays connected across the close/open transition
-    // instead of losing focus to <body>.
+  const runRailCommand = (command: "task.later" | "task.structure" | "task.open") => {
+    // Move focus to the kebab before the rail unmounts, so a focused-
+    // workflow sheet's opener-restore targets a control that stays
+    // connected across the close/open transition instead of losing focus
+    // to <body>.
     kebabButtonRef.current?.focus();
     scope.setOpenRail(null);
     dispatch({ type: command, taskId: task.id });
   };
 
+  const [successorComposerOpen, setSuccessorComposerOpen] = useState(false);
+
   return (
+    <>
     <li
       className={`task-row task-row-surface-${task.status}`}
       style={{ listStyle: "none" }}
@@ -503,13 +505,16 @@ export function TaskRow({
           ) : null}
         </div>
         {ownerMember ? (
-          <span
+          <button
+            type="button"
             className="task-row-owner-avatar"
-            aria-label={`${strings.owner}: ${ownerLabel}`}
+            aria-label={`${strings.assign}: ${ownerLabel}`}
             title={ownerLabel}
+            disabled={busy}
+            onClick={() => dispatch({ type: "task.assignOwner", taskId: task.id })}
           >
             <MemberAvatar member={ownerMember} size={isCompact ? "xs" : "sm"} />
-          </span>
+          </button>
         ) : null}
         <RowKebabButton
           classPrefix="task-row"
@@ -526,24 +531,16 @@ export function TaskRow({
       ) : null}
 
       {chipsOpen ? (
-        <WorkItemCommandRail
+        <WorkItemActionRail
           kind="task"
-          favorites={taskFavorites}
-          labels={strings.railCommandLabels}
-          labelForCommand={(command) =>
-            command === "task.waitingLifecycle" && task.externalWait
-              ? strings.followUp
-              : strings.railCommandLabels[command]
-          }
-          groupLabel={strings.moreActions}
-          overflowLabel={`${strings.more} …`}
           disabled={busy}
-          onCommand={runRailCommand}
-          {...(isCapturedInboxItem(task)
-            ? { hiddenCommands: ["task.changeProject", "task.split", "task.reminders"] as const }
-            : {})}
-          overflowOpen={scope.openOverflowId === taskProp.id}
-          onOverflowChange={(open) => scope.setOpenOverflow(open ? taskProp.id : null)}
+          groupLabel={strings.moreActions}
+          laterLabel={strings.railLater}
+          structureLabel={strings.railStructure}
+          moreLabel={strings.railMore}
+          onLater={() => runRailCommand("task.later")}
+          onStructure={() => runRailCommand("task.structure")}
+          onMore={() => runRailCommand("task.open")}
         />
       ) : null}
       {lifecycleOpen ? (
@@ -563,6 +560,17 @@ export function TaskRow({
               {strings.taskStatusLabels[status]}
             </button>
           ))}
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={busy}
+            onClick={() => {
+              scope.setOpenLifecycle(null);
+              dispatch({ type: "task.waitingLifecycle", taskId: task.id });
+            }}
+          >
+            {task.externalWait ? strings.followUp : strings.waiting}
+          </button>
         </div>
       ) : null}
 
@@ -616,5 +624,26 @@ export function TaskRow({
         </ul>
       ) : null}
     </li>
+    {organizeEnabled ? (
+      <li className="task-row-successor-slot" style={{ listStyle: "none" }}>
+        {successorComposerOpen ? (
+          <InlineSuccessorComposer
+            predecessorId={task.id}
+            onCancel={() => setSuccessorComposerOpen(false)}
+            onCreated={() => setSuccessorComposerOpen(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            className="task-row-add-successor"
+            aria-label={strings.insertSuccessorLabel}
+            onClick={() => setSuccessorComposerOpen(true)}
+          >
+            +
+          </button>
+        )}
+      </li>
+    ) : null}
+    </>
   );
 }

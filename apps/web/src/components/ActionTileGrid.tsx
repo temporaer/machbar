@@ -9,12 +9,12 @@ export interface ActionTileDescriptor {
 }
 
 /**
- * Genuine-action surface for Task/Project detail views: unlike
- * the compact command rail overflow (see `WorkItemCommandRail`), this renders
- * each item as a large tappable tile with a mnemonic icon *and* an
+ * Genuine-action surface for Task/Project detail views' `Weitere Aktionen`:
+ * unlike the fixed `Später`/`Struktur` rail (see `WorkItemActionRail`), this
+ * renders each item as a large tappable tile with a mnemonic icon *and* an
  * always-visible verb label -- never icon-only -- sized for a ~44-52px
- * target. Detail views pass only commands that are not already directly
- * represented elsewhere on the page (see callers).
+ * target. Detail views pass only genuinely uncommon commands that have no
+ * other direct affordance (see callers).
  */
 export function ActionTileGrid({ items }: { items: readonly ActionTileDescriptor[] }) {
   if (items.length === 0) return null;

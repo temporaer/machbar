@@ -2878,12 +2878,11 @@ details[open] > .disclosure-summary::after {
 
 .rail-main-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
-.rail-main-grid .btn,
-.rail-overflow-grid .btn {
+.rail-main-grid .btn {
   width: 100%;
   min-width: 0;
   min-height: 44px;
@@ -2892,19 +2891,6 @@ details[open] > .disclosure-summary::after {
   line-height: 1.2;
   white-space: normal;
   overflow-wrap: anywhere;
-}
-
-.rail-overflow-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 8px;
-}
-
-@media (max-width: 360px) {
-  .rail-overflow-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 /*
@@ -3277,6 +3263,30 @@ details[open] > .disclosure-summary::after {
   width: 100%;
 }
 
+/*
+ * The contextual successor "+" — only rendered by `TaskRow` inside an
+ * `organizable` outline (see `useOutlineOrganizeRow()`), directly under
+ * the row it follows, at every depth.
+ */
+.task-row-add-successor {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 44px;
+  border: 1px dashed var(--color-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.task-row-add-successor:hover {
+  background: var(--color-surface-alt);
+}
+
 .task-row-error {
   display: flex;
   align-items: center;
@@ -3307,7 +3317,11 @@ details[open] > .disclosure-summary::after {
   right: 10px;
   bottom: 8px;
   z-index: 2;
-  pointer-events: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
 }
 
 .task-row-main {

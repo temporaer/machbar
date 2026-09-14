@@ -5,6 +5,7 @@ import { useProjectWorkflow } from "../lib/projectWorkflowContext";
 import { useIdentity } from "../lib/identity";
 import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { ProjectDeferSheet } from "./ProjectDeferSheet";
+import { ProjectStructureSheet } from "./ProjectStructureSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
 import { PlanDatesSheet } from "./PlanDatesSheet";
 import { ProjectContextsSheet } from "./ProjectContextsSheet";
@@ -48,6 +49,8 @@ export function ProjectWorkflowHost() {
           }}
         />
       );
+    case "structure":
+      return <ProjectStructureSheet story={story} onClose={close} />;
     case "assignDriver":
       return (
         <MemberSelectionSheet

@@ -15,7 +15,6 @@ import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
-import { RailConfigProvider } from "../lib/railConfigContext";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
@@ -112,7 +111,6 @@ function renderWithProjectRoute(ui: ReactElement) {
       <IdentityProvider>
         <RefreshProvider>
           <SwipeSettingsProvider>
-            <RailConfigProvider>
               <TaskActionsProvider>
                 <ProjectActionsProvider>
                   <InteractionScopeProvider>
@@ -129,7 +127,6 @@ function renderWithProjectRoute(ui: ReactElement) {
                   </InteractionScopeProvider>
                 </ProjectActionsProvider>
               </TaskActionsProvider>
-            </RailConfigProvider>
           </SwipeSettingsProvider>
         </RefreshProvider>
       </IdentityProvider>
@@ -140,10 +137,6 @@ function renderWithProjectRoute(ui: ReactElement) {
 function openChips() {
   fireEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
   return screen.getByRole("group", { name: "Weitere Aktionen" });
-}
-
-async function openRailOverflow(group: HTMLElement) {
-  await userEvent.click(within(group).getByText("Mehr …"));
 }
 
 function openLifecycleRail(container: HTMLElement) {
@@ -629,27 +622,19 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Noah" })]);
   });
 
-  it("reveals the default project rail commands plus More overflow for secondary commands", async () => {
+  it("reveals the fixed rail commands: Später, Struktur, Mehr — never a configurable or overflow set", async () => {
     const story = makeProject({ id: 40, title: "Aktive Geschichte", status: "active", ownerMemberId: 1 });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Aktive Geschichte");
 
     swipe(container, -100);
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(chips).getByRole("button", { name: "Wiedervorlegen" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Person ändern" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Arbeit planen" })).toBeInTheDocument();
-    expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Später" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
     const mainGrid = chips.querySelector(".rail-main-grid");
-    expect(mainGrid?.querySelectorAll("button")).toHaveLength(4);
-
-    await openRailOverflow(chips);
-    expect(mainGrid?.querySelectorAll("button")).toHaveLength(4);
-    expect(within(chips).getByRole("group", { name: "Mehr …" })).toHaveClass("rail-overflow-grid");
-    expect(within(chips).getByRole("button", { name: "Ergebnis bearbeiten" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Tags bearbeiten" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Orte bearbeiten" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Status ändern" })).toBeInTheDocument();
+    expect(mainGrid?.querySelectorAll("button")).toHaveLength(3);
+    expect(chips.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
   });
 
   it("offers only legal transitions in the lifecycle rail for a completed and an archived story", async () => {
@@ -695,8 +680,9 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     renderWithProviders(<Harness story={story} />);
     await screen.findByText("Driver-Regel");
 
-    const chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Person ändern" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Verantwortliche Person zuweisen: Mira" }),
+    );
 
     const group = screen.getByRole("group", { name: "Verantwortlich" });
     expect(within(group).queryByRole("button", { name: "Niemand zugewiesen" })).not.toBeInTheDocument();
@@ -721,8 +707,9 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     renderWithProviders(<Harness story={story} variant="compact" />);
     await screen.findByText("Backlog-Driver");
 
-    const chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Person ändern" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Verantwortliche Person zuweisen: Mira" }),
+    );
 
     const group = screen.getByRole("group", { name: "Verantwortlich" });
     expect(within(group).getByRole("button", { name: "Niemand zugewiesen" })).toBeInTheDocument();
@@ -745,9 +732,12 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await screen.findByText("Popup-Geschichte");
 
     let chips = openChips();
-    await openRailOverflow(chips);
+    await userEvent.click(within(chips).getByRole("button", { name: "Struktur" }));
+    const structureSheet = await screen.findByRole("dialog", {
+      name: "Struktur: Popup-Geschichte",
+    });
     await userEvent.click(
-      within(chips).getByRole("button", { name: "Ergebnis bearbeiten" }),
+      within(structureSheet).getByRole("button", { name: "Ergebnis bearbeiten" }),
     );
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
     expect(await screen.findByDisplayValue("Angebot eingeholt")).toBeInTheDocument();
@@ -761,7 +751,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     chips = openChips();
     await userEvent.click(
-      within(chips).getByRole("button", { name: "Wiedervorlegen" }),
+      within(chips).getByRole("button", { name: "Später" }),
     );
     // `story.defer` opens the canonical Wiedervorlage-first workflow (the
     // deadline is a secondary constraint behind its own affordance), not a
@@ -814,37 +804,36 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     expect(within(firstRow).queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
   });
 
-  it("clears overflow state when the shared rail moves to another story", async () => {
-    const first = makeProject({ id: 49, title: "Rail mit Overflow", status: "active", ownerMemberId: 1 });
-    const second = makeProject({ id: 50, title: "Andere Rail", status: "active", ownerMemberId: 1 });
-    renderWithProviders(
-      <ul>
-        <ProjectStoryRow story={first} />
-        <ProjectStoryRow story={second} />
-      </ul>,
-    );
-    await screen.findByText("Rail mit Overflow");
-    const firstRow = screen.getByText("Rail mit Overflow").closest(".story-row") as HTMLElement;
-    const secondRow = screen.getByText("Andere Rail").closest(".story-row") as HTMLElement;
+  // The former "clears overflow state when the shared rail moves to another
+  // story" test exercised the deleted overflow group (`aria-label "Mehr …"`,
+  // `.rail-overflow-grid`) directly; the fixed rail has no such per-row local
+  // toggle state left to clear, so there is nothing left to assert here that
+  // isn't already covered by the "only one rail open" test above.
 
-    await userEvent.click(within(firstRow).getByRole("button", { name: "Weitere Aktionen" }));
-    await openRailOverflow(within(firstRow).getByRole("group", { name: "Weitere Aktionen" }));
-    expect(within(firstRow).getByRole("button", { name: "Tags bearbeiten" })).toBeInTheDocument();
-
-    await userEvent.click(within(secondRow).getByRole("button", { name: "Weitere Aktionen" }));
-    expect(within(secondRow).getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
-    expect(within(firstRow).queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
-    expect(secondRow.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
-  });
-
-  it("navigates to the project page through the explicit 'Arbeit planen' action", async () => {
+  it("navigates to the project detail page through the structure sheet's 'Nächste Aufgabe erfassen' action", async () => {
     const story = makeProject({ id: 47, title: "Voll bearbeiten", status: "active", ownerMemberId: 1 });
     renderWithProjectRoute(<Harness story={story} />);
     await screen.findByText("Voll bearbeiten");
 
     const chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Arbeit planen" }));
+    await userEvent.click(within(chips).getByRole("button", { name: "Struktur" }));
+    const structureSheet = await screen.findByRole("dialog", {
+      name: "Struktur: Voll bearbeiten",
+    });
+    await userEvent.click(
+      within(structureSheet).getByRole("button", { name: "Nächste Aufgabe erfassen" }),
+    );
     expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 47");
+  });
+
+  it("navigates directly to the project detail page through the rail's 'Mehr' action", async () => {
+    const story = makeProject({ id: 48, title: "Direkt zur Detailseite", status: "active", ownerMemberId: 1 });
+    renderWithProjectRoute(<Harness story={story} />);
+    await screen.findByText("Direkt zur Detailseite");
+
+    const chips = openChips();
+    await userEvent.click(within(chips).getByRole("button", { name: "Mehr" }));
+    expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 48");
   });
 });
 
@@ -1060,7 +1049,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(screen.getByText("Erledigt, wenn …: Übergabe abgeschlossen")).toBeInTheDocument();
     expect(screen.queryByText(/Aufgaben:/)).not.toBeInTheDocument();
     expect(screen.getByText("Nächster Schritt: Kartons kaufen")).toBeInTheDocument();
-    expect(screen.getByLabelText("Verantwortlich: Mira")).toBeInTheDocument();
+    expect(screen.getByLabelText("Verantwortliche Person zuweisen: Mira")).toBeInTheDocument();
     const contextTag = screen.getByText("Seligenstadt");
     expect(contextTag).toHaveClass("task-card-tag");
     expect(contextTag.closest(".story-row-meta")).toBeInTheDocument();
@@ -1275,30 +1264,26 @@ describe("ProjectStoryRow – retention, cycling and error rollback", () => {
   });
 });
 
-describe("ProjectStoryRow – configurable text command rail", () => {
+describe("ProjectStoryRow – fixed action rail", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
-  it("renders the default project rail commands as labelled buttons with More overflow", async () => {
+  it("renders exactly the fixed Später/Struktur/Mehr commands as labelled buttons, never an overflow", async () => {
     const story = makeProject({ id: 70, title: "Kompakte Chips", status: "active", ownerMemberId: 1 });
     renderWithProviders(<Harness story={story} />);
     await screen.findByText("Kompakte Chips");
 
     const chips = openChips();
-    for (const name of ["Wiedervorlegen", "Person ändern", "Arbeit planen"]) {
+    for (const name of ["Später", "Struktur", "Mehr"]) {
       const button = within(chips).getByRole("button", { name });
       expect(button).toHaveClass("btn", "btn-sm");
       expect(button.textContent).toBe(name);
     }
-
-    expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
-    await openRailOverflow(chips);
-    for (const name of ["Ergebnis bearbeiten", "Tags bearbeiten", "Orte bearbeiten", "Status ändern"]) {
-      expect(within(chips).getByRole("button", { name })).toBeInTheDocument();
-    }
+    expect(chips.querySelector(".rail-main-grid")?.querySelectorAll("button")).toHaveLength(3);
+    expect(chips.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
   });
 });
 

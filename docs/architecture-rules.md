@@ -186,7 +186,13 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task/story read projection (shared lifecycle vocabulary) | `apps/api/src/domain/workItem.ts` and `apps/api/src/domain/graph.ts` |
 | Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`) |
 | Semantic user-intent commands (mouse/touch/keyboard dispatch a common vocabulary) | `apps/web/src/lib/commands.ts` and `apps/web/src/lib/useWorkItemCommands.ts` |
-| Configurable work-item command rails and pure overflow | `apps/web/src/lib/railConfig.ts`, `apps/web/src/lib/railConfigContext.tsx`, and `apps/web/src/components/WorkItemCommandRail.tsx` |
+| Fixed row action rail (`Später` · `Struktur` · `Mehr`, non-configurable) | `apps/web/src/components/WorkItemActionRail.tsx`, wired from `apps/web/src/components/TaskRow.tsx` and `apps/web/src/components/ProjectStoryRow.tsx` |
+| Task `Später` workflow (same-day member-scoped snooze vs. future scheduling) | `apps/web/src/components/TaskLaterSheet.tsx`, opened as the `later` task workflow |
+| Member-scoped ephemeral task snooze (not `scheduledDate`/`externalWait`) | `apps/web/src/lib/taskSnooze.ts` and `apps/web/src/lib/taskSnoozeContext.tsx` |
+| Task `Struktur` workflow (split/move/convert-to-project) | `apps/web/src/components/TaskStructureSheet.tsx`, opened as the `structure` task workflow |
+| Project `Struktur` workflow (plan next task/edit outcome) | `apps/web/src/components/ProjectStructureSheet.tsx`, opened as the `structure` project workflow |
+| Consolidated task move (project and/or parent in one step) | `apps/web/src/components/MoveTaskSheet.tsx` via `task.changeProject` |
+| Contextual successor creation ("+" in organizable outlines only) | `apps/web/src/components/InlineSuccessorComposer.tsx`, rendered by `apps/web/src/components/TaskRow.tsx` when `organizeEnabled` |
 | Logical active WorkItem, structural capability, and collapse state per navigable surface | `apps/web/src/lib/interactionScope.tsx` |
 | Command descriptors, keyboard help, and prefix hints | `apps/web/src/lib/commandRegistry.ts`, `apps/web/src/components/CommandHelpSheet.tsx`, and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
 | Keyboard navigation (`j/k/h/l`, `Alt+arrows`, `g`-prefix, `?`, `c`, focused task keys) | `apps/web/src/lib/useWorkItemKeyboardNav.ts` and `apps/web/src/lib/useGlobalNavigationKeys.ts` |

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type AgendaScope } from "../lib/api";
+import type { Task } from "@machbar/shared";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
@@ -18,6 +19,7 @@ import { readTodayScope, writeTodayScope } from "../lib/todayScope";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
+import { useTaskSnooze } from "../lib/taskSnoozeContext";
 
 export function TodayPage() {
   const strings = useStrings();
@@ -60,11 +62,18 @@ export function TodayPage() {
     setScope(nextScope);
     writeTodayScope(nextScope);
   };
-  const revisitTasks = agenda?.revisit ?? [];
-  const additionalTasks = [
+  const { isSnoozed } = useTaskSnooze();
+  // A same-day "Später" snooze (see `taskSnooze.ts`) is member-scoped,
+  // client-only attention state -- it never touches `scheduledDate` or
+  // `externalWait`, so it must not affect what other members see, and it
+  // is filtered here rather than server-side.
+  const notSnoozed = <T extends { id: number }>(tasks: T[]) =>
+    tasks.filter((task) => !isSnoozed(task.id));
+  const revisitTasks = notSnoozed(agenda?.revisit ?? []);
+  const additionalTasks = notSnoozed([
     ...(agenda?.shared ?? []),
     ...(agenda?.unscheduled ?? []),
-  ];
+  ]);
   const projectAgenda = agenda?.projects ?? [];
   const projectsByBucket: Record<
     "planned" | "overdue" | "dueToday" | "dueSoon",
@@ -78,6 +87,15 @@ export function TodayPage() {
   for (const entry of projectAgenda) {
     projectsByBucket[entry.attentionBucket].push(entry);
   }
+  const visibleSectionTasks: Record<
+    "planned" | "overdue" | "dueToday" | "dueSoon",
+    Task[]
+  > = {
+    planned: notSnoozed(agenda?.planned ?? []),
+    overdue: notSnoozed(agenda?.overdue ?? []),
+    dueToday: notSnoozed(agenda?.dueToday ?? []),
+    dueSoon: notSnoozed(agenda?.dueSoon ?? []),
+  };
   const resolveProjectOwner = (ownerMemberId: number | null) =>
     scope === "all" && ownerMemberId !== null
       ? (members.find((member) => member.id === ownerMemberId) ?? null)
@@ -126,7 +144,7 @@ export function TodayPage() {
         {agenda
           ? (() => {
               const total =
-                sections.reduce((sum, s) => sum + agenda[s.key].length, 0) +
+                sections.reduce((sum, s) => sum + visibleSectionTasks[s.key].length, 0) +
                 additionalTasks.length +
                 revisitTasks.length +
                 projectAgenda.length;
@@ -137,15 +155,15 @@ export function TodayPage() {
                   {sections
                     .filter(
                       (s) =>
-                        agenda[s.key].length > 0 ||
+                        visibleSectionTasks[s.key].length > 0 ||
                         projectsByBucket[s.key].length > 0,
                     )
                     .map((s) => (
                       <div className="section" key={s.key}>
                         <div className="section-title">{s.label}</div>
-                        {agenda[s.key].length > 0 ? (
+                        {visibleSectionTasks[s.key].length > 0 ? (
                           <TaskOutline
-                            tasks={agenda[s.key]}
+                            tasks={visibleSectionTasks[s.key]}
                             emptyMessage={strings.noItems}
                             preserveRootOrder
                             showSwipeHint={false}
@@ -155,7 +173,7 @@ export function TodayPage() {
                         {projectsByBucket[s.key].length > 0 ? (
                           <div
                             className={`list${
-                              agenda[s.key].length > 0
+                              visibleSectionTasks[s.key].length > 0
                                 ? " today-project-agenda-list"
                                 : ""
                             }`}

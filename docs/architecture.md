@@ -747,27 +747,40 @@ collections (subtasks, dependencies) as disclosures, followed by
 `Weitere Aktionen`, `Organisation`, activity and deletion.
 
 Every scalar value in the meta row is a button that dispatches the same
-semantic command as the rail and keyboard — owner, planning, waiting,
+semantic command as the fixed rail and keyboard — owner, planning, waiting,
 recurrence, priority, tags and contexts. Unset rare properties render nothing;
 only owner, planning and waiting keep a lightweight `+ …` affordance. Status
-shows as a read-only badge, with changes made through the `task.lifecycle`
-chooser under `Weitere Aktionen`.
+shows as a clickable badge that toggles its own inline lifecycle chooser
+(`task.lifecycle`), not a `Weitere Aktionen` tile. Movement (`task.changeProject`),
+split (`task.split`), and convert-to-project (`task.convertToProject`) live in
+the row rail's `Struktur` sheet instead of here, and successor creation is the
+contextual "+" in organizable outlines — none of them duplicate into
+`Weitere Aktionen`, which now holds only genuinely uncommon actions with no
+other affordance (priority/recurrence when unset, the additional-next-action
+toggle).
 
 `ProjectDetailPage` is the same shape for stories, and `ProjectEditSheet` is
 gone. The page edits only its authored title and notes in place; driver,
 dates, tags and contexts are meta-row values that dispatch
-`story.assignDriver`/`story.planDates`/`story.tags`/`story.contexts`.
+`story.assignDriver`/`story.planDates`/`story.tags`/`story.contexts`, and the
+driver avatar itself is also directly clickable for the same
+`story.assignDriver` shortcut.
 Outcome is visible **Ergebnis** content: `AcceptanceCriteriaChecklist` shares
 the direct `useCriterionCheck` mutation with `AcceptanceCriteriaEditor`, while
 the explicit `story.editOutcome` action is the sole route for changing
-criterion structure. Its genuine non-property commands appear as
-verb-labelled `ActionTileGrid` tiles rather than a generic command dump.
+criterion structure — reachable both from the row rail's `Struktur` sheet and
+from the contextual icon button next to the outcome section. Its genuine
+non-property commands (there are none left once `story.planWork`/
+`story.defer` moved into the fixed rail) mean the page's own `Weitere
+Aktionen`/`ActionTileGrid` section is gone entirely; `ActionTileGrid` is now
+used only by `TaskDetailSheet`'s trimmed `Weitere Aktionen`.
 Deleting the sheet also deleted its private copies of
 activation-driver, activation-progress and completion-criteria prerequisite
 handling, which `resolveStoryPrerequisite()` already decides once. Review
 repair links (`?focus=driver|completion|outcome`) dispatch those same
 commands rather than scrolling a form to a field. Filters
-(`SearchFilterBar`) and settings (`MorePage`) are unaffected.
+(`SearchFilterBar`) are unaffected; settings (`MorePage`) no longer has a
+rail-favorites configuration section since the rail is fixed.
 
 ### Outline structure editing: drag and keyboard
 
@@ -825,15 +838,21 @@ progress count is always computed against the full, unpruned `children` array.
 - Dropping into a **collapsed** parent would hide the moved row, so the hook publishes an `expandRequest` the addressed row reacts to (collapse state is per row).
 - A drag is announced through a `role="status"` live region, since the gesture has no meaning for assistive tech.
 
-`MoveTaskSheet` backs both explicit moves — `parent` and `subtree` — and renders each destination list through `DestinationPicker`. It is opened from `task.changeProject` (`subtree` mode, which offers both pickers, dispatched via `TaskWorkflowHost`) and from `TaskDetailSheet`:
+`MoveTaskSheet` always renders both the project and parent destination pickers
+in one step — there is no separate `parent`-only mode, since a project-only
+move is not representable in the `work_items.parentId`-only hierarchy anyway,
+and the combined shape is a strict superset. It is opened from
+`task.changeProject`, dispatched from the row rail's `Struktur` sheet
+(`TaskStructureSheet`) via `TaskWorkflowHost`:
 
-- **Search** is an always-visible filter over the candidate list, matched case-insensitively (`toLocaleLowerCase`, so German umlauts fold correctly) as a substring of `title + subtitle`. For parent-task candidates the subtitle is the owning project's title, so typing a project name finds its tasks. In `parent` mode the project list is never fetched, so the title comes from the `GET /api/projects/:id` response the sheet already loads.
+- **Search** is an always-visible filter over the candidate list, matched case-insensitively (`toLocaleLowerCase`, so German umlauts fold correctly) as a substring of `title + subtitle`. For parent-task candidates the subtitle is the owning project's title, so typing a project name finds its tasks.
 - **Recents** (`lib/recentDestinations.ts`) are shown first while the query is empty, in a `Zuletzt verwendet` group, with the remaining candidates under `Alle Ziele`. Once a query is typed the grouping collapses to plain results.
 - Recents are stored in `localStorage` under `machbar:recent-destinations:{project,parent}` — separate lists, most-recent-first, de-duplicated, capped at `MAX_RECENT_DESTINATIONS` (5). They are written only after a move the API **accepted**, and a corrupt/unavailable entry degrades to "no recents" rather than failing.
 - `pickRecent()` filters recents against the *current* candidate list at read time instead of pruning storage, because a destination can be unavailable in one picker (excluded as the moved task's own subtree) yet perfectly valid in the next.
 
-The picker only selects. All modes send a concrete destination to `moveTask`;
-the moved task's own subtree is still excluded from parent candidates
+The picker only selects. Every submit sends a concrete `{ projectId,
+parentTaskId }` pair to `moveTask`; the moved task's own subtree is still
+excluded from parent candidates
 client-side, and hierarchy/cycle validation stays server-side
 (`wouldCreateHierarchyCycle` / `wouldCreateDependencyCycle` in
 `apps/api/src/repo/treeRepo.ts` and `dependencyRepo.ts`).
@@ -1020,17 +1039,34 @@ be read from an ancestor) handles the scope-independent `g`-prefix
 navigation sequence and returns descriptor-derived prefix choices for the
 which-key hint. `?` opens the scoped `CommandHelpSheet`, `c` dispatches
 `capture.open`, and semantic task shortcuts dispatch `task.plan`,
-`task.waitingLifecycle`, `task.assignOwner`, and `task.openOverflow` when the
-logical active item is a task. These bindings are independent of rail
-favorite configuration. Both keyboard hooks suppress
-themselves via one shared
+`task.waitingLifecycle`, `task.assignOwner`, and `task.open` (`Mehr`, opening
+the detail directly) when the logical active item is a task. These bindings
+are independent of the fixed action rail's presentation. Both keyboard hooks
+suppress themselves via one shared
 `shouldSuppressGlobalShortcuts()` (`apps/web/src/lib/keyboardShortcuts.ts`)
 while editing text, or while a `BottomSheet`/modal is open.
 
-**Command rails.** `WorkItemCommandRail.tsx` renders three device-local
-favorite commands from `railConfig.ts` plus a fixed `Mehr …` overflow. The
-overflow is derived from the same canonical command registry and excludes
-pinned favorites, so changing prominence never changes command semantics.
+**Command rails.** `WorkItemActionRail.tsx` renders exactly three fixed,
+non-configurable buttons per row — `Später` · `Struktur` · `Mehr` — for both
+tasks and projects; there is no per-household favorite/overflow
+configuration. `Später` dispatches `task.later`/`story.defer`; `Struktur`
+dispatches `task.structure`/`story.structure`, opening `TaskStructureSheet`
+(split/move/convert-to-project) or `ProjectStructureSheet` (plan next
+task/edit outcome); `Mehr` opens the item's detail directly (`task.open` /
+navigation to the project detail page) — it is not another overflow menu.
+The separate status/lifecycle rail (swipe right, `*-row-lifecycle`) is
+unchanged and, for tasks, now also carries the waiting/follow-up
+(`task.waitingLifecycle`) affordance. Task `Später`'s same-day choices write
+to a member-scoped, ephemeral client-only snooze (`taskSnooze.ts`/
+`taskSnoozeContext.tsx`) rather than `scheduledDate`, so a snooze never
+affects what other household members see; future dates schedule normally
+through `task.plan`'s existing commit path. Contextual successor creation
+(a small "+" reading "Aufgabe danach hinzufügen") appears only inside the
+two `organizable` `TaskOutline` mounts (project detail's own outline, the
+split sheet's subtree editor) via `InlineSuccessorComposer`, not in
+compiled views where sibling order isn't visible. Owner/driver avatars in
+`TaskRow`/`ProjectStoryRow` are directly clickable shortcuts to
+`task.assignOwner`/`story.assignDriver`.
 `InteractionScopeProvider` owns the open rail identity and closes other rails
 when a new row is opened or the user taps elsewhere.
 

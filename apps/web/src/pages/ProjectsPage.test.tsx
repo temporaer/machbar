@@ -221,17 +221,16 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     );
   });
 
-  it("reveals configurable per-row commands on a left swipe and keeps status transitions in the lifecycle rail", async () => {
+  it("reveals the fixed Später/Struktur/Mehr rail on a left swipe and keeps status transitions in the lifecycle rail", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Archivierte Geschichte");
 
     const row = rowFor(container, "Archivierte Geschichte");
     swipeRow(row, -100);
     const chips = within(row).getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(chips).getByRole("button", { name: "Wiedervorlegen" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Person ändern" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Arbeit planen" })).toBeInTheDocument();
-    expect(within(chips).getByText("Mehr …")).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Später" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
     expect(within(chips).queryByRole("button", { name: "Auf später verschieben" })).not.toBeInTheDocument();
     expect(within(chips).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
 

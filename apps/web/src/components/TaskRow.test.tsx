@@ -387,59 +387,111 @@ describe("TaskRow – primary swipe direction mapping", () => {
     );
   });
 
-  it("reveals the touch-chip row (not an action) on the opposite swipe direction", async () => {
+  it("reveals the fixed Später/Struktur/Mehr rail (not an action) on the opposite swipe direction", async () => {
     const task = makeTask({ id: 7, title: "Projektplan", status: "actionable" });
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Projektplan");
 
     swipe(container, -100);
 
-    expect(screen.getByRole("button", { name: "Planen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Warten / Nachhaken" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Aufteilen" })).toBeInTheDocument();
-    expect(screen.getByText("Mehr …")).toBeInTheDocument();
+    const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
+    expect(within(rail).getByRole("button", { name: "Später" })).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
     expect(mockedApi.completeTask).not.toHaveBeenCalled();
     expect(mockedApi.cancelTask).not.toHaveBeenCalled();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
-  it("also reveals the chip row via the explicit ⋯ button (non-gesture access)", async () => {
+  it("also reveals the fixed rail via the explicit ⋯ button (non-gesture access)", async () => {
     const task = makeTask({ id: 8, title: "Steuerunterlagen", status: "actionable" });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Steuerunterlagen");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
-    expect(screen.getByRole("button", { name: "Planen" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Später" })).toBeInTheDocument();
   });
 
-  it("renders the default task command rail plus a More overflow", async () => {
+  it("renders exactly the fixed Später/Struktur/Mehr rail, never configurable per row", async () => {
     const task = makeTask({ id: 10, title: "Kompakte Aktionen", status: "actionable", projectId: 2 });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Kompakte Aktionen");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
-    for (const name of ["Planen", "Warten / Nachhaken", "Aufteilen"]) {
-      const button = screen.getByRole("button", { name });
+    const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
+    for (const name of ["Später", "Struktur", "Mehr"]) {
+      const button = within(rail).getByRole("button", { name });
       expect(button).toHaveClass("btn", "btn-sm");
       expect(button.textContent).toBe(name);
     }
-    const mainGrid = screen.getByRole("group", { name: "Weitere Aktionen" }).querySelector(".rail-main-grid");
+    const mainGrid = rail.querySelector(".rail-main-grid");
     expect(mainGrid).toHaveClass("rail-main-grid");
-    expect(mainGrid?.querySelectorAll("button")).toHaveLength(4);
+    expect(mainGrid?.querySelectorAll("button")).toHaveLength(3);
+    // There is no separate overflow grid anymore — `Mehr` opens the task
+    // detail directly instead of another menu.
     expect(screen.queryByRole("group", { name: "Mehr …" })).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByText("Mehr …"));
-    expect(mainGrid?.querySelectorAll("button")).toHaveLength(4);
-    expect(screen.getByRole("group", { name: "Mehr …" })).toHaveClass("rail-overflow-grid");
-    for (const name of ["Person ändern", "In Projekt verschieben", "Nächsten Schritt hinzufügen", "Status ändern"]) {
-      expect(screen.getByRole("button", { name })).toBeInTheDocument();
-    }
-    expect(screen.queryByRole("button", { name: "Verwerfen" })).not.toBeInTheDocument();
   });
 
-  it("adds a successor from the rail overflow and returns focus to the task", async () => {
+  it("opens the task detail directly from the 'Mehr' rail button", async () => {
+    const task = makeTask({ id: 11, title: "Angebot einholen", status: "actionable" });
+    renderWithProviders(
+      <div>
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+        <OpenTaskProbe />
+      </div>,
+    );
+    await screen.findByText("Angebot einholen");
+
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Mehr" }));
+
+    expect(screen.getByTestId("open-task")).toHaveTextContent("11");
+  });
+
+  it("opens the focused Später workflow (TaskLaterSheet) from the 'Später' rail button", async () => {
+    const task = makeTask({ id: 9, title: "Kurz aufschieben", status: "actionable" });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderWithProviders(
+      <div>
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+        <TaskWorkflowHost />
+      </div>,
+    );
+    await screen.findByText("Kurz aufschieben");
+
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Später" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Später: Kurz aufschieben" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "In einer Weile" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Heute Abend" })).toBeInTheDocument();
+  });
+
+  it("opens the focused Struktur workflow (TaskStructureSheet) from the 'Struktur' rail button", async () => {
+    const task = makeTask({ id: 19, title: "Struktur ändern", status: "actionable", projectId: 2 });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderWithProviders(
+      <div>
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+        <TaskWorkflowHost />
+      </div>,
+    );
+    await screen.findByText("Struktur ändern");
+
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Struktur" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Struktur: Struktur ändern" });
+    expect(within(dialog).getByRole("button", { name: "Aufteilen" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Verschieben …" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Zum Projekt machen" })).toBeInTheDocument();
+  });
+
+  it("adds a successor from the '+' affordance inside an organizable outline and returns focus to the task", async () => {
     const task = makeTask({
       id: 11,
       title: "Angebot einholen",
@@ -452,21 +504,14 @@ describe("TaskRow – primary swipe direction mapping", () => {
     mockedApi.getTask.mockResolvedValue(task);
     renderWithProviders(
       <div>
-        <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
+        <TaskOutline tasks={[task]} emptyMessage="Nichts da" organizable />
         <TaskWorkflowHost />
       </div>,
     );
     await screen.findByText("Angebot einholen");
 
-    const moreButton = screen.getByRole("button", {
-      name: "Weitere Aktionen",
-    });
-    await userEvent.click(moreButton);
-    await userEvent.click(screen.getByText("Mehr …"));
     await userEvent.click(
-      screen.getByRole("button", {
-        name: "Nächsten Schritt hinzufügen",
-      }),
+      screen.getByRole("button", { name: "Aufgabe danach hinzufügen" }),
     );
     await userEvent.type(
       screen.getByPlaceholderText("Nächster Schritt"),
@@ -480,7 +525,16 @@ describe("TaskRow – primary swipe direction mapping", () => {
         expect.objectContaining({ title: "Termin vereinbaren" }),
       ),
     );
-    expect(moreButton).toHaveFocus();
+  });
+
+  it("does not offer the successor '+' affordance outside an organizable outline", async () => {
+    const task = makeTask({ id: 90, title: "Kein Organisieren", status: "actionable" });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Kein Organisieren");
+
+    expect(
+      screen.queryByRole("button", { name: "Aufgabe danach hinzufügen" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -575,8 +629,8 @@ describe("TaskRow – calm shared card presentation", () => {
     ];
     renderWithProviders(<TaskOutline tasks={tasks} emptyMessage="Nichts da" />);
 
-    expect(await screen.findByLabelText("Zuständig: Ich")).toBeInTheDocument();
-    expect(screen.getByLabelText("Zuständig: Alex")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Zuweisen: Ich")).toBeInTheDocument();
+    expect(screen.getByLabelText("Zuweisen: Alex")).toBeInTheDocument();
     expect(screen.queryByText("Ich")).not.toBeInTheDocument();
     expect(screen.queryByText("Alex")).not.toBeInTheDocument();
     expect(screen.queryByText("Gemeinsam")).not.toBeInTheDocument();
@@ -647,38 +701,52 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     );
   }
 
-  it("assigns from a focused sheet and returns without opening full details", async () => {
-    const task = makeTask({ id: 30, title: "Kunde anrufen", status: "actionable" });
+  it("opens the owner assignment sheet directly from the row's owner avatar and returns without opening full details", async () => {
+    const task = makeTask({
+      id: 30,
+      title: "Kunde anrufen",
+      status: "actionable",
+      ownerMemberId: 1,
+      ownerInheritanceMode: "explicit",
+      effectiveOwnerId: 1,
+    });
     renderOutlineWithDetail(task);
     await screen.findByText("Kunde anrufen");
 
-    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByText("Mehr …"));
-    await userEvent.click(screen.getByRole("button", { name: "Person ändern" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: `Zuweisen: Mira` }),
+    );
 
     const group = await screen.findByRole("group", { name: "Zuständig" });
     expect(group.closest(".sheet-backdrop")?.parentElement).toBe(document.body);
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
-    // Tap chips rather than a native <select>, with the shared/unassigned
-    // bucket offered explicitly and pressed while nobody is assigned.
+    // Tap chips rather than a native <select>.
     expect(within(group).queryByRole("combobox")).not.toBeInTheDocument();
-    expect(within(group).getByRole("button", { name: "Gemeinsam" })).toHaveAttribute(
+    expect(within(group).getByRole("button", { name: "Mira" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
 
-    await userEvent.click(within(group).getByRole("button", { name: "Mira" }));
+    await userEvent.click(within(group).getByRole("button", { name: "Gemeinsam" }));
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(30, {
-        ownerMemberId: 1,
-        ownerInheritanceMode: "explicit",
+        ownerMemberId: null,
+        ownerInheritanceMode: "none",
         expectedRevision: 1,
       }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("can make an inherited effective owner explicit without changing the person", async () => {
+  it("does not render a clickable owner avatar for a task with no effective owner", async () => {
+    const task = makeTask({ id: 37, title: "Ohne Zuständigkeit", status: "actionable" });
+    renderOutlineWithDetail(task);
+    await screen.findByText("Ohne Zuständigkeit");
+
+    expect(screen.queryByRole("button", { name: /^Zuweisen:/ })).not.toBeInTheDocument();
+  });
+
+  it("can make an inherited effective owner explicit from the owner avatar without changing the person", async () => {
     const task = makeTask({
       id: 35,
       title: "Geerbte Zuständigkeit",
@@ -692,9 +760,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     renderOutlineWithDetail(task);
     await screen.findByText("Geerbte Zuständigkeit");
 
-    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByText("Mehr …"));
-    await userEvent.click(screen.getByRole("button", { name: "Person ändern" }));
+    await userEvent.click(screen.getByRole("button", { name: `Zuweisen: Mira` }));
     await userEvent.click(
       within(await screen.findByRole("group", { name: "Zuständig" })).getByRole(
         "button",
@@ -711,13 +777,16 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     );
   });
 
-  it("plans via the focused TaskPlanSheet workflow with an explicit commit", async () => {
+  it("plans via the focused TaskPlanSheet workflow reached from the Später sheet's escape hatch", async () => {
     const task = makeTask({ id: 31, title: "Termin vereinbaren", status: "actionable" });
     renderOutlineWithDetail(task);
     await screen.findByText("Termin vereinbaren");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Planen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Später" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Weitere Planungsoptionen …" }),
+    );
 
     await screen.findByLabelText("Wann willst du das angehen?");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
@@ -739,59 +808,41 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     );
   });
 
-  it("opens the waiting lifecycle focus from the default rail command", async () => {
+  it("opens the waiting/follow-up focus from the status rail's Warten/Nachhaken button", async () => {
     const task = makeTask({ id: 32, title: "Vertrag prüfen", status: "actionable" });
-    renderOutlineWithDetail(task);
+    const { container } = renderOutlineWithDetail(task);
     await screen.findByText("Vertrag prüfen");
 
-    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Warten / Nachhaken" }));
+    const content = container.querySelector(".task-row-content") as HTMLElement;
+    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: 140, pointerId: 1 });
+    fireEvent.pointerUp(content, { clientX: 140, pointerId: 1 });
+
+    await userEvent.click(screen.getByRole("button", { name: "Wartet" }));
 
     const waitingFor = await screen.findByLabelText("Worauf wartest du?");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
     expect(waitingFor).toBeInTheDocument();
   });
 
-  it("opens the rail overflow from the 'Mehr …' control", async () => {
-    const task = makeTask({ id: 33, title: "Umzug planen", status: "actionable" });
-    renderOutlineWithDetail(task);
-    await screen.findByText("Umzug planen");
-
-    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByText("Mehr …"));
-
-    expect(screen.getByRole("button", { name: "Person ändern" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Status ändern" })).toBeInTheDocument();
-  });
-
-  it("offers the reminders command from the rail overflow", async () => {
-    const task = makeTask({ id: 34, title: "Rauchmelder prüfen", status: "actionable" });
-    renderOutlineWithDetail(task);
-    await screen.findByText("Rauchmelder prüfen");
-
-    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByText("Mehr …"));
-
-    expect(screen.getByRole("button", { name: "Erinnerung hinzufügen" })).toBeInTheDocument();
-  });
-
-  it("hides the reminders rail command for a captured inbox item", async () => {
+  it("labels the status rail's waiting button as 'Nachhaken' once the task already has an external wait", async () => {
     const task = makeTask({
-      id: 36,
-      title: "Unklarer Einfall",
-      status: "captured",
-      projectId: null,
-      parentTaskId: null,
+      id: 38,
+      title: "Wartet auf Antwort",
+      status: "actionable",
+      externalWait: { waitingFor: "Rückmeldung vom Amt", revisitDate: null },
     });
-    renderOutlineWithDetail(task);
-    await screen.findByText("Unklarer Einfall");
+    const { container } = renderOutlineWithDetail(task);
+    await screen.findByText("Wartet auf Antwort");
 
-    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByText("Mehr …"));
+    const content = container.querySelector(".task-row-content") as HTMLElement;
+    fireEvent.pointerDown(content, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(content, { clientX: 140, pointerId: 1 });
+    fireEvent.pointerUp(content, { clientX: 140, pointerId: 1 });
 
-    expect(screen.queryByRole("button", { name: "Erinnerung hinzufügen" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Nachhaken" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Wartet" })).not.toBeInTheDocument();
   });
-
 });
 
 describe("TaskRow – reminder indicator", () => {

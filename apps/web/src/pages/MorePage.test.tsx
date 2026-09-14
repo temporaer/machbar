@@ -213,4 +213,15 @@ describe("MorePage", () => {
     expect(dark).toHaveAttribute("aria-pressed", "true");
     expect(window.localStorage.getItem("machbar:theme")).toBe("dark");
   });
+
+  it("no longer offers any rail-favorites configuration (the row rail is fixed, not configurable)", async () => {
+    renderWithProviders(<MorePage />);
+
+    await userEvent.click(screen.getByText("Administration"));
+
+    expect(
+      screen.queryByRole("heading", { name: /Favorit|Schnellzugriff|Aktionsleiste/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Später.*Struktur.*Mehr/)).not.toBeInTheDocument();
+  });
 });
