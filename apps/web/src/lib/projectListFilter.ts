@@ -2,8 +2,12 @@ import type { ProjectWithActions } from "./api";
 import type { Locale } from "../i18n/catalog";
 import { isFutureCalendarDate } from "./relativeDate";
 
-/** The two visibility scopes the Projekte tab's compact chips switch between. */
-export type ProjectVisibilityScope = "mine" | "all";
+/** The three visibility scopes the Projekte tab's compact chips switch
+ * between. Work and household items are never mixed: "work" shows only the
+ * viewer's own work-scope projects, "mine"/"all" only ever show
+ * household-scope ones (a household member's own work projects are excluded
+ * from the household views too). */
+export type ProjectVisibilityScope = "mine" | "all" | "work";
 
 export interface ProjectListFilterOptions {
   /** Free-text query, matched against title, notes, and completion criteria. */
@@ -51,6 +55,8 @@ function matchesQuery(project: ProjectWithActions, foldedQuery: string): boolean
  * or everything.
  */
 function matchesScope(project: ProjectWithActions, scope: ProjectVisibilityScope, currentMemberId: number | null): boolean {
+  if (scope === "work") return project.scope === "work";
+  if (project.scope === "work") return false;
   if (scope === "all") return true;
   if (currentMemberId === null) return project.ownerMemberId === null;
   return project.ownerMemberId === null || project.ownerMemberId === currentMemberId;

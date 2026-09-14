@@ -37,6 +37,7 @@ import type {
   WeekAgendaDay,
   WeekWorkItemSummary,
   WorkItemAncestor,
+  WorkItemScope,
 } from "@machbar/shared";
 import { readRequestActorMemberId } from "./identityStorage";
 import { getClientId } from "./clientId";
@@ -191,6 +192,9 @@ export interface CreateTaskInput {
   tagIds?: number[];
   contextIds?: number[];
   contextInheritanceMode?: InheritanceMode;
+  /** Only meaningful for a root task (no parent/project); a child/successor
+   * always inherits its parent's scope regardless of this field. */
+  scope?: WorkItemScope;
 }
 
 /** Body for `POST /api/tasks/:id/children` (no `projectId`/`parentTaskId`, both implied). */
@@ -226,6 +230,9 @@ export interface CreateProjectInput {
   parentId?: number | null;
   status?: ProjectStatus;
   ownerMemberId?: number | null;
+  /** Only meaningful for a root project (no `parentId`); a nested project
+   * always inherits its parent's scope regardless of this field. */
+  scope?: WorkItemScope;
   dueDate?: string | null;
   scheduledDate?: string | null;
   tagIds?: number[];
@@ -386,7 +393,7 @@ export type AgendaResponse = Agenda & {
   followUp?: Task[];
 };
 
-export type AgendaScope = "mine" | "all";
+export type AgendaScope = "mine" | "all" | "work";
 
 export type { ProjectAgendaEntry };
 
@@ -596,7 +603,7 @@ export const api = {
     ].join("-");
     return request<AgendaResponse>(
       `/agenda/today${query({
-        memberId: scope === "mine" ? memberId : undefined,
+        memberId: scope === "all" ? undefined : memberId,
         scope,
         date,
       })}`,
@@ -610,7 +617,7 @@ export const api = {
     request<WeekAgendaResponse>(
       `/agenda/week${query({
         start,
-        memberId: scope === "mine" ? memberId : undefined,
+        memberId: scope === "all" ? undefined : memberId,
         scope,
       })}`,
     ),
@@ -618,7 +625,7 @@ export const api = {
   getWaiting: (memberId?: number | null, scope: AgendaScope = "mine") =>
     request<WaitingEntry[]>(
       `/waiting${query({
-        memberId: scope === "mine" ? memberId : undefined,
+        memberId: scope === "all" ? undefined : memberId,
         scope,
       })}`,
     ),

@@ -27,7 +27,8 @@ export type IconActionKind =
   | "priority"
   | "recurrence"
   | "discard"
-  | "places";
+  | "places"
+  | "work";
 
 export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
   const common = {
@@ -144,6 +145,11 @@ export function IconActionGlyph({ kind }: { kind: IconActionKind }) {
         <>
           <path d="M12 21s7-6.2 7-11.5A7 7 0 105 9.5C5 14.8 12 21 12 21z" {...common} />
           <circle cx="12" cy="9.5" r="2.3" {...common} />
+        </>
+      ) : kind === "work" ? (
+        <>
+          <rect x="3.5" y="7.5" width="17" height="12" rx="1.8" {...common} />
+          <path d="M8.5 7.5V6a2 2 0 012-2h3a2 2 0 012 2v1.5M3.5 12.5h17" {...common} />
         </>
       ) : (
         <>

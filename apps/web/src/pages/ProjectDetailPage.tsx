@@ -536,6 +536,33 @@ export function ProjectDetailPage() {
                       {strings.addDriver}
                     </DetailPropertyPill>
                   )}
+                  {project.parentId === null ? (
+                    <DetailPropertyPill
+                      label={strings.scope}
+                      disabled={projectMutationPending}
+                      onClick={async () => {
+                        setContentError(null);
+                        try {
+                          await projectActions.update(
+                            project,
+                            {
+                              scope: project.scope === "work" ? "household" : "work",
+                              expectedRevision: project.revision,
+                            },
+                            undefined,
+                            true,
+                          );
+                        } catch (cause) {
+                          if (isStaleWriteConflict(cause)) reloadProject();
+                          setContentError(localizedErrorMessage(cause, strings));
+                        }
+                      }}
+                    >
+                      <span>
+                        {project.scope === "work" ? strings.scopeWork : strings.scopeHousehold}
+                      </span>
+                    </DetailPropertyPill>
+                  ) : null}
                   {dueDate ? (
                     <DetailPropertyPill
                       label={strings.due}

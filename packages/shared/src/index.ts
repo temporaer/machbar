@@ -185,6 +185,8 @@ export type ApiErrorCode =
   | "task_parent_self"
   | "task_promotion_invalid"
   | "task_reminder_invalid"
+  | "scope_mismatch"
+  | "scope_edit_root_only"
   | "role_conversion_invalid"
   | "task_title_required"
   | "external_wait_reason_required"

@@ -15,7 +15,7 @@ import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaRow } from "../components/ProjectAgendaRow";
 import { PageHeader, type PageHint } from "../components/PageHeader";
 import { ContributionPulse } from "../components/ContributionPulse";
-import { readTodayScope, writeTodayScope } from "../lib/todayScope";
+import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
@@ -127,12 +127,28 @@ export function TodayPage() {
               <button
                 type="button"
                 className="page-header-button today-scope-toggle"
-                aria-label={strings.todayHouseholdScope}
-                aria-pressed={scope === "all"}
-                title={strings.todayHouseholdScope}
-                onClick={() => selectScope(scope === "mine" ? "all" : "mine")}
+                aria-label={
+                  scope === "mine"
+                    ? strings.todayHouseholdScope
+                    : scope === "all"
+                      ? strings.todayWorkScope
+                      : strings.todayMineScope
+                }
+                aria-pressed={scope !== "mine"}
+                title={
+                  scope === "mine"
+                    ? strings.todayHouseholdScope
+                    : scope === "all"
+                      ? strings.todayWorkScope
+                      : strings.todayMineScope
+                }
+                onClick={() => selectScope(nextAgendaScope(scope))}
               >
-                <IconActionGlyph kind="household" />
+                <IconActionGlyph
+                  kind={
+                    scope === "mine" ? "owner" : scope === "all" ? "household" : "work"
+                  }
+                />
               </button>
             </>
           }
@@ -221,7 +237,7 @@ export function TodayPage() {
               );
             })()
           : null}
-        <QuickAdd />
+        <QuickAdd {...(scope === "work" ? { defaultScope: "work" as const } : {})} />
       </div>
     </InteractionScopeProvider>
   );
