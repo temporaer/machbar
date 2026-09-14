@@ -60,7 +60,7 @@ export interface BuildAgendaOptions {
    * agenda is built for the whole household, unfiltered by owner.
    */
   memberId?: number;
-  scope?: "mine" | "all";
+  scope?: "mine" | "all" | "work";
   contextAvailability?: (
     task: TaskRecord,
     target: number | "household",
@@ -161,7 +161,8 @@ export function buildAgenda(
         project.status === "active" &&
         (memberId === undefined ||
           project.ownerMemberId === null ||
-          project.ownerMemberId === memberId),
+          project.ownerMemberId === memberId) &&
+        selection.matchesScope(project),
     )
     .flatMap((project): ProjectAgendaEntry[] => {
       const due =

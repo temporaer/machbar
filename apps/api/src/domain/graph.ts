@@ -13,6 +13,7 @@ import type {
   TaskSize,
   TaskStatus,
   WorkItemAncestor,
+  WorkItemScope,
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -85,6 +86,7 @@ interface RawTask {
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
   physicalContextInheritanceMode: InheritanceMode;
+  scope: WorkItemScope;
   createdByMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
@@ -111,6 +113,7 @@ interface RawProject {
   status: ProjectStatus;
   archivedAt: string | null;
   ownerMemberId: number | null;
+  scope: WorkItemScope;
   dueDate: string | null;
   scheduledDate: string | null;
   position: number;
@@ -218,9 +221,26 @@ export class Graph {
   static load(
     db: Db,
     today = new Date().toISOString().slice(0, 10),
+    viewerMemberId?: number,
   ): Graph {
+    // A 3rd argument is only ever supplied by the handful of viewer-aware
+    // public read routes; every other (much more numerous) internal call
+    // site — e.g. re-reading a row inside the very same mutation that just
+    // wrote it — calls `Graph.load(db)`/`Graph.load(db, today)` and must
+    // keep seeing every row regardless of scope, exactly as before this
+    // feature existed. Distinguishing "no 3rd argument" (unrestricted)
+    // from "3rd argument explicitly undefined" (a public caller that
+    // could not resolve a viewer, so every "work" row must be hidden) is
+    // the reason this checks `arguments.length` instead of just `viewerMemberId
+    // === undefined`.
+    const restrictToViewer = arguments.length >= 3;
     const startedAt = performance.now();
     // --- SQL/CTE-computed derivations (repo layer) ---------------------
+    // These run unrestricted (no viewer filtering): scope is uniform down
+    // an entire subtree by construction, so a task these CTEs compute a
+    // value for but that the viewer must not see is simply never looked
+    // up below — `rawTasks`/`rawProjects` (built from the viewer-filtered
+    // `workItemRows`) never include it.
     const effectiveOwners = getEffectiveOwners(db);
     const effectiveTagIdsByTask = getEffectiveTagIds(db);
     const effectiveContextIdsByTask = getEffectivePhysicalContextIds(db);
@@ -229,7 +249,26 @@ export class Graph {
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
     const taskProjectIds = getTaskProjectIds(db);
-    const workItemRows = db.select().from(schema.workItems).all();
+    // Single funnel point for the "work" scope's owner-only invariant: a
+    // "work" item is dropped for every viewer except its own owner (and
+    // for all viewers when no `viewerMemberId` is known at all). A task's
+    // *effective* owner (which walks the same explicit/inherit/none chain
+    // used everywhere else) is used rather than its own row, since most
+    // descendants of a work item legitimately have no explicit owner of
+    // their own; a project has no owner-inheritance mechanism, so its own
+    // row is authoritative there.
+    const workItemRows = db
+      .select()
+      .from(schema.workItems)
+      .all()
+      .filter((row) => {
+        if (row.scope !== "work" || !restrictToViewer) return true;
+        const ownerId =
+          row.role === "task"
+            ? (effectiveOwners.get(row.id)?.ownerId ?? null)
+            : row.ownerMemberId;
+        return ownerId === viewerMemberId;
+      });
     const reminderRows = db.select().from(schema.taskReminders).all();
     const remindersByTask = new Map<number, TaskReminder[]>();
     for (const row of reminderRows) {
@@ -261,6 +300,7 @@ export class Graph {
         ),
         archivedAt: row.archivedAt,
         ownerMemberId: row.ownerMemberId,
+        scope: row.scope as WorkItemScope,
         dueDate: row.dueDate,
         scheduledDate: row.scheduledDate,
         position: row.position,
@@ -287,6 +327,7 @@ export class Graph {
         ownerInheritanceMode: row.ownerInheritanceMode as InheritanceMode,
         physicalContextInheritanceMode:
           row.physicalContextInheritanceMode as InheritanceMode,
+        scope: row.scope as WorkItemScope,
         createdByMemberId: row.createdByMemberId,
         dueDate: row.dueDate,
         scheduledDate: row.scheduledDate,
@@ -488,6 +529,7 @@ export class Graph {
         status: p.status,
         archivedAt: p.archivedAt,
         ownerMemberId: p.ownerMemberId,
+        scope: p.scope,
         dueDate: p.dueDate,
         scheduledDate: p.scheduledDate,
         position: p.position,
@@ -624,6 +666,7 @@ export class Graph {
         ownerMemberId: raw.ownerMemberId,
         ownerInheritanceMode: raw.ownerInheritanceMode,
         contextInheritanceMode: raw.physicalContextInheritanceMode,
+        scope: raw.scope,
         createdByMemberId: raw.createdByMemberId,
         dueDate: raw.dueDate,
         scheduledDate: raw.scheduledDate,

@@ -106,6 +106,9 @@ const en = {
   discard: "Discard",
   notes: "Notes",
   owner: "Owner",
+  scope: "Scope",
+  scopeHousehold: "Household",
+  scopeWork: "Work",
   status: "Status",
   due: "Due",
   pickDate: "Date …",
@@ -335,6 +338,8 @@ const en = {
   waitingEmpty: "Nothing is waiting right now.",
   todayEmpty: "Nothing is planned for today.",
   todayHouseholdScope: "Show everyone's tasks",
+  todayWorkScope: "Show only your work tasks",
+  todayMineScope: "Show only your tasks",
   todayScopeHint:
     "“Everyone” shows the whole household's tasks without changing your identity for edits.",
   inboxHint:
@@ -665,6 +670,9 @@ const en = {
     "Projects connect a desired outcome with the path toward it. Active projects always show a next step or intentional waiting.",
   waitingPageHint:
     "Work that cannot move yet lives here. See what it is waiting on and when it needs another look.",
+  waitingHouseholdScope: "Show everyone's waiting tasks",
+  waitingWorkScope: "Show only your waiting work tasks",
+  waitingMineScope: "Show only your waiting tasks",
   waitingExternal: "External",
   waitingContext: "Place",
   waitingContextHint:
@@ -708,6 +716,8 @@ const en = {
   workflowStep: "Next step",
   projectSearchPlaceholder: "Search title, notes, or “Done when…”",
   projectHouseholdScope: "Show everyone's projects",
+  projectWorkScope: "Show only your work projects",
+  projectMineScope: "Show only your projects",
   projectHiddenMatchesHint: (count: number) =>
     count === 1
       ? "1 more match belongs to someone else"
@@ -1073,6 +1083,10 @@ const en = {
     task_parent_self: "A task cannot be its own parent.",
     task_promotion_invalid:
       "This inbox item cannot be converted to a project in its current state.",
+    scope_mismatch:
+      "A task cannot be moved between household and work scope.",
+    scope_edit_root_only:
+      "Only a top-level task or project can have its scope changed.",
     role_conversion_invalid:
       "Remove conflicting task-only details before converting this task to a project.",
     task_title_required: "Enter a task title.",

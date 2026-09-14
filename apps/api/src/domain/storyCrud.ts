@@ -4,7 +4,7 @@
  * in `storyCapabilities.ts`.
  */
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import type { ProjectStatus } from "@machbar/shared";
+import type { ProjectStatus, WorkItemScope } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -71,6 +71,9 @@ export interface CreateProjectInput {
   scheduledDate?: string | null;
   tagIds?: number[];
   contextIds?: number[];
+  /** Only meaningful for a root project (no `parentId`); a nested project
+   * always inherits its parent's scope regardless of this field. */
+  scope?: WorkItemScope;
 }
 
 export function getProjectOrThrow(db: Db, id: number) {
@@ -111,7 +114,14 @@ export function createProject(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const parentId = input.parentId ?? null;
-    if (parentId !== null) getProjectOrThrow(txDb, parentId);
+    const parent = parentId !== null ? getProjectOrThrow(txDb, parentId) : null;
+    const scope: WorkItemScope =
+      parent !== null ? (parent.scope as WorkItemScope) : input.scope ?? "household";
+    // A "work" project is always owner-only; a root project with nobody set
+    // as owner would be invisible to everyone including whoever just
+    // created it, so default the owner to the creator when none was given.
+    const ownerMemberId =
+      input.ownerMemberId ?? (scope === "work" ? actor(context) : null);
     const maxPosition = tx
       .select({ position: schema.workItems.position })
       .from(schema.workItems)
@@ -135,7 +145,8 @@ export function createProject(
         notes: input.notes ?? "",
         status: projectStatusToStored(input.status ?? "backlog"),
         archivedAt: input.status === "archived" ? nowIso() : null,
-        ownerMemberId: input.ownerMemberId ?? null,
+        ownerMemberId,
+        scope,
         dueDate: input.dueDate ?? null,
         scheduledDate: input.scheduledDate ?? null,
         position: maxPosition + 1,
@@ -186,6 +197,10 @@ export interface UpdateProjectInput {
   title?: string;
   notes?: string;
   ownerMemberId?: number | null;
+  /** Only legal on a root project (no `parentId`); cascades to the whole
+   * subtree. Converting to "work" auto-assigns the acting member as owner
+   * when no owner is set, since a work item is always owner-only. */
+  scope?: WorkItemScope;
   dueDate?: string | null;
   scheduledDate?: string | null;
   position?: number;
@@ -264,6 +279,30 @@ export function updateProject(
     if (input.position !== undefined && input.position !== project.position) {
       patch.position = input.position;
     }
+    if (input.scope !== undefined && input.scope !== project.scope) {
+      if (project.parentId !== null) {
+        throw AppError.conflict(
+          "scope_edit_root_only",
+          "Only a root project's scope can be changed; it always cascades to the whole subtree.",
+          { projectId: id },
+        );
+      }
+      patch.scope = input.scope;
+      changedFields.push("scope");
+      // A "work" project is always owner-only; default the owner to the
+      // acting member if converting to "work" leaves nobody owning it.
+      if (
+        input.scope === "work" &&
+        (patch.ownerMemberId !== undefined
+          ? patch.ownerMemberId
+          : project.ownerMemberId) === null
+      ) {
+        patch.ownerMemberId = actor(context);
+        if (!changedFields.includes("ownerMemberId")) {
+          changedFields.push("ownerMemberId");
+        }
+      }
+    }
 
     const existingTagIds = sortedIds(
       tx
@@ -294,6 +333,15 @@ export function updateProject(
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = nowIso();
       tx.update(schema.workItems).set(patch).where(eq(schema.workItems.id, id)).run();
+    }
+    if (patch.scope !== undefined) {
+      const descendantIds = repoGetDescendantIds(txDb, id);
+      if (descendantIds.length > 0) {
+        tx.update(schema.workItems)
+          .set({ scope: patch.scope, updatedAt: nowIso() })
+          .where(inArray(schema.workItems.id, descendantIds))
+          .run();
+      }
     }
 
     if (tagsChanged) {

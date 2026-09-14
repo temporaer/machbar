@@ -23,9 +23,13 @@ import { useOptionalInteractionScope } from "../lib/interactionScope";
 export function QuickAdd({
   autoOpen = false,
   onAutoOpenClose,
+  defaultScope,
 }: {
   autoOpen?: boolean;
   onAutoOpenClose?: () => void;
+  /** Set on capture only when the mounting page's active view is the Work
+   * scope; omitted (server default `"household"` applies) otherwise. */
+  defaultScope?: "work";
 }) {
   const strings = useStrings();
   const navigate = useNavigate();
@@ -169,6 +173,7 @@ export function QuickAdd({
               pendingFiles={pendingFile ? [pendingFile] : []}
               onCropPendingFile={(file) => setCropFile(file)}
               {...(pendingFile ? { prepareNotes: prepareMaterialNotes } : {})}
+              {...(defaultScope ? { defaultScope } : {})}
               onCancel={close}
               onCaptured={(result) => {
                 bump();

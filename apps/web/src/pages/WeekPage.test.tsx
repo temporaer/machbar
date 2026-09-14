@@ -251,6 +251,15 @@ describe("WeekPage", () => {
       expect(mockedApi.getWeekAgenda).toHaveBeenLastCalledWith(
         expect.any(String),
         1,
+        "work",
+      ),
+    );
+
+    await userEvent.click(toggle);
+    await waitFor(() =>
+      expect(mockedApi.getWeekAgenda).toHaveBeenLastCalledWith(
+        expect.any(String),
+        1,
         "mine",
       ),
     );

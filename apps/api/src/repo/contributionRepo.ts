@@ -124,10 +124,40 @@ function pulseLevel(points: number): ContributionPulseLevel {
   return "none";
 }
 
+function entityScope(
+  db: Db,
+  entityType: ContributionEntityType,
+  entityId: number,
+): "household" | "work" | null {
+  if (entityType === "task" || entityType === "project") {
+    const row = db
+      .select({ scope: schema.workItems.scope })
+      .from(schema.workItems)
+      .where(eq(schema.workItems.id, entityId))
+      .get();
+    return row?.scope ?? null;
+  }
+  const occurrence = db
+    .select({ taskId: schema.taskRecurrenceOccurrences.taskId })
+    .from(schema.taskRecurrenceOccurrences)
+    .where(eq(schema.taskRecurrenceOccurrences.id, entityId))
+    .get();
+  if (!occurrence) return null;
+  const row = db
+    .select({ scope: schema.workItems.scope })
+    .from(schema.workItems)
+    .where(eq(schema.workItems.id, occurrence.taskId))
+    .get();
+  return row?.scope ?? null;
+}
+
 export function recordContribution(
   db: Db,
   input: RecordContributionInput,
 ): typeof schema.contributionEvents.$inferSelect | null {
+  // Work items are private, owner-only, and outside the household's shared
+  // gamification system: never award or record points for them.
+  if (entityScope(db, input.entityType, input.entityId) === "work") return null;
   const now = input.now ?? new Date();
   const nowIso = now.toISOString();
   const existing = db

@@ -26,6 +26,7 @@ import { PageHeader } from "../components/PageHeader";
 import { useLocale } from "../lib/locale";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { InteractionScopeProvider } from "../lib/interactionScope";
+import { nextAgendaScope } from "../lib/todayScope";
 
 /**
  * The Projekte tab: current and terminal projects are user stories, and every
@@ -101,7 +102,10 @@ function ProjectsPageContent() {
     if (!trimmed) return;
     setSaving(true);
     try {
-      await api.createProject({ title: trimmed });
+      await api.createProject({
+        title: trimmed,
+        ...(scope === "work" ? { scope: "work" } : {}),
+      });
       setTitle("");
       setCreating(false);
       bump();
@@ -208,14 +212,26 @@ function ProjectsPageContent() {
           <button
             type="button"
             className="page-header-button projects-scope-toggle"
-            aria-label={strings.projectHouseholdScope}
-            aria-pressed={scope === "all"}
-            title={strings.projectHouseholdScope}
-            onClick={() =>
-              setScope((current) => (current === "mine" ? "all" : "mine"))
+            aria-label={
+              scope === "mine"
+                ? strings.projectHouseholdScope
+                : scope === "all"
+                  ? strings.projectWorkScope
+                  : strings.projectMineScope
             }
+            aria-pressed={scope !== "mine"}
+            title={
+              scope === "mine"
+                ? strings.projectHouseholdScope
+                : scope === "all"
+                  ? strings.projectWorkScope
+                  : strings.projectMineScope
+            }
+            onClick={() => setScope((current) => nextAgendaScope(current))}
           >
-            <IconActionGlyph kind="household" />
+            <IconActionGlyph
+              kind={scope === "mine" ? "owner" : scope === "all" ? "household" : "work"}
+            />
           </button>
         }
         hints={[{ text: strings.projectsHint }]}

@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
 import { Graph, type TaskDetailRecord } from "../domain/graph.js";
@@ -63,8 +63,21 @@ function parseId(raw: string): number {
   return id;
 }
 
-function taskOrThrow(db: Db, id: number): TaskDetailRecord {
-  const graph = Graph.load(db);
+// The authenticated member (or, absent auth, the activity actor) is used
+// as the viewer for the single funnel point (`Graph.load`) that hides
+// other members' "work"-scope items; this also lets an owner's own
+// just-created/updated work item round-trip back through these
+// mutation-echo responses instead of appearing to vanish.
+function viewerMemberId(request: FastifyRequest): number | undefined {
+  return request.authMember?.id ?? request.activityActor?.id ?? undefined;
+}
+
+function taskOrThrow(
+  db: Db,
+  id: number,
+  viewerMemberId?: number,
+): TaskDetailRecord {
+  const graph = Graph.load(db, undefined, viewerMemberId);
   const task = graph.tasksById.get(id);
   if (!task) {
     throw AppError.notFound(
@@ -79,7 +92,7 @@ function taskOrThrow(db: Db, id: number): TaskDetailRecord {
 export function registerTaskRoutes(app: FastifyInstance, db: Db) {
   app.get<{ Params: { id: string } }>("/api/tasks/:id", async (request) => {
     const id = parseId(request.params.id);
-    return taskOrThrow(db, id);
+    return taskOrThrow(db, id, viewerMemberId(request));
   });
 
   app.post<{ Params: { id: string } }>(
@@ -90,7 +103,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       acknowledgeTaskReview(db, id, body.expectedRevision, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -98,7 +111,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     "/api/tasks/:id/recurrence-history",
     async (request) => {
       const id = parseId(request.params.id);
-      taskOrThrow(db, id);
+      taskOrThrow(db, id, viewerMemberId(request));
       return getTaskRecurrenceHistory(db, id);
     },
   );
@@ -116,7 +129,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       { actorMemberId: request.activityActor?.id ?? null },
     );
     reply.status(201);
-    return taskOrThrow(db, task.id);
+    return taskOrThrow(db, task.id, viewerMemberId(request));
   });
 
   app.post<{ Params: { id: string } }>(
@@ -136,7 +149,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null },
       );
       reply.status(201);
-      return taskOrThrow(db, task.id);
+      return taskOrThrow(db, task.id, viewerMemberId(request));
     },
   );
 
@@ -157,7 +170,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null },
       );
       reply.status(201);
-      return taskOrThrow(db, task.id);
+      return taskOrThrow(db, task.id, viewerMemberId(request));
     },
   );
 
@@ -167,7 +180,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     updateTask(db, id, body, {
       actorMemberId: request.activityActor?.id ?? null,
     });
-    return taskOrThrow(db, id);
+    return taskOrThrow(db, id, viewerMemberId(request));
   });
 
   app.post<{ Params: { id: string } }>(
@@ -178,7 +191,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       appendTaskNotes(db, id, body.content, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -207,7 +220,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         },
         { actorMemberId: request.activityActor?.id ?? null },
       );
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -219,7 +232,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const project = convertTaskToStory(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      const graph = Graph.load(db);
+      const graph = Graph.load(db, undefined, viewerMemberId(request));
       reply.status(201);
       return graph.projectWithComputed(project.id);
     },
@@ -238,7 +251,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         body.completedOn,
         body.expectedRevision,
       );
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -254,7 +267,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null },
         body.expectedRevision,
       );
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -269,7 +282,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null },
         body.expectedRevision,
       );
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -281,7 +294,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       clarifyTask(db, id, body.expectedRevision, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -291,7 +304,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     moveTask(db, id, body, {
       actorMemberId: request.activityActor?.id ?? null,
     });
-    return taskOrThrow(db, id);
+    return taskOrThrow(db, id, viewerMemberId(request));
   });
 
   app.post<{ Params: { id: string } }>(
@@ -303,7 +316,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         actorMemberId: request.activityActor?.id ?? null,
       });
       reply.status(201);
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -315,7 +328,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       upsertExternalWait(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -327,7 +340,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       resolveExternalWait(db, id, body.expectedRevision, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -339,7 +352,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       followUpExternalWait(db, id, body, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -351,7 +364,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       removeDependency(db, id, dependsOnTaskId, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -364,7 +377,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         actorMemberId: request.activityActor?.id ?? null,
       });
       reply.status(201);
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -376,7 +389,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       removeTaskTag(db, id, tagId, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -389,7 +402,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         actorMemberId: request.activityActor?.id ?? null,
       });
       reply.status(201);
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 
@@ -401,7 +414,7 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       removeExcludedTag(db, id, tagId, {
         actorMemberId: request.activityActor?.id ?? null,
       });
-      return taskOrThrow(db, id);
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 }

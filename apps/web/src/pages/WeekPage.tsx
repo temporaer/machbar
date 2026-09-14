@@ -17,7 +17,7 @@ import { MemberAvatar } from "../components/MemberAvatar";
 import { formatDate } from "../lib/format";
 import { QuickAdd } from "../components/QuickAdd";
 import { IconActionGlyph } from "../components/IconActionButton";
-import { readTodayScope, writeTodayScope } from "../lib/todayScope";
+import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
 
 function weekWindowStart(date: Date): string {
   return toIsoCalendarDate(date);
@@ -427,12 +427,28 @@ export function WeekPage() {
               <button
                 type="button"
                 className="page-header-button today-scope-toggle"
-                aria-label={strings.todayHouseholdScope}
-                aria-pressed={scope === "all"}
-                title={strings.todayHouseholdScope}
-                onClick={() => selectScope(scope === "mine" ? "all" : "mine")}
+                aria-label={
+                  scope === "mine"
+                    ? strings.todayHouseholdScope
+                    : scope === "all"
+                      ? strings.todayWorkScope
+                      : strings.todayMineScope
+                }
+                aria-pressed={scope !== "mine"}
+                title={
+                  scope === "mine"
+                    ? strings.todayHouseholdScope
+                    : scope === "all"
+                      ? strings.todayWorkScope
+                      : strings.todayMineScope
+                }
+                onClick={() => selectScope(nextAgendaScope(scope))}
               >
-                <IconActionGlyph kind="household" />
+                <IconActionGlyph
+                  kind={
+                    scope === "mine" ? "owner" : scope === "all" ? "household" : "work"
+                  }
+                />
               </button>
             </div>
           }
@@ -486,7 +502,7 @@ export function WeekPage() {
             />
           </>
         ) : null}
-        <QuickAdd />
+        <QuickAdd {...(scope === "work" ? { defaultScope: "work" as const } : {})} />
       </div>
     </InteractionScopeProvider>
   );

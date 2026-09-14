@@ -43,6 +43,9 @@ export interface CaptureFormProps {
   onCropPendingFile?: ((file: File, index: number) => void) | undefined;
   onCancel: () => void;
   onCaptured: (result: CaptureResult) => void;
+  /** Set on capture only when the currently active view is the Work
+   * scope; omitted (server default `"household"` applies) otherwise. */
+  defaultScope?: "work";
 }
 
 /** Shared Capture editor used by both the global FAB and incoming shares. */
@@ -60,6 +63,7 @@ export function CaptureForm({
   onCropPendingFile,
   onCancel,
   onCaptured,
+  defaultScope,
 }: CaptureFormProps) {
   const strings = useStrings();
   const { locale } = useLocale();
@@ -119,6 +123,7 @@ export function CaptureForm({
     parentTaskId: parentTaskId ?? null,
     createdByMemberId: currentMemberId,
     status: needsClarification ? "captured" : "actionable",
+    ...(defaultScope ? { scope: defaultScope } : {}),
     dueDate: syntaxMetadata.dueDate ?? dueDate,
     scheduledDate: syntaxMetadata.scheduledDate ?? null,
     ...(syntaxMetadata.size !== undefined ? { size: syntaxMetadata.size } : {}),

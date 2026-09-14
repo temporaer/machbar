@@ -82,6 +82,9 @@ const base = {
   discard: "Verwerfen",
   notes: "Notizen",
   owner: "Zuständig",
+  scope: "Bereich",
+  scopeHousehold: "Haushalt",
+  scopeWork: "Arbeit",
   status: "Status",
   due: "Fällig",
   pickDate: "Datum …",
@@ -321,6 +324,8 @@ const extra = {
   waitingEmpty: "Nichts wartet gerade.",
   todayEmpty: "Für heute ist nichts geplant.",
   todayHouseholdScope: "Aufgaben aller Personen anzeigen",
+  todayWorkScope: "Nur eigene Arbeitsaufgaben anzeigen",
+  todayMineScope: "Nur eigene Aufgaben anzeigen",
   todayScopeHint:
     "„Alle“ zeigt die Aufgaben des ganzen Haushalts, ohne deine Identität für Änderungen zu wechseln.",
   inboxHint:
@@ -658,6 +663,9 @@ const extra = {
     "Projekte halten ein gewünschtes Ergebnis und den Weg dorthin zusammen. Aktiv sind sie nur mit einem nächsten Schritt oder bewusstem Warten.",
   waitingPageHint:
     "Hier liegt Arbeit, die gerade nicht weitergeht. Sieh, worauf sie wartet und wann du wieder nachhaken solltest.",
+  waitingHouseholdScope: "Wartende Aufgaben aller Personen anzeigen",
+  waitingWorkScope: "Nur eigene wartende Arbeitsaufgaben anzeigen",
+  waitingMineScope: "Nur eigene wartende Aufgaben anzeigen",
   waitingExternal: "Extern",
   waitingContext: "Ort",
   waitingContextHint:
@@ -701,6 +709,8 @@ const extra = {
   workflowStep: "Workflow-Schritt",
   projectSearchPlaceholder: "Titel, Notizen oder „Erledigt, wenn …“ suchen …",
   projectHouseholdScope: "Projekte aller Personen anzeigen",
+  projectWorkScope: "Nur eigene Arbeitsprojekte anzeigen",
+  projectMineScope: "Nur eigene Projekte anzeigen",
   projectHiddenMatchesHint: (count: number) =>
     count === 1
       ? "1 weiterer Treffer bei anderen Personen"
@@ -1076,6 +1086,10 @@ const extra = {
       "Eine Aufgabe kann nicht ihre eigene übergeordnete Aufgabe sein.",
     task_promotion_invalid:
       "Dieser Eingangseintrag kann in seinem aktuellen Zustand nicht in ein Projekt umgewandelt werden.",
+    scope_mismatch:
+      "Eine Aufgabe kann nicht zwischen Haushalt und Arbeit verschoben werden.",
+    scope_edit_root_only:
+      "Nur bei einer Aufgabe/einem Projekt auf oberster Ebene kann der Bereich geändert werden.",
     role_conversion_invalid:
       "Diese Aufgabe kann erst in ein Projekt umgewandelt werden, wenn widersprechende Aufgaben-Eigenschaften entfernt wurden.",
     task_title_required: "Bitte gib einen Aufgabentitel ein.",

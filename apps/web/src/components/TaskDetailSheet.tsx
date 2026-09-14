@@ -645,6 +645,32 @@ export function TaskDetailSheet() {
                 {strings.addOwner}
               </DetailPropertyPill>
             )}
+            {task.parentTaskId === null && task.projectId === null ? (
+              <DetailPropertyPill
+                label={strings.scope}
+                onClick={async () => {
+                  setSaveError(null);
+                  try {
+                    await taskActions.update(
+                      task,
+                      {
+                        scope: task.scope === "work" ? "household" : "work",
+                        expectedRevision: task.revision,
+                      },
+                      undefined,
+                      true,
+                    );
+                  } catch (cause) {
+                    if (isStaleWriteConflict(cause)) reload();
+                    setSaveError(localizedErrorMessage(cause, strings));
+                  }
+                }}
+              >
+                <span>
+                  {task.scope === "work" ? strings.scopeWork : strings.scopeHousehold}
+                </span>
+              </DetailPropertyPill>
+            ) : null}
             {planValue ? (
               <DetailPropertyPill
                 label={strings.taskPlanFor}

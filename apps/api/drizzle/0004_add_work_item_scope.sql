@@ -1,0 +1,1 @@
+ALTER TABLE `work_items` ADD `scope` text DEFAULT 'household' NOT NULL;

@@ -120,6 +120,13 @@ describe("TodayPage", () => {
     expect(await screen.findByText("Jonas' Aufgabe")).toBeInTheDocument();
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     expect(toggle).toHaveClass("today-scope-toggle");
+    expect(toggle).toHaveAccessibleName("Nur eigene Arbeitsaufgaben anzeigen");
+
+    await userEvent.click(toggle);
+    await waitFor(() =>
+      expect(mockedApi.getAgenda).toHaveBeenLastCalledWith(1, "work"),
+    );
+    expect(toggle).toHaveAccessibleName("Nur eigene Aufgaben anzeigen");
 
     await userEvent.click(toggle);
     await waitFor(() =>
@@ -147,7 +154,7 @@ describe("TodayPage", () => {
     );
     expect(
       screen.getByRole("button", {
-        name: "Aufgaben aller Personen anzeigen",
+        name: "Nur eigene Arbeitsaufgaben anzeigen",
       }),
     ).toHaveAttribute("aria-pressed", "true");
   });
@@ -173,7 +180,7 @@ describe("TodayPage", () => {
     expect(await screen.findByText("Netzwerkfehler")).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: "Aufgaben aller Personen anzeigen",
+        name: "Nur eigene Arbeitsaufgaben anzeigen",
       }),
     ).toHaveAttribute("aria-pressed", "true");
   });

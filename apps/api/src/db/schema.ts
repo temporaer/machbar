@@ -316,6 +316,14 @@ export const workItems = sqliteTable(
     physicalContextInheritanceMode: text("physical_context_inheritance_mode")
       .notNull()
       .default("inherit"), // inherit | explicit | none
+    // household | work. Set once at creation (inherited from parent, or
+    // explicit for a root item) and uniform down the whole subtree by
+    // construction. "work" items are always owner-only (never visible to
+    // any other member) and never contribute to the household points
+    // system; see Graph.load and contributionRepo.recordContribution.
+    scope: text("scope", { enum: ["household", "work"] })
+      .notNull()
+      .default("household"),
     createdByMemberId: integer("created_by_member_id").references(
       () => members.id,
       { onDelete: "set null" },
