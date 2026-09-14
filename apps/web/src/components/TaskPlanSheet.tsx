@@ -1,9 +1,18 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
+import { useLocale } from "../lib/locale";
 import { useTaskActions } from "../lib/useTaskActions";
 import { localizedErrorMessage } from "../lib/errorMessage";
+import {
+  extractCaptionHints,
+  removeCaptionHintSpans,
+  strongestCaptionHints,
+  type TemporalCaptionHint,
+} from "../lib/captionHints";
+import { formatExactLocalDate } from "../lib/relativeDate";
 import { BottomSheet } from "./BottomSheet";
+import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { HumanDateInput } from "./HumanDateInput";
 
@@ -16,6 +25,7 @@ import { HumanDateInput } from "./HumanDateInput";
  */
 export function TaskPlanSheet({ task, onClose }: { task: Task; onClose: () => void }) {
   const strings = useStrings();
+  const { locale } = useLocale();
   const taskActions = useTaskActions();
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
@@ -23,18 +33,71 @@ export function TaskPlanSheet({ task, onClose }: { task: Task; onClose: () => vo
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dateValid, setDateValid] = useState(true);
+  const [acceptedHints, setAcceptedHints] = useState<
+    Partial<Record<"scheduledDate" | "dueDate", TemporalCaptionHint>>
+  >({});
 
-  const dirty = (scheduledDate || null) !== task.scheduledDate || (dueDate || null) !== task.dueDate;
+  const temporalHints = useMemo(
+    () =>
+      extractCaptionHints(task.title, {
+        locale,
+        referenceDate: new Date(task.createdAt),
+      }).filter((hint): hint is TemporalCaptionHint => hint.kind === "temporal"),
+    [locale, task.createdAt, task.title],
+  );
+  const scheduleHints = strongestCaptionHints(
+    temporalHints.filter((hint) => hint.semantic === "scheduledDate"),
+  );
+  const deadlineHints = strongestCaptionHints(
+    temporalHints.filter((hint) => hint.semantic === "dueDate"),
+  );
+  const cleanedTitle = removeCaptionHintSpans(
+    task.title,
+    Object.values(acceptedHints).flatMap((hint) =>
+      hint ? [hint.removalSpan] : [],
+    ),
+  );
+  const dirty =
+    (scheduledDate || null) !== task.scheduledDate ||
+    (dueDate || null) !== task.dueDate ||
+    cleanedTitle !== task.title;
+
+  const acceptHint = (
+    field: "scheduledDate" | "dueDate",
+    hints: readonly TemporalCaptionHint[],
+    key: string,
+  ) => {
+    const hint = hints.find((candidate) => candidate.key === key);
+    if (!hint) return;
+    setAcceptedHints((current) => ({ ...current, [field]: hint }));
+    if (field === "scheduledDate") setScheduledDate(hint.date);
+    else {
+      setDueDate(hint.date);
+      setShowDeadline(true);
+    }
+  };
+
+  const labelFor = (hint: TemporalCaptionHint, field: "scheduledDate" | "dueDate") => {
+    const date = formatExactLocalDate(hint.date, locale) ?? hint.date;
+    return field === "scheduledDate"
+      ? strings.titleHintSchedule(date)
+      : strings.titleHintDeadline(date);
+  };
 
   const commit = async () => {
     if (saving || !dateValid) return;
     setSaving(true);
     setError(null);
     try {
+      const patch = {
+        scheduledDate: scheduledDate || null,
+        dueDate: dueDate || null,
+        ...(cleanedTitle !== task.title ? { title: cleanedTitle } : {}),
+      };
       await taskActions.update(
         task,
-        { scheduledDate: scheduledDate || null, dueDate: dueDate || null },
-        { scheduledDate: scheduledDate || null, dueDate: dueDate || null },
+        patch,
+        patch,
         true,
       );
       onClose();
@@ -75,6 +138,14 @@ export function TaskPlanSheet({ task, onClose }: { task: Task; onClose: () => vo
           onChange={(date) => setScheduledDate(date ?? "")}
           disabled={saving}
         />
+        <CaptionHintSuggestions
+          hints={scheduleHints.map((hint) => ({
+            key: hint.key,
+            label: labelFor(hint, "scheduledDate"),
+          }))}
+          disabled={saving}
+          onSelect={(key) => acceptHint("scheduledDate", scheduleHints, key)}
+        />
 
         {showDeadline ? (
           <div className="field">
@@ -86,15 +157,33 @@ export function TaskPlanSheet({ task, onClose }: { task: Task; onClose: () => vo
               onValidityChange={setDateValid}
               disabled={saving}
             />
+            <CaptionHintSuggestions
+              hints={deadlineHints.map((hint) => ({
+                key: hint.key,
+                label: labelFor(hint, "dueDate"),
+              }))}
+              disabled={saving}
+              onSelect={(key) => acceptHint("dueDate", deadlineHints, key)}
+            />
           </div>
         ) : (
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost task-detail-add-property"
-            onClick={() => setShowDeadline(true)}
-          >
-            {strings.addDeadline}
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost task-detail-add-property"
+              onClick={() => setShowDeadline(true)}
+            >
+              {strings.addDeadline}
+            </button>
+            <CaptionHintSuggestions
+              hints={deadlineHints.map((hint) => ({
+                key: hint.key,
+                label: labelFor(hint, "dueDate"),
+              }))}
+              disabled={saving}
+              onSelect={(key) => acceptHint("dueDate", deadlineHints, key)}
+            />
+          </>
         )}
 
         {error ? (

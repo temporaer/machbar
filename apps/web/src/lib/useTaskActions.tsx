@@ -274,8 +274,12 @@ function useTaskActionsState() {
       ownerMemberId: number | null,
       ownerInheritanceMode: Task["ownerInheritanceMode"] =
         ownerMemberId === null ? "none" : "explicit",
+      companionPatch: Pick<UpdateTaskInput, "title"> = {},
     ) => {
-      const patch = ownerAssignmentPatch(ownerMemberId, ownerInheritanceMode);
+      const patch = {
+        ...ownerAssignmentPatch(ownerMemberId, ownerInheritanceMode),
+        ...companionPatch,
+      };
       const effectiveOwnerSource =
         ownerInheritanceMode === "inherit"
           ? task.effectiveOwnerSource
@@ -303,11 +307,12 @@ function useTaskActionsState() {
       task: Task,
       contextInheritanceMode: Task["contextInheritanceMode"],
       contextIds: number[],
+      companionPatch: Pick<UpdateTaskInput, "title"> = {},
     ) =>
       update(
         task,
-        { contextInheritanceMode, contextIds },
-        { contextInheritanceMode },
+        { contextInheritanceMode, contextIds, ...companionPatch },
+        { contextInheritanceMode, ...companionPatch },
         true,
       ),
     [update],

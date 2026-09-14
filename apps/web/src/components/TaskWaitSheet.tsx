@@ -1,10 +1,19 @@
-import { useState } from "react";
-import type { Task } from "@machbar/shared";
+import { useMemo, useState } from "react";
+import type { Member, Task } from "@machbar/shared";
+import {
+  extractCaptionHints,
+  strongestCaptionHints,
+  type TemporalCaptionHint,
+  type WaitingCaptionHint,
+} from "../lib/captionHints";
+import { useLocale } from "../lib/locale";
 import { useStrings } from "../lib/strings";
 import { useTaskActions } from "../lib/useTaskActions";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
+import { formatExactLocalDate } from "../lib/relativeDate";
 import { BottomSheet } from "./BottomSheet";
+import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { HumanDateInput } from "./HumanDateInput";
 
 /**
@@ -13,8 +22,17 @@ import { HumanDateInput } from "./HumanDateInput";
  * instead of `WaitingFollowUpSheet` once `task.externalWait` is null (see
  * that component for the "already waiting" case).
  */
-export function TaskWaitSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskWaitSheet({
+  task,
+  members,
+  onClose,
+}: {
+  task: Task;
+  members: Member[];
+  onClose: () => void;
+}) {
   const strings = useStrings();
+  const { locale } = useLocale();
   const taskActions = useTaskActions();
   const [waitingFor, setWaitingFor] = useState("");
   const [revisitDate, setRevisitDate] = useState<string | null>(null);
@@ -22,6 +40,26 @@ export function TaskWaitSheet({ task, onClose }: { task: Task; onClose: () => vo
   const [dateValid, setDateValid] = useState(true);
   const saving = taskActions.isPending(task.id);
   const error = taskActions.errors[task.id] ?? null;
+  const captionHints = useMemo(
+    () =>
+      extractCaptionHints(task.title, {
+        locale,
+        referenceDate: new Date(task.createdAt),
+        members,
+      }),
+    [locale, members, task.createdAt, task.title],
+  );
+  const waitingHints = strongestCaptionHints(
+    captionHints.filter(
+      (hint): hint is WaitingCaptionHint => hint.kind === "waiting",
+    ),
+  );
+  const revisitHints = strongestCaptionHints(
+    captionHints.filter(
+      (hint): hint is TemporalCaptionHint =>
+        hint.kind === "temporal" && hint.semantic === "followUp",
+    ),
+  );
 
   const today = () => toIsoCalendarDate(new Date());
 
@@ -60,6 +98,19 @@ export function TaskWaitSheet({ task, onClose }: { task: Task; onClose: () => vo
             disabled={saving}
             autoFocus
             onChange={(event) => setWaitingFor(event.target.value)}
+          />
+          <CaptionHintSuggestions
+            hints={waitingHints.map((hint) => ({
+              key: hint.key,
+              label: hint.waitingFor,
+            }))}
+            disabled={saving}
+            onSelect={(key) => {
+              const hint = waitingHints.find(
+                (candidate) => candidate.key === key,
+              );
+              if (hint) setWaitingFor(hint.waitingFor);
+            }}
           />
         </div>
 
@@ -133,6 +184,26 @@ export function TaskWaitSheet({ task, onClose }: { task: Task; onClose: () => vo
               disabled={saving}
             />
           ) : null}
+          <CaptionHintSuggestions
+            hints={revisitHints.map((hint) => {
+              const date =
+                formatExactLocalDate(hint.date, locale) ?? hint.date;
+              return {
+                key: hint.key,
+                label: strings.titleHintFollowUp(date),
+              };
+            })}
+            disabled={saving}
+            onSelect={(key) => {
+              const hint = revisitHints.find(
+                (candidate) => candidate.key === key,
+              );
+              if (hint) {
+                setRevisitDate(hint.date);
+                setCustomDate(true);
+              }
+            }}
+          />
         </div>
 
         {error ? (

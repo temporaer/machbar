@@ -50,6 +50,16 @@ Decide what the capture means:
 Clarification is separate from capture so that fast collection does not force
 premature planning.
 
+When an existing task title already contains a likely date, person, tag, place,
+or simple waiting phrase, the relevant focused editor can offer up to three
+optional **Aus Titel** suggestions. Capture remains free-form and ignoring a
+suggestion changes nothing. Accepting a planning, owner, tag, or place
+suggestion applies the known value and removes only that phrase from the title;
+relative dates are interpreted from when the task was originally captured, not
+when it is later clarified. Waiting suggestions can fill both who or what the
+task is waiting for and an explicit follow-up date, but deliberately leave the
+original title intact.
+
 An inbox item leaves clarification through one explicit classification:
 
 - **Machbar** keeps it as a task and makes it actionable.

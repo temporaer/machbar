@@ -1347,6 +1347,16 @@ details[open] > .disclosure-summary::after {
   opacity: 0.5;
 }
 
+.caption-hints {
+  display: grid;
+  gap: 6px;
+}
+
+.caption-hint-chip {
+  min-height: 36px;
+  padding-block: 5px;
+}
+
 .field-label {
   font-size: 0.8rem;
   font-weight: 600;

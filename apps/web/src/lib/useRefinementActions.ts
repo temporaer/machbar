@@ -72,6 +72,7 @@ export function useRefinementActions() {
       ownerInheritanceMode: InheritanceMode = ownerMemberId === null
         ? "none"
         : "explicit",
+      companionPatch: { title?: string } = {},
     ) => {
       const effectiveOwnerId =
         ownerInheritanceMode === "inherit"
@@ -89,6 +90,7 @@ export function useRefinementActions() {
             : "task";
       const optimistic: RefinementListItem = {
         ...task,
+        ...companionPatch,
         ownerMemberId,
         ownerInheritanceMode,
         effectiveOwnerId,
@@ -100,7 +102,10 @@ export function useRefinementActions() {
         mutate: () =>
           updateTask(
             task,
-            ownerAssignmentPatch(ownerMemberId, ownerInheritanceMode),
+            {
+              ...ownerAssignmentPatch(ownerMemberId, ownerInheritanceMode),
+              ...companionPatch,
+            },
           ),
         confirmed: (confirmed) => ({
           ...task,

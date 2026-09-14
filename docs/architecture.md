@@ -759,6 +759,23 @@ contextual "+" in organizable outlines — none of them duplicate into
 other affordance (priority/recurrence when unset, the additional-next-action
 toggle).
 
+Focused task workflows may derive optional structured suggestions from the
+task title through the React-free `lib/captionHints.ts` primitive. It retains
+source and removal spans, resolves German/English calendar phrases against the
+task's original `createdAt`, and ranks matches only against known members,
+tags, and active Home Assistant contexts. `CaptionHintSuggestions` renders at
+most three matches inside the existing plan, owner, tag, context, or start-wait
+sheet; there is no parsing dialog and capture syntax is unchanged.
+
+Suggestion acceptance remains part of the owning workflow. Planning stages
+accepted spans until **Fertig**; owner, tag, and context acceptance sends the
+structured field plus cleaned title through the existing revision-safe task
+PATCH. Ignoring or cancelling is inert, and cleanup never creates an empty
+title. Starting an external wait is the deliberate exception: its person/text
+and follow-up-date hints only fill the existing local draft and preserve the
+title, because the dedicated wait command remains one backend operation and is
+not expanded with unrelated title metadata.
+
 `ProjectDetailPage` is the same shape for stories, and `ProjectEditSheet` is
 gone. The page edits only its authored title and notes in place; driver,
 dates, tags and contexts are meta-row values that dispatch
