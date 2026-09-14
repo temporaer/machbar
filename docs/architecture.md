@@ -73,6 +73,16 @@ WorkItem(role=story) ─── WorkItem(role=task)
 - **Tags** are many-to-many with WorkItems via `work_item_tags`. Every tag has a
   persisted colour; newly created names map deterministically onto the
   application palette, so colours do not change between clients or renders.
+- **Scope** (`work_items.scope`, `"household" | "work"`, default
+  `"household"`) separates household work from a member's own work tasks.
+  Unlike owner/tags, scope is not a per-task inheritance override: only the
+  root of a subtree can set it, and it cascades unconditionally to every
+  descendant; a non-root `scope` in a create/update input is ignored. Work
+  items are strictly owner-only (never returned to any other member, in any
+  list/search/dashboard/aggregate) and never mixed with household items in
+  the same view. Work items never contribute to points/gamification. See
+  `docs/architecture-rules.md`'s "Task/project `scope` and the `Graph.load`
+  viewer contract" section for the enforcement mechanism.
 
 ### Inheritance chains
 
@@ -592,7 +602,7 @@ nicht aktiv** section, and completed/archived stories remain folded.
 `lib/projectListFilter.ts` is a pure `filterAndSortProjects(projects, { query, scope, currentMemberId })`, unit-tested on its own and called once per render by `ProjectsPage`:
 
 - **Search** folds diacritics (`NFD` + combining-mark strip) and lower-cases both sides, then substring-matches the title **and** every `acceptanceCriteria[].text`. The list endpoint already returns criteria (`Graph.load`), so no extra request is needed.
-- **Scope** is `mine` by default — the selected member's stories plus `ownerMemberId === null`. With no identity selected there is no "mine", so it collapses to unassigned-only rather than to everything. `all` disables the filter.
+- **Scope** is `mine` by default — the selected member's stories plus `ownerMemberId === null`. With no identity selected there is no "mine", so it collapses to unassigned-only rather than to everything. `all` disables the filter. A third state, `work`, shows only the current member's own `scope: "work"` items (household items are excluded); `nextAgendaScope` in `apps/web/src/lib/todayScope.ts` defines the shared Mine → Household → Work cycle order and is reused by `TodayPage`, `WeekPage`, `ProjectsPage`, and `WaitingPage`.
 - **Sort buckets**, in order: active & healthy, active & ready-to-complete
   (`completion_review`), active & `stuckReason`, active with a future-scheduled
   next action, active waiting, backlog, completed, archived; ties break on

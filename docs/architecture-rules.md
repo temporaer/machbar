@@ -192,6 +192,10 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task `Struktur` workflow (split/move/convert-to-project) | `apps/web/src/components/TaskStructureSheet.tsx`, opened as the `structure` task workflow |
 | Project `Struktur` workflow (plan next task/edit outcome) | `apps/web/src/components/ProjectStructureSheet.tsx`, opened as the `structure` project workflow |
 | Consolidated task move (project and/or parent in one step) | `apps/web/src/components/MoveTaskSheet.tsx` via `task.changeProject` |
+| View-mode scope selector (Mine / Household / Work), cycle order, and persistence | `apps/web/src/lib/todayScope.ts` (`nextAgendaScope`, `readTodayScope`/`writeTodayScope`) reused by `TodayPage`, `WeekPage`, `ProjectsPage`, `WaitingPage` |
+| Task/project `scope` ("household" \| "work") read/derivation and owner-only visibility | `apps/api/src/domain/graph.ts` (`Graph.load`'s viewer-restriction parameter; see below) |
+| Household/work agenda-scope filtering shared by Today/Week/Waiting | `apps/api/src/domain/agendaSelection.ts` (`matchesScope`) |
+| Work-item exclusion from points/gamification | `apps/api/src/repo/contributionRepo.ts` (`entityScope` gate in `recordContribution`) |
 | Contextual successor creation ("+" in organizable outlines only) | `apps/web/src/components/InlineSuccessorComposer.tsx`, rendered by `apps/web/src/components/TaskRow.tsx` when `organizeEnabled` |
 | Logical active WorkItem, structural capability, and collapse state per navigable surface | `apps/web/src/lib/interactionScope.tsx` |
 | Command descriptors, keyboard help, and prefix hints | `apps/web/src/lib/commandRegistry.ts`, `apps/web/src/components/CommandHelpSheet.tsx`, and `apps/web/src/lib/useGlobalNavigationKeys.ts` |
@@ -214,6 +218,49 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 
 Before introducing another primitive for one of these needs, update this table
 and explain why the existing primitive is insufficient.
+
+### Task/project `scope` and the `Graph.load` viewer contract
+
+Every task and project has a `scope` of `"household"` (default) or `"work"`.
+Work items are strictly owner-only: no endpoint may return a work item to
+anyone other than its own effective owner, and household and work items are
+never mixed in the same list/aggregate. `scope` inherits down the task tree
+the same way owner/tags do (`inherit | explicit | none` is not needed here;
+non-root tasks always inherit their parent's scope and a non-root `scope` in
+a create/update input is ignored — only the root of a subtree can change it,
+cascading to the whole subtree).
+
+`Graph.load(db, ?, viewerMemberId?)` is the single choke point for this
+filter. Its behavior depends on **how many arguments are passed**, not on
+whether the 3rd argument is `undefined`:
+
+- Called with 1 or 2 arguments (all pre-existing internal call sites, e.g.
+  domain code re-reading a row inside the same transaction that just wrote
+  it): fully unrestricted, exactly as before this feature existed. Never add
+  a 3rd argument to an internal call site.
+- Called with exactly 3 arguments (every public route that exposes a scope
+  selector): viewer-restricted. A work item is included only if the passed
+  `viewerMemberId` matches its effective owner (via `getEffectiveOwners`, not
+  the row's own possibly-null `ownerMemberId` column). Passing the 3rd
+  argument as `undefined` (no resolvable viewer) is a deliberate "hide every
+  work-scope row" signal, used by `/api/review`, `/api/views/more-counts`, and
+  `/api/inbox` — which have no scope selector at all and must stay purely
+  household-only for everyone, including a work item's own owner.
+
+New routes that read tasks/projects must decide explicitly which of these two
+behaviors they need and call `Graph.load` accordingly; do not add a viewer
+parameter "just in case" to an internal call site.
+
+Work items never contribute to points/gamification: `contributionRepo.ts`'s
+`recordContribution` looks up the entity's scope and returns early (no
+contribution row) for `scope === "work"`. This is the single enforcement
+point; do not duplicate the check elsewhere.
+
+`/api/refinement/owners` and `/api/refinement/tasks` are a deliberate, narrow
+exception: they are internal-tooling read endpoints outside the ~8-endpoint
+list above and remain unrestricted (a work item could theoretically surface
+there to another member). Widen the viewer-threading to cover them before
+relying on refinement views for anything user-facing.
 
 ## Deletion and deprecation
 
