@@ -536,7 +536,6 @@ describe("MCP integration", () => {
     await client.close();
     await server.close();
   });
-
   it("publishes single-shape absolute reminder schemas for Home Assistant", async () => {
     const member = await createMember();
     const { client, server } = await connectMcp(member.id);
@@ -573,6 +572,175 @@ describe("MCP integration", () => {
       },
     });
     expect(manageReminderSchema).toMatchObject({ type: "string" });
+
+    await client.close();
+    await server.close();
+  });
+
+  it("supports scoped project creation, updates, waits, notes, and active contexts", async () => {
+    const authenticated = await createMember();
+    const owner = await createMember("Alex");
+    const context = ctx.handle.db
+      .insert(schema.physicalContexts)
+      .values({
+        source: "home_assistant",
+        externalId: "zone.home",
+        name: "Home",
+        active: true,
+      })
+      .returning()
+      .get();
+    const inactiveContext = ctx.handle.db
+      .insert(schema.physicalContexts)
+      .values({
+        source: "home_assistant",
+        externalId: "zone.garage",
+        name: "Garage",
+        active: false,
+      })
+      .returning()
+      .get();
+    const ownedParent = insertTestProject(ctx.handle.db, {
+      title: "Owned parent",
+      ownerMemberId: owner.id,
+    });
+    const { client, server } = await connectMcp(authenticated.id);
+
+    const shared = await client.callTool({
+      name: "machbar_create_project",
+      arguments: {
+        title: "Shared child",
+        parentProjectId: ownedParent.id,
+        contextIds: [context.id],
+      },
+    });
+    const sharedProject = (
+      shared.structuredContent as {
+        result: {
+          id: number;
+          revision: number;
+          ownerMemberId: number | null;
+          scope: string;
+        };
+      }
+    ).result;
+    expect(sharedProject).toMatchObject({
+      ownerMemberId: null,
+      scope: "household",
+    });
+
+    const explicitlyOwned = await client.callTool({
+      name: "machbar_create_project",
+      arguments: { title: "Alex project", ownerMemberId: owner.id },
+    });
+    expect(explicitlyOwned.structuredContent).toEqual({
+      result: expect.objectContaining({
+        ownerMemberId: owner.id,
+        scope: "household",
+      }),
+    });
+
+    const updated = await client.callTool({
+      name: "machbar_update_project",
+      arguments: {
+        projectId: sharedProject.id,
+        expectedRevision: sharedProject.revision,
+        ownerMemberId: owner.id,
+        dueDate: "2026-09-21",
+        contextIds: [context.id],
+      },
+    });
+    expect(updated.structuredContent).toEqual({
+      result: expect.objectContaining({
+        ownerMemberId: owner.id,
+        dueDate: "2026-09-21",
+        contexts: [expect.objectContaining({ id: context.id })],
+      }),
+    });
+
+    const contexts = await client.callTool({
+      name: "machbar_list_contexts",
+      arguments: {},
+    });
+    expect(contexts.structuredContent).toEqual({
+      result: [
+        expect.objectContaining({
+          id: context.id,
+          name: "Home",
+          externalId: "zone.home",
+        }),
+      ],
+    });
+    expect(JSON.stringify(contexts.structuredContent)).not.toContain(
+      `"id":${inactiveContext.id}`,
+    );
+
+    const task = await client.callTool({
+      name: "machbar_create_task",
+      arguments: { title: "Wait for reply", status: "actionable" },
+    });
+    const createdTask = (
+      task.structuredContent as {
+        result: { id: number; revision: number };
+      }
+    ).result;
+    const waiting = await client.callTool({
+      name: "machbar_set_waiting",
+      arguments: {
+        taskId: createdTask.id,
+        expectedRevision: createdTask.revision,
+        waitingFor: "Alex",
+        revisitDate: "2026-09-22",
+      },
+    });
+    expect(waiting.structuredContent).toEqual({
+      result: expect.objectContaining({
+        externalWait: { waitingFor: "Alex", revisitDate: "2026-09-22" },
+      }),
+    });
+
+    const taskNote = await client.callTool({
+      name: "machbar_append_note",
+      arguments: {
+        entityType: "task",
+        entityId: createdTask.id,
+        content: "Ask again next week",
+      },
+    });
+    expect(taskNote.structuredContent).toEqual({
+      result: expect.objectContaining({ notes: "Ask again next week" }),
+    });
+    const projectNote = await client.callTool({
+      name: "machbar_append_note",
+      arguments: {
+        entityType: "project",
+        entityId: sharedProject.id,
+        content: "Keep this shared",
+      },
+    });
+    expect(projectNote.structuredContent).toEqual({
+      result: expect.objectContaining({ notes: "Keep this shared" }),
+    });
+
+    await client.close();
+    await server.close();
+  });
+
+  it("forces project ownership to the authenticated member in work scope", async () => {
+    const authenticated = await createMember();
+    const other = await createMember("Alex");
+    const { client, server } = await connectMcp(authenticated.id, "work");
+
+    const created = await client.callTool({
+      name: "machbar_create_project",
+      arguments: { title: "Work project", ownerMemberId: other.id },
+    });
+    expect(created.structuredContent).toEqual({
+      result: expect.objectContaining({
+        scope: "work",
+        ownerMemberId: authenticated.id,
+      }),
+    });
 
     await client.close();
     await server.close();
