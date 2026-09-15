@@ -536,7 +536,6 @@ describe("MCP integration", () => {
     await client.close();
     await server.close();
   });
-
   it("publishes single-shape absolute reminder schemas for Home Assistant", async () => {
     const member = await createMember();
     const { client, server } = await connectMcp(member.id);
