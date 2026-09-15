@@ -258,7 +258,7 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     });
   });
 
-  it("keeps capture for metadata updates but requires promotion instead of refiling", async () => {
+  it("refiles a captured inbox item into a project atomically, clearing capture", async () => {
     const task = await createTask({ title: "Ungeklärte Aufgabe" });
     const metadataRes = await ctx.app.inject({
       method: "PATCH",
@@ -280,8 +280,12 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
         expectedRevision: metadataRes.json().revision,
       },
     });
-    expect(moveRes.statusCode).toBe(409);
-    expect(moveRes.json().error.code).toBe("task_promotion_invalid");
+    expect(moveRes.statusCode).toBe(200);
+    expect(moveRes.json()).toMatchObject({
+      status: "actionable",
+      needsClarification: false,
+      projectId: projectRes.json().id,
+    });
   });
 
   it("rejects an empty title", async () => {

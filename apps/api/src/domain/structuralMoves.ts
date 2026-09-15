@@ -143,18 +143,16 @@ export function moveTask(
         }
       }
     }
-    if (
+    // Filing a captured, unclassified inbox item into a project/parent is
+    // the refile flow: it is not "just a move" (the item is not yet a
+    // legal task anywhere), so it atomically classifies the item into the
+    // normal actionable state in the same transaction as the reparent below,
+    // instead of requiring a separate promotion step first.
+    const refilesCapturedInboxItem =
       task.status === "captured" &&
       task.projectId === null &&
       task.parentTaskId === null &&
-      (newParentTaskId !== null || newProjectId !== null)
-    ) {
-      throw AppError.conflict(
-        "task_promotion_invalid",
-        "Promote the captured inbox item instead of filing it as a task.",
-        { taskId, reason: "captured_root_move_forbidden" },
-      );
-    }
+      (newParentTaskId !== null || newProjectId !== null);
 
     const sourceHadNextAction =
       task.projectId === null
@@ -196,6 +194,9 @@ export function moveTask(
         parentId: newParentTaskId ?? newProjectId,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
+        ...(refilesCapturedInboxItem
+          ? { status: "active" as const, needsClarification: false }
+          : {}),
       })
       .where(eq(schema.workItems.id, taskId))
       .run();

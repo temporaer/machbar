@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import * as schema from "../src/db/schema.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 describe("canonical hierarchy moves", () => {
@@ -35,6 +36,15 @@ describe("canonical hierarchy moves", () => {
   async function getTask(taskId: number) {
     const res = await ctx.app.inject({ method: "GET", url: `/api/tasks/${taskId}` });
     return res.json();
+  }
+
+  function createMember(name: string) {
+    // Members are seed-only in this API; insert directly for isolated tests.
+    return ctx.handle.db
+      .insert(schema.members)
+      .values({ name, color: "#000000" })
+      .returning()
+      .get();
   }
 
   it("reorders siblings and renormalizes positions", async () => {
@@ -233,5 +243,118 @@ describe("canonical hierarchy moves", () => {
     expect(stale.statusCode).toBe(409);
     expect(stale.json().error.code).toBe("stale_write_conflict");
     expect((await getTask(first.id)).parentTaskId).toBeNull();
+  });
+
+  it("refiles a captured inbox item directly into an existing project root", async () => {
+    const captured = await createTask({ title: "Ungeklärte Aufgabe" });
+    expect(captured.status).toBe("captured");
+    const project = await createProject("Ziel-Projekt");
+
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${captured.id}/move`,
+      payload: {
+        projectId: project.id,
+        expectedRevision: captured.revision,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const moved = res.json();
+    expect(moved.status).toBe("actionable");
+    expect(moved.needsClarification).toBe(false);
+    expect(moved.projectId).toBe(project.id);
+    expect(moved.parentTaskId).toBeNull();
+  });
+
+  it("refiles a captured inbox item under a parent task inside a project", async () => {
+    const captured = await createTask({ title: "Ungeklärte Aufgabe" });
+    const project = await createProject("Ziel-Projekt");
+    const parent = await createTask({ projectId: project.id, title: "Elternaufgabe" });
+
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${captured.id}/move`,
+      payload: {
+        parentTaskId: parent.id,
+        expectedRevision: captured.revision,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const moved = res.json();
+    expect(moved.status).toBe("actionable");
+    expect(moved.needsClarification).toBe(false);
+    expect(moved.parentTaskId).toBe(parent.id);
+    expect(moved.projectId).toBe(project.id);
+  });
+
+  it("applies owner inheritance when refiling a captured inbox item into an owned project", async () => {
+    const owner = createMember("Anna");
+    const captured = await createTask({ title: "Ungeklärte Aufgabe" });
+    const project = await createProject("Ziel-Projekt");
+    await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${project.id}`,
+      payload: { ownerMemberId: owner.id, expectedRevision: project.revision },
+    });
+
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${captured.id}/move`,
+      payload: {
+        projectId: project.id,
+        expectedRevision: captured.revision,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const moved = res.json();
+    expect(moved.status).toBe("actionable");
+    expect(moved.effectiveOwnerId).toBe(owner.id);
+    expect(moved.effectiveOwnerSource).toBe("project");
+  });
+
+  it("leaves an ordinary, already-filed task's status untouched on an unrelated move", async () => {
+    const projectA = await createProject("Projekt A");
+    const projectB = await createProject("Projekt B");
+    const task = await createTask({
+      projectId: projectA.id,
+      title: "Bereits eingeordnet",
+      status: "someday",
+    });
+
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/move`,
+      payload: {
+        projectId: projectB.id,
+        expectedRevision: task.revision,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const moved = res.json();
+    expect(moved.status).toBe("someday");
+    expect(moved.projectId).toBe(projectB.id);
+  });
+
+  it("still rejects a cycle when refiling a captured inbox item under its own would-be descendant", async () => {
+    // A never-filed captured root task has no descendants of its own yet, so
+    // this exercises the ordinary cross-project cycle guard: refiling it
+    // under a task inside a project it is not otherwise related to must
+    // still validate exactly like any other move.
+    const captured = await createTask({ title: "Ungeklärte Aufgabe" });
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${captured.id}/move`,
+      payload: {
+        parentTaskId: captured.id,
+        expectedRevision: captured.revision,
+      },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe("task_parent_self");
   });
 });
