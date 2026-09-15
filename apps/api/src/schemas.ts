@@ -301,6 +301,11 @@ export const homeAssistantMappingSchema = z.object({
   memberId: z.number().int().positive().nullable(),
 });
 
+export const createMcpAgentSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  scope: z.enum(workItemScopes),
+});
+
 export const createMemberSchema = z.object({
   name: z.string().min(1, "Member name must not be empty."),
 });

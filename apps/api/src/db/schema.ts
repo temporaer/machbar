@@ -181,6 +181,28 @@ export const homeAssistantIntegrations = sqliteTable(
   (t) => [index("home_assistant_integrations_active_idx").on(t.revokedAt)],
 );
 
+export const mcpAgents = sqliteTable(
+  "mcp_agents",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    memberId: integer("member_id")
+      .notNull()
+      .references(() => members.id, { onDelete: "cascade" }),
+    scope: text("scope", { enum: ["household", "work"] }).notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    lastUsedAt: text("last_used_at"),
+    revokedAt: text("revoked_at"),
+  },
+  (t) => [
+    index("mcp_agents_member_idx").on(t.memberId),
+    index("mcp_agents_active_idx").on(t.revokedAt),
+  ],
+);
+
 export const pushSubscriptions = sqliteTable(
   "push_subscriptions",
   {

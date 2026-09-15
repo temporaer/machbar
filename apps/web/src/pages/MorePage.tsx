@@ -246,6 +246,18 @@ export function MorePage() {
               ) : null}
               <div className="more-link-group">
                 <Link
+                  to="/more/integrations/mcp"
+                  className="list-link more-list-link"
+                >
+                  <span>
+                    <strong>{strings.mcp}</strong>
+                    <small className="list-link-description">
+                      {strings.mcpLinkHint}
+                    </small>
+                  </span>
+                  <span aria-hidden="true">›</span>
+                </Link>
+                <Link
                   to="/more/integrations/home-assistant"
                   className="list-link more-list-link"
                 >
