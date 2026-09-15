@@ -26,7 +26,7 @@ import { PageHeader } from "../components/PageHeader";
 import { useLocale } from "../lib/locale";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { InteractionScopeProvider } from "../lib/interactionScope";
-import { nextAgendaScope } from "../lib/todayScope";
+import { nextAgendaScope, readTodayScope, writeTodayScope } from "../lib/todayScope";
 
 /**
  * The Projekte tab: current and terminal projects are user stories, and every
@@ -58,7 +58,11 @@ function ProjectsPageContent() {
   const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const [query, setQuery] = useState("");
-  const [scope, setScope] = useState<ProjectVisibilityScope>("mine");
+  const [scope, setScope] = useState<ProjectVisibilityScope>(readTodayScope);
+  const selectScope = (nextScope: ProjectVisibilityScope) => {
+    setScope(nextScope);
+    writeTodayScope(nextScope);
+  };
   const [groupBy, setGroupBy] = useState<GroupableTagKind | null>(null);
   const [groupingOpen, setGroupingOpen] = useState(false);
   // A just-created project handed off via `navigate(..., { state: { highlightProjectId } })`
@@ -227,7 +231,7 @@ function ProjectsPageContent() {
                   ? strings.projectWorkScope
                   : strings.projectMineScope
             }
-            onClick={() => setScope((current) => nextAgendaScope(current))}
+            onClick={() => selectScope(nextAgendaScope(scope))}
           >
             <IconActionGlyph
               kind={scope === "mine" ? "owner" : scope === "all" ? "household" : "work"}

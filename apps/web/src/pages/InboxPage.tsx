@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Task } from "@machbar/shared";
-import { api } from "../lib/api";
+import { api, type AgendaScope } from "../lib/api";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
@@ -15,15 +15,27 @@ import { useTaskDetail } from "../lib/taskDetailContext";
 import { PageHeader } from "../components/PageHeader";
 import { InteractionScopeProvider, useInteractionScope } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
+import { useIdentity } from "../lib/identity";
+import { IconActionGlyph } from "../components/IconActionButton";
+import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
 
 export function InboxPage() {
   const strings = useStrings();
+  const { currentMemberId } = useIdentity();
+  const [scope, setScope] = useState<AgendaScope>(readTodayScope);
+  const selectScope = (nextScope: AgendaScope) => {
+    setScope(nextScope);
+    writeTodayScope(nextScope);
+  };
   const {
     data: tasks,
     loading,
     error,
     reload,
-  } = useAsync(() => api.getInbox(), []);
+  } = useAsync(
+    () => api.getInbox(currentMemberId, scope),
+    [currentMemberId, scope],
+  );
   const { openQueue } = useTaskDetail();
   const location = useLocation();
 
@@ -35,15 +47,41 @@ export function InboxPage() {
         <PageHeader
           title={strings.inbox}
           actions={
-            tasks && tasks.length > 0 ? (
+            <>
               <button
                 type="button"
-                className="btn btn-sm btn-primary"
-                onClick={() => openQueue(tasks.map((t) => t.id))}
+                className="page-header-button inbox-scope-toggle"
+                aria-label={
+                  scope === "mine"
+                    ? strings.inboxHouseholdScope
+                    : scope === "all"
+                      ? strings.inboxWorkScope
+                      : strings.inboxMineScope
+                }
+                aria-pressed={scope !== "mine"}
+                title={
+                  scope === "mine"
+                    ? strings.inboxHouseholdScope
+                    : scope === "all"
+                      ? strings.inboxWorkScope
+                      : strings.inboxMineScope
+                }
+                onClick={() => selectScope(nextAgendaScope(scope))}
               >
-                {strings.clarifyNow}
+                <IconActionGlyph
+                  kind={scope === "mine" ? "owner" : scope === "all" ? "household" : "work"}
+                />
               </button>
-            ) : null
+              {tasks && tasks.length > 0 ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  onClick={() => openQueue(tasks.map((t) => t.id))}
+                >
+                  {strings.clarifyNow}
+                </button>
+              ) : null}
+            </>
           }
           hints={[{ text: strings.inboxHint }]}
         />
@@ -61,7 +99,7 @@ export function InboxPage() {
             />
           )
         ) : null}
-        <QuickAdd />
+        <QuickAdd {...(scope === "work" ? { defaultScope: "work" as const } : {})} />
       </div>
     </InteractionScopeProvider>
   );

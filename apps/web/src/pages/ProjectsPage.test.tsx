@@ -323,6 +323,7 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+    window.sessionStorage.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Theo" })]);
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
@@ -429,6 +430,24 @@ describe("ProjectsPage – search, visibility scope and sort", () => {
     await userEvent.click(toggle);
     await waitFor(() =>
       expect(toggle).toHaveAttribute("aria-pressed", "false"),
+    );
+  });
+
+  it("shares the scope selection with the rest of the app via session storage", async () => {
+    window.localStorage.setItem("machbar:identity-member-id", "1");
+    window.sessionStorage.setItem("machbar:today-scope", "work");
+    renderWithProviders(<ProjectsPage />);
+
+    const toggle = await screen.findByRole("button", {
+      name: "Nur eigene Projekte anzeigen",
+    });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(toggle);
+    await waitFor(() =>
+      expect(window.sessionStorage.getItem("machbar:today-scope")).toBe(
+        "mine",
+      ),
     );
   });
 

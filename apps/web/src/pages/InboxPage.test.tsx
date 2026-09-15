@@ -1,14 +1,25 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import type { Task } from "@machbar/shared";
-import { makeTask } from "../test/fixtures";
+import { makeMember, makeTask } from "../test/fixtures";
 import {
   InteractionScopeProvider,
   useInteractionScope,
 } from "../lib/interactionScope";
-import { InboxFocusRail } from "./InboxPage";
+import { InboxFocusRail, InboxPage } from "./InboxPage";
+import { api } from "../lib/api";
+import { renderWithProviders } from "../test/testUtils";
+
+vi.mock("../lib/api", () => ({
+  api: {
+    getMembers: vi.fn(),
+    getInbox: vi.fn(),
+  },
+}));
+
+const mockedApi = vi.mocked(api, true);
 
 function ScopeProbe() {
   const location = useLocation();
@@ -146,5 +157,61 @@ describe("InboxFocusRail", () => {
       </MemoryRouter>,
     );
     expect(screen.getByTestId("open-rail-id")).toHaveTextContent("456");
+  });
+});
+
+describe("InboxPage scope toggle", () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    vi.clearAllMocks();
+    mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+    mockedApi.getInbox.mockResolvedValue([]);
+  });
+
+  it("cycles mine -> household -> work and requests the matching inbox scope", async () => {
+    const { container } = renderWithProviders(<InboxPage />);
+
+    await waitFor(() =>
+      expect(mockedApi.getInbox).toHaveBeenLastCalledWith(null, "mine"),
+    );
+
+    const header = container.querySelector<HTMLElement>(".page-header")!;
+    const toggle = within(header).getByRole("button", {
+      name: "Ungeklärtes aller Personen anzeigen",
+    });
+    expect(toggle).toHaveClass("page-header-button", "inbox-scope-toggle");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    await userEvent.click(toggle);
+    await waitFor(() =>
+      expect(mockedApi.getInbox).toHaveBeenLastCalledWith(null, "all"),
+    );
+    expect(toggle).toHaveAccessibleName("Nur eigenes ungeklärtes Arbeitsmaterial anzeigen");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(toggle);
+    await waitFor(() =>
+      expect(mockedApi.getInbox).toHaveBeenLastCalledWith(null, "work"),
+    );
+    expect(toggle).toHaveAccessibleName("Nur eigenes ungeklärtes Material anzeigen");
+
+    await userEvent.click(toggle);
+    await waitFor(() =>
+      expect(mockedApi.getInbox).toHaveBeenLastCalledWith(null, "mine"),
+    );
+  });
+
+  it("remembers the scope written by another view while this browser tab remains open", async () => {
+    window.sessionStorage.setItem("machbar:today-scope", "work");
+    renderWithProviders(<InboxPage />);
+
+    await waitFor(() =>
+      expect(mockedApi.getInbox).toHaveBeenLastCalledWith(null, "work"),
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "Nur eigenes ungeklärtes Material anzeigen",
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 });

@@ -288,4 +288,59 @@ describe("work-task scope", () => {
       ctx.handle.db.select().from(schema.contributionEvents).all(),
     ).toHaveLength(0);
   });
+
+  it("hides a captured work item from other members but keeps it visible to its owner in /api/inbox", async () => {
+    const anna = await ctx.app
+      .inject({ method: "POST", url: "/api/members", payload: { name: "Anna", color: "#111111" } })
+      .then((res) => res.json());
+    const ben = await ctx.app
+      .inject({ method: "POST", url: "/api/members", payload: { name: "Ben", color: "#222222" } })
+      .then((res) => res.json());
+
+    const capturedWork = createTask(ctx.handle.db, {
+      title: "Erfasste Arbeitsaufgabe",
+      status: "captured",
+      scope: "work",
+      createdByMemberId: anna.id,
+    });
+
+    const householdDefault = await ctx.app.inject({ method: "GET", url: "/api/inbox" });
+    expect(
+      (householdDefault.json() as Array<{ id: number }>).map((task) => task.id),
+    ).not.toContain(capturedWork.id);
+
+    const forOther = await ctx.app.inject({
+      method: "GET",
+      url: `/api/inbox?scope=work&memberId=${ben.id}`,
+    });
+    expect(
+      (forOther.json() as Array<{ id: number }>).map((task) => task.id),
+    ).not.toContain(capturedWork.id);
+
+    const forOwner = await ctx.app.inject({
+      method: "GET",
+      url: `/api/inbox?scope=work&memberId=${anna.id}`,
+    });
+    expect(
+      (forOwner.json() as Array<{ id: number }>).map((task) => task.id),
+    ).toContain(capturedWork.id);
+
+    const householdScopeForOwner = await ctx.app.inject({
+      method: "GET",
+      url: `/api/inbox?scope=all&memberId=${anna.id}`,
+    });
+    expect(
+      (householdScopeForOwner.json() as Array<{ id: number }>).map(
+        (task) => task.id,
+      ),
+    ).not.toContain(capturedWork.id);
+  });
+
+  it("requires a resolvable member for the work inbox scope", async () => {
+    const res = await ctx.app.inject({
+      method: "GET",
+      url: "/api/inbox?scope=work",
+    });
+    expect(res.statusCode).toBe(400);
+  });
 });
