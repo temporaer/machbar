@@ -148,6 +148,20 @@ describe("MCP integration", () => {
       }),
     });
 
+    const cancelled = await client.callTool({
+      name: "machbar_cancel_task",
+      arguments: {
+        taskId: workTask.id,
+        expectedRevision: workTask.revision,
+      },
+    });
+    expect(cancelled.structuredContent).toEqual({
+      result: expect.objectContaining({
+        id: workTask.id,
+        status: "cancelled",
+      }),
+    });
+
     const forbidden = await client.callTool({
       name: "machbar_complete_task",
       arguments: {
