@@ -30,6 +30,7 @@ import { TaskDeepLinkPage } from "./pages/TaskDeepLinkPage";
 import { ActivityPage } from "./pages/ActivityPage";
 import { DebugPage } from "./pages/DebugPage";
 import { HomeAssistantPage } from "./pages/HomeAssistantPage";
+import { McpPage } from "./pages/McpPage";
 import { LocaleProvider } from "./lib/locale";
 import { ThemeProvider } from "./lib/theme";
 import { SwipeCoachProvider } from "./lib/swipeCoach";
@@ -84,6 +85,7 @@ function Shell() {
               path="/more/integrations/home-assistant"
               element={<HomeAssistantPage />}
             />
+            <Route path="/more/integrations/mcp" element={<McpPage />} />
             <Route
               path="/more/debug"
               element={

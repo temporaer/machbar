@@ -10,6 +10,8 @@ import type {
   HomeAssistantIntegrationStatus,
   HomeAssistantPairingCode,
   InheritanceMode,
+  McpAgent,
+  McpAgentToken,
   Member,
   MoreCounts,
   PaperlessDocumentSummary,
@@ -656,6 +658,17 @@ export const api = {
       `/integrations/home-assistant/people/${encodeURIComponent(externalId)}/mapping`,
       { method: "PUT", body: JSON.stringify({ memberId }) },
     ),
+  listMcpAgents: () =>
+    request<McpAgent[]>("/integrations/mcp/agents"),
+  createMcpAgent: (name: string, scope: "household" | "work") =>
+    request<McpAgentToken>("/integrations/mcp/agents", {
+      method: "POST",
+      body: JSON.stringify({ name, scope }),
+    }),
+  revokeMcpAgent: (id: number) =>
+    request<void>(`/integrations/mcp/agents/${id}`, {
+      method: "DELETE",
+    }),
   searchTasks: (filters: SearchFilters) =>
     request<Task[]>(
       `/search${query({

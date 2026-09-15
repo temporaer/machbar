@@ -690,6 +690,22 @@ export interface HomeAssistantPairingResponse {
   protocolVersion: 1;
 }
 
+export interface McpAgent {
+  id: number;
+  name: string;
+  memberId: number;
+  scope: WorkItemScope;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+
+export interface McpAgentToken {
+  agent: McpAgent;
+  token: string;
+  endpoint: string;
+}
+
 export interface HomeAssistantContextSnapshot {
   protocolVersion: 1;
   observedAt: string;

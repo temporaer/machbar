@@ -360,6 +360,22 @@ routes use Bearer authentication and cannot substitute for browser sessions.
 member-specific availability. Unknown or telemetry older than 30 minutes fails
 open and never changes structural blocker or project-health derivations.
 
+### Copilot / MCP
+
+The remote MCP endpoint is mounted at `/api/mcp` inside the Fastify process
+using the official TypeScript MCP SDK's stateless Streamable HTTP transport.
+It is not a second service or workspace package.
+
+An OIDC-authenticated member creates a named, revocable agent credential in the
+web UI. Only the SHA-256 token hash is stored in `mcp_agents`; the raw token is
+shown once and then sent as an `Authorization: Bearer` header. Every credential
+is permanently bound to its creator and to either the `household` or `work`
+scope. Tool handlers enforce that boundary before reads and mutations.
+
+`apps/api/src/mcp/tools.ts` is an adapter over the same graph projections,
+domain commands, revision checks, and transaction boundaries used by REST
+routes. MCP must not become a second mutation architecture.
+
 ---
 
 ## 6. Status Lifecycle

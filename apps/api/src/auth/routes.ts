@@ -9,6 +9,7 @@ import { parseOrThrow } from "../validation.js";
 import { PocketIdProvider, type OidcProvider } from "./oidcClient.js";
 import { AuthService } from "./service.js";
 import { authenticateHomeAssistant } from "../integrations/homeAssistant.js";
+import { authenticateMcpAgent } from "../integrations/mcp.js";
 
 export const SESSION_COOKIE = "__Host-machbar-session";
 export const OIDC_STATE_COOKIE = "__Host-machbar-oidc-state";
@@ -35,7 +36,12 @@ function isPublicApiPath(path: string): boolean {
   );
 }
 
-type RouteAuthPolicy = "anonymous" | "human" | "home_assistant" | "pairing";
+type RouteAuthPolicy =
+  | "anonymous"
+  | "human"
+  | "home_assistant"
+  | "mcp_agent"
+  | "pairing";
 
 export function authPolicyForRoute(path: string): RouteAuthPolicy {
   if (isPublicApiPath(path)) return "anonymous";
@@ -43,6 +49,7 @@ export function authPolicyForRoute(path: string): RouteAuthPolicy {
   if (path === "/api/integrations/home-assistant/context") {
     return "home_assistant";
   }
+  if (path === "/api/mcp") return "mcp_agent";
   return "human";
 }
 
@@ -132,6 +139,8 @@ export function registerAuthentication(
   app.register(cookie);
   app.decorateRequest("authMember", null);
   app.decorateRequest("homeAssistantIntegrationId", null);
+  app.decorateRequest("mcpAgentId", null);
+  app.decorateRequest("mcpScope", null);
 
   const service =
     env.oidc === null
@@ -146,6 +155,15 @@ export function registerAuthentication(
     request.authMember = service?.memberForSession(
       request.cookies[SESSION_COOKIE],
     ) ?? null;
+    if (request.routeOptions.url === "/api/mcp") {
+      const authenticated = authenticateMcpAgent(
+        db,
+        request.headers.authorization,
+      );
+      request.mcpAgentId = authenticated.agentId;
+      request.mcpScope = authenticated.scope;
+      request.authMember = authenticated.member;
+    }
   });
 
   app.addHook("preHandler", async (request) => {
@@ -158,6 +176,19 @@ export function registerAuthentication(
         db,
         request.headers.authorization,
       ).id;
+      return;
+    }
+    if (policy === "mcp_agent") {
+      if (
+        !request.authMember ||
+        request.mcpAgentId === null ||
+        request.mcpScope === null
+      ) {
+        throw AppError.unauthorized(
+          "integration_authentication_required",
+          "An MCP agent token is required.",
+        );
+      }
       return;
     }
     if (!service) return;
