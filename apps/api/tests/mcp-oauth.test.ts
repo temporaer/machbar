@@ -12,6 +12,7 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from "vitest";
 import * as schema from "../src/db/schema.js";
 import { McpOAuthProvider } from "../src/integrations/mcpOAuth.js";
@@ -38,6 +39,7 @@ let privateKey: Parameters<SignJWT["sign"]>[0];
 let jwks: Record<string, unknown>;
 let jwksServer: Server;
 let jwksUri: string;
+let jwksAvailable = true;
 
 beforeAll(async () => {
   const generated = await generateKeyPair("RS256");
@@ -55,6 +57,10 @@ beforeAll(async () => {
   jwksServer = createServer((request, response) => {
     if (request.url !== "/jwks.json") {
       response.writeHead(404).end();
+      return;
+    }
+    if (!jwksAvailable) {
+      response.writeHead(503).end();
       return;
     }
     response.setHeader("content-type", "application/json");
@@ -166,6 +172,10 @@ describe("MCP OAuth", () => {
     });
   }
 
+  function oauthAuthorization(tokenValue: string): string {
+    return ["Bearer", tokenValue].join(" ");
+  }
+
   it("publishes protected-resource and compatibility metadata", async () => {
     const protectedMetadata = await ctx.app.inject({
       method: "GET",
@@ -226,6 +236,7 @@ describe("MCP OAuth", () => {
     expect(missing.headers["www-authenticate"]).toContain(
       'resource_metadata="https://machbar.example/.well-known/oauth-protected-resource/api/mcp"',
     );
+    expect(missing.headers["www-authenticate"]).not.toContain("error=");
 
     const invalid = await mcpRequest("Bearer not-a-jwt", 2, "initialize");
     expect(invalid.statusCode).toBe(401);
@@ -274,6 +285,54 @@ describe("MCP OAuth", () => {
     expect(JSON.stringify(today.json())).not.toContain("Work task");
   });
 
+  it("accepts a token expired within the clock-skew tolerance", async () => {
+    await createLinkedMember();
+    const response = await mcpRequest(
+      oauthAuthorization(await token({
+        expiration: Math.floor(Date.now() / 1000) - 30,
+      })),
+      1,
+      "initialize",
+    );
+    expect(response.statusCode).toBe(200);
+  });
+
+  it("creates a household task through the OAuth MCP write path", async () => {
+    const member = await createLinkedMember();
+    const title = "OAuth-created household task";
+    const response = await mcpRequest(
+      oauthAuthorization(await token()),
+      1,
+      "tools/call",
+      {
+        name: "machbar_create_task",
+        arguments: {
+          title,
+          status: "actionable",
+        },
+      },
+    );
+    expect(response.statusCode).toBe(200);
+    expect(response.json().result.structuredContent.result).toEqual(
+      expect.objectContaining({
+        title,
+        scope: "household",
+      }),
+    );
+    const created = ctx.handle.db
+      .select()
+      .from(schema.workItems)
+      .all()
+      .find((item) => item.title === title);
+    expect(created).toEqual(
+      expect.objectContaining({
+        title,
+        scope: "household",
+        createdByMemberId: member.id,
+      }),
+    );
+  });
+
   it("rejects insufficient scope, wrong audience, and unlinked subjects", async () => {
     await createLinkedMember();
     const insufficient = await mcpRequest(
@@ -302,6 +361,102 @@ describe("MCP OAuth", () => {
     );
     expect(unlinked.statusCode).toBe(403);
     expect(unlinked.json().error.code).toBe("mcp_oauth_member_unlinked");
+    expect(unlinked.headers["www-authenticate"]).toBeUndefined();
+  });
+
+  it("returns 503 without an invalid-token challenge when discovery fails", async () => {
+    const failedProvider = new McpOAuthProvider(oidc, mcpOAuth, {
+      discover: async () => {
+        throw new Error("Pocket ID is unavailable");
+      },
+    });
+    const failedContext = createTestContext({
+      oidc,
+      mcpOAuth,
+      mcpOAuthProvider: failedProvider,
+    });
+    try {
+      const response = await failedContext.app.inject({
+        method: "POST",
+        url: "/api/mcp",
+        headers: {
+          authorization: oauthAuthorization(await token()),
+          accept: "application/json, text/event-stream",
+        },
+        payload: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {},
+        },
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe(
+        "mcp_oauth_provider_unavailable",
+      );
+      expect(response.headers["www-authenticate"]).toBeUndefined();
+    } finally {
+      await closeTestContext(failedContext);
+    }
+  });
+
+  it("returns 503 without an invalid-token challenge when JWKS retrieval fails", async () => {
+    await createLinkedMember();
+    jwksAvailable = false;
+    try {
+      const response = await mcpRequest(
+        oauthAuthorization(await token()),
+        1,
+        "initialize",
+      );
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error.code).toBe(
+        "mcp_oauth_provider_unavailable",
+      );
+      expect(response.headers["www-authenticate"]).toBeUndefined();
+    } finally {
+      jwksAvailable = true;
+    }
+  });
+
+  it("rejects discovery metadata with a mismatched issuer or insecure endpoint", async () => {
+    const fetchMock = vi.fn();
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          issuer: "https://other.example",
+          authorization_endpoint: "https://pocket.example/authorize",
+          token_endpoint: "https://pocket.example/token",
+          jwks_uri: "https://pocket.example/jwks.json",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const discoveryProvider = new McpOAuthProvider(oidc, mcpOAuth);
+      await expect(discoveryProvider.metadata()).rejects.toThrow(
+        "issuer does not match",
+      );
+
+      fetchMock.mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            issuer: oidc.issuerUrl,
+            authorization_endpoint: "http://pocket.example/authorize",
+            token_endpoint: "https://pocket.example/token",
+            jwks_uri: "https://pocket.example/jwks.json",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+      const insecureProvider = new McpOAuthProvider(oidc, mcpOAuth);
+      await expect(insecureProvider.metadata()).rejects.toThrow(
+        "requires an HTTPS",
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("fails closed for invalid signatures, expiry, issuer, subject, and scope claims", async () => {
@@ -336,6 +491,11 @@ describe("MCP OAuth", () => {
       expect(response.statusCode, testCase.name).toBe(
         testCase.expectedStatus ?? 401,
       );
+      if ((testCase.expectedStatus ?? 401) === 401) {
+        expect(response.json().error.code, testCase.name).toBe(
+          "mcp_oauth_invalid_token",
+        );
+      }
     }
   });
 

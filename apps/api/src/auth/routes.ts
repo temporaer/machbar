@@ -160,9 +160,17 @@ function setMcpChallenge(
     );
     return;
   }
+  if (
+    error instanceof AppError &&
+    (error.code === "mcp_oauth_member_unlinked" ||
+      error.code === "mcp_oauth_provider_unavailable")
+  ) {
+    return;
+  }
   const errorParameter =
     error instanceof AppError &&
-    error.code !== "integration_authentication_required"
+    (error.code === "mcp_oauth_invalid_token" ||
+      error.code === "integration_token_revoked")
       ? ` error="invalid_token"`
       : "";
   reply.header(

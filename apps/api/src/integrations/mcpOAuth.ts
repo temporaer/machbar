@@ -1,11 +1,23 @@
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import {
+  createRemoteJWKSet,
+  errors,
+  jwtVerify,
+  type JWTPayload,
+} from "jose";
 import type { Member } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import type { McpOAuthConfig, OidcConfig } from "../env.js";
 import { AppError } from "../errors.js";
-import {
-  findOidcMemberByIdentity,
-} from "../auth/repository.js";
+import { findOidcMemberByIdentity } from "../auth/repository.js";
+
+const JWT_CLOCK_TOLERANCE_SECONDS = 60;
+const PROVIDER_UNAVAILABLE_JOSE_CODES = new Set([
+  "ERR_JOSE_GENERIC",
+  "ERR_JWK_INVALID",
+  "ERR_JWKS_INVALID",
+  "ERR_JWKS_MULTIPLE_MATCHING_KEYS",
+  "ERR_JWKS_TIMEOUT",
+]);
 
 export interface McpOAuthMetadata {
   issuer: string;
@@ -36,6 +48,23 @@ function requiredString(
   return value;
 }
 
+function requiredHttpsUrl(
+  document: DiscoveryDocument,
+  field: keyof DiscoveryDocument,
+): string {
+  const value = requiredString(document, field);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`Pocket ID discovery has an invalid ${field}.`);
+  }
+  if (url.protocol !== "https:") {
+    throw new Error(`Pocket ID discovery requires an HTTPS ${field}.`);
+  }
+  return value;
+}
+
 async function discoverPocketId(issuerUrl: string): Promise<McpOAuthMetadata> {
   const discoveryUrl = new URL(
     ".well-known/openid-configuration",
@@ -46,11 +75,18 @@ async function discoverPocketId(issuerUrl: string): Promise<McpOAuthMetadata> {
     throw new Error(`Pocket ID discovery failed with HTTP ${response.status}.`);
   }
   const document = (await response.json()) as DiscoveryDocument;
+  const issuer = requiredString(document, "issuer");
+  if (issuer !== issuerUrl) {
+    throw new Error("Pocket ID discovery issuer does not match configuration.");
+  }
   return {
-    issuer: requiredString(document, "issuer"),
-    authorizationEndpoint: requiredString(document, "authorization_endpoint"),
-    tokenEndpoint: requiredString(document, "token_endpoint"),
-    jwksUri: requiredString(document, "jwks_uri"),
+    issuer,
+    authorizationEndpoint: requiredHttpsUrl(
+      document,
+      "authorization_endpoint",
+    ),
+    tokenEndpoint: requiredHttpsUrl(document, "token_endpoint"),
+    jwksUri: requiredHttpsUrl(document, "jwks_uri"),
   };
 }
 
@@ -58,6 +94,21 @@ function invalidToken(): AppError {
   return AppError.unauthorized(
     "mcp_oauth_invalid_token",
     "The MCP OAuth access token is invalid.",
+  );
+}
+
+function providerUnavailable(): AppError {
+  return new AppError(
+    503,
+    "mcp_oauth_provider_unavailable",
+    "The MCP OAuth identity provider is temporarily unavailable.",
+  );
+}
+
+function isProviderUnavailable(error: unknown): boolean {
+  return !(
+    error instanceof errors.JOSEError &&
+    !PROVIDER_UNAVAILABLE_JOSE_CODES.has(error.code)
   );
 }
 
@@ -101,7 +152,7 @@ export class McpOAuthProvider {
     try {
       metadata = await this.metadata();
     } catch {
-      throw invalidToken();
+      throw providerUnavailable();
     }
 
     let payload: JWTPayload;
@@ -110,10 +161,13 @@ export class McpOAuthProvider {
         issuer: this.oidc.issuerUrl,
         audience: this.oauth.resourceUrl,
         requiredClaims: ["exp"],
-        clockTolerance: 60,
+        clockTolerance: JWT_CLOCK_TOLERANCE_SECONDS,
       });
       payload = verified.payload;
-    } catch {
+    } catch (error) {
+      if (isProviderUnavailable(error)) {
+        throw providerUnavailable();
+      }
       throw invalidToken();
     }
 

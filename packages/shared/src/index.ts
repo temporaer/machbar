@@ -129,6 +129,7 @@ export type ApiErrorCode =
   | "mcp_oauth_insufficient_scope"
   | "mcp_oauth_invalid_token"
   | "mcp_oauth_member_unlinked"
+  | "mcp_oauth_provider_unavailable"
   | "oidc_callback_rejected"
   | "oidc_browser_mismatch"
   | "oidc_flow_expired"
