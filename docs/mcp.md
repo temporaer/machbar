@@ -75,9 +75,10 @@ preferred option for scripts, developer CLIs, and work-scoped access.
 
 ## Tools
 
-Read tools cover Today, member lookup, Review, Waiting, search, task details,
-project details, and project lists. Write tools cover task creation, completion,
-atomic metadata updates, reminder management, hierarchy moves, resolving
+Read tools cover Today, member lookup, active Home Assistant contexts, Review,
+Waiting, search, task details, project details, and project lists. Write tools
+cover task and project creation, project and task metadata updates, note
+appending, completion, reminder management, hierarchy moves, setting/resolving
 external waits, and legal project lifecycle commands. Task cancellation is
 available for reconciliations where tracked work was explicitly abandoned rather
 than completed.
@@ -87,11 +88,14 @@ They therefore enforce the same hierarchy rules, project readiness checks,
 calendar-date semantics, and optimistic concurrency revisions.
 
 Household MCP does not identify the person speaking through Home Assistant. An
-omitted task owner is explicitly shared/unassigned; use `machbar_list_members`
-to resolve a stable member ID when ownership is clear. Dates are calendar dates
-in `YYYY-MM-DD` format only. MCP reminder inputs accept absolute reminder times
-as full RFC3339/ISO instants only; deadline-relative reminders remain available
-to Machbar's internal/UI APIs but are not created or edited through MCP.
+omitted task or project owner is explicitly shared/unassigned, including for
+nested items; use `machbar_list_members` to resolve a stable member ID when
+ownership is clear. Work-scope projects and tasks are always owned by the
+authenticated member. `machbar_list_contexts` exposes active physical context
+IDs synchronized from Home Assistant. Dates are calendar dates in `YYYY-MM-DD`
+format only. MCP reminder inputs accept absolute reminder times as full
+RFC3339/ISO instants only; deadline-relative reminders remain available to
+Machbar's internal/UI APIs but are not created or edited through MCP.
 ## Security and revocation
 
 An agent token authorizes reads and writes as the member who created it, within

@@ -7,12 +7,24 @@ import { Graph, type TaskDetailRecord } from "../domain/graph.js";
 import { buildReviewItems } from "../domain/reviewItems.js";
 import { searchTasks } from "../domain/search.js";
 import { moveTask } from "../domain/structuralMoves.js";
-import { resolveExternalWait } from "../domain/taskCapabilities.js";
-import { createTask, updateTask } from "../domain/taskCrud.js";
+import {
+  resolveExternalWait,
+  upsertExternalWait,
+} from "../domain/taskCapabilities.js";
+import {
+  appendTaskNotes,
+  createTask,
+  updateTask,
+} from "../domain/taskCrud.js";
 import { cancelTask, completeTask } from "../domain/taskWorkflow.js";
 import { buildWaitingEntries } from "../domain/waiting.js";
 import { isIsoCalendarDate } from "../domain/calendarDate.js";
 import { getMemberOrThrow, listMembers } from "../domain/members.js";
+import {
+  appendProjectNotes,
+  createProject,
+  updateProject,
+} from "../domain/storyCrud.js";
 import {
   activateProject,
   archiveProject,
@@ -24,6 +36,7 @@ import { AppError } from "../errors.js";
 import {
   contextAvailabilityForHousehold,
   contextAvailabilityForMember,
+  homeAssistantStatus,
 } from "../integrations/homeAssistant.js";
 
 export interface MachbarMcpContext {
@@ -287,6 +300,157 @@ export function createMachbarMcpServer({
           .listProjectsWithComputed()
           .filter((project) => project.scope === agentScope),
       ),
+  );
+
+  server.registerTool(
+    "machbar_create_project",
+    {
+      description:
+        "Create a Machbar project. In household scope, the authenticated member is not necessarily the speaker: omitted ownerMemberId creates an explicitly shared/unassigned project, and ambiguous ownership must remain shared. Resolve names with machbar_list_members and pass a stable member ID when ownership is explicit. In work scope, ownership is always forced to the authenticated member. dueDate and scheduledDate are calendar dates in YYYY-MM-DD format only, never times or timezones.",
+      inputSchema: {
+        title: z.string().min(1),
+        notes: z.string().optional(),
+        parentProjectId: projectId.nullable().optional(),
+        ownerMemberId: z.number().int().positive().nullable().optional(),
+        dueDate: calendarDate.nullable(),
+        scheduledDate: calendarDate.nullable(),
+        contextIds: z.array(z.number().int().positive()).optional(),
+      },
+    },
+    async (input) => {
+      if (input.parentProjectId !== undefined && input.parentProjectId !== null) {
+        scopedProjectOrThrow(input.parentProjectId);
+      }
+      if (
+        agentScope === "household" &&
+        input.ownerMemberId !== undefined &&
+        input.ownerMemberId !== null
+      ) {
+        getMemberOrThrow(db, input.ownerMemberId);
+      }
+      const ownerMemberId =
+        agentScope === "work" ? memberId : (input.ownerMemberId ?? null);
+      const created = createProject(
+        db,
+        {
+          title: input.title,
+          notes: input.notes,
+          parentId: input.parentProjectId,
+          ownerMemberId,
+          dueDate: input.dueDate,
+          scheduledDate: input.scheduledDate,
+          contextIds: input.contextIds,
+          scope: agentScope,
+        },
+        mutationContext,
+      );
+      return result(scopedProjectOrThrow(created.id));
+    },
+  );
+
+  server.registerTool(
+    "machbar_update_project",
+    {
+      description:
+        "Update project metadata using the latest revision. In household scope, the authenticated member is not necessarily the speaker; omit ownerMemberId to leave ownership unchanged, pass null to make the project explicitly shared/unassigned, or pass a stable member ID resolved with machbar_list_members. In work scope, supplied ownership is forced to the authenticated member. dueDate and scheduledDate are calendar dates in YYYY-MM-DD format only, never times or timezones.",
+      inputSchema: {
+        projectId,
+        expectedRevision,
+        title: z.string().min(1).optional(),
+        ownerMemberId: z.number().int().positive().nullable().optional(),
+        dueDate: calendarDate.nullable(),
+        scheduledDate: calendarDate.nullable(),
+        contextIds: z.array(z.number().int().positive()).optional(),
+      },
+    },
+    async ({ projectId, expectedRevision, ...input }) => {
+      scopedProjectOrThrow(projectId);
+      if (
+        agentScope === "household" &&
+        input.ownerMemberId !== undefined &&
+        input.ownerMemberId !== null
+      ) {
+        getMemberOrThrow(db, input.ownerMemberId);
+      }
+      const ownerMemberId =
+        agentScope === "work" && input.ownerMemberId !== undefined
+          ? memberId
+          : input.ownerMemberId;
+      updateProject(
+        db,
+        projectId,
+        {
+          ...input,
+          ...(ownerMemberId !== undefined ? { ownerMemberId } : {}),
+          expectedRevision,
+        },
+        mutationContext,
+      );
+      return result(scopedProjectOrThrow(projectId));
+    },
+  );
+
+  server.registerTool(
+    "machbar_list_contexts",
+    {
+      description:
+        "List active physical contexts currently synchronized from Home Assistant. Use the stable context IDs when creating or updating tasks and projects.",
+      annotations: { readOnlyHint: true },
+    },
+    async () =>
+      result(
+        homeAssistantStatus(db).contexts
+          .filter((context) => context.active)
+          .sort((left, right) => left.id - right.id)
+          .map(({ id, name, externalId }) => ({ id, name, externalId })),
+      ),
+  );
+
+  server.registerTool(
+    "machbar_set_waiting",
+    {
+      description:
+        "Set or update an actionable task's external wait. waitingFor must explain what event or person is awaited. revisitDate, when supplied, is a calendar date in YYYY-MM-DD format only, never a time or timezone. Use the latest expectedRevision.",
+      inputSchema: {
+        taskId,
+        expectedRevision,
+        waitingFor: z.string().trim().min(1),
+        revisitDate: calendarDate.nullable(),
+      },
+    },
+    async ({ taskId, expectedRevision, waitingFor, revisitDate }) => {
+      scopedTaskOrThrow(taskId);
+      upsertExternalWait(
+        db,
+        taskId,
+        { expectedRevision, waitingFor, revisitDate },
+        mutationContext,
+      );
+      return result(scopedTaskOrThrow(taskId));
+    },
+  );
+
+  server.registerTool(
+    "machbar_append_note",
+    {
+      description:
+        "Append a note to a task or project. Notes are appended through the canonical domain mutation and are not replacements.",
+      inputSchema: {
+        entityType: z.enum(["task", "project"]),
+        entityId: z.number().int().positive(),
+        content: z.string().trim().min(1),
+      },
+    },
+    async ({ entityType, entityId, content }) => {
+      if (entityType === "task") {
+        scopedTaskOrThrow(entityId);
+        appendTaskNotes(db, entityId, content, mutationContext);
+        return result(scopedTaskOrThrow(entityId));
+      }
+      scopedProjectOrThrow(entityId);
+      appendProjectNotes(db, entityId, content, mutationContext);
+      return result(scopedProjectOrThrow(entityId));
+    },
   );
 
   server.registerTool(
