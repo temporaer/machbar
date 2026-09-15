@@ -6,11 +6,13 @@ function isOpen(task: Task): boolean {
 
 /**
  * An unclassified root capture: still `captured`, never filed under a
- * project or parent task. The API rejects reparenting/project moves and
- * child creation for these (`task_promotion_invalid`) until the user
- * classifies it via the capture-shape actions, so rail/detail UIs must keep
- * organize commands that require classification (change project, change
- * parent, split) unavailable for it instead of offering them and failing.
+ * project or parent task. Filing it into a project/parent via
+ * `task.changeProject` is the intended refile/clarification path — the API
+ * atomically classifies it out of `captured` as part of that move — so this
+ * helper must NOT be used to hide the move affordance. It still gates
+ * commands the API rejects outright for a captured root item: adding
+ * children/splitting it (`task_promotion_invalid`, since it isn't filed
+ * anywhere yet to hold steps) and other classification-requiring commands.
  */
 export function isCapturedInboxItem(task: Task): boolean {
   return (

@@ -160,6 +160,11 @@ describe("QuickAdd", () => {
       contexts: [context],
     });
     mockedApi.createTask.mockResolvedValue(makeTask({ id: 90, title: "Tickets buchen" }));
+    // Pin only `Date` (not timers) so the "!15.9" short-syntax due date
+    // deterministically resolves to the current year regardless of the
+    // real-world date userEvent's internal delays keep using real timers.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 8, 7, 12, 0, 0));
     renderWithProviders(<QuickAdd />);
     await openCapture();
 
@@ -175,21 +180,25 @@ describe("QuickAdd", () => {
     await userEvent.type(input, " !15.9 :S");
     await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
 
-    await waitFor(() =>
-      expect(mockedApi.createTask).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Tickets buchen",
-          projectId: 7,
-          ownerMemberId: 2,
-          ownerInheritanceMode: "explicit",
-          dueDate: "2026-09-15",
-          size: "S",
-          tagIds: [9],
-          contextIds: [10],
-          contextInheritanceMode: "explicit",
-        }),
-      ),
-    );
+    try {
+      await waitFor(() =>
+        expect(mockedApi.createTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "Tickets buchen",
+            projectId: 7,
+            ownerMemberId: 2,
+            ownerInheritanceMode: "explicit",
+            dueDate: "2026-09-15",
+            size: "S",
+            tagIds: [9],
+            contextIds: [10],
+            contextInheritanceMode: "explicit",
+          }),
+        ),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("behält Titel und Fehler nach einem fehlgeschlagenen Erfassen", async () => {

@@ -131,7 +131,7 @@ describe("TaskStructureSheet routing", () => {
     expect(mockedApi.convertTaskToStory).not.toHaveBeenCalled();
   });
 
-  it("hides split/move for a captured inbox item but still offers conversion", async () => {
+  it("hides split but still offers move and conversion for a captured inbox item", async () => {
     const task = makeTask({
       id: 75,
       title: "Unklarer Einfall",
@@ -146,7 +146,26 @@ describe("TaskStructureSheet routing", () => {
     await screen.findByRole("dialog", { name: "Struktur: Unklarer Einfall" });
 
     expect(screen.queryByRole("button", { name: "Aufteilen" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Verschieben …" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verschieben …" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Zum Projekt machen" })).toBeInTheDocument();
+  });
+
+  it("dispatches task.changeProject and opens MoveTaskSheet for a captured inbox item (refile flow)", async () => {
+    const task = makeTask({
+      id: 76,
+      title: "Unklarer Einfall",
+      status: "captured",
+      projectId: null,
+      parentTaskId: null,
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderStructure(76);
+
+    await userEvent.click(screen.getByRole("button", { name: "open structure" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Verschieben …" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "In anderes Projekt verschieben" }),
+    ).toBeInTheDocument();
   });
 });
