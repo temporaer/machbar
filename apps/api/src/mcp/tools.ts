@@ -9,7 +9,7 @@ import { searchTasks } from "../domain/search.js";
 import { moveTask } from "../domain/structuralMoves.js";
 import { resolveExternalWait } from "../domain/taskCapabilities.js";
 import { createTask, updateTask } from "../domain/taskCrud.js";
-import { completeTask } from "../domain/taskWorkflow.js";
+import { cancelTask, completeTask } from "../domain/taskWorkflow.js";
 import { buildWaitingEntries } from "../domain/waiting.js";
 import {
   activateProject,
@@ -313,6 +313,33 @@ export function createMachbarMcpServer({
         descendantsPolicy,
         mutationContext,
         completedOn,
+        expectedRevision,
+      );
+      return result(scopedTaskOrThrow(taskId));
+    },
+  );
+
+  server.registerTool(
+    "machbar_cancel_task",
+    {
+      description:
+        "Cancel a Machbar task using its current revision, for work that will not be completed.",
+      inputSchema: {
+        taskId,
+        expectedRevision,
+        descendantsPolicy: z
+          .enum(["leave_open", "complete_children", "cancel_children"])
+          .optional(),
+      },
+      annotations: { destructiveHint: true },
+    },
+    async ({ taskId, descendantsPolicy, expectedRevision }) => {
+      scopedTaskOrThrow(taskId);
+      cancelTask(
+        db,
+        taskId,
+        descendantsPolicy,
+        mutationContext,
         expectedRevision,
       );
       return result(scopedTaskOrThrow(taskId));
