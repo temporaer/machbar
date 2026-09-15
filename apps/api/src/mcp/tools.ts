@@ -25,10 +25,6 @@ import {
   contextAvailabilityForHousehold,
   contextAvailabilityForMember,
 } from "../integrations/homeAssistant.js";
-import {
-  taskReminderInputSchema,
-  taskRemindersSchema,
-} from "../schemas.js";
 
 export interface MachbarMcpContext {
   db: Db;
@@ -47,6 +43,13 @@ const calendarDate = z
 const taskId = z.number().int().positive();
 const projectId = z.number().int().positive();
 const expectedRevision = z.number().int().positive();
+const mcpAbsoluteAtSchema = z
+  .string()
+  .datetime({ offset: true })
+  .transform((value) => new Date(value).toISOString())
+  .describe("Absolute reminder time as a full RFC3339/ISO timestamp.");
+const mcpAbsoluteReminderSchema = z.object({ at: mcpAbsoluteAtSchema });
+const mcpAbsoluteRemindersSchema = z.array(mcpAbsoluteReminderSchema);
 
 function result(value: unknown) {
   return {
@@ -290,7 +293,7 @@ export function createMachbarMcpServer({
     "machbar_create_task",
     {
       description:
-        "Create a Machbar task. In household scope, the authenticated member is not necessarily the speaker: an omitted ownerMemberId creates an explicitly shared/unassigned task, and ambiguous ownership must remain shared. Resolve names with machbar_list_members and pass a stable member ID when ownership is explicit. In work scope, ownership is always forced to the authenticated member. dueDate and scheduledDate are calendar dates in YYYY-MM-DD format only, never times or timezones. Reminders support absolute.at as a full RFC3339/ISO instant, or deadline_relative with daysBefore, time as HH:mm, and timezone as an IANA timezone.",
+        "Create a Machbar task. In household scope, the authenticated member is not necessarily the speaker: an omitted ownerMemberId creates an explicitly shared/unassigned task, and ambiguous ownership must remain shared. Resolve names with machbar_list_members and pass a stable member ID when ownership is explicit. In work scope, ownership is always forced to the authenticated member. dueDate and scheduledDate are calendar dates in YYYY-MM-DD format only, never times or timezones. MCP task creation accepts absolute reminders with at as a full RFC3339/ISO timestamp; existing deadline-relative reminders remain an internal/UI feature.",
       inputSchema: {
         title: z.string().min(1),
         notes: z.string().optional(),
@@ -302,7 +305,7 @@ export function createMachbarMcpServer({
         ownerMemberId: z.number().int().positive().nullable().optional(),
         dueDate: calendarDate.nullable(),
         scheduledDate: calendarDate.nullable(),
-        reminders: taskRemindersSchema.optional(),
+        reminders: mcpAbsoluteRemindersSchema.optional(),
         priority: z.number().int().nullable().optional(),
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
         tagIds: z.array(z.number().int().positive()).optional(),
@@ -310,6 +313,7 @@ export function createMachbarMcpServer({
       },
     },
     async (input) => {
+      const { reminders: mcpReminders, ...taskInput } = input;
       if (input.parentTaskId !== undefined && input.parentTaskId !== null) {
         scopedTaskOrThrow(input.parentTaskId);
       }
@@ -328,7 +332,15 @@ export function createMachbarMcpServer({
       const created = createTask(
         db,
         {
-          ...input,
+          ...taskInput,
+          ...(mcpReminders !== undefined
+            ? {
+                reminders: mcpReminders.map((reminder) => ({
+                  kind: "absolute" as const,
+                  at: reminder.at,
+                })),
+              }
+            : {}),
           ownerMemberId,
           ownerInheritanceMode: ownerMemberId === null ? "none" : "explicit",
           ...(input.contextIds !== undefined
@@ -368,7 +380,7 @@ export function createMachbarMcpServer({
         completedOn,
         expectedRevision,
       );
-      return result(scopedTaskOrThrow(taskId));
+       return result(scopedTaskOrThrow(taskId));
     },
   );
 
@@ -457,47 +469,41 @@ export function createMachbarMcpServer({
     "machbar_manage_reminder",
     {
       description:
-        "Add, update, or remove one task reminder through the canonical task mutation. Use the latest expectedRevision. For add/update, absolute.at is a full RFC3339/ISO instant; deadline_relative.time is HH:mm and deadline_relative.timezone is an IANA timezone. Reminder IDs are stable; provide reminderId for update/remove. Captured inbox tasks cannot carry reminders.",
+        "Add, update, or remove one absolute task reminder through the canonical task mutation. Use the latest expectedRevision. at is a full RFC3339/ISO timestamp. Reminder IDs are stable; provide reminderId for update/remove. MCP does not create, update, or remove deadline-relative reminders. Captured inbox tasks cannot carry reminders.",
       inputSchema: {
         taskId,
         expectedRevision,
         operation: z.enum(["add", "update", "remove"]),
         reminderId: z.number().int().positive().optional(),
-        reminder: taskReminderInputSchema.optional(),
+        at: mcpAbsoluteAtSchema.optional(),
       },
     },
-    async ({ taskId, expectedRevision, operation, reminderId, reminder }) => {
+    async ({ taskId, expectedRevision, operation, reminderId, at }) => {
       const task = scopedTaskOrThrow(taskId);
       if (operation === "add") {
-        if (!reminder) {
+        if (!at) {
           throw AppError.badRequest(
             "task_reminder_invalid",
-            "Adding a reminder requires a reminder payload.",
-          );
-        }
-        if (reminder.id !== undefined) {
-          throw AppError.badRequest(
-            "task_reminder_invalid",
-            "Adding a reminder must not include an existing reminder id.",
+            "Adding a reminder requires an at timestamp.",
           );
         }
         updateTask(
           db,
           taskId,
-          { reminders: [...task.reminders, reminder], expectedRevision },
+          {
+            reminders: [
+              ...task.reminders,
+              { kind: "absolute", at },
+            ],
+            expectedRevision,
+          },
           mutationContext,
         );
       } else if (operation === "update") {
-        if (reminderId === undefined || !reminder) {
+        if (reminderId === undefined || !at) {
           throw AppError.badRequest(
             "task_reminder_invalid",
-            "Updating a reminder requires reminderId and a reminder payload.",
-          );
-        }
-        if (reminder.id !== undefined && reminder.id !== reminderId) {
-          throw AppError.badRequest(
-            "task_reminder_invalid",
-            "The reminder payload id must match reminderId.",
+            "Updating a reminder requires reminderId and an at timestamp.",
           );
         }
         const index = task.reminders.findIndex(({ id }) => id === reminderId);
@@ -508,8 +514,19 @@ export function createMachbarMcpServer({
             { taskId, reminderId },
           );
         }
+        if (task.reminders[index]!.kind !== "absolute") {
+          throw AppError.badRequest(
+            "task_reminder_invalid",
+            "MCP can only update absolute reminders.",
+            { taskId, reminderId },
+          );
+        }
         const reminders = [...task.reminders];
-        reminders[index] = { ...reminder, id: reminderId };
+        reminders[index] = {
+          id: reminderId,
+          kind: "absolute",
+          at,
+        };
         updateTask(db, taskId, { reminders, expectedRevision }, mutationContext);
       } else {
         if (reminderId === undefined) {
@@ -526,9 +543,19 @@ export function createMachbarMcpServer({
             { taskId, reminderId },
           );
         }
+        if (
+          task.reminders.find(({ id }) => id === reminderId)!.kind !==
+          "absolute"
+        ) {
+          throw AppError.badRequest(
+            "task_reminder_invalid",
+            "MCP can only remove absolute reminders.",
+            { taskId, reminderId },
+          );
+        }
         updateTask(db, taskId, { reminders, expectedRevision }, mutationContext);
       }
-      return result(scopedTaskOrThrow(taskId));
+     return result(scopedTaskOrThrow(taskId));
     },
   );
 

@@ -196,7 +196,6 @@ describe("MCP integration", () => {
     await client.close();
     await server.close();
   });
-
   it("keeps household ownership shared unless the model supplies a member id", async () => {
     const authenticated = await createMember();
     const owner = await createMember("Alex");
@@ -443,7 +442,6 @@ describe("MCP integration", () => {
         status: "actionable",
         reminders: [
           {
-            kind: "absolute",
             at: "2026-09-21T08:00:00+02:00",
           },
         ],
@@ -463,12 +461,7 @@ describe("MCP integration", () => {
         taskId: createdTask.id,
         expectedRevision: createdTask.revision,
         operation: "add",
-        reminder: {
-          kind: "deadline_relative",
-          daysBefore: 1,
-          time: "08:00",
-          timezone: "Europe/Berlin",
-        },
+        at: "2026-09-22T08:00:00+02:00",
       },
     });
     const addedTask = (
@@ -491,12 +484,7 @@ describe("MCP integration", () => {
         expectedRevision: addedTask.revision,
         operation: "update",
         reminderId: addedReminderId,
-        reminder: {
-          kind: "deadline_relative",
-          daysBefore: 2,
-          time: "08:30",
-          timezone: "Europe/Berlin",
-        },
+        at: "2026-09-22T08:30:00+02:00",
       },
     });
     const updatedTask = (
@@ -506,12 +494,12 @@ describe("MCP integration", () => {
     ).result;
     expect(updatedTask.reminders).toEqual(
       expect.arrayContaining([
-      expect.objectContaining({
-        id: addedReminderId,
-        kind: "deadline_relative",
-        daysBefore: 2,
-      }),
-      expect.objectContaining({ id: originalReminderId, kind: "absolute" }),
+        expect.objectContaining({
+          id: addedReminderId,
+          kind: "absolute",
+          at: "2026-09-22T06:30:00.000Z",
+        }),
+        expect.objectContaining({ id: originalReminderId, kind: "absolute" }),
       ]),
     );
 
@@ -528,18 +516,63 @@ describe("MCP integration", () => {
       (removed.structuredContent as { result: { reminders: unknown[] } }).result
         .reminders,
     ).toEqual([
-      expect.objectContaining({ id: addedReminderId, kind: "deadline_relative" }),
+      expect.objectContaining({
+        id: addedReminderId,
+        kind: "absolute",
+        at: "2026-09-22T06:30:00.000Z",
+      }),
     ]);
 
     const captured = await client.callTool({
       name: "machbar_create_task",
       arguments: {
         title: "Inbox reminder",
-        reminders: [{ kind: "absolute", at: "2026-09-21T08:00:00Z" }],
+        reminders: [{ at: "2026-09-21T08:00:00Z" }],
       },
     });
     expect(captured.isError).toBe(true);
     expect(JSON.stringify(captured.content)).toContain("captured");
+
+    await client.close();
+    await server.close();
+  });
+
+  it("publishes single-shape absolute reminder schemas for Home Assistant", async () => {
+    const member = await createMember();
+    const { client, server } = await connectMcp(member.id);
+    const listed = await client.listTools();
+    const createTool = listed.tools.find(
+      ({ name }) => name === "machbar_create_task",
+    );
+    const manageTool = listed.tools.find(
+      ({ name }) => name === "machbar_manage_reminder",
+    );
+
+    expect(createTool).toBeDefined();
+    expect(manageTool).toBeDefined();
+    const createReminderSchema = (
+      createTool!.inputSchema.properties as Record<string, unknown>
+    ).reminders;
+    const manageReminderSchema = (
+      manageTool!.inputSchema.properties as Record<string, unknown>
+    ).at;
+    const schemas = JSON.stringify({
+      createReminderSchema,
+      manageReminderSchema,
+    });
+    expect(schemas).not.toContain("anyOf");
+    expect(schemas).not.toContain("oneOf");
+    expect(createReminderSchema).toMatchObject({
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          at: { type: "string" },
+        },
+        required: ["at"],
+      },
+    });
+    expect(manageReminderSchema).toMatchObject({ type: "string" });
 
     await client.close();
     await server.close();
