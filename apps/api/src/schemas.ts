@@ -32,7 +32,7 @@ function isValidIanaTimezone(value: string): boolean {
   }
 }
 
-const taskReminderInputSchema = z.discriminatedUnion("kind", [
+export const taskReminderInputSchema = z.discriminatedUnion("kind", [
   z.object({
     id: z.number().int().positive().optional(),
     kind: z.literal("absolute"),
@@ -51,7 +51,7 @@ const taskReminderInputSchema = z.discriminatedUnion("kind", [
       .refine(isValidIanaTimezone, "Timezone must be a valid IANA zone name."),
   }),
 ]);
-const taskRemindersSchema = z.array(taskReminderInputSchema);
+export const taskRemindersSchema = z.array(taskReminderInputSchema);
 
 export const createProjectSchema = z.object({
   title: z.string().min(1, "Project title must not be empty."),

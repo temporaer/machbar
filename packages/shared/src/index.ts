@@ -965,7 +965,7 @@ export interface ReviewItem {
 
 export interface SearchFilters {
   text?: string;
-  ownerId?: number;
+  ownerId?: number | null;
   projectId?: number;
   tagIds?: number[];
   status?: TaskStatus;

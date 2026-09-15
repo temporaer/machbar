@@ -75,15 +75,22 @@ preferred option for scripts, developer CLIs, and work-scoped access.
 
 ## Tools
 
-Read tools cover Today, Review, Waiting, search, task details, project details,
-and project lists. Write tools cover task creation, completion, atomic metadata
-updates, hierarchy moves, resolving external waits, and legal project lifecycle
-commands. Task cancellation is available for reconciliations where tracked work
-was explicitly abandoned rather than completed.
+Read tools cover Today, member lookup, Review, Waiting, search, task details,
+project details, and project lists. Write tools cover task creation, completion,
+atomic metadata updates, reminder management, hierarchy moves, resolving
+external waits, and legal project lifecycle commands. Task cancellation is
+available for reconciliations where tracked work was explicitly abandoned rather
+than completed.
 
 MCP tools call the same domain commands and projections as the ordinary API.
 They therefore enforce the same hierarchy rules, project readiness checks,
 calendar-date semantics, and optimistic concurrency revisions.
+
+Household MCP does not identify the person speaking through Home Assistant. An
+omitted task owner is explicitly shared/unassigned; use `machbar_list_members`
+to resolve a stable member ID when ownership is clear. Dates are calendar dates
+in `YYYY-MM-DD` format only, while absolute reminder times are full RFC3339/ISO
+instants and deadline-relative reminders use `HH:mm` plus an IANA timezone.
 
 ## Security and revocation
 
