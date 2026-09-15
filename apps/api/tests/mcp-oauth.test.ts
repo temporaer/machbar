@@ -316,7 +316,7 @@ describe("MCP OAuth", () => {
     expect(response.json().result.structuredContent.result).toEqual(
       expect.objectContaining({
         title,
-        scope: "household",
+        effectiveOwnerId: null,
       }),
     );
     const created = ctx.handle.db

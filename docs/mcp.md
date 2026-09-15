@@ -96,6 +96,13 @@ IDs synchronized from Home Assistant. Dates are calendar dates in `YYYY-MM-DD`
 format only. MCP reminder inputs accept absolute reminder times as full
 RFC3339/ISO instants only; deadline-relative reminders remain available to
 Machbar's internal/UI APIs but are not created or edited through MCP.
+
+Broad read tools return compact summaries. `machbar_search` returns at most 10
+items by default and accepts `limit` from 1 to 25; its result includes
+`returned` and `truncated` so the model can refine a search. Project listings
+return at most 20 compact summaries by default and accept `limit` up to 50.
+Use `machbar_get_task` or `machbar_get_project` when notes, reminders,
+ancestors, dependencies, or the full computed entity are needed.
 ## Security and revocation
 
 An agent token authorizes reads and writes as the member who created it, within

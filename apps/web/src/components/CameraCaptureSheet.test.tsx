@@ -24,9 +24,12 @@ describe("CameraCaptureSheet", () => {
       stop,
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
+      getCapabilities: vi.fn(() => ({ focusMode: ["continuous"] })),
+      applyConstraints: vi.fn().mockResolvedValue(undefined),
     };
     const stream = {
       getTracks: () => [track],
+      getVideoTracks: () => [track],
     } as unknown as MediaStream;
     const getUserMedia = vi.fn().mockResolvedValue(stream);
     Object.defineProperty(navigator, "mediaDevices", {
@@ -59,6 +62,9 @@ describe("CameraCaptureSheet", () => {
         height: { ideal: 1280, max: 1280 },
       },
     });
+    expect(track.applyConstraints).toHaveBeenCalledWith({
+      advanced: [{ focusMode: "continuous" }],
+    });
     const video = screen.getByLabelText("Kameravorschau");
     Object.defineProperties(video, {
       videoWidth: { configurable: true, value: 1920 },
@@ -78,6 +84,88 @@ describe("CameraCaptureSheet", () => {
 
     unmount();
     expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("continues without focus constraints when autofocus is unsupported", async () => {
+    const track = {
+      stop: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    const stream = {
+      getTracks: () => [track],
+      getVideoTracks: () => [track],
+    } as unknown as MediaStream;
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia },
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+
+    render(
+      <CameraCaptureSheet
+        onCapture={vi.fn()}
+        onFallback={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+    const video = screen.getByLabelText("Kameravorschau");
+    fireEvent.canPlay(video);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Foto aufnehmen" })).toBeEnabled();
+  });
+
+  it("keeps capture available when autofocus constraints fail", async () => {
+    const track = {
+      stop: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      getCapabilities: vi.fn(() => ({ focusMode: ["continuous"] })),
+      applyConstraints: vi.fn().mockRejectedValue(new Error("Focus failed")),
+    };
+    const stream = {
+      getTracks: () => [track],
+      getVideoTracks: () => [track],
+    } as unknown as MediaStream;
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia },
+    });
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
+      (callback) => callback(new Blob(["photo"], { type: "image/jpeg" })),
+    );
+    const onCapture = vi.fn();
+
+    render(
+      <CameraCaptureSheet
+        onCapture={onCapture}
+        onFallback={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalled());
+    const video = screen.getByLabelText("Kameravorschau");
+    Object.defineProperties(video, {
+      videoWidth: { configurable: true, value: 1920 },
+      videoHeight: { configurable: true, value: 1080 },
+    });
+    fireEvent.canPlay(video);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Foto aufnehmen" }),
+    );
+
+    await waitFor(() => expect(onCapture).toHaveBeenCalled());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(track.applyConstraints).toHaveBeenCalled();
   });
 
   it("stops the stream and offers the device picker when playback fails", async () => {

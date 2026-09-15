@@ -1,9 +1,20 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import type { WorkItemScope } from "@machbar/shared";
+import type {
+  Agenda,
+  Project as SharedProject,
+  ProjectAgendaEntry,
+  ReviewItem,
+  Task as SharedTask,
+  WaitingEntry,
+  WorkItemScope,
+} from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import { buildAgenda } from "../domain/agenda.js";
-import { Graph, type TaskDetailRecord } from "../domain/graph.js";
+import {
+  Graph,
+  type TaskDetailRecord,
+} from "../domain/graph.js";
 import { buildReviewItems } from "../domain/reviewItems.js";
 import { searchTasks } from "../domain/search.js";
 import { moveTask } from "../domain/structuralMoves.js";
@@ -63,11 +74,135 @@ const mcpAbsoluteAtSchema = z
   .describe("Absolute reminder time as a full RFC3339/ISO timestamp.");
 const mcpAbsoluteReminderSchema = z.object({ at: mcpAbsoluteAtSchema });
 const mcpAbsoluteRemindersSchema = z.array(mcpAbsoluteReminderSchema);
+const mcpSearchLimit = z
+  .number()
+  .int()
+  .min(1)
+  .max(25)
+  .default(10)
+  .describe("Maximum results to return (1-25; default 10).");
+const mcpProjectLimit = z
+  .number()
+  .int()
+  .min(1)
+  .max(50)
+  .default(20)
+  .describe("Maximum projects to return (1-50; default 20).");
+
+type McpTaskSource = Pick<
+  SharedTask,
+  | "id"
+  | "revision"
+  | "title"
+  | "status"
+  | "projectId"
+  | "projectTitle"
+  | "effectiveOwnerId"
+  | "dueDate"
+  | "scheduledDate"
+  | "blocked"
+  | "externalWait"
+>;
+
+type McpProjectSource = Pick<
+  SharedProject,
+  "id" | "revision" | "title" | "status" | "ownerMemberId" | "dueDate" | "scheduledDate"
+>;
 
 function result(value: unknown) {
   return {
     content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
     structuredContent: { result: value },
+  };
+}
+
+function compactTask(task: McpTaskSource) {
+  return {
+    id: task.id,
+    revision: task.revision,
+    title: task.title,
+    status: task.status,
+    projectId: task.projectId,
+    projectTitle: task.projectTitle ?? null,
+    effectiveOwnerId: task.effectiveOwnerId,
+    dueDate: task.dueDate,
+    scheduledDate: task.scheduledDate,
+    blocked: task.blocked,
+    externalWait: task.externalWait
+      ? {
+          waitingFor: task.externalWait.waitingFor,
+          revisitDate: task.externalWait.revisitDate,
+        }
+      : null,
+  };
+}
+
+function compactTaskMutation(task: SharedTask, includeReminders = false) {
+  return includeReminders
+    ? { ...compactTask(task), reminders: task.reminders }
+    : compactTask(task);
+}
+
+function compactProject(project: McpProjectSource) {
+  return {
+    id: project.id,
+    revision: project.revision,
+    title: project.title,
+    status: project.status,
+    ownerMemberId: project.ownerMemberId,
+    dueDate: project.dueDate,
+    scheduledDate: project.scheduledDate,
+  };
+}
+
+function compactAgenda(agenda: Agenda) {
+  const compactProjectEntry = (entry: ProjectAgendaEntry) => ({
+    project: compactProject(entry.project),
+    qualification: entry.qualification,
+    attentionBucket: entry.attentionBucket,
+    nextAction: entry.nextAction ? compactTask(entry.nextAction) : null,
+    stuck: entry.stuck,
+  });
+  return {
+    projects: agenda.projects.map(compactProjectEntry),
+    planned: agenda.planned.map(compactTask),
+    overdue: agenda.overdue.map(compactTask),
+    dueToday: agenda.dueToday.map(compactTask),
+    dueSoon: agenda.dueSoon.map(compactTask),
+    shared: agenda.shared.map(compactTask),
+    unscheduled: agenda.unscheduled.map(compactTask),
+    revisit: agenda.revisit.map(compactTask),
+  };
+}
+
+function compactReviewItem(item: ReviewItem) {
+  return {
+    entityType: item.entityType,
+    entityId: item.entityId,
+    entityTitle: item.entityTitle,
+    projectId: item.projectId,
+    projectTitle: item.projectTitle,
+    category: item.category,
+    reason: item.reason,
+    suggestedAction: item.suggestedAction,
+  };
+}
+
+function compactWaitingEntry(entry: WaitingEntry) {
+  return {
+    task: compactTask(entry.task),
+    reasons: entry.reasons.map((reason) =>
+      reason.type === "external"
+        ? {
+            type: reason.type,
+            waitingFor: reason.waitingFor,
+            revisitDate: reason.revisitDate,
+          }
+        : {
+            type: reason.type,
+            contexts: reason.contexts.map(({ id, name }) => ({ id, name })),
+          },
+    ),
   };
 }
 
@@ -143,7 +278,7 @@ export function createMachbarMcpServer({
     "machbar_today",
     {
       description:
-        "List Machbar Today. In household scope, omitted memberId means the whole household; provide a stable memberId to focus on that member and shared tasks. The authenticated member is the OAuth identity, not necessarily the speaker. date is a calendar date in YYYY-MM-DD format only, never a time or timezone.",
+        "List Today. Household memberId is optional and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. date is YYYY-MM-DD only, never a time or timezone.",
       inputSchema: {
         date: calendarDate,
         memberId: z.number().int().positive().optional(),
@@ -159,7 +294,7 @@ export function createMachbarMcpServer({
             : (getMemberOrThrow(db, requestedMemberId), requestedMemberId);
       const graph = graphFor(db, memberId, date);
       return result(
-        buildAgenda(graph, {
+        compactAgenda(buildAgenda(graph, {
           memberId: selectedMemberId,
           today: date,
           scope: agendaScope,
@@ -167,7 +302,7 @@ export function createMachbarMcpServer({
             target === "household"
               ? contextAvailabilityForHousehold(db, task.effectiveContexts)
               : contextAvailabilityForMember(db, task.effectiveContexts, target),
-        }),
+        })),
       );
     },
   );
@@ -176,7 +311,7 @@ export function createMachbarMcpServer({
     "machbar_list_members",
     {
       description:
-        "List household members so the model can resolve names to stable member IDs. isAuthenticatedMember identifies the OAuth identity only; it does not identify the person speaking through Home Assistant.",
+        "List household members so the model can resolve names to stable IDs. The OAuth identity is not necessarily the person speaking through Home Assistant.",
       annotations: { readOnlyHint: true },
     },
     async () =>
@@ -184,9 +319,6 @@ export function createMachbarMcpServer({
         listMembers(db).map((member) => ({
           id: member.id,
           name: member.name,
-          color: member.color,
-          pictureUrl: member.pictureUrl,
-          isAuthenticatedMember: member.id === memberId,
         })),
       ),
   );
@@ -206,7 +338,7 @@ export function createMachbarMcpServer({
             : graph.projectsById.get(item.entityId);
         return entity?.scope === agentScope;
       });
-      return result(items);
+      return result(items.map(compactReviewItem));
     },
   );
 
@@ -225,7 +357,7 @@ export function createMachbarMcpServer({
             target === "household"
               ? contextAvailabilityForHousehold(db, task.effectiveContexts)
               : contextAvailabilityForMember(db, task.effectiveContexts, target),
-        }),
+        }).map(compactWaitingEntry),
       ),
   );
 
@@ -233,7 +365,7 @@ export function createMachbarMcpServer({
     "machbar_search",
     {
       description:
-        "Search Machbar tasks using structured filters. ownerId filters effective ownership, including inherited owners; ownerId null finds genuinely shared/unassigned tasks. dueFrom, dueTo, scheduledFrom, and scheduledTo are calendar dates in YYYY-MM-DD format only, never times or timezones.",
+        "Search tasks with structured filters. ownerId uses effective ownership; null finds shared tasks. Dates are YYYY-MM-DD only, never times or timezones.",
       inputSchema: {
         text: z.string().optional(),
         projectId: z.number().int().positive().optional(),
@@ -249,10 +381,11 @@ export function createMachbarMcpServer({
         blocked: z.boolean().optional(),
         externalWait: z.boolean().optional(),
         includeTerminal: z.boolean().optional(),
+        limit: mcpSearchLimit,
       },
       annotations: { readOnlyHint: true },
     },
-    async (filters) => {
+    async ({ limit, ...filters }) => {
       if (
         agentScope === "household" &&
         filters.ownerId !== undefined &&
@@ -260,11 +393,15 @@ export function createMachbarMcpServer({
       ) {
         getMemberOrThrow(db, filters.ownerId);
       }
-      return result(
-        searchTasks(graphFor(db, memberId), filters).filter(
-          (task) => task.scope === agentScope,
-        ),
+      const matches = searchTasks(graphFor(db, memberId), filters).filter(
+        (task) => task.scope === agentScope,
       );
+      const items = matches.slice(0, limit).map(compactTask);
+      return result({
+        items,
+        returned: items.length,
+        truncated: matches.length > limit,
+      });
     },
   );
 
@@ -291,22 +428,28 @@ export function createMachbarMcpServer({
   server.registerTool(
     "machbar_list_projects",
     {
-      description: "List Machbar projects with computed workflow state.",
+      description: "List compact Machbar project summaries.",
+      inputSchema: { limit: mcpProjectLimit },
       annotations: { readOnlyHint: true },
     },
-    async () =>
-      result(
-        graphFor(db, memberId)
+    async ({ limit }) => {
+      const matches = graphFor(db, memberId)
           .listProjectsWithComputed()
-          .filter((project) => project.scope === agentScope),
-      ),
+          .filter((project) => project.scope === agentScope);
+      const items = matches.slice(0, limit).map(compactProject);
+      return result({
+        items,
+        returned: items.length,
+        truncated: matches.length > limit,
+      });
+    },
   );
 
   server.registerTool(
     "machbar_create_project",
     {
       description:
-        "Create a Machbar project. In household scope, the authenticated member is not necessarily the speaker: omitted ownerMemberId creates an explicitly shared/unassigned project, and ambiguous ownership must remain shared. Resolve names with machbar_list_members and pass a stable member ID when ownership is explicit. In work scope, ownership is always forced to the authenticated member. dueDate and scheduledDate are calendar dates in YYYY-MM-DD format only, never times or timezones.",
+        "Create a project. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only.",
       inputSchema: {
         title: z.string().min(1),
         notes: z.string().optional(),
@@ -344,7 +487,7 @@ export function createMachbarMcpServer({
         },
         mutationContext,
       );
-      return result(scopedProjectOrThrow(created.id));
+      return result(compactProject(scopedProjectOrThrow(created.id)));
     },
   );
 
@@ -352,7 +495,7 @@ export function createMachbarMcpServer({
     "machbar_update_project",
     {
       description:
-        "Update project metadata using the latest revision. In household scope, the authenticated member is not necessarily the speaker; omit ownerMemberId to leave ownership unchanged, pass null to make the project explicitly shared/unassigned, or pass a stable member ID resolved with machbar_list_members. In work scope, supplied ownership is forced to the authenticated member. dueDate and scheduledDate are calendar dates in YYYY-MM-DD format only, never times or timezones.",
+        "Update project metadata with the latest revision. In household scope, omit ownerMemberId to keep ownership, pass null for shared, or pass a stable member ID; work scope always uses the authenticated member. Dates are YYYY-MM-DD only.",
       inputSchema: {
         projectId,
         expectedRevision,
@@ -386,15 +529,14 @@ export function createMachbarMcpServer({
         },
         mutationContext,
       );
-      return result(scopedProjectOrThrow(projectId));
+      return result(compactProject(scopedProjectOrThrow(projectId)));
     },
   );
 
   server.registerTool(
     "machbar_list_contexts",
     {
-      description:
-        "List active physical contexts currently synchronized from Home Assistant. Use the stable context IDs when creating or updating tasks and projects.",
+      description: "List active Home Assistant contexts by stable ID and name.",
       annotations: { readOnlyHint: true },
     },
     async () =>
@@ -402,7 +544,7 @@ export function createMachbarMcpServer({
         homeAssistantStatus(db).contexts
           .filter((context) => context.active)
           .sort((left, right) => left.id - right.id)
-          .map(({ id, name, externalId }) => ({ id, name, externalId })),
+          .map(({ id, name }) => ({ id, name })),
       ),
   );
 
@@ -426,7 +568,7 @@ export function createMachbarMcpServer({
         { expectedRevision, waitingFor, revisitDate },
         mutationContext,
       );
-      return result(scopedTaskOrThrow(taskId));
+      return result(compactTaskMutation(scopedTaskOrThrow(taskId)));
     },
   );
 
@@ -445,11 +587,11 @@ export function createMachbarMcpServer({
       if (entityType === "task") {
         scopedTaskOrThrow(entityId);
         appendTaskNotes(db, entityId, content, mutationContext);
-        return result(scopedTaskOrThrow(entityId));
+        return result(compactTaskMutation(scopedTaskOrThrow(entityId)));
       }
       scopedProjectOrThrow(entityId);
       appendProjectNotes(db, entityId, content, mutationContext);
-      return result(scopedProjectOrThrow(entityId));
+      return result(compactProject(scopedProjectOrThrow(entityId)));
     },
   );
 
@@ -457,7 +599,7 @@ export function createMachbarMcpServer({
     "machbar_create_task",
     {
       description:
-        "Create a Machbar task. In household scope, the authenticated member is not necessarily the speaker: an omitted ownerMemberId creates an explicitly shared/unassigned task, and ambiguous ownership must remain shared. Resolve names with machbar_list_members and pass a stable member ID when ownership is explicit. In work scope, ownership is always forced to the authenticated member. dueDate and scheduledDate are calendar dates in YYYY-MM-DD format only, never times or timezones. MCP task creation accepts absolute reminders with at as a full RFC3339/ISO timestamp; existing deadline-relative reminders remain an internal/UI feature.",
+        "Create a task. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. MCP reminders are absolute RFC3339/ISO timestamps.",
       inputSchema: {
         title: z.string().min(1),
         notes: z.string().optional(),
@@ -515,7 +657,12 @@ export function createMachbarMcpServer({
         },
         mutationContext,
       );
-      return result(scopedTaskOrThrow(created.id));
+      return result(
+        compactTaskMutation(
+          scopedTaskOrThrow(created.id),
+          mcpReminders !== undefined,
+        ),
+      );
     },
   );
 
@@ -544,7 +691,7 @@ export function createMachbarMcpServer({
         completedOn,
         expectedRevision,
       );
-       return result(scopedTaskOrThrow(taskId));
+       return result(compactTaskMutation(scopedTaskOrThrow(taskId)));
     },
   );
 
@@ -571,7 +718,7 @@ export function createMachbarMcpServer({
         mutationContext,
         expectedRevision,
       );
-      return result(scopedTaskOrThrow(taskId));
+      return result(compactTaskMutation(scopedTaskOrThrow(taskId)));
     },
   );
 
@@ -579,7 +726,7 @@ export function createMachbarMcpServer({
     "machbar_update_task",
     {
       description:
-        "Update atomic task metadata. Use the latest revision to avoid stale writes. In household scope, the authenticated member is not necessarily the speaker; omit ownerMemberId to leave ownership unchanged, pass null to make the task explicitly shared/unassigned, or pass a stable member ID resolved with machbar_list_members. dueDate and scheduledDate are calendar dates in YYYY-MM-DD format only, never times or timezones.",
+        "Update task metadata with the latest revision. In household scope, omit ownerMemberId to keep ownership, pass null for shared, or pass a stable member ID; work scope always uses the authenticated member. Dates are YYYY-MM-DD only.",
       inputSchema: {
         taskId,
         expectedRevision,
@@ -625,7 +772,7 @@ export function createMachbarMcpServer({
         mutationContext,
       );
 
-      return result(scopedTaskOrThrow(taskId));
+      return result(compactTaskMutation(scopedTaskOrThrow(taskId)));
     },
   );
 
@@ -719,7 +866,9 @@ export function createMachbarMcpServer({
         }
         updateTask(db, taskId, { reminders, expectedRevision }, mutationContext);
       }
-     return result(scopedTaskOrThrow(taskId));
+     return result(
+       compactTaskMutation(scopedTaskOrThrow(taskId), true),
+     );
     },
   );
 
@@ -744,7 +893,7 @@ export function createMachbarMcpServer({
         scopedProjectOrThrow(input.projectId);
       }
       moveTask(db, taskId, input, mutationContext);
-      return result(scopedTaskOrThrow(taskId));
+      return result(compactTaskMutation(scopedTaskOrThrow(taskId)));
     },
   );
 
@@ -757,7 +906,7 @@ export function createMachbarMcpServer({
     async ({ taskId, expectedRevision }) => {
       scopedTaskOrThrow(taskId);
       resolveExternalWait(db, taskId, expectedRevision, mutationContext);
-      return result(scopedTaskOrThrow(taskId));
+      return result(compactTaskMutation(scopedTaskOrThrow(taskId)));
     },
   );
 
@@ -826,7 +975,7 @@ export function createMachbarMcpServer({
           archiveProject(db, projectId, mutationContext, expectedRevision);
           break;
       }
-      return result(scopedProjectOrThrow(projectId));
+      return result(compactProject(scopedProjectOrThrow(projectId)));
     },
   );
 
