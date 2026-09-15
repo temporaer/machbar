@@ -1021,6 +1021,13 @@ const extra = {
     member_not_found: "Die Person wurde nicht gefunden.",
     member_oidc_managed:
       "Diese Person wird von Pocket ID verwaltet und kann hier nicht geändert werden.",
+    mcp_oauth_insufficient_scope:
+      "Das MCP-OAuth-Token gewährt keinen Haushaltszugriff.",
+    mcp_oauth_invalid_token: "Das MCP-OAuth-Token ist ungültig.",
+    mcp_oauth_member_unlinked:
+      "Das Pocket-ID-Konto ist keiner vorhandenen Machbar-Person zugeordnet.",
+    mcp_oauth_provider_unavailable:
+      "Der MCP-OAuth-Identitätsanbieter ist vorübergehend nicht erreichbar.",
     oidc_callback_rejected: "Die Anmeldung wurde abgelehnt.",
     oidc_browser_mismatch:
       "Die Anmeldung wurde in einem anderen Browser begonnen.",

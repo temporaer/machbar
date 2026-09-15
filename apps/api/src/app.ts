@@ -6,6 +6,7 @@ import { registerRoutes } from "./routes/index.js";
 import { registerStatic } from "./static.js";
 import { registerAuthentication } from "./auth/routes.js";
 import type { OidcProvider } from "./auth/oidcClient.js";
+import { McpOAuthProvider } from "./integrations/mcpOAuth.js";
 import { registerActivityActorResolution } from "./activity/actor.js";
 import {
   ChangeNotifier,
@@ -28,6 +29,7 @@ export interface BuildAppOptions {
   env: Env;
   logger?: boolean;
   oidcProvider?: OidcProvider;
+  mcpOAuthProvider?: McpOAuthProvider;
   changeNotifier?: ChangeNotifier;
   pushTransport?: PushTransport;
   paperlessClient?: PaperlessClient;
@@ -43,6 +45,7 @@ export function buildApp({
   changeNotifier,
   pushTransport,
   paperlessClient,
+  mcpOAuthProvider: suppliedMcpOAuthProvider,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger });
   const notificationTransport =
@@ -51,6 +54,11 @@ export function buildApp({
   const paperless =
     paperlessClient ??
     (env.paperless ? createPaperlessClient(env.paperless) : undefined);
+  const mcpOAuthProvider =
+    suppliedMcpOAuthProvider ??
+    (env.mcpOAuth && env.oidc
+      ? new McpOAuthProvider(env.oidc, env.mcpOAuth)
+      : undefined);
 
   app.setErrorHandler<FastifyError | AppError>((error, request, reply) => {
     if (error instanceof AppError) {
@@ -94,10 +102,20 @@ export function buildApp({
 
   app.get("/api/health", async () => ({ status: "ok" }));
 
-  registerAuthentication(app, db, env, { provider: oidcProvider });
+  registerAuthentication(app, db, env, {
+    provider: oidcProvider,
+    mcpOAuthProvider,
+  });
   registerActivityActorResolution(app, db, env);
   registerChangeNotifications(app, changeNotifier ?? new ChangeNotifier());
-  registerRoutes(app, db, env, notificationTransport, paperless);
+  registerRoutes(
+    app,
+    db,
+    env,
+    notificationTransport,
+    paperless,
+    mcpOAuthProvider,
+  );
   registerNotificationRunner(app, db, env.push, notificationTransport);
   registerStatic(app, env);
 

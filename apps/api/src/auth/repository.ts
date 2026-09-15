@@ -91,6 +91,31 @@ export interface OidcIdentityClaims {
   pictureUrl?: string;
 }
 
+export function findOidcMemberByIdentity(
+  db: Db,
+  issuer: string,
+  subject: string,
+): Member | null {
+  const row = db
+    .select({
+      member: schema.members,
+      pictureUrl: schema.memberOidcIdentities.pictureUrl,
+    })
+    .from(schema.memberOidcIdentities)
+    .innerJoin(
+      schema.members,
+      eq(schema.memberOidcIdentities.memberId, schema.members.id),
+    )
+    .where(
+      and(
+        eq(schema.memberOidcIdentities.issuer, issuer),
+        eq(schema.memberOidcIdentities.subject, subject),
+      ),
+    )
+    .get();
+  return row ? memberResult(row.member, true, row.pictureUrl) : null;
+}
+
 export function resolveOidcMember(db: Db, claims: OidcIdentityClaims): Member {
   const name = claims.name.trim();
   if (!name) {

@@ -1025,6 +1025,13 @@ const en = {
     member_not_found: "The person could not be found.",
     member_oidc_managed:
       "This person is managed by Pocket ID and cannot be changed here.",
+    mcp_oauth_insufficient_scope:
+      "The MCP OAuth token does not grant household access.",
+    mcp_oauth_invalid_token: "The MCP OAuth token is invalid.",
+    mcp_oauth_member_unlinked:
+      "The Pocket ID account is not linked to an existing Machbar person.",
+    mcp_oauth_provider_unavailable:
+      "The MCP OAuth identity provider is temporarily unavailable.",
     oidc_callback_rejected: "The sign-in was rejected.",
     oidc_browser_mismatch: "The sign-in was started in another browser.",
     oidc_flow_expired: "The sign-in expired. Please try again.",

@@ -5,14 +5,14 @@ import { buildApp } from "../src/app.js";
 import { openDb, type DbHandle } from "../src/db/client.js";
 import { runMigrations } from "../src/db/migrate.js";
 import { seedDatabase } from "../src/db/seed.js";
-import type { Env } from "../src/env.js";
-import type { OidcConfig } from "../src/env.js";
+import type { Env, McpOAuthConfig, OidcConfig } from "../src/env.js";
 import type { OidcProvider } from "../src/auth/oidcClient.js";
 import type { ChangeNotifier } from "../src/changeNotifier.js";
 import type { VapidConfig } from "../src/env.js";
 import type { PushTransport } from "../src/notifications/delivery.js";
 import type { PaperlessConfig } from "../src/env.js";
 import type { PaperlessClient } from "../src/paperless/client.js";
+import type { McpOAuthProvider } from "../src/integrations/mcpOAuth.js";
 import * as schema from "../src/db/schema.js";
 import type { Db } from "../src/db/client.js";
 
@@ -27,6 +27,8 @@ export interface TestContext {
 export function createTestContext(options?: {
   seed?: boolean;
   oidc?: OidcConfig;
+  mcpOAuth?: McpOAuthConfig | null;
+  mcpOAuthProvider?: McpOAuthProvider;
   oidcProvider?: OidcProvider;
   basePath?: string;
   changeNotifier?: ChangeNotifier;
@@ -50,6 +52,7 @@ export function createTestContext(options?: {
     seedDatabase: false,
     webDistDir: path.join(__dirname, "__no_web_dist__"),
     oidc: options?.oidc ?? null,
+    mcpOAuth: options?.mcpOAuth ?? null,
     push: options?.push ?? null,
     paperless: options?.paperless ?? null,
   };
@@ -58,6 +61,7 @@ export function createTestContext(options?: {
     env,
     logger: false,
     oidcProvider: options?.oidcProvider,
+    mcpOAuthProvider: options?.mcpOAuthProvider,
     changeNotifier: options?.changeNotifier,
     pushTransport: options?.pushTransport,
     paperlessClient: options?.paperlessClient,

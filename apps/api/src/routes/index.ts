@@ -17,6 +17,8 @@ import type { PushTransport } from "../notifications/delivery.js";
 import type { PaperlessClient } from "../paperless/client.js";
 import { registerHomeAssistantRoutes } from "./homeAssistant.js";
 import { registerMcpRoutes } from "./mcp.js";
+import { registerMcpOAuthRoutes } from "./mcpOAuth.js";
+import type { McpOAuthProvider } from "../integrations/mcpOAuth.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -24,6 +26,7 @@ export function registerRoutes(
   env: Env,
   pushTransport?: PushTransport,
   paperlessClient?: PaperlessClient,
+  mcpOAuthProvider?: McpOAuthProvider,
 ) {
   registerActivityRoutes(app, db);
   registerContributionRoutes(app, db);
@@ -38,5 +41,6 @@ export function registerRoutes(
   registerPushRoutes(app, db, env, pushTransport);
   registerPaperlessRoutes(app, env, paperlessClient);
   registerHomeAssistantRoutes(app, db);
+  registerMcpOAuthRoutes(app, env, mcpOAuthProvider);
   registerMcpRoutes(app, db);
 }

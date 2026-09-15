@@ -11,7 +11,7 @@ import * as schema from "../db/schema.js";
 import { listMembers } from "../domain/members.js";
 import { AppError } from "../errors.js";
 
-const TOKEN_PREFIX = "mbmcp_";
+export const MCP_AGENT_TOKEN_PREFIX = "mbmcp_";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -46,7 +46,7 @@ export function createMcpAgent(
   scope: WorkItemScope,
   endpoint: string,
 ): McpAgentToken {
-  const token = `${TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
+  const token = `${MCP_AGENT_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
   const row = db
     .insert(schema.mcpAgents)
     .values({
@@ -96,6 +96,58 @@ export function authenticateMcpAgent(
     .where(eq(schema.mcpAgents.id, agent.id))
     .run();
   return { agentId: agent.id, member, scope: agent.scope };
+}
+
+export type McpAuthentication =
+  | {
+      kind: "agent";
+      agentId: number;
+      member: Member;
+      scope: WorkItemScope;
+    }
+  | {
+      kind: "oauth";
+      agentId: null;
+      member: Member;
+      scope: "household";
+    };
+
+export interface McpOAuthAuthenticator {
+  authenticate(
+    db: Db,
+    token: string,
+  ): Promise<{ member: Member; scope: "household"; agentId: null }>;
+}
+
+export async function authenticateMcpRequest(
+  db: Db,
+  authorization: string | undefined,
+  oauth: McpOAuthAuthenticator | undefined,
+): Promise<McpAuthentication> {
+  const prefix = "Bearer ";
+  if (!authorization?.startsWith(prefix)) {
+    throw AppError.unauthorized(
+      "integration_authentication_required",
+      "An MCP credential is required.",
+    );
+  }
+  const token = authorization.slice(prefix.length);
+  if (token.startsWith(MCP_AGENT_TOKEN_PREFIX)) {
+    return {
+      kind: "agent",
+      ...authenticateMcpAgent(db, authorization),
+    };
+  }
+  if (!oauth) {
+    throw AppError.unauthorized(
+      "integration_authentication_required",
+      "An MCP agent token is required.",
+    );
+  }
+  return {
+    kind: "oauth",
+    ...(await oauth.authenticate(db, token)),
+  };
 }
 
 export function revokeMcpAgent(

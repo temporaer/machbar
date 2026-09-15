@@ -124,6 +124,7 @@ With Compose, obtain the generated container name with `docker compose ps`.
 | `OIDC_CLIENT_SECRET` | unset | Pocket ID client secret |
 | `OIDC_PUBLIC_URL` | unset | Exact public HTTPS origin |
 | `OIDC_SESSION_TTL_DAYS` | `30` | Local session lifetime, 1–365 days |
+| `MCP_OAUTH_ENABLED` | `false` | Enable delegated Pocket ID OAuth access for `/api/mcp`; requires complete OIDC configuration |
 | `VAPID_PUBLIC_KEY` | unset | Public VAPID key exposed to browsers when Web Push is enabled |
 | `VAPID_PRIVATE_KEY` | unset | Private VAPID signing key; keep it only in deployment secrets or the uncommitted `.env` |
 | `VAPID_SUBJECT` | unset | HTTPS URL or `mailto:` contact identifying the Push sender |
@@ -131,6 +132,8 @@ With Compose, obtain the generated container name with `docker compose ps`.
 | `PAPERLESS_API_TOKEN` | unset | Server-only Paperless API token; configure together with `PAPERLESS_URL` |
 
 The application treats a partial OIDC configuration as a startup error.
+When `MCP_OAUTH_ENABLED=true`, complete OIDC configuration is also required.
+The MCP OAuth audience is derived exactly as `${OIDC_PUBLIC_URL}/api/mcp`.
 Production refuses to start when OIDC is completely unset unless
 `ALLOW_UNAUTHENTICATED=true` explicitly enables unauthenticated mode.
 Web Push is optional, but a partial VAPID configuration is also a startup
@@ -253,6 +256,29 @@ OIDC_SESSION_TTL_DAYS=30
 `OIDC_PUBLIC_URL` must be an exact HTTPS origin without a path. The browser
 receives an opaque Secure, HttpOnly, SameSite=Lax session cookie; provider
 tokens and the client secret remain server-side.
+
+### MCP OAuth for Home Assistant
+
+For delegated Home Assistant access, first configure a Pocket ID API whose
+resource is exactly `https://<machbar-origin>/api/mcp`, with the
+`machbar:mcp:household` permission. Create a separate confidential OIDC client
+for Home Assistant, use the redirect URI
+`https://my.home-assistant.io/redirect/oauth`, enable authorization-code and
+refresh-token grants, and do not require PKCE for the current Home Assistant
+MCP flow. Grant user-delegated access to the API and permission, not client/M2M
+access. Then set:
+
+```dotenv
+MCP_OAUTH_ENABLED=true
+```
+
+Machbar exposes protected-resource metadata and validates Pocket ID JWT access
+tokens for the household scope. It does not issue tokens, proxy the Pocket ID
+token endpoint, store OAuth state, or receive the Home Assistant client secret
+or refresh token. The temporary authorization endpoint shim only injects the
+RFC 8707 `resource` parameter that current Home Assistant omits and redirects
+to Pocket ID. Keep Machbar private/VPN-reachable; Home Assistant must be able to
+reach the configured URL directly.
 
 On first login, Machbar attempts to link the Pocket ID subject to an unlinked
 member with a matching display name, or a unique matching preferred username.

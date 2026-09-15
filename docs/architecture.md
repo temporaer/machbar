@@ -372,6 +372,24 @@ shown once and then sent as an `Authorization: Bearer` header. Every credential
 is permanently bound to its creator and to either the `household` or `work`
 scope. Tool handlers enforce that boundary before reads and mutations.
 
+When `MCP_OAUTH_ENABLED=true`, the same endpoint also accepts delegated Pocket
+ID API access tokens. Machbar validates the JWT signature through the
+discovered JWKS, configured issuer, exact `/api/mcp` audience, expiry, and
+fixed `machbar:mcp:household` scope, then maps the immutable `(issuer, sub)`
+pair to an already-linked member. OAuth is household-only and never provisions
+or updates a member; work access remains limited to explicit agent
+credentials. `apps/api/src/auth/routes.ts` is the common credential boundary,
+while `apps/api/src/mcp/tools.ts` remains independent of the credential
+mechanism.
+
+Protected-resource metadata is permanent resource-server behavior. The
+Machbar authorization-server metadata and `/api/mcp/oauth/authorize` route are
+temporary Home Assistant compatibility code: current Home Assistant omits the
+RFC 8707 `resource` authorization parameter, so the stateless route injects
+Machbar's canonical resource and redirects to Pocket ID. Pocket ID remains the
+direct token endpoint; Machbar never proxies or stores Home Assistant client
+secrets, authorization codes, or refresh tokens.
+
 `apps/api/src/mcp/tools.ts` is an adapter over the same graph projections,
 domain commands, revision checks, and transaction boundaries used by REST
 routes. MCP must not become a second mutation architecture.
