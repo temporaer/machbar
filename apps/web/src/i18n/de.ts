@@ -330,6 +330,9 @@ const extra = {
     "„Alle“ zeigt die Aufgaben des ganzen Haushalts, ohne deine Identität für Änderungen zu wechseln.",
   inboxHint:
     "Hier landet noch ungeklärte Arbeit. Entscheide, was machbar ist, zu einem Projekt gehört oder bewusst später dran ist.",
+  inboxHouseholdScope: "Ungeklärtes aller Personen anzeigen",
+  inboxWorkScope: "Nur eigenes ungeklärtes Arbeitsmaterial anzeigen",
+  inboxMineScope: "Nur eigenes ungeklärtes Material anzeigen",
   moreTitle: "Mehr",
   moreMomentum: "Gemeinsam vorankommen",
   moreFindAndReview: "Finden und prüfen",
@@ -1096,6 +1099,7 @@ const extra = {
     external_wait_reason_required:
       "Bitte gib an, worauf diese Aufgabe wartet.",
     waiting_query_invalid: "Die Wartelisten-Abfrage ist ungültig.",
+    inbox_query_invalid: "Die Eingangs-Abfrage ist ungültig.",
     external_wait_recurring_forbidden:
       "Wiederkehrende Aufgaben können keinen externen Wartepunkt haben.",
     external_wait_status_invalid:

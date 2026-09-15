@@ -344,6 +344,9 @@ const en = {
     "“Everyone” shows the whole household's tasks without changing your identity for edits.",
   inboxHint:
     "Unclarified work lands here. Decide what is actionable, belongs to a project, or should deliberately wait until later.",
+  inboxHouseholdScope: "Show everyone's unclarified items",
+  inboxWorkScope: "Show only your unclarified work items",
+  inboxMineScope: "Show only your unclarified items",
   moreTitle: "More",
   moreMomentum: "Household momentum",
   moreFindAndReview: "Find and review",
@@ -1092,6 +1095,7 @@ const en = {
     task_title_required: "Enter a task title.",
     external_wait_reason_required: "Enter what this task is waiting for.",
     waiting_query_invalid: "The Waiting query is invalid.",
+    inbox_query_invalid: "The Inbox query is invalid.",
     external_wait_recurring_forbidden:
       "Recurring tasks cannot have an external wait.",
     external_wait_status_invalid:

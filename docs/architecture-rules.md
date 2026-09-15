@@ -192,7 +192,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task `Struktur` workflow (split/move/convert-to-project) | `apps/web/src/components/TaskStructureSheet.tsx`, opened as the `structure` task workflow |
 | Project `Struktur` workflow (plan next task/edit outcome) | `apps/web/src/components/ProjectStructureSheet.tsx`, opened as the `structure` project workflow |
 | Consolidated task move (project and/or parent in one step) | `apps/web/src/components/MoveTaskSheet.tsx` via `task.changeProject` |
-| View-mode scope selector (Mine / Household / Work), cycle order, and persistence | `apps/web/src/lib/todayScope.ts` (`nextAgendaScope`, `readTodayScope`/`writeTodayScope`) reused by `TodayPage`, `WeekPage`, `ProjectsPage`, `WaitingPage` |
+| View-mode scope selector (Mine / Household / Work), cycle order, and persistence | `apps/web/src/lib/todayScope.ts` (`nextAgendaScope`, `readTodayScope`/`writeTodayScope`) reused by `TodayPage`, `WeekPage`, `ProjectsPage`, `WaitingPage`, `InboxPage` |
 | Task/project `scope` ("household" \| "work") read/derivation and owner-only visibility | `apps/api/src/domain/graph.ts` (`Graph.load`'s viewer-restriction parameter; see below) |
 | Household/work agenda-scope filtering shared by Today/Week/Waiting | `apps/api/src/domain/agendaSelection.ts` (`matchesScope`) |
 | Work-item exclusion from points/gamification | `apps/api/src/repo/contributionRepo.ts` (`entityScope` gate in `recordContribution`) |
@@ -243,9 +243,11 @@ whether the 3rd argument is `undefined`:
   `viewerMemberId` matches its effective owner (via `getEffectiveOwners`, not
   the row's own possibly-null `ownerMemberId` column). Passing the 3rd
   argument as `undefined` (no resolvable viewer) is a deliberate "hide every
-  work-scope row" signal, used by `/api/review`, `/api/views/more-counts`, and
-  `/api/inbox` — which have no scope selector at all and must stay purely
-  household-only for everyone, including a work item's own owner.
+  work-scope row" signal, used by `/api/review` and `/api/views/more-counts`
+  — which have no scope selector at all and must stay purely household-only
+  for everyone, including a work item's own owner. `/api/inbox` does expose
+  the Mine/Household/Work selector (mirroring `/api/waiting`) so a captured
+  work item stays reachable by its own owner instead of vanishing everywhere.
 
 New routes that read tasks/projects must decide explicitly which of these two
 behaviors they need and call `Graph.load` accordingly; do not add a viewer

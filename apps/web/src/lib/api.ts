@@ -621,7 +621,13 @@ export const api = {
         scope,
       })}`,
     ),
-  getInbox: () => request<Task[]>("/inbox"),
+  getInbox: (memberId?: number | null, scope: AgendaScope = "mine") =>
+    request<Task[]>(
+      `/inbox${query({
+        memberId: scope === "all" ? undefined : memberId,
+        scope,
+      })}`,
+    ),
   getWaiting: (memberId?: number | null, scope: AgendaScope = "mine") =>
     request<WaitingEntry[]>(
       `/waiting${query({

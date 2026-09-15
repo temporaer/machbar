@@ -5,6 +5,7 @@ import { Graph } from "../domain/graph.js";
 import { buildAgenda } from "../domain/agenda.js";
 import { buildWeekAgenda } from "../domain/weekAgenda.js";
 import { buildWaitingEntries } from "../domain/waiting.js";
+import { createAgendaSelection } from "../domain/agendaSelection.js";
 import { getMemberOrThrow } from "../domain/members.js";
 import { AppError } from "../errors.js";
 import { validationDetails } from "../validation.js";
@@ -158,9 +159,42 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
     });
   });
 
-  app.get("/api/inbox", async () => {
-    // Deliberately household-only, matching Review (see its comment above).
-    const graph = Graph.load(db, undefined, undefined);
+  app.get("/api/inbox", async (request) => {
+    const parsed = waitingQuerySchema.safeParse(request.query);
+    if (!parsed.success) {
+      throw AppError.badRequest(
+        "inbox_query_invalid",
+        "The inbox query parameters are invalid.",
+        validationDetails(parsed.error),
+      );
+    }
+    const viewerMemberId =
+      request.authMember?.id ??
+      parsed.data.memberId ??
+      request.activityActor?.id;
+    if (parsed.data.scope === "work" && viewerMemberId === undefined) {
+      throw AppError.badRequest(
+        "inbox_query_invalid",
+        "The work scope requires a known member.",
+      );
+    }
+    const memberId = parsed.data.scope === "all" ? undefined : viewerMemberId;
+    if (memberId !== undefined) getMemberOrThrow(db, memberId);
+    const scope =
+      parsed.data.scope === "work"
+        ? "work"
+        : memberId === undefined
+          ? "all"
+          : "mine";
+    // Mine/Household/Work toggle, matching Today/Week/Waiting: a resolved
+    // viewer sees their own household captured items (or, in Work scope,
+    // only their own work-scope captured items). Unlike Review and
+    // /more-counts (which have no scope selector at all and stay
+    // unconditionally household-only, see their comments above), Inbox
+    // needs a real viewer so a captured work item is reachable by its own
+    // owner instead of vanishing everywhere.
+    const graph = Graph.load(db, undefined, viewerMemberId);
+    const selection = createAgendaSelection(graph, { memberId, scope });
     const projectStatusById = new Map(
       [...graph.projectsById.values()].map((project) => [
         project.id,
@@ -172,7 +206,9 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       .filter(
         (task) =>
           task.status === "captured" &&
-          isTaskInWorkingSystem(task, projectStatusById),
+          isTaskInWorkingSystem(task, projectStatusById) &&
+          selection.matchesScope(task) &&
+          selection.matchesOwner(task),
       );
     const capturedIds = new Set(captured.map((task) => task.id));
     const cloneCaptured = (task: (typeof captured)[number]): (typeof captured)[number] => ({

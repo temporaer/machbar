@@ -191,6 +191,7 @@ export type ApiErrorCode =
   | "task_title_required"
   | "external_wait_reason_required"
   | "waiting_query_invalid"
+  | "inbox_query_invalid"
   | "unsupported_protocol_version";
 
 export interface ApiErrorPayload {
