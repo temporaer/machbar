@@ -1,6 +1,6 @@
 import cookie from "@fastify/cookie";
 import type { ApiErrorCode } from "@machbar/shared";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 import type { Db } from "../db/client.js";
 import type { Env } from "../env.js";
@@ -9,7 +9,11 @@ import { parseOrThrow } from "../validation.js";
 import { PocketIdProvider, type OidcProvider } from "./oidcClient.js";
 import { AuthService } from "./service.js";
 import { authenticateHomeAssistant } from "../integrations/homeAssistant.js";
-import { authenticateMcpAgent } from "../integrations/mcp.js";
+import {
+  authenticateMcpRequest,
+  type McpAuthentication,
+} from "../integrations/mcp.js";
+import { McpOAuthProvider } from "../integrations/mcpOAuth.js";
 
 export const SESSION_COOKIE = "__Host-machbar-session";
 export const OIDC_STATE_COOKIE = "__Host-machbar-oidc-state";
@@ -32,7 +36,8 @@ function isPublicApiPath(path: string): boolean {
     path === "/api/health" ||
     path === "/api/auth/status" ||
     path === "/api/auth/login" ||
-    path === "/api/auth/callback"
+    path === "/api/auth/callback" ||
+    path === "/api/mcp/oauth/authorize"
   );
 }
 
@@ -40,7 +45,7 @@ type RouteAuthPolicy =
   | "anonymous"
   | "human"
   | "home_assistant"
-  | "mcp_agent"
+  | "mcp"
   | "pairing";
 
 export function authPolicyForRoute(path: string): RouteAuthPolicy {
@@ -49,7 +54,7 @@ export function authPolicyForRoute(path: string): RouteAuthPolicy {
   if (path === "/api/integrations/home-assistant/context") {
     return "home_assistant";
   }
-  if (path === "/api/mcp") return "mcp_agent";
+  if (path === "/api/mcp") return "mcp";
   return "human";
 }
 
@@ -128,6 +133,42 @@ function authErrorRedirect(
 
 export interface RegisterAuthenticationOptions {
   provider?: OidcProvider;
+  mcpOAuthProvider?: McpOAuthProvider;
+}
+
+function mcpProtectedResourceMetadataUrl(env: Env): string {
+  return new URL(
+    "/.well-known/oauth-protected-resource/api/mcp",
+    env.oidc!.publicUrl,
+  ).toString();
+}
+
+function setMcpChallenge(
+  reply: FastifyReply,
+  env: Env,
+  error: unknown,
+): void {
+  if (!env.mcpOAuth || !env.oidc) return;
+  const metadataUrl = mcpProtectedResourceMetadataUrl(env);
+  if (
+    error instanceof AppError &&
+    error.code === "mcp_oauth_insufficient_scope"
+  ) {
+    reply.header(
+      "WWW-Authenticate",
+      `Bearer error="insufficient_scope", scope="${env.mcpOAuth.requiredScope}", resource_metadata="${metadataUrl}"`,
+    );
+    return;
+  }
+  const errorParameter =
+    error instanceof AppError &&
+    error.code !== "integration_authentication_required"
+      ? ` error="invalid_token"`
+      : "";
+  reply.header(
+    "WWW-Authenticate",
+    `Bearer${errorParameter} resource_metadata="${metadataUrl}"`,
+  );
 }
 
 export function registerAuthentication(
@@ -150,23 +191,19 @@ export function registerAuthentication(
           env.oidc,
           options.provider ?? new PocketIdProvider(env.oidc),
         );
+  const mcpOAuthProvider =
+    options.mcpOAuthProvider ??
+    (env.mcpOAuth && env.oidc
+      ? new McpOAuthProvider(env.oidc, env.mcpOAuth)
+      : undefined);
 
   app.addHook("onRequest", async (request) => {
     request.authMember = service?.memberForSession(
       request.cookies[SESSION_COOKIE],
     ) ?? null;
-    if (request.routeOptions.url === "/api/mcp") {
-      const authenticated = authenticateMcpAgent(
-        db,
-        request.headers.authorization,
-      );
-      request.mcpAgentId = authenticated.agentId;
-      request.mcpScope = authenticated.scope;
-      request.authMember = authenticated.member;
-    }
   });
 
-  app.addHook("preHandler", async (request) => {
+  app.addHook("preHandler", async (request, reply) => {
     const routePath = request.routeOptions.url;
     if (!routePath?.startsWith("/api/")) return;
     const policy = authPolicyForRoute(routePath);
@@ -178,16 +215,22 @@ export function registerAuthentication(
       ).id;
       return;
     }
-    if (policy === "mcp_agent") {
-      if (
-        !request.authMember ||
-        request.mcpAgentId === null ||
-        request.mcpScope === null
-      ) {
-        throw AppError.unauthorized(
-          "integration_authentication_required",
-          "An MCP agent token is required.",
+    if (policy === "mcp") {
+      try {
+        const authenticated: McpAuthentication = await authenticateMcpRequest(
+          db,
+          request.headers.authorization,
+          mcpOAuthProvider,
         );
+        request.mcpAgentId = authenticated.agentId;
+        request.mcpScope = authenticated.scope;
+        request.authMember = authenticated.member;
+      } catch (error) {
+        setMcpChallenge(reply, env, error);
+        if (error instanceof AppError) {
+          request.log.warn({ code: error.code }, "MCP authentication failed");
+        }
+        throw error;
       }
       return;
     }

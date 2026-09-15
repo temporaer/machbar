@@ -23,6 +23,56 @@ existing API process; no second service is required.
 The scope is part of the credential and cannot be changed per tool call.
 Create a separate named agent when another scope is needed.
 
+## Home Assistant with Pocket ID OAuth
+
+Machbar can accept a delegated Pocket ID access token for the existing
+`/api/mcp` endpoint. Enable it with:
+
+```dotenv
+MCP_OAUTH_ENABLED=true
+```
+
+This reuses Machbar's existing `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`,
+`OIDC_CLIENT_SECRET`, and `OIDC_PUBLIC_URL` configuration. The OAuth resource
+is derived exactly as `${OIDC_PUBLIC_URL}/api/mcp`; no second issuer or MCP
+audience setting is supported.
+
+### Pocket ID setup
+
+1. Create a Pocket ID API named **Machbar MCP** with resource
+   `https://<machbar-origin>/api/mcp` (no trailing slash).
+2. Add the API permission `machbar:mcp:household`, named **Access household
+   tasks in Machbar**, with the description **Read and modify
+   household-scoped Machbar tasks and projects through MCP.**
+3. Create a separate confidential authorization-code OIDC client named
+   **Home Assistant – Machbar MCP**. Do not reuse Machbar's browser-login
+   client.
+4. For a normal My Home Assistant installation, add the redirect URI
+   `https://my.home-assistant.io/redirect/oauth`.
+5. Enable authorization-code and refresh-token grants, and leave PKCE disabled
+   for this client while Home Assistant's MCP flow does not send PKCE.
+6. Grant the client user-delegated access to **Machbar MCP** and enable
+   `machbar:mcp:household`. Do not enable client/M2M access.
+
+### Home Assistant setup
+
+1. Add the **Model Context Protocol** integration.
+2. Set the server URL to `https://<machbar-origin>/api/mcp`.
+3. Enter the dedicated Pocket ID client ID and secret when Home Assistant asks
+   for Application Credentials.
+4. Complete the Pocket ID login and consent flow.
+5. Ensure the Pocket ID user has signed into Machbar normally at least once so
+   the issuer/subject identity is already linked to a Machbar member.
+
+Home Assistant must reach Machbar over the local network or VPN. The cloud
+conversation model does not need direct access. Home Assistant exchanges and
+refreshes tokens directly with Pocket ID; Machbar only validates the resulting
+access token and never receives the Home Assistant client secret or refresh
+token.
+
+OAuth access is household-only. Existing named agent tokens remain the
+preferred option for scripts, developer CLIs, and work-scoped access.
+
 ## Tools
 
 Read tools cover Today, Review, Waiting, search, task details, project details,

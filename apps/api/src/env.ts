@@ -10,8 +10,16 @@ export interface Env {
   seedDatabase: boolean;
   webDistDir: string;
   oidc: OidcConfig | null;
+  mcpOAuth: McpOAuthConfig | null;
   push: VapidConfig | null;
   paperless: PaperlessConfig | null;
+}
+
+export const MCP_HOUSEHOLD_SCOPE = "machbar:mcp:household" as const;
+
+export interface McpOAuthConfig {
+  resourceUrl: string;
+  requiredScope: typeof MCP_HOUSEHOLD_SCOPE;
 }
 
 export interface OidcConfig {
@@ -142,6 +150,18 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     source.WEB_DIST_DIR ?? "../web/dist",
   );
   const oidc = loadOidcConfig(source);
+  const mcpOAuthEnabled = source.MCP_OAUTH_ENABLED === "true";
+  if (mcpOAuthEnabled && oidc === null) {
+    throw new Error(
+      "MCP OAuth requires complete OIDC configuration. Configure OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_PUBLIC_URL.",
+    );
+  }
+  const mcpOAuth: McpOAuthConfig | null = mcpOAuthEnabled
+    ? {
+        resourceUrl: `${oidc!.publicUrl}/api/mcp`,
+        requiredScope: MCP_HOUSEHOLD_SCOPE,
+      }
+    : null;
   const push = loadVapidConfig(source);
   const paperless = loadPaperlessConfig(source);
   if (
@@ -164,6 +184,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     seedDatabase,
     webDistDir,
     oidc,
+    mcpOAuth,
     push,
     paperless,
   };

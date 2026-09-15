@@ -3,7 +3,11 @@ import { loadEnv } from "../src/env.js";
 
 describe("OIDC environment configuration", () => {
   it("keeps authentication disabled outside production when no OIDC variables are present", () => {
-    expect(loadEnv({}).oidc).toBeNull();
+    expect(loadEnv({})).toMatchObject({ oidc: null, mcpOAuth: null });
+  });
+
+  it("keeps MCP OAuth disabled by default", () => {
+    expect(loadEnv({ MCP_OAUTH_ENABLED: "false" }).mcpOAuth).toBeNull();
   });
 
   describe("VAPID environment configuration", () => {
@@ -94,6 +98,23 @@ describe("OIDC environment configuration", () => {
       publicUrl: "https://machbar.example",
       sessionTtlDays: 30,
     });
+  });
+
+  it("derives the MCP OAuth resource and requires OIDC when enabled", () => {
+    const valid = {
+      OIDC_ISSUER_URL: "https://pocket.example",
+      OIDC_CLIENT_ID: "machbar",
+      OIDC_CLIENT_SECRET: "secret",
+      OIDC_PUBLIC_URL: "https://machbar.example",
+      MCP_OAUTH_ENABLED: "true",
+    };
+    expect(loadEnv(valid).mcpOAuth).toEqual({
+      resourceUrl: "https://machbar.example/api/mcp",
+      requiredScope: "machbar:mcp:household",
+    });
+    expect(() =>
+      loadEnv({ MCP_OAUTH_ENABLED: "true", ALLOW_UNAUTHENTICATED: "true" }),
+    ).toThrow(/MCP OAuth requires complete OIDC configuration/);
   });
 
   it("rejects insecure URLs, public URL paths, and unreasonable session limits", () => {
