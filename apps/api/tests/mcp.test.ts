@@ -145,7 +145,16 @@ describe("MCP integration", () => {
       arguments: { includeTerminal: true },
     });
     expect(search.structuredContent).toEqual({
-      result: [expect.objectContaining({ id: workTask.id, scope: "work" })],
+      result: {
+        items: [
+          expect.objectContaining({
+            id: workTask.id,
+            effectiveOwnerId: member.id,
+          }),
+        ],
+        returned: 1,
+        truncated: false,
+      },
     });
 
     const created = await client.callTool({
@@ -158,7 +167,6 @@ describe("MCP integration", () => {
     });
     expect(created.structuredContent).toEqual({
       result: expect.objectContaining({
-        scope: "work",
         effectiveOwnerId: member.id,
       }),
     });
@@ -196,6 +204,172 @@ describe("MCP integration", () => {
     await client.close();
     await server.close();
   });
+
+  it("bounds broad MCP responses and keeps drill-down details explicit", async () => {
+    const member = await createMember();
+    const project = insertTestProject(ctx.handle.db, {
+      title: "Compact project",
+      notes: "Project notes should only appear in drill-down.",
+      status: "active",
+    });
+    const { client, server } = await connectMcp(member.id);
+
+    for (let index = 0; index < 12; index += 1) {
+      insertTestTask(ctx.handle.db, {
+        title: `Compact task ${index}`,
+        notes: "Task notes should only appear in drill-down.",
+        projectId: project.id,
+        dueDate: "2026-09-15",
+      });
+    }
+
+    const defaultSearch = await client.callTool({
+      name: "machbar_search",
+      arguments: { text: "Compact task", includeTerminal: true },
+    });
+    const defaultSearchResult = (
+      defaultSearch.structuredContent as {
+        result: {
+          items: Array<{ id: number; revision: number } & Record<string, unknown>>;
+          returned: number;
+          truncated: boolean;
+        };
+      }
+    ).result;
+    expect(defaultSearchResult.returned).toBe(10);
+    expect(defaultSearchResult.truncated).toBe(true);
+    expect(defaultSearchResult.items[0]).not.toHaveProperty("notes");
+    expect(defaultSearchResult.items[0]).not.toHaveProperty("reminders");
+    expect(defaultSearchResult.items[0]).not.toHaveProperty("ancestors");
+    expect(defaultSearchResult.items[0]).not.toHaveProperty("blockers");
+    expect(defaultSearchResult.items[0]).not.toHaveProperty("children");
+    expect(defaultSearchResult.items[0]).not.toHaveProperty("effectiveTags");
+
+    const limitedSearch = await client.callTool({
+      name: "machbar_search",
+      arguments: { text: "Compact task", limit: 3 },
+    });
+    expect(
+      (limitedSearch.structuredContent as {
+        result: { items: unknown[]; returned: number; truncated: boolean };
+      }).result,
+    ).toMatchObject({ returned: 3, truncated: true });
+    expect(
+      (limitedSearch.structuredContent as {
+        result: { items: unknown[] };
+      }).result.items,
+    ).toHaveLength(3);
+
+    const invalidLimit = await client.callTool({
+      name: "machbar_search",
+      arguments: { limit: 26 },
+    });
+    expect(invalidLimit.isError).toBe(true);
+
+    const projects = await client.callTool({
+      name: "machbar_list_projects",
+      arguments: {},
+    });
+    const projectSummary = (
+      projects.structuredContent as {
+        result: { items: Array<Record<string, unknown>> };
+      }
+    ).result.items[0]!;
+    expect(projectSummary).toMatchObject({
+      id: project.id,
+      title: "Compact project",
+    });
+    expect(projectSummary).not.toHaveProperty("tasks");
+    expect(projectSummary).not.toHaveProperty("childStories");
+    expect(projectSummary).not.toHaveProperty("notes");
+    expect(projectSummary).not.toHaveProperty("ancestors");
+
+    insertTestProject(ctx.handle.db, { title: "Another compact project" });
+    const limitedProjects = await client.callTool({
+      name: "machbar_list_projects",
+      arguments: { limit: 1 },
+    });
+    expect(
+      (limitedProjects.structuredContent as {
+        result: { items: unknown[]; truncated: boolean };
+      }).result,
+    ).toMatchObject({ truncated: true });
+    expect(
+      (limitedProjects.structuredContent as {
+        result: { items: unknown[] };
+      }).result.items,
+    ).toHaveLength(1);
+    const invalidProjectLimit = await client.callTool({
+      name: "machbar_list_projects",
+      arguments: { limit: 51 },
+    });
+    expect(invalidProjectLimit.isError).toBe(true);
+
+    const today = await client.callTool({
+      name: "machbar_today",
+      arguments: { date: "2026-09-15" },
+    });
+    const todayResult = (today.structuredContent as {
+      result: { dueToday: Array<Record<string, unknown>> };
+    }).result;
+    expect(todayResult.dueToday[0]).not.toHaveProperty("notes");
+    expect(todayResult.dueToday[0]).not.toHaveProperty("reminders");
+    expect(todayResult.dueToday[0]).not.toHaveProperty("ancestors");
+
+    const taskId = defaultSearchResult.items[0]!.id;
+    const waitingMutation = await client.callTool({
+      name: "machbar_set_waiting",
+      arguments: {
+        taskId,
+        expectedRevision: defaultSearchResult.items[0]!.revision,
+        waitingFor: "a reply",
+      },
+    });
+    expect(waitingMutation.structuredContent).toEqual({
+      result: expect.objectContaining({ revision: expect.any(Number) }),
+    });
+    const waiting = await client.callTool({
+      name: "machbar_waiting",
+      arguments: {},
+    });
+    const waitingResult = (waiting.structuredContent as {
+      result: Array<{ task: Record<string, unknown> }>;
+    }).result;
+    expect(waitingResult[0]!.task).not.toHaveProperty("notes");
+    expect(waitingResult[0]!.task).not.toHaveProperty("reminders");
+    const review = await client.callTool({
+      name: "machbar_review",
+      arguments: {},
+    });
+    expect((review.structuredContent as { result: unknown[] }).result[0]).not.toHaveProperty(
+      "notes",
+    );
+
+    const detailedTask = await client.callTool({
+      name: "machbar_get_task",
+      arguments: { taskId },
+    });
+    expect(detailedTask.structuredContent).toEqual({
+      result: expect.objectContaining({
+        notes: "Task notes should only appear in drill-down.",
+        ancestors: expect.any(Array),
+      }),
+    });
+    const detailedProject = await client.callTool({
+      name: "machbar_get_project",
+      arguments: { projectId: project.id },
+    });
+    expect(detailedProject.structuredContent).toEqual({
+      result: expect.objectContaining({
+        notes: "Project notes should only appear in drill-down.",
+        tasks: expect.any(Array),
+      }),
+    });
+
+    await client.close();
+    await server.close();
+  });
+
   it("keeps household ownership shared unless the model supplies a member id", async () => {
     const authenticated = await createMember();
     const owner = await createMember("Alex");
@@ -225,8 +399,6 @@ describe("MCP integration", () => {
     });
     expect(shared.structuredContent).toEqual({
       result: expect.objectContaining({
-        ownerMemberId: null,
-        ownerInheritanceMode: "none",
         effectiveOwnerId: null,
       }),
     });
@@ -240,8 +412,6 @@ describe("MCP integration", () => {
     });
     expect(sharedUnderParent.structuredContent).toEqual({
       result: expect.objectContaining({
-        ownerMemberId: null,
-        ownerInheritanceMode: "none",
         effectiveOwnerId: null,
       }),
     });
@@ -257,8 +427,6 @@ describe("MCP integration", () => {
     });
     expect(explicitlyOwned.structuredContent).toEqual({
       result: expect.objectContaining({
-        ownerMemberId: owner.id,
-        ownerInheritanceMode: "explicit",
         effectiveOwnerId: owner.id,
       }),
     });
@@ -269,16 +437,8 @@ describe("MCP integration", () => {
     });
     expect(members.structuredContent).toEqual({
       result: expect.arrayContaining([
-        expect.objectContaining({
-          id: authenticated.id,
-          name: "Mira",
-          isAuthenticatedMember: true,
-        }),
-        expect.objectContaining({
-          id: owner.id,
-          name: "Alex",
-          isAuthenticatedMember: false,
-        }),
+        { id: authenticated.id, name: "Mira" },
+        { id: owner.id, name: "Alex" },
       ]),
     });
 
@@ -320,7 +480,6 @@ describe("MCP integration", () => {
     });
     expect(unchangedOwner.structuredContent).toEqual({
       result: expect.objectContaining({
-        ownerMemberId: owner.id,
         effectiveOwnerId: owner.id,
       }),
     });
@@ -336,8 +495,6 @@ describe("MCP integration", () => {
     });
     expect(clearedOwner.structuredContent).toEqual({
       result: expect.objectContaining({
-        ownerMemberId: null,
-        ownerInheritanceMode: "none",
         effectiveOwnerId: null,
       }),
     });
@@ -414,7 +571,11 @@ describe("MCP integration", () => {
       arguments: { text: "Must not be created", includeTerminal: true },
     });
     expect(
-      (afterInvalidCreate.structuredContent as { result: unknown[] }).result,
+      (
+        afterInvalidCreate.structuredContent as {
+          result: { items: unknown[] };
+        }
+      ).result.items,
     ).toEqual([]);
 
     const invalidScheduledCreate = await client.callTool({
@@ -620,13 +781,11 @@ describe("MCP integration", () => {
           id: number;
           revision: number;
           ownerMemberId: number | null;
-          scope: string;
         };
       }
     ).result;
     expect(sharedProject).toMatchObject({
       ownerMemberId: null,
-      scope: "household",
     });
 
     const explicitlyOwned = await client.callTool({
@@ -636,7 +795,6 @@ describe("MCP integration", () => {
     expect(explicitlyOwned.structuredContent).toEqual({
       result: expect.objectContaining({
         ownerMemberId: owner.id,
-        scope: "household",
       }),
     });
 
@@ -654,7 +812,6 @@ describe("MCP integration", () => {
       result: expect.objectContaining({
         ownerMemberId: owner.id,
         dueDate: "2026-09-21",
-        contexts: [expect.objectContaining({ id: context.id })],
       }),
     });
 
@@ -664,11 +821,7 @@ describe("MCP integration", () => {
     });
     expect(contexts.structuredContent).toEqual({
       result: [
-        expect.objectContaining({
-          id: context.id,
-          name: "Home",
-          externalId: "zone.home",
-        }),
+        { id: context.id, name: "Home" },
       ],
     });
     expect(JSON.stringify(contexts.structuredContent)).not.toContain(
@@ -708,7 +861,7 @@ describe("MCP integration", () => {
       },
     });
     expect(taskNote.structuredContent).toEqual({
-      result: expect.objectContaining({ notes: "Ask again next week" }),
+      result: expect.objectContaining({ revision: expect.any(Number) }),
     });
     const projectNote = await client.callTool({
       name: "machbar_append_note",
@@ -719,7 +872,7 @@ describe("MCP integration", () => {
       },
     });
     expect(projectNote.structuredContent).toEqual({
-      result: expect.objectContaining({ notes: "Keep this shared" }),
+      result: expect.objectContaining({ revision: expect.any(Number) }),
     });
 
     await client.close();
@@ -737,7 +890,6 @@ describe("MCP integration", () => {
     });
     expect(created.structuredContent).toEqual({
       result: expect.objectContaining({
-        scope: "work",
         ownerMemberId: authenticated.id,
       }),
     });

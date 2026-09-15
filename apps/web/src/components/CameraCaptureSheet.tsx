@@ -72,6 +72,23 @@ export function CameraCaptureSheet({
         tracks.forEach((track) =>
           track.addEventListener("ended", onTrackEnded, { once: true }),
         );
+        const videoTrack = stream.getVideoTracks?.()[0];
+        const capabilities = videoTrack?.getCapabilities?.() as
+          | (MediaTrackCapabilities & { focusMode?: string[] })
+          | undefined;
+        const focusModes = capabilities?.focusMode;
+        const focusConstraint: MediaTrackConstraintSet & {
+          focusMode?: ConstrainDOMString;
+        } = { focusMode: "continuous" };
+        if (videoTrack && focusModes?.includes("continuous")) {
+          try {
+            await videoTrack.applyConstraints({
+              advanced: [focusConstraint],
+            });
+          } catch {
+            // Focus is an enhancement; keep the stream usable if unsupported.
+          }
+        }
         const video = videoRef.current;
         if (!video) {
           stream.getTracks().forEach((track) => track.stop());
