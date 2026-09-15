@@ -380,7 +380,7 @@ export function createMachbarMcpServer({
         completedOn,
         expectedRevision,
       );
-      return result(scopedTaskOrThrow(taskId));
+       return result(scopedTaskOrThrow(taskId));
     },
   );
 
@@ -555,7 +555,7 @@ export function createMachbarMcpServer({
         }
         updateTask(db, taskId, { reminders, expectedRevision }, mutationContext);
       }
-      return result(scopedTaskOrThrow(taskId));
+     return result(scopedTaskOrThrow(taskId));
     },
   );
 

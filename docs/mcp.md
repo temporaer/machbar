@@ -92,7 +92,6 @@ to resolve a stable member ID when ownership is clear. Dates are calendar dates
 in `YYYY-MM-DD` format only. MCP reminder inputs accept absolute reminder times
 as full RFC3339/ISO instants only; deadline-relative reminders remain available
 to Machbar's internal/UI APIs but are not created or edited through MCP.
-
 ## Security and revocation
 
 An agent token authorizes reads and writes as the member who created it, within

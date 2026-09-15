@@ -196,7 +196,6 @@ describe("MCP integration", () => {
     await client.close();
     await server.close();
   });
-
   it("keeps household ownership shared unless the model supplies a member id", async () => {
     const authenticated = await createMember();
     const owner = await createMember("Alex");
