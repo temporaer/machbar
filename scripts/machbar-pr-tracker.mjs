@@ -298,6 +298,28 @@ async function fullTasks(client, value) {
   return tasks;
 }
 
+async function trackedTasksForSearch(client, value) {
+  const tasks = await Promise.all(
+    taskList(value).map((task) =>
+      task.id
+        ? call(client, "machbar_get_task", { taskId: task.id })
+        : task,
+    ),
+  );
+  const tracked = tasks.filter((task) =>
+    markerValue(task.notes, PR_MARKER_PREFIX),
+  );
+  const wrongScope = tracked.find(
+    (task) => task.scope !== undefined && task.scope !== TRACKER_SCOPE,
+  );
+  if (wrongScope) {
+    throw new Error(
+      `Refusing to modify non-${TRACKER_SCOPE} task ${wrongScope.id} (${wrongScope.scope})`,
+    );
+  }
+  return tracked;
+}
+
 async function findTrackedTask(client, url) {
   const candidates = await fullTasks(
     client,
@@ -582,12 +604,38 @@ async function sync(configPath) {
         limit: 25,
       }),
     );
-    await flattenTrackerHierarchy(client, tracked);
+    const trackedById = new Map(tracked.map((task) => [task.id, task]));
+    for (const repository of config.repositories) {
+      const [, repositoryName] = repository.repository.split("/");
+      for (const searchText of [repository.repository, repositoryName]) {
+        const repositoryTasks = await trackedTasksForSearch(
+          client,
+          await call(client, "machbar_search", {
+            text: searchText,
+            includeTerminal: true,
+            limit: 25,
+          }),
+        );
+        for (const task of repositoryTasks) {
+          trackedById.set(task.id, task);
+        }
+      }
+    }
+    const allTracked = [...trackedById.values()];
+    await flattenTrackerHierarchy(client, allTracked);
     const trackedByUrl = new Map();
-    for (const task of tracked) {
+    for (const task of allTracked) {
       const url = markerValue(task.notes, PR_MARKER_PREFIX);
       if (!url) continue;
-      if (!trackedByUrl.has(url)) trackedByUrl.set(url, task);
+      const current = trackedByUrl.get(url);
+      if (
+        !current ||
+        ((current.status === "done" || current.status === "cancelled") &&
+          task.status !== "done" &&
+          task.status !== "cancelled")
+      ) {
+        trackedByUrl.set(url, task);
+      }
     }
 
     const discovered = new Map();
