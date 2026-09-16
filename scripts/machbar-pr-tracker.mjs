@@ -161,13 +161,16 @@ const PULL_REQUEST_FIELDS = [
 function pullRequest(config, url) {
   const parsed = parsePullRequestUrl(url);
   const repository = repoConfig(config, parsed.repository);
-  return ghJson(repository.account, [
-    "pr",
-    "view",
-    parsed.url,
-    "--json",
-    PULL_REQUEST_FIELDS,
-  ]);
+  return {
+    ...ghJson(repository.account, [
+      "pr",
+      "view",
+      parsed.url,
+      "--json",
+      PULL_REQUEST_FIELDS,
+    ]),
+    repository: parsed.repository,
+  };
 }
 
 function unresolvedReviewThreads(config, url) {
