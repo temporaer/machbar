@@ -20,6 +20,7 @@ const ROOT_MARKER = "[machbar-pr-tracker:root]";
 const REPO_MARKER_PREFIX = "[machbar-pr-tracker:repo=";
 const PR_MARKER_PREFIX = "[machbar-pr-tracker:pr=";
 const STATE_MARKER_PREFIX = "[machbar-pr-tracker:state=";
+const TRACKER_SCOPE = "work";
 
 function fail(message) {
   console.error(message);
@@ -276,13 +277,22 @@ function taskList(value) {
 }
 
 async function fullTasks(client, value) {
-  return Promise.all(
+  const tasks = await Promise.all(
     taskList(value).map((task) =>
       task.id
         ? call(client, "machbar_get_task", { taskId: task.id })
         : task,
     ),
   );
+  const wrongScope = tasks.find(
+    (task) => task.scope !== undefined && task.scope !== TRACKER_SCOPE,
+  );
+  if (wrongScope) {
+    throw new Error(
+      `Refusing to modify non-${TRACKER_SCOPE} task ${wrongScope.id} (${wrongScope.scope})`,
+    );
+  }
+  return tasks;
 }
 
 async function findTrackedTask(client, url) {
@@ -586,6 +596,11 @@ async function sync(configPath) {
         const task = await call(client, "machbar_get_task", {
           taskId: created.id,
         });
+        if (task.scope !== TRACKER_SCOPE) {
+          throw new Error(
+            `Refusing to track task ${task.id} in non-${TRACKER_SCOPE} scope (${task.scope})`,
+          );
+        }
         trackedByUrl.set(pull.url, task);
         console.log(`Tracking ${pull.url}`);
       }
