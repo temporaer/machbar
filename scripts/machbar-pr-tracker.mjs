@@ -443,7 +443,6 @@ async function ensureHierarchy(client, config, tracked) {
     root = await call(client, "machbar_create_task", {
       title: config.rootTitle,
       notes: ROOT_MARKER,
-      status: "someday",
     });
     console.log(`Created group: ${root.title}`);
   }
@@ -459,7 +458,6 @@ async function ensureHierarchy(client, config, tracked) {
       title: repository.repository,
       notes: `${REPO_MARKER_PREFIX}${repository.repository}]`,
       parentTaskId: root.id,
-      status: "someday",
     });
     groups.set(repository.repository, group);
     console.log(`Created repository group: ${repository.repository}`);
@@ -521,7 +519,7 @@ async function sync(configPath) {
         title: prTitle(pull.repository, pull),
         notes: `${pull.url}\n\n${PR_MARKER_PREFIX}${pull.url}]`,
         parentTaskId: groups.get(pull.repository).id,
-        status: "actionable",
+        activateIfReady: true,
       });
       trackedByUrl.set(pull.url, task);
       console.log(`Tracking ${pull.url}`);
