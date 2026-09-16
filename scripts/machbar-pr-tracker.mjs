@@ -487,35 +487,36 @@ function classifyPullRequest(pull, unresolvedCount) {
   };
 }
 
-function actionTitle(repository, classified) {
+function actionTitle(repository, pullTitle, classified) {
+  const subject = `${repository}: ${pullTitle}`;
   if (classified.ciState === "failing") {
-    return `Fix CI in ${repository}`;
+    return `Fix CI in ${subject}`;
   }
   if (classified.conflict) {
-    return `Resolve merge conflict in ${repository}`;
+    return `Resolve merge conflict in ${subject}`;
   }
   if (
     classified.reviewState === "changes_requested" ||
     classified.unresolvedCount > 0
   ) {
-    return `Address review feedback in ${repository}`;
+    return `Address review feedback in ${subject}`;
   }
   if (classified.reviewState === "approved" && classified.ciState === "passing") {
-    return `Merge ${repository}`;
+    return `Merge ${subject}`;
   }
   if (classified.draft) {
-    return `Continue PR work in ${repository}`;
+    return `Continue PR work in ${subject}`;
   }
   if (classified.reviewState === "awaiting_first_review") {
-    return `Follow up on review in ${repository}`;
+    return `Follow up on review in ${subject}`;
   }
   if (classified.ciState === "running") {
-    return `Monitor CI in ${repository}`;
+    return `Monitor CI in ${subject}`;
   }
   if (classified.reviewState === "review_required") {
-    return `Request review for ${repository}`;
+    return `Request review for ${subject}`;
   }
-  return `Review ${repository} PR`;
+  return `Review ${subject}`;
 }
 
 async function flattenTrackerHierarchy(client, tracked) {
@@ -619,7 +620,7 @@ async function sync(configPath) {
         console.log(`Found existing tracked PR ${pull.url}`);
       } else {
         const created = await call(client, "machbar_create_task", {
-          title: `Review ${pull.repository} PR`,
+          title: `Review ${pull.repository}: ${pull.title}`,
           notes: `${pull.url}\n\n${PR_MARKER_PREFIX}${pull.url}]`,
           activateIfReady: true,
         });
@@ -660,7 +661,11 @@ async function sync(configPath) {
         pull,
         unresolvedReviewThreads(config, url),
       );
-      const desiredTitle = actionTitle(pull.repository, classified);
+      const desiredTitle = actionTitle(
+        pull.repository,
+        pull.title,
+        classified,
+      );
       if (task.title !== desiredTitle) {
         const updated = await call(client, "machbar_update_task", {
           taskId: task.id,
