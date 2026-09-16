@@ -738,6 +738,8 @@ export interface Agenda {
    * They reappear here as an attention signal even though they remain blocked.
    */
   revisit: Task[];
+  /** Top-level task rows completed on the selected calendar date. */
+  completedToday: Task[];
 }
 
 export type WeekWorkItemRole = "task" | "story";

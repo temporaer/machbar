@@ -66,6 +66,8 @@ const en = {
   continueWaiting: "Continue waiting",
   revisit: "Follow-up",
   revisitHint: "Blocked, but due for another look today.",
+  completedToday: "Completed today",
+  completedTodayHint: "Reactivate a completed task if it still needs attention.",
   nextAction: "Next step",
   noNextAction: "No next step",
   quickAdd: "Quick add",

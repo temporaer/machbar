@@ -89,6 +89,21 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(task).not.toHaveProperty("markedToday");
   });
 
+  it("returns tasks completed on the requested calendar date in a separate projection", async () => {
+    const task = await createTask({ title: "Heute abgeschlossen" });
+    const complete = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/complete`,
+    });
+    expect(complete.statusCode).toBe(200);
+
+    const agenda = await getAgenda();
+    expect(titlesOf(agenda.completedToday)).toContain("Heute abgeschlossen");
+    expect(agenda.planned).not.toContainEqual(
+      expect.objectContaining({ title: "Heute abgeschlossen" }),
+    );
+  });
+
   it("derives 'planned' purely from scheduledDate <= today (today and overdue-scheduled)", async () => {
     await createTask({ title: "Heute geplant", scheduledDate: today });
     await createTask({ title: "Gestern geplant, noch offen", scheduledDate: yesterday });

@@ -172,6 +172,7 @@ function compactAgenda(agenda: Agenda) {
     shared: agenda.shared.map(compactTask),
     unscheduled: agenda.unscheduled.map(compactTask),
     revisit: agenda.revisit.map(compactTask),
+    completedToday: agenda.completedToday.map(compactTask),
   };
 }
 

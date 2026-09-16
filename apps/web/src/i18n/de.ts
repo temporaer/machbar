@@ -42,6 +42,8 @@ const base = {
   continueWaiting: "Weiter warten",
   revisit: "Wiedervorlage",
   revisitHint: "Blockiert, aber heute wieder zu prüfen.",
+  completedToday: "Heute erledigt",
+  completedTodayHint: "Erledigte Aufgaben bei Bedarf wieder aktivieren.",
   nextAction: "Nächster Schritt",
   noNextAction: "Kein nächster Schritt",
   quickAdd: "Schnell hinzufügen",
