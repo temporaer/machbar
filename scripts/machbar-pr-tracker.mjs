@@ -484,8 +484,35 @@ function classifyPullRequest(pull, unresolvedCount) {
   };
 }
 
-function prTitle(repository, pull) {
-  return `PR ${repository}#${pull.number}: ${pull.title}`;
+function actionTitle(repository, classified) {
+  if (classified.ciState === "failing") {
+    return `Fix CI in ${repository}`;
+  }
+  if (classified.conflict) {
+    return `Resolve merge conflict in ${repository}`;
+  }
+  if (
+    classified.reviewState === "changes_requested" ||
+    classified.unresolvedCount > 0
+  ) {
+    return `Address review feedback in ${repository}`;
+  }
+  if (classified.reviewState === "approved" && classified.ciState === "passing") {
+    return `Merge ${repository}`;
+  }
+  if (classified.draft) {
+    return `Continue PR work in ${repository}`;
+  }
+  if (classified.reviewState === "awaiting_first_review") {
+    return `Follow up on review in ${repository}`;
+  }
+  if (classified.ciState === "running") {
+    return `Monitor CI in ${repository}`;
+  }
+  if (classified.reviewState === "review_required") {
+    return `Request review for ${repository}`;
+  }
+  return `Review ${repository} PR`;
 }
 
 async function flattenTrackerHierarchy(client, tracked) {
@@ -589,7 +616,7 @@ async function sync(configPath) {
         console.log(`Found existing tracked PR ${pull.url}`);
       } else {
         const created = await call(client, "machbar_create_task", {
-          title: prTitle(pull.repository, pull),
+          title: `Review ${pull.repository} PR`,
           notes: `${pull.url}\n\n${PR_MARKER_PREFIX}${pull.url}]`,
           activateIfReady: true,
         });
@@ -606,7 +633,8 @@ async function sync(configPath) {
       }
     }
 
-    for (const [url, task] of trackedByUrl) {
+    for (const [url, initialTask] of trackedByUrl) {
+      let task = initialTask;
       if (task.status === "done" || task.status === "cancelled") continue;
       const pull = pullRequest(config, url);
       if (pull.mergedAt) {
@@ -629,6 +657,20 @@ async function sync(configPath) {
         pull,
         unresolvedReviewThreads(config, url),
       );
+      const desiredTitle = actionTitle(pull.repository, classified);
+      if (task.title !== desiredTitle) {
+        const updated = await call(client, "machbar_update_task", {
+          taskId: task.id,
+          expectedRevision: task.revision,
+          title: desiredTitle,
+        });
+        task = {
+          ...task,
+          title: desiredTitle,
+          revision: updated?.revision ?? task.revision,
+        };
+        console.log(`Renamed PR task: ${desiredTitle}`);
+      }
       const externalBlocker = task.blockers?.find(
         (blocker) => blocker.type === "external",
       );

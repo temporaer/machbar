@@ -741,10 +741,11 @@ export function createMachbarMcpServer({
     "machbar_update_task",
     {
       description:
-        "Update task metadata with the latest revision. In household scope, omit ownerMemberId to keep ownership, pass null for shared, or pass a stable member ID; work scope always uses the authenticated member. Dates are YYYY-MM-DD only.",
+        "Update task metadata, including its title, with the latest revision. In household scope, omit ownerMemberId to keep ownership, pass null for shared, or pass a stable member ID; work scope always uses the authenticated member. Dates are YYYY-MM-DD only.",
       inputSchema: {
         taskId,
         expectedRevision,
+        title: z.string().min(1).optional(),
         ownerMemberId: z.number().int().positive().nullable().optional(),
         dueDate: calendarDate.nullable(),
         scheduledDate: calendarDate.nullable(),

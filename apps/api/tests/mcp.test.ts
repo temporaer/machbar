@@ -630,12 +630,27 @@ describe("MCP integration", () => {
         effectiveOwnerId: owner.id,
       }),
     });
-    const clearedOwner = await client.callTool({
+    const renamedTask = await client.callTool({
       name: "machbar_update_task",
       arguments: {
         taskId: explicitlyOwnedTask.id,
         expectedRevision: (
           unchangedOwner.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        title: "Renamed task",
+      },
+    });
+    expect(renamedTask.structuredContent).toEqual({
+      result: expect.objectContaining({
+        title: "Renamed task",
+      }),
+    });
+    const clearedOwner = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: explicitlyOwnedTask.id,
+        expectedRevision: (
+          renamedTask.structuredContent as { result: { revision: number } }
         ).result.revision,
         ownerMemberId: null,
       },
