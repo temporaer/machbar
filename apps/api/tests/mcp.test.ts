@@ -161,7 +161,7 @@ describe("MCP integration", () => {
       name: "machbar_create_task",
       arguments: {
         title: "Work-only task",
-        status: "actionable",
+        activateIfReady: true,
         ownerMemberId: otherMember.id,
       },
     });
@@ -200,6 +200,133 @@ describe("MCP integration", () => {
       })
     ).json();
     expect(unchanged.status).toBe("actionable");
+
+    await client.close();
+    await server.close();
+  });
+
+  it("selects the initial task status without exposing the status enum", async () => {
+    const authenticated = await createMember();
+    const project = insertTestProject(ctx.handle.db, {
+      title: "Metadata project",
+    });
+    const context = ctx.handle.db
+      .insert(schema.physicalContexts)
+      .values({
+        source: "home_assistant",
+        externalId: "zone.home",
+        name: "Home",
+        active: true,
+      })
+      .returning()
+      .get();
+    const { client, server } = await connectMcp(authenticated.id);
+
+    const listed = await client.listTools();
+    const createTool = listed.tools.find(
+      ({ name }) => name === "machbar_create_task",
+    );
+    expect(createTool).toBeDefined();
+    const properties = createTool!.inputSchema.properties as Record<
+      string,
+      { type?: string }
+    >;
+    expect(properties.activateIfReady).toMatchObject({ type: "boolean" });
+    expect(createTool!.inputSchema.required ?? []).not.toContain(
+      "activateIfReady",
+    );
+    expect(properties.status).toBeUndefined();
+    const activateSchema = JSON.stringify(properties.activateIfReady);
+    expect(activateSchema).not.toContain("oneOf");
+    expect(activateSchema).not.toContain("anyOf");
+
+    const omitted = await client.callTool({
+      name: "machbar_create_task",
+      arguments: { title: "Inbox by default" },
+    });
+    expect(omitted.structuredContent).toEqual({
+      result: expect.objectContaining({ status: "captured" }),
+    });
+
+    const explicitFalse = await client.callTool({
+      name: "machbar_create_task",
+      arguments: { title: "Inbox explicitly", activateIfReady: false },
+    });
+    expect(explicitFalse.structuredContent).toEqual({
+      result: expect.objectContaining({ status: "captured" }),
+    });
+
+    const actionable = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "Buy milk",
+        activateIfReady: true,
+        projectId: project.id,
+        dueDate: "2026-09-21",
+        contextIds: [context.id],
+      },
+    });
+    const actionableTask = (
+      actionable.structuredContent as {
+        result: {
+          id: number;
+          status: string;
+          projectId: number | null;
+          dueDate: string | null;
+        };
+      }
+    ).result;
+    expect(actionableTask).toMatchObject({
+      status: "actionable",
+      projectId: project.id,
+      dueDate: "2026-09-21",
+    });
+
+    const detailed = await client.callTool({
+      name: "machbar_get_task",
+      arguments: { taskId: actionableTask.id },
+    });
+    expect(detailed.structuredContent).toEqual({
+      result: expect.objectContaining({
+        status: "actionable",
+        projectId: project.id,
+        dueDate: "2026-09-21",
+        explicitContexts: [
+          expect.objectContaining({ id: context.id, name: "Home" }),
+        ],
+      }),
+    });
+
+    const recurringParent = insertTestTask(ctx.handle.db, {
+      title: "Recurring parent",
+      repeatAfterDays: 7,
+      scheduledDate: "2026-09-20",
+      dueDate: "2026-09-21",
+    });
+    const rejected = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "Must not be created under recurring parent",
+        parentTaskId: recurringParent.id,
+        activateIfReady: true,
+      },
+    });
+    expect(rejected.isError).toBe(true);
+
+    const afterRejected = await client.callTool({
+      name: "machbar_search",
+      arguments: {
+        text: "Must not be created under recurring parent",
+        includeTerminal: true,
+      },
+    });
+    expect(
+      (
+        afterRejected.structuredContent as {
+          result: { items: unknown[] };
+        }
+      ).result.items,
+    ).toEqual([]);
 
     await client.close();
     await server.close();
@@ -394,7 +521,7 @@ describe("MCP integration", () => {
       arguments: {
         title: "Shared child",
         projectId: project.id,
-        status: "actionable",
+        activateIfReady: true,
       },
     });
     expect(shared.structuredContent).toEqual({
@@ -407,7 +534,7 @@ describe("MCP integration", () => {
       arguments: {
         title: "Shared nested child",
         parentTaskId: parent.id,
-        status: "actionable",
+        activateIfReady: true,
       },
     });
     expect(sharedUnderParent.structuredContent).toEqual({
@@ -422,7 +549,7 @@ describe("MCP integration", () => {
         title: "Alex child",
         projectId: project.id,
         ownerMemberId: owner.id,
-        status: "actionable",
+        activateIfReady: true,
       },
     });
     expect(explicitlyOwned.structuredContent).toEqual({
@@ -504,7 +631,7 @@ describe("MCP integration", () => {
       arguments: {
         title: "Invalid owner",
         ownerMemberId: 99999,
-        status: "actionable",
+        activateIfReady: true,
       },
     });
     expect(invalidOwner.isError).toBe(true);
@@ -561,7 +688,7 @@ describe("MCP integration", () => {
       name: "machbar_create_task",
       arguments: {
         title: "Must not be created",
-        status: "actionable",
+        activateIfReady: true,
         dueDate: "2026-09-21T17:00:00+02:00",
       },
     });
@@ -582,7 +709,7 @@ describe("MCP integration", () => {
       name: "machbar_create_task",
       arguments: {
         title: "Must not be scheduled",
-        status: "actionable",
+        activateIfReady: true,
         scheduledDate: "2026-09-21T17:00:00+02:00",
       },
     });
@@ -600,7 +727,7 @@ describe("MCP integration", () => {
       name: "machbar_create_task",
       arguments: {
         title: "Call the dentist",
-        status: "actionable",
+        activateIfReady: true,
         reminders: [
           {
             at: "2026-09-21T08:00:00+02:00",
@@ -830,7 +957,7 @@ describe("MCP integration", () => {
 
     const task = await client.callTool({
       name: "machbar_create_task",
-      arguments: { title: "Wait for reply", status: "actionable" },
+      arguments: { title: "Wait for reply", activateIfReady: true },
     });
     const createdTask = (
       task.structuredContent as {

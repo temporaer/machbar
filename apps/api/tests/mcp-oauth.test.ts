@@ -308,7 +308,7 @@ describe("MCP OAuth", () => {
         name: "machbar_create_task",
         arguments: {
           title,
-          status: "actionable",
+          activateIfReady: true,
         },
       },
     );
