@@ -161,13 +161,16 @@ const PULL_REQUEST_FIELDS = [
 function pullRequest(config, url) {
   const parsed = parsePullRequestUrl(url);
   const repository = repoConfig(config, parsed.repository);
-  return ghJson(repository.account, [
-    "pr",
-    "view",
-    parsed.url,
-    "--json",
-    PULL_REQUEST_FIELDS,
-  ]);
+  return {
+    ...ghJson(repository.account, [
+      "pr",
+      "view",
+      parsed.url,
+      "--json",
+      PULL_REQUEST_FIELDS,
+    ]),
+    repository: parsed.repository,
+  };
 }
 
 function unresolvedReviewThreads(config, url) {
@@ -449,13 +452,13 @@ function classifyPullRequest(pull, unresolvedCount) {
   if (externalWait) {
     statusParts.push(`waiting: ${externalWait}`);
   } else if (reviewState === "changes_requested" || unresolvedCount > 0) {
-    statusParts.push("action: address review feedback");
+    statusParts.push("action: address review comments");
   } else if (ciState === "failing") {
-    statusParts.push("action: fix CI");
+    statusParts.push("action: fix failing CI");
   } else if (conflict) {
-    statusParts.push("action: resolve merge conflict");
+    statusParts.push("action: resolve merge conflicts");
   } else if (reviewState === "approved" && ciState !== "running") {
-    statusParts.push("action: merge when ready");
+    statusParts.push("action: merge approved PR");
   } else if (draft) {
     statusParts.push("action: continue work or mark ready");
   } else if (statusParts.length === 0) {
@@ -484,35 +487,36 @@ function classifyPullRequest(pull, unresolvedCount) {
   };
 }
 
-function actionTitle(repository, classified) {
+function actionTitle(repository, pullTitle, classified) {
+  const subject = `${repository}: ${pullTitle}`;
   if (classified.ciState === "failing") {
-    return `Fix CI in ${repository}`;
+    return `Fix failing CI for ${subject}`;
   }
   if (classified.conflict) {
-    return `Resolve merge conflict in ${repository}`;
+    return `Resolve merge conflicts for ${subject}`;
   }
   if (
     classified.reviewState === "changes_requested" ||
     classified.unresolvedCount > 0
   ) {
-    return `Address review feedback in ${repository}`;
+    return `Address review comments for ${subject}`;
   }
   if (classified.reviewState === "approved" && classified.ciState === "passing") {
-    return `Merge ${repository}`;
+    return `Merge approved PR for ${subject}`;
   }
   if (classified.draft) {
-    return `Continue PR work in ${repository}`;
+    return `Continue work on ${subject}`;
   }
   if (classified.reviewState === "awaiting_first_review") {
-    return `Follow up on review in ${repository}`;
+    return `Follow up on review for ${subject}`;
   }
   if (classified.ciState === "running") {
-    return `Monitor CI in ${repository}`;
+    return `Monitor CI for ${subject}`;
   }
   if (classified.reviewState === "review_required") {
-    return `Request review for ${repository}`;
+    return `Request review for ${subject}`;
   }
-  return `Review ${repository} PR`;
+  return `Review PR for ${subject}`;
 }
 
 async function flattenTrackerHierarchy(client, tracked) {
@@ -616,7 +620,7 @@ async function sync(configPath) {
         console.log(`Found existing tracked PR ${pull.url}`);
       } else {
         const created = await call(client, "machbar_create_task", {
-          title: `Review ${pull.repository} PR`,
+          title: `Review PR for ${pull.repository}: ${pull.title}`,
           notes: `${pull.url}\n\n${PR_MARKER_PREFIX}${pull.url}]`,
           activateIfReady: true,
         });
@@ -657,7 +661,11 @@ async function sync(configPath) {
         pull,
         unresolvedReviewThreads(config, url),
       );
-      const desiredTitle = actionTitle(pull.repository, classified);
+      const desiredTitle = actionTitle(
+        pull.repository,
+        pull.title,
+        classified,
+      );
       if (task.title !== desiredTitle) {
         const updated = await call(client, "machbar_update_task", {
           taskId: task.id,
