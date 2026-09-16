@@ -34,6 +34,7 @@ function makeEmptyAgenda(): Agenda {
     shared: [],
     unscheduled: [],
     revisit: [],
+    completedToday: [],
   };
 }
 
@@ -298,6 +299,29 @@ describe("TodayPage", () => {
 
     await screen.findByText("Etwas anderes");
     expect(screen.queryByText("Wiedervorlage")).not.toBeInTheDocument();
+  });
+
+  it("zeigt heute erledigte Aufgaben zunächst zugeklappt zur möglichen Reaktivierung", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      completedToday: [
+        makeTask({
+          id: 8,
+          title: "Barbara anrufen",
+          status: "done",
+          completedAt: "2026-09-16T16:28:53.000Z",
+        }),
+      ],
+    });
+    renderWithProviders(<TodayPage />);
+
+    const summary = await screen.findByText("Heute erledigt (1)");
+    const details = summary.closest("details")!;
+    expect(details).not.toHaveAttribute("open");
+    expect(screen.getByText("Barbara anrufen")).not.toBeVisible();
+
+    await userEvent.click(summary);
+    expect(screen.getByText("Barbara anrufen")).toBeVisible();
   });
 
   it("zeigt machbare Aufgaben ohne Termin sofort sichtbar in einem normalen Nebenabschnitt", async () => {

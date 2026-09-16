@@ -52,6 +52,7 @@ const emptyAgenda = {
   shared: [],
   unscheduled: [],
   revisit: [],
+  completedToday: [],
 };
 
 function renderPage() {

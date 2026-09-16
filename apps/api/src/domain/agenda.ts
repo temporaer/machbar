@@ -150,6 +150,23 @@ export function buildAgenda(
     dueSoonDays,
   });
   for (const task of [...shared, ...unscheduled]) seen.add(task.id);
+  const completedToday = graph
+    .allTasks()
+    .filter(
+      (task) =>
+        task.status === "done" &&
+        task.completedAt?.slice(0, 10) === today &&
+        selection.matchesOwner(task) &&
+        selection.matchesScope(task),
+    )
+    .sort(
+      (a, b) =>
+        (b.completedAt ?? "").localeCompare(a.completedAt ?? "") ||
+        sortByPriorityTitleId(a, b),
+    )
+    // Keep this projection flat: a completed child can be reactivated
+    // independently, and embedding its whole subtree would duplicate rows.
+    .map((task) => ({ ...task, children: [] }));
 
   const projectDueLimit = addDaysIso(today, 7);
   const stuckByProject = new Map(
@@ -245,6 +262,7 @@ export function buildAgenda(
     shared,
     unscheduled,
     revisit,
+    completedToday,
     projects,
   };
 }

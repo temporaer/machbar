@@ -70,6 +70,7 @@ export function TodayPage() {
   const notSnoozed = <T extends { id: number }>(tasks: T[]) =>
     tasks.filter((task) => !isSnoozed(task.id));
   const revisitTasks = notSnoozed(agenda?.revisit ?? []);
+  const completedTodayTasks = agenda?.completedToday ?? [];
   const additionalTasks = notSnoozed([
     ...(agenda?.shared ?? []),
     ...(agenda?.unscheduled ?? []),
@@ -163,6 +164,7 @@ export function TodayPage() {
                 sections.reduce((sum, s) => sum + visibleSectionTasks[s.key].length, 0) +
                 additionalTasks.length +
                 revisitTasks.length +
+                completedTodayTasks.length +
                 projectAgenda.length;
               if (total === 0)
                 return <EmptyState message={strings.todayEmpty} />;
@@ -232,6 +234,21 @@ export function TodayPage() {
                         compactDescendants
                       />
                     </div>
+                  ) : null}
+                  {completedTodayTasks.length > 0 ? (
+                    <details className="section" key="completedToday">
+                      <summary className="section-title disclosure-summary">
+                        {strings.completedToday} ({completedTodayTasks.length})
+                      </summary>
+                      <p className="page-subtitle">{strings.completedTodayHint}</p>
+                      <TaskOutline
+                        tasks={completedTodayTasks}
+                        emptyMessage={strings.noItems}
+                        preserveRootOrder
+                        showSwipeHint={false}
+                        compactDescendants
+                      />
+                    </details>
                   ) : null}
                 </>
               );
