@@ -186,7 +186,7 @@ describe("SharePage", () => {
     window.history.replaceState(
       null,
       "",
-      "/?title=Elternabend&text=15.%20Sept.%20%E2%80%A2%2019%3A00%E2%80%9321%3A00%20%E2%80%A2%20Details%20ansehen%0Ahttps%3A%2F%2Fcalendar.app.google%2Fabc123#/share",
+      "/?title=Elternabend&text=15.%20Sept.%202026%20%E2%80%A2%2019%3A00%E2%80%9321%3A00%20%E2%80%A2%20Details%20ansehen%0Ahttps%3A%2F%2Fcalendar.app.google%2Fabc123#/share",
     );
     renderPage();
 
@@ -202,7 +202,7 @@ describe("SharePage", () => {
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(8, {
         notes:
-          "Bestehende Notiz\n\nElternabend\n\n15. Sept. • 19:00–21:00 • Details ansehen\nhttps://calendar.app.google/abc123",
+          "Bestehende Notiz\n\nElternabend\n\n15. Sept. 2026 • 19:00–21:00 • Details ansehen\nhttps://calendar.app.google/abc123",
         dueDate: "2026-09-15",
         expectedRevision: 3,
       }),
