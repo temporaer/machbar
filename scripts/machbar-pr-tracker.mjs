@@ -275,6 +275,47 @@ function taskList(value) {
   throw new Error("machbar_search returned an unexpected result shape");
 }
 
+async function fullTasks(client, value) {
+  return Promise.all(
+    taskList(value).map((task) =>
+      task.id
+        ? call(client, "machbar_get_task", { taskId: task.id })
+        : task,
+    ),
+  );
+}
+
+async function findTrackedTask(client, url) {
+  const candidates = await fullTasks(
+    client,
+    await call(client, "machbar_search", {
+      text: url,
+      includeTerminal: true,
+      limit: 25,
+    }),
+  );
+  const matches = candidates.filter(
+    (task) => markerValue(task.notes, PR_MARKER_PREFIX) === url,
+  );
+  const active = matches.filter(
+    (task) => task.status !== "done" && task.status !== "cancelled",
+  );
+  const keep = active[0] ?? matches[0];
+  for (const duplicate of matches) {
+    if (duplicate.id === keep?.id) continue;
+    if (duplicate.status === "done" || duplicate.status === "cancelled") {
+      continue;
+    }
+    await call(client, "machbar_cancel_task", {
+      taskId: duplicate.id,
+      expectedRevision: duplicate.revision,
+      descendantsPolicy: "leave_open",
+    });
+    console.log(`Removed duplicate PR task: ${duplicate.title}`);
+  }
+  return keep;
+}
+
 function markerValue(notes, prefix) {
   const start = notes.indexOf(prefix);
   if (start === -1) return null;
@@ -437,57 +478,75 @@ function prTitle(repository, pull) {
   return `PR ${repository}#${pull.number}: ${pull.title}`;
 }
 
-async function ensureHierarchy(client, config, tracked) {
-  let root = tracked.find((task) => task.notes.includes(ROOT_MARKER));
-  if (!root) {
-    root = await call(client, "machbar_create_task", {
-      title: config.rootTitle,
-      notes: ROOT_MARKER,
-    });
-    console.log(`Created group: ${root.title}`);
+async function flattenTrackerHierarchy(client, tracked) {
+  const rootTasks = tracked.filter((task) =>
+    task.notes.includes(ROOT_MARKER),
+  );
+  const repositoryTasks = new Set(
+    tracked
+      .filter((task) => markerValue(task.notes, REPO_MARKER_PREFIX))
+      .map((task) => task.id),
+  );
+
+  for (const task of tracked) {
+    if (
+      markerValue(task.notes, PR_MARKER_PREFIX) &&
+      repositoryTasks.has(task.parentTaskId)
+    ) {
+      await call(client, "machbar_move_task", {
+        taskId: task.id,
+        expectedRevision: task.revision,
+        parentTaskId: null,
+      });
+      console.log(`Moved PR task to top level: ${task.title}`);
+    }
   }
 
-  const groups = new Map();
-  for (const task of tracked) {
-    const repository = markerValue(task.notes, REPO_MARKER_PREFIX);
-    if (repository) groups.set(repository, task);
-  }
-  for (const repository of config.repositories) {
-    if (groups.has(repository.repository)) continue;
-    const group = await call(client, "machbar_create_task", {
-      title: repository.repository,
-      notes: `${REPO_MARKER_PREFIX}${repository.repository}]`,
-      parentTaskId: root.id,
+  for (const task of [...tracked].filter(
+    (candidate) =>
+      repositoryTasks.has(candidate.id) &&
+      candidate.status !== "done" &&
+      candidate.status !== "cancelled",
+  )) {
+    await call(client, "machbar_cancel_task", {
+      taskId: task.id,
+      expectedRevision: task.revision,
+      descendantsPolicy: "leave_open",
     });
-    groups.set(repository.repository, group);
-    console.log(`Created repository group: ${repository.repository}`);
+    console.log(`Removed repository group task: ${task.title}`);
   }
-  return groups;
+
+  for (const task of rootTasks.filter(
+    (candidate) =>
+      candidate.status !== "done" && candidate.status !== "cancelled",
+  )) {
+    await call(client, "machbar_cancel_task", {
+      taskId: task.id,
+      expectedRevision: task.revision,
+      descendantsPolicy: "leave_open",
+    });
+    console.log(`Removed tracker root task: ${task.title}`);
+  }
 }
 
 async function sync(configPath) {
   const config = loadConfig(configPath);
   const client = await connectMachbar(config.mcpServer);
   try {
-    const searchResults = taskList(
+    const tracked = await fullTasks(
+      client,
       await call(client, "machbar_search", {
         text: "machbar-pr-tracker:",
         includeTerminal: true,
         limit: 25,
       }),
     );
-    const tracked = await Promise.all(
-      searchResults.map((task) =>
-        task.id
-          ? call(client, "machbar_get_task", { taskId: task.id })
-          : task,
-      ),
-    );
-    const groups = await ensureHierarchy(client, config, tracked);
+    await flattenTrackerHierarchy(client, tracked);
     const trackedByUrl = new Map();
     for (const task of tracked) {
       const url = markerValue(task.notes, PR_MARKER_PREFIX);
-      if (url) trackedByUrl.set(url, task);
+      if (!url) continue;
+      if (!trackedByUrl.has(url)) trackedByUrl.set(url, task);
     }
 
     const discovered = new Map();
@@ -514,15 +573,22 @@ async function sync(configPath) {
     }
 
     for (const pull of discovered.values()) {
-      if (trackedByUrl.has(pull.url)) continue;
-      const task = await call(client, "machbar_create_task", {
-        title: prTitle(pull.repository, pull),
-        notes: `${pull.url}\n\n${PR_MARKER_PREFIX}${pull.url}]`,
-        parentTaskId: groups.get(pull.repository).id,
-        activateIfReady: true,
-      });
-      trackedByUrl.set(pull.url, task);
-      console.log(`Tracking ${pull.url}`);
+      const existing = await findTrackedTask(client, pull.url);
+      if (existing) {
+        trackedByUrl.set(pull.url, existing);
+        console.log(`Found existing tracked PR ${pull.url}`);
+      } else {
+        const created = await call(client, "machbar_create_task", {
+          title: prTitle(pull.repository, pull),
+          notes: `${pull.url}\n\n${PR_MARKER_PREFIX}${pull.url}]`,
+          activateIfReady: true,
+        });
+        const task = await call(client, "machbar_get_task", {
+          taskId: created.id,
+        });
+        trackedByUrl.set(pull.url, task);
+        console.log(`Tracking ${pull.url}`);
+      }
     }
 
     for (const [url, task] of trackedByUrl) {
