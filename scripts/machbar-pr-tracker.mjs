@@ -19,6 +19,8 @@ const DEFAULT_CONFIG = resolve(
 const ROOT_MARKER = "[machbar-pr-tracker:root]";
 const REPO_MARKER_PREFIX = "[machbar-pr-tracker:repo=";
 const PR_MARKER_PREFIX = "[machbar-pr-tracker:pr=";
+const STATE_MARKER_PREFIX = "[machbar-pr-tracker:state=";
+const TRACKER_SCOPE = "work";
 
 function fail(message) {
   console.error(message);
@@ -139,6 +141,23 @@ function authoredOpenPullRequests(repository) {
   );
 }
 
+const PULL_REQUEST_FIELDS = [
+  "number",
+  "title",
+  "url",
+  "isDraft",
+  "author",
+  "state",
+  "mergedAt",
+  "createdAt",
+  "reviewDecision",
+  "reviews",
+  "reviewRequests",
+  "statusCheckRollup",
+  "mergeable",
+  "mergeStateStatus",
+].join(",");
+
 function pullRequest(config, url) {
   const parsed = parsePullRequestUrl(url);
   const repository = repoConfig(config, parsed.repository);
@@ -147,8 +166,33 @@ function pullRequest(config, url) {
     "view",
     parsed.url,
     "--json",
-    "number,title,url,isDraft,author,state,mergedAt,createdAt",
+    PULL_REQUEST_FIELDS,
   ]);
+}
+
+function unresolvedReviewThreads(config, url) {
+  const parsed = parsePullRequestUrl(url);
+  const repository = repoConfig(config, parsed.repository);
+  const [owner, name] = parsed.repository.split("/");
+  const result = ghJson(repository.account, [
+    "api",
+    "graphql",
+    "-f",
+    "query=query($owner:String!, $name:String!, $number:Int!) { repository(owner:$owner, name:$name) { pullRequest(number:$number) { reviewThreads(first:100) { nodes { isResolved } } } } }",
+    "-F",
+    `owner=${owner}`,
+    "-F",
+    `name=${name}`,
+    "-F",
+    `number=${parsed.number}`,
+  ]);
+  // GitHub returns at most the first 100 threads here; this is a display hint,
+  // not a completeness guarantee for unusually large reviews.
+  return (
+    result.data?.repository?.pullRequest?.reviewThreads?.nodes?.filter(
+      (thread) => !thread.isResolved,
+    ).length ?? 0
+  );
 }
 
 function mcpDefinition(serverName) {
@@ -207,6 +251,81 @@ async function call(client, name, args = {}) {
   return text ? JSON.parse(text) : undefined;
 }
 
+function taskList(value) {
+  const tasks = Array.isArray(value)
+    ? value
+    : value && Array.isArray(value.result)
+      ? value.result
+      : value && Array.isArray(value.items)
+        ? value.items
+        : value && Array.isArray(value.tasks)
+          ? value.tasks
+          : value && Array.isArray(value.results)
+            ? value.results
+            : null;
+  if (tasks) {
+    return tasks.map((task) => {
+      const normalized = task?.task ?? task;
+      return {
+        ...normalized,
+        notes: normalized.notes ?? "",
+        blockers: normalized.blockers ?? [],
+      };
+    });
+  }
+  throw new Error("machbar_search returned an unexpected result shape");
+}
+
+async function fullTasks(client, value) {
+  const tasks = await Promise.all(
+    taskList(value).map((task) =>
+      task.id
+        ? call(client, "machbar_get_task", { taskId: task.id })
+        : task,
+    ),
+  );
+  const wrongScope = tasks.find(
+    (task) => task.scope !== undefined && task.scope !== TRACKER_SCOPE,
+  );
+  if (wrongScope) {
+    throw new Error(
+      `Refusing to modify non-${TRACKER_SCOPE} task ${wrongScope.id} (${wrongScope.scope})`,
+    );
+  }
+  return tasks;
+}
+
+async function findTrackedTask(client, url) {
+  const candidates = await fullTasks(
+    client,
+    await call(client, "machbar_search", {
+      text: url,
+      includeTerminal: true,
+      limit: 25,
+    }),
+  );
+  const matches = candidates.filter(
+    (task) => markerValue(task.notes, PR_MARKER_PREFIX) === url,
+  );
+  const active = matches.filter(
+    (task) => task.status !== "done" && task.status !== "cancelled",
+  );
+  const keep = active[0] ?? matches[0];
+  for (const duplicate of matches) {
+    if (duplicate.id === keep?.id) continue;
+    if (duplicate.status === "done" || duplicate.status === "cancelled") {
+      continue;
+    }
+    await call(client, "machbar_cancel_task", {
+      taskId: duplicate.id,
+      expectedRevision: duplicate.revision,
+      descendantsPolicy: "leave_open",
+    });
+    console.log(`Removed duplicate PR task: ${duplicate.title}`);
+  }
+  return keep;
+}
+
 function markerValue(notes, prefix) {
   const start = notes.indexOf(prefix);
   if (start === -1) return null;
@@ -214,53 +333,257 @@ function markerValue(notes, prefix) {
   return end === -1 ? null : notes.slice(start + prefix.length, end);
 }
 
-function prTitle(repository, pull) {
-  return `PR ${repository}#${pull.number}: ${pull.title}`;
+function lastMarkerValue(notes, prefix) {
+  const start = notes.lastIndexOf(prefix);
+  if (start === -1) return null;
+  const end = notes.indexOf("]", start);
+  return end === -1 ? null : notes.slice(start + prefix.length, end);
 }
 
-async function ensureHierarchy(client, config, tracked) {
-  let root = tracked.find((task) => task.notes.includes(ROOT_MARKER));
-  if (!root) {
-    root = await call(client, "machbar_create_task", {
-      title: config.rootTitle,
-      notes: ROOT_MARKER,
-      status: "someday",
-    });
-    console.log(`Created group: ${root.title}`);
+function encodeState(state) {
+  return Buffer.from(JSON.stringify(state), "utf8").toString("base64url");
+}
+
+function decodeState(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function checkState(check) {
+  return String(check.state ?? check.status ?? "").toUpperCase();
+}
+
+function checkConclusion(check) {
+  return String(check.conclusion ?? "").toUpperCase();
+}
+
+function classifyPullRequest(pull, unresolvedCount) {
+  const checks = Array.isArray(pull.statusCheckRollup)
+    ? pull.statusCheckRollup
+    : [];
+  const hasRunningCheck = checks.some((check) =>
+    ["QUEUED", "PENDING", "IN_PROGRESS", "REQUESTED", "WAITING"].includes(
+      checkState(check),
+    ),
+  );
+  const hasFailedCheck = checks.some((check) =>
+    [
+      "FAILURE",
+      "ERROR",
+      "CANCELLED",
+      "TIMED_OUT",
+      "STARTUP_FAILURE",
+      "ACTION_REQUIRED",
+    ].includes(checkConclusion(check)),
+  );
+  const hasCompletedCheck = checks.some(
+    (check) =>
+      checkConclusion(check) ||
+      ["SUCCESS", "COMPLETED"].includes(checkState(check)),
+  );
+  const ciState = hasRunningCheck
+    ? "running"
+    : hasFailedCheck
+      ? "failing"
+      : hasCompletedCheck
+        ? "passing"
+        : "none";
+
+  const reviews = Array.isArray(pull.reviews) ? pull.reviews : [];
+  const hasAnyReview = reviews.length > 0;
+  const reviewDecision = String(pull.reviewDecision ?? "").toUpperCase();
+  const reviewState = !hasAnyReview && pull.reviewRequests?.length
+    ? "awaiting_first_review"
+    : reviewDecision === "CHANGES_REQUESTED"
+      ? "changes_requested"
+      : reviewDecision === "APPROVED"
+        ? "approved"
+        : reviewDecision === "REVIEW_REQUIRED"
+          ? "review_required"
+          : hasAnyReview
+            ? "reviewed"
+            : "none";
+  const requestedReviewers = (Array.isArray(pull.reviewRequests)
+    ? pull.reviewRequests
+    : [])
+    .map((request) => request.login ?? request.name ?? request.slug)
+    .filter(Boolean)
+    .sort();
+  const conflict =
+    String(pull.mergeable ?? "").toUpperCase() === "CONFLICTING" ||
+    String(pull.mergeStateStatus ?? "").toUpperCase() === "DIRTY";
+  const draft = Boolean(pull.isDraft);
+  const waitingReasons = [];
+  if (ciState === "running") waitingReasons.push("CI running");
+  if (!hasAnyReview && requestedReviewers.length > 0) {
+    waitingReasons.push(`review from ${requestedReviewers.join(", ")}`);
+  }
+  const externalWait = waitingReasons.length
+    ? waitingReasons.join("; ")
+    : null;
+
+  const statusParts = [];
+  if (draft) statusParts.push("draft");
+  if (reviewState === "awaiting_first_review") {
+    statusParts.push(`review requested from ${requestedReviewers.join(", ")}`);
+  } else if (reviewState === "changes_requested") {
+    statusParts.push("changes requested");
+  } else if (reviewState === "approved") {
+    statusParts.push("approved");
+  } else if (reviewState === "review_required") {
+    statusParts.push("review required");
+  }
+  if (ciState === "running") statusParts.push("CI running");
+  else if (ciState === "failing") statusParts.push("CI failing");
+  else if (ciState === "passing") statusParts.push("CI passing");
+  if (conflict) statusParts.push("merge conflict");
+  if (unresolvedCount > 0) {
+    statusParts.push(
+      `${unresolvedCount} unresolved review comment${unresolvedCount === 1 ? "" : "s"}`,
+    );
+  }
+  if (externalWait) {
+    statusParts.push(`waiting: ${externalWait}`);
+  } else if (reviewState === "changes_requested" || unresolvedCount > 0) {
+    statusParts.push("action: address review feedback");
+  } else if (ciState === "failing") {
+    statusParts.push("action: fix CI");
+  } else if (conflict) {
+    statusParts.push("action: resolve merge conflict");
+  } else if (reviewState === "approved" && ciState !== "running") {
+    statusParts.push("action: merge when ready");
+  } else if (draft) {
+    statusParts.push("action: continue work or mark ready");
+  } else if (statusParts.length === 0) {
+    statusParts.push("action: inspect PR");
   }
 
-  const groups = new Map();
+  const signature = {
+    ciState,
+    conflict,
+    draft,
+    reviewState,
+    requestedReviewers,
+    unresolvedCount,
+    externalWait,
+  };
+  return {
+    ciState,
+    conflict,
+    draft,
+    externalWait,
+    hasAnyReview,
+    requestedReviewers,
+    reviewState,
+    signature,
+    statusLine: statusParts.join(" · "),
+  };
+}
+
+function actionTitle(repository, classified) {
+  if (classified.ciState === "failing") {
+    return `Fix CI in ${repository}`;
+  }
+  if (classified.conflict) {
+    return `Resolve merge conflict in ${repository}`;
+  }
+  if (
+    classified.reviewState === "changes_requested" ||
+    classified.unresolvedCount > 0
+  ) {
+    return `Address review feedback in ${repository}`;
+  }
+  if (classified.reviewState === "approved" && classified.ciState === "passing") {
+    return `Merge ${repository}`;
+  }
+  if (classified.draft) {
+    return `Continue PR work in ${repository}`;
+  }
+  if (classified.reviewState === "awaiting_first_review") {
+    return `Follow up on review in ${repository}`;
+  }
+  if (classified.ciState === "running") {
+    return `Monitor CI in ${repository}`;
+  }
+  if (classified.reviewState === "review_required") {
+    return `Request review for ${repository}`;
+  }
+  return `Review ${repository} PR`;
+}
+
+async function flattenTrackerHierarchy(client, tracked) {
+  const rootTasks = tracked.filter((task) =>
+    task.notes.includes(ROOT_MARKER),
+  );
+  const repositoryTasks = new Set(
+    tracked
+      .filter((task) => markerValue(task.notes, REPO_MARKER_PREFIX))
+      .map((task) => task.id),
+  );
+
   for (const task of tracked) {
-    const repository = markerValue(task.notes, REPO_MARKER_PREFIX);
-    if (repository) groups.set(repository, task);
+    if (
+      markerValue(task.notes, PR_MARKER_PREFIX) &&
+      repositoryTasks.has(task.parentTaskId)
+    ) {
+      await call(client, "machbar_move_task", {
+        taskId: task.id,
+        expectedRevision: task.revision,
+        parentTaskId: null,
+      });
+      console.log(`Moved PR task to top level: ${task.title}`);
+    }
   }
-  for (const repository of config.repositories) {
-    if (groups.has(repository.repository)) continue;
-    const group = await call(client, "machbar_create_task", {
-      title: repository.repository,
-      notes: `${REPO_MARKER_PREFIX}${repository.repository}]`,
-      parentTaskId: root.id,
-      status: "someday",
+
+  for (const task of [...tracked].filter(
+    (candidate) =>
+      repositoryTasks.has(candidate.id) &&
+      candidate.status !== "done" &&
+      candidate.status !== "cancelled",
+  )) {
+    await call(client, "machbar_cancel_task", {
+      taskId: task.id,
+      expectedRevision: task.revision,
+      descendantsPolicy: "leave_open",
     });
-    groups.set(repository.repository, group);
-    console.log(`Created repository group: ${repository.repository}`);
+    console.log(`Removed repository group task: ${task.title}`);
   }
-  return groups;
+
+  for (const task of rootTasks.filter(
+    (candidate) =>
+      candidate.status !== "done" && candidate.status !== "cancelled",
+  )) {
+    await call(client, "machbar_cancel_task", {
+      taskId: task.id,
+      expectedRevision: task.revision,
+      descendantsPolicy: "leave_open",
+    });
+    console.log(`Removed tracker root task: ${task.title}`);
+  }
 }
 
 async function sync(configPath) {
   const config = loadConfig(configPath);
   const client = await connectMachbar(config.mcpServer);
   try {
-    const tracked = await call(client, "machbar_search", {
-      text: "machbar-pr-tracker:",
-      includeTerminal: true,
-    });
-    const groups = await ensureHierarchy(client, config, tracked);
+    const tracked = await fullTasks(
+      client,
+      await call(client, "machbar_search", {
+        text: "machbar-pr-tracker:",
+        includeTerminal: true,
+        limit: 25,
+      }),
+    );
+    await flattenTrackerHierarchy(client, tracked);
     const trackedByUrl = new Map();
     for (const task of tracked) {
       const url = markerValue(task.notes, PR_MARKER_PREFIX);
-      if (url) trackedByUrl.set(url, task);
+      if (!url) continue;
+      if (!trackedByUrl.has(url)) trackedByUrl.set(url, task);
     }
 
     const discovered = new Map();
@@ -287,18 +610,31 @@ async function sync(configPath) {
     }
 
     for (const pull of discovered.values()) {
-      if (trackedByUrl.has(pull.url)) continue;
-      const task = await call(client, "machbar_create_task", {
-        title: prTitle(pull.repository, pull),
-        notes: `${pull.url}\n\n${PR_MARKER_PREFIX}${pull.url}]`,
-        parentTaskId: groups.get(pull.repository).id,
-        status: "actionable",
-      });
-      trackedByUrl.set(pull.url, task);
-      console.log(`Tracking ${pull.url}`);
+      const existing = await findTrackedTask(client, pull.url);
+      if (existing) {
+        trackedByUrl.set(pull.url, existing);
+        console.log(`Found existing tracked PR ${pull.url}`);
+      } else {
+        const created = await call(client, "machbar_create_task", {
+          title: `Review ${pull.repository} PR`,
+          notes: `${pull.url}\n\n${PR_MARKER_PREFIX}${pull.url}]`,
+          activateIfReady: true,
+        });
+        const task = await call(client, "machbar_get_task", {
+          taskId: created.id,
+        });
+        if (task.scope !== TRACKER_SCOPE) {
+          throw new Error(
+            `Refusing to track task ${task.id} in non-${TRACKER_SCOPE} scope (${task.scope})`,
+          );
+        }
+        trackedByUrl.set(pull.url, task);
+        console.log(`Tracking ${pull.url}`);
+      }
     }
 
-    for (const [url, task] of trackedByUrl) {
+    for (const [url, initialTask] of trackedByUrl) {
+      let task = initialTask;
       if (task.status === "done" || task.status === "cancelled") continue;
       const pull = pullRequest(config, url);
       if (pull.mergedAt) {
@@ -307,12 +643,75 @@ async function sync(configPath) {
           expectedRevision: task.revision,
         });
         console.log(`Completed merged PR ${url}`);
+        continue;
       } else if (pull.state === "CLOSED") {
         await call(client, "machbar_cancel_task", {
           taskId: task.id,
           expectedRevision: task.revision,
         });
         console.log(`Cancelled closed PR ${url}`);
+        continue;
+      }
+
+      const classified = classifyPullRequest(
+        pull,
+        unresolvedReviewThreads(config, url),
+      );
+      const desiredTitle = actionTitle(pull.repository, classified);
+      if (task.title !== desiredTitle) {
+        const updated = await call(client, "machbar_update_task", {
+          taskId: task.id,
+          expectedRevision: task.revision,
+          title: desiredTitle,
+        });
+        task = {
+          ...task,
+          title: desiredTitle,
+          revision: updated?.revision ?? task.revision,
+        };
+        console.log(`Renamed PR task: ${desiredTitle}`);
+      }
+      const externalBlocker = task.blockers?.find(
+        (blocker) => blocker.type === "external",
+      );
+      if (classified.externalWait) {
+        if (
+          task.status === "actionable" &&
+          (!externalBlocker ||
+            externalBlocker.waitingFor !== classified.externalWait)
+        ) {
+          await call(client, "machbar_set_waiting", {
+            taskId: task.id,
+            expectedRevision: task.revision,
+            waitingFor: classified.externalWait,
+          });
+          console.log(`Waiting on ${classified.externalWait}: ${url}`);
+        } else if (task.status !== "actionable") {
+          console.log(
+            `Cannot set external wait on ${task.status} task: ${url}`,
+          );
+        }
+      } else if (externalBlocker) {
+        await call(client, "machbar_resolve_waiting", {
+          taskId: task.id,
+          expectedRevision: task.revision,
+        });
+        console.log(`Resolved external wait: ${url}`);
+      }
+
+      const previousState = decodeState(
+        lastMarkerValue(task.notes, STATE_MARKER_PREFIX),
+      );
+      if (
+        !previousState ||
+        JSON.stringify(previousState) !== JSON.stringify(classified.signature)
+      ) {
+        await call(client, "machbar_append_note", {
+          entityId: task.id,
+          entityType: "task",
+          content: `Status: ${classified.statusLine}\n${STATE_MARKER_PREFIX}${encodeState(classified.signature)}]`,
+        });
+        console.log(`Updated status for ${url}: ${classified.statusLine}`);
       }
     }
   } finally {
