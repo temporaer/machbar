@@ -683,6 +683,7 @@ export const api = {
         scheduledTo: filters.scheduledTo,
         blocked: filters.blocked,
         externalWait: filters.externalWait,
+        includeTerminal: filters.includeTerminal,
       })}`,
     ),
 
