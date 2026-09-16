@@ -320,13 +320,17 @@ describe("MCP integration", () => {
         includeTerminal: true,
       },
     });
+    const afterRejectedItems = (
+      afterRejected.structuredContent as {
+        result: { items: Array<{ id: number; title: string }> };
+      }
+    ).result.items;
     expect(
-      (
-        afterRejected.structuredContent as {
-          result: { items: unknown[] };
-        }
-      ).result.items,
-    ).toEqual([]);
+      afterRejectedItems.find(
+        (item) => item.title === "Must not be created under recurring parent",
+      ),
+    ).toBeUndefined();
+    expect(afterRejectedItems.filter((item) => item.id === recurringParent.id)).toHaveLength(1);
 
     await client.close();
     await server.close();
@@ -386,6 +390,22 @@ describe("MCP integration", () => {
         result: { items: unknown[] };
       }).result.items,
     ).toHaveLength(3);
+
+    insertTestTask(ctx.handle.db, { title: "LexicalLimit" });
+    const strongest = insertTestTask(ctx.handle.db, {
+      title: "LexicalLimit exact phrase",
+    });
+    const rankedLimitedSearch = await client.callTool({
+      name: "machbar_search",
+      arguments: { text: "LexicalLimit exact phrase", limit: 1 },
+    });
+    expect(
+      (
+        rankedLimitedSearch.structuredContent as {
+          result: { items: Array<{ id: number }> };
+        }
+      ).result.items,
+    ).toEqual([expect.objectContaining({ id: strongest.id })]);
 
     const invalidLimit = await client.callTool({
       name: "machbar_search",

@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { createProject as createProjectMutation } from "../src/domain/storyCrud.js";
 import { addDependency } from "../src/domain/taskCapabilities.js";
 import { createTask } from "../src/domain/taskCrud.js";
+import { Graph } from "../src/domain/graph.js";
+import { searchTasks } from "../src/domain/search.js";
 import * as schema from "../src/db/schema.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -78,6 +80,125 @@ describe("search/filter and project CRUD/archive", () => {
     ).json() as Array<{ id: number }>;
     expect(exhaustive.map((task) => task.id)).toEqual(
       expect.arrayContaining([done.id, cancelled.id]),
+    );
+  });
+
+  it("normalizes case, punctuation, and German transliterations for exact titles", async () => {
+    const desk = createTask(ctx.handle.db, { title: "Schreibtisch aufräumen" });
+    const kita = createTask(ctx.handle.db, { title: "Kita-Tasche packen" });
+    const oil = createTask(ctx.handle.db, { title: "Öl kaufen" });
+    const street = createTask(ctx.handle.db, { title: "Straße planen" });
+
+    const deskResults = (
+      await ctx.app.inject({
+        method: "GET",
+        url: `/api/search?text=${encodeURIComponent("MEINEN Schreibtisch aufzuraeumen")}`,
+      })
+    ).json() as Array<{ id: number }>;
+    expect(deskResults[0]?.id).toBe(desk.id);
+
+    const normalizedResults = (
+      await ctx.app.inject({
+        method: "GET",
+        url: `/api/search?text=${encodeURIComponent("kita tasche packen")}`,
+      })
+    ).json() as Array<{ id: number }>;
+    expect(normalizedResults[0]?.id).toBe(kita.id);
+
+    for (const [query, expectedId] of [
+      ["Oel kaufen", oil.id],
+      ["Strasse planen", street.id],
+    ] as const) {
+      const response = await ctx.app.inject({
+        method: "GET",
+        url: `/api/search?text=${encodeURIComponent(query)}`,
+      });
+      expect((response.json() as Array<{ id: number }>)[0]?.id).toBe(expectedId);
+    }
+  });
+
+  it("ranks complete title matches ahead of weaker titles and notes-only matches", async () => {
+    const strong = createTask(ctx.handle.db, { title: "Kaskoversicherung anrufen" });
+    const weaker = createTask(ctx.handle.db, { title: "Kaskoversicherung" });
+    const notesOnly = createTask(ctx.handle.db, {
+      title: "Versicherung prüfen",
+      notes: "Kaskoversicherung anrufen",
+    });
+
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: `/api/search?text=${encodeURIComponent("kaskoversicherung anrufen")}`,
+    });
+    expect((response.json() as Array<{ id: number }>).map((task) => task.id)).toEqual([
+      strong.id,
+      weaker.id,
+      notesOnly.id,
+    ]);
+
+    const singleToken = await ctx.app.inject({
+      method: "GET",
+      url: "/api/search?text=Kaskoversicherung",
+    });
+    expect((singleToken.json() as Array<{ id: number }>).map((task) => task.id)).toEqual([
+      weaker.id,
+      strong.id,
+      notesOnly.id,
+    ]);
+  });
+
+  it("supports multi-token partial overlap without matching one accidental token", async () => {
+    const strong = createTask(ctx.handle.db, {
+      title: "Reisepass für Urlaub suchen",
+    });
+    const accidental = createTask(ctx.handle.db, { title: "Urlaub planen" });
+
+    const partial = await ctx.app.inject({
+      method: "GET",
+      url: `/api/search?text=${encodeURIComponent("reisepass urlaub dringend")}`,
+    });
+    expect((partial.json() as Array<{ id: number }>).map((task) => task.id)).toEqual([
+      strong.id,
+    ]);
+
+    const oneToken = await ctx.app.inject({
+      method: "GET",
+      url: `/api/search?text=${encodeURIComponent("reisepass urlaub")}`,
+    });
+    expect((oneToken.json() as Array<{ id: number }>).map((task) => task.id)).toEqual([
+      strong.id,
+    ]);
+    expect(accidental.id).not.toBe(strong.id);
+  });
+
+  it("composes lexical ranking with structured filters and preserves no-text ordering", async () => {
+    const actionable = createTask(ctx.handle.db, {
+      title: "Filterphrase erledigen",
+      status: "actionable",
+    });
+    createTask(ctx.handle.db, {
+      title: "Filterphrase später",
+      status: "captured",
+    });
+
+    const filtered = await ctx.app.inject({
+      method: "GET",
+      url: "/api/search?text=Filterphrase&status=actionable",
+    });
+    expect((filtered.json() as Array<{ id: number }>).map((task) => task.id)).toEqual([
+      actionable.id,
+    ]);
+
+    const noText = searchTasks(Graph.load(ctx.handle.db), {});
+    expect(noText.map((task) => task.id)).toEqual(
+      [...noText.map((task) => task.id)].sort((a, b) => a - b),
+    );
+
+    const whitespace = await ctx.app.inject({
+      method: "GET",
+      url: "/api/search?text=%20%20",
+    });
+    expect((whitespace.json() as Array<{ id: number }>).map((task) => task.id)).toEqual(
+      noText.map((task) => task.id),
     );
   });
 

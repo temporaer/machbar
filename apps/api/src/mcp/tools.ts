@@ -365,9 +365,14 @@ export function createMachbarMcpServer({
     "machbar_search",
     {
       description:
-        "Search tasks with structured filters. ownerId uses effective ownership; null finds shared tasks. Dates are YYYY-MM-DD only, never times or timezones.",
+        "Search tasks by structured filters and natural spoken text. Resolve a task here before mutating it; wording need not reproduce its exact title. If one result is clearly strongest, use it; if several are genuinely plausible, ask which one. Do not retry with manually shortened phrases or infer no match from wording differences. ownerId uses effective ownership; null finds shared tasks. Dates are YYYY-MM-DD only, never times or timezones.",
       inputSchema: {
-        text: z.string().optional(),
+        text: z
+          .string()
+          .describe(
+            'Natural-language text used to find tasks by title or notes. Matching is case-insensitive, tolerates German umlaut transliterations such as "aufräumen"/"aufraeumen", and may match task titles contained within a longer spoken phrase. Results are ranked by lexical match quality.',
+          )
+          .optional(),
         projectId: z.number().int().positive().optional(),
         ownerId: z.number().int().positive().nullable().optional(),
         tagIds: z.array(z.number().int().positive()).optional(),
