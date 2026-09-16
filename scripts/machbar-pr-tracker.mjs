@@ -19,6 +19,7 @@ const DEFAULT_CONFIG = resolve(
 const ROOT_MARKER = "[machbar-pr-tracker:root]";
 const REPO_MARKER_PREFIX = "[machbar-pr-tracker:repo=";
 const PR_MARKER_PREFIX = "[machbar-pr-tracker:pr=";
+const STATE_MARKER_PREFIX = "[machbar-pr-tracker:state=";
 
 function fail(message) {
   console.error(message);
@@ -139,6 +140,23 @@ function authoredOpenPullRequests(repository) {
   );
 }
 
+const PULL_REQUEST_FIELDS = [
+  "number",
+  "title",
+  "url",
+  "isDraft",
+  "author",
+  "state",
+  "mergedAt",
+  "createdAt",
+  "reviewDecision",
+  "reviews",
+  "reviewRequests",
+  "statusCheckRollup",
+  "mergeable",
+  "mergeStateStatus",
+].join(",");
+
 function pullRequest(config, url) {
   const parsed = parsePullRequestUrl(url);
   const repository = repoConfig(config, parsed.repository);
@@ -147,8 +165,33 @@ function pullRequest(config, url) {
     "view",
     parsed.url,
     "--json",
-    "number,title,url,isDraft,author,state,mergedAt,createdAt",
+    PULL_REQUEST_FIELDS,
   ]);
+}
+
+function unresolvedReviewThreads(config, url) {
+  const parsed = parsePullRequestUrl(url);
+  const repository = repoConfig(config, parsed.repository);
+  const [owner, name] = parsed.repository.split("/");
+  const result = ghJson(repository.account, [
+    "api",
+    "graphql",
+    "-f",
+    "query=query($owner:String!, $name:String!, $number:Int!) { repository(owner:$owner, name:$name) { pullRequest(number:$number) { reviewThreads(first:100) { nodes { isResolved } } } } }",
+    "-F",
+    `owner=${owner}`,
+    "-F",
+    `name=${name}`,
+    "-F",
+    `number=${parsed.number}`,
+  ]);
+  // GitHub returns at most the first 100 threads here; this is a display hint,
+  // not a completeness guarantee for unusually large reviews.
+  return (
+    result.data?.repository?.pullRequest?.reviewThreads?.nodes?.filter(
+      (thread) => !thread.isResolved,
+    ).length ?? 0
+  );
 }
 
 function mcpDefinition(serverName) {
@@ -207,11 +250,187 @@ async function call(client, name, args = {}) {
   return text ? JSON.parse(text) : undefined;
 }
 
+function taskList(value) {
+  const tasks = Array.isArray(value)
+    ? value
+    : value && Array.isArray(value.result)
+      ? value.result
+      : value && Array.isArray(value.items)
+        ? value.items
+        : value && Array.isArray(value.tasks)
+          ? value.tasks
+          : value && Array.isArray(value.results)
+            ? value.results
+            : null;
+  if (tasks) {
+    return tasks.map((task) => {
+      const normalized = task?.task ?? task;
+      return {
+        ...normalized,
+        notes: normalized.notes ?? "",
+        blockers: normalized.blockers ?? [],
+      };
+    });
+  }
+  throw new Error("machbar_search returned an unexpected result shape");
+}
+
 function markerValue(notes, prefix) {
   const start = notes.indexOf(prefix);
   if (start === -1) return null;
   const end = notes.indexOf("]", start);
   return end === -1 ? null : notes.slice(start + prefix.length, end);
+}
+
+function lastMarkerValue(notes, prefix) {
+  const start = notes.lastIndexOf(prefix);
+  if (start === -1) return null;
+  const end = notes.indexOf("]", start);
+  return end === -1 ? null : notes.slice(start + prefix.length, end);
+}
+
+function encodeState(state) {
+  return Buffer.from(JSON.stringify(state), "utf8").toString("base64url");
+}
+
+function decodeState(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function checkState(check) {
+  return String(check.state ?? check.status ?? "").toUpperCase();
+}
+
+function checkConclusion(check) {
+  return String(check.conclusion ?? "").toUpperCase();
+}
+
+function classifyPullRequest(pull, unresolvedCount) {
+  const checks = Array.isArray(pull.statusCheckRollup)
+    ? pull.statusCheckRollup
+    : [];
+  const hasRunningCheck = checks.some((check) =>
+    ["QUEUED", "PENDING", "IN_PROGRESS", "REQUESTED", "WAITING"].includes(
+      checkState(check),
+    ),
+  );
+  const hasFailedCheck = checks.some((check) =>
+    [
+      "FAILURE",
+      "ERROR",
+      "CANCELLED",
+      "TIMED_OUT",
+      "STARTUP_FAILURE",
+      "ACTION_REQUIRED",
+    ].includes(checkConclusion(check)),
+  );
+  const hasCompletedCheck = checks.some(
+    (check) =>
+      checkConclusion(check) ||
+      ["SUCCESS", "COMPLETED"].includes(checkState(check)),
+  );
+  const ciState = hasRunningCheck
+    ? "running"
+    : hasFailedCheck
+      ? "failing"
+      : hasCompletedCheck
+        ? "passing"
+        : "none";
+
+  const reviews = Array.isArray(pull.reviews) ? pull.reviews : [];
+  const hasAnyReview = reviews.length > 0;
+  const reviewDecision = String(pull.reviewDecision ?? "").toUpperCase();
+  const reviewState = !hasAnyReview && pull.reviewRequests?.length
+    ? "awaiting_first_review"
+    : reviewDecision === "CHANGES_REQUESTED"
+      ? "changes_requested"
+      : reviewDecision === "APPROVED"
+        ? "approved"
+        : reviewDecision === "REVIEW_REQUIRED"
+          ? "review_required"
+          : hasAnyReview
+            ? "reviewed"
+            : "none";
+  const requestedReviewers = (Array.isArray(pull.reviewRequests)
+    ? pull.reviewRequests
+    : [])
+    .map((request) => request.login ?? request.name ?? request.slug)
+    .filter(Boolean)
+    .sort();
+  const conflict =
+    String(pull.mergeable ?? "").toUpperCase() === "CONFLICTING" ||
+    String(pull.mergeStateStatus ?? "").toUpperCase() === "DIRTY";
+  const draft = Boolean(pull.isDraft);
+  const waitingReasons = [];
+  if (ciState === "running") waitingReasons.push("CI running");
+  if (!hasAnyReview && requestedReviewers.length > 0) {
+    waitingReasons.push(`review from ${requestedReviewers.join(", ")}`);
+  }
+  const externalWait = waitingReasons.length
+    ? waitingReasons.join("; ")
+    : null;
+
+  const statusParts = [];
+  if (draft) statusParts.push("draft");
+  if (reviewState === "awaiting_first_review") {
+    statusParts.push(`review requested from ${requestedReviewers.join(", ")}`);
+  } else if (reviewState === "changes_requested") {
+    statusParts.push("changes requested");
+  } else if (reviewState === "approved") {
+    statusParts.push("approved");
+  } else if (reviewState === "review_required") {
+    statusParts.push("review required");
+  }
+  if (ciState === "running") statusParts.push("CI running");
+  else if (ciState === "failing") statusParts.push("CI failing");
+  else if (ciState === "passing") statusParts.push("CI passing");
+  if (conflict) statusParts.push("merge conflict");
+  if (unresolvedCount > 0) {
+    statusParts.push(
+      `${unresolvedCount} unresolved review comment${unresolvedCount === 1 ? "" : "s"}`,
+    );
+  }
+  if (externalWait) {
+    statusParts.push(`waiting: ${externalWait}`);
+  } else if (reviewState === "changes_requested" || unresolvedCount > 0) {
+    statusParts.push("action: address review feedback");
+  } else if (ciState === "failing") {
+    statusParts.push("action: fix CI");
+  } else if (conflict) {
+    statusParts.push("action: resolve merge conflict");
+  } else if (reviewState === "approved" && ciState !== "running") {
+    statusParts.push("action: merge when ready");
+  } else if (draft) {
+    statusParts.push("action: continue work or mark ready");
+  } else if (statusParts.length === 0) {
+    statusParts.push("action: inspect PR");
+  }
+
+  const signature = {
+    ciState,
+    conflict,
+    draft,
+    reviewState,
+    requestedReviewers,
+    unresolvedCount,
+    externalWait,
+  };
+  return {
+    ciState,
+    conflict,
+    draft,
+    externalWait,
+    hasAnyReview,
+    requestedReviewers,
+    reviewState,
+    signature,
+    statusLine: statusParts.join(" · "),
+  };
 }
 
 function prTitle(repository, pull) {
@@ -252,10 +471,20 @@ async function sync(configPath) {
   const config = loadConfig(configPath);
   const client = await connectMachbar(config.mcpServer);
   try {
-    const tracked = await call(client, "machbar_search", {
-      text: "machbar-pr-tracker:",
-      includeTerminal: true,
-    });
+    const searchResults = taskList(
+      await call(client, "machbar_search", {
+        text: "machbar-pr-tracker:",
+        includeTerminal: true,
+        limit: 25,
+      }),
+    );
+    const tracked = await Promise.all(
+      searchResults.map((task) =>
+        task.id
+          ? call(client, "machbar_get_task", { taskId: task.id })
+          : task,
+      ),
+    );
     const groups = await ensureHierarchy(client, config, tracked);
     const trackedByUrl = new Map();
     for (const task of tracked) {
@@ -307,12 +536,61 @@ async function sync(configPath) {
           expectedRevision: task.revision,
         });
         console.log(`Completed merged PR ${url}`);
+        continue;
       } else if (pull.state === "CLOSED") {
         await call(client, "machbar_cancel_task", {
           taskId: task.id,
           expectedRevision: task.revision,
         });
         console.log(`Cancelled closed PR ${url}`);
+        continue;
+      }
+
+      const classified = classifyPullRequest(
+        pull,
+        unresolvedReviewThreads(config, url),
+      );
+      const externalBlocker = task.blockers?.find(
+        (blocker) => blocker.type === "external",
+      );
+      if (classified.externalWait) {
+        if (
+          task.status === "actionable" &&
+          (!externalBlocker ||
+            externalBlocker.waitingFor !== classified.externalWait)
+        ) {
+          await call(client, "machbar_set_waiting", {
+            taskId: task.id,
+            expectedRevision: task.revision,
+            waitingFor: classified.externalWait,
+          });
+          console.log(`Waiting on ${classified.externalWait}: ${url}`);
+        } else if (task.status !== "actionable") {
+          console.log(
+            `Cannot set external wait on ${task.status} task: ${url}`,
+          );
+        }
+      } else if (externalBlocker) {
+        await call(client, "machbar_resolve_waiting", {
+          taskId: task.id,
+          expectedRevision: task.revision,
+        });
+        console.log(`Resolved external wait: ${url}`);
+      }
+
+      const previousState = decodeState(
+        lastMarkerValue(task.notes, STATE_MARKER_PREFIX),
+      );
+      if (
+        !previousState ||
+        JSON.stringify(previousState) !== JSON.stringify(classified.signature)
+      ) {
+        await call(client, "machbar_append_note", {
+          entityId: task.id,
+          entityType: "task",
+          content: `Status: ${classified.statusLine}\n${STATE_MARKER_PREFIX}${encodeState(classified.signature)}]`,
+        });
+        console.log(`Updated status for ${url}: ${classified.statusLine}`);
       }
     }
   } finally {
