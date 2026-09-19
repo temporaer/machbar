@@ -36,7 +36,10 @@ function attentionAt(entity: {
 // executable for a reason other than being blocked (e.g. a future
 // `notBeforeAt`, which is not waiting on an external party or a
 // dependency) while its underlying path is still healthy — matching
-// Graph's own executable/next-action availability gate.
+// Graph's own executable/next-action availability gate. A task that is
+// already executable (or is not actionable/blocked at all) is not itself
+// what makes a project's progress path viable here — those tasks are
+// covered separately via `canonicalCandidates`.
 function isViableProgressTask(
   task: TaskRecord,
   analysis: TaskBlockerAnalysis,
