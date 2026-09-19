@@ -35,7 +35,7 @@ import type { ProjectWorkflowAction } from "./api";
 export type WorkItemCommand =
   | { type: "task.open"; taskId: number; focusField?: TaskDetailFocusField }
   | { type: "task.plan"; taskId: number }
-  | { type: "task.later"; taskId: number }
+  | { type: "task.availability"; taskId: number }
   | { type: "task.structure"; taskId: number }
   | { type: "task.reminders"; taskId: number }
   | { type: "task.waitingLifecycle"; taskId: number }
@@ -66,7 +66,7 @@ export type WorkItemCommand =
   | { type: "story.assignDriver"; story: ProjectWithActions }
   | { type: "story.planWork"; story: ProjectWithActions }
   | { type: "story.editOutcome"; story: ProjectWithActions }
-  | { type: "story.planDates"; story: ProjectWithActions }
+  | { type: "story.deadline"; story: ProjectWithActions }
   | { type: "story.tags"; story: ProjectWithActions }
   | { type: "story.contexts"; story: ProjectWithActions }
   | { type: "story.lifecycle"; story: ProjectWithActions }

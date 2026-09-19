@@ -192,6 +192,44 @@ describe("ReviewPage", () => {
     expect(within(taskCard).getByText("Für jetzt bestätigt")).toBeInTheDocument();
   });
 
+  it("offers only activate, reschedule, and archive for a reached backlog revisit", async () => {
+    const reached = makeProject({
+      id: 6,
+      title: "Urlaubsplanung wieder ansehen",
+      status: "backlog",
+      availableActions: ["activate", "archive"],
+    });
+    mockedApi.getProjects.mockResolvedValue([reached]);
+    mockedApi.getReviewItems.mockResolvedValue([
+      {
+        entityType: "project",
+        entityId: reached.id,
+        entityTitle: reached.title,
+        projectId: reached.id,
+        projectTitle: reached.title,
+        category: "reconsider",
+        reason: "backlog_revisit_reached",
+        suggestedAction: {
+          code: "defer_project",
+          targetEntityType: "project",
+          targetEntityId: reached.id,
+        },
+      },
+    ]);
+
+    renderWithProviders(<ReviewPage />);
+    const card = (await screen.findByText(reached.title)).closest("article")!;
+
+    expect(within(card).getByRole("button", { name: "Projekt aktivieren" }))
+      .toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Wiedervorlage verschieben" }))
+      .toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Archivieren" }))
+      .toBeInTheDocument();
+    expect(within(card).queryByRole("button", { name: "So beibehalten" }))
+      .not.toBeInTheDocument();
+  });
+
   it("reuses the canonical task lifecycle action for a Someday decision", async () => {
     mockedApi.updateTask.mockResolvedValue({ ...task, status: "actionable", revision: 2 });
     renderWithProviders(<ReviewPage />);
@@ -305,7 +343,7 @@ describe("ReviewPage", () => {
       await userEvent.click(within(card).getByRole("button", { name: "Planen" }));
 
       const sheet = await screen.findByRole("dialog");
-      expect(within(sheet).getByText("Wann willst du das angehen?")).toBeInTheDocument();
+      expect(within(sheet).getByText("Wann nimmst du dir das vor?")).toBeInTheDocument();
     });
 
     it("opens the canonical waiting workflow for a set_followup repair", async () => {

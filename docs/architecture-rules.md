@@ -188,9 +188,11 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Task/story read projection (shared lifecycle vocabulary) | `apps/api/src/domain/workItem.ts` and `apps/api/src/domain/graph.ts` |
 | Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`) |
 | Semantic user-intent commands (mouse/touch/keyboard dispatch a common vocabulary) | `apps/web/src/lib/commands.ts` and `apps/web/src/lib/useWorkItemCommands.ts` |
-| Fixed row action rail (`Später` · `Struktur` · `Mehr`, non-configurable) | `apps/web/src/components/WorkItemActionRail.tsx`, wired from `apps/web/src/components/TaskRow.tsx` and `apps/web/src/components/ProjectStoryRow.tsx` |
-| Task `Später` workflow (same-day member-scoped snooze vs. future scheduling) | `apps/web/src/components/TaskLaterSheet.tsx`, opened as the `later` task workflow |
-| Member-scoped ephemeral task snooze (not `scheduledDate`/`externalWait`) | `apps/web/src/lib/taskSnooze.ts` and `apps/web/src/lib/taskSnoozeContext.tsx` |
+| Fixed row action rail (`Ab …` · `Einplanen` · `Mehr` for tasks; backlog revisit/structure/more for projects) | `apps/web/src/components/WorkItemActionRail.tsx`, wired from `apps/web/src/components/TaskRow.tsx` and `apps/web/src/components/ProjectStoryRow.tsx` |
+| Task availability (`notBeforeAt` + local `notBeforeDate`, “Ab …”) workflow | `apps/web/src/components/TaskAvailabilitySheet.tsx`, opened as the `availability` task workflow and committed through `apps/web/src/lib/useTaskActions.tsx` |
+| Task planned-work date (`scheduledDate`, “Geplant für …”) workflow | `apps/web/src/components/TaskPlanSheet.tsx`, opened as the `plan` task workflow |
+| Backlog-project Wiedervorlage (`scheduledDate`) workflow | `apps/web/src/components/ProjectDeferSheet.tsx`, opened by `story.defer` |
+| Project deadline (`dueDate`) workflow | `apps/web/src/components/ProjectDeadlineSheet.tsx`, opened by `story.deadline` |
 | Task `Struktur` workflow (split/move/convert-to-project) | `apps/web/src/components/TaskStructureSheet.tsx`, opened as the `structure` task workflow |
 | Project `Struktur` workflow (plan next task/edit outcome) | `apps/web/src/components/ProjectStructureSheet.tsx`, opened as the `structure` project workflow |
 | Consolidated task move (project and/or parent in one step) | `apps/web/src/components/MoveTaskSheet.tsx` via `task.changeProject` |

@@ -14,16 +14,16 @@ import type { ReactNode } from "react";
  * `TaskWorkflowHost.tsx`, which is the only component that imports every
  * one of the focused sheets below and switches on `kind`.
  *
- * `later` and `structure` back the fixed row rail's `Später`/`Struktur`
- * buttons: `later` opens `TaskLaterSheet` (same-day snooze or future
- * scheduling), `structure` opens `TaskStructureSheet` (Aufteilen/
+ * `availability` backs the fixed row rail's `Ab …` button and opens
+ * `TaskAvailabilitySheet`. `structure` opens
+ * `TaskStructureSheet` (Aufteilen/
  * Verschieben …/Zum Projekt machen), which itself only ever dispatches
  * `task.split`/`task.changeProject`/`task.convertToProject` rather than
  * rendering a sheet of its own.
  */
 export type TaskWorkflowKind =
   | "plan"
-  | "later"
+  | "availability"
   | "structure"
   | "reminders"
   | "waitingLifecycle"

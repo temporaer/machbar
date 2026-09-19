@@ -149,10 +149,10 @@ export function ProjectDetailPage() {
   const criteriaPct =
     criteriaTotal > 0 ? Math.round((criteriaDone / criteriaTotal) * 100) : 0;
   const dueDate = project ? formatDate(project.dueDate, locale) : null;
-  const scheduledDate = project
+  const showProjectRevisit = project?.status === "backlog";
+  const scheduledDate = project && showProjectRevisit
     ? formatDate(project.scheduledDate, locale)
     : null;
-  const hasProjectDates = Boolean(dueDate) || Boolean(scheduledDate);
 
   const reviewReturn = (
     location.state as {
@@ -568,7 +568,7 @@ export function ProjectDetailPage() {
                       label={strings.due}
                       disabled={projectMutationPending}
                       onClick={() =>
-                        dispatch({ type: "story.planDates", story: project })
+                        dispatch({ type: "story.deadline", story: project })
                       }
                     >
                       <span>{dueDate}</span>
@@ -579,21 +579,32 @@ export function ProjectDetailPage() {
                       label={strings.projectRevisitDate}
                       disabled={projectMutationPending}
                       onClick={() =>
-                        dispatch({ type: "story.planDates", story: project })
+                        dispatch({ type: "story.defer", story: project })
                       }
                     >
                       <span>{scheduledDate}</span>
                     </DetailPropertyPill>
                   ) : null}
-                  {!hasProjectDates ? (
+                  {!dueDate ? (
                     <DetailPropertyPill
                       variant="unset"
                       disabled={projectMutationPending}
                       onClick={() =>
-                        dispatch({ type: "story.planDates", story: project })
+                        dispatch({ type: "story.deadline", story: project })
                       }
                     >
-                      {strings.addPlan}
+                      {strings.addDeadline}
+                    </DetailPropertyPill>
+                  ) : null}
+                  {showProjectRevisit && !scheduledDate ? (
+                    <DetailPropertyPill
+                      variant="unset"
+                      disabled={projectMutationPending}
+                      onClick={() =>
+                        dispatch({ type: "story.defer", story: project })
+                      }
+                    >
+                      {strings.projectRevisitDate}
                     </DetailPropertyPill>
                   ) : null}
                   {project.tags.length > 0 ? (

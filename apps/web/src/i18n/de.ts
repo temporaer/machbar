@@ -90,7 +90,8 @@ const base = {
   status: "Status",
   due: "Fällig",
   pickDate: "Datum …",
-  scheduled: "Geplant",
+  scheduled: "Geplant für",
+  notBefore: "Ab",
   context: "Ort",
   tags: "Tags",
   priority: "Priorität",
@@ -402,7 +403,7 @@ const extra = {
   firstMemberHint: "Noch ist niemand angelegt. Erstelle die erste Person, um Machbar zu starten.",
   version: "Version",
   revisitDate: "Wiedervorlage",
-  taskPlanQuestion: "Wann willst du das angehen?",
+  taskPlanQuestion: "Wann nimmst du dir das vor?",
   fromTitle: "Aus Titel",
   titleHintSchedule: (value: string) => `Planen: ${value}`,
   titleHintDeadline: (value: string) => `Deadline: ${value}`,
@@ -467,18 +468,20 @@ const extra = {
   swipeSettingTitle: "Wischgeste",
   swipeSettingHint:
     "Bestimmt, was ein Wisch nach rechts in Aufgabenlisten auslöst. Nach links wischen zeigt immer Zuweisen, Planen, Notizen sowie Warten/Mehr. Bereits erledigte oder verworfene Aufgaben werden durch die Wischgeste immer wieder geöffnet.",
-  railLater: "Später",
+  railAvailableFrom: "Ab …",
+  railPlan: "Einplanen",
   railStructure: "Struktur",
   railMore: "Mehr",
-  later: "Später",
-  laterSameDayHint: "Heute später noch einmal melden:",
-  laterSameDayGroup: "Am selben Tag",
-  laterInAWhile: "In einer Weile",
-  laterTonight: "Heute Abend",
-  laterFutureHint: "Oder erst an einem anderen Tag:",
-  laterFutureGroup: "Zukünftig planen",
-  laterCustomDate: "Anderes Datum",
-  laterMorePlanningOptions: "Weitere Planungsoptionen …",
+  availabilitySameDayHint: "Nicht vor:",
+  availabilitySameDayGroup: "Am selben Tag",
+  availabilityInAWhile: "In einer Weile",
+  availabilityTonight: "Heute Abend",
+  availabilityFutureHint: "Oder erst ab einem anderen Zeitpunkt:",
+  availabilityFutureGroup: "Verfügbarkeit",
+  availabilityCustomDate: "Anderes Datum",
+  availabilityCustomTime: "Uhrzeit",
+  clearNotBefore: "Ab-Datum entfernen",
+  availabilityMorePlanningOptions: "Einplanen / Deadline …",
   structure: "Struktur",
   structureSplit: "Aufteilen",
   structureMove: "Verschieben …",
@@ -494,6 +497,7 @@ const extra = {
    * avatar clicks, and the successor "+".
    */
   actionTileLabels: {
+    "task.structure": "Struktur ändern",
     "task.priority": "Priorität setzen",
     "task.recurrence": "Wiederholung einrichten",
   },
@@ -592,6 +596,7 @@ const extra = {
   reviewActionSetFollowup: "Wiedervorlage setzen",
   reviewActionResolveBlocker: "Blockierung klären",
   reviewKeep: "So beibehalten",
+  reviewRescheduleRevisit: "Wiedervorlage verschieben",
   reviewStart: "Starten",
   reviewBacklog: "Im Backlog lassen",
   reviewSomeday: "Irgendwann lassen",
@@ -610,6 +615,8 @@ const extra = {
   reviewReasonAge: "Diese Arbeit wurde länger nicht bewusst bestätigt.",
   reviewReasonBacklogPlannedWork:
     "Dieses Backlog-Projekt hat bereits geplante oder ausführbare Arbeit — das widerspricht dem Backlog-Status.",
+  reviewReasonBacklogRevisitReached:
+    "Die Wiedervorlage dieses Backlog-Projekts ist erreicht.",
   reviewReasonTaskScheduledBeforeResurface:
     "Diese Aufgabe ist vor der Wiedervorlage des Projekts eingeplant.",
   reviewReasonTaskDueBeforeResurface:
@@ -652,8 +659,7 @@ const extra = {
     "Verschiebe oder verwirf jede verbleibende offene Aufgabe, bevor das Projekt abgeschlossen wird.",
   completeWithOpenTasksResolved: "Keine offenen Aufgaben mehr — bereit zum Abschließen.",
   cancelTask: "Verwerfen",
-  planDates: "Wiedervorlegen",
-  planDatesTitle: "Wiedervorlage & Fälligkeit",
+  projectDeadlineTitle: "Projektfrist",
   taskSummary: "Aufgaben",
   taskSummaryNone: "Noch keine Aufgaben",
   archiveStory: "Archivieren",
@@ -1117,6 +1123,10 @@ const extra = {
     task_indent_unavailable:
       "Die Aufgabe kann an dieser Stelle nicht eingerückt werden.",
     task_not_found: "Die Aufgabe wurde nicht gefunden.",
+    task_schedule_before_available:
+      "Eine Aufgabe kann nicht vor ihrem Ab-Datum eingeplant werden.",
+    task_availability_date_required:
+      "Zur Verfügbarkeit fehlt das zugehörige lokale Datum.",
     task_parent_self:
       "Eine Aufgabe kann nicht ihre eigene übergeordnete Aufgabe sein.",
     task_promotion_invalid:

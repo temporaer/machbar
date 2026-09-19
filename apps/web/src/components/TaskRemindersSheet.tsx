@@ -5,6 +5,7 @@ import { useLocale } from "../lib/locale";
 import { useTaskActions } from "../lib/useTaskActions";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { browserTimezone } from "../lib/browserTimezone";
+import { localDateTimeToIso } from "../lib/localDateTime";
 import {
   ABSOLUTE_REMINDER_PRESETS,
   DEADLINE_RELATIVE_REMINDER_PRESETS,
@@ -126,7 +127,8 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
 
   const confirmEditor = () => {
     if (editor.mode === "customAbsolute") {
-      const at = new Date(`${editor.date}T${editor.time}:00`).toISOString();
+      const at = localDateTimeToIso(editor.date, editor.time);
+      if (!at) return;
       upsertReminder(editor.key, { kind: "absolute", at });
     } else if (editor.mode === "customRelative") {
       upsertReminder(editor.key, {

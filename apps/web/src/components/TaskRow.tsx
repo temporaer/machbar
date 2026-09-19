@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
-import { formatDate, isOverdue } from "../lib/format";
+import { formatDate, formatDateTime, isOverdue } from "../lib/format";
 import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
@@ -213,6 +213,7 @@ export function TaskRow({
         : ownerMember?.name ?? strings.unknownMember;
   const due = formatDate(task.dueDate, locale);
   const scheduled = formatDate(task.scheduledDate, locale);
+  const notBefore = formatDateTime(task.notBeforeAt, locale);
   const projectDueRelative = task.projectDueDate
     ? formatRelativeDueDate(task.projectDueDate, new Date(), locale)
     : null;
@@ -283,7 +284,7 @@ export function TaskRow({
     [busy, task.id, organize, organizeEnabled, cancelSwipe],
   );
 
-  const runRailCommand = (command: "task.later" | "task.structure" | "task.open") => {
+  const runRailCommand = (command: "task.availability" | "task.plan" | "task.open") => {
     // Move focus to the kebab before the rail unmounts, so a focused-
     // workflow sheet's opener-restore targets a control that stays
     // connected across the close/open transition instead of losing focus
@@ -463,6 +464,11 @@ export function TaskRow({
                   {strings.due}: {due}
                 </span>
               ) : null}
+              {isCompact ? null : notBefore ? (
+                <span className="task-row-meta-item">
+                  {strings.notBefore}: {notBefore}
+                </span>
+              ) : null}
               {isCompact ? null : scheduled ? (
                 <span className="task-row-meta-item">
                   {strings.scheduled}: {scheduled}
@@ -535,12 +541,11 @@ export function TaskRow({
           kind="task"
           disabled={busy}
           groupLabel={strings.moreActions}
-          laterLabel={strings.railLater}
-          structureLabel={strings.railStructure}
-          moreLabel={strings.railMore}
-          onLater={() => runRailCommand("task.later")}
-          onStructure={() => runRailCommand("task.structure")}
-          onMore={() => runRailCommand("task.open")}
+          actions={[
+            { label: strings.railAvailableFrom, onSelect: () => runRailCommand("task.availability") },
+            { label: strings.railPlan, onSelect: () => runRailCommand("task.plan") },
+            { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
+          ]}
         />
       ) : null}
       {lifecycleOpen ? (

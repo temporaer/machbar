@@ -90,6 +90,8 @@ interface RawTask {
   createdByMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
+  notBeforeAt: string | null;
+  notBeforeDate: string | null;
   priority: number | null;
   size: TaskSize | null;
   position: number;
@@ -222,6 +224,7 @@ export class Graph {
     db: Db,
     today = new Date().toISOString().slice(0, 10),
     viewerMemberId?: number,
+    now = new Date().toISOString(),
   ): Graph {
     // A 3rd argument is only ever supplied by the handful of viewer-aware
     // public read routes; every other (much more numerous) internal call
@@ -244,7 +247,7 @@ export class Graph {
     const effectiveOwners = getEffectiveOwners(db);
     const effectiveTagIdsByTask = getEffectiveTagIds(db);
     const effectiveContextIdsByTask = getEffectivePhysicalContextIds(db);
-    const nextActionIdsByProject = getNextActionTaskIdsByProject(db);
+    const nextActionIdsByProject = getNextActionTaskIdsByProject(db, now);
     const graph = new Graph(new Map(), nextActionIdsByProject);
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
@@ -331,6 +334,8 @@ export class Graph {
         createdByMemberId: row.createdByMemberId,
         dueDate: row.dueDate,
         scheduledDate: row.scheduledDate,
+        notBeforeAt: row.notBeforeAt,
+        notBeforeDate: row.notBeforeDate,
         priority: row.priority,
         size: row.size as TaskSize | null,
         position: row.position,
@@ -470,6 +475,8 @@ export class Graph {
           status: task.status,
           projectId: task.projectId,
           scheduledDate: task.scheduledDate,
+          notBeforeAt: task.notBeforeAt,
+          notBeforeDate: task.notBeforeDate,
           externalWait: externalWaitByTask.get(task.id) ?? null,
           dependencies: (dependenciesByTask.get(task.id) ?? []).map(
             (dependency) => {
@@ -491,6 +498,7 @@ export class Graph {
       blockerInputs,
       projectStatuses,
       today,
+      now,
     );
     for (const [taskId, analysis] of blockerAnalysis) {
       graph.blockerAnalysisByTask.set(taskId, analysis);
@@ -501,7 +509,7 @@ export class Graph {
       const activationBlockers =
         project.status === "active"
           ? blockerAnalysis
-          : analyzeTaskBlockers(blockerInputs, activationStatuses, today);
+          : analyzeTaskBlockers(blockerInputs, activationStatuses, today, now);
       graph.activationReadinessByProject.set(
         project.id,
         evaluateProjectActivationReadiness({
@@ -670,6 +678,8 @@ export class Graph {
         createdByMemberId: raw.createdByMemberId,
         dueDate: raw.dueDate,
         scheduledDate: raw.scheduledDate,
+        notBeforeAt: raw.notBeforeAt,
+        notBeforeDate: raw.notBeforeDate,
         externalWait,
         priority: raw.priority,
         size: raw.size,
@@ -788,15 +798,18 @@ export class Graph {
   }
 
   nextActionFor(projectId: number): TaskRecord | null {
-    const id = this.nextActionIdsByProject.get(projectId)?.[0];
-    if (id === undefined) return null;
-    return this.tasksById.get(id) ?? null;
+    for (const id of this.nextActionIdsByProject.get(projectId) ?? []) {
+      const task = this.tasksById.get(id);
+      if (!task) continue;
+      if (task.executable) return task;
+    }
+    return null;
   }
 
   nextActionCandidatesFor(projectId: number): TaskRecord[] {
     return (this.nextActionIdsByProject.get(projectId) ?? [])
       .map((id) => this.tasksById.get(id))
-      .filter((task): task is TaskRecord => task !== undefined);
+      .filter((task): task is TaskRecord => task !== undefined && task.executable);
   }
 
   selectedNextActionsFor(

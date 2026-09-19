@@ -622,18 +622,21 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Noah" })]);
   });
 
-  it("reveals the fixed rail commands: Später, Struktur, Mehr — never a configurable or overflow set", async () => {
+  it("reveals the fixed active-project rail commands without backlog revisit", async () => {
     const story = makeProject({ id: 40, title: "Aktive Geschichte", status: "active", ownerMemberId: 1 });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Aktive Geschichte");
 
     swipe(container, -100);
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(chips).getByRole("button", { name: "Später" })).toBeInTheDocument();
+    expect(within(chips).queryByRole("button", { name: "Wiedervorlage" })).not.toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
     const mainGrid = chips.querySelector(".rail-main-grid");
-    expect(mainGrid?.querySelectorAll("button")).toHaveLength(3);
+    expect(mainGrid?.querySelectorAll("button")).toHaveLength(2);
+    expect(mainGrid).toHaveStyle({
+      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    });
     expect(chips.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
   });
 
@@ -722,7 +725,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     const story = makeProject({
       id: 46,
       title: "Popup-Geschichte",
-      status: "active",
+      status: "backlog",
       ownerMemberId: 1,
       acceptanceCriteria: [makeCriterion({ id: 91, projectId: 46, text: "Angebot eingeholt" })],
     });
@@ -751,7 +754,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     chips = openChips();
     await userEvent.click(
-      within(chips).getByRole("button", { name: "Später" }),
+      within(chips).getByRole("button", { name: "Wiedervorlage" }),
     );
     // `story.defer` opens the canonical Wiedervorlage-first workflow (the
     // deadline is a secondary constraint behind its own affordance), not a
@@ -1271,18 +1274,18 @@ describe("ProjectStoryRow – fixed action rail", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
   });
 
-  it("renders exactly the fixed Später/Struktur/Mehr commands as labelled buttons, never an overflow", async () => {
+  it("renders exactly the fixed active-project commands as labelled buttons, never an overflow", async () => {
     const story = makeProject({ id: 70, title: "Kompakte Chips", status: "active", ownerMemberId: 1 });
     renderWithProviders(<Harness story={story} />);
     await screen.findByText("Kompakte Chips");
 
     const chips = openChips();
-    for (const name of ["Später", "Struktur", "Mehr"]) {
+    for (const name of ["Struktur", "Mehr"]) {
       const button = within(chips).getByRole("button", { name });
       expect(button).toHaveClass("btn", "btn-sm");
       expect(button.textContent).toBe(name);
     }
-    expect(chips.querySelector(".rail-main-grid")?.querySelectorAll("button")).toHaveLength(3);
+    expect(chips.querySelector(".rail-main-grid")?.querySelectorAll("button")).toHaveLength(2);
     expect(chips.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
   });
 });

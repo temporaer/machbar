@@ -5,22 +5,22 @@ import { useStrings } from "../lib/strings";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 
-/** Bottom sheet for a project's revisit and due dates. */
-export function PlanDatesSheet({
+/** Bottom sheet for a project's deadline. */
+export function ProjectDeadlineSheet({
   story,
   onClose,
   onSave,
 }: {
   story: Project;
   onClose: () => void;
-  onSave: (patch: { dueDate?: string | null; scheduledDate?: string | null }) => Promise<void>;
+  onSave: (patch: { dueDate: string | null }) => Promise<void>;
 }) {
   const strings = useStrings();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const commit = async (
-    patch: { dueDate?: string | null; scheduledDate?: string | null },
+    patch: { dueDate: string | null },
   ) => {
     if (saving) return;
     setSaving(true);
@@ -36,35 +36,22 @@ export function PlanDatesSheet({
 
   return (
     <BottomSheet
-      title={strings.planDatesTitle}
+      title={strings.projectDeadlineTitle}
       onClose={() => {
         if (!saving) onClose();
       }}
-      labelledBy="plan-dates-title"
+      labelledBy="project-deadline-title"
     >
       <div className="stack">
         <p className="text-muted">{story.title}</p>
-        <div className="row">
-          <div className="field" style={{ flex: 1 }}>
-            <label htmlFor="story-due">{strings.due}</label>
-            <HumanDateInput
-              id="story-due"
-              value={story.dueDate ?? ""}
-              onChange={(date) => void commit({ dueDate: date })}
-              disabled={saving}
-            />
-          </div>
-          <div className="field" style={{ flex: 1 }}>
-            <label htmlFor="story-scheduled">
-              {strings.projectRevisitDate}
-            </label>
-            <HumanDateInput
-              id="story-scheduled"
-              value={story.scheduledDate ?? ""}
-              onChange={(date) => void commit({ scheduledDate: date })}
-              disabled={saving}
-            />
-          </div>
+        <div className="field">
+          <label htmlFor="story-due">{strings.due}</label>
+          <HumanDateInput
+            id="story-due"
+            value={story.dueDate ?? ""}
+            onChange={(date) => void commit({ dueDate: date })}
+            disabled={saving}
+          />
         </div>
         {error ? <p role="alert" style={{ color: "var(--color-danger)" }}>{error}</p> : null}
         <button type="button" className="btn" onClick={onClose} disabled={saving}>

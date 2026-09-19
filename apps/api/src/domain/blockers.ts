@@ -16,6 +16,8 @@ export interface BlockerTaskInput {
   status: TaskStatus;
   projectId: number | null;
   scheduledDate: string | null;
+  notBeforeAt: string | null;
+  notBeforeDate: string | null;
   externalWait: {
     waitingFor: string | null;
     revisitDate: string | null;
@@ -64,6 +66,7 @@ export function analyzeTaskBlockers(
   tasks: ReadonlyMap<number, BlockerTaskInput>,
   projectStatuses: ReadonlyMap<number, ProjectStatus>,
   today: string,
+  now: string,
 ): Map<number, TaskBlockerAnalysis> {
   const analyzePath = (
     taskId: number,
@@ -145,6 +148,13 @@ export function analyzeTaskBlockers(
     }
 
     const branchResults: PathAnalysis[] = [];
+    if (task.notBeforeAt !== null && task.notBeforeAt > now) {
+      branchResults.push({
+        healthy: true,
+        attentionDate: task.notBeforeDate,
+        diagnoses: [],
+      });
+    }
     if (task.externalWait) {
       if (!task.externalWait.revisitDate) {
         branchResults.push({
@@ -212,7 +222,10 @@ export function analyzeTaskBlockers(
     const path = analyzePath(task.id, []);
     result.set(task.id, {
       blocked,
-      executable: task.status === "actionable" && !blocked,
+      executable:
+        task.status === "actionable" &&
+        !blocked &&
+        (task.notBeforeAt === null || task.notBeforeAt <= now),
       healthyProgressPath: path.healthy,
       nextBlockerAttentionDate: blocked ? path.attentionDate : null,
       diagnoses: path.diagnoses,

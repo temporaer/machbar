@@ -460,6 +460,9 @@ export function TaskDetailSheet() {
         .filter((value): value is string => value !== null)
         .join(" · ")
     : "";
+  const notBeforeValue = task?.notBeforeAt
+    ? formatDateTime(task.notBeforeAt, locale)
+    : null;
   const reminderSummary = task
     ? formatReminderSummary(task.reminders, task.dueDate, strings, locale)
     : null;
@@ -478,6 +481,7 @@ export function TaskDetailSheet() {
     command:
       | "task.lifecycle"
       | "task.assignOwner"
+      | "task.availability"
       | "task.plan"
       | "task.reminders"
       | "task.waitingLifecycle"
@@ -485,7 +489,8 @@ export function TaskDetailSheet() {
       | "task.priority"
       | "task.tags"
       | "task.contexts"
-      | "task.split",
+      | "task.split"
+      | "task.structure",
   ) => {
     if (!task) return;
     if (command === "task.lifecycle") {
@@ -681,6 +686,18 @@ export function TaskDetailSheet() {
             ) : (
               <DetailPropertyPill variant="unset" onClick={() => runCommand("task.plan")}>
                 {strings.addPlan}
+              </DetailPropertyPill>
+            )}
+            {notBeforeValue ? (
+              <DetailPropertyPill
+                label={strings.railAvailableFrom}
+                onClick={() => runCommand("task.availability")}
+              >
+                <span>{notBeforeValue}</span>
+              </DetailPropertyPill>
+            ) : (
+              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.availability")}>
+                {strings.railAvailableFrom}
               </DetailPropertyPill>
             )}
             {task.reminders.length > 0 && reminderSummary ? (
@@ -1023,7 +1040,7 @@ export function TaskDetailSheet() {
             </div>
           </WorkItemDetailDisclosure>
 
-          {task.priority === null || task.repeatAfterDays === null || (!taskIsCapturedInboxItem && task.projectId !== null) ? (
+          {task ? (
             <WorkItemDetailDisclosure
               title={strings.moreActions}
               resetKey={task.id}
@@ -1041,6 +1058,12 @@ export function TaskDetailSheet() {
                         },
                       ]
                     : []),
+                  {
+                    key: "task.structure",
+                    icon: "split" as const,
+                    label: strings.actionTileLabels["task.structure"],
+                    onClick: () => runCommand("task.structure"),
+                  },
                   ...(task.repeatAfterDays === null
                     ? [
                         {
