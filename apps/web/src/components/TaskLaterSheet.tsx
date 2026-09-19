@@ -3,7 +3,6 @@ import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
-import { useTaskSnooze } from "../lib/taskSnoozeContext";
 import { resolveAbsolutePreset } from "../lib/reminderPresets";
 import { resolveScheduleShortcut } from "./ScheduleShortcuts";
 import { localizedErrorMessage } from "../lib/errorMessage";
@@ -11,38 +10,38 @@ import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 
 /**
- * Focused `task.later` workflow — one smart "when should this come back to
- * my attention?" sheet. Same-day choices ("Heute Abend" / "In einer Weile")
- * only write the member-scoped, ephemeral snooze (`taskSnoozeContext.tsx`):
- * today is still the scheduled day, so they never touch `scheduledDate`.
- * "Morgen" / "Wochenende" / a custom date instead schedule the task through
- * the same commit path `TaskPlanSheet` uses. `laterMorePlanningOptions` is
- * the escape hatch into the full `task.plan` workflow (deadline, etc.) —
- * reached by dispatching `task.plan` rather than opening it directly, so
- * `useWorkItemCommands()` stays the only place deciding which workflow a
- * command opens.
+ * Focused `task.later` workflow: edits the global "Ab …" availability gate.
+ * Planning commitments and deadlines stay in the separate `task.plan`
+ * workflow, reached by dispatching `task.plan` so `useWorkItemCommands()`
+ * remains the only place deciding which workflow a command opens.
  */
 export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => void }) {
   const strings = useStrings();
   const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
-  const { snooze } = useTaskSnooze();
   const [customDate, setCustomDate] = useState("");
+  const [customTime, setCustomTime] = useState("08:00");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dateValid, setDateValid] = useState(true);
 
-  const applySnooze = (preset: "tonight" | "in3Hours") => {
-    snooze(task.id, new Date(resolveAbsolutePreset(preset)));
-    onClose();
+  const customNotBeforeAt = () => {
+    if (!customDate) return null;
+    const [hours, minutes] = customTime.split(":").map(Number);
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
+    const date = new Date(`${customDate}T00:00:00`);
+    date.setHours(hours, minutes, 0, 0);
+    return date.toISOString();
   };
 
-  const applySchedule = async (date: string | null) => {
-    if (saving || !date) return;
+  const startOfLocalDay = (date: string) => new Date(`${date}T00:00:00`).toISOString();
+
+  const applyNotBefore = async (notBeforeAt: string | null) => {
+    if (saving) return;
     setSaving(true);
     setError(null);
     try {
-      await taskActions.update(task, { scheduledDate: date }, { scheduledDate: date }, true);
+      await taskActions.update(task, { notBeforeAt }, { notBeforeAt }, true);
       onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
@@ -51,7 +50,7 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
   };
 
   return (
-    <BottomSheet title={`${strings.later}: ${task.title}`} onClose={() => !saving && onClose()}>
+    <BottomSheet title={`${strings.notBefore}: ${task.title}`} onClose={() => !saving && onClose()}>
       <div className="stack">
         <div>
           <p className="text-muted">{strings.laterSameDayHint}</p>
@@ -60,7 +59,7 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => applySnooze("in3Hours")}
+              onClick={() => void applyNotBefore(resolveAbsolutePreset("in3Hours"))}
             >
               {strings.laterInAWhile}
             </button>
@@ -68,7 +67,7 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => applySnooze("tonight")}
+              onClick={() => void applyNotBefore(resolveAbsolutePreset("tonight"))}
             >
               {strings.laterTonight}
             </button>
@@ -81,7 +80,7 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => void applySchedule(resolveScheduleShortcut("tomorrow"))}
+              onClick={() => void applyNotBefore(startOfLocalDay(resolveScheduleShortcut("tomorrow")))}
             >
               {strings.scheduleShortcutLabels.tomorrow}
             </button>
@@ -89,7 +88,7 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => void applySchedule(resolveScheduleShortcut("weekend"))}
+              onClick={() => void applyNotBefore(startOfLocalDay(resolveScheduleShortcut("weekend")))}
             >
               {strings.scheduleShortcutLabels.weekend}
             </button>
@@ -101,6 +100,16 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
               value={customDate}
               onChange={(date) => setCustomDate(date ?? "")}
               onValidityChange={setDateValid}
+              disabled={saving}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={`later-custom-time-${task.id}`}>{strings.laterCustomTime}</label>
+            <input
+              id={`later-custom-time-${task.id}`}
+              type="time"
+              value={customTime}
+              onChange={(event) => setCustomTime(event.target.value)}
               disabled={saving}
             />
           </div>
@@ -120,6 +129,14 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
           <button
             type="button"
             className="btn"
+            disabled={saving || task.notBeforeAt === null}
+            onClick={() => void applyNotBefore(null)}
+          >
+            {strings.clearNotBefore}
+          </button>
+          <button
+            type="button"
+            className="btn"
             disabled={saving}
             onClick={() => dispatch({ type: "task.plan", taskId: task.id })}
           >
@@ -129,7 +146,7 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
             type="button"
             className="btn btn-primary"
             disabled={saving || !dateValid || !customDate}
-            onClick={() => void applySchedule(customDate || null)}
+            onClick={() => void applyNotBefore(customNotBeforeAt())}
           >
             {strings.confirmDone}
           </button>

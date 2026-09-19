@@ -114,7 +114,8 @@ const en = {
   status: "Status",
   due: "Due",
   pickDate: "Date …",
-  scheduled: "Scheduled",
+  scheduled: "Planned for",
+  notBefore: "Available from",
   context: "Place",
   tags: "Tags",
   priority: "Priority",
@@ -422,7 +423,7 @@ const en = {
     "No one has been added yet. Add the first person to get started.",
   version: "Version",
   revisitDate: "Follow-up date",
-  taskPlanQuestion: "When do you want to tackle this?",
+  taskPlanQuestion: "When will you make time for this?",
   fromTitle: "From title",
   titleHintSchedule: (value: string) => `Schedule: ${value}`,
   titleHintDeadline: (value: string) => `Deadline: ${value}`,
@@ -488,17 +489,21 @@ const en = {
   swipeSettingHint:
     "Choose what swiping right does in task lists. Swiping left always shows Assign, Schedule, Notes, Waiting, and More. Swiping a completed or discarded task always reopens it.",
   railLater: "Later",
+  railAvailableFrom: "From …",
+  railPlan: "Plan",
   railStructure: "Structure",
   railMore: "More",
-  later: "Later",
-  laterSameDayHint: "Bring this back later today:",
+  later: "Available from …",
+  laterSameDayHint: "Not before:",
   laterSameDayGroup: "Same day",
   laterInAWhile: "In a while",
   laterTonight: "Tonight",
-  laterFutureHint: "Or plan for a different day:",
-  laterFutureGroup: "Plan ahead",
+  laterFutureHint: "Or from another time:",
+  laterFutureGroup: "Availability",
   laterCustomDate: "Custom date",
-  laterMorePlanningOptions: "More planning options …",
+  laterCustomTime: "Time",
+  clearNotBefore: "Clear availability date",
+  laterMorePlanningOptions: "Plan / deadline …",
   structure: "Structure",
   structureSplit: "Break down",
   structureMove: "Move …",
@@ -618,6 +623,8 @@ const en = {
   reviewReasonAge: "This work has not been intentionally confirmed for a while.",
   reviewReasonBacklogPlannedWork:
     "This backlog project already has planned or executable work — that contradicts its backlog status.",
+  reviewReasonBacklogRevisitReached:
+    "This backlog project's revisit date has been reached.",
   reviewReasonTaskScheduledBeforeResurface:
     "This task is scheduled before the project's own resurface date.",
   reviewReasonTaskDueBeforeResurface:
@@ -1115,6 +1122,8 @@ const en = {
       "This move would create a cycle in the task hierarchy.",
     task_indent_unavailable: "The task cannot be indented here.",
     task_not_found: "The task could not be found.",
+    task_schedule_before_available:
+      "A task cannot be planned before its availability date.",
     task_parent_self: "A task cannot be its own parent.",
     task_promotion_invalid:
       "This inbox item cannot be converted to a project in its current state.",

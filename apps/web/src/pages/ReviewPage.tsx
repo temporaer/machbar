@@ -152,6 +152,8 @@ export function ReviewPage() {
         return strings.reviewReasonCompletion;
       case "backlog_planned_work":
         return strings.reviewReasonBacklogPlannedWork;
+      case "backlog_revisit_reached":
+        return strings.reviewReasonBacklogRevisitReached;
       case "task_scheduled_before_resurface":
         return strings.reviewReasonTaskScheduledBeforeResurface;
       case "task_due_before_resurface":

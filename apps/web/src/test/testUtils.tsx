@@ -9,7 +9,6 @@ import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { TaskActionsProvider } from "../lib/useTaskActions";
 import { ProjectActionsProvider } from "../lib/useProjectActions";
-import { TaskSnoozeProvider } from "../lib/taskSnoozeContext";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { LocaleProvider, type Locale } from "../lib/locale";
 import { ThemeProvider } from "../lib/theme";
@@ -36,15 +35,13 @@ function AllProviders({
                     <SwipeCoachProvider>
                       <TaskActionsProvider>
                         <ProjectActionsProvider>
-                          <TaskSnoozeProvider>
-                            <InteractionScopeProvider>
-                              <TaskDetailProvider>
-                                <TaskWorkflowProvider>
-                                  <ProjectWorkflowProvider>{children}</ProjectWorkflowProvider>
-                                </TaskWorkflowProvider>
-                              </TaskDetailProvider>
-                            </InteractionScopeProvider>
-                          </TaskSnoozeProvider>
+                          <InteractionScopeProvider>
+                            <TaskDetailProvider>
+                              <TaskWorkflowProvider>
+                                <ProjectWorkflowProvider>{children}</ProjectWorkflowProvider>
+                              </TaskWorkflowProvider>
+                            </TaskDetailProvider>
+                          </InteractionScopeProvider>
                         </ProjectActionsProvider>
                       </TaskActionsProvider>
                     </SwipeCoachProvider>

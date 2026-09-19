@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { makeTask } from "../test/fixtures";
-import { readSnoozeEntries } from "../lib/taskSnooze";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { TaskLaterSheet } from "./TaskLaterSheet";
@@ -21,13 +20,9 @@ vi.mock("../lib/api", () => ({
 const mockedApi = vi.mocked(api, true);
 
 /**
- * Coverage for the fixed row rail's `Später` sheet
- * (`TaskLaterSheet.tsx`): same-day choices ("In einer Weile"/"Heute
- * Abend") must only write the client-only, member-scoped snooze
- * (`taskSnooze.ts`) and never touch `scheduledDate`, while a future date
- * choice commits through the same `scheduledDate` patch `TaskPlanSheet`
- * uses. See `taskSnooze.test.ts` for the underlying storage primitive's
- * own unit coverage.
+ * Coverage for the fixed row rail's `Ab …` sheet: every preset writes the
+ * persistent task `notBeforeAt` availability gate and never touches
+ * `scheduledDate`, which remains owned by `TaskPlanSheet`.
  */
 describe("TaskLaterSheet", () => {
   beforeEach(() => {
@@ -37,37 +32,41 @@ describe("TaskLaterSheet", () => {
     mockedApi.getTags.mockResolvedValue([]);
   });
 
-  it("writes a same-day 'In einer Weile' snooze without touching scheduledDate", async () => {
+  it("writes a same-day 'In einer Weile' availability gate without touching scheduledDate", async () => {
+    mockedApi.updateTask.mockResolvedValue(makeTask({ id: 40 }));
     const task = makeTask({ id: 40, title: "Wäsche aufhängen", scheduledDate: "2026-09-14" });
     const onClose = vi.fn();
     renderWithProviders(<TaskLaterSheet task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "In einer Weile" }));
 
-    expect(mockedApi.updateTask).not.toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalled();
-    const entries = readSnoozeEntries(null);
-    expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ taskId: 40 });
-    // Still today: the snooze is a same-day defer, not a reschedule.
-    expect(new Date(entries[0]!.until).toISOString().slice(0, 10)).toBe(
-      new Date().toISOString().slice(0, 10),
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(40, {
+        notBeforeAt: expect.any(String),
+        expectedRevision: 1,
+      }),
     );
+    expect(onClose).toHaveBeenCalled();
   });
 
-  it("writes a same-day 'Heute Abend' snooze without touching scheduledDate", async () => {
+  it("writes a same-day 'Heute Abend' availability gate without touching scheduledDate", async () => {
+    mockedApi.updateTask.mockResolvedValue(makeTask({ id: 41 }));
     const task = makeTask({ id: 41, title: "Anruf zurückgeben" });
     const onClose = vi.fn();
     renderWithProviders(<TaskLaterSheet task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "Heute Abend" }));
 
-    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
+        notBeforeAt: expect.any(String),
+        expectedRevision: 1,
+      }),
+    );
     expect(onClose).toHaveBeenCalled();
-    expect(readSnoozeEntries(null)).toHaveLength(1);
   });
 
-  it("schedules a future date (Morgen) as a real scheduledDate commit, not a snooze", async () => {
+  it("sets a future date (Morgen) as availability, not a scheduledDate commit", async () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 42 }));
     const task = makeTask({ id: 42, title: "Steuer einreichen" });
     const onClose = vi.fn();
@@ -77,15 +76,31 @@ describe("TaskLaterSheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
-        scheduledDate: expect.any(String),
+        notBeforeAt: expect.any(String),
         expectedRevision: 1,
       }),
     );
     expect(onClose).toHaveBeenCalled();
-    expect(readSnoozeEntries(null)).toHaveLength(0);
   });
 
-  it("escapes into the full task.plan workflow via 'Weitere Planungsoptionen …'", async () => {
+  it("clears an existing availability gate", async () => {
+    mockedApi.updateTask.mockResolvedValue(makeTask({ id: 44, notBeforeAt: null }));
+    const task = makeTask({ id: 44, title: "Handwerker beauftragen", notBeforeAt: "2026-09-19T18:00:00.000Z" });
+    const onClose = vi.fn();
+    renderWithProviders(<TaskLaterSheet task={task} onClose={onClose} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Ab-Datum entfernen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(44, {
+        notBeforeAt: null,
+        expectedRevision: 1,
+      }),
+    );
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("escapes into the full task.plan workflow via 'Einplanen / Deadline …'", async () => {
     const task = makeTask({ id: 43, title: "Handwerker beauftragen" });
     mockedApi.getTask.mockResolvedValue(task);
 
@@ -104,9 +119,9 @@ describe("TaskLaterSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "open later" }));
     await userEvent.click(
-      await screen.findByRole("button", { name: "Weitere Planungsoptionen …" }),
+      await screen.findByRole("button", { name: "Einplanen / Deadline …" }),
     );
 
-    expect(await screen.findByLabelText("Wann willst du das angehen?")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Wann nimmst du dir das vor?")).toBeInTheDocument();
   });
 });

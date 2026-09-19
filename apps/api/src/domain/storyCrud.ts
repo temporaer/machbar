@@ -148,7 +148,7 @@ export function createProject(
         ownerMemberId,
         scope,
         dueDate: input.dueDate ?? null,
-        scheduledDate: input.scheduledDate ?? null,
+        scheduledDate: (input.status ?? "backlog") === "backlog" ? input.scheduledDate ?? null : null,
         position: maxPosition + 1,
       })
       .returning()
@@ -244,6 +244,17 @@ export function updateProject(
       throw AppError.conflict(
         "project_driver_locked",
         "The project driver can only be removed while the project is in the backlog.",
+        { projectId: id, currentStatus: project.status, requiredStatus: "backlog" },
+      );
+    }
+    if (
+      project.status !== "backlog" &&
+      input.scheduledDate !== undefined &&
+      input.scheduledDate !== null
+    ) {
+      throw AppError.conflict(
+        "project_transition_invalid",
+        "Project revisit dates are only valid while the project is in the backlog.",
         { projectId: id, currentStatus: project.status, requiredStatus: "backlog" },
       );
     }
@@ -547,4 +558,3 @@ export function deleteProject(
     }
   });
 }
-

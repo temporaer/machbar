@@ -83,12 +83,13 @@ const reasonOrder: Record<ReviewReason, number> = {
   task_due_before_resurface: 6,
   task_scheduled_before_resurface: 7,
   backlog_planned_work: 8,
-  completed_project_open_work: 9,
-  completion_review: 10,
-  active_stale: 11,
-  backlog_due: 12,
-  backlog_stale: 13,
-  standalone_someday_stale: 14,
+  backlog_revisit_reached: 9,
+  completed_project_open_work: 10,
+  completion_review: 11,
+  active_stale: 12,
+  backlog_due: 13,
+  backlog_stale: 14,
+  standalone_someday_stale: 15,
 };
 
 export interface BuildReviewItemsOptions {
@@ -311,6 +312,17 @@ export function buildReviewItems(
         project.reviewedAt.slice(0, 10) <=
           addDaysIso(today, -BACKLOG_REVIEW_DAYS);
       if (
+        project.scheduledDate !== null &&
+        project.scheduledDate <= today
+      ) {
+        items.push(
+          projectItem(project, "reconsider", "backlog_revisit_reached", {
+            code: "defer_project",
+            targetEntityType: "project",
+            targetEntityId: project.id,
+          }),
+        );
+      } else if (
         project.dueDate !== null &&
         project.dueDate <= today &&
         acknowledgementExpired

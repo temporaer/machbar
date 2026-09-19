@@ -184,19 +184,10 @@ export function buildAgenda(
     .flatMap((project): ProjectAgendaEntry[] => {
       const due =
         project.dueDate !== null && project.dueDate <= projectDueLimit;
-      const scheduled =
-        project.scheduledDate !== null &&
-        project.scheduledDate <= today;
-      if (!due && !scheduled) return [];
+      if (!due) return [];
 
-      // `planned` wins whenever the reached `scheduledDate` applies, matching
-      // Task's own bucket priority (`planned` resolved before its due-date
-      // buckets). Otherwise classify the due date exactly like a Task's own
-      // overdue/dueToday/dueSoon buckets, reusing the same `today` boundary
-      // already computed above for tasks.
-      const attentionBucket: ProjectAgendaBucket = scheduled
-        ? "planned"
-        : project.dueDate! < today
+      const attentionBucket: ProjectAgendaBucket =
+        project.dueDate! < today
           ? "overdue"
           : project.dueDate === today
             ? "dueToday"
@@ -222,7 +213,7 @@ export function buildAgenda(
       return [
         {
           project: computed,
-          qualification: due && scheduled ? "both" : due ? "due" : "scheduled",
+          qualification: "due",
           attentionBucket,
           nextAction,
           nextActionContextAvailability: nextAction

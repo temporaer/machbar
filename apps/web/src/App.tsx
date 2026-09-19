@@ -8,7 +8,6 @@ import { ProjectWorkflowProvider } from "./lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "./lib/swipeSettings";
 import { TaskActionsProvider } from "./lib/useTaskActions";
 import { ProjectActionsProvider } from "./lib/useProjectActions";
-import { TaskSnoozeProvider } from "./lib/taskSnoozeContext";
 import { useGlobalNavigationKeys } from "./lib/useGlobalNavigationKeys";
 import { IdentityGate } from "./components/IdentityGate";
 import { BottomNav } from "./components/BottomNav";
@@ -130,17 +129,15 @@ export function App() {
                   <SwipeCoachProvider>
                     <TaskActionsProvider>
                       <ProjectActionsProvider>
-                        <TaskSnoozeProvider>
-                          <TaskDetailProvider>
-                            <TaskWorkflowProvider>
-                              <ProjectWorkflowProvider>
-                                <HashRouter>
-                                  <Shell />
-                                </HashRouter>
-                              </ProjectWorkflowProvider>
-                            </TaskWorkflowProvider>
-                          </TaskDetailProvider>
-                        </TaskSnoozeProvider>
+                        <TaskDetailProvider>
+                          <TaskWorkflowProvider>
+                            <ProjectWorkflowProvider>
+                              <HashRouter>
+                                <Shell />
+                              </HashRouter>
+                            </ProjectWorkflowProvider>
+                          </TaskWorkflowProvider>
+                        </TaskDetailProvider>
                       </ProjectActionsProvider>
                     </TaskActionsProvider>
                   </SwipeCoachProvider>

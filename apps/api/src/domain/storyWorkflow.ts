@@ -105,6 +105,7 @@ export function activateProject(
       .set({
         status: "active",
         archivedAt: null,
+        scheduledDate: null,
         ownerMemberId,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
@@ -166,6 +167,7 @@ export function returnProjectToBacklog(
       .set({
         status: "backlog",
         archivedAt: null,
+        ...(project.status === "archived" ? { scheduledDate: null } : {}),
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
@@ -231,6 +233,7 @@ export function completeProject(
       .set({
         status: "done",
         archivedAt: null,
+        scheduledDate: null,
         completedAt: nowIso(),
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
@@ -282,6 +285,7 @@ export function reopenProject(
         status: "active",
         archivedAt: null,
         completedAt: null,
+        scheduledDate: null,
         ownerMemberId: nextOwnerMemberId,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
@@ -325,6 +329,7 @@ export function archiveProject(
     tx.update(schema.workItems)
       .set({
         archivedAt: nowIso(),
+        scheduledDate: null,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })

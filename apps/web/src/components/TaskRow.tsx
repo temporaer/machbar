@@ -213,6 +213,9 @@ export function TaskRow({
         : ownerMember?.name ?? strings.unknownMember;
   const due = formatDate(task.dueDate, locale);
   const scheduled = formatDate(task.scheduledDate, locale);
+  const notBefore = task.notBeforeAt
+    ? formatDate(task.notBeforeAt.slice(0, 10), locale)
+    : null;
   const projectDueRelative = task.projectDueDate
     ? formatRelativeDueDate(task.projectDueDate, new Date(), locale)
     : null;
@@ -283,7 +286,7 @@ export function TaskRow({
     [busy, task.id, organize, organizeEnabled, cancelSwipe],
   );
 
-  const runRailCommand = (command: "task.later" | "task.structure" | "task.open") => {
+  const runRailCommand = (command: "task.later" | "task.plan" | "task.open") => {
     // Move focus to the kebab before the rail unmounts, so a focused-
     // workflow sheet's opener-restore targets a control that stays
     // connected across the close/open transition instead of losing focus
@@ -463,6 +466,11 @@ export function TaskRow({
                   {strings.due}: {due}
                 </span>
               ) : null}
+              {isCompact ? null : notBefore ? (
+                <span className="task-row-meta-item">
+                  {strings.notBefore}: {notBefore}
+                </span>
+              ) : null}
               {isCompact ? null : scheduled ? (
                 <span className="task-row-meta-item">
                   {strings.scheduled}: {scheduled}
@@ -535,11 +543,11 @@ export function TaskRow({
           kind="task"
           disabled={busy}
           groupLabel={strings.moreActions}
-          laterLabel={strings.railLater}
-          structureLabel={strings.railStructure}
+          laterLabel={strings.railAvailableFrom}
+          structureLabel={strings.railPlan}
           moreLabel={strings.railMore}
           onLater={() => runRailCommand("task.later")}
-          onStructure={() => runRailCommand("task.structure")}
+          onStructure={() => runRailCommand("task.plan")}
           onMore={() => runRailCommand("task.open")}
         />
       ) : null}

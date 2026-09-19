@@ -90,7 +90,8 @@ const base = {
   status: "Status",
   due: "Fällig",
   pickDate: "Datum …",
-  scheduled: "Geplant",
+  scheduled: "Geplant für",
+  notBefore: "Ab",
   context: "Ort",
   tags: "Tags",
   priority: "Priorität",
@@ -402,7 +403,7 @@ const extra = {
   firstMemberHint: "Noch ist niemand angelegt. Erstelle die erste Person, um Machbar zu starten.",
   version: "Version",
   revisitDate: "Wiedervorlage",
-  taskPlanQuestion: "Wann willst du das angehen?",
+  taskPlanQuestion: "Wann nimmst du dir das vor?",
   fromTitle: "Aus Titel",
   titleHintSchedule: (value: string) => `Planen: ${value}`,
   titleHintDeadline: (value: string) => `Deadline: ${value}`,
@@ -468,17 +469,21 @@ const extra = {
   swipeSettingHint:
     "Bestimmt, was ein Wisch nach rechts in Aufgabenlisten auslöst. Nach links wischen zeigt immer Zuweisen, Planen, Notizen sowie Warten/Mehr. Bereits erledigte oder verworfene Aufgaben werden durch die Wischgeste immer wieder geöffnet.",
   railLater: "Später",
+  railAvailableFrom: "Ab …",
+  railPlan: "Einplanen",
   railStructure: "Struktur",
   railMore: "Mehr",
-  later: "Später",
-  laterSameDayHint: "Heute später noch einmal melden:",
+  later: "Ab …",
+  laterSameDayHint: "Nicht vor:",
   laterSameDayGroup: "Am selben Tag",
   laterInAWhile: "In einer Weile",
   laterTonight: "Heute Abend",
-  laterFutureHint: "Oder erst an einem anderen Tag:",
-  laterFutureGroup: "Zukünftig planen",
+  laterFutureHint: "Oder erst ab einem anderen Zeitpunkt:",
+  laterFutureGroup: "Verfügbarkeit",
   laterCustomDate: "Anderes Datum",
-  laterMorePlanningOptions: "Weitere Planungsoptionen …",
+  laterCustomTime: "Uhrzeit",
+  clearNotBefore: "Ab-Datum entfernen",
+  laterMorePlanningOptions: "Einplanen / Deadline …",
   structure: "Struktur",
   structureSplit: "Aufteilen",
   structureMove: "Verschieben …",
@@ -610,6 +615,8 @@ const extra = {
   reviewReasonAge: "Diese Arbeit wurde länger nicht bewusst bestätigt.",
   reviewReasonBacklogPlannedWork:
     "Dieses Backlog-Projekt hat bereits geplante oder ausführbare Arbeit — das widerspricht dem Backlog-Status.",
+  reviewReasonBacklogRevisitReached:
+    "Die Wiedervorlage dieses Backlog-Projekts ist erreicht.",
   reviewReasonTaskScheduledBeforeResurface:
     "Diese Aufgabe ist vor der Wiedervorlage des Projekts eingeplant.",
   reviewReasonTaskDueBeforeResurface:
@@ -1117,6 +1124,8 @@ const extra = {
     task_indent_unavailable:
       "Die Aufgabe kann an dieser Stelle nicht eingerückt werden.",
     task_not_found: "Die Aufgabe wurde nicht gefunden.",
+    task_schedule_before_available:
+      "Eine Aufgabe kann nicht vor ihrem Ab-Datum eingeplant werden.",
     task_parent_self:
       "Eine Aufgabe kann nicht ihre eigene übergeordnete Aufgabe sein.",
     task_promotion_invalid:

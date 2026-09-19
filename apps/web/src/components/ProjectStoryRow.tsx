@@ -413,7 +413,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           laterLabel={strings.railLater}
           structureLabel={strings.railStructure}
           moreLabel={strings.railMore}
-          onLater={() => runRailCommand("story.defer")}
+          onLater={story.status === "backlog" ? () => runRailCommand("story.defer") : undefined}
           onStructure={() => runRailCommand("story.structure")}
           onMore={handleMainClick}
         />

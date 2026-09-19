@@ -19,7 +19,6 @@ import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todaySc
 import { IconActionGlyph } from "../components/IconActionButton";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
-import { useTaskSnooze } from "../lib/taskSnoozeContext";
 
 export function TodayPage() {
   const strings = useStrings();
@@ -62,19 +61,12 @@ export function TodayPage() {
     setScope(nextScope);
     writeTodayScope(nextScope);
   };
-  const { isSnoozed } = useTaskSnooze();
-  // A same-day "Später" snooze (see `taskSnooze.ts`) is member-scoped,
-  // client-only attention state -- it never touches `scheduledDate` or
-  // `externalWait`, so it must not affect what other members see, and it
-  // is filtered here rather than server-side.
-  const notSnoozed = <T extends { id: number }>(tasks: T[]) =>
-    tasks.filter((task) => !isSnoozed(task.id));
-  const revisitTasks = notSnoozed(agenda?.revisit ?? []);
+  const revisitTasks = agenda?.revisit ?? [];
   const completedTodayTasks = agenda?.completedToday ?? [];
-  const additionalTasks = notSnoozed([
+  const additionalTasks = [
     ...(agenda?.shared ?? []),
     ...(agenda?.unscheduled ?? []),
-  ]);
+  ];
   const projectAgenda = agenda?.projects ?? [];
   const projectsByBucket: Record<
     "planned" | "overdue" | "dueToday" | "dueSoon",
@@ -92,10 +84,10 @@ export function TodayPage() {
     "planned" | "overdue" | "dueToday" | "dueSoon",
     Task[]
   > = {
-    planned: notSnoozed(agenda?.planned ?? []),
-    overdue: notSnoozed(agenda?.overdue ?? []),
-    dueToday: notSnoozed(agenda?.dueToday ?? []),
-    dueSoon: notSnoozed(agenda?.dueSoon ?? []),
+    planned: agenda?.planned ?? [],
+    overdue: agenda?.overdue ?? [],
+    dueToday: agenda?.dueToday ?? [],
+    dueSoon: agenda?.dueSoon ?? [],
   };
   const resolveProjectOwner = (ownerMemberId: number | null) =>
     scope === "all" && ownerMemberId !== null
