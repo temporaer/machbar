@@ -181,6 +181,36 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     ]);
   });
 
+  it("excludes tasks before their global availability date and includes them once reached", async () => {
+    await createTask({
+      title: "Erst morgen machbar",
+      notBeforeAt: `${tomorrow}T00:00:00.000Z`,
+    });
+    await createTask({
+      title: "Schon wieder machbar",
+      notBeforeAt: `${yesterday}T00:00:00.000Z`,
+    });
+
+    expect(await bucketsContaining("Erst morgen machbar")).toEqual([]);
+    expect(await bucketsContaining("Schon wieder machbar")).toEqual(["shared"]);
+  });
+
+  it("rejects planning a task before its availability date", async () => {
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Widersprüchliche Planung",
+        status: "actionable",
+        scheduledDate: today,
+        notBeforeAt: `${tomorrow}T00:00:00.000Z`,
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("task_schedule_before_available");
+  });
+
   it("excludes Später-klären captures from Heute", async () => {
     await createTask({
       title: "Noch zu entscheiden",
@@ -1073,7 +1103,7 @@ describe("Heute agenda: compiled project prompts", () => {
     expect(bucketOf(dueSoon.id)).toBe("dueSoon");
   });
 
-  it("classifies a reached scheduledDate as planned even when a due date also qualifies", async () => {
+  it("ignores active-project scheduledDate and classifies project attention by due date", async () => {
     const today = localTodayIso();
     const scheduledOnly = await createActiveProject({
       title: "Nur Wiedervorlage",
@@ -1088,36 +1118,32 @@ describe("Heute agenda: compiled project prompts", () => {
     const prompts = await projectPrompts();
     const bucketOf = (id: number) =>
       prompts.find((entry) => entry.project.id === id)?.attentionBucket;
-    expect(bucketOf(scheduledOnly.id)).toBe("planned");
-    expect(bucketOf(both.id)).toBe("planned");
+    expect(bucketOf(scheduledOnly.id)).toBeUndefined();
+    expect(bucketOf(both.id)).toBe("overdue");
   });
 
-  it("persists reached schedules until rescheduled or completed", async () => {
+  it("does not surface active projects from reached schedules", async () => {
     const today = localTodayIso();
     const project = await createActiveProject({
       title: "Projekt-Wiedervorlage",
       scheduledDate: addDaysIso(today, -2),
     });
 
-    expect((await projectPrompts()).map((entry) => entry.project.id)).toContain(
-      project.id,
-    );
+    expect((await projectPrompts()).map((entry) => entry.project.id)).not.toContain(project.id);
 
     ctx.handle.sqlite
       .prepare("UPDATE work_items SET scheduled_date = ? WHERE id = ?")
-      .run(addDaysIso(today, 1), project.id);
+      .run(addDaysIso(today, -1), project.id);
     expect(
       (await projectPrompts()).map((entry) => entry.project.id),
     ).not.toContain(project.id);
 
     ctx.handle.sqlite
       .prepare(
-        "UPDATE work_items SET scheduled_date = ?, status = 'done' WHERE id = ?",
+        "UPDATE work_items SET due_date = ? WHERE id = ?",
       )
       .run(today, project.id);
-    expect(
-      (await projectPrompts()).map((entry) => entry.project.id),
-    ).not.toContain(project.id);
+    expect((await projectPrompts()).map((entry) => entry.project.id)).toContain(project.id);
   });
 
   it("deduplicates due and scheduled reasons and applies driver/shared identity semantics", async () => {
@@ -1164,10 +1190,10 @@ describe("Heute agenda: compiled project prompts", () => {
     );
     expect(
       prompts.find((entry) => entry.project.id === both.id)?.qualification,
-    ).toBe("both");
+    ).toBe("due");
     expect(
       prompts.find((entry) => entry.project.id === both.id)?.attentionBucket,
-    ).toBe("planned");
+    ).toBe("dueToday");
     expect(prompts.map((entry) => entry.project.id)).toContain(shared.id);
     expect(prompts.map((entry) => entry.project.id)).not.toContain(other.id);
   });
@@ -1221,7 +1247,7 @@ describe("Heute agenda: compiled project prompts", () => {
     const captured = await createActiveProject({
       title: "Nur erfasstes Projekt",
       ownerMemberId: owner.id,
-      scheduledDate: today,
+      dueDate: today,
     });
     await createTask({
       projectId: captured.id,

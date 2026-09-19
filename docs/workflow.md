@@ -132,10 +132,13 @@ tasks inside open backlog projects still appear in Week because they are
 intentional planning signals; unscheduled backlog-project tasks stay out of
 **Ohne Planung** until the project is active.
 
-Each item has three distinct source attention dates: `scheduledDate` records
-when the household intends to work on it, `dueDate` records the real deadline
-or constraint, and `externalWait.revisitDate` records the follow-up date for a
-direct external wait. From these, Week derives one explicit projected
+Each task has distinct temporal semantics: `notBeforeAt` ("Ab …") gates when it
+may enter the executable pool, `scheduledDate` ("Geplant für …") records when
+the household intends to work on it, `dueDate` records the real deadline or
+constraint, and `externalWait.revisitDate` records the follow-up date for a
+direct external wait. Week placement uses the attention dates
+`scheduledDate`/`dueDate`/`externalWait.revisitDate`; `notBeforeAt` is only an
+eligibility gate. From these, Week derives one explicit projected
 `attentionDate` (and matching `placement`) per item: the earliest applicable
 date, clamped forward to today when it has passed. This means a due date that
 is chronologically earlier than a scheduled/revisit date wins the placement
@@ -157,9 +160,10 @@ dependency-blocked tasks, captures, someday/backlog tasks, or already scheduled
 tasks.
 
 Dragging a card edits whichever date field is responsible for its current
-placement, not simply its task-vs-project role: a `scheduled` card changes
-`scheduledDate`, a `revisit` card changes `externalWait.revisitDate`, and a
-project resurface card uses the project scheduling command. A `due`-placement
+placement, not simply its task-vs-project role: a `scheduled` task card changes
+`scheduledDate`, and a `revisit` card changes `externalWait.revisitDate`.
+Backlog-project Wiedervorlage is edited through the project workflow and is not
+active-project attention. A `due`-placement
 card's deadline is a hard constraint and is never moved by generic drag; the
 day columns reject the drop for it. Dropping a `scheduled` or `revisit` card
 onto **Ohne Planung** clears that date field; if the item still has an

@@ -157,6 +157,39 @@ describe("review queue", () => {
     ).toBe(true);
   });
 
+  it("surfaces reached backlog project revisits in Review", () => {
+    const reached = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        status: "backlog",
+        title: "Reached revisit",
+        scheduledDate: today,
+      })
+      .returning()
+      .get();
+    const future = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        status: "backlog",
+        title: "Future revisit",
+        scheduledDate: "2026-09-05",
+      })
+      .returning()
+      .get();
+
+    const items = reviewItems();
+    expect(
+      items.some(
+        (item) =>
+          item.entityId === reached.id &&
+          item.reason === "backlog_revisit_reached",
+      ),
+    ).toBe(true);
+    expect(items.some((item) => item.entityId === future.id)).toBe(false);
+  });
+
   it("suppresses active staleness for a healthy future wait and does not age project someday tasks", () => {
     const member = ctx.handle.db
       .insert(schema.members)

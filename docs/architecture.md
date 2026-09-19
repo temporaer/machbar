@@ -221,9 +221,13 @@ still uses one compact day list with chips rather than separate day or wait
 sections.
 
 There are three distinct source attention dates for a card:
-- `scheduledDate` = intended work date;
+- task `scheduledDate` = intended work date;
 - `dueDate` = deadline or constraint;
 - `externalWait.revisitDate` = follow-up date for a direct external wait.
+Task `notBeforeAt` is a separate availability gate, not a Week placement date:
+while it is in the future the task is not executable or selected as a next
+action; once reached, normal eligibility resumes without creating a special
+bucket.
 
 From these, `projectWeekAttention` (in `@machbar/shared`, reused by both the
 backend projection and the frontend's optimistic drag/clear recompute)
@@ -257,12 +261,10 @@ deadline command for surfaces that offer due-date editing. Story dates mean
 story-level attention and never propagate to descendants.
 
 Active projects have a separate compiled `projects` bucket. A project enters
-Heute seven local calendar days before its `dueDate`, or once its
-`scheduledDate` is reached; reached scheduling prompts persist until the
-project is rescheduled or completed. A project qualifying through both dates
-appears once with both reasons and its clarified next action, or its existing
-stuck diagnosis when no executable next action exists. Project dates never
-become task dates.
+Heute seven local calendar days before its `dueDate`; project `scheduledDate`
+is a backlog-only Wiedervorlage and does not surface active project attention.
+Reached backlog Wiedervorlagen surface in Review for an activation/defer/archive
+decision. Project dates never become task dates.
 
 ---
 
@@ -1107,21 +1109,17 @@ suppress themselves via one shared
 `shouldSuppressGlobalShortcuts()` (`apps/web/src/lib/keyboardShortcuts.ts`)
 while editing text, or while a `BottomSheet`/modal is open.
 
-**Command rails.** `WorkItemActionRail.tsx` renders exactly three fixed,
-non-configurable buttons per row — `Später` · `Struktur` · `Mehr` — for both
-tasks and projects; there is no per-household favorite/overflow
-configuration. `Später` dispatches `task.later`/`story.defer`; `Struktur`
-dispatches `task.structure`/`story.structure`, opening `TaskStructureSheet`
-(split/move/convert-to-project) or `ProjectStructureSheet` (plan next
-task/edit outcome); `Mehr` opens the item's detail directly (`task.open` /
-navigation to the project detail page) — it is not another overflow menu.
+**Command rails.** `WorkItemActionRail.tsx` renders fixed, non-configurable
+buttons per row; there is no per-household favorite/overflow configuration.
+Tasks use `Ab …` · `Einplanen` · `Mehr`: `Ab …` dispatches `task.later` and
+edits persistent `Task.notBeforeAt`; `Einplanen` dispatches `task.plan` for
+`scheduledDate`/deadline; `Mehr` opens task detail. Backlog projects use
+Wiedervorlage/Struktur/Mehr, while active projects omit the Wiedervorlage
+button. `Struktur` opens `ProjectStructureSheet` for project rows and remains
+available from task detail for task split/move/convert workflows.
 The separate status/lifecycle rail (swipe right, `*-row-lifecycle`) is
 unchanged and, for tasks, now also carries the waiting/follow-up
-(`task.waitingLifecycle`) affordance. Task `Später`'s same-day choices write
-to a member-scoped, ephemeral client-only snooze (`taskSnooze.ts`/
-`taskSnoozeContext.tsx`) rather than `scheduledDate`, so a snooze never
-affects what other household members see; future dates schedule normally
-through `task.plan`'s existing commit path. Contextual successor creation
+(`task.waitingLifecycle`) affordance. Contextual successor creation
 (a small "+" reading "Aufgabe danach hinzufügen") appears only inside the
 two `organizable` `TaskOutline` mounts (project detail's own outline, the
 split sheet's subtree editor) via `InlineSuccessorComposer`, not in

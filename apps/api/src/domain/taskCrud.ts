@@ -102,22 +102,22 @@ function isValidIanaTimezone(value: string): boolean {
   } catch {
     return false;
   }
+}
 
-  function assertScheduleNotBeforeAvailability(
-    scheduledDate: string | null,
-    notBeforeAt: string | null,
+function assertScheduleNotBeforeAvailability(
+  scheduledDate: string | null,
+  notBeforeAt: string | null,
+) {
+  if (
+    scheduledDate !== null &&
+    notBeforeAt !== null &&
+    scheduledDate < notBeforeAt.slice(0, 10)
   ) {
-    if (
-      scheduledDate !== null &&
-      notBeforeAt !== null &&
-      scheduledDate < notBeforeAt.slice(0, 10)
-    ) {
-      throw AppError.conflict(
-        "task_schedule_before_available",
-        "A task cannot be planned before it becomes available.",
-        { scheduledDate, notBeforeAt },
-      );
-    }
+    throw AppError.conflict(
+      "task_schedule_before_available",
+      "A task cannot be planned before it becomes available.",
+      { scheduledDate, notBeforeAt },
+    );
   }
 }
 

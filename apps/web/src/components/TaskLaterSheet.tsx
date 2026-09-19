@@ -30,7 +30,7 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
     const [hours, minutes] = customTime.split(":").map(Number);
     if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
     const date = new Date(`${customDate}T00:00:00`);
-    date.setHours(hours, minutes, 0, 0);
+    date.setHours(hours!, minutes!, 0, 0);
     return date.toISOString();
   };
 
@@ -80,7 +80,10 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => void applyNotBefore(startOfLocalDay(resolveScheduleShortcut("tomorrow")))}
+              onClick={() => {
+                const date = resolveScheduleShortcut("tomorrow");
+                if (date) void applyNotBefore(startOfLocalDay(date));
+              }}
             >
               {strings.scheduleShortcutLabels.tomorrow}
             </button>
@@ -88,7 +91,10 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => void applyNotBefore(startOfLocalDay(resolveScheduleShortcut("weekend")))}
+              onClick={() => {
+                const date = resolveScheduleShortcut("weekend");
+                if (date) void applyNotBefore(startOfLocalDay(date));
+              }}
             >
               {strings.scheduleShortcutLabels.weekend}
             </button>

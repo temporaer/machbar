@@ -128,7 +128,6 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
     scope: "household",
     dueDate: null,
     scheduledDate: null,
-    notBeforeAt: null,
     position: 0,
     createdAt: new Date("2026-01-01T09:00:00Z").toISOString(),
     updatedAt: new Date("2026-01-01T09:00:00Z").toISOString(),

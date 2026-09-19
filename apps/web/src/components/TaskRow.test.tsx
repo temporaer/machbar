@@ -387,7 +387,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     );
   });
 
-  it("reveals the fixed Später/Struktur/Mehr rail (not an action) on the opposite swipe direction", async () => {
+  it("reveals the fixed Ab/Einplanen/Mehr rail (not an action) on the opposite swipe direction", async () => {
     const task = makeTask({ id: 7, title: "Projektplan", status: "actionable" });
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Projektplan");
@@ -395,8 +395,8 @@ describe("TaskRow – primary swipe direction mapping", () => {
     swipe(container, -100);
 
     const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(rail).getByRole("button", { name: "Später" })).toBeInTheDocument();
-    expect(within(rail).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Ab …" })).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Einplanen" })).toBeInTheDocument();
     expect(within(rail).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
     expect(mockedApi.completeTask).not.toHaveBeenCalled();
     expect(mockedApi.cancelTask).not.toHaveBeenCalled();
@@ -410,10 +410,10 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
-    expect(screen.getByRole("button", { name: "Später" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ab …" })).toBeInTheDocument();
   });
 
-  it("renders exactly the fixed Später/Struktur/Mehr rail, never configurable per row", async () => {
+  it("renders exactly the fixed Ab/Einplanen/Mehr rail, never configurable per row", async () => {
     const task = makeTask({ id: 10, title: "Kompakte Aktionen", status: "actionable", projectId: 2 });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Kompakte Aktionen");
@@ -421,7 +421,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
     const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
-    for (const name of ["Später", "Struktur", "Mehr"]) {
+    for (const name of ["Ab …", "Einplanen", "Mehr"]) {
       const button = within(rail).getByRole("button", { name });
       expect(button).toHaveClass("btn", "btn-sm");
       expect(button.textContent).toBe(name);
@@ -450,7 +450,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(screen.getByTestId("open-task")).toHaveTextContent("11");
   });
 
-  it("opens the focused Später workflow (TaskLaterSheet) from the 'Später' rail button", async () => {
+  it("opens the focused Ab workflow (TaskLaterSheet) from the 'Ab …' rail button", async () => {
     const task = makeTask({ id: 9, title: "Kurz aufschieben", status: "actionable" });
     mockedApi.getTask.mockResolvedValue(task);
     renderWithProviders(
@@ -462,16 +462,16 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await screen.findByText("Kurz aufschieben");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Später" }));
+    await userEvent.click(screen.getByRole("button", { name: "Ab …" }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Später: Kurz aufschieben" }),
+      await screen.findByRole("dialog", { name: "Ab: Kurz aufschieben" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "In einer Weile" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Heute Abend" })).toBeInTheDocument();
   });
 
-  it("opens the focused Struktur workflow (TaskStructureSheet) from the 'Struktur' rail button", async () => {
+  it("opens the focused planning workflow (TaskPlanSheet) from the 'Einplanen' rail button", async () => {
     const task = makeTask({ id: 19, title: "Struktur ändern", status: "actionable", projectId: 2 });
     mockedApi.getTask.mockResolvedValue(task);
     renderWithProviders(
@@ -483,12 +483,10 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await screen.findByText("Struktur ändern");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Struktur" }));
+    await userEvent.click(screen.getByRole("button", { name: "Einplanen" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Struktur: Struktur ändern" });
-    expect(within(dialog).getByRole("button", { name: "Aufteilen" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Verschieben …" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Zum Projekt machen" })).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "Planen: Struktur ändern" });
+    expect(within(dialog).getByLabelText("Wann nimmst du dir das vor?")).toBeInTheDocument();
   });
 
   it("adds a successor from the '+' affordance inside an organizable outline and returns focus to the task", async () => {
@@ -783,12 +781,12 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     await screen.findByText("Termin vereinbaren");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Später" }));
+    await userEvent.click(screen.getByRole("button", { name: "Ab …" }));
     await userEvent.click(
-      await screen.findByRole("button", { name: "Weitere Planungsoptionen …" }),
+      await screen.findByRole("button", { name: "Einplanen / Deadline …" }),
     );
 
-    await screen.findByLabelText("Wann willst du das angehen?");
+    await screen.findByLabelText("Wann nimmst du dir das vor?");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
 
