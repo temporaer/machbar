@@ -72,6 +72,11 @@ const mcpAbsoluteAtSchema = z
   .datetime({ offset: true })
   .transform((value) => new Date(value).toISOString())
   .describe("Absolute reminder time as a full RFC3339/ISO timestamp.");
+const mcpNotBeforeAtSchema = z
+  .string()
+  .datetime({ offset: true })
+  .transform((value) => new Date(value).toISOString())
+  .describe("Task availability time as a full RFC3339/ISO timestamp.");
 const mcpAbsoluteReminderSchema = z.object({ at: mcpAbsoluteAtSchema });
 const mcpAbsoluteRemindersSchema = z.array(mcpAbsoluteReminderSchema);
 const mcpSearchLimit = z
@@ -100,6 +105,7 @@ type McpTaskSource = Pick<
   | "effectiveOwnerId"
   | "dueDate"
   | "scheduledDate"
+  | "notBeforeAt"
   | "blocked"
   | "externalWait"
 >;
@@ -127,6 +133,7 @@ function compactTask(task: McpTaskSource) {
     effectiveOwnerId: task.effectiveOwnerId,
     dueDate: task.dueDate,
     scheduledDate: task.scheduledDate,
+    notBeforeAt: task.notBeforeAt,
     blocked: task.blocked,
     externalWait: task.externalWait
       ? {
@@ -605,7 +612,7 @@ export function createMachbarMcpServer({
     "machbar_create_task",
     {
       description:
-        "Create a task. Set activateIfReady=true only for a concrete, single-step action that can be performed without further clarification, decision, decomposition, or triage. Leave it false or omitted for vague captures, ideas, multi-step outcomes, clarification, or Inbox review; do not estimate duration or use a two-minute rule. Do not invent metadata to justify activation. Examples: \"Buy milk\" and \"Add batteries to the shopping list\" can be activated; \"Call the dentist tomorrow\" can be activated with its explicitly requested date; \"Figure out the summer holiday\", \"Need to sort out the heating thing\", and \"Remember that we should think about replacing the router\" should remain Inbox. If uncertain, prefer Inbox. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. MCP reminders are absolute RFC3339/ISO timestamps.",
+        "Create a task. Set activateIfReady=true only for a concrete, single-step action that can be performed without further clarification, decision, decomposition, or triage. Leave it false or omitted for vague captures, ideas, multi-step outcomes, clarification, or Inbox review; do not estimate duration or use a two-minute rule. Do not invent metadata to justify activation. Examples: \"Buy milk\" and \"Add batteries to the shopping list\" can be activated; \"Call the dentist tomorrow\" can be activated with its explicitly requested date; \"Figure out the summer holiday\", \"Need to sort out the heating thing\", and \"Remember that we should think about replacing the router\" should remain Inbox. If uncertain, prefer Inbox. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. notBeforeAt and MCP reminders are absolute RFC3339/ISO timestamps.",
       inputSchema: {
         title: z.string().min(1),
         notes: z.string().optional(),
@@ -620,6 +627,7 @@ export function createMachbarMcpServer({
         ownerMemberId: z.number().int().positive().nullable().optional(),
         dueDate: calendarDate.nullable(),
         scheduledDate: calendarDate.nullable(),
+        notBeforeAt: mcpNotBeforeAtSchema.nullable().optional(),
         reminders: mcpAbsoluteRemindersSchema.optional(),
         priority: z.number().int().nullable().optional(),
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
@@ -742,7 +750,7 @@ export function createMachbarMcpServer({
     "machbar_update_task",
     {
       description:
-        "Update task metadata, including its title, with the latest revision. In household scope, omit ownerMemberId to keep ownership, pass null for shared, or pass a stable member ID; work scope always uses the authenticated member. Dates are YYYY-MM-DD only.",
+        "Update task metadata, including its title, with the latest revision. In household scope, omit ownerMemberId to keep ownership, pass null for shared, or pass a stable member ID; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. notBeforeAt is an absolute RFC3339/ISO timestamp or null to clear it.",
       inputSchema: {
         taskId,
         expectedRevision,
@@ -750,6 +758,7 @@ export function createMachbarMcpServer({
         ownerMemberId: z.number().int().positive().nullable().optional(),
         dueDate: calendarDate.nullable(),
         scheduledDate: calendarDate.nullable(),
+        notBeforeAt: mcpNotBeforeAtSchema.nullable().optional(),
         priority: z.number().int().nullable().optional(),
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
         tagIds: z.array(z.number().int().positive()).optional(),

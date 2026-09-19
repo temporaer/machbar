@@ -22,7 +22,10 @@ import type { Db } from "../db/client.js";
  * prevent an eligible child from being reached, and a parent whose
  * children have all become terminal is free to become a candidate again.
  */
-export function getNextActionTaskIdsByProject(db: Db): Map<number, number[]> {
+export function getNextActionTaskIdsByProject(
+  db: Db,
+  now = new Date().toISOString(),
+): Map<number, number[]> {
   const rows = db.all<{ project_id: number; task_id: number }>(sql`
     WITH RECURSIVE sortkey(task_id, project_id, key) AS (
       SELECT task.id, story.id, printf('%08d', task.position)
@@ -41,6 +44,7 @@ export function getNextActionTaskIdsByProject(db: Db): Map<number, number[]> {
       JOIN work_items t ON t.id = sk.task_id
       WHERE sk.project_id IS NOT NULL
         AND t.status = 'active'
+        AND (t.not_before_at IS NULL OR t.not_before_at <= ${now})
         AND NOT EXISTS (
           SELECT 1 FROM task_dependencies td
           JOIN work_items dep ON dep.id = td.depends_on_task_id

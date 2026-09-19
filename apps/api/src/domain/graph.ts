@@ -246,7 +246,7 @@ export class Graph {
     const effectiveOwners = getEffectiveOwners(db);
     const effectiveTagIdsByTask = getEffectiveTagIds(db);
     const effectiveContextIdsByTask = getEffectivePhysicalContextIds(db);
-    const nextActionIdsByProject = getNextActionTaskIdsByProject(db);
+    const nextActionIdsByProject = getNextActionTaskIdsByProject(db, now);
     const graph = new Graph(new Map(), nextActionIdsByProject);
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------

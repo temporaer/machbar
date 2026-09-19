@@ -100,6 +100,17 @@ describe("TaskLaterSheet", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("requires both a custom date and time before confirming", async () => {
+    const task = makeTask({ id: 45, title: "Termin abstimmen" });
+    renderWithProviders(<TaskLaterSheet task={task} onClose={vi.fn()} />);
+
+    await userEvent.type(screen.getByLabelText("Anderes Datum"), "morgen");
+    await userEvent.tab();
+    await userEvent.clear(screen.getByLabelText("Uhrzeit"));
+
+    expect(screen.getByRole("button", { name: "Fertig" })).toBeDisabled();
+  });
+
   it("escapes into the full task.plan workflow via 'Einplanen / Deadline …'", async () => {
     const task = makeTask({ id: 43, title: "Handwerker beauftragen" });
     mockedApi.getTask.mockResolvedValue(task);

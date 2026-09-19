@@ -24,12 +24,12 @@ describe("non-backlog project revisit cleanup migration", () => {
       applyMigration(sqlite, "0006_add_task_not_before.sql");
 
       sqlite.exec(`
-        INSERT INTO work_items (id, role, title, status, scheduled_date) VALUES
-          (1, 'story', 'Backlog bleibt terminiert', 'backlog', '2026-09-10'),
-          (2, 'story', 'Aktiv wird bereinigt', 'active', '2026-09-11'),
-          (3, 'story', 'Abgeschlossen wird bereinigt', 'done', '2026-09-12'),
-          (4, 'story', 'Archiviert wird bereinigt', 'archived', '2026-09-13'),
-          (5, 'task', 'Aufgabe bleibt geplant', 'active', '2026-09-14');
+        INSERT INTO work_items (id, role, title, status, scheduled_date, archived_at) VALUES
+          (1, 'story', 'Backlog bleibt terminiert', 'backlog', '2026-09-10', NULL),
+          (2, 'story', 'Aktiv wird bereinigt', 'active', '2026-09-11', NULL),
+          (3, 'story', 'Abgeschlossen wird bereinigt', 'done', '2026-09-12', NULL),
+          (4, 'story', 'Archiviert wird bereinigt', 'backlog', '2026-09-13', '2026-09-14T08:00:00.000Z'),
+          (5, 'task', 'Aufgabe bleibt geplant', 'active', '2026-09-14', NULL);
       `);
 
       applyMigration(sqlite, "0007_clean_non_backlog_revisit_dates.sql");

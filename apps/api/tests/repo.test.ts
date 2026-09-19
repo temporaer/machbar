@@ -296,6 +296,28 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       expect(ids).not.toContain(parent.id);
     });
 
+    it("excludes tasks that are not yet available", () => {
+      const project = createProject(handle.db, { title: "Verfügbarkeit" });
+      const deferred = createTask(handle.db, {
+        projectId: project.id,
+        title: "Später",
+        status: "actionable",
+        notBeforeAt: "2026-09-20T08:00:00.000Z",
+      });
+      const available = createTask(handle.db, {
+        projectId: project.id,
+        title: "Jetzt",
+        status: "actionable",
+      });
+
+      const ids = getNextActionTaskIdsByProject(
+        handle.db,
+        "2026-09-19T14:00:00.000Z",
+      ).get(project.id);
+      expect(ids).toEqual([available.id]);
+      expect(ids).not.toContain(deferred.id);
+    });
+
     it("selects the first eligible leaf across multiple open descendants in outline order", () => {
       const project = createProject(handle.db, { title: "Tiefe Struktur" });
       const root = createTask(handle.db, {

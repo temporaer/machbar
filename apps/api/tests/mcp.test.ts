@@ -754,6 +754,57 @@ describe("MCP integration", () => {
     await server.close();
   });
 
+  it("exposes, sets, and clears task availability timestamps", async () => {
+    const member = await createMember();
+    const { client, server } = await connectMcp(member.id);
+
+    const created = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "Available later",
+        activateIfReady: true,
+        notBeforeAt: "2026-09-21T18:00:00+02:00",
+      },
+    });
+    const createdTask = (
+      created.structuredContent as {
+        result: { id: number; revision: number; notBeforeAt: string | null };
+      }
+    ).result;
+    expect(createdTask.notBeforeAt).toBe("2026-09-21T16:00:00.000Z");
+
+    const search = await client.callTool({
+      name: "machbar_search",
+      arguments: { text: "Available later" },
+    });
+    expect(
+      (
+        search.structuredContent as {
+          result: { items: Array<{ notBeforeAt: string | null }> };
+        }
+      ).result.items[0]?.notBeforeAt,
+    ).toBe("2026-09-21T16:00:00.000Z");
+
+    const updated = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: createdTask.id,
+        expectedRevision: createdTask.revision,
+        notBeforeAt: null,
+      },
+    });
+    expect(
+      (
+        updated.structuredContent as {
+          result: { notBeforeAt: string | null };
+        }
+      ).result.notBeforeAt,
+    ).toBeNull();
+
+    await client.close();
+    await server.close();
+  });
+
   it("manages reminders through canonical task updates with stable ids", async () => {
     const member = await createMember();
     const { client, server } = await connectMcp(member.id);

@@ -151,7 +151,7 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
           <button
             type="button"
             className="btn btn-primary"
-            disabled={saving || !dateValid || !customDate}
+            disabled={saving || !dateValid || customNotBeforeAt() === null}
             onClick={() => void applyNotBefore(customNotBeforeAt())}
           >
             {strings.confirmDone}
