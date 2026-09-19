@@ -3,6 +3,8 @@ import type { ProjectWithActions, WeekPlanningItem } from "./api";
 import type { TaskDetailFocusField } from "./taskDetailContext";
 import type { ProjectWorkflowAction } from "./api";
 
+type WeekTaskPlanningItem = Extract<WeekPlanningItem, { role: "task" }>;
+
 /**
  * The semantic command vocabulary every interaction surface dispatches
  * against — mouse click, touch/swipe, row buttons, and (future) keyboard
@@ -27,8 +29,8 @@ import type { ProjectWorkflowAction } from "./api";
  *
  * `workItem.schedule`, `workItem.setDeadline`, and
  * `workItem.setRevisitDate` are date intents used by Week planning and
- * future date surfaces; they preserve the scheduled-date/deadline/external-wait
- * distinction while still routing through existing task/story action providers.
+ * future date surfaces. Schedule and external-wait revisit apply only to tasks;
+ * deadlines route through the existing task/story action providers.
  * `navigate.*` names the g-prefixed keyboard destinations, and `capture.open`
  * names the contextual QuickAdd entry point.
  */
@@ -52,7 +54,7 @@ export type WorkItemCommand =
   | { type: "task.toggleDone"; task: Task }
   | { type: "task.toggleAdditionalNextAction"; task: Task }
   | { type: "task.primaryAction"; task: Task }
-  | { type: "workItem.schedule"; item: WeekPlanningItem; date: string | null }
+  | { type: "workItem.schedule"; item: WeekTaskPlanningItem; date: string | null }
   | { type: "workItem.setDeadline"; item: WeekPlanningItem; date: string | null }
   | { type: "workItem.setRevisitDate"; item: WeekPlanningItem; date: string | null }
   | { type: "workItem.open"; workItem: { id: number; role: "story" | "task" } }

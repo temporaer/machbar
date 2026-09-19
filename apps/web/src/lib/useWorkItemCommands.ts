@@ -293,17 +293,12 @@ export function useWorkItemCommands() {
           taskActions.requestPrimarySwipe(command.task, primarySwipeAction);
           return;
         case "workItem.schedule":
-          if (command.item.role === "task") {
-            return taskActions.update(
-              command.item.task,
-              { scheduledDate: command.date },
-              { scheduledDate: command.date },
-              true,
-            );
-          }
-          return projectActions.schedule(command.item.project, {
-            scheduledDate: command.date,
-          });
+          return taskActions.update(
+            command.item.task,
+            { scheduledDate: command.date },
+            { scheduledDate: command.date },
+            true,
+          );
         case "workItem.setDeadline":
           if (command.item.role === "task") {
             return taskActions.update(

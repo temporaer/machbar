@@ -118,7 +118,7 @@ function assertScheduleNotBeforeAvailability(
     );
   }
   if (notBeforeAt !== null && notBeforeDate !== null) {
-    const utcDate = notBeforeAt.slice(0, 10);
+    const utcDate = new Date(notBeforeAt).toISOString().substring(0, 10);
     const localDateEpoch = Date.parse(`${notBeforeDate}T00:00:00.000Z`);
     const utcDateEpoch = Date.parse(`${utcDate}T00:00:00.000Z`);
     const calendarDistance = Math.abs(localDateEpoch - utcDateEpoch);

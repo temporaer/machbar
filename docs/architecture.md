@@ -1063,10 +1063,10 @@ generic here — they dispatch directly against the specific
 `useOutlineOrganize()` instance that owns the rendered sibling group (via
 the scope's registered `moveBy`), because only that instance can enforce
 the compiled-view structural-safety invariant below.
-Date commands are semantic too: `workItem.schedule` changes only
+Date commands are semantic too: `workItem.schedule` changes only a task's
 `scheduledDate`, `workItem.setDeadline` changes only `dueDate`, and
-`workItem.setRevisitDate` changes only `externalWait.revisitDate`, then routes
-through the existing task or story action provider based on the WorkItem role.
+`workItem.setRevisitDate` changes only a task's `externalWait.revisitDate`.
+Project Wiedervorlage never routes through Week; it uses `story.defer`.
 `capture.open` invokes the opener registered by the scoped `QuickAdd`.
 
 **Command descriptors.** `apps/web/src/lib/commandRegistry.ts` is the

@@ -153,7 +153,12 @@ describe("WeekPage", () => {
 
   it("renders seven days plus scheduled task/story and unplanned items", async () => {
     const task = taskItem({ id: 11, title: "Müll raus", scheduledDate: "2026-09-07" });
-    const story = storyItem({ id: 12, title: "Urlaub planen", scheduledDate: "2026-09-09" });
+    const story = storyItem({
+      id: 12,
+      title: "Urlaub planen",
+      dueDate: "2026-09-09",
+      placement: "due",
+    });
     const unplanned = taskItem({ id: 13, title: "Batterien kaufen", placement: "unplanned" });
     mockedApi.getWeekAgenda.mockResolvedValue(
       agenda({
@@ -179,8 +184,8 @@ describe("WeekPage", () => {
     expect(taskCard).toBeInTheDocument();
     expect(storyCard).toBeInTheDocument();
     expect(within(taskCard).getByText("Geplant für")).toBeInTheDocument();
-    expect(within(storyCard).getByText("Wiedervorlage")).toBeInTheDocument();
-    expect(within(storyCard).queryByText("Geplant für")).not.toBeInTheDocument();
+    expect(within(storyCard).getByText(/^⚑/)).toBeInTheDocument();
+    expect(within(storyCard).queryByText("Wiedervorlage")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Batterien kaufen/ })).toBeInTheDocument();
     expect(screen.getByLabelText("Mo., 7.")).toBeInTheDocument();
     expect(screen.getByLabelText("So., 13.")).toBeInTheDocument();
