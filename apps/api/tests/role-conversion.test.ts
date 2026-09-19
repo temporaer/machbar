@@ -34,6 +34,7 @@ describe("task <-> story role conversion", () => {
         ownerInheritanceMode: "explicit",
         dueDate: "2026-10-10",
         scheduledDate: "2026-09-15",
+        notBeforeAt: "2026-09-14T08:00:00.000Z",
         tagIds: [tag.id],
       })
     ).json();
@@ -73,9 +74,19 @@ describe("task <-> story role conversion", () => {
       status: "active",
       ownerMemberId: member.id,
       dueDate: "2026-10-10",
-      scheduledDate: "2026-09-15",
+      scheduledDate: null,
       tags: [expect.objectContaining({ id: tag.id })],
     });
+    expect(
+      ctx.handle.db
+        .select({
+          scheduledDate: schema.workItems.scheduledDate,
+          notBeforeAt: schema.workItems.notBeforeAt,
+        })
+        .from(schema.workItems)
+        .where(eq(schema.workItems.id, root.id))
+        .get(),
+    ).toEqual({ scheduledDate: null, notBeforeAt: null });
 
     const project = (
       await ctx.app.inject({
@@ -188,6 +199,7 @@ describe("task <-> story role conversion", () => {
         ownerInheritanceMode: "explicit",
         dueDate: "2026-10-10",
         scheduledDate: "2026-09-15",
+        notBeforeAt: "2026-09-14T08:00:00.000Z",
         tagIds: [tag.id],
         contextInheritanceMode: "explicit",
         contextIds: [context.id],
@@ -217,10 +229,20 @@ describe("task <-> story role conversion", () => {
       status: "backlog",
       ownerMemberId: member.id,
       dueDate: "2026-10-10",
-      scheduledDate: "2026-09-15",
+      scheduledDate: null,
       tags: [expect.objectContaining({ id: tag.id })],
       contexts: [expect.objectContaining({ id: context.id })],
     });
+    expect(
+      ctx.handle.db
+        .select({
+          scheduledDate: schema.workItems.scheduledDate,
+          notBeforeAt: schema.workItems.notBeforeAt,
+        })
+        .from(schema.workItems)
+        .where(eq(schema.workItems.id, root.id))
+        .get(),
+    ).toEqual({ scheduledDate: null, notBeforeAt: null });
     const project = (
       await ctx.app.inject({ method: "GET", url: `/api/projects/${root.id}` })
     ).json();
@@ -497,27 +519,35 @@ describe("task <-> story role conversion", () => {
   });
 
   it("converts a story back to a task, preserving identity and history, when the story has no children or acceptance criteria", async () => {
-    const root = (await post("/api/tasks", { title: "Wieder zur Aufgabe" })).json();
-    const converted = (
-      await post(`/api/tasks/${root.id}/convert-to-story`, {
+    const project = (
+      await post("/api/projects", {
+        title: "Wieder zur Aufgabe",
         status: "backlog",
-        expectedRevision: root.revision,
+        dueDate: "2026-10-10",
+        scheduledDate: "2026-09-15",
       })
     ).json();
-    expect(converted.id).toBe(root.id);
-    const reverted = await post(`/api/projects/${converted.id}/convert-to-task`, {
-      expectedRevision: converted.revision,
+    ctx.handle.db
+      .update(schema.workItems)
+      .set({ notBeforeAt: "2026-09-14T08:00:00.000Z" })
+      .where(eq(schema.workItems.id, project.id))
+      .run();
+    const reverted = await post(`/api/projects/${project.id}/convert-to-task`, {
+      expectedRevision: project.revision,
     });
     expect(reverted.statusCode).toBe(201);
     expect(reverted.json()).toMatchObject({
-      id: root.id,
+      id: project.id,
       title: "Wieder zur Aufgabe",
       status: "someday",
+      dueDate: "2026-10-10",
+      scheduledDate: null,
+      notBeforeAt: null,
     });
     expect(
       await ctx.app.inject({
         method: "GET",
-        url: `/api/projects/${converted.id}`,
+        url: `/api/projects/${project.id}`,
       }),
     ).toMatchObject({ statusCode: 404 });
 
@@ -525,9 +555,7 @@ describe("task <-> story role conversion", () => {
       .select()
       .from(schema.activityEvents)
       .all();
-    expect(activity.filter((e) => e.kind === "work_item_role_converted")).toHaveLength(
-      2,
-    );
+    expect(activity.filter((e) => e.kind === "work_item_role_converted")).toHaveLength(1);
   });
 
   it("rejects converting a story with tasks or acceptance criteria back to a task", async () => {

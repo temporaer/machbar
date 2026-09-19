@@ -410,7 +410,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           kind="project"
           disabled={busy}
           groupLabel={strings.moreActions}
-          laterLabel={strings.railLater}
+          laterLabel={strings.projectRevisitDate}
           structureLabel={strings.railStructure}
           moreLabel={strings.railMore}
           {...(story.status === "backlog"

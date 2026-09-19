@@ -19,6 +19,7 @@ import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todaySc
 import { IconActionGlyph } from "../components/IconActionButton";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
+import { useVisibleRefreshInterval } from "../lib/refresh";
 
 export function TodayPage() {
   const strings = useStrings();
@@ -53,6 +54,7 @@ export function TodayPage() {
     }),
     [currentMemberId, scope],
   );
+  useVisibleRefreshInterval(reload);
   const agenda =
     loadedAgenda?.selectionKey === agendaSelectionKey
       ? loadedAgenda.agenda

@@ -12,6 +12,7 @@ import { changeStreamUrl } from "./api";
 import { getClientId } from "./clientId";
 
 export const DISCONNECTED_POLL_MS = 120_000;
+export const TIMED_ELIGIBILITY_REFRESH_MS = 60_000;
 const REFRESH_COALESCE_MS = 150;
 
 /**
@@ -119,4 +120,16 @@ export function useRefresh(): RefreshContextValue {
   const ctx = useContext(RefreshContext);
   if (!ctx) throw new Error("useRefresh must be used within a RefreshProvider");
   return ctx;
+}
+
+export function useVisibleRefreshInterval(
+  refresh: () => void,
+  intervalMs = TIMED_ELIGIBILITY_REFRESH_MS,
+) {
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, intervalMs);
+    return () => window.clearInterval(interval);
+  }, [intervalMs, refresh]);
 }

@@ -606,6 +606,7 @@ const en = {
   reviewActionSetFollowup: "Set a revisit",
   reviewActionResolveBlocker: "Resolve blockage",
   reviewKeep: "Keep as is",
+  reviewRescheduleRevisit: "Reschedule revisit",
   reviewStart: "Start",
   reviewBacklog: "Keep in backlog",
   reviewSomeday: "Keep for someday",

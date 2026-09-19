@@ -165,6 +165,7 @@ describe("review queue", () => {
         status: "backlog",
         title: "Reached revisit",
         scheduledDate: today,
+        reviewedAt: `${today}T12:00:00.000Z`,
       })
       .returning()
       .get();
@@ -181,12 +182,18 @@ describe("review queue", () => {
 
     const items = reviewItems();
     expect(
-      items.some(
+      items.find(
         (item) =>
           item.entityId === reached.id &&
           item.reason === "backlog_revisit_reached",
       ),
-    ).toBe(true);
+    ).toMatchObject({
+      suggestedAction: {
+        code: "defer_project",
+        targetEntityType: "project",
+        targetEntityId: reached.id,
+      },
+    });
     expect(items.some((item) => item.entityId === future.id)).toBe(false);
   });
 

@@ -629,7 +629,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     swipe(container, -100);
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(chips).queryByRole("button", { name: "Später" })).not.toBeInTheDocument();
+    expect(within(chips).queryByRole("button", { name: "Wiedervorlage" })).not.toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
     const mainGrid = chips.querySelector(".rail-main-grid");
@@ -751,7 +751,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     chips = openChips();
     await userEvent.click(
-      within(chips).getByRole("button", { name: "Später" }),
+      within(chips).getByRole("button", { name: "Wiedervorlage" }),
     );
     // `story.defer` opens the canonical Wiedervorlage-first workflow (the
     // deadline is a secondary constraint behind its own affordance), not a

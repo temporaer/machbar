@@ -598,6 +598,7 @@ const extra = {
   reviewActionSetFollowup: "Wiedervorlage setzen",
   reviewActionResolveBlocker: "Blockierung klären",
   reviewKeep: "So beibehalten",
+  reviewRescheduleRevisit: "Wiedervorlage verschieben",
   reviewStart: "Starten",
   reviewBacklog: "Im Backlog lassen",
   reviewSomeday: "Irgendwann lassen",

@@ -4,7 +4,9 @@ import type { ReactNode } from "react";
 import {
   DISCONNECTED_POLL_MS,
   RefreshProvider,
+  TIMED_ELIGIBILITY_REFRESH_MS,
   useRefresh,
+  useVisibleRefreshInterval,
 } from "./refresh";
 
 vi.mock("./api", () => ({
@@ -43,6 +45,11 @@ function Version({ children }: { children?: ReactNode }) {
       {children}
     </div>
   );
+}
+
+function VisibleInterval({ refresh }: { refresh: () => void }) {
+  useVisibleRefreshInterval(refresh);
+  return null;
 }
 
 describe("RefreshProvider synchronization", () => {
@@ -147,5 +154,24 @@ describe("RefreshProvider synchronization", () => {
 
     rendered.unmount();
     expect(stream.close).toHaveBeenCalledOnce();
+  });
+
+  it("runs timed eligibility refreshes only while the page is visible", () => {
+    const refresh = vi.fn();
+    render(
+      <RefreshProvider>
+        <VisibleInterval refresh={refresh} />
+      </RefreshProvider>,
+    );
+
+    act(() => vi.advanceTimersByTime(TIMED_ELIGIBILITY_REFRESH_MS));
+    expect(refresh).toHaveBeenCalledOnce();
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    act(() => vi.advanceTimersByTime(TIMED_ELIGIBILITY_REFRESH_MS));
+    expect(refresh).toHaveBeenCalledOnce();
   });
 });
