@@ -251,7 +251,8 @@ describe("review queue", () => {
       .get();
     const project = ctx.handle.db
       .insert(schema.workItems)
-      .values({ role: "story",
+      .values({
+        role: "story",
         title: "Deferred but healthy",
         status: "active",
         ownerMemberId: member.id,
@@ -260,7 +261,9 @@ describe("review queue", () => {
       .get();
     const deferred = ctx.handle.db
       .insert(schema.workItems)
-      .values({ role: "task", status: "active",
+      .values({
+        role: "task",
+        status: "active",
         parentId: project.id,
         title: "Not before tonight",
         notBeforeAt: "2099-01-01T18:00:00.000Z",
