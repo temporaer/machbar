@@ -261,6 +261,22 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(response.json().error.code).toBe("task_availability_date_required");
   });
 
+  it("rejects a local availability date that cannot contain the supplied instant", async () => {
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Widersprüchliche Verfügbarkeit",
+        status: "actionable",
+        notBeforeAt: "2026-10-01T08:00:00.000Z",
+        notBeforeDate: "2026-09-01",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("task_availability_date_required");
+  });
+
   it("excludes Später-klären captures from Heute", async () => {
     await createTask({
       title: "Noch zu entscheiden",

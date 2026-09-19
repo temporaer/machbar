@@ -117,6 +117,25 @@ function assertScheduleNotBeforeAvailability(
       { notBeforeAt, notBeforeDate },
     );
   }
+  if (notBeforeAt !== null && notBeforeDate !== null) {
+    const utcDate = notBeforeAt.slice(0, 10);
+    const localDateEpoch = Date.parse(`${notBeforeDate}T00:00:00.000Z`);
+    const utcDateEpoch = Date.parse(`${utcDate}T00:00:00.000Z`);
+    const calendarDistance = Math.abs(localDateEpoch - utcDateEpoch);
+    // Every IANA offset maps an instant to the previous, same, or next UTC
+    // calendar date. Reject unrelated dates while keeping the caller-provided
+    // local date authoritative for the schedule invariant below.
+    if (
+      !isIsoCalendarDate(notBeforeDate) ||
+      calendarDistance > 24 * 60 * 60 * 1000
+    ) {
+      throw AppError.badRequest(
+        "task_availability_date_required",
+        "The local task availability date does not match its instant.",
+        { notBeforeAt, notBeforeDate },
+      );
+    }
+  }
   if (
     scheduledDate !== null &&
     notBeforeDate !== null &&
