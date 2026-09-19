@@ -100,6 +100,7 @@ export function ProjectWorkflowHost() {
           onSave={async (patch) => {
             await projectActions.schedule(story, patch);
           }}
+          showRevisitDate={story.status === "backlog"}
         />
       );
     case "tags":

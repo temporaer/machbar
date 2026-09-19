@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
-import { formatDate, isOverdue } from "../lib/format";
+import { formatDate, formatDateTime, isOverdue } from "../lib/format";
 import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
@@ -213,9 +213,7 @@ export function TaskRow({
         : ownerMember?.name ?? strings.unknownMember;
   const due = formatDate(task.dueDate, locale);
   const scheduled = formatDate(task.scheduledDate, locale);
-  const notBefore = task.notBeforeAt
-    ? formatDate(task.notBeforeAt.slice(0, 10), locale)
-    : null;
+  const notBefore = formatDateTime(task.notBeforeAt, locale);
   const projectDueRelative = task.projectDueDate
     ? formatRelativeDueDate(task.projectDueDate, new Date(), locale)
     : null;

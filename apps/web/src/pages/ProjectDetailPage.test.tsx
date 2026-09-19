@@ -284,10 +284,10 @@ describe("ProjectDetailPage task explanations", () => {
       within(overview).getByRole("button", { name: /Fällig.*15\.09\.2026/ }),
     ).toBeInTheDocument();
     expect(
-      within(overview).getByRole("button", {
+      within(overview).queryByRole("button", {
         name: /Wiedervorlage.*10\.09\.2026/,
       }),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(
       within(overview).queryByText(/Erledigt, wenn ….*0\/1/),
     ).not.toBeInTheDocument();
@@ -305,9 +305,7 @@ describe("ProjectDetailPage task explanations", () => {
     ).toBeInTheDocument();
 
     await userEvent.click(
-      within(overview).getByRole("button", {
-        name: /Wiedervorlage.*10\.09\.2026/,
-      }),
+      within(overview).getByRole("button", { name: /Fällig.*15\.09\.2026/ }),
     );
 
     expect(
@@ -315,7 +313,7 @@ describe("ProjectDetailPage task explanations", () => {
         name: "Wiedervorlage & Fälligkeit",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Wiedervorlage")).toHaveValue("10.09.2026");
+    expect(screen.queryByLabelText("Wiedervorlage")).not.toBeInTheDocument();
   });
 
   it("checks outcome criteria directly and opens the canonical structural editor explicitly", async () => {

@@ -10,10 +10,12 @@ export function PlanDatesSheet({
   story,
   onClose,
   onSave,
+  showRevisitDate = true,
 }: {
   story: Project;
   onClose: () => void;
   onSave: (patch: { dueDate?: string | null; scheduledDate?: string | null }) => Promise<void>;
+  showRevisitDate?: boolean;
 }) {
   const strings = useStrings();
   const [saving, setSaving] = useState(false);
@@ -54,17 +56,19 @@ export function PlanDatesSheet({
               disabled={saving}
             />
           </div>
-          <div className="field" style={{ flex: 1 }}>
-            <label htmlFor="story-scheduled">
-              {strings.projectRevisitDate}
-            </label>
-            <HumanDateInput
-              id="story-scheduled"
-              value={story.scheduledDate ?? ""}
-              onChange={(date) => void commit({ scheduledDate: date })}
-              disabled={saving}
-            />
-          </div>
+          {showRevisitDate ? (
+            <div className="field" style={{ flex: 1 }}>
+              <label htmlFor="story-scheduled">
+                {strings.projectRevisitDate}
+              </label>
+              <HumanDateInput
+                id="story-scheduled"
+                value={story.scheduledDate ?? ""}
+                onChange={(date) => void commit({ scheduledDate: date })}
+                disabled={saving}
+              />
+            </div>
+          ) : null}
         </div>
         {error ? <p role="alert" style={{ color: "var(--color-danger)" }}>{error}</p> : null}
         <button type="button" className="btn" onClick={onClose} disabled={saving}>

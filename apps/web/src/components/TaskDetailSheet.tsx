@@ -460,6 +460,9 @@ export function TaskDetailSheet() {
         .filter((value): value is string => value !== null)
         .join(" · ")
     : "";
+  const notBeforeValue = task?.notBeforeAt
+    ? formatDateTime(task.notBeforeAt, locale)
+    : null;
   const reminderSummary = task
     ? formatReminderSummary(task.reminders, task.dueDate, strings, locale)
     : null;
@@ -478,6 +481,7 @@ export function TaskDetailSheet() {
     command:
       | "task.lifecycle"
       | "task.assignOwner"
+      | "task.later"
       | "task.plan"
       | "task.reminders"
       | "task.waitingLifecycle"
@@ -682,6 +686,18 @@ export function TaskDetailSheet() {
             ) : (
               <DetailPropertyPill variant="unset" onClick={() => runCommand("task.plan")}>
                 {strings.addPlan}
+              </DetailPropertyPill>
+            )}
+            {notBeforeValue ? (
+              <DetailPropertyPill
+                label={strings.notBefore}
+                onClick={() => runCommand("task.later")}
+              >
+                <span>{notBeforeValue}</span>
+              </DetailPropertyPill>
+            ) : (
+              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.later")}>
+                {strings.railAvailableFrom}
               </DetailPropertyPill>
             )}
             {task.reminders.length > 0 && reminderSummary ? (

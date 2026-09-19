@@ -796,9 +796,7 @@ export class Graph {
   }
 
   nextActionFor(projectId: number): TaskRecord | null {
-    const id = this.nextActionIdsByProject.get(projectId)?.[0];
-    if (id === undefined) return null;
-    return this.tasksById.get(id) ?? null;
+    return this.nextActionCandidatesFor(projectId)[0] ?? null;
   }
 
   nextActionCandidatesFor(projectId: number): TaskRecord[] {

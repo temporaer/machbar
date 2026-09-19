@@ -41,4 +41,18 @@ describe("PlanDatesSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "Schließen" }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
+
+  it("can hide project revisit editing while keeping the due date field", () => {
+    render(
+      <PlanDatesSheet
+        story={makeProject({ id: 1, title: "Urlaub", status: "active" })}
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        showRevisitDate={false}
+      />,
+    );
+
+    expect(screen.getByLabelText("Fällig")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Wiedervorlage")).not.toBeInTheDocument();
+  });
 });

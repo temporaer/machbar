@@ -249,4 +249,21 @@ describe("task.additionalNextAction opt-in", () => {
     // Stored intent survives even though the blocked task isn't currently selected.
     expect((await getTask(blocked.id)).additionalNextAction).toBe(true);
   });
+
+  it("skips future availability tasks when exposing the canonical project next action", async () => {
+    const project = await createProject({ title: "Projekt I", status: "active" });
+    const deferred = await createTask({
+      title: "Erst später verfügbar I",
+      projectId: project.id,
+      notBeforeAt: "2999-01-01T18:00:00.000Z",
+    });
+    const available = await createTask({
+      title: "Jetzt verfügbar I",
+      projectId: project.id,
+    });
+
+    const detail = await getProject(project.id);
+    expect(detail.nextAction.id).toBe(available.id);
+    expect(detail.nextAction.id).not.toBe(deferred.id);
+  });
 });

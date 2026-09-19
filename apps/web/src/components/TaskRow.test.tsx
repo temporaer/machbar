@@ -653,6 +653,18 @@ describe("TaskRow – calm shared card presentation", () => {
     );
   });
 
+  it("shows deferred availability with date and time", async () => {
+    const task = makeTask({
+      id: 27,
+      title: "Erst abends erledigen",
+      notBeforeAt: "2026-09-19T18:00:00.000Z",
+    });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+
+    await screen.findByText("Erst abends erledigen");
+    expect(screen.getByText(/Ab: .*18:00/)).toBeInTheDocument();
+  });
+
   it("keeps a long wrapping title complete while tags occupy the upper-right", async () => {
     const title =
       "Sehr lange Aufgabe, die über mehrere Zeilen läuft und unter den Tags wieder die volle Kartenbreite nutzt";
