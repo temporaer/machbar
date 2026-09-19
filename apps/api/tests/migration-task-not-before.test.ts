@@ -11,7 +11,7 @@ function applyMigration(sqlite: ReturnType<typeof openDb>["sqlite"], file: strin
   sqlite.exec(readFileSync(path.join(drizzleDir, file), "utf8"));
 }
 
-describe("non-backlog project revisit cleanup migration", () => {
+describe("task not-before and project revisit migration", () => {
   it("clears scheduled_date only for non-backlog stories", () => {
     const { sqlite, close } = openDb(":memory:");
     try {
