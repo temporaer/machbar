@@ -152,6 +152,8 @@ export function ReviewPage() {
         return strings.reviewReasonCompletion;
       case "backlog_planned_work":
         return strings.reviewReasonBacklogPlannedWork;
+      case "backlog_revisit_reached":
+        return strings.reviewReasonBacklogRevisitReached;
       case "task_scheduled_before_resurface":
         return strings.reviewReasonTaskScheduledBeforeResurface;
       case "task_due_before_resurface":
@@ -181,6 +183,9 @@ export function ReviewPage() {
     }
   };
   const actionLabel = (item: ReviewItem): string => {
+    if (item.reason === "backlog_revisit_reached") {
+      return strings.reviewRescheduleRevisit;
+    }
     switch (item.suggestedAction.code) {
       case "assign_driver":
         return strings.assignDriver;
@@ -316,6 +321,37 @@ export function ReviewPage() {
     const project = projectById.get(item.entityId);
     if (!project) return null;
     const displayed = projectActions.retained.get(project.id)?.story ?? project;
+    if (item.reason === "backlog_revisit_reached") {
+      const issueIndex = (items ?? []).indexOf(item);
+      return (
+        <>
+          {displayed.availableActions.includes("activate") ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() =>
+                dispatchWithReturn(
+                  { type: "story.activate", story: displayed },
+                  item,
+                  issueIndex,
+                )
+              }
+            >
+              {strings.activateProject}
+            </button>
+          ) : null}
+          {displayed.availableActions.includes("archive") ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={() => void projectActions.archive(displayed)}
+            >
+              {strings.reviewArchive}
+            </button>
+          ) : null}
+        </>
+      );
+    }
     return (
       <>
         {displayed.availableActions.includes("activate") && hasProjectProgressPath(displayed) ? (

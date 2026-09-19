@@ -43,6 +43,13 @@
       "when": 1789459250975,
       "tag": "0005_add_mcp_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789816814937,
+      "tag": "0006_add_task_not_before",
+      "breakpoints": true
     }
   ]
 }

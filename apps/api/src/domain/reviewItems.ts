@@ -5,6 +5,7 @@ import type {
   ReviewReason,
 } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
+import type { TaskBlockerAnalysis } from "./blockers.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
 
 export const ACTIVE_REVIEW_DAYS = 14;
@@ -28,6 +29,27 @@ function attentionAt(entity: {
   return entity.reviewedAt && entity.reviewedAt > entity.updatedAt
     ? entity.reviewedAt
     : entity.updatedAt;
+}
+
+// A task can be a viable progress path either because it is `blocked` on a
+// healthy wait/dependency, or because it is actionable but not yet
+// executable for a reason other than being blocked (e.g. a future
+// `notBeforeAt`, which is not waiting on an external party or a
+// dependency) while its underlying path is still healthy — matching
+// Graph's own executable/next-action availability gate. A task that is
+// already executable (or is not actionable/blocked at all) is not itself
+// what makes a project's progress path viable here — those tasks are
+// covered separately via `canonicalCandidates`.
+function isViableProgressTask(
+  task: TaskRecord,
+  analysis: TaskBlockerAnalysis,
+): boolean {
+  if (analysis.blocked) return analysis.healthyProgressPath;
+  return (
+    task.status === "actionable" &&
+    !analysis.executable &&
+    analysis.healthyProgressPath
+  );
 }
 
 function projectAttentionAt(
@@ -83,12 +105,13 @@ const reasonOrder: Record<ReviewReason, number> = {
   task_due_before_resurface: 6,
   task_scheduled_before_resurface: 7,
   backlog_planned_work: 8,
-  completed_project_open_work: 9,
-  completion_review: 10,
-  active_stale: 11,
-  backlog_due: 12,
-  backlog_stale: 13,
-  standalone_someday_stale: 14,
+  backlog_revisit_reached: 9,
+  completed_project_open_work: 10,
+  completion_review: 11,
+  active_stale: 12,
+  backlog_due: 13,
+  backlog_stale: 14,
+  standalone_someday_stale: 15,
 };
 
 export interface BuildReviewItemsOptions {
@@ -248,10 +271,7 @@ export function buildReviewItems(
       const canonicalCandidates = graph.nextActionCandidatesFor(project.id);
       const hasHealthyProgressPath = openTasks.some((task) => {
         const analysis = graph.blockerAnalysisFor(task.id);
-        return (
-          analysis?.blocked === true &&
-          analysis.healthyProgressPath
-        );
+        return analysis !== null && isViableProgressTask(task, analysis);
       });
       const hasIntentionalWait = openTasks.some(
         (task) => task.externalWait?.revisitDate !== null &&
@@ -311,6 +331,17 @@ export function buildReviewItems(
         project.reviewedAt.slice(0, 10) <=
           addDaysIso(today, -BACKLOG_REVIEW_DAYS);
       if (
+        project.scheduledDate !== null &&
+        project.scheduledDate <= today
+      ) {
+        items.push(
+          projectItem(project, "reconsider", "backlog_revisit_reached", {
+            code: "defer_project",
+            targetEntityType: "project",
+            targetEntityId: project.id,
+          }),
+        );
+      } else if (
         project.dueDate !== null &&
         project.dueDate <= today &&
         acknowledgementExpired

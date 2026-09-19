@@ -7,7 +7,7 @@ import { useIdentity } from "../lib/identity";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
 import { TaskPlanSheet } from "./TaskPlanSheet";
-import { TaskLaterSheet } from "./TaskLaterSheet";
+import { TaskAvailabilitySheet } from "./TaskAvailabilitySheet";
 import { TaskStructureSheet } from "./TaskStructureSheet";
 import { TaskRemindersSheet } from "./TaskRemindersSheet";
 import { TaskWaitSheet } from "./TaskWaitSheet";
@@ -56,8 +56,8 @@ export function TaskWorkflowHost() {
   switch (workflow.current.kind) {
     case "plan":
       return <TaskPlanSheet task={task} onClose={close} />;
-    case "later":
-      return <TaskLaterSheet task={task} onClose={close} />;
+    case "availability":
+      return <TaskAvailabilitySheet task={task} onClose={close} />;
     case "structure":
       return <TaskStructureSheet task={task} onClose={close} />;
     case "reminders":

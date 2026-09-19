@@ -125,7 +125,7 @@ function storySummary(
     title: story.title,
     status: story.status,
     ownerMemberId: story.ownerMemberId,
-    scheduledDate: story.scheduledDate,
+    scheduledDate: null,
     dueDate: story.dueDate,
     externalWait: null,
     placement,
@@ -208,7 +208,7 @@ export function buildWeekAgenda(
     }
     const projection = projectWeekAttention(
       {
-        scheduledDate: story.scheduledDate,
+        scheduledDate: null,
         revisitDate: null,
         dueDate: story.dueDate,
       },
@@ -246,4 +246,3 @@ export function buildWeekAgenda(
     unplanned,
   };
 }
-

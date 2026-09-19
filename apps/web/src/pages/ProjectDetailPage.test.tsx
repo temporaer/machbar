@@ -284,10 +284,10 @@ describe("ProjectDetailPage task explanations", () => {
       within(overview).getByRole("button", { name: /Fällig.*15\.09\.2026/ }),
     ).toBeInTheDocument();
     expect(
-      within(overview).getByRole("button", {
+      within(overview).queryByRole("button", {
         name: /Wiedervorlage.*10\.09\.2026/,
       }),
-    ).toBeInTheDocument();
+    ).not.toBeInTheDocument();
     expect(
       within(overview).queryByText(/Erledigt, wenn ….*0\/1/),
     ).not.toBeInTheDocument();
@@ -305,17 +305,15 @@ describe("ProjectDetailPage task explanations", () => {
     ).toBeInTheDocument();
 
     await userEvent.click(
-      within(overview).getByRole("button", {
-        name: /Wiedervorlage.*10\.09\.2026/,
-      }),
+      within(overview).getByRole("button", { name: /Fällig.*15\.09\.2026/ }),
     );
 
     expect(
       await screen.findByRole("heading", {
-        name: "Wiedervorlage & Fälligkeit",
+        name: "Projektfrist",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Wiedervorlage")).toHaveValue("10.09.2026");
+    expect(screen.queryByLabelText("Wiedervorlage")).not.toBeInTheDocument();
   });
 
   it("checks outcome criteria directly and opens the canonical structural editor explicitly", async () => {
@@ -376,7 +374,7 @@ describe("ProjectDetailPage task explanations", () => {
       within(overview).getByRole("button", { name: strings.addDriver }),
     ).toBeInTheDocument();
     expect(
-      within(overview).getByRole("button", { name: strings.addPlan }),
+      within(overview).getByRole("button", { name: strings.addDeadline }),
     ).toBeInTheDocument();
     expect(
       within(overview).getByRole("button", { name: strings.addTags }),
@@ -390,6 +388,33 @@ describe("ProjectDetailPage task explanations", () => {
     expect(
       within(overview).queryByRole("button", { name: /Wiedervorlage/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("opens the canonical defer workflow from a backlog project's Wiedervorlage property", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({
+        id: 42,
+        title: "Sommerfest planen",
+        status: "backlog",
+        scheduledDate: "2026-09-20",
+      }),
+      tasks: [],
+    });
+
+    renderProjectRoute("/projects/42");
+
+    const overview = await screen.findByLabelText(strings.projectOverview);
+    await userEvent.click(
+      within(overview).getByRole("button", {
+        name: /Wiedervorlage.*20\.09\.2026/,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: strings.deferProject }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: strings.projectDeadlineTitle }))
+      .not.toBeInTheDocument();
   });
 
   it("loads project and recorded task activity only after opening the disclosure", async () => {

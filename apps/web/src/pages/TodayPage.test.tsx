@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
@@ -7,6 +7,7 @@ import { IdentitySelector } from "../components/IdentitySelector";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
 import type { Agenda } from "@machbar/shared";
+import { TIMED_ELIGIBILITY_REFRESH_MS } from "../lib/refresh";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -57,6 +58,10 @@ describe("TodayPage", () => {
         level: "none" as const,
       })),
     });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("shows a number-free seven-day shared contribution pulse below the header", async () => {
@@ -215,6 +220,28 @@ describe("TodayPage", () => {
     );
     expect(await screen.findByText("Frisch geladen")).toBeInTheDocument();
     expect(screen.queryByText("Bleibt sichtbar")).not.toBeInTheDocument();
+  });
+
+  it("revalidates visible Today when time-based eligibility can have changed", async () => {
+    vi.useFakeTimers();
+    mockedApi.getAgenda
+      .mockResolvedValueOnce(makeEmptyAgenda())
+      .mockResolvedValueOnce({
+        ...makeEmptyAgenda(),
+        unscheduled: [makeTask({ title: "Jetzt machbar" })],
+      });
+    renderWithProviders(<TodayPage />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Für heute ist nichts geplant.")).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(TIMED_ELIGIBILITY_REFRESH_MS);
+    });
+
+    expect(mockedApi.getAgenda).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Jetzt machbar")).toBeInTheDocument();
   });
 
   it("zeigt keinen manuellen Heute-Umschalter mehr an und erklärt die Ansicht im Seitenhinweis", async () => {

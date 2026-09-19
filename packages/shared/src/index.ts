@@ -186,6 +186,8 @@ export type ApiErrorCode =
   | "task_hierarchy_cycle"
   | "task_indent_unavailable"
   | "task_not_found"
+  | "task_schedule_before_available"
+  | "task_availability_date_required"
   | "task_parent_self"
   | "task_promotion_invalid"
   | "task_reminder_invalid"
@@ -523,6 +525,9 @@ export interface Task {
   createdByMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
+  notBeforeAt: string | null;
+  /** Local calendar date selected with `notBeforeAt`; used for date-only invariants. */
+  notBeforeDate: string | null;
   externalWait: ExternalWait | null;
   priority: number | null;
   size: TaskSize | null;
@@ -927,6 +932,7 @@ export type ReviewReason =
   | "active_stale"
   | "backlog_stale"
   | "backlog_due"
+  | "backlog_revisit_reached"
   | "standalone_someday_stale"
   | "backlog_planned_work"
   | "task_scheduled_before_resurface"

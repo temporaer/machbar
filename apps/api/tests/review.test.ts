@@ -157,6 +157,46 @@ describe("review queue", () => {
     ).toBe(true);
   });
 
+  it("surfaces reached backlog project revisits in Review", () => {
+    const reached = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        status: "backlog",
+        title: "Reached revisit",
+        scheduledDate: today,
+        reviewedAt: `${today}T12:00:00.000Z`,
+      })
+      .returning()
+      .get();
+    const future = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        status: "backlog",
+        title: "Future revisit",
+        scheduledDate: "2026-09-05",
+      })
+      .returning()
+      .get();
+
+    const items = reviewItems();
+    expect(
+      items.find(
+        (item) =>
+          item.entityId === reached.id &&
+          item.reason === "backlog_revisit_reached",
+      ),
+    ).toMatchObject({
+      suggestedAction: {
+        code: "defer_project",
+        targetEntityType: "project",
+        targetEntityId: reached.id,
+      },
+    });
+    expect(items.some((item) => item.entityId === future.id)).toBe(false);
+  });
+
   it("suppresses active staleness for a healthy future wait and does not age project someday tasks", () => {
     const member = ctx.handle.db
       .insert(schema.members)
@@ -206,6 +246,47 @@ describe("review queue", () => {
         (item) =>
           item.entityId === projectSomeday.id &&
           item.reason === "standalone_someday_stale",
+      ),
+    ).toBe(false);
+  });
+
+  it("treats a task deferred by a future notBeforeAt as a healthy progress path", () => {
+    const member = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Nora", color: "#a1b2c3" })
+      .returning()
+      .get();
+    const project = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        title: "Deferred but healthy",
+        status: "active",
+        ownerMemberId: member.id,
+      })
+      .returning()
+      .get();
+    const deferred = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        status: "active",
+        parentId: project.id,
+        title: "Not before tonight",
+        notBeforeAt: "2099-01-01T18:00:00.000Z",
+        notBeforeDate: "2099-01-01",
+      })
+      .returning()
+      .get();
+    setProjectAge(project.id, "2026-01-01");
+    setTaskAge(deferred.id, "2026-01-01");
+
+    const items = reviewItems();
+    expect(
+      items.some(
+        (item) =>
+          item.entityId === project.id &&
+          item.reason === "no_viable_progress_path",
       ),
     ).toBe(false);
   });

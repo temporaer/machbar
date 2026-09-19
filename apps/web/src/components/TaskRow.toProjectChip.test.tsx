@@ -4,6 +4,7 @@ import { render, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TaskOutline } from "./TaskOutline";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
+import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
@@ -25,8 +26,18 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
-async function openTaskStructureSheet() {
-  await userEvent.click(screen.getByRole("button", { name: "Struktur" }));
+async function openTaskStructureSheet(task = makeTask()) {
+  mockedApi.getTask.mockResolvedValue(task);
+  await userEvent.click(screen.getByRole("button", { name: `open structure ${task.id}` }));
+}
+
+function StructureOpenButton({ task }: { task: ReturnType<typeof makeTask> }) {
+  const workflow = useTaskWorkflow();
+  return (
+    <button type="button" onClick={() => workflow.open("structure", task.id)}>
+      open structure {task.id}
+    </button>
+  );
 }
 
 /** Simulates a horizontal drag past the swipe threshold and releases it. */
@@ -57,6 +68,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
         <>
           <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
           <TaskWorkflowHost />
+          <StructureOpenButton task={task} />
         </>
       );
 
@@ -66,7 +78,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       // reveal rail via swipe and open the Struktur sheet
       mockedApi.getTask.mockResolvedValue(task);
       swipe(container, -100);
-      await openTaskStructureSheet();
+      await openTaskStructureSheet(task);
 
       const command = screen.getByRole("button", { name: "Verschieben …" });
       expect(command).toBeEnabled();
@@ -88,13 +100,14 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
         <>
           <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
           <TaskWorkflowHost />
+          <StructureOpenButton task={task} />
         </>
       );
       await screen.findByText("Kunde kontaktieren");
 
       mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-      await openTaskStructureSheet();
+      await openTaskStructureSheet(task);
       await userEvent.click(screen.getByRole("button", { name: "Verschieben …" }));
 
       expect(await screen.findByRole("heading", { name: "In anderes Projekt verschieben" })).toBeInTheDocument();
@@ -108,12 +121,13 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
         <>
           <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
           <TaskWorkflowHost />
+          <StructureOpenButton task={task} />
         </>
       );
       await screen.findByText("Wäsche waschen");
 
       swipe(container, -100);
-      await openTaskStructureSheet();
+      await openTaskStructureSheet(task);
 
       const command = screen.getByRole("button", { name: "Verschieben …" });
       expect(command).toBeEnabled();
@@ -127,13 +141,14 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
         <>
           <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
           <TaskWorkflowHost />
+          <StructureOpenButton task={task} />
         </>
       );
       await screen.findByText("Wäsche waschen");
 
       mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-      await openTaskStructureSheet();
+      await openTaskStructureSheet(task);
       await userEvent.click(screen.getByRole("button", { name: "Verschieben …" }));
 
       expect(await screen.findByRole("heading", { name: "In anderes Projekt verschieben" })).toBeInTheDocument();
@@ -149,6 +164,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
         <>
           <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
           <TaskWorkflowHost />
+          <StructureOpenButton task={task} />
         </>
       );
       await screen.findByText("Wäsche waschen");
@@ -156,7 +172,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
       mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(kebab);
-      await openTaskStructureSheet();
+      await openTaskStructureSheet(task);
       await userEvent.click(screen.getByRole("button", { name: "Verschieben …" }));
 
       await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
@@ -179,6 +195,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
         <>
           <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
           <TaskWorkflowHost />
+          <StructureOpenButton task={task} />
         </>
       );
       await screen.findByText("Wäsche waschen");
@@ -186,7 +203,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       const kebab = screen.getByRole("button", { name: "Weitere Aktionen" });
       mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(kebab);
-      await openTaskStructureSheet();
+      await openTaskStructureSheet(task);
       await userEvent.click(screen.getByRole("button", { name: "Verschieben …" }));
       await screen.findByRole("heading", { name: "In anderes Projekt verschieben" });
 
@@ -203,13 +220,14 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
         <>
           <TaskOutline tasks={[task]} emptyMessage="Nichts da" />
           <TaskWorkflowHost />
+          <StructureOpenButton task={task} />
         </>
       );
       await screen.findByText("Wäsche waschen");
 
       mockedApi.getTask.mockResolvedValue(task);
       await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-      await openTaskStructureSheet();
+      await openTaskStructureSheet(task);
       await userEvent.click(screen.getByRole("button", { name: "Verschieben …" }));
       await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));
@@ -233,6 +251,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
         <>
           <TaskOutline tasks={[parent]} emptyMessage="Nichts da" />
           <TaskWorkflowHost />
+          <StructureOpenButton task={parent} />
         </>
       );
       await screen.findByText("Wäsche waschen");
@@ -243,7 +262,7 @@ describe("TaskRow – project rail command always opens the canonical MoveTaskSh
       const kebabs = screen.getAllByRole("button", { name: "Weitere Aktionen" });
       mockedApi.getTask.mockResolvedValue(parent);
       await userEvent.click(kebabs[0]!);
-      await openTaskStructureSheet();
+      await openTaskStructureSheet(parent);
       await userEvent.click(screen.getByRole("button", { name: "Verschieben …" }));
       await userEvent.click(await screen.findByRole("button", { name: "Garten winterfest machen" }));
       await userEvent.click(screen.getByRole("button", { name: "Hierher verschieben" }));

@@ -17,6 +17,8 @@ function task(
     status: "actionable" as TaskStatus,
     projectId: null,
     scheduledDate: null,
+    notBeforeAt: null,
+    notBeforeDate: null,
     externalWait: null,
     dependencies: [],
     ...overrides,
@@ -31,6 +33,7 @@ function analyze(
     new Map(values.map((value) => [value.id, value])),
     new Map(projects),
     today,
+    `${today}T12:00:00.000Z`,
   );
 }
 

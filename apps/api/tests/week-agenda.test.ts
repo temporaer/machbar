@@ -139,7 +139,7 @@ describe("week planning agenda", () => {
     ]);
   });
 
-  it("places scheduled tasks and stories on their own scheduled day", async () => {
+  it("places scheduled tasks but leaves backlog project Wiedervorlage to Review", async () => {
     await createTask({ title: "Apotheke abholen", scheduledDate: tuesday });
     await createProject({
       title: "Urlaub planen",
@@ -149,7 +149,7 @@ describe("week planning agenda", () => {
     const week = await getWeek();
 
     expect(titles(week.days[1].items)).toContain("Apotheke abholen");
-    expect(titles(week.days[2].items)).toContain("Urlaub planen");
+    expect(titles(week.days[2].items)).not.toContain("Urlaub planen");
   });
 
   it("places explicitly dated tasks from backlog stories without adding their unscheduled siblings to the planning pool", async () => {
@@ -371,7 +371,7 @@ describe("week planning agenda", () => {
 
     const week = await getWeek();
 
-    expect(titles(week.days[0].items)).toContain("Haus verbessern");
+    expect(titles(week.days[0].items)).not.toContain("Haus verbessern");
     expect(titles(week.days[0].items)).not.toContain("Rauchmelder kaufen");
   });
 
@@ -470,7 +470,7 @@ describe("week planning agenda", () => {
     );
   });
 
-  it("carries an overdue project resurface (scheduled) date forward to today", async () => {
+  it("leaves an overdue project Wiedervorlage to Review", async () => {
     await createProject({
       title: "Laengst faelliges Projekt",
       scheduledDate: "2026-09-01",
@@ -478,15 +478,7 @@ describe("week planning agenda", () => {
 
     const week = await getWeek();
 
-    expect(week.days[0].items).toContainEqual(
-      expect.objectContaining({
-        title: "Laengst faelliges Projekt",
-        role: "story",
-        placement: "scheduled",
-        attentionDate: monday,
-        scheduledDate: "2026-09-01",
-      }),
-    );
+    expect(titles(week.days[0].items)).not.toContain("Laengst faelliges Projekt");
   });
 
   it("places a task at its due date when due is chronologically earlier than its scheduled date", async () => {
@@ -663,14 +655,18 @@ describe("week planning agenda", () => {
     expect(due).toMatchObject({ placement: "due", externalWait: null });
   });
 
-  it("keeps ordinary story placement unaffected by revisit handling", async () => {
-    await createProject({ title: "Kueche renovieren", scheduledDate: thursday });
+  it("keeps project deadline placement unaffected by revisit handling", async () => {
+    await createProject({ title: "Kueche renovieren", dueDate: thursday });
 
     const week = await getWeek();
     const story = week.days[3].items.find(
       (entry: { title: string }) => entry.title === "Kueche renovieren",
     );
 
-    expect(story).toMatchObject({ role: "story", placement: "scheduled" });
+    expect(story).toMatchObject({
+      role: "story",
+      placement: "due",
+      scheduledDate: null,
+    });
   });
 });

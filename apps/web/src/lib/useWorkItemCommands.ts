@@ -24,7 +24,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
   switch (command.type) {
     case "task.open":
     case "task.plan":
-    case "task.later":
+    case "task.availability":
     case "task.structure":
     case "task.reminders":
     case "task.waitingLifecycle":
@@ -58,6 +58,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "story.assignDriver":
     case "story.planWork":
     case "story.editOutcome":
+    case "story.deadline":
     case "story.tags":
     case "story.contexts":
     case "story.lifecycle":
@@ -78,7 +79,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
   switch (command.type) {
     case "task.open":
     case "task.plan":
-    case "task.later":
+    case "task.availability":
     case "task.structure":
     case "task.reminders":
     case "task.waitingLifecycle":
@@ -106,6 +107,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "story.assignDriver":
     case "story.planWork":
     case "story.editOutcome":
+    case "story.deadline":
     case "story.tags":
     case "story.contexts":
     case "story.lifecycle":
@@ -204,8 +206,8 @@ export function useWorkItemCommands() {
         case "task.plan":
           taskWorkflow.open("plan", command.taskId);
           return;
-        case "task.later":
-          taskWorkflow.open("later", command.taskId);
+        case "task.availability":
+          taskWorkflow.open("availability", command.taskId);
           return;
         case "task.structure":
           taskWorkflow.open("structure", command.taskId);
@@ -291,17 +293,12 @@ export function useWorkItemCommands() {
           taskActions.requestPrimarySwipe(command.task, primarySwipeAction);
           return;
         case "workItem.schedule":
-          if (command.item.role === "task") {
-            return taskActions.update(
-              command.item.task,
-              { scheduledDate: command.date },
-              { scheduledDate: command.date },
-              true,
-            );
-          }
-          return projectActions.schedule(command.item.project, {
-            scheduledDate: command.date,
-          });
+          return taskActions.update(
+            command.item.task,
+            { scheduledDate: command.date },
+            { scheduledDate: command.date },
+            true,
+          );
         case "workItem.setDeadline":
           if (command.item.role === "task") {
             return taskActions.update(
@@ -357,8 +354,8 @@ export function useWorkItemCommands() {
         case "story.editOutcome":
           projectWorkflow.open("editOutcome", command.story.id);
           return;
-        case "story.planDates":
-          projectWorkflow.open("planDates", command.story.id);
+        case "story.deadline":
+          projectWorkflow.open("deadline", command.story.id);
           return;
         case "story.tags":
           projectWorkflow.open("tags", command.story.id);

@@ -7,7 +7,7 @@ import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { ProjectDeferSheet } from "./ProjectDeferSheet";
 import { ProjectStructureSheet } from "./ProjectStructureSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
-import { PlanDatesSheet } from "./PlanDatesSheet";
+import { ProjectDeadlineSheet } from "./ProjectDeadlineSheet";
 import { ProjectContextsSheet } from "./ProjectContextsSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
@@ -92,9 +92,9 @@ export function ProjectWorkflowHost() {
           }}
         />
       );
-    case "planDates":
+    case "deadline":
       return (
-        <PlanDatesSheet
+        <ProjectDeadlineSheet
           story={story}
           onClose={close}
           onSave={async (patch) => {

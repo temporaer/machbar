@@ -19,6 +19,8 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     createdByMemberId: null,
     dueDate: null,
     scheduledDate: null,
+    notBeforeAt: null,
+    notBeforeDate: null,
     priority: null,
     size: null,
     position: 0,

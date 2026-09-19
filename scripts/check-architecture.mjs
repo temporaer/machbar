@@ -88,7 +88,7 @@ const WORKFLOW_SHEET_HOSTS = new Map([
   ["TaskPlanSheet", "TaskWorkflowHost"],
   ["TaskWaitSheet", "TaskWorkflowHost"],
   ["WaitingFollowUpSheet", "TaskWorkflowHost"],
-  ["TaskLaterSheet", "TaskWorkflowHost"],
+  ["TaskAvailabilitySheet", "TaskWorkflowHost"],
   ["TaskStructureSheet", "TaskWorkflowHost"],
   ["TaskSplitSheet", "TaskWorkflowHost"],
   ["TaskRecurrenceSheet", "TaskWorkflowHost"],
@@ -101,7 +101,7 @@ const WORKFLOW_SHEET_HOSTS = new Map([
   ["ProjectTagsSheet", "ProjectWorkflowHost"],
   ["ProjectContextsSheet", "ProjectWorkflowHost"],
   ["StoryCriteriaSheet", "ProjectWorkflowHost"],
-  ["PlanDatesSheet", "ProjectWorkflowHost"],
+  ["ProjectDeadlineSheet", "ProjectWorkflowHost"],
 ]);
 
 /**

@@ -345,7 +345,10 @@ export function WeekPage() {
     if (data) setAgenda(data);
   }, [data]);
 
-  const applySchedule = async (item: WeekPlanningItem, date: string | null) => {
+  const applySchedule = async (
+    item: Extract<WeekPlanningItem, { role: "task" }>,
+    date: string | null,
+  ) => {
     if (!agenda) return;
     const previous = agenda;
     setMutationError(null);
@@ -377,7 +380,7 @@ export function WeekPage() {
   // Drag routes to whichever date field is responsible for the item's
   // current placement: a deadline (`due`) is never moved by generic drag.
   const handleDropItem = (item: WeekPlanningItem, date: string | null) => {
-    if (item.placement === "due") return;
+    if (item.placement === "due" || item.role !== "task") return;
     if (item.placement === "revisit") {
       void applyRevisitDate(item, date);
       return;
