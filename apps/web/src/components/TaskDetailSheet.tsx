@@ -485,7 +485,8 @@ export function TaskDetailSheet() {
       | "task.priority"
       | "task.tags"
       | "task.contexts"
-      | "task.split",
+      | "task.split"
+      | "task.structure",
   ) => {
     if (!task) return;
     if (command === "task.lifecycle") {
@@ -1023,7 +1024,7 @@ export function TaskDetailSheet() {
             </div>
           </WorkItemDetailDisclosure>
 
-          {task.priority === null || task.repeatAfterDays === null || (!taskIsCapturedInboxItem && task.projectId !== null) ? (
+          {task ? (
             <WorkItemDetailDisclosure
               title={strings.moreActions}
               resetKey={task.id}
@@ -1041,6 +1042,12 @@ export function TaskDetailSheet() {
                         },
                       ]
                     : []),
+                  {
+                    key: "task.structure",
+                    icon: "split" as const,
+                    label: strings.actionTileLabels["task.structure"],
+                    onClick: () => runCommand("task.structure"),
+                  },
                   ...(task.repeatAfterDays === null
                     ? [
                         {

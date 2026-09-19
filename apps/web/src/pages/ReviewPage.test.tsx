@@ -305,7 +305,7 @@ describe("ReviewPage", () => {
       await userEvent.click(within(card).getByRole("button", { name: "Planen" }));
 
       const sheet = await screen.findByRole("dialog");
-      expect(within(sheet).getByText("Wann willst du das angehen?")).toBeInTheDocument();
+      expect(within(sheet).getByText("Wann nimmst du dir das vor?")).toBeInTheDocument();
     });
 
     it("opens the canonical waiting workflow for a set_followup repair", async () => {

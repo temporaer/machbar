@@ -134,7 +134,7 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     // Drag resets — no lingering translateX — yet the chips are still there.
     expect(content.style.transform).toBe("");
     expect(screen.getByRole("group", { name: "Weitere Aktionen" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Später" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ab …" })).toBeInTheDocument();
   });
 
   it("keeps every default rail command enabled and directly clickable once revealed by a left-swipe", async () => {
@@ -152,8 +152,8 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     swipe(row, -100);
 
     const chipButtons = [
-      screen.getByRole("button", { name: "Später" }),
-      screen.getByRole("button", { name: "Struktur" }),
+      screen.getByRole("button", { name: "Ab …" }),
+      screen.getByRole("button", { name: "Einplanen" }),
       screen.getByRole("button", { name: "Mehr" }),
     ];
     for (const btn of chipButtons) {
@@ -162,9 +162,9 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     }
 
     // Actually interactable via a real pointer/click sequence, not just present in the DOM.
-    // "Später" always opens the one canonical TaskLaterSheet workflow.
-    await userEvent.click(screen.getByRole("button", { name: "Später" }));
-    expect(await screen.findByRole("dialog", { name: "Später: Vertrag unterschreiben" })).toBeInTheDocument();
+    // "Ab …" always opens the one canonical TaskLaterSheet workflow.
+    await userEvent.click(screen.getByRole("button", { name: "Ab …" }));
+    expect(await screen.findByRole("dialog", { name: "Ab: Vertrag unterschreiben" })).toBeInTheDocument();
   });
 
   it("closes the command rail predictably when a command is used, hiding the persisted red background again", async () => {
@@ -174,11 +174,11 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     await screen.findByText("Rückruf einplanen");
 
     swipe(container, -100);
-    expect(screen.getByRole("button", { name: "Später" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ab …" })).toBeInTheDocument();
     const cancelBg = container.querySelector(".task-row-swipe-bg.cancel") as HTMLElement;
     expect(getComputedStyle(cancelBg).opacity).toBe("1");
 
-    await userEvent.click(screen.getByRole("button", { name: "Später" }));
+    await userEvent.click(screen.getByRole("button", { name: "Ab …" }));
     expect(screen.queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
     expect(getComputedStyle(cancelBg).opacity).toBe("0");
   });

@@ -499,6 +499,7 @@ const extra = {
    * avatar clicks, and the successor "+".
    */
   actionTileLabels: {
+    "task.structure": "Struktur ändern",
     "task.priority": "Priorität setzen",
     "task.recurrence": "Wiederholung einrichten",
   },

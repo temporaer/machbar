@@ -178,9 +178,9 @@ describe("WeekPage", () => {
       .closest("article") as HTMLElement;
     expect(taskCard).toBeInTheDocument();
     expect(storyCard).toBeInTheDocument();
-    expect(within(taskCard).getByText("Geplant")).toBeInTheDocument();
+    expect(within(taskCard).getByText("Geplant für")).toBeInTheDocument();
     expect(within(storyCard).getByText("Wiedervorlage")).toBeInTheDocument();
-    expect(within(storyCard).queryByText("Geplant")).not.toBeInTheDocument();
+    expect(within(storyCard).queryByText("Geplant für")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Batterien kaufen/ })).toBeInTheDocument();
     expect(screen.getByLabelText("Mo., 7.")).toBeInTheDocument();
     expect(screen.getByLabelText("So., 13.")).toBeInTheDocument();

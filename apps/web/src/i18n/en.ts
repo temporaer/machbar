@@ -512,6 +512,7 @@ const en = {
   structureEditOutcome: "Edit outcome",
   insertSuccessorLabel: "Add task after this one",
   actionTileLabels: {
+    "task.structure": "Change structure",
     "task.priority": "Set priority",
     "task.recurrence": "Set up recurrence",
   },

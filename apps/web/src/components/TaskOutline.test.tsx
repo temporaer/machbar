@@ -190,7 +190,7 @@ describe("TaskOutline", () => {
       await screen.findByText("Nachkomme");
 
       // The root row keeps its full metadata stack (e.g. the scheduled chip)…
-      expect(screen.getAllByText(/Geplant:/)).toHaveLength(1);
+      expect(screen.getAllByText(/Geplant für/)).toHaveLength(1);
     });
 
     it("keeps open descendants visible", async () => {
