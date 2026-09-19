@@ -21,8 +21,6 @@ describe("non-backlog project revisit cleanup migration", () => {
       applyMigration(sqlite, "0003_add_task_reminders.sql");
       applyMigration(sqlite, "0004_add_work_item_scope.sql");
       applyMigration(sqlite, "0005_add_mcp_agents.sql");
-      applyMigration(sqlite, "0006_add_task_not_before.sql");
-
       sqlite.exec(`
         INSERT INTO work_items (id, role, title, status, scheduled_date, archived_at) VALUES
           (1, 'story', 'Backlog bleibt terminiert', 'backlog', '2026-09-10', NULL),
@@ -32,7 +30,7 @@ describe("non-backlog project revisit cleanup migration", () => {
           (5, 'task', 'Aufgabe bleibt geplant', 'active', '2026-09-14', NULL);
       `);
 
-      applyMigration(sqlite, "0007_clean_non_backlog_revisit_dates.sql");
+      applyMigration(sqlite, "0006_add_task_not_before.sql");
 
       const rows = sqlite
         .prepare(`SELECT id, scheduled_date FROM work_items ORDER BY id`)
