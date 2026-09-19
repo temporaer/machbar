@@ -21,6 +21,7 @@ import type { Db } from "../db/client.js";
  * they all read this one map. A blocked/waiting parent still does not
  * prevent an eligible child from being reached, and a parent whose
  * children have all become terminal is free to become a candidate again.
+ * Tasks whose `not_before_at` is later than `now` are likewise excluded.
  */
 export function getNextActionTaskIdsByProject(
   db: Db,
