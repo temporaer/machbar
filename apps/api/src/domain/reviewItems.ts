@@ -5,6 +5,7 @@ import type {
   ReviewReason,
 } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
+import type { TaskBlockerAnalysis } from "./blockers.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
 
 export const ACTIVE_REVIEW_DAYS = 14;
@@ -28,6 +29,24 @@ function attentionAt(entity: {
   return entity.reviewedAt && entity.reviewedAt > entity.updatedAt
     ? entity.reviewedAt
     : entity.updatedAt;
+}
+
+// A task can be a viable progress path either because it is `blocked` on a
+// healthy wait/dependency, or because it is actionable but not yet
+// executable for a reason other than being blocked (e.g. a future
+// `notBeforeAt`, which is not waiting on an external party or a
+// dependency) while its underlying path is still healthy — matching
+// Graph's own executable/next-action availability gate.
+function isViableProgressTask(
+  task: TaskRecord,
+  analysis: TaskBlockerAnalysis,
+): boolean {
+  if (analysis.blocked) return analysis.healthyProgressPath;
+  return (
+    task.status === "actionable" &&
+    !analysis.executable &&
+    analysis.healthyProgressPath
+  );
 }
 
 function projectAttentionAt(
@@ -249,18 +268,7 @@ export function buildReviewItems(
       const canonicalCandidates = graph.nextActionCandidatesFor(project.id);
       const hasHealthyProgressPath = openTasks.some((task) => {
         const analysis = graph.blockerAnalysisFor(task.id);
-        if (!analysis) return false;
-        if (analysis.blocked) return analysis.healthyProgressPath;
-        // An actionable task can be off the executable/next-action candidate
-        // lists without `blocked` being set (e.g. a future `notBeforeAt`,
-        // which is not waiting on an external party or a dependency). Any
-        // such not-yet-executable task with a healthy underlying path counts
-        // as viable progress too, matching Graph's own availability gate.
-        return (
-          task.status === "actionable" &&
-          !analysis.executable &&
-          analysis.healthyProgressPath
-        );
+        return analysis !== null && isViableProgressTask(task, analysis);
       });
       const hasIntentionalWait = openTasks.some(
         (task) => task.externalWait?.revisitDate !== null &&
