@@ -149,8 +149,8 @@ export function ProjectDetailPage() {
   const criteriaPct =
     criteriaTotal > 0 ? Math.round((criteriaDone / criteriaTotal) * 100) : 0;
   const dueDate = project ? formatDate(project.dueDate, locale) : null;
-  const canEditProjectRevisit = project?.status === "backlog";
-  const scheduledDate = project && canEditProjectRevisit
+  const showProjectRevisit = project?.status === "backlog";
+  const scheduledDate = project && showProjectRevisit
     ? formatDate(project.scheduledDate, locale)
     : null;
   const hasProjectDates = Boolean(dueDate) || Boolean(scheduledDate);

@@ -796,7 +796,11 @@ export class Graph {
   }
 
   nextActionFor(projectId: number): TaskRecord | null {
-    return this.nextActionCandidatesFor(projectId)[0] ?? null;
+    for (const id of this.nextActionIdsByProject.get(projectId) ?? []) {
+      const task = this.tasksById.get(id);
+      if (task?.executable) return task;
+    }
+    return null;
   }
 
   nextActionCandidatesFor(projectId: number): TaskRecord[] {

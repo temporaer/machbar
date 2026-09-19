@@ -690,7 +690,7 @@ export function TaskDetailSheet() {
             )}
             {notBeforeValue ? (
               <DetailPropertyPill
-                label={strings.notBefore}
+                label={strings.railAvailableFrom}
                 onClick={() => runCommand("task.later")}
               >
                 <span>{notBeforeValue}</span>
