@@ -32,6 +32,13 @@ describe("task not-before and project revisit migration", () => {
 
       applyMigration(sqlite, "0006_add_task_not_before.sql");
 
+      const columns = sqlite
+        .prepare(`PRAGMA table_info(work_items)`)
+        .all() as Array<{ name: string }>;
+      expect(columns.map(({ name }) => name)).toEqual(
+        expect.arrayContaining(["not_before_at", "not_before_date"]),
+      );
+
       const rows = sqlite
         .prepare(`SELECT id, scheduled_date FROM work_items ORDER BY id`)
         .all() as Array<{ id: number; scheduled_date: string | null }>;

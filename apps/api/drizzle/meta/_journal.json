@@ -50,13 +50,6 @@
       "when": 1789816814937,
       "tag": "0006_add_task_not_before",
       "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1789844938684,
-      "tag": "0007_add_task_not_before_date",
-      "breakpoints": true
     }
   ]
 }

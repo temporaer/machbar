@@ -1,1 +1,0 @@
-ALTER TABLE `work_items` ADD `not_before_date` text;

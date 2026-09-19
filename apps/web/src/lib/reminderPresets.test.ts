@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  absolutePresetIsFuture,
   absolutePresetReminderInput,
   relativePresetReminderInput,
   resolveAbsolutePreset,
@@ -14,6 +15,17 @@ describe("reminderPresets", () => {
     expect(resolved.getDate()).toBe(now.getDate());
     expect(resolved.getHours()).toBe(19);
     expect(resolved.getMinutes()).toBe(0);
+  });
+
+  it("offers tonight at 18:00 and rejects it after its 19:00 target", () => {
+    const beforeEvening = new Date(2026, 8, 19, 18, 0);
+    const afterEvening = new Date(2026, 8, 19, 21, 0);
+
+    expect(absolutePresetIsFuture("tonight", beforeEvening)).toBe(true);
+    const target = new Date(resolveAbsolutePreset("tonight", beforeEvening));
+    expect(target.getDate()).toBe(beforeEvening.getDate());
+    expect(target.getHours()).toBe(19);
+    expect(absolutePresetIsFuture("tonight", afterEvening)).toBe(false);
   });
 
   it("resolves 'tomorrowMorning' to 08:00 the next local day", () => {

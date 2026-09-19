@@ -756,9 +756,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await userEvent.click(
       within(chips).getByRole("button", { name: "Wiedervorlage" }),
     );
-    // `story.defer` opens the canonical Wiedervorlage-first workflow (the
-    // deadline is a secondary constraint behind its own affordance), not a
-    // generic two-date form.
+    // `story.defer` opens the canonical revisit-only workflow.
     const deferSheet = await screen.findByRole("dialog");
     expect(
       within(deferSheet).getByRole("heading", { name: "Wiedervorlegen" }),
@@ -766,9 +764,11 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     expect(
       within(deferSheet).getByText("Bis wann zurückstellen?"),
     ).toBeInTheDocument();
-    await userEvent.click(
-      within(deferSheet).getByRole("button", { name: "+ Deadline hinzufügen" }),
-    );
+    expect(
+      within(deferSheet).queryByRole("button", { name: "+ Deadline hinzufügen" }),
+    ).not.toBeInTheDocument();
+    expect(within(deferSheet).queryByLabelText("Fällig")).not.toBeInTheDocument();
+    await userEvent.click(within(deferSheet).getByRole("button", { name: "Datum …" }));
     await userEvent.type(
       within(deferSheet).getByRole("textbox"),
       "1. Mai 2026",
@@ -779,7 +779,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
-        dueDate: "2026-05-01",
+        scheduledDate: "2026-05-01",
         expectedRevision: 1,
       }),
     );

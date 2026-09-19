@@ -67,6 +67,14 @@ export function resolveAbsolutePreset(preset: AbsoluteReminderPreset, now = new 
   }
 }
 
+/** Whether an absolute preset's shared target is still strictly in the future. */
+export function absolutePresetIsFuture(
+  preset: AbsoluteReminderPreset,
+  now = new Date(),
+): boolean {
+  return new Date(resolveAbsolutePreset(preset, now)).getTime() > now.getTime();
+}
+
 /** Builds the `TaskReminderInput` for a selected absolute preset. */
 export function absolutePresetReminderInput(
   preset: AbsoluteReminderPreset,

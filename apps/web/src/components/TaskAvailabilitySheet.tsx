@@ -3,7 +3,10 @@ import type { Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
-import { resolveAbsolutePreset } from "../lib/reminderPresets";
+import {
+  absolutePresetIsFuture,
+  resolveAbsolutePreset,
+} from "../lib/reminderPresets";
 import { localDateForInstant, localDateTimeToIso } from "../lib/localDateTime";
 import { resolveScheduleShortcut } from "./ScheduleShortcuts";
 import { localizedErrorMessage } from "../lib/errorMessage";
@@ -25,6 +28,7 @@ export function TaskAvailabilitySheet({ task, onClose }: { task: Task; onClose: 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dateValid, setDateValid] = useState(true);
+  const tonightAvailable = absolutePresetIsFuture("tonight");
 
   const customNotBeforeAt = () => {
     if (!customDate) return null;
@@ -66,17 +70,20 @@ export function TaskAvailabilitySheet({ task, onClose }: { task: Task; onClose: 
             >
               {strings.availabilityInAWhile}
             </button>
-            <button
-              type="button"
-              className="choice-chip"
-              disabled={saving}
-              onClick={() => {
-                const instant = resolveAbsolutePreset("tonight");
-                void applyNotBefore(instant, localDateForInstant(instant));
-              }}
-            >
-              {strings.availabilityTonight}
-            </button>
+            {tonightAvailable ? (
+              <button
+                type="button"
+                className="choice-chip"
+                disabled={saving}
+                onClick={() => {
+                  if (!absolutePresetIsFuture("tonight")) return;
+                  const instant = resolveAbsolutePreset("tonight");
+                  void applyNotBefore(instant, localDateForInstant(instant));
+                }}
+              >
+                {strings.availabilityTonight}
+              </button>
+            ) : null}
           </div>
         </div>
         <div>

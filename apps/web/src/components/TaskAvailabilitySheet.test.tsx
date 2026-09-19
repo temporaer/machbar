@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
@@ -32,6 +32,10 @@ describe("TaskAvailabilitySheet", () => {
     mockedApi.getTags.mockResolvedValue([]);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("writes a same-day 'In einer Weile' availability gate without touching scheduledDate", async () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 40 }));
     const task = makeTask({ id: 40, title: "Wäsche aufhängen", scheduledDate: "2026-09-14" });
@@ -51,21 +55,39 @@ describe("TaskAvailabilitySheet", () => {
   });
 
   it("writes a same-day 'Heute Abend' availability gate without touching scheduledDate", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 8, 19, 18, 0));
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 41 }));
     const task = makeTask({ id: 41, title: "Anruf zurückgeben" });
     const onClose = vi.fn();
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Heute Abend" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Heute Abend" }));
+    });
 
-    await waitFor(() =>
-      expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
-        notBeforeAt: expect.any(String),
-        notBeforeDate: expect.any(String),
-        expectedRevision: 1,
-      }),
-    );
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
+      notBeforeAt: expect.any(String),
+      notBeforeDate: expect.any(String),
+      expectedRevision: 1,
+    });
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("hides 'Heute Abend' after today's evening target has passed", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 8, 19, 21, 0));
+
+    renderWithProviders(
+      <TaskAvailabilitySheet
+        task={makeTask({ id: 46, title: "Später Anruf" })}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Heute Abend" }),
+    ).not.toBeInTheDocument();
   });
 
   it("sets a future date (Morgen) as availability, not a scheduledDate commit", async () => {
