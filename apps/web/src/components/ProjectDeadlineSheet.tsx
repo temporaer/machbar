@@ -40,7 +40,7 @@ export function ProjectDeadlineSheet({
       onClose={() => {
         if (!saving) onClose();
       }}
-      labelledBy="plan-dates-title"
+      labelledBy="project-deadline-title"
     >
       <div className="stack">
         <p className="text-muted">{story.title}</p>

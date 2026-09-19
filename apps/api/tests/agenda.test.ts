@@ -215,7 +215,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
   });
 
   it("compares planning against the selected local availability date, not its UTC date", async () => {
-    const response = await ctx.app.inject({
+    const rejected = await ctx.app.inject({
       method: "POST",
       url: "/api/tasks",
       payload: {
@@ -229,8 +229,36 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
       },
     });
 
-    expect(response.statusCode).toBe(409);
-    expect(response.json().error.code).toBe("task_schedule_before_available");
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json().error.code).toBe("task_schedule_before_available");
+
+    const accepted = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Am lokalen Verfügbarkeitstag geplant",
+        status: "actionable",
+        scheduledDate: "2026-09-20",
+        notBeforeAt: "2026-09-19T22:30:00.000Z",
+        notBeforeDate: "2026-09-20",
+      },
+    });
+    expect(accepted.statusCode).toBe(201);
+  });
+
+  it("requires the local calendar date when setting task availability", async () => {
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Unvollständige Verfügbarkeit",
+        status: "actionable",
+        notBeforeAt: "2026-09-19T22:30:00.000Z",
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("task_availability_date_required");
   });
 
   it("excludes Später-klären captures from Heute", async () => {

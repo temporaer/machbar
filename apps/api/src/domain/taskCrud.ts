@@ -840,6 +840,19 @@ export function updateTask(
       input.notBeforeAt !== undefined ? input.notBeforeAt : currentTask.notBeforeAt;
     const nextNotBeforeDate =
       input.notBeforeDate !== undefined ? input.notBeforeDate : currentTask.notBeforeDate;
+    if (
+      (input.notBeforeAt === undefined) !==
+      (input.notBeforeDate === undefined)
+    ) {
+      throw AppError.badRequest(
+        "task_availability_date_required",
+        "Task availability must update its instant and local calendar date together.",
+        {
+          notBeforeAt: input.notBeforeAt,
+          notBeforeDate: input.notBeforeDate,
+        },
+      );
+    }
     assertScheduleNotBeforeAvailability(
       nextScheduledDate,
       nextNotBeforeAt,
