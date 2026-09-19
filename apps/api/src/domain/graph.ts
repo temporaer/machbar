@@ -798,7 +798,8 @@ export class Graph {
   nextActionFor(projectId: number): TaskRecord | null {
     for (const id of this.nextActionIdsByProject.get(projectId) ?? []) {
       const task = this.tasksById.get(id);
-      if (task?.executable) return task;
+      if (!task) continue;
+      if (task.executable) return task;
     }
     return null;
   }
