@@ -236,6 +236,9 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
     const mainGrid = chips.querySelector(".rail-main-grid");
     expect(mainGrid?.querySelectorAll("button")).toHaveLength(3);
+    expect(mainGrid).toHaveStyle({
+      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    });
     // The rail is fixed — always exactly Wiedervorlage/Struktur/Mehr, never a
     // configurable/overflow set (see `WorkItemActionRail.tsx`).
     expect(within(chips).getByRole("button", { name: "Wiedervorlage" })).toBeInTheDocument();

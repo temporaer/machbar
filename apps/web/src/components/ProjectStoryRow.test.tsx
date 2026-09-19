@@ -634,6 +634,9 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     expect(within(chips).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
     const mainGrid = chips.querySelector(".rail-main-grid");
     expect(mainGrid?.querySelectorAll("button")).toHaveLength(2);
+    expect(mainGrid).toHaveStyle({
+      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    });
     expect(chips.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
   });
 

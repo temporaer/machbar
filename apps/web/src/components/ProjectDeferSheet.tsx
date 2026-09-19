@@ -7,8 +7,8 @@ import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 
 /**
- * The canonical `story.defer` workflow — replaces the old two-equal-field
- * `PlanDatesSheet`. `scheduledDate` has explicit semantics for a project
+ * The canonical `story.defer` workflow, separate from deadline editing.
+ * `scheduledDate` has explicit semantics for a project
  * ("before this date, this project is intentionally not relevant"), so
  * the primary question is "Bis wann zurückstellen?" with convenience
  * shortcuts; the existing deadline is shown separately, as a secondary

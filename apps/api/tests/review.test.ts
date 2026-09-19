@@ -274,6 +274,7 @@ describe("review queue", () => {
         parentId: project.id,
         title: "Not before tonight",
         notBeforeAt: "2099-01-01T18:00:00.000Z",
+        notBeforeDate: "2099-01-01",
       })
       .returning()
       .get();

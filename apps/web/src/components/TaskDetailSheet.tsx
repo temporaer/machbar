@@ -481,7 +481,7 @@ export function TaskDetailSheet() {
     command:
       | "task.lifecycle"
       | "task.assignOwner"
-      | "task.later"
+      | "task.availability"
       | "task.plan"
       | "task.reminders"
       | "task.waitingLifecycle"
@@ -691,12 +691,12 @@ export function TaskDetailSheet() {
             {notBeforeValue ? (
               <DetailPropertyPill
                 label={strings.railAvailableFrom}
-                onClick={() => runCommand("task.later")}
+                onClick={() => runCommand("task.availability")}
               >
                 <span>{notBeforeValue}</span>
               </DetailPropertyPill>
             ) : (
-              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.later")}>
+              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.availability")}>
                 {strings.railAvailableFrom}
               </DetailPropertyPill>
             )}

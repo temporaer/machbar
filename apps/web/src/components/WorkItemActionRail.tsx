@@ -2,19 +2,17 @@ interface WorkItemActionRailProps {
   kind: "task" | "project";
   disabled?: boolean;
   groupLabel: string;
-  laterLabel: string;
-  structureLabel: string;
-  moreLabel: string;
-  onLater?: () => void;
-  onStructure: () => void;
-  onMore: () => void;
+  actions: readonly {
+    label: string;
+    onSelect: () => void;
+  }[];
 }
 
 /**
  * Fixed row rail shared by tasks and projects — replaces the
  * former user-configurable favorites/overflow rail
  * (`railConfig.ts`/`railConfigContext.tsx`/`WorkItemCommandRail.tsx`):
- * always in this order, never configurable. Tasks use
+ * receives the fixed actions for the current item in display order. Tasks use
  * **Ab … · Einplanen · Mehr**; projects keep their own revisit/structure
  * labels. `Mehr` opens the item's
  * detail directly — it is not another overflow menu. Status/lifecycle
@@ -26,27 +24,25 @@ export function WorkItemActionRail({
   kind,
   disabled = false,
   groupLabel,
-  laterLabel,
-  structureLabel,
-  moreLabel,
-  onLater,
-  onStructure,
-  onMore,
+  actions,
 }: WorkItemActionRailProps) {
   return (
     <div className="work-item-command-rail" data-kind={kind} role="group" aria-label={groupLabel}>
-      <div className="rail-main-grid">
-        {onLater ? (
-          <button type="button" className="btn btn-sm" disabled={disabled} onClick={onLater}>
-            {laterLabel}
+      <div
+        className="rail-main-grid"
+        style={{ gridTemplateColumns: `repeat(${actions.length}, minmax(0, 1fr))` }}
+      >
+        {actions.map((action) => (
+          <button
+            key={action.label}
+            type="button"
+            className="btn btn-sm"
+            disabled={disabled}
+            onClick={action.onSelect}
+          >
+            {action.label}
           </button>
-        ) : null}
-        <button type="button" className="btn btn-sm" disabled={disabled} onClick={onStructure}>
-          {structureLabel}
-        </button>
-        <button type="button" className="btn btn-sm" disabled={disabled} onClick={onMore}>
-          {moreLabel}
-        </button>
+        ))}
       </div>
     </div>
   );

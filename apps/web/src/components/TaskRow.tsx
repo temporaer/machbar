@@ -284,7 +284,7 @@ export function TaskRow({
     [busy, task.id, organize, organizeEnabled, cancelSwipe],
   );
 
-  const runRailCommand = (command: "task.later" | "task.plan" | "task.open") => {
+  const runRailCommand = (command: "task.availability" | "task.plan" | "task.open") => {
     // Move focus to the kebab before the rail unmounts, so a focused-
     // workflow sheet's opener-restore targets a control that stays
     // connected across the close/open transition instead of losing focus
@@ -541,12 +541,11 @@ export function TaskRow({
           kind="task"
           disabled={busy}
           groupLabel={strings.moreActions}
-          laterLabel={strings.railAvailableFrom}
-          structureLabel={strings.railPlan}
-          moreLabel={strings.railMore}
-          onLater={() => runRailCommand("task.later")}
-          onStructure={() => runRailCommand("task.plan")}
-          onMore={() => runRailCommand("task.open")}
+          actions={[
+            { label: strings.railAvailableFrom, onSelect: () => runRailCommand("task.availability") },
+            { label: strings.railPlan, onSelect: () => runRailCommand("task.plan") },
+            { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
+          ]}
         />
       ) : null}
       {lifecycleOpen ? (

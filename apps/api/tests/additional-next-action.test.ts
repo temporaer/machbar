@@ -256,6 +256,7 @@ describe("task.additionalNextAction opt-in", () => {
       title: "Erst später verfügbar I",
       projectId: project.id,
       notBeforeAt: "2999-01-01T18:00:00.000Z",
+      notBeforeDate: "2999-01-01",
     });
     const available = await createTask({
       title: "Jetzt verfügbar I",

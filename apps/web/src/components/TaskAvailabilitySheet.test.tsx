@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 import { makeTask } from "../test/fixtures";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
-import { TaskLaterSheet } from "./TaskLaterSheet";
+import { TaskAvailabilitySheet } from "./TaskAvailabilitySheet";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -24,7 +24,7 @@ const mockedApi = vi.mocked(api, true);
  * persistent task `notBeforeAt` availability gate and never touches
  * `scheduledDate`, which remains owned by `TaskPlanSheet`.
  */
-describe("TaskLaterSheet", () => {
+describe("TaskAvailabilitySheet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
@@ -36,13 +36,14 @@ describe("TaskLaterSheet", () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 40 }));
     const task = makeTask({ id: 40, title: "Wäsche aufhängen", scheduledDate: "2026-09-14" });
     const onClose = vi.fn();
-    renderWithProviders(<TaskLaterSheet task={task} onClose={onClose} />);
+    renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "In einer Weile" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(40, {
         notBeforeAt: expect.any(String),
+        notBeforeDate: expect.any(String),
         expectedRevision: 1,
       }),
     );
@@ -53,13 +54,14 @@ describe("TaskLaterSheet", () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 41 }));
     const task = makeTask({ id: 41, title: "Anruf zurückgeben" });
     const onClose = vi.fn();
-    renderWithProviders(<TaskLaterSheet task={task} onClose={onClose} />);
+    renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "Heute Abend" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
         notBeforeAt: expect.any(String),
+        notBeforeDate: expect.any(String),
         expectedRevision: 1,
       }),
     );
@@ -70,13 +72,14 @@ describe("TaskLaterSheet", () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 42 }));
     const task = makeTask({ id: 42, title: "Steuer einreichen" });
     const onClose = vi.fn();
-    renderWithProviders(<TaskLaterSheet task={task} onClose={onClose} />);
+    renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
         notBeforeAt: expect.any(String),
+        notBeforeDate: expect.any(String),
         expectedRevision: 1,
       }),
     );
@@ -87,13 +90,14 @@ describe("TaskLaterSheet", () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 44, notBeforeAt: null }));
     const task = makeTask({ id: 44, title: "Handwerker beauftragen", notBeforeAt: "2026-09-19T18:00:00.000Z" });
     const onClose = vi.fn();
-    renderWithProviders(<TaskLaterSheet task={task} onClose={onClose} />);
+    renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "Ab-Datum entfernen" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(44, {
         notBeforeAt: null,
+        notBeforeDate: null,
         expectedRevision: 1,
       }),
     );
@@ -102,7 +106,7 @@ describe("TaskLaterSheet", () => {
 
   it("requires both a custom date and time before confirming", async () => {
     const task = makeTask({ id: 45, title: "Termin abstimmen" });
-    renderWithProviders(<TaskLaterSheet task={task} onClose={vi.fn()} />);
+    renderWithProviders(<TaskAvailabilitySheet task={task} onClose={vi.fn()} />);
 
     await userEvent.type(screen.getByLabelText("Anderes Datum"), "morgen");
     await userEvent.tab();
@@ -119,8 +123,8 @@ describe("TaskLaterSheet", () => {
       const workflow = useTaskWorkflow();
       return (
         <div>
-          <button type="button" onClick={() => workflow.open("later", 43)}>
-            open later
+          <button type="button" onClick={() => workflow.open("availability", 43)}>
+            open availability
           </button>
           <TaskWorkflowHost />
         </div>
@@ -128,7 +132,7 @@ describe("TaskLaterSheet", () => {
     }
     renderWithProviders(<Harness />);
 
-    await userEvent.click(screen.getByRole("button", { name: "open later" }));
+    await userEvent.click(screen.getByRole("button", { name: "open availability" }));
     await userEvent.click(
       await screen.findByRole("button", { name: "Einplanen / Deadline …" }),
     );

@@ -229,7 +229,7 @@ while it is in the future the task is not executable or selected as a next
 action; once reached, normal eligibility resumes without creating a special
 bucket.
 
-From these, `projectWeekAttention` (in `@machbar/shared`, reused by both the
+From these task dates, `projectWeekAttention` (in `@machbar/shared`, reused by both the
 backend projection and the frontend's optimistic drag/clear recompute)
 derives one explicit `attentionDate` + `placement` per item: the earliest
 applicable candidate date, clamped forward to today when it is in the past.
@@ -248,17 +248,18 @@ the same current available-work selection as Heute's `shared` and
 actions only, never unscheduled stories/projects, waiting work, dependency
 blocked work, captured work, someday/backlog work, or already scheduled work.
 Current physical context does not remove a task from Week's planning pool.
-Dragging a card edits whichever date is responsible for its *current*
+Dragging a task card edits whichever date is responsible for its *current*
 placement, not simply its task-vs-project role: a `scheduled` card changes
-`scheduledDate`; a `revisit` card changes `externalWait.revisitDate`; a
-project resurface card uses the project scheduling command. A `due`-placement
+`scheduledDate`; a `revisit` card changes `externalWait.revisitDate`. A `due`-placement
 card is never movable by generic drag - its deadline is a hard constraint, so
 day-column drop is rejected for it instead. Clearing a `scheduled`/`revisit`
 date (including via the **Ohne Planung** drop) recomputes placement rather
 than assuming `unplanned`: if an in-week due (or revisit) date still applies,
 the item lands there instead. `workItem.setDeadline` remains the semantic
-deadline command for surfaces that offer due-date editing. Story dates mean
-story-level attention and never propagate to descendants.
+deadline command for surfaces that offer due-date editing. Project `scheduledDate` is not a Week placement field: it is the backlog-only
+Wiedervorlage, edited through `story.defer` and surfaced in Review when reached.
+Active projects have no project-level Wiedervorlage. Project dates never
+propagate to descendants.
 
 Active projects have a separate compiled `projects` bucket. A project enters
 Heute seven local calendar days before its `dueDate`; project `scheduledDate`
@@ -569,10 +570,10 @@ due-without-plan, malformed waiting, broken blocker paths, XL work without
 breakdown, completion review, and age-based reconsideration. It also flags
 semantic contradictions between a project's own dates/status and its child
 tasks: a backlog project already carrying genuinely executable/actionable open
-work (an intentionally scheduled or due date alone is not flagged — backlog
-dates are an allowed planning signal that Week already surfaces); a task
-scheduled or due before its project's own resurface (`scheduledDate`) date; a
-project whose deadline precedes its own resurface date; and a completed/archived
+work (an intentionally scheduled or due child-task date alone is not flagged —
+those task dates are allowed planning signals that Week surfaces); a task
+scheduled or due before its project's Wiedervorlage (`scheduledDate`); a
+project whose deadline precedes its own Wiedervorlage; and a completed/archived
 project that still has open child tasks (a repair signal for legacy/corrupt or
 externally-created data — normal completion no longer creates this state, since
 completion asks the driver to resolve remaining open tasks first). It
@@ -770,7 +771,8 @@ Interactions target one field at a time instead of opening the full detail sheet
 | `StoryCriteriaSheet` | Targeted criteria popup for a story row |
 | `CompleteWithCriteriaSheet` | Focused `story.complete` continuation when criteria remain unchecked: shares the `AcceptanceCriteriaChecklist` check/uncheck UI and commits the same completion transition once all criteria are checked |
 | `CompleteWithOpenTasksSheet` | Focused `story.complete` continuation when criteria are satisfied/absent but open child tasks remain: lets the driver cancel or move each task (reusing `useTaskActions().requestCancel` and `task.changeProject`) and commits the same completion transition once no open tasks remain |
-| `PlanDatesSheet` | Due/scheduled dates only |
+| `ProjectDeferSheet` | Canonical backlog-project Wiedervorlage (`scheduledDate`) editor |
+| `ProjectDeadlineSheet` | Project deadline (`dueDate`) only |
 | `WaitingFollowUpSheet` | Owns follow-up drafts; delegates the atomic command, pending state, errors, and refresh to `useTaskActions` |
 | `DestinationPicker` | Searchable refile destination list with recents (see below) |
 
@@ -825,7 +827,7 @@ not expanded with unrelated title metadata.
 `ProjectDetailPage` is the same shape for stories, and `ProjectEditSheet` is
 gone. The page edits only its authored title and notes in place; driver,
 dates, tags and contexts are meta-row values that dispatch
-`story.assignDriver`/`story.planDates`/`story.tags`/`story.contexts`, and the
+`story.assignDriver`/`story.defer`/`story.deadline`/`story.tags`/`story.contexts`, and the
 driver avatar itself is also directly clickable for the same
 `story.assignDriver` shortcut.
 Outcome is visible **Ergebnis** content: `AcceptanceCriteriaChecklist` shares
@@ -1111,8 +1113,9 @@ while editing text, or while a `BottomSheet`/modal is open.
 
 **Command rails.** `WorkItemActionRail.tsx` renders fixed, non-configurable
 buttons per row; there is no per-household favorite/overflow configuration.
-Tasks use `Ab …` · `Einplanen` · `Mehr`: `Ab …` dispatches `task.later` and
-edits persistent `Task.notBeforeAt`; `Einplanen` dispatches `task.plan` for
+Tasks use `Ab …` · `Einplanen` · `Mehr`: `Ab …` dispatches
+`task.availability` and edits persistent `Task.notBeforeAt` plus its local
+calendar date `Task.notBeforeDate`; `Einplanen` dispatches `task.plan` for
 `scheduledDate`/deadline; `Mehr` opens task detail. Backlog projects use
 Wiedervorlage/Struktur/Mehr, while active projects omit the Wiedervorlage
 button. `Struktur` opens `ProjectStructureSheet` for project rows and remains

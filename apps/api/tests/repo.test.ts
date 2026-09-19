@@ -303,6 +303,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
         title: "Später",
         status: "actionable",
         notBeforeAt: "2026-09-20T08:00:00.000Z",
+        notBeforeDate: "2026-09-20",
       });
       const available = createTask(handle.db, {
         projectId: project.id,

@@ -410,14 +410,13 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           kind="project"
           disabled={busy}
           groupLabel={strings.moreActions}
-          laterLabel={strings.projectRevisitDate}
-          structureLabel={strings.railStructure}
-          moreLabel={strings.railMore}
-          {...(story.status === "backlog"
-            ? { onLater: () => runRailCommand("story.defer") }
-            : {})}
-          onStructure={() => runRailCommand("story.structure")}
-          onMore={handleMainClick}
+          actions={[
+            ...(story.status === "backlog"
+              ? [{ label: strings.projectRevisitDate, onSelect: () => runRailCommand("story.defer") }]
+              : []),
+            { label: strings.railStructure, onSelect: () => runRailCommand("story.structure") },
+            { label: strings.railMore, onSelect: handleMainClick },
+          ]}
         />
       ) : null}
       {lifecycleOpen ? (

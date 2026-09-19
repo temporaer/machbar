@@ -91,6 +91,7 @@ interface RawTask {
   dueDate: string | null;
   scheduledDate: string | null;
   notBeforeAt: string | null;
+  notBeforeDate: string | null;
   priority: number | null;
   size: TaskSize | null;
   position: number;
@@ -334,6 +335,7 @@ export class Graph {
         dueDate: row.dueDate,
         scheduledDate: row.scheduledDate,
         notBeforeAt: row.notBeforeAt,
+        notBeforeDate: row.notBeforeDate,
         priority: row.priority,
         size: row.size as TaskSize | null,
         position: row.position,
@@ -474,6 +476,7 @@ export class Graph {
           projectId: task.projectId,
           scheduledDate: task.scheduledDate,
           notBeforeAt: task.notBeforeAt,
+          notBeforeDate: task.notBeforeDate,
           externalWait: externalWaitByTask.get(task.id) ?? null,
           dependencies: (dependenciesByTask.get(task.id) ?? []).map(
             (dependency) => {
@@ -676,6 +679,7 @@ export class Graph {
         dueDate: raw.dueDate,
         scheduledDate: raw.scheduledDate,
         notBeforeAt: raw.notBeforeAt,
+        notBeforeDate: raw.notBeforeDate,
         externalWait,
         priority: raw.priority,
         size: raw.size,
@@ -702,9 +706,7 @@ export class Graph {
         inheritedContexts,
         effectiveContexts,
         blocked: execution?.blocked ?? false,
-        executable:
-          (execution?.executable ?? false) &&
-          (raw.notBeforeAt === null || raw.notBeforeAt <= now),
+        executable: execution?.executable ?? false,
         nextBlockerAttentionDate:
           execution?.nextBlockerAttentionDate ?? null,
         blockers,

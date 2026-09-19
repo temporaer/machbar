@@ -106,6 +106,7 @@ type McpTaskSource = Pick<
   | "dueDate"
   | "scheduledDate"
   | "notBeforeAt"
+  | "notBeforeDate"
   | "blocked"
   | "externalWait"
 >;
@@ -134,6 +135,7 @@ function compactTask(task: McpTaskSource) {
     dueDate: task.dueDate,
     scheduledDate: task.scheduledDate,
     notBeforeAt: task.notBeforeAt,
+    notBeforeDate: task.notBeforeDate,
     blocked: task.blocked,
     externalWait: task.externalWait
       ? {
@@ -612,7 +614,7 @@ export function createMachbarMcpServer({
     "machbar_create_task",
     {
       description:
-        "Create a task. Set activateIfReady=true only for a concrete, single-step action that can be performed without further clarification, decision, decomposition, or triage. Leave it false or omitted for vague captures, ideas, multi-step outcomes, clarification, or Inbox review; do not estimate duration or use a two-minute rule. Do not invent metadata to justify activation. Examples: \"Buy milk\" and \"Add batteries to the shopping list\" can be activated; \"Call the dentist tomorrow\" can be activated with its explicitly requested date; \"Figure out the summer holiday\", \"Need to sort out the heating thing\", and \"Remember that we should think about replacing the router\" should remain Inbox. If uncertain, prefer Inbox. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. notBeforeAt and MCP reminders are absolute RFC3339/ISO timestamps.",
+        "Create a task. Set activateIfReady=true only for a concrete, single-step action that can be performed without further clarification, decision, decomposition, or triage. Leave it false or omitted for vague captures, ideas, multi-step outcomes, clarification, or Inbox review; do not estimate duration or use a two-minute rule. Do not invent metadata to justify activation. Examples: \"Buy milk\" and \"Add batteries to the shopping list\" can be activated; \"Call the dentist tomorrow\" can be activated with its explicitly requested date; \"Figure out the summer holiday\", \"Need to sort out the heating thing\", and \"Remember that we should think about replacing the router\" should remain Inbox. If uncertain, prefer Inbox. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. notBeforeAt is an absolute RFC3339/ISO timestamp and requires notBeforeDate, its local YYYY-MM-DD calendar date. MCP reminders are absolute timestamps.",
       inputSchema: {
         title: z.string().min(1),
         notes: z.string().optional(),
@@ -628,6 +630,7 @@ export function createMachbarMcpServer({
         dueDate: calendarDate.nullable(),
         scheduledDate: calendarDate.nullable(),
         notBeforeAt: mcpNotBeforeAtSchema.nullable().optional(),
+        notBeforeDate: calendarDate.nullable().optional(),
         reminders: mcpAbsoluteRemindersSchema.optional(),
         priority: z.number().int().nullable().optional(),
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
@@ -750,7 +753,7 @@ export function createMachbarMcpServer({
     "machbar_update_task",
     {
       description:
-        "Update task metadata, including its title, with the latest revision. In household scope, omit ownerMemberId to keep ownership, pass null for shared, or pass a stable member ID; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. notBeforeAt is an absolute RFC3339/ISO timestamp or null to clear it.",
+        "Update task metadata, including its title, with the latest revision. In household scope, omit ownerMemberId to keep ownership, pass null for shared, or pass a stable member ID; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. notBeforeAt is an absolute RFC3339/ISO timestamp and must be set or cleared together with its local YYYY-MM-DD notBeforeDate.",
       inputSchema: {
         taskId,
         expectedRevision,
@@ -759,6 +762,7 @@ export function createMachbarMcpServer({
         dueDate: calendarDate.nullable(),
         scheduledDate: calendarDate.nullable(),
         notBeforeAt: mcpNotBeforeAtSchema.nullable().optional(),
+        notBeforeDate: calendarDate.nullable().optional(),
         priority: z.number().int().nullable().optional(),
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
         tagIds: z.array(z.number().int().positive()).optional(),

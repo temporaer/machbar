@@ -39,7 +39,7 @@ export type ProjectWorkflowKind =
   | "structure"
   | "assignDriver"
   | "editOutcome"
-  | "planDates"
+  | "deadline"
   | "tags"
   | "contexts"
   | "activateWithDriver"

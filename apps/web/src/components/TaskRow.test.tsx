@@ -429,6 +429,9 @@ describe("TaskRow – primary swipe direction mapping", () => {
     const mainGrid = rail.querySelector(".rail-main-grid");
     expect(mainGrid).toHaveClass("rail-main-grid");
     expect(mainGrid?.querySelectorAll("button")).toHaveLength(3);
+    expect(mainGrid).toHaveStyle({
+      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+    });
     // There is no separate overflow grid anymore — `Mehr` opens the task
     // detail directly instead of another menu.
     expect(screen.queryByRole("group", { name: "Mehr …" })).not.toBeInTheDocument();
@@ -450,7 +453,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(screen.getByTestId("open-task")).toHaveTextContent("11");
   });
 
-  it("opens the focused Ab workflow (TaskLaterSheet) from the 'Ab …' rail button", async () => {
+  it("opens the focused Ab workflow (TaskAvailabilitySheet) from the 'Ab …' rail button", async () => {
     const task = makeTask({ id: 9, title: "Kurz aufschieben", status: "actionable" });
     mockedApi.getTask.mockResolvedValue(task);
     renderWithProviders(

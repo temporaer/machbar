@@ -162,7 +162,7 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     }
 
     // Actually interactable via a real pointer/click sequence, not just present in the DOM.
-    // "Ab …" always opens the one canonical TaskLaterSheet workflow.
+    // "Ab …" always opens the one canonical TaskAvailabilitySheet workflow.
     await userEvent.click(screen.getByRole("button", { name: "Ab …" }));
     expect(await screen.findByRole("dialog", { name: "Ab: Vertrag unterschreiben" })).toBeInTheDocument();
   });

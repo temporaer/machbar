@@ -764,14 +764,21 @@ describe("MCP integration", () => {
         title: "Available later",
         activateIfReady: true,
         notBeforeAt: "2026-09-21T18:00:00+02:00",
+        notBeforeDate: "2026-09-21",
       },
     });
     const createdTask = (
       created.structuredContent as {
-        result: { id: number; revision: number; notBeforeAt: string | null };
+        result: {
+          id: number;
+          revision: number;
+          notBeforeAt: string | null;
+          notBeforeDate: string | null;
+        };
       }
     ).result;
     expect(createdTask.notBeforeAt).toBe("2026-09-21T16:00:00.000Z");
+    expect(createdTask.notBeforeDate).toBe("2026-09-21");
 
     const search = await client.callTool({
       name: "machbar_search",
@@ -780,7 +787,9 @@ describe("MCP integration", () => {
     expect(
       (
         search.structuredContent as {
-          result: { items: Array<{ notBeforeAt: string | null }> };
+          result: {
+            items: Array<{ notBeforeAt: string | null; notBeforeDate: string | null }>;
+          };
         }
       ).result.items[0]?.notBeforeAt,
     ).toBe("2026-09-21T16:00:00.000Z");
@@ -791,12 +800,13 @@ describe("MCP integration", () => {
         taskId: createdTask.id,
         expectedRevision: createdTask.revision,
         notBeforeAt: null,
+        notBeforeDate: null,
       },
     });
     expect(
       (
         updated.structuredContent as {
-          result: { notBeforeAt: string | null };
+          result: { notBeforeAt: string | null; notBeforeDate: string | null };
         }
       ).result.notBeforeAt,
     ).toBeNull();

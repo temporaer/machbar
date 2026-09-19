@@ -187,6 +187,7 @@ export type ApiErrorCode =
   | "task_indent_unavailable"
   | "task_not_found"
   | "task_schedule_before_available"
+  | "task_availability_date_required"
   | "task_parent_self"
   | "task_promotion_invalid"
   | "task_reminder_invalid"
@@ -525,6 +526,8 @@ export interface Task {
   dueDate: string | null;
   scheduledDate: string | null;
   notBeforeAt: string | null;
+  /** Local calendar date selected with `notBeforeAt`; used for date-only invariants. */
+  notBeforeDate: string | null;
   externalWait: ExternalWait | null;
   priority: number | null;
   size: TaskSize | null;

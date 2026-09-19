@@ -2,14 +2,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { makeProject } from "../test/fixtures";
-import { PlanDatesSheet } from "./PlanDatesSheet";
+import { ProjectDeadlineSheet } from "./ProjectDeadlineSheet";
 
-describe("PlanDatesSheet", () => {
+describe("ProjectDeadlineSheet", () => {
   it("rejects an invalid date, saves valid input, and closes explicitly", async () => {
     const onClose = vi.fn();
     const onSave = vi.fn().mockResolvedValue(undefined);
     render(
-      <PlanDatesSheet
+      <ProjectDeadlineSheet
         story={makeProject({ id: 1, title: "Urlaub" })}
         onClose={onClose}
         onSave={onSave}
@@ -17,9 +17,8 @@ describe("PlanDatesSheet", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Wiedervorlage & Fälligkeit" }),
+      screen.getByRole("heading", { name: "Projektfrist" }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Wiedervorlage")).toBeInTheDocument();
     const dueDate = screen.getByLabelText("Fällig");
     await userEvent.type(dueDate, "irgendwann vielleicht");
 
@@ -42,17 +41,4 @@ describe("PlanDatesSheet", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
-  it("can hide project revisit editing while keeping the due date field", () => {
-    render(
-      <PlanDatesSheet
-        story={makeProject({ id: 1, title: "Urlaub", status: "active" })}
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        showRevisitDate={false}
-      />,
-    );
-
-    expect(screen.getByLabelText("Fällig")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Wiedervorlage")).not.toBeInTheDocument();
-  });
 });

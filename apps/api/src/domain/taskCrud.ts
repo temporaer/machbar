@@ -83,6 +83,7 @@ export interface CreateTaskInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   notBeforeAt?: string | null;
+  notBeforeDate?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
   repeatAfterDays?: number | null;
@@ -107,16 +108,24 @@ function isValidIanaTimezone(value: string): boolean {
 function assertScheduleNotBeforeAvailability(
   scheduledDate: string | null,
   notBeforeAt: string | null,
+  notBeforeDate: string | null,
 ) {
+  if ((notBeforeAt === null) !== (notBeforeDate === null)) {
+    throw AppError.badRequest(
+      "task_availability_date_required",
+      "Task availability requires both an instant and its local calendar date.",
+      { notBeforeAt, notBeforeDate },
+    );
+  }
   if (
     scheduledDate !== null &&
-    notBeforeAt !== null &&
-    scheduledDate < notBeforeAt.slice(0, 10)
+    notBeforeDate !== null &&
+    scheduledDate < notBeforeDate
   ) {
     throw AppError.conflict(
       "task_schedule_before_available",
       "A task cannot be planned before it becomes available.",
-      { scheduledDate, notBeforeAt },
+      { scheduledDate, notBeforeAt, notBeforeDate },
     );
   }
 }
@@ -429,7 +438,8 @@ function insertTask(
   const allowedDeviationDays = input.allowedDeviationDays ?? null;
   const scheduledDate = input.scheduledDate ?? null;
   const notBeforeAt = input.notBeforeAt ?? null;
-  assertScheduleNotBeforeAvailability(scheduledDate, notBeforeAt);
+  const notBeforeDate = input.notBeforeDate ?? null;
+  assertScheduleNotBeforeAvailability(scheduledDate, notBeforeAt, notBeforeDate);
   const recurrence = recurrenceDates(
     repeatAfterDays,
     allowedDeviationDays,
@@ -464,6 +474,7 @@ function insertTask(
       dueDate: recurrence.enabled ? recurrence.dueDate : input.dueDate ?? null,
       scheduledDate,
       notBeforeAt,
+      notBeforeDate,
       priority: input.priority ?? null,
       size: input.size ?? null,
       repeatAfterDays,
@@ -745,6 +756,7 @@ export interface UpdateTaskInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   notBeforeAt?: string | null;
+  notBeforeDate?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
   repeatAfterDays?: number | null;
@@ -826,7 +838,13 @@ export function updateTask(
         : currentTask.scheduledDate;
     const nextNotBeforeAt =
       input.notBeforeAt !== undefined ? input.notBeforeAt : currentTask.notBeforeAt;
-    assertScheduleNotBeforeAvailability(nextScheduledDate, nextNotBeforeAt);
+    const nextNotBeforeDate =
+      input.notBeforeDate !== undefined ? input.notBeforeDate : currentTask.notBeforeDate;
+    assertScheduleNotBeforeAvailability(
+      nextScheduledDate,
+      nextNotBeforeAt,
+      nextNotBeforeDate,
+    );
     if ((nextStatus ?? currentTask.status) === "captured") {
       assertCapturedTaskShape("captured", {
         repeatAfterDays: nextRepeatAfterDays,
@@ -987,6 +1005,13 @@ export function updateTask(
     ) {
       patch.notBeforeAt = input.notBeforeAt;
       changedFields.push("notBeforeAt");
+    }
+    if (
+      input.notBeforeDate !== undefined &&
+      input.notBeforeDate !== currentTask.notBeforeDate
+    ) {
+      patch.notBeforeDate = input.notBeforeDate;
+      changedFields.push("notBeforeDate");
     }
     for (const field of [
       "priority",
@@ -1164,7 +1189,9 @@ export function updateTask(
     ];
     const availabilityOnlyChange =
       coalescedChangedFields.length > 0 &&
-      coalescedChangedFields.every((field) => field === "notBeforeAt");
+      coalescedChangedFields.every(
+        (field) => field === "notBeforeAt" || field === "notBeforeDate",
+      );
     if (recurringCompletion && occurrence) {
       const updatedScheduledDate = updated.scheduledDate!;
       const updatedDueDate = updated.dueDate!;

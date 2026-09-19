@@ -17,6 +17,7 @@ export interface BlockerTaskInput {
   projectId: number | null;
   scheduledDate: string | null;
   notBeforeAt: string | null;
+  notBeforeDate: string | null;
   externalWait: {
     waitingFor: string | null;
     revisitDate: string | null;
@@ -150,7 +151,7 @@ export function analyzeTaskBlockers(
     if (task.notBeforeAt !== null && task.notBeforeAt > now) {
       branchResults.push({
         healthy: true,
-        attentionDate: task.notBeforeAt.slice(0, 10),
+        attentionDate: task.notBeforeDate,
         diagnoses: [],
       });
     }

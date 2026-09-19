@@ -187,6 +187,7 @@ export interface CreateTaskInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   notBeforeAt?: string | null;
+  notBeforeDate?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
   repeatAfterDays?: number | null;

@@ -4,18 +4,19 @@ import { useStrings } from "../lib/strings";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { resolveAbsolutePreset } from "../lib/reminderPresets";
+import { localDateForInstant, localDateTimeToIso } from "../lib/localDateTime";
 import { resolveScheduleShortcut } from "./ScheduleShortcuts";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 
 /**
- * Focused `task.later` workflow: edits the global "Ab …" availability gate.
+ * Focused `task.availability` workflow: edits the global "Ab …" availability gate.
  * Planning commitments and deadlines stay in the separate `task.plan`
  * workflow, reached by dispatching `task.plan` so `useWorkItemCommands()`
  * remains the only place deciding which workflow a command opens.
  */
-export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => void }) {
+export function TaskAvailabilitySheet({ task, onClose }: { task: Task; onClose: () => void }) {
   const strings = useStrings();
   const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
@@ -27,21 +28,20 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
 
   const customNotBeforeAt = () => {
     if (!customDate) return null;
-    const [hours, minutes] = customTime.split(":").map(Number);
-    if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return null;
-    const date = new Date(`${customDate}T00:00:00`);
-    date.setHours(hours!, minutes!, 0, 0);
-    return date.toISOString();
+    return localDateTimeToIso(customDate, customTime);
   };
 
-  const startOfLocalDay = (date: string) => new Date(`${date}T00:00:00`).toISOString();
-
-  const applyNotBefore = async (notBeforeAt: string | null) => {
+  const applyNotBefore = async (notBeforeAt: string | null, notBeforeDate: string | null) => {
     if (saving) return;
     setSaving(true);
     setError(null);
     try {
-      await taskActions.update(task, { notBeforeAt }, { notBeforeAt }, true);
+      await taskActions.update(
+        task,
+        { notBeforeAt, notBeforeDate },
+        { notBeforeAt, notBeforeDate },
+        true,
+      );
       onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
@@ -53,36 +53,42 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
     <BottomSheet title={`${strings.notBefore}: ${task.title}`} onClose={() => !saving && onClose()}>
       <div className="stack">
         <div>
-          <p className="text-muted">{strings.laterSameDayHint}</p>
-          <div className="choice-group" role="group" aria-label={strings.laterSameDayGroup}>
+          <p className="text-muted">{strings.availabilitySameDayHint}</p>
+          <div className="choice-group" role="group" aria-label={strings.availabilitySameDayGroup}>
             <button
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => void applyNotBefore(resolveAbsolutePreset("in3Hours"))}
+              onClick={() => {
+                const instant = resolveAbsolutePreset("in3Hours");
+                void applyNotBefore(instant, localDateForInstant(instant));
+              }}
             >
-              {strings.laterInAWhile}
+              {strings.availabilityInAWhile}
             </button>
             <button
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => void applyNotBefore(resolveAbsolutePreset("tonight"))}
+              onClick={() => {
+                const instant = resolveAbsolutePreset("tonight");
+                void applyNotBefore(instant, localDateForInstant(instant));
+              }}
             >
-              {strings.laterTonight}
+              {strings.availabilityTonight}
             </button>
           </div>
         </div>
         <div>
-          <p className="text-muted">{strings.laterFutureHint}</p>
-          <div className="choice-group" role="group" aria-label={strings.laterFutureGroup}>
+          <p className="text-muted">{strings.availabilityFutureHint}</p>
+          <div className="choice-group" role="group" aria-label={strings.availabilityFutureGroup}>
             <button
               type="button"
               className="choice-chip"
               disabled={saving}
               onClick={() => {
                 const date = resolveScheduleShortcut("tomorrow");
-                if (date) void applyNotBefore(startOfLocalDay(date));
+                if (date) void applyNotBefore(localDateTimeToIso(date, "00:00"), date);
               }}
             >
               {strings.scheduleShortcutLabels.tomorrow}
@@ -93,16 +99,18 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
               disabled={saving}
               onClick={() => {
                 const date = resolveScheduleShortcut("weekend");
-                if (date) void applyNotBefore(startOfLocalDay(date));
+                if (date) void applyNotBefore(localDateTimeToIso(date, "00:00"), date);
               }}
             >
               {strings.scheduleShortcutLabels.weekend}
             </button>
           </div>
           <div className="field">
-            <label htmlFor={`later-custom-date-${task.id}`}>{strings.laterCustomDate}</label>
+            <label htmlFor={`availability-custom-date-${task.id}`}>
+              {strings.availabilityCustomDate}
+            </label>
             <HumanDateInput
-              id={`later-custom-date-${task.id}`}
+              id={`availability-custom-date-${task.id}`}
               value={customDate}
               onChange={(date) => setCustomDate(date ?? "")}
               onValidityChange={setDateValid}
@@ -110,9 +118,11 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
             />
           </div>
           <div className="field">
-            <label htmlFor={`later-custom-time-${task.id}`}>{strings.laterCustomTime}</label>
+            <label htmlFor={`availability-custom-time-${task.id}`}>
+              {strings.availabilityCustomTime}
+            </label>
             <input
-              id={`later-custom-time-${task.id}`}
+              id={`availability-custom-time-${task.id}`}
               type="time"
               value={customTime}
               onChange={(event) => setCustomTime(event.target.value)}
@@ -136,7 +146,7 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
             type="button"
             className="btn"
             disabled={saving || task.notBeforeAt === null}
-            onClick={() => void applyNotBefore(null)}
+            onClick={() => void applyNotBefore(null, null)}
           >
             {strings.clearNotBefore}
           </button>
@@ -146,13 +156,13 @@ export function TaskLaterSheet({ task, onClose }: { task: Task; onClose: () => v
             disabled={saving}
             onClick={() => dispatch({ type: "task.plan", taskId: task.id })}
           >
-            {strings.laterMorePlanningOptions}
+            {strings.availabilityMorePlanningOptions}
           </button>
           <button
             type="button"
             className="btn btn-primary"
             disabled={saving || !dateValid || customNotBeforeAt() === null}
-            onClick={() => void applyNotBefore(customNotBeforeAt())}
+            onClick={() => void applyNotBefore(customNotBeforeAt(), customDate)}
           >
             {strings.confirmDone}
           </button>

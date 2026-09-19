@@ -185,10 +185,12 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     await createTask({
       title: "Erst morgen machbar",
       notBeforeAt: `${tomorrow}T00:00:00.000Z`,
+      notBeforeDate: tomorrow,
     });
     await createTask({
       title: "Schon wieder machbar",
       notBeforeAt: `${yesterday}T00:00:00.000Z`,
+      notBeforeDate: yesterday,
     });
 
     expect(await bucketsContaining("Erst morgen machbar")).toEqual([]);
@@ -204,6 +206,26 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
         status: "actionable",
         scheduledDate: today,
         notBeforeAt: `${tomorrow}T00:00:00.000Z`,
+        notBeforeDate: tomorrow,
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("task_schedule_before_available");
+  });
+
+  it("compares planning against the selected local availability date, not its UTC date", async () => {
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Nach Berliner Mitternacht verfügbar",
+        status: "actionable",
+        scheduledDate: "2026-09-19",
+        // Europe/Berlin is UTC+2 on this date, so this instant belongs to
+        // local calendar date 2026-09-20.
+        notBeforeAt: "2026-09-19T22:30:00.000Z",
+        notBeforeDate: "2026-09-20",
       },
     });
 

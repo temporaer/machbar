@@ -35,6 +35,7 @@ describe("task <-> story role conversion", () => {
         dueDate: "2026-10-10",
         scheduledDate: "2026-09-15",
         notBeforeAt: "2026-09-14T08:00:00.000Z",
+        notBeforeDate: "2026-09-14",
         tagIds: [tag.id],
       })
     ).json();
@@ -82,11 +83,12 @@ describe("task <-> story role conversion", () => {
         .select({
           scheduledDate: schema.workItems.scheduledDate,
           notBeforeAt: schema.workItems.notBeforeAt,
+          notBeforeDate: schema.workItems.notBeforeDate,
         })
         .from(schema.workItems)
         .where(eq(schema.workItems.id, root.id))
         .get(),
-    ).toEqual({ scheduledDate: null, notBeforeAt: null });
+    ).toEqual({ scheduledDate: null, notBeforeAt: null, notBeforeDate: null });
 
     const project = (
       await ctx.app.inject({
@@ -200,6 +202,7 @@ describe("task <-> story role conversion", () => {
         dueDate: "2026-10-10",
         scheduledDate: "2026-09-15",
         notBeforeAt: "2026-09-14T08:00:00.000Z",
+        notBeforeDate: "2026-09-14",
         tagIds: [tag.id],
         contextInheritanceMode: "explicit",
         contextIds: [context.id],
@@ -238,11 +241,12 @@ describe("task <-> story role conversion", () => {
         .select({
           scheduledDate: schema.workItems.scheduledDate,
           notBeforeAt: schema.workItems.notBeforeAt,
+          notBeforeDate: schema.workItems.notBeforeDate,
         })
         .from(schema.workItems)
         .where(eq(schema.workItems.id, root.id))
         .get(),
-    ).toEqual({ scheduledDate: null, notBeforeAt: null });
+    ).toEqual({ scheduledDate: null, notBeforeAt: null, notBeforeDate: null });
     const project = (
       await ctx.app.inject({ method: "GET", url: `/api/projects/${root.id}` })
     ).json();
@@ -529,7 +533,10 @@ describe("task <-> story role conversion", () => {
     ).json();
     ctx.handle.db
       .update(schema.workItems)
-      .set({ notBeforeAt: "2026-09-14T08:00:00.000Z" })
+      .set({
+        notBeforeAt: "2026-09-14T08:00:00.000Z",
+        notBeforeDate: "2026-09-14",
+      })
       .where(eq(schema.workItems.id, project.id))
       .run();
     const reverted = await post(`/api/projects/${project.id}/convert-to-task`, {
@@ -543,6 +550,7 @@ describe("task <-> story role conversion", () => {
       dueDate: "2026-10-10",
       scheduledDate: null,
       notBeforeAt: null,
+      notBeforeDate: null,
     });
     expect(
       await ctx.app.inject({

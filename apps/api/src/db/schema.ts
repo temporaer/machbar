@@ -353,6 +353,7 @@ export const workItems = sqliteTable(
     dueDate: text("due_date"),
     scheduledDate: text("scheduled_date"),
     notBeforeAt: text("not_before_at"),
+    notBeforeDate: text("not_before_date"),
     priority: integer("priority"),
     size: text("size"), // task-only, nullable S | M | L | XL
     position: integer("position").notNull().default(0),

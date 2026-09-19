@@ -18,6 +18,7 @@ function task(
     projectId: null,
     scheduledDate: null,
     notBeforeAt: null,
+    notBeforeDate: null,
     externalWait: null,
     dependencies: [],
     ...overrides,
