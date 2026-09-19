@@ -249,8 +249,16 @@ export function buildReviewItems(
       const canonicalCandidates = graph.nextActionCandidatesFor(project.id);
       const hasHealthyProgressPath = openTasks.some((task) => {
         const analysis = graph.blockerAnalysisFor(task.id);
+        if (!analysis) return false;
+        if (analysis.blocked) return analysis.healthyProgressPath;
+        // A future `notBeforeAt` keeps a task off the executable/next-action
+        // candidate lists without setting `blocked` (it is not waiting on an
+        // external party or a dependency). Treat that deferred-but-healthy
+        // path as a viable progress path too, matching Graph's own
+        // executable/next-action availability gate.
         return (
-          analysis?.blocked === true &&
+          task.status === "actionable" &&
+          !analysis.executable &&
           analysis.healthyProgressPath
         );
       });

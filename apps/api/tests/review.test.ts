@@ -243,6 +243,43 @@ describe("review queue", () => {
     ).toBe(false);
   });
 
+  it("treats a task deferred by a future notBeforeAt as a healthy progress path", () => {
+    const member = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Nora", color: "#a1b2c3" })
+      .returning()
+      .get();
+    const project = ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "story",
+        title: "Deferred but healthy",
+        status: "active",
+        ownerMemberId: member.id,
+      })
+      .returning()
+      .get();
+    const deferred = ctx.handle.db
+      .insert(schema.workItems)
+      .values({ role: "task", status: "active",
+        parentId: project.id,
+        title: "Not before tonight",
+        notBeforeAt: "2099-01-01T18:00:00.000Z",
+      })
+      .returning()
+      .get();
+    setProjectAge(project.id, "2026-01-01");
+    setTaskAge(deferred.id, "2026-01-01");
+
+    const items = reviewItems();
+    expect(
+      items.some(
+        (item) =>
+          item.entityId === project.id &&
+          item.reason === "no_viable_progress_path",
+      ),
+    ).toBe(false);
+  });
+
   it("accepts an executable cross-project dependency as a healthy progress path", () => {
     const member = ctx.handle.db
       .insert(schema.members)
