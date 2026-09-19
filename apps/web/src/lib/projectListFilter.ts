@@ -90,6 +90,7 @@ export function classifyProjectListItem(project: ProjectWithActions): ProjectLis
   if (
     project.status === "active" &&
     project.nextAction == null &&
+    project.deferredNextAction == null &&
     project.stuckReason == null
   ) {
     return "active-waiting";

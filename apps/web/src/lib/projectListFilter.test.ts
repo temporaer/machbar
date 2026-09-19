@@ -22,6 +22,16 @@ describe("classifyProjectListItem", () => {
         }),
       ),
     ).toBe("active-waiting");
+    expect(
+      classifyProjectListItem(
+        makeProject({
+          status: "active",
+          nextAction: null,
+          deferredNextAction: makeTask(),
+          stuckReason: null,
+        }),
+      ),
+    ).toBe("active-actionable");
     expect(classifyProjectListItem(makeProject({ status: "backlog" }))).toBe("backlog");
     expect(classifyProjectListItem(makeProject({ status: "completed" }))).toBe("completed");
     expect(classifyProjectListItem(makeProject({ status: "archived" }))).toBe("archived");

@@ -426,6 +426,8 @@ export interface Project {
   openCount?: number;
   doneCount?: number;
   nextAction?: Task | null;
+  /** The earliest canonical next-action candidate deferred only by future availability. */
+  deferredNextAction?: Task | null;
   /**
    * Tasks explicitly opted in via `additionalNextAction` that are currently
    * genuinely eligible (active, unblocked) alongside the canonical

@@ -266,5 +266,62 @@ describe("task.additionalNextAction opt-in", () => {
     const detail = await getProject(project.id);
     expect(detail.nextAction.id).toBe(available.id);
     expect(detail.nextAction.id).not.toBe(deferred.id);
+    expect(detail.deferredNextAction.id).toBe(deferred.id);
+  });
+
+  it("exposes the earliest otherwise-eligible future task as deferredNextAction", async () => {
+    const project = await createProject({ title: "Projekt J", status: "active" });
+    const deferred = await createTask({
+      title: "Erst morgen",
+      projectId: project.id,
+      notBeforeAt: "2999-01-01T18:00:00.000Z",
+      notBeforeDate: "2999-01-01",
+    });
+
+    const detail = await getProject(project.id);
+    expect(detail.nextAction).toBeNull();
+    expect(detail.deferredNextAction.id).toBe(deferred.id);
+    expect(detail.stuckReason).toBeNull();
+  });
+
+  it("keeps deferred candidates separate from dependency- or externally-blocked tasks", async () => {
+    const project = await createProject({ title: "Projekt K", status: "active" });
+    const dependency = await createTask({ title: "Voraussetzung", projectId: project.id });
+    const dependencyBlocked = await createTask({
+      title: "Mit Abhängigkeit",
+      projectId: project.id,
+      notBeforeAt: "2999-01-01T18:00:00.000Z",
+      notBeforeDate: "2999-01-01",
+    });
+    const externalBlocked = await createTask({
+      title: "Mit externer Wartezeit",
+      projectId: project.id,
+      notBeforeAt: "2999-01-01T18:00:00.000Z",
+      notBeforeDate: "2999-01-01",
+    });
+    const dependencyRes = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${dependencyBlocked.id}/dependencies`,
+      payload: { dependsOnTaskId: dependency.id },
+    });
+    expect(dependencyRes.statusCode).toBe(201);
+    await addExternalWait(externalBlocked.id);
+
+    const detail = await getProject(project.id);
+    expect(detail.deferredNextAction).toBeNull();
+  });
+
+  it("moves a deferred candidate into nextAction when its availability is reached", async () => {
+    const project = await createProject({ title: "Projekt L", status: "active" });
+    const task = await createTask({
+      title: "Jetzt dran",
+      projectId: project.id,
+      notBeforeAt: "2026-09-19T18:00:00.000Z",
+      notBeforeDate: "2026-09-19",
+    });
+
+    const detail = await getProject(project.id);
+    expect(detail.nextAction.id).toBe(task.id);
+    expect(detail.deferredNextAction).toBeNull();
   });
 });

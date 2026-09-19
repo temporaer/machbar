@@ -1115,6 +1115,45 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(context).not.toHaveAttribute("title");
   });
 
+  it("shows a deferred next action without presenting generic waiting", async () => {
+    renderWithProviders(
+      <Harness
+        story={makeProject({
+          id: 62,
+          status: "active",
+          nextAction: null,
+          stuckReason: null,
+          deferredNextAction: makeTask({
+            title: "Morgen anfangen",
+            notBeforeDate: localDateAfter(1),
+          }),
+        })}
+      />,
+    );
+
+    expect(await screen.findByText("Nächster Schritt ab morgen: Morgen anfangen")).toBeInTheDocument();
+    expect(screen.queryByText("Wartet – Grund nicht angegeben")).not.toBeInTheDocument();
+  });
+
+  it("shows a deferred task secondarily when an executable next action exists", async () => {
+    renderWithProviders(
+      <Harness
+        story={makeProject({
+          id: 63,
+          status: "active",
+          nextAction: makeTask({ title: "Jetzt anfangen" }),
+          deferredNextAction: makeTask({
+            title: "Morgen anfangen",
+            notBeforeDate: localDateAfter(1),
+          }),
+        })}
+      />,
+    );
+
+    expect(await screen.findByText("Nächster Schritt: Jetzt anfangen")).toBeInTheDocument();
+    expect(screen.getByText("Morgen anfangen ab morgen")).toBeInTheDocument();
+  });
+
   it("omits the progress bar when there is nothing to show", async () => {
     const story = makeProject({ id: 54, title: "Ohne Kriterien", status: "backlog", acceptanceCriteria: [] });
     const { container } = renderWithProviders(<Harness story={story} />);

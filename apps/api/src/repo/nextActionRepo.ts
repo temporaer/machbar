@@ -23,11 +23,27 @@ import type { Db } from "../db/client.js";
  * children have all become terminal is free to become a candidate again.
  * Tasks whose `not_before_at` is later than `now` are likewise excluded.
  */
+export interface NextActionTaskIdsByProject {
+  available: Map<number, number[]>;
+  deferred: Map<number, number[]>;
+}
+
 export function getNextActionTaskIdsByProject(
   db: Db,
   now = new Date().toISOString(),
 ): Map<number, number[]> {
-  const rows = db.all<{ project_id: number; task_id: number }>(sql`
+  return getNextActionTaskIdsByProjectProjection(db, now).available;
+}
+
+export function getNextActionTaskIdsByProjectProjection(
+  db: Db,
+  now = new Date().toISOString(),
+): NextActionTaskIdsByProject {
+  const rows = db.all<{
+    project_id: number;
+    task_id: number;
+    availability: "available" | "deferred";
+  }>(sql`
     WITH RECURSIVE sortkey(task_id, project_id, key) AS (
       SELECT task.id, story.id, printf('%08d', task.position)
       FROM work_items task
@@ -39,13 +55,12 @@ export function getNextActionTaskIdsByProject(
       JOIN sortkey sk ON task.parent_id = sk.task_id
       WHERE task.role = 'task'
     ),
-    eligible AS (
+    candidates AS (
       SELECT sk.task_id, sk.project_id, sk.key
       FROM sortkey sk
       JOIN work_items t ON t.id = sk.task_id
       WHERE sk.project_id IS NOT NULL
         AND t.status = 'active'
-        AND (t.not_before_at IS NULL OR t.not_before_at <= ${now})
         AND NOT EXISTS (
           SELECT 1 FROM task_dependencies td
           JOIN work_items dep ON dep.id = td.depends_on_task_id
@@ -56,18 +71,34 @@ export function getNextActionTaskIdsByProject(
         )
         AND NOT EXISTS (
           SELECT 1 FROM work_items child
-          WHERE child.parent_id = t.id
+        WHERE child.parent_id = t.id
             AND child.role = 'task'
             AND child.status NOT IN ('done', 'cancelled')
         )
+    ),
+    eligible AS (
+      SELECT c.project_id, c.task_id, c.key,
+        CASE
+         WHEN t.not_before_at IS NULL OR t.not_before_at <= ${now}
+           THEN 'available'
+         ELSE 'deferred'
+        END AS availability
+      FROM candidates c
+      JOIN work_items t ON t.id = c.task_id
+      WHERE t.not_before_at IS NULL OR t.not_before_at <= ${now}
+        OR t.not_before_at > ${now}
     )
-    SELECT project_id, task_id FROM eligible ORDER BY project_id, key
+    SELECT project_id, task_id, availability
+    FROM eligible
+    ORDER BY project_id, key
   `);
-  const result = new Map<number, number[]>();
+  const available = new Map<number, number[]>();
+  const deferred = new Map<number, number[]>();
   for (const row of rows) {
+    const result = row.availability === "available" ? available : deferred;
     const ids = result.get(row.project_id) ?? [];
     ids.push(row.task_id);
     result.set(row.project_id, ids);
   }
-  return result;
+  return { available, deferred };
 }

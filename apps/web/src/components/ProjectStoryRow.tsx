@@ -162,6 +162,12 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
     nextActionScheduleExact
       ? `${strings.nextAction} ${nextActionScheduleRelative} (${nextActionScheduleExact}): ${story.nextAction.title}`
       : null;
+  const deferredNextActionRelative = story.deferredNextAction?.notBeforeDate
+    ? formatRelativeScheduleDate(story.deferredNextAction.notBeforeDate, now, locale)
+    : null;
+  const deferredNextActionExact = story.deferredNextAction?.notBeforeDate
+    ? formatExactLocalDate(story.deferredNextAction.notBeforeDate, locale)
+    : null;
   const waitingDurationSuffix =
     story.waitingUntil && waitingRelativeDate
       ? isFutureCalendarDate(story.waitingUntil, now)
@@ -349,8 +355,21 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
                           ? ` ${nextActionScheduleRelative}`
                           : ""
                       }: ${story.nextAction.title}`
-                    : strings.noNextAction}
+                    : story.deferredNextAction
+                      ? strings.deferredNextAction(
+                          deferredNextActionRelative ?? deferredNextActionExact ?? "",
+                          story.deferredNextAction.title,
+                        )
+                      : strings.noNextAction}
               </p>
+              {story.nextAction && story.deferredNextAction ? (
+                <p className="story-row-deferred-action">
+                  {strings.deferredNextActionSecondary(
+                    deferredNextActionRelative ?? deferredNextActionExact ?? "",
+                    story.deferredNextAction.title,
+                  )}
+                </p>
+              ) : null}
               {totalTasks > 0 ? (
                 <div
                   className="project-card-progress"
