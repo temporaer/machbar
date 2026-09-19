@@ -251,11 +251,11 @@ export function buildReviewItems(
         const analysis = graph.blockerAnalysisFor(task.id);
         if (!analysis) return false;
         if (analysis.blocked) return analysis.healthyProgressPath;
-        // A future `notBeforeAt` keeps a task off the executable/next-action
-        // candidate lists without setting `blocked` (it is not waiting on an
-        // external party or a dependency). Treat that deferred-but-healthy
-        // path as a viable progress path too, matching Graph's own
-        // executable/next-action availability gate.
+        // An actionable task can be off the executable/next-action candidate
+        // lists without `blocked` being set (e.g. a future `notBeforeAt`,
+        // which is not waiting on an external party or a dependency). Any
+        // such not-yet-executable task with a healthy underlying path counts
+        // as viable progress too, matching Graph's own availability gate.
         return (
           task.status === "actionable" &&
           !analysis.executable &&
