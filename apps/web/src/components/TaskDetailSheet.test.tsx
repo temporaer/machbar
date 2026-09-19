@@ -1113,6 +1113,40 @@ describe("TaskDetailSheet", () => {
     );
   });
 
+  it("opens the focused availability workflow from an unset detail value", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 61, title: "Noch nicht verfügbar", notBeforeAt: null }),
+    );
+    renderSheet(61);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Noch nicht verfügbar");
+
+    await userEvent.click(screen.getByRole("button", { name: "Ab …" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Ab: Noch nicht verfügbar" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the availability instant and opens the focused availability workflow", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({
+        id: 62,
+        title: "Abends verfügbar",
+        notBeforeAt: "2026-09-19T18:00:00.000Z",
+      }),
+    );
+    renderSheet(62);
+    await userEvent.click(screen.getByText("open"));
+    await waitForTaskTitle("Abends verfügbar");
+
+    await userEvent.click(screen.getByRole("button", { name: /Ab ….*18:00/ }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Ab: Abends verfügbar" }),
+    ).toBeInTheDocument();
+  });
+
   it("shows a deadline beside the planned date and edits both in one transaction", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({
