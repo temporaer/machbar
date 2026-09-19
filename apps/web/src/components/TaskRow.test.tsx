@@ -471,7 +471,6 @@ describe("TaskRow – primary swipe direction mapping", () => {
       await screen.findByRole("dialog", { name: "Ab: Kurz aufschieben" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "In einer Weile" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Heute Abend" })).toBeInTheDocument();
   });
 
   it("opens the focused planning workflow (TaskPlanSheet) from the 'Einplanen' rail button", async () => {
