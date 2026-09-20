@@ -37,7 +37,7 @@ export function MemberSelectionSheet({
   const choose = async (memberId: number | null) => {
     if (saving) return;
     if (memberId === value && valueIsExplicit) {
-      onClose();
+      (onCancel ?? onClose)();
       return;
     }
     setSaving(true);
