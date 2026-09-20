@@ -85,20 +85,17 @@ export function syncExternalTask(
           state: existing.state as "active" | "withdrawn",
         };
       }
-      cancelTask(txDb, existing.taskId, "leave_open");
-      if (existing.state !== "withdrawn") {
-        tx
-          .update(schema.externalTaskLinks)
-          .set({ state: "withdrawn", updatedAt: nowIso() })
-          .where(eq(schema.externalTaskLinks.id, existing.id))
-          .run();
-      }
+      const withdrawn = cancelTask(txDb, existing.taskId, "leave_open");
+      tx
+        .update(schema.externalTaskLinks)
+        .set({
+          state: "withdrawn",
+          withdrawnTaskRevision: withdrawn.revision,
+          updatedAt: nowIso(),
+        })
+        .where(eq(schema.externalTaskLinks.id, existing.id))
+        .run();
       return { taskId: existing.taskId, state: "withdrawn" as const };
-    }
-
-    let personMemberId: number | undefined;
-    if (input.person !== undefined && input.person !== null) {
-      personMemberId = mappedMemberId(txDb, integrationId, input.person);
     }
 
     if (!existing) {
@@ -142,9 +139,26 @@ export function syncExternalTask(
     if (!task) throw AppError.notFound("task_not_found", "The linked task was not found.");
     if (task.status === "done") return { taskId: task.id, state: "active" as const };
     if (task.status === "cancelled" && existing.state === "withdrawn") {
-      reopenTask(txDb, task.id);
+      if (existing.withdrawnTaskRevision === task.revision) {
+        reopenTask(txDb, task.id);
+      } else {
+        tx.update(schema.externalTaskLinks)
+          .set({
+            state: "active",
+            withdrawnTaskRevision: null,
+            updatedAt: nowIso(),
+          })
+          .where(eq(schema.externalTaskLinks.id, existing.id))
+          .run();
+        return { taskId: task.id, state: "active" as const };
+      }
     } else if (task.status === "cancelled") {
       return { taskId: task.id, state: "active" as const };
+    }
+
+    let personMemberId: number | undefined;
+    if (input.person !== undefined && input.person !== null) {
+      personMemberId = mappedMemberId(txDb, integrationId, input.person);
     }
 
     const patch: Parameters<typeof updateTask>[2] = {};
@@ -160,7 +174,7 @@ export function syncExternalTask(
     if (Object.keys(patch).length > 0) updateTask(txDb, task.id, patch);
     tx
       .update(schema.externalTaskLinks)
-      .set({ state: "active", updatedAt: nowIso() })
+      .set({ state: "active", withdrawnTaskRevision: null, updatedAt: nowIso() })
       .where(eq(schema.externalTaskLinks.id, existing.id))
       .run();
     return { taskId: task.id, state: "active" as const };

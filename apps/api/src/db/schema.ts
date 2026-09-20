@@ -664,6 +664,7 @@ export const externalTaskLinks = sqliteTable(
     state: text("state", { enum: ["active", "withdrawn"] })
       .notNull()
       .default("active"),
+    withdrawnTaskRevision: integer("withdrawn_task_revision"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),

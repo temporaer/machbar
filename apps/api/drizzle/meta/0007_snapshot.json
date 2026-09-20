@@ -412,6 +412,13 @@
           "autoincrement": false,
           "default": "'active'"
         },
+        "withdrawn_task_revision": {
+          "name": "withdrawn_task_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "text",

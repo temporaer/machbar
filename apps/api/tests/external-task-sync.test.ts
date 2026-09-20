@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import { syncExternalTask } from "../src/domain/externalTaskSync.js";
-import { cancelTask, completeTask } from "../src/domain/taskWorkflow.js";
+import { cancelTask, completeTask, reopenTask } from "../src/domain/taskWorkflow.js";
 import {
   closeTestContext,
   createTestContext,
@@ -161,5 +161,49 @@ describe("Home Assistant external task reconciliation", () => {
     expect(ctx.handle.db.select().from(schema.workItems)
       .where(and(eq(schema.workItems.id, completed.taskId), eq(schema.workItems.status, "done")))
       .get()?.title).toBe("Erledigt");
+  });
+
+  it("does not let stale external withdrawal authority reopen a human cancellation", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "stale-withdrawal",
+      relevant: true,
+      title: "Nicht automatisch öffnen",
+    })!;
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "stale-withdrawal",
+      relevant: false,
+    });
+    reopenTask(ctx.handle.db, created.taskId);
+    cancelTask(ctx.handle.db, created.taskId, "leave_open");
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "stale-withdrawal",
+      relevant: true,
+      title: "Neue Version",
+    });
+
+    const task = ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()!;
+    const link = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    expect(task.status).toBe("cancelled");
+    expect(task.title).toBe("Nicht automatisch öffnen");
+    expect(link.state).toBe("active");
+    expect(link.withdrawnTaskRevision).toBeNull();
+  });
+
+  it("does not resolve an owner for terminal reconciliation no-ops", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "terminal-owner",
+      relevant: true,
+      title: "Erledigt",
+    })!;
+    completeTask(ctx.handle.db, created.taskId, "leave_open");
+
+    expect(() => syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "terminal-owner",
+      relevant: true,
+      person: "person.unknown",
+    })).not.toThrow();
   });
 });

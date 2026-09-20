@@ -4,6 +4,7 @@ CREATE TABLE `external_task_links` (
 	`source_key` text NOT NULL,
 	`task_id` integer NOT NULL,
 	`state` text DEFAULT 'active' NOT NULL,
+	`withdrawn_task_revision` integer,
 	`created_at` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')) NOT NULL,
 	`updated_at` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')) NOT NULL,
 	FOREIGN KEY (`task_id`) REFERENCES `work_items`(`id`) ON UPDATE no action ON DELETE cascade
