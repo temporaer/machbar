@@ -34,6 +34,7 @@ import {
   convertStoryToTaskSchema,
   projectLifecycleSchema,
   reorderCriteriaSchema,
+  returnProjectToBacklogSchema,
   updateCriterionSchema,
   updateProjectSchema,
 } from "../schemas.js";
@@ -158,7 +159,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     "/api/projects/:id/return-to-backlog",
     async (request) => {
       const id = parseId(request.params.id);
-      const body = parseOrThrow(projectLifecycleSchema, request.body ?? {});
+      const body = parseOrThrow(returnProjectToBacklogSchema, request.body ?? {});
       returnProjectToBacklog(
         db,
         id,

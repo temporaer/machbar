@@ -15,6 +15,7 @@ export function MemberSelectionSheet({
   unassignedLabel,
   hint,
   onClose,
+  onCancel,
   onSelect,
 }: {
   title: string;
@@ -26,6 +27,7 @@ export function MemberSelectionSheet({
   unassignedLabel: string | null;
   hint?: string | undefined;
   onClose: () => void;
+  onCancel?: () => void;
   onSelect: (memberId: number | null) => Promise<void>;
 }) {
   const strings = useStrings();
@@ -52,7 +54,7 @@ export function MemberSelectionSheet({
 
   return (
     <BottomSheet title={title} onClose={() => {
-      if (!saving) onClose();
+      if (!saving) (onCancel ?? onClose)();
     }}>
       <div className="stack task-quick-action-sheet">
         {hint ? <p className="text-muted">{hint}</p> : null}
@@ -67,7 +69,7 @@ export function MemberSelectionSheet({
           autoFocus
         />
         {error ? <div className="task-row-error" role="alert">{error}</div> : null}
-        <button type="button" className="btn" onClick={onClose} disabled={saving}>
+        <button type="button" className="btn" onClick={onCancel ?? onClose} disabled={saving}>
           {strings.cancel}
         </button>
       </div>

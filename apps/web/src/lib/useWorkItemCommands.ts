@@ -195,8 +195,11 @@ export function useWorkItemCommands() {
       ownerMemberId?: number | null,
     ) => {
       if (!resolveStoryPrerequisite(story, action, ownerMemberId)) {
-        void projectActions.runAction(story, action, ownerMemberId);
-        projectWorkflow.cancelContinuation();
+        void projectActions
+          .runAction(story, action, ownerMemberId)
+          .then((result) => {
+            if (result) projectWorkflow.cancelContinuation();
+          });
       }
     },
     [projectActions, projectWorkflow, resolveStoryPrerequisite],

@@ -51,7 +51,7 @@ export type ProjectWorkflowKind =
 export type ProjectLifecycleContinuation = {
   projectId: number;
   action: "activate" | "reopen";
-  resume: (story: ProjectWithActions) => void;
+  resume: (story: ProjectWithActions) => void | Promise<void>;
 };
 
 export interface ProjectWorkflowState {
@@ -90,8 +90,7 @@ export function ProjectWorkflowProvider({ children }: { children: ReactNode }) {
       resumeContinuation: (story) => {
         const active = continuation;
         if (active?.projectId === story.id) {
-          setContinuation(null);
-          active.resume(story);
+          void active.resume(story);
         }
       },
     }),

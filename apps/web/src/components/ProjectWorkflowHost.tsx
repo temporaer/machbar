@@ -131,13 +131,16 @@ export function ProjectWorkflowHost() {
           value={story.ownerMemberId}
           unassignedLabel={null}
           hint={strings.assignDriverToActivateHint}
-          onClose={close}
+          onClose={workflow.closeCurrent}
+          onCancel={close}
           onSelect={async (ownerMemberId) => {
             if (workflow.continuation?.projectId === story.id) {
               if (story.activationReadiness.hasViableProgressPath) {
-                await projectActions.runAction(story, action, ownerMemberId);
-                workflow.closeCurrent();
-                workflow.cancelContinuation();
+                const result = await projectActions.runAction(story, action, ownerMemberId);
+                if (result) {
+                  workflow.closeCurrent();
+                  workflow.cancelContinuation();
+                }
               } else {
                 const assigned = await projectActions.assignDriver(story, ownerMemberId);
                 const updated =

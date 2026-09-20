@@ -90,6 +90,14 @@ export function ProjectDeferSheet({
             <button
               type="button"
               className="choice-chip"
+              disabled={saving}
+              onClick={() => void commit({ scheduledDate: null })}
+            >
+              {strings.projectDeferWithoutRevisit}
+            </button>
+            <button
+              type="button"
+              className="choice-chip"
               aria-pressed={customDate}
               disabled={saving}
               onClick={() => setCustomDate(true)}

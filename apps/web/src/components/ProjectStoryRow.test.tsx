@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { ReactElement } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, useParams } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useParams, useLocation } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import type { ProjectStatus, Task } from "@machbar/shared";
 import { IdentityProvider } from "../lib/identity";
@@ -14,10 +14,12 @@ import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
+import { useProjectWorkflow } from "../lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
+import { QuickAdd } from "./QuickAdd";
 import type { ProjectWithActions } from "../lib/api";
 import {
   makeCriterion,
@@ -33,8 +35,11 @@ import "./ProjectStoryRow.css";
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
+    getProjects: vi.fn(),
     getProject: vi.fn(),
+    createTask: vi.fn(),
     getTags: vi.fn(),
+    getHomeAssistantStatus: vi.fn(),
     createTag: vi.fn(),
     updateProject: vi.fn(),
     activateProject: vi.fn(),
@@ -104,7 +109,32 @@ function swipe(container: HTMLElement, deltaX: number) {
 function renderWithProjectRoute(ui: ReactElement) {
   function ProjectRouteMarker() {
     const { id } = useParams();
-    return <div data-testid="project-page">Projektseite {id}</div>;
+    const location = useLocation();
+    const workflow = useProjectWorkflow();
+    const autoOpen =
+      Number(id) === 33 &&
+      new URLSearchParams(location.search).get("focus") === "next-action";
+    return (
+      <>
+        <div data-testid="project-page">Projektseite {id}</div>
+        {autoOpen ? (
+          <InteractionScopeProvider captureTarget={{ kind: "story", storyId: Number(id) }}>
+            <QuickAdd
+              autoOpen
+              onAutoOpenClose={(captured) => {
+                if (!captured) {
+                  workflow.cancelContinuation();
+                  return;
+                }
+                void api.getProject(Number(id)).then((updated) => {
+                  workflow.resumeContinuation(updated);
+                });
+              }}
+            />
+          </InteractionScopeProvider>
+        ) : null}
+      </>
+    );
   }
   return render(
     <MemoryRouter initialEntries={["/"]}>
@@ -149,6 +179,18 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Noah" })]);
+    mockedApi.getProjects.mockResolvedValue([]);
+    mockedApi.getTags.mockResolvedValue([]);
+    mockedApi.getHomeAssistantStatus.mockResolvedValue({
+      connected: false,
+      instanceId: null,
+      protocolVersion: null,
+      connectedAt: null,
+      lastUpdateAt: null,
+      stale: false,
+      contexts: [],
+      people: [],
+    });
   });
 
   afterEach(() => {
@@ -540,6 +582,7 @@ describe("ProjectStoryRow – activation preparation", () => {
       ownerMemberId: null,
       nextAction: makeTask({ projectId: 30 }),
     });
+
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active", ownerMemberId: 2 });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Ohne Driver backlog");
@@ -566,6 +609,25 @@ describe("ProjectStoryRow – activation preparation", () => {
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
+  });
+
+  it("cancelling the driver prerequisite clears activation continuation", async () => {
+    const story = makeProject({
+      id: 34,
+      title: "Aktivierung abgebrochen",
+      status: "backlog",
+      ownerMemberId: null,
+      nextAction: makeTask({ projectId: 34 }),
+    });
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Aktivierung abgebrochen");
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Aktiv machen" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Verantwortliche Person zuweisen",
+    });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("restores an archived story to backlog without requiring a driver", async () => {
@@ -667,12 +729,17 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     const lifecycle = openLifecycleRail(container);
     fireEvent.click(within(lifecycle).getByRole("button", { name: "Auf später verschieben" }));
+    const deferSheet = await screen.findByRole("dialog", { name: "Zurückstellen …" });
+    await userEvent.click(
+      within(deferSheet).getByRole("button", { name: "Ohne Wiedervorlage" }),
+    );
     await act(async () => {
       await flushMicrotasks();
     });
 
     expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(43, {
       expectedRevision: 1,
+      scheduledDate: null,
     });
     expect(screen.getByText("Auf später verschoben")).toBeInTheDocument();
   });
@@ -759,7 +826,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     // `story.defer` opens the canonical revisit-only workflow.
     const deferSheet = await screen.findByRole("dialog");
     expect(
-      within(deferSheet).getByRole("heading", { name: "Wiedervorlegen" }),
+      within(deferSheet).getByRole("heading", { name: "Zurückstellen …" }),
     ).toBeInTheDocument();
     expect(
       within(deferSheet).getByText("Bis wann zurückstellen?"),
@@ -780,6 +847,19 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
         scheduledDate: "2026-05-01",
+        expectedRevision: 1,
+      }),
+    );
+    await userEvent.click(
+      within(openChips()).getByRole("button", { name: "Wiedervorlage" }),
+    );
+    const noRevisitSheet = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(noRevisitSheet).getByRole("button", { name: "Ohne Wiedervorlage" }),
+    );
+    await waitFor(() =>
+      expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
+        scheduledDate: null,
         expectedRevision: 1,
       }),
     );

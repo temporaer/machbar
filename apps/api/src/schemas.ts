@@ -90,6 +90,10 @@ export const activateProjectSchema = z.object({
 
 export const projectLifecycleSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
+});
+
+export const returnProjectToBacklogSchema = z.object({
+  expectedRevision: z.number().int().positive().optional(),
   scheduledDate: isoDate.nullable().optional(),
 });
 

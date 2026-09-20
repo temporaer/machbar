@@ -425,6 +425,7 @@ const extra = {
     noDate: "Kein Datum",
   },
   projectDeferQuestion: "Bis wann zurückstellen?",
+  projectDeferWithoutRevisit: "Ohne Wiedervorlage",
   projectDeferShortcutLabels: {
     tomorrow: "Morgen",
     nextWeek: "Nächste Woche",

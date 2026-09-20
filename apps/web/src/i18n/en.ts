@@ -443,6 +443,7 @@ const en = {
     noDate: "No date",
   },
   projectDeferQuestion: "Defer until when?",
+  projectDeferWithoutRevisit: "Without revisit",
   projectDeferShortcutLabels: {
     tomorrow: "Tomorrow",
     nextWeek: "Next week",
