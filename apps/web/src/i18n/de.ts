@@ -46,6 +46,12 @@ const base = {
   completedTodayHint: "Erledigte Aufgaben bei Bedarf wieder aktivieren.",
   nextAction: "Nächster Schritt",
   noNextAction: "Kein nächster Schritt",
+  deferredNextAction: (relative: string, title: string) =>
+    `Nächster Schritt ${
+      relative === "in 1 Tag" ? "ab morgen" : relative
+    }: ${title}`,
+  deferredNextActionSecondary: (relative: string, title: string) =>
+    `${title} ${relative === "in 1 Tag" ? "ab morgen" : relative}`,
   quickAdd: "Schnell hinzufügen",
   captureTask: "Aufgabe erfassen",
   capturePhoto: "Foto erfassen",

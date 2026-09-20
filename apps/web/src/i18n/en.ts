@@ -70,6 +70,10 @@ const en = {
   completedTodayHint: "Reactivate a completed task if it still needs attention.",
   nextAction: "Next step",
   noNextAction: "No next step",
+  deferredNextAction: (relative: string, title: string) =>
+    `Next step ${relative === "in 1 day" ? "available tomorrow" : relative}: ${title}`,
+  deferredNextActionSecondary: (relative: string, title: string) =>
+    `${title} ${relative === "in 1 day" ? "available tomorrow" : relative}`,
   quickAdd: "Quick add",
   captureTask: "Capture task",
   capturePhoto: "Capture photo",

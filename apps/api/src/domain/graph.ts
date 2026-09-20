@@ -26,7 +26,7 @@ import {
   getEffectivePhysicalContextIds,
   getEffectiveTagIds,
 } from "../repo/effectiveRepo.js";
-import { getNextActionTaskIdsByProject } from "../repo/nextActionRepo.js";
+import { getNextActionTaskIdsByProjectProjection } from "../repo/nextActionRepo.js";
 import { getTaskProjectIds } from "../repo/treeRepo.js";
 import { selectPrimaryAreaTag } from "./projectAreas.js";
 import { performance } from "node:perf_hooks";
@@ -202,6 +202,10 @@ export class Graph {
   readonly rootsByProject = new Map<number | null, TaskRecord[]>();
   private readonly stuckReasonByProject: Map<number, StuckReason>;
   private readonly nextActionIdsByProject: Map<number, number[]>;
+  private readonly orderedNextActionCandidatesByProject: Map<
+    number,
+    Array<{ taskId: number; availability: "available" | "deferred" }>
+  >;
   private readonly blockerAnalysisByTask = new Map<
     number,
     TaskBlockerAnalysis
@@ -215,9 +219,15 @@ export class Graph {
   private constructor(
     stuckReasonByProject: Map<number, StuckReason>,
     nextActionIdsByProject: Map<number, number[]>,
+    orderedNextActionCandidatesByProject: Map<
+      number,
+      Array<{ taskId: number; availability: "available" | "deferred" }>
+    >,
   ) {
     this.stuckReasonByProject = stuckReasonByProject;
     this.nextActionIdsByProject = nextActionIdsByProject;
+    this.orderedNextActionCandidatesByProject =
+      orderedNextActionCandidatesByProject;
   }
 
   static load(
@@ -247,8 +257,13 @@ export class Graph {
     const effectiveOwners = getEffectiveOwners(db);
     const effectiveTagIdsByTask = getEffectiveTagIds(db);
     const effectiveContextIdsByTask = getEffectivePhysicalContextIds(db);
-    const nextActionIdsByProject = getNextActionTaskIdsByProject(db, now);
-    const graph = new Graph(new Map(), nextActionIdsByProject);
+    const nextActionProjection = getNextActionTaskIdsByProjectProjection(db, now);
+    const nextActionIdsByProject = nextActionProjection.available;
+    const graph = new Graph(
+      new Map(),
+      nextActionIdsByProject,
+      nextActionProjection.ordered,
+    );
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
     const taskProjectIds = getTaskProjectIds(db);
@@ -812,6 +827,26 @@ export class Graph {
       .filter((task): task is TaskRecord => task !== undefined && task.executable);
   }
 
+  deferredNextActionFor(projectId: number): TaskRecord | null {
+    const candidates =
+      this.orderedNextActionCandidatesByProject.get(projectId) ?? [];
+    const firstAvailable = candidates.find(
+      (candidate) => candidate.availability === "available",
+    );
+    const firstDeferred = candidates.find(
+      (candidate) => candidate.availability === "deferred",
+    );
+    if (
+      !firstDeferred ||
+      (firstAvailable &&
+        candidates.indexOf(firstDeferred) > candidates.indexOf(firstAvailable))
+    ) {
+      return null;
+    }
+    const id = firstDeferred.taskId;
+    return id === undefined ? null : this.tasksById.get(id) ?? null;
+  }
+
   selectedNextActionsFor(
     projectId: number,
     selection:
@@ -974,6 +1009,7 @@ export class Graph {
       openCount,
       doneCount,
       nextAction: this.nextActionFor(projectId),
+      deferredNextAction: this.deferredNextActionFor(projectId),
       additionalNextActions: this.additionalSelectedNextActionsFor(
         projectId,
         { scope: "all" },
