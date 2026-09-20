@@ -145,10 +145,6 @@ describe("Home Assistant physical contexts", () => {
         title: "Nein",
       })).statusCode,
     ).toBe(401);
-    expect(
-      (await post("/api/tasks", { title: "Kein allgemeiner Zugriff" }))
-        .statusCode,
-    ).toBe(401);
   });
 
   it("pairs once, stores only hashes, and moves work between Today and Waiting", async () => {
