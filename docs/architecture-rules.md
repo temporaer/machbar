@@ -153,6 +153,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Physical-context actions | `apps/web/src/lib/useTaskActions.ts` and `apps/web/src/lib/useProjectActions.ts` |
 | Physical-context availability | `apps/api/src/integrations/homeAssistant.ts`, consumed through agenda/waiting projections |
 | Home Assistant machine authentication | `apps/api/src/auth/routes.ts` route policy |
+| Home Assistant task reconciliation | `apps/api/src/domain/externalTaskSync.ts` and `POST /api/integrations/home-assistant/tasks/sync` |
 | MCP authentication and fixed scope | `apps/api/src/integrations/mcp.ts` for explicit named/revocable agent tokens, `apps/api/src/integrations/mcpOAuth.ts` for delegated Pocket ID access-token validation, and the `mcp` policy in `apps/api/src/auth/routes.ts` as the common HTTP boundary |
 | MCP tools | `apps/api/src/mcp/tools.ts`; tools must call existing domain/repository primitives and must not introduce parallel mutation semantics |
 | Project next-action selection | `apps/api/src/repo/nextActionRepo.ts` and `Graph.selectedNextActionsFor()` |

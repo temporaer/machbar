@@ -76,6 +76,12 @@ export function syncExternalTask(
         .from(schema.workItems)
         .where(eq(schema.workItems.id, existing.taskId))
         .get();
+      if (!task || task.status === "done" || task.status === "cancelled") {
+        return {
+          taskId: existing.taskId,
+          state: existing.state as "active" | "withdrawn",
+        };
+      }
       if (task && task.status !== "done" && task.status !== "cancelled") {
         cancelTask(txDb, existing.taskId, "leave_open");
       }

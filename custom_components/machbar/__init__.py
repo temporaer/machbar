@@ -28,7 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_SYNC_TASK = "sync_task"
 
 
-def _sync_task_schema(hass: HomeAssistant) -> vol.Schema:
+def _sync_task_schema() -> vol.Schema:
     return vol.Schema(
         {
             vol.Required("source_key"): str,
@@ -47,6 +47,58 @@ def _sync_task_schema(hass: HomeAssistant) -> vol.Schema:
             ),
         }
     )
+
+
+async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
+    """Register the action independently of config-entry availability."""
+    if hass.services.has_service(DOMAIN, SERVICE_SYNC_TASK):
+        return True
+
+    async def handle_sync_task(call: Any) -> None:
+        requested_entry = call.data.get("config_entry")
+        target = (
+            hass.config_entries.async_get_entry(requested_entry)
+            if requested_entry
+            else next(
+                (
+                    configured
+                    for configured in hass.config_entries.async_entries(DOMAIN)
+                    if configured.domain == DOMAIN
+                ),
+                None,
+            )
+        )
+        if target is None or target.domain != DOMAIN:
+            raise ValueError("No usable Machbar config entry is configured")
+        client = MachbarClient(
+            async_get_clientsession(hass),
+            target.data[CONF_ORIGIN],
+            target.data[CONF_TOKEN],
+        )
+        payload = {
+            "sourceKey": call.data["source_key"],
+            "relevant": call.data["relevant"],
+        }
+        for source, target_name in (
+            ("title", "title"),
+            ("person", "person"),
+            ("scheduled_date", "scheduledDate"),
+            ("due_date", "dueDate"),
+            ("notes", "notes"),
+            ("priority", "priority"),
+            ("size", "size"),
+        ):
+            if source in call.data:
+                payload[target_name] = call.data[source]
+        await client.sync_task(payload)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SYNC_TASK,
+        handle_sync_task,
+        schema=_sync_task_schema(),
+    )
+    return True
 
 
 class SnapshotPublisher:
@@ -129,42 +181,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady("Unable to connect to Machbar") from err
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = publisher
-    if not hass.services.has_service(DOMAIN, SERVICE_SYNC_TASK):
-        async def handle_sync_task(call: Any) -> None:
-            requested_entry = call.data.get("config_entry")
-            target = entry
-            if requested_entry:
-                target = hass.config_entries.async_get_entry(requested_entry)
-                if target is None or target.domain != DOMAIN:
-                    raise ValueError("Unknown Machbar config entry")
-            client = MachbarClient(
-                async_get_clientsession(hass),
-                target.data[CONF_ORIGIN],
-                target.data[CONF_TOKEN],
-            )
-            payload = {
-                "sourceKey": call.data["source_key"],
-                "relevant": call.data["relevant"],
-            }
-            for source, target_name in (
-                ("title", "title"),
-                ("person", "person"),
-                ("scheduled_date", "scheduledDate"),
-                ("due_date", "dueDate"),
-                ("notes", "notes"),
-                ("priority", "priority"),
-                ("size", "size"),
-            ):
-                if source in call.data:
-                    payload[target_name] = call.data[source]
-            await client.sync_task(payload)
-
-        hass.services.async_register(
-            DOMAIN,
-            SERVICE_SYNC_TASK,
-            handle_sync_task,
-            schema=_sync_task_schema(hass),
-        )
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
 
@@ -181,7 +197,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if publisher is not None:
         await publisher.async_stop()
     if not hass.data.get(DOMAIN):
-        if hass.services.has_service(DOMAIN, SERVICE_SYNC_TASK):
-            hass.services.async_remove(DOMAIN, SERVICE_SYNC_TASK)
         hass.data.pop(DOMAIN, None)
     return True
