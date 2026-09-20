@@ -310,7 +310,7 @@ const extra = {
   addNextAction: "Nächsten Schritt hinzufügen",
   projectSteps: "Schritte",
   plan: "Planen",
-  deferProject: "Wiedervorlegen",
+  deferProject: "Zurückstellen …",
   activateProject: "Projekt aktivieren",
   projectLifecycle: "Projektstatus prüfen",
   saveNotes: "Notizen speichern",

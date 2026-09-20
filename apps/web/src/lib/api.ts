@@ -294,6 +294,7 @@ export type WeekAgendaResponse = Omit<WeekAgenda, "days" | "unplanned"> & {
 /** Body for `POST /api/projects/:id/activate` (matches `activateProjectSchema`). */
 export interface ProjectWorkflowInput {
   expectedRevision: number;
+  scheduledDate?: string | null;
 }
 
 export interface ActivateProjectInput extends ProjectWorkflowInput {

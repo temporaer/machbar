@@ -799,7 +799,16 @@ export function ProjectDetailPage() {
         ) : null}
         <QuickAdd
           autoOpen={focus === "next-action"}
-          onAutoOpenClose={clearRouteFocus}
+          onAutoOpenClose={(captured) => {
+            clearRouteFocus();
+            if (captured) {
+              void api.getProject(projectId).then((updated) => {
+                projectWorkflow.resumeContinuation(updated);
+              });
+            } else {
+              projectWorkflow.cancelContinuation();
+            }
+          }}
         />
         {attachmentOpen && project ? (
           <MarkdownAttachmentSheet

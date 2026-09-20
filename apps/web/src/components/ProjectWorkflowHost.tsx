@@ -14,6 +14,7 @@ import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
 import { CompleteWithOpenTasksSheet } from "./CompleteWithOpenTasksSheet";
 import { useStrings } from "../lib/strings";
 import { canClearDriver } from "../lib/projectWorkflow";
+import type { ProjectWithActions } from "../lib/api";
 
 /**
  * Project counterpart of `TaskWorkflowHost.tsx` — the single place that
@@ -45,7 +46,11 @@ export function ProjectWorkflowHost() {
           story={story}
           onClose={close}
           onSave={async (patch) => {
-            await projectActions.schedule(story, patch);
+            if (story.status === "active") {
+              await projectActions.returnToBacklog(story, patch.scheduledDate);
+            } else {
+              await projectActions.schedule(story, patch);
+            }
           }}
         />
       );
@@ -128,7 +133,23 @@ export function ProjectWorkflowHost() {
           hint={strings.assignDriverToActivateHint}
           onClose={close}
           onSelect={async (ownerMemberId) => {
-            await projectActions.runAction(story, action, ownerMemberId);
+            if (workflow.continuation?.projectId === story.id) {
+              if (story.activationReadiness.hasViableProgressPath) {
+                await projectActions.runAction(story, action, ownerMemberId);
+                workflow.closeCurrent();
+                workflow.cancelContinuation();
+              } else {
+                const assigned = await projectActions.assignDriver(story, ownerMemberId);
+                const updated =
+                  (assigned as ProjectWithActions | undefined) ??
+                  (await api.getProject(story.id)) ??
+                  { ...story, ownerMemberId, revision: story.revision + 1 };
+                workflow.closeCurrent();
+                workflow.resumeContinuation(updated);
+              }
+            } else {
+              await projectActions.runAction(story, action, ownerMemberId);
+            }
           }}
         />
       );

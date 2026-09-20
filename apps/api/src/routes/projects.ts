@@ -164,6 +164,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
         id,
         { actorMemberId: request.activityActor?.id ?? null },
         body.expectedRevision,
+        body.scheduledDate,
       );
       const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);

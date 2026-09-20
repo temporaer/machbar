@@ -49,7 +49,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "workItem.open":
       return command.workItem.id;
     case "story.activate":
-    case "story.returnToBacklog":
+    case "story.deferProject":
     case "story.complete":
     case "story.reopen":
     case "story.archive":
@@ -98,7 +98,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.primaryAction":
       return "task";
     case "story.activate":
-    case "story.returnToBacklog":
+    case "story.deferProject":
     case "story.complete":
     case "story.reopen":
     case "story.archive":
@@ -186,6 +186,20 @@ export function useWorkItemCommands() {
       }
     },
     [navigate, projectWorkflow],
+  );
+
+  const continueStoryLifecycle = useCallback(
+    (
+      story: ProjectWithActions,
+      action: "activate" | "reopen",
+      ownerMemberId?: number | null,
+    ) => {
+      if (!resolveStoryPrerequisite(story, action, ownerMemberId)) {
+        void projectActions.runAction(story, action, ownerMemberId);
+        projectWorkflow.cancelContinuation();
+      }
+    },
+    [projectActions, projectWorkflow, resolveStoryPrerequisite],
   );
 
   const dispatch = useCallback(
@@ -322,12 +336,19 @@ export function useWorkItemCommands() {
           }
           return;
         case "story.activate":
-          if (!resolveStoryPrerequisite(command.story, "activate", command.ownerMemberId)) {
-            void projectActions.activate(command.story, command.ownerMemberId);
-          }
+          projectWorkflow.beginContinuation({
+            projectId: command.story.id,
+            action: "activate",
+            resume: (story) => continueStoryLifecycle(story, "activate"),
+          });
+          continueStoryLifecycle(command.story, "activate", command.ownerMemberId);
           return;
-        case "story.returnToBacklog":
-          void projectActions.runAction(command.story, "return_to_backlog");
+        case "story.deferProject":
+          if (command.story.status === "active") {
+            projectWorkflow.open("defer", command.story.id);
+          } else {
+            void projectActions.runAction(command.story, "return_to_backlog");
+          }
           return;
         case "story.complete":
           if (!resolveStoryPrerequisite(command.story, "complete")) {
@@ -335,9 +356,12 @@ export function useWorkItemCommands() {
           }
           return;
         case "story.reopen":
-          if (!resolveStoryPrerequisite(command.story, "reopen", command.ownerMemberId)) {
-            void projectActions.runAction(command.story, "reopen", command.ownerMemberId);
-          }
+          projectWorkflow.beginContinuation({
+            projectId: command.story.id,
+            action: "reopen",
+            resume: (story) => continueStoryLifecycle(story, "reopen"),
+          });
+          continueStoryLifecycle(command.story, "reopen", command.ownerMemberId);
           return;
         case "story.archive":
           void projectActions.runAction(command.story, "archive");
@@ -411,6 +435,7 @@ export function useWorkItemCommands() {
       primarySwipeAction,
       scope,
       resolveStoryPrerequisite,
+      continueStoryLifecycle,
     ],
   );
 

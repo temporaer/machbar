@@ -166,6 +166,30 @@ function useProjectActionsState() {
     [update],
   );
 
+  const returnToBacklog = useCallback(
+    (story: ProjectWithActions, scheduledDate: string | null) =>
+      run({
+        id: story.id,
+        optimistic: {
+          story: {
+            ...story,
+            status: "backlog",
+            scheduledDate,
+            revision: story.revision + 1,
+            availableActions: workflowActionsByStatus.backlog,
+          },
+          action: "return_to_backlog",
+        },
+        mutate: () =>
+          api.returnProjectToBacklog(story.id, {
+            expectedRevision: story.revision,
+            scheduledDate,
+          }),
+        confirmed: (confirmed) => ({ story: confirmed, action: "return_to_backlog" }),
+      }),
+    [run],
+  );
+
   const setContexts = useCallback(
     (story: ProjectWithActions, contextIds: number[]) =>
       update(story, { contextIds }, undefined, true),
@@ -207,6 +231,7 @@ function useProjectActionsState() {
     update,
     assignDriver,
     schedule,
+    returnToBacklog,
     setContexts,
     acknowledgeReview,
   };
@@ -248,7 +273,7 @@ export function useProjectActions(
     for (const [id, entry] of retained) {
       if (entry.action !== undefined) continue;
       const authoritative = authoritativeProjects.find((project) => project.id === id);
-      if (authoritative && authoritative.revision >= entry.story.revision) {
+      if (authoritative && entry.story && authoritative.revision >= entry.story.revision) {
         release(id);
       }
     }

@@ -157,6 +157,7 @@ export function returnProjectToBacklog(
   id: number,
   context?: MutationContext,
   expectedRevision?: number,
+  scheduledDate?: string | null,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -167,7 +168,9 @@ export function returnProjectToBacklog(
       .set({
         status: "backlog",
         archivedAt: null,
-        ...(project.status === "archived" ? { scheduledDate: null } : {}),
+        ...(project.status === "archived"
+          ? { scheduledDate: null }
+          : { scheduledDate: scheduledDate ?? null }),
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })

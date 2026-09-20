@@ -322,7 +322,7 @@ const en = {
   addNextAction: "Add next step",
   projectSteps: "Steps",
   plan: "Plan",
-  deferProject: "Resurface project",
+  deferProject: "Defer project …",
   activateProject: "Activate project",
   projectLifecycle: "Review project status",
   saveNotes: "Save notes",

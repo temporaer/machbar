@@ -59,7 +59,7 @@ export type WorkItemCommand =
   | { type: "workItem.setRevisitDate"; item: WeekPlanningItem; date: string | null }
   | { type: "workItem.open"; workItem: { id: number; role: "story" | "task" } }
   | { type: "story.activate"; story: ProjectWithActions; ownerMemberId?: number | null }
-  | { type: "story.returnToBacklog"; story: ProjectWithActions }
+  | { type: "story.deferProject"; story: ProjectWithActions }
   | { type: "story.complete"; story: ProjectWithActions }
   | { type: "story.reopen"; story: ProjectWithActions; ownerMemberId?: number | null }
   | { type: "story.archive"; story: ProjectWithActions }
@@ -103,7 +103,7 @@ export function storyWorkflowCommand(
     case "activate":
       return { type: "story.activate", story, ...ownerMemberIdField };
     case "return_to_backlog":
-      return { type: "story.returnToBacklog", story };
+      return { type: "story.deferProject", story };
     case "complete":
       return { type: "story.complete", story };
     case "reopen":

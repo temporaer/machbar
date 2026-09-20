@@ -172,13 +172,15 @@ export function lifecyclePrerequisite(
     // ever creating that inconsistency.
     return "openTasks";
   }
+  if (
+    (action === "activate" || action === "reopen") &&
+    ownerMemberId === undefined &&
+    needsDriverBeforeAction(story, action)
+  ) {
+    return "driver";
+  }
   if ((action === "activate" || action === "reopen") && !hasProjectProgressPath(story)) {
     return "progressPath";
-  }
-  // An explicitly supplied driver is exactly what the prompt collects, so a
-  // second pass through it would loop.
-  if (ownerMemberId === undefined && needsDriverBeforeAction(story, action)) {
-    return "driver";
   }
   return null;
 }

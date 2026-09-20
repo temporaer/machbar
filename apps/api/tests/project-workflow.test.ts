@@ -556,6 +556,24 @@ describe("project workflow (service layer)", () => {
     expect(backToBacklog.status).toBe("backlog");
   });
 
+  it("returns an active project to backlog with its revisit date atomically", () => {
+    const anna = createMember(handle.db, "Anna");
+    const project = createProject(handle.db, { title: "Später", ownerMemberId: anna.id });
+    createTask(handle.db, { title: "Next action", projectId: project.id });
+    activateProject(handle.db, project.id);
+
+    const deferred = returnProjectToBacklog(
+      handle.db,
+      project.id,
+      undefined,
+      project.revision + 1,
+      "2030-01-15",
+    );
+
+    expect(deferred.status).toBe("backlog");
+    expect(deferred.scheduledDate).toBe("2030-01-15");
+  });
+
   it("throws a not-found AppError for a nonexistent project on every transition", () => {
     expect(() => activateProject(handle.db, 999999)).toThrow(/not found/);
     expect(() => returnProjectToBacklog(handle.db, 999999)).toThrow(/not found/);

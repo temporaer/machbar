@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import type { ProjectWithActions } from "./api";
 
 /**
  * Project counterpart of `taskWorkflowContext.tsx`. Every `story.*`
@@ -47,6 +48,12 @@ export type ProjectWorkflowKind =
   | "completeWithCriteria"
   | "completeWithOpenTasks";
 
+export type ProjectLifecycleContinuation = {
+  projectId: number;
+  action: "activate" | "reopen";
+  resume: (story: ProjectWithActions) => void;
+};
+
 export interface ProjectWorkflowState {
   kind: ProjectWorkflowKind;
   projectId: number;
@@ -56,19 +63,39 @@ interface ProjectWorkflowContextValue {
   current: ProjectWorkflowState | null;
   open: (kind: ProjectWorkflowKind, projectId: number) => void;
   close: () => void;
+  closeCurrent: () => void;
+  continuation: ProjectLifecycleContinuation | null;
+  beginContinuation: (continuation: ProjectLifecycleContinuation) => void;
+  cancelContinuation: () => void;
+  resumeContinuation: (story: ProjectWithActions) => void;
 }
 
 const ProjectWorkflowContext = createContext<ProjectWorkflowContextValue | null>(null);
 
 export function ProjectWorkflowProvider({ children }: { children: ReactNode }) {
   const [current, setCurrent] = useState<ProjectWorkflowState | null>(null);
+  const [continuation, setContinuation] = useState<ProjectLifecycleContinuation | null>(null);
   const value = useMemo<ProjectWorkflowContextValue>(
     () => ({
       current,
       open: (kind, projectId) => setCurrent({ kind, projectId }),
-      close: () => setCurrent(null),
+      closeCurrent: () => setCurrent(null),
+      close: () => {
+        setCurrent(null);
+        setContinuation(null);
+      },
+      continuation,
+      beginContinuation: setContinuation,
+      cancelContinuation: () => setContinuation(null),
+      resumeContinuation: (story) => {
+        const active = continuation;
+        if (active?.projectId === story.id) {
+          setContinuation(null);
+          active.resume(story);
+        }
+      },
     }),
-    [current],
+    [current, continuation],
   );
   return <ProjectWorkflowContext.Provider value={value}>{children}</ProjectWorkflowContext.Provider>;
 }
