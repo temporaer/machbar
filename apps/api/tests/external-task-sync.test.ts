@@ -140,6 +140,53 @@ describe("Home Assistant external task reconciliation", () => {
     expect(link.withdrawnTaskRevision).toBeNull();
   });
 
+  it("keeps repeated withdrawals idempotent and preserves reopen authority", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "repeated-withdrawal",
+      relevant: true,
+      title: "Wiederkehrende Aufgabe",
+    })!;
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "repeated-withdrawal",
+      relevant: false,
+    });
+    const firstTask = ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()!;
+    const firstLink = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    const activityCount = ctx.handle.db.select().from(schema.activityEvents).all().length;
+    const contributionCount = ctx.handle.db.select().from(schema.contributionEvents).all().length;
+
+    const repeated = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "repeated-withdrawal",
+      relevant: false,
+    })!;
+    const secondTask = ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()!;
+    const secondLink = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    expect(repeated).toEqual({ taskId: created.taskId, state: "withdrawn" });
+    expect(secondTask.status).toBe("cancelled");
+    expect(secondTask.revision).toBe(firstTask.revision);
+    expect(secondLink.state).toBe("withdrawn");
+    expect(secondLink.withdrawnTaskRevision).toBe(firstLink.withdrawnTaskRevision);
+    expect(ctx.handle.db.select().from(schema.activityEvents).all()).toHaveLength(activityCount);
+    expect(ctx.handle.db.select().from(schema.contributionEvents).all()).toHaveLength(contributionCount);
+
+    const reopened = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "repeated-withdrawal",
+      relevant: true,
+    })!;
+    const finalTask = ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()!;
+    const finalLink = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    expect(reopened.taskId).toBe(created.taskId);
+    expect(finalTask.status).toBe("active");
+    expect(finalLink.state).toBe("active");
+    expect(finalLink.withdrawnTaskRevision).toBeNull();
+  });
+
   it("preserves omitted fields and clears explicit nullable fields", () => {
     const created = syncExternalTask(ctx.handle.db, integrationId, {
       sourceKey: "nullable-fields",

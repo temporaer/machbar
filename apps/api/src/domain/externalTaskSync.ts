@@ -84,20 +84,35 @@ export function syncExternalTask(
         .from(schema.workItems)
         .where(eq(schema.workItems.id, existing.taskId))
         .get();
-      if (!task || task.status === "done" || task.status === "cancelled") {
-        if (
-          task &&
-          (existing.state !== "active" || existing.withdrawnTaskRevision !== null)
-        ) {
+      if (!task) {
+        return {
+          taskId: existing.taskId,
+          state: "active" as const,
+        };
+      }
+      if (task.status === "done") {
+        if (existing.state !== "active" || existing.withdrawnTaskRevision !== null) {
           tx.update(schema.externalTaskLinks)
             .set({ state: "active", withdrawnTaskRevision: null, updatedAt: nowIso() })
             .where(eq(schema.externalTaskLinks.id, existing.id))
             .run();
         }
-        return {
-          taskId: existing.taskId,
-          state: "active" as const,
-        };
+        return { taskId: existing.taskId, state: "active" as const };
+      }
+      if (task.status === "cancelled") {
+        if (
+          existing.state === "withdrawn" &&
+          existing.withdrawnTaskRevision === task.revision
+        ) {
+          return { taskId: existing.taskId, state: "withdrawn" as const };
+        }
+        if (existing.state !== "active" || existing.withdrawnTaskRevision !== null) {
+          tx.update(schema.externalTaskLinks)
+            .set({ state: "active", withdrawnTaskRevision: null, updatedAt: nowIso() })
+            .where(eq(schema.externalTaskLinks.id, existing.id))
+            .run();
+        }
+        return { taskId: existing.taskId, state: "active" as const };
       }
       const withdrawn = cancelTask(txDb, existing.taskId, "leave_open");
       tx
