@@ -322,7 +322,7 @@ const en = {
   addNextAction: "Add next step",
   projectSteps: "Steps",
   plan: "Plan",
-  deferProject: "Resurface project",
+  deferProject: "Defer project …",
   activateProject: "Activate project",
   projectLifecycle: "Review project status",
   saveNotes: "Save notes",
@@ -443,6 +443,7 @@ const en = {
     noDate: "No date",
   },
   projectDeferQuestion: "Defer until when?",
+  projectDeferWithoutRevisit: "Without revisit",
   projectDeferShortcutLabels: {
     tomorrow: "Tomorrow",
     nextWeek: "Next week",
@@ -770,7 +771,8 @@ const en = {
 
   openProject: "Open project",
   projectDangerSection: "Delete project",
-  returnToBacklogStory: "Move to later",
+  returnToBacklogStory: "Defer project …",
+  restoreProjectToBacklog: "Restore to backlog",
   completeStory: "Complete",
   taskProgress: "Tasks",
   addCriterion: "Add item",

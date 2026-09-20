@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import type { ReactElement } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, useParams } from "react-router-dom";
+import { MemoryRouter, Routes, Route, useParams, useLocation } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import type { ProjectStatus, Task } from "@machbar/shared";
 import { IdentityProvider } from "../lib/identity";
@@ -14,10 +14,12 @@ import { TaskActionsProvider } from "../lib/useTaskActions";
 import { TaskDetailProvider } from "../lib/taskDetailContext";
 import { TaskWorkflowProvider } from "../lib/taskWorkflowContext";
 import { ProjectWorkflowProvider } from "../lib/projectWorkflowContext";
+import { useProjectWorkflow } from "../lib/projectWorkflowContext";
 import { SwipeSettingsProvider } from "../lib/swipeSettings";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { RETENTION_MS } from "../lib/useTaskActions";
 import { api } from "../lib/api";
+import { QuickAdd } from "./QuickAdd";
 import type { ProjectWithActions } from "../lib/api";
 import {
   makeCriterion,
@@ -33,8 +35,11 @@ import "./ProjectStoryRow.css";
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
+    getProjects: vi.fn(),
     getProject: vi.fn(),
+    createTask: vi.fn(),
     getTags: vi.fn(),
+    getHomeAssistantStatus: vi.fn(),
     createTag: vi.fn(),
     updateProject: vi.fn(),
     activateProject: vi.fn(),
@@ -104,7 +109,31 @@ function swipe(container: HTMLElement, deltaX: number) {
 function renderWithProjectRoute(ui: ReactElement) {
   function ProjectRouteMarker() {
     const { id } = useParams();
-    return <div data-testid="project-page">Projektseite {id}</div>;
+    const location = useLocation();
+    const workflow = useProjectWorkflow();
+    const autoOpen =
+      new URLSearchParams(location.search).get("focus") === "next-action";
+    return (
+      <>
+        <div data-testid="project-page">Projektseite {id}</div>
+        {autoOpen ? (
+          <InteractionScopeProvider captureTarget={{ kind: "story", storyId: Number(id) }}>
+            <QuickAdd
+              autoOpen
+              onAutoOpenClose={(captured) => {
+                if (!captured) {
+                  workflow.cancelContinuation();
+                  return;
+                }
+                void api.getProject(Number(id)).then((updated) => {
+                  workflow.resumeContinuation(updated);
+                });
+              }}
+            />
+          </InteractionScopeProvider>
+        ) : null}
+      </>
+    );
   }
   return render(
     <MemoryRouter initialEntries={["/"]}>
@@ -149,6 +178,18 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     vi.clearAllMocks();
     window.localStorage.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Noah" })]);
+    mockedApi.getProjects.mockResolvedValue([]);
+    mockedApi.getTags.mockResolvedValue([]);
+    mockedApi.getHomeAssistantStatus.mockResolvedValue({
+      connected: false,
+      instanceId: null,
+      protocolVersion: null,
+      connectedAt: null,
+      lastUpdateAt: null,
+      stale: false,
+      contexts: [],
+      people: [],
+    });
   });
 
   afterEach(() => {
@@ -442,6 +483,44 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(mockedApi.reopenProject).not.toHaveBeenCalled();
   });
 
+  it("keeps reopen intent through first-task capture", async () => {
+    const story = {
+      ...makeProject({
+        id: 27,
+        title: "Abgeschlossen ohne nächsten Schritt",
+        status: "completed",
+        ownerMemberId: 1,
+      }),
+      tasks: [],
+    };
+    const ready = {
+      ...story,
+      nextAction: makeTask({ projectId: 27, executable: true }),
+      activationReadiness: {
+        ...story.activationReadiness,
+        ready: true,
+        hasViableProgressPath: true,
+      },
+    };
+    mockedApi.createTask.mockResolvedValue(makeTask({ id: 277, projectId: 27 }));
+    mockedApi.reopenProject.mockResolvedValue({ ...ready, status: "active" });
+    const { container } = renderWithProjectRoute(<Harness story={story} />);
+    mockedApi.getProject.mockResolvedValue(ready);
+    await screen.findByText(story.title);
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Wieder öffnen" }));
+
+    const capture = await screen.findByRole("dialog", { name: "Schnell hinzufügen" });
+    await userEvent.type(within(capture).getByRole("textbox"), "Erster Schritt");
+    await userEvent.click(within(capture).getByRole("button", { name: "Erstellen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.reopenProject).toHaveBeenCalledWith(27, {
+        expectedRevision: 1,
+      }),
+    );
+    expect(mockedApi.reopenProject).toHaveBeenCalledTimes(1);
+  });
+
   it("collects a missing driver and reopens atomically", async () => {
     const story = makeProject({
       id: 26,
@@ -486,7 +565,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
 
     const lifecycle = openLifecycleRail(container);
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Auf später verschieben" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -540,6 +619,7 @@ describe("ProjectStoryRow – activation preparation", () => {
       ownerMemberId: null,
       nextAction: makeTask({ projectId: 30 }),
     });
+
     mockedApi.activateProject.mockResolvedValue({ ...story, status: "active", ownerMemberId: 2 });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Ohne Driver backlog");
@@ -568,6 +648,116 @@ describe("ProjectStoryRow – activation preparation", () => {
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
   });
 
+  it("keeps activation intent through driver and first-task capture", async () => {
+    const story = {
+      ...makeProject({
+        id: 33,
+        title: "Beide Aktivierungsvoraussetzungen fehlen",
+        status: "backlog",
+        ownerMemberId: null,
+        activationReadiness: {
+          ready: false,
+          hasDriver: false,
+          hasViableProgressPath: false,
+          hasHealthyFutureWaiting: false,
+        },
+      }),
+      tasks: [],
+    };
+    const assigned = {
+      ...story,
+      revision: 2,
+      ownerMemberId: 2,
+      activationReadiness: { ...story.activationReadiness, hasDriver: true },
+    };
+    const ready = {
+      ...assigned,
+      nextAction: makeTask({ projectId: 33, executable: true }),
+      activationReadiness: {
+        ...assigned.activationReadiness,
+        ready: true,
+        hasViableProgressPath: true,
+      },
+    };
+    mockedApi.updateProject.mockResolvedValue(assigned);
+    mockedApi.createTask.mockResolvedValue(makeTask({ id: 333, projectId: 33 }));
+    mockedApi.activateProject.mockResolvedValue({ ...ready, status: "active" });
+
+    const { container } = renderWithProjectRoute(<Harness story={story} />);
+    mockedApi.getProject
+      .mockResolvedValueOnce(story)
+      .mockResolvedValueOnce(assigned)
+      .mockResolvedValue(ready);
+    await screen.findByText(story.title);
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Aktiv machen" }));
+
+    const driverDialog = await screen.findByRole("dialog", {
+      name: "Verantwortliche Person zuweisen",
+    });
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+    await userEvent.click(within(driverDialog).getByRole("button", { name: "Noah" }));
+    await waitFor(() =>
+      expect(mockedApi.updateProject).toHaveBeenCalledWith(33, {
+        expectedRevision: 1,
+        ownerMemberId: 2,
+      }),
+    );
+
+    const capture = await screen.findByRole("dialog", { name: "Schnell hinzufügen" });
+    await userEvent.type(within(capture).getByRole("textbox"), "Erster Schritt");
+    await userEvent.click(within(capture).getByRole("button", { name: "Erstellen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.activateProject).toHaveBeenCalledWith(33, {
+        expectedRevision: 2,
+      }),
+    );
+    expect(mockedApi.activateProject).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("project-page")).toHaveTextContent("Projektseite 33");
+  });
+
+  it("cancelling progress-path capture clears activation continuation", async () => {
+    const story = makeProject({
+      id: 35,
+      title: "Aktivierung ohne nächsten Schritt",
+      status: "backlog",
+      ownerMemberId: 1,
+      activationReadiness: {
+        ready: false,
+        hasDriver: true,
+        hasViableProgressPath: false,
+        hasHealthyFutureWaiting: false,
+      },
+    });
+    const { container } = renderWithProjectRoute(<Harness story={story} />);
+    await screen.findByText(story.title);
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Aktiv machen" }));
+
+    const capture = await screen.findByRole("dialog", { name: "Schnell hinzufügen" });
+    await userEvent.click(within(capture).getByRole("button", { name: "Abbrechen" }));
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("cancelling the driver prerequisite clears activation continuation", async () => {
+    const story = makeProject({
+      id: 34,
+      title: "Aktivierung abgebrochen",
+      status: "backlog",
+      ownerMemberId: null,
+      nextAction: makeTask({ projectId: 34 }),
+    });
+    const { container } = renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Aktivierung abgebrochen");
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Aktiv machen" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Verantwortliche Person zuweisen",
+    });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Abbrechen" }));
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("restores an archived story to backlog without requiring a driver", async () => {
     const story = makeProject({
       id: 31,
@@ -585,7 +775,7 @@ describe("ProjectStoryRow – activation preparation", () => {
 
     const lifecycle = openLifecycleRail(container);
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Auf später verschieben" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -647,14 +837,14 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     let lifecycle = openLifecycleRail(completedContainer);
     expect(within(lifecycle).getByRole("button", { name: "Wieder öffnen" })).toBeInTheDocument();
     expect(within(lifecycle).getByRole("button", { name: "Archivieren" })).toBeInTheDocument();
-    expect(within(lifecycle).queryByRole("button", { name: "Auf später verschieben" })).not.toBeInTheDocument();
+    expect(within(lifecycle).queryByRole("button", { name: "Zurückstellen …" })).not.toBeInTheDocument();
     unmount();
 
     const archived = makeProject({ id: 42, title: "Archivierte Geschichte", status: "archived", ownerMemberId: 1 });
     const { container } = renderWithProviders(<Harness story={archived} />);
     await screen.findByText("Archivierte Geschichte");
     lifecycle = openLifecycleRail(container);
-    expect(within(lifecycle).getByRole("button", { name: "Auf später verschieben" })).toBeInTheDocument();
+    expect(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" })).toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
@@ -666,13 +856,18 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await screen.findByText("Doch nicht jetzt");
 
     const lifecycle = openLifecycleRail(container);
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Auf später verschieben" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Zurückstellen …" }));
+    const deferSheet = await screen.findByRole("dialog", { name: "Zurückstellen …" });
+    await userEvent.click(
+      within(deferSheet).getByRole("button", { name: "Ohne Wiedervorlage" }),
+    );
     await act(async () => {
       await flushMicrotasks();
     });
 
     expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(43, {
       expectedRevision: 1,
+      scheduledDate: null,
     });
     expect(screen.getByText("Auf später verschoben")).toBeInTheDocument();
   });
@@ -759,7 +954,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     // `story.defer` opens the canonical revisit-only workflow.
     const deferSheet = await screen.findByRole("dialog");
     expect(
-      within(deferSheet).getByRole("heading", { name: "Wiedervorlegen" }),
+      within(deferSheet).getByRole("heading", { name: "Wiedervorlage" }),
     ).toBeInTheDocument();
     expect(
       within(deferSheet).getByText("Bis wann zurückstellen?"),
@@ -780,6 +975,19 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
         scheduledDate: "2026-05-01",
+        expectedRevision: 1,
+      }),
+    );
+    await userEvent.click(
+      within(openChips()).getByRole("button", { name: "Wiedervorlage" }),
+    );
+    const noRevisitSheet = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(noRevisitSheet).getByRole("button", { name: "Ohne Wiedervorlage" }),
+    );
+    await waitFor(() =>
+      expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
+        scheduledDate: null,
         expectedRevision: 1,
       }),
     );
@@ -916,7 +1124,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     // … and every status change is an explicitly named lifecycle-rail button.
     fireEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     const lifecycle = openLifecycleRail(container);
-    for (const label of ["Abschließen", "Auf später verschieben", "Archivieren"]) {
+    for (const label of ["Abschließen", "Zurückstellen …", "Archivieren"]) {
       expect(within(lifecycle).getByRole("button", { name: label })).toBeEnabled();
     }
     expect((container.querySelector(".story-row-primary") as HTMLElement).getAttribute("aria-label")).toBe(
@@ -1411,7 +1619,7 @@ describe("ProjectStoryRow – semantic status accents", () => {
     const primary = screen.getByRole("button", { name: "Abschließen" });
     expect(primary).toHaveClass("story-row-primary--waiting");
     const lifecycle = openLifecycleRail(container);
-    expect(within(lifecycle).getByRole("button", { name: "Auf später verschieben" })).toBeEnabled();
+    expect(within(lifecycle).getByRole("button", { name: "Zurückstellen …" })).toBeEnabled();
     expect(within(lifecycle).getByRole("button", { name: "Archivieren" })).toBeEnabled();
     expect(within(lifecycle).getByRole("button", { name: "Abschließen" })).toBeEnabled();
 

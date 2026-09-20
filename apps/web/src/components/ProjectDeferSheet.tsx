@@ -45,7 +45,7 @@ export function ProjectDeferSheet({
 
   return (
     <BottomSheet
-      title={strings.deferProject}
+      title={story.status === "active" ? strings.deferProject : strings.revisit}
       onClose={() => {
         if (!saving) onClose();
       }}
@@ -86,6 +86,14 @@ export function ProjectDeferSheet({
               onClick={() => void commit({ scheduledDate: addIsoCalendarDays(today(), 30) })}
             >
               {strings.projectDeferShortcutLabels.nextMonth}
+            </button>
+            <button
+              type="button"
+              className="choice-chip"
+              disabled={saving}
+              onClick={() => void commit({ scheduledDate: null })}
+            >
+              {strings.projectDeferWithoutRevisit}
             </button>
             <button
               type="button"

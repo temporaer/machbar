@@ -411,7 +411,7 @@ describe("ProjectDetailPage task explanations", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: strings.deferProject }),
+      await screen.findByRole("heading", { name: strings.revisit }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: strings.projectDeadlineTitle }))
       .not.toBeInTheDocument();

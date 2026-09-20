@@ -26,7 +26,7 @@ export function QuickAdd({
   defaultScope,
 }: {
   autoOpen?: boolean;
-  onAutoOpenClose?: () => void;
+  onAutoOpenClose?: (captured?: boolean) => void;
   /** Set on capture only when the mounting page's active view is the Work
    * scope; omitted (server default `"household"` applies) otherwise. */
   defaultScope?: "work";
@@ -74,14 +74,14 @@ export function QuickAdd({
     return () => scope.setCaptureOpen(null);
   }, [scope, openCapture]);
 
-  const close = () => {
+  const close = (captured = false) => {
     setOpen(false);
     setCaptureStep("choose");
     setPendingFile(null);
     setCropFile(null);
     setCameraOpen(false);
     uploadedAttachmentRef.current = null;
-    if (autoOpen) onAutoOpenClose?.();
+    if (autoOpen) onAutoOpenClose?.(captured);
   };
 
   const selectMaterial = (event: ChangeEvent<HTMLInputElement>) => {
@@ -177,7 +177,7 @@ export function QuickAdd({
               onCancel={close}
               onCaptured={(result) => {
                 bump();
-                close();
+                close(true);
                 if (projectId === null) {
                   navigate(`/inbox?focus=${result.task.id}`);
                   return;

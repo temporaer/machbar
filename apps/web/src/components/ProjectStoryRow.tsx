@@ -127,7 +127,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
 
   const primaryAction = primaryWorkflowAction(story);
   const primaryLabel = primaryAction
-    ? projectWorkflowLabel(primaryAction, strings)
+    ? projectWorkflowLabel(primaryAction, strings, story.status)
     : strings.workflowStep;
   const secondaryActions = secondaryWorkflowActions(story);
   const statusLabel = retainedEntry?.action
@@ -452,7 +452,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
               disabled={busy}
               onClick={() => runLifecycleAction(action)}
             >
-              {projectWorkflowLabel(action, strings)}
+              {projectWorkflowLabel(action, strings, story.status)}
             </button>
           ))}
         </div>

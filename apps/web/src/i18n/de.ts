@@ -310,7 +310,7 @@ const extra = {
   addNextAction: "Nächsten Schritt hinzufügen",
   projectSteps: "Schritte",
   plan: "Planen",
-  deferProject: "Wiedervorlegen",
+  deferProject: "Zurückstellen …",
   activateProject: "Projekt aktivieren",
   projectLifecycle: "Projektstatus prüfen",
   saveNotes: "Notizen speichern",
@@ -425,6 +425,7 @@ const extra = {
     noDate: "Kein Datum",
   },
   projectDeferQuestion: "Bis wann zurückstellen?",
+  projectDeferWithoutRevisit: "Ohne Wiedervorlage",
   projectDeferShortcutLabels: {
     tomorrow: "Morgen",
     nextWeek: "Nächste Woche",
@@ -765,7 +766,8 @@ const extra = {
   // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---
   openProject: "Projekt öffnen",
   projectDangerSection: "Projekt löschen",
-  returnToBacklogStory: "Auf später verschieben",
+  returnToBacklogStory: "Zurückstellen …",
+  restoreProjectToBacklog: "In Backlog zurückholen",
   completeStory: "Abschließen",
   taskProgress: "Aufgaben",
   addCriterion: "Punkt hinzufügen",

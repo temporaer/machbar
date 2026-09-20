@@ -92,6 +92,11 @@ export const projectLifecycleSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
 });
 
+export const returnProjectToBacklogSchema = z.object({
+  expectedRevision: z.number().int().positive().optional(),
+  scheduledDate: isoDate.nullable().optional(),
+});
+
 export const acknowledgeReviewSchema = projectLifecycleSchema;
 
 export const addCriterionSchema = z.object({
