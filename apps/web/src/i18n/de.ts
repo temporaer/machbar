@@ -766,7 +766,7 @@ const extra = {
   // --- Project/story detail editing (Projekte › Detail › Bearbeiten) ---
   openProject: "Projekt öffnen",
   projectDangerSection: "Projekt löschen",
-  returnToBacklogStory: "Auf später verschieben",
+  returnToBacklogStory: "Zurückstellen …",
   completeStory: "Abschließen",
   taskProgress: "Aufgaben",
   addCriterion: "Punkt hinzufügen",

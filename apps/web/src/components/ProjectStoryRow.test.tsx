@@ -112,7 +112,6 @@ function renderWithProjectRoute(ui: ReactElement) {
     const location = useLocation();
     const workflow = useProjectWorkflow();
     const autoOpen =
-      Number(id) === 33 &&
       new URLSearchParams(location.search).get("focus") === "next-action";
     return (
       <>
@@ -484,6 +483,44 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(mockedApi.reopenProject).not.toHaveBeenCalled();
   });
 
+  it("keeps reopen intent through first-task capture", async () => {
+    const story = {
+      ...makeProject({
+        id: 27,
+        title: "Abgeschlossen ohne nächsten Schritt",
+        status: "completed",
+        ownerMemberId: 1,
+      }),
+      tasks: [],
+    };
+    const ready = {
+      ...story,
+      nextAction: makeTask({ projectId: 27, executable: true }),
+      activationReadiness: {
+        ...story.activationReadiness,
+        ready: true,
+        hasViableProgressPath: true,
+      },
+    };
+    mockedApi.createTask.mockResolvedValue(makeTask({ id: 277, projectId: 27 }));
+    mockedApi.reopenProject.mockResolvedValue({ ...ready, status: "active" });
+    const { container } = renderWithProjectRoute(<Harness story={story} />);
+    mockedApi.getProject.mockResolvedValue(ready);
+    await screen.findByText(story.title);
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Wieder öffnen" }));
+
+    const capture = await screen.findByRole("dialog", { name: "Schnell hinzufügen" });
+    await userEvent.type(within(capture).getByRole("textbox"), "Erster Schritt");
+    await userEvent.click(within(capture).getByRole("button", { name: "Erstellen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.reopenProject).toHaveBeenCalledWith(27, {
+        expectedRevision: 1,
+      }),
+    );
+    expect(mockedApi.reopenProject).toHaveBeenCalledTimes(1);
+  });
+
   it("collects a missing driver and reopens atomically", async () => {
     const story = makeProject({
       id: 26,
@@ -528,7 +565,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
 
     const lifecycle = openLifecycleRail(container);
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Auf später verschieben" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Zurückstellen …" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -611,6 +648,96 @@ describe("ProjectStoryRow – activation preparation", () => {
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
   });
 
+  it("keeps activation intent through driver and first-task capture", async () => {
+    const story = {
+      ...makeProject({
+        id: 33,
+        title: "Beide Aktivierungsvoraussetzungen fehlen",
+        status: "backlog",
+        ownerMemberId: null,
+        activationReadiness: {
+          ready: false,
+          hasDriver: false,
+          hasViableProgressPath: false,
+          hasHealthyFutureWaiting: false,
+        },
+      }),
+      tasks: [],
+    };
+    const assigned = {
+      ...story,
+      ownerMemberId: 2,
+      activationReadiness: { ...story.activationReadiness, hasDriver: true },
+    };
+    const ready = {
+      ...assigned,
+      nextAction: makeTask({ projectId: 33, executable: true }),
+      activationReadiness: {
+        ...assigned.activationReadiness,
+        ready: true,
+        hasViableProgressPath: true,
+      },
+    };
+    mockedApi.updateProject.mockResolvedValue(assigned);
+    mockedApi.createTask.mockResolvedValue(makeTask({ id: 333, projectId: 33 }));
+    mockedApi.activateProject.mockResolvedValue({ ...ready, status: "active" });
+
+    const { container } = renderWithProjectRoute(<Harness story={story} />);
+    mockedApi.getProject
+      .mockResolvedValueOnce(story)
+      .mockResolvedValueOnce(assigned)
+      .mockResolvedValue(ready);
+    await screen.findByText(story.title);
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Aktiv machen" }));
+
+    const driverDialog = await screen.findByRole("dialog", {
+      name: "Verantwortliche Person zuweisen",
+    });
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+    await userEvent.click(within(driverDialog).getByRole("button", { name: "Noah" }));
+    await waitFor(() =>
+      expect(mockedApi.updateProject).toHaveBeenCalledWith(33, {
+        expectedRevision: 1,
+        ownerMemberId: 2,
+      }),
+    );
+
+    const capture = await screen.findByRole("dialog", { name: "Schnell hinzufügen" });
+    await userEvent.type(within(capture).getByRole("textbox"), "Erster Schritt");
+    await userEvent.click(within(capture).getByRole("button", { name: "Erstellen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.activateProject).toHaveBeenCalledWith(33, {
+        expectedRevision: 1,
+      }),
+    );
+    expect(mockedApi.activateProject).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("project-page")).toHaveTextContent("Projektseite 33");
+  });
+
+  it("cancelling progress-path capture clears activation continuation", async () => {
+    const story = makeProject({
+      id: 35,
+      title: "Aktivierung ohne nächsten Schritt",
+      status: "backlog",
+      ownerMemberId: 1,
+      activationReadiness: {
+        ready: false,
+        hasDriver: true,
+        hasViableProgressPath: false,
+        hasHealthyFutureWaiting: false,
+      },
+    });
+    const { container } = renderWithProjectRoute(<Harness story={story} />);
+    await screen.findByText(story.title);
+    fireEvent.click(within(openLifecycleRail(container)).getByRole("button", { name: "Aktiv machen" }));
+
+    const capture = await screen.findByRole("dialog", { name: "Schnell hinzufügen" });
+    await userEvent.click(within(capture).getByRole("button", { name: "Abbrechen" }));
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("cancelling the driver prerequisite clears activation continuation", async () => {
     const story = makeProject({
       id: 34,
@@ -647,7 +774,7 @@ describe("ProjectStoryRow – activation preparation", () => {
 
     const lifecycle = openLifecycleRail(container);
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Auf später verschieben" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Zurückstellen …" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -709,14 +836,14 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     let lifecycle = openLifecycleRail(completedContainer);
     expect(within(lifecycle).getByRole("button", { name: "Wieder öffnen" })).toBeInTheDocument();
     expect(within(lifecycle).getByRole("button", { name: "Archivieren" })).toBeInTheDocument();
-    expect(within(lifecycle).queryByRole("button", { name: "Auf später verschieben" })).not.toBeInTheDocument();
+    expect(within(lifecycle).queryByRole("button", { name: "Zurückstellen …" })).not.toBeInTheDocument();
     unmount();
 
     const archived = makeProject({ id: 42, title: "Archivierte Geschichte", status: "archived", ownerMemberId: 1 });
     const { container } = renderWithProviders(<Harness story={archived} />);
     await screen.findByText("Archivierte Geschichte");
     lifecycle = openLifecycleRail(container);
-    expect(within(lifecycle).getByRole("button", { name: "Auf später verschieben" })).toBeInTheDocument();
+    expect(within(lifecycle).getByRole("button", { name: "Zurückstellen …" })).toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
@@ -728,7 +855,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     await screen.findByText("Doch nicht jetzt");
 
     const lifecycle = openLifecycleRail(container);
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Auf später verschieben" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "Zurückstellen …" }));
     const deferSheet = await screen.findByRole("dialog", { name: "Zurückstellen …" });
     await userEvent.click(
       within(deferSheet).getByRole("button", { name: "Ohne Wiedervorlage" }),
@@ -826,7 +953,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     // `story.defer` opens the canonical revisit-only workflow.
     const deferSheet = await screen.findByRole("dialog");
     expect(
-      within(deferSheet).getByRole("heading", { name: "Zurückstellen …" }),
+      within(deferSheet).getByRole("heading", { name: "Wiedervorlage" }),
     ).toBeInTheDocument();
     expect(
       within(deferSheet).getByText("Bis wann zurückstellen?"),
@@ -996,7 +1123,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     // … and every status change is an explicitly named lifecycle-rail button.
     fireEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     const lifecycle = openLifecycleRail(container);
-    for (const label of ["Abschließen", "Auf später verschieben", "Archivieren"]) {
+    for (const label of ["Abschließen", "Zurückstellen …", "Archivieren"]) {
       expect(within(lifecycle).getByRole("button", { name: label })).toBeEnabled();
     }
     expect((container.querySelector(".story-row-primary") as HTMLElement).getAttribute("aria-label")).toBe(
@@ -1491,7 +1618,7 @@ describe("ProjectStoryRow – semantic status accents", () => {
     const primary = screen.getByRole("button", { name: "Abschließen" });
     expect(primary).toHaveClass("story-row-primary--waiting");
     const lifecycle = openLifecycleRail(container);
-    expect(within(lifecycle).getByRole("button", { name: "Auf später verschieben" })).toBeEnabled();
+    expect(within(lifecycle).getByRole("button", { name: "Zurückstellen …" })).toBeEnabled();
     expect(within(lifecycle).getByRole("button", { name: "Archivieren" })).toBeEnabled();
     expect(within(lifecycle).getByRole("button", { name: "Abschließen" })).toBeEnabled();
 

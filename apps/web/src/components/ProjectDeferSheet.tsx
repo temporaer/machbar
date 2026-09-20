@@ -45,7 +45,7 @@ export function ProjectDeferSheet({
 
   return (
     <BottomSheet
-      title={strings.deferProject}
+      title={story.status === "active" ? strings.deferProject : strings.revisit}
       onClose={() => {
         if (!saving) onClose();
       }}
