@@ -71,9 +71,9 @@ const en = {
   nextAction: "Next step",
   noNextAction: "No next step",
   deferredNextAction: (relative: string, title: string) =>
-    `Next step available ${relative === "in 1 day" ? "tomorrow" : relative}: ${title}`,
+    `Next step ${relative === "in 1 day" ? "available tomorrow" : relative}: ${title}`,
   deferredNextActionSecondary: (relative: string, title: string) =>
-    `${title} available ${relative === "in 1 day" ? "tomorrow" : relative}`,
+    `${title} ${relative === "in 1 day" ? "available tomorrow" : relative}`,
   quickAdd: "Quick add",
   captureTask: "Capture task",
   capturePhoto: "Capture photo",

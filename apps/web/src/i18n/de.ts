@@ -47,9 +47,11 @@ const base = {
   nextAction: "Nächster Schritt",
   noNextAction: "Kein nächster Schritt",
   deferredNextAction: (relative: string, title: string) =>
-    `Nächster Schritt ab ${relative === "in 1 Tag" ? "morgen" : relative.replace(/^in /, "")}: ${title}`,
+    `Nächster Schritt ${
+      relative === "in 1 Tag" ? "ab morgen" : relative
+    }: ${title}`,
   deferredNextActionSecondary: (relative: string, title: string) =>
-    `${title} ab ${relative === "in 1 Tag" ? "morgen" : relative.replace(/^in /, "")}`,
+    `${title} ${relative === "in 1 Tag" ? "ab morgen" : relative}`,
   quickAdd: "Schnell hinzufügen",
   captureTask: "Aufgabe erfassen",
   capturePhoto: "Foto erfassen",

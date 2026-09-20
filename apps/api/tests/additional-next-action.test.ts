@@ -269,6 +269,24 @@ describe("task.additionalNextAction opt-in", () => {
     expect(detail.deferredNextAction.id).toBe(deferred.id);
   });
 
+  it("does not expose a later deferred task as deferredNextAction", async () => {
+    const project = await createProject({ title: "Projekt M", status: "active" });
+    const available = await createTask({
+      title: "Jetzt verfügbar",
+      projectId: project.id,
+    });
+    await createTask({
+      title: "Erst später",
+      projectId: project.id,
+      notBeforeAt: "2999-01-01T18:00:00.000Z",
+      notBeforeDate: "2999-01-01",
+    });
+
+    const detail = await getProject(project.id);
+    expect(detail.nextAction.id).toBe(available.id);
+    expect(detail.deferredNextAction).toBeNull();
+  });
+
   it("exposes the earliest otherwise-eligible future task as deferredNextAction", async () => {
     const project = await createProject({ title: "Projekt J", status: "active" });
     const deferred = await createTask({

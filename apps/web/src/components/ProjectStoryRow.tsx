@@ -50,6 +50,7 @@ const statusAccentByClassification: Record<ProjectListClassification, StatusAcce
   "active-actionable": "active",
   "active-review": "review",
   "active-stuck": "stuck",
+  "active-deferred": "active",
   "active-waiting": "waiting",
   backlog: "backlog",
   completed: "completed",

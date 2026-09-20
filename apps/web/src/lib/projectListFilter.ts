@@ -24,6 +24,7 @@ export type ProjectListClassification =
   | "active-actionable"
   | "active-review"
   | "active-stuck"
+  | "active-deferred"
   | "active-waiting"
   | "backlog"
   | "completed"
@@ -90,10 +91,9 @@ export function classifyProjectListItem(project: ProjectWithActions): ProjectLis
   if (
     project.status === "active" &&
     project.nextAction == null &&
-    project.deferredNextAction == null &&
     project.stuckReason == null
   ) {
-    return "active-waiting";
+    return project.deferredNextAction ? "active-deferred" : "active-waiting";
   }
   if (project.status === "active") {
     if (project.stuckReason === "completion_review") return "active-review";
@@ -107,6 +107,7 @@ const projectListClassificationOrder: Record<ProjectListClassification, number> 
   "active-actionable": 0,
   "active-review": 1,
   "active-stuck": 2,
+  "active-deferred": 3,
   "active-waiting": 4,
   backlog: 5,
   completed: 6,

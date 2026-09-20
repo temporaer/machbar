@@ -1154,6 +1154,27 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(screen.getByText("Morgen anfangen ab morgen")).toBeInTheDocument();
   });
 
+  it("uses natural availability wording beyond tomorrow", async () => {
+    renderWithProviders(
+      <Harness
+        story={makeProject({
+          id: 64,
+          status: "active",
+          nextAction: null,
+          stuckReason: null,
+          deferredNextAction: makeTask({
+            title: "In drei Tagen anfangen",
+            notBeforeDate: localDateAfter(3),
+          }),
+        })}
+      />,
+    );
+
+    expect(
+      await screen.findByText("Nächster Schritt in 3 Tagen: In drei Tagen anfangen"),
+    ).toBeInTheDocument();
+  });
+
   it("omits the progress bar when there is nothing to show", async () => {
     const story = makeProject({ id: 54, title: "Ohne Kriterien", status: "backlog", acceptanceCriteria: [] });
     const { container } = renderWithProviders(<Harness story={story} />);

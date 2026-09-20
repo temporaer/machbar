@@ -202,7 +202,10 @@ export class Graph {
   readonly rootsByProject = new Map<number | null, TaskRecord[]>();
   private readonly stuckReasonByProject: Map<number, StuckReason>;
   private readonly nextActionIdsByProject: Map<number, number[]>;
-  private readonly deferredNextActionIdsByProject: Map<number, number[]>;
+  private readonly orderedNextActionCandidatesByProject: Map<
+    number,
+    Array<{ taskId: number; availability: "available" | "deferred" }>
+  >;
   private readonly blockerAnalysisByTask = new Map<
     number,
     TaskBlockerAnalysis
@@ -216,11 +219,15 @@ export class Graph {
   private constructor(
     stuckReasonByProject: Map<number, StuckReason>,
     nextActionIdsByProject: Map<number, number[]>,
-    deferredNextActionIdsByProject: Map<number, number[]>,
+    orderedNextActionCandidatesByProject: Map<
+      number,
+      Array<{ taskId: number; availability: "available" | "deferred" }>
+    >,
   ) {
     this.stuckReasonByProject = stuckReasonByProject;
     this.nextActionIdsByProject = nextActionIdsByProject;
-    this.deferredNextActionIdsByProject = deferredNextActionIdsByProject;
+    this.orderedNextActionCandidatesByProject =
+      orderedNextActionCandidatesByProject;
   }
 
   static load(
@@ -255,7 +262,7 @@ export class Graph {
     const graph = new Graph(
       new Map(),
       nextActionIdsByProject,
-      nextActionProjection.deferred,
+      nextActionProjection.ordered,
     );
 
     // --- ordinary CRUD reads (plain Drizzle query builder) --------------
@@ -821,7 +828,22 @@ export class Graph {
   }
 
   deferredNextActionFor(projectId: number): TaskRecord | null {
-    const id = this.deferredNextActionIdsByProject.get(projectId)?.[0];
+    const candidates =
+      this.orderedNextActionCandidatesByProject.get(projectId) ?? [];
+    const firstAvailable = candidates.find(
+      (candidate) => candidate.availability === "available",
+    );
+    const firstDeferred = candidates.find(
+      (candidate) => candidate.availability === "deferred",
+    );
+    if (
+      !firstDeferred ||
+      (firstAvailable &&
+        candidates.indexOf(firstDeferred) > candidates.indexOf(firstAvailable))
+    ) {
+      return null;
+    }
+    const id = firstDeferred.taskId;
     return id === undefined ? null : this.tasksById.get(id) ?? null;
   }
 
