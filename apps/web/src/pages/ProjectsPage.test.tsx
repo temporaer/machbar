@@ -616,6 +616,20 @@ describe("ProjectsPage – workflow sections", () => {
         stuckReason: null,
         waitingOn: ["Angebot der Schreinerei"],
       }),
+      makeProject({
+        id: 7,
+        title: "Späterer nächster Schritt",
+        status: "active",
+        ownerMemberId: 1,
+        position: 3,
+        nextAction: null,
+        deferredNextAction: makeTask({
+          id: 70,
+          title: "Morgen beginnen",
+          notBeforeDate: "2099-01-02",
+        }),
+        stuckReason: null,
+      }),
     ]);
 
     const { container } = renderWithProviders(<ProjectsPage />);
@@ -636,6 +650,12 @@ describe("ProjectsPage – workflow sections", () => {
       "data-project-section",
       "active",
     );
+    expect(
+      rowFor(container, "Späterer nächster Schritt").closest("[data-project-section]"),
+    ).toHaveAttribute("data-project-section", "active");
+    expect(
+      rowFor(container, "Späterer nächster Schritt").closest('[data-project-section="waiting"]'),
+    ).toBeNull();
     expect(rowFor(container, "Wartet gesund A").closest("[data-project-section]")).toHaveAttribute(
       "data-project-section",
       "waiting",

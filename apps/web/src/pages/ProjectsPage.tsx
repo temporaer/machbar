@@ -155,7 +155,8 @@ function ProjectsPageContent() {
     return (
       classification === "active-actionable" ||
       classification === "active-review" ||
-      classification === "active-stuck"
+      classification === "active-stuck" ||
+      classification === "active-deferred"
     );
   });
   const waitingProjects = filteredProjects.filter(
