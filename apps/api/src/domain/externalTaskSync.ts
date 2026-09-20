@@ -24,6 +24,8 @@ export interface ExternalTaskSyncInput {
  */
 const SOURCE = "home_assistant";
 
+// A withdrawn link may reopen only the exact cancellation revision produced by
+// Home Assistant. Any human lifecycle change invalidates that authority.
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -75,14 +77,26 @@ export function syncExternalTask(
     if (!input.relevant) {
       if (!existing) return null;
       const task = tx
-        .select({ status: schema.workItems.status })
+        .select({
+          status: schema.workItems.status,
+          revision: schema.workItems.revision,
+        })
         .from(schema.workItems)
         .where(eq(schema.workItems.id, existing.taskId))
         .get();
       if (!task || task.status === "done" || task.status === "cancelled") {
+        if (
+          task &&
+          (existing.state !== "active" || existing.withdrawnTaskRevision !== null)
+        ) {
+          tx.update(schema.externalTaskLinks)
+            .set({ state: "active", withdrawnTaskRevision: null, updatedAt: nowIso() })
+            .where(eq(schema.externalTaskLinks.id, existing.id))
+            .run();
+        }
         return {
           taskId: existing.taskId,
-          state: existing.state as "active" | "withdrawn",
+          state: "active" as const,
         };
       }
       const withdrawn = cancelTask(txDb, existing.taskId, "leave_open");

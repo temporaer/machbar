@@ -267,6 +267,30 @@ describe("Home Assistant external task reconciliation", () => {
     expect(link.withdrawnTaskRevision).toBeNull();
   });
 
+  it("normalizes withdrawal metadata after human completion", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "completed-after-withdrawal",
+      relevant: true,
+      title: "Nicht wieder öffnen",
+    })!;
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "completed-after-withdrawal",
+      relevant: false,
+    });
+    reopenTask(ctx.handle.db, created.taskId);
+    completeTask(ctx.handle.db, created.taskId, "leave_open");
+
+    const result = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "completed-after-withdrawal",
+      relevant: true,
+    });
+    const link = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    expect(result).toEqual({ taskId: created.taskId, state: "active" });
+    expect(link.state).toBe("active");
+    expect(link.withdrawnTaskRevision).toBeNull();
+  });
+
   it("does not resolve an owner for terminal reconciliation no-ops", () => {
     const created = syncExternalTask(ctx.handle.db, integrationId, {
       sourceKey: "terminal-owner",
