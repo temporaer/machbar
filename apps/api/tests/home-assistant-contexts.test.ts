@@ -146,7 +146,7 @@ describe("Home Assistant physical contexts", () => {
       })).statusCode,
     ).toBe(401);
     expect(
-      (await post("/api/tasks", { title: "Kein allgemeiner Zugriff" }, token.token))
+      (await post("/api/tasks", { title: "Kein allgemeiner Zugriff" }))
         .statusCode,
     ).toBe(401);
   });

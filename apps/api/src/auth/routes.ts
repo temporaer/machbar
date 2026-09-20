@@ -245,22 +245,7 @@ export function registerAuthentication(
       }
       return;
     }
-    if (!service) {
-      if (request.headers.authorization) {
-        try {
-          authenticateHomeAssistant(db, request.headers.authorization);
-          throw AppError.unauthorized(
-            "authentication_required",
-            "Sign in with Pocket ID before accessing this resource.",
-          );
-        } catch (error) {
-          if (error instanceof AppError && error.code === "authentication_required") {
-            throw error;
-          }
-        }
-      }
-      return;
-    }
+    if (!service) return;
 
     if (!request.authMember) {
       throw AppError.unauthorized(
