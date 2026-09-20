@@ -1,0 +1,59 @@
+sync_task:
+  name: Task synchronisieren
+  description: Synchronisiert eine von Home Assistant verwaltete Machbar-Aufgabe.
+  fields:
+    config_entry:
+      name: Machbar-Verbindung
+      description: Die zu verwendende Machbar-Verbindung.
+      selector:
+        config_entry:
+          integration: machbar
+    source_key:
+      name: Referenz
+      description: Stabile externe Referenz der Aufgabe.
+      required: true
+      selector:
+        text:
+    relevant:
+      name: Relevant
+      required: true
+      selector:
+        boolean:
+    title:
+      name: Titel
+      selector:
+        text:
+    person:
+      name: Zuständig
+      selector:
+        entity:
+          domain: person
+    scheduled_date:
+      name: Geplant für
+      selector:
+        date:
+    due_date:
+      name: Fällig am
+      selector:
+        date:
+    notes:
+      name: Notiz
+      selector:
+        text:
+          multiline: true
+    priority:
+      name: Priorität
+      selector:
+        number:
+          min: 0
+          max: 3
+          mode: slider
+    size:
+      name: Größe
+      selector:
+        select:
+          options:
+            - S
+            - M
+            - L
+            - XL

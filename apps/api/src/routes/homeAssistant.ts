@@ -8,10 +8,12 @@ import {
   revokeHomeAssistant,
   setHomeAssistantMemberMapping,
 } from "../integrations/homeAssistant.js";
+import { syncExternalTask } from "../domain/externalTaskSync.js";
 import {
   homeAssistantMappingSchema,
   homeAssistantPairSchema,
   homeAssistantSnapshotSchema,
+  homeAssistantSyncTaskSchema,
 } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
 
@@ -45,6 +47,11 @@ export function registerHomeAssistantRoutes(
     );
     reply.status(204);
     return null;
+  });
+
+  app.post(`${ROOT}/tasks/sync`, async (request) => {
+    const body = parseOrThrow(homeAssistantSyncTaskSchema, request.body);
+    return syncExternalTask(db, request.homeAssistantIntegrationId!, body);
   });
 
   app.put<{ Params: { externalId: string } }>(

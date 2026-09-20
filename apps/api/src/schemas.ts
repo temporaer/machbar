@@ -53,6 +53,22 @@ export const taskReminderInputSchema = z.discriminatedUnion("kind", [
 ]);
 export const taskRemindersSchema = z.array(taskReminderInputSchema);
 
+export const homeAssistantSyncTaskSchema = z
+  .object({
+    sourceKey: z.string().min(1),
+    relevant: z.boolean(),
+    title: z.string().min(1).optional(),
+    person: z.string().min(1).nullable().optional(),
+    scheduledDate: isoDate.nullable().optional(),
+    dueDate: isoDate.nullable().optional(),
+    notes: z.string().nullable().optional(),
+    priority: z.number().int().nullable().optional(),
+    size: z.enum(taskSizes).nullable().optional(),
+  })
+  .refine((value) => value.relevant || Object.keys(value).every((key) => key === "sourceKey" || key === "relevant"), {
+    message: "Withdrawals may only specify sourceKey and relevant.",
+  });
+
 export const createProjectSchema = z.object({
   title: z.string().min(1, "Project title must not be empty."),
   notes: z.string().optional(),

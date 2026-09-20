@@ -10,4 +10,5 @@ CONF_PROTOCOL_VERSION = "protocolVersion"
 PROTOCOL_VERSION = 1
 PAIR_PATH = "/api/integrations/home-assistant/pair"
 CONTEXT_PATH = "/api/integrations/home-assistant/context"
+SYNC_TASK_PATH = "/api/integrations/home-assistant/tasks/sync"
 PUSH_DELAY_SECONDS = 0.5

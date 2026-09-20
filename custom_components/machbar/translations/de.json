@@ -1,5 +1,11 @@
 {
   "title": "Machbar",
+  "services": {
+    "sync_task": {
+      "name": "Aufgabe synchronisieren",
+      "description": "Eine von Home Assistant verwaltete Machbar-Aufgabe abgleichen."
+    }
+  },
   "config": {
     "step": {
       "user": {

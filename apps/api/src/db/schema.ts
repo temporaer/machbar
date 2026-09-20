@@ -652,6 +652,36 @@ export const homeAssistantMemberMappings = sqliteTable(
   },
 );
 
+export const externalTaskLinks = sqliteTable(
+  "external_task_links",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    source: text("source").notNull(),
+    integrationId: text("integration_id").notNull(),
+    sourceKey: text("source_key").notNull(),
+    taskId: integer("task_id")
+      .notNull()
+      .references(() => workItems.id, { onDelete: "cascade" }),
+    state: text("state", { enum: ["active", "withdrawn"] })
+      .notNull()
+      .default("active"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+  (t) => [
+    unique("external_task_links_identity_unique").on(
+      t.source,
+      t.integrationId,
+      t.sourceKey,
+    ),
+    index("external_task_links_task_idx").on(t.taskId),
+  ],
+);
+
 export const taskDependencies = sqliteTable(
   "task_dependencies",
   {

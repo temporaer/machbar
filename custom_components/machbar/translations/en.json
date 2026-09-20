@@ -1,5 +1,11 @@
 {
   "title": "Machbar",
+  "services": {
+    "sync_task": {
+      "name": "Synchronize task",
+      "description": "Reconcile a Home Assistant-managed Machbar task."
+    }
+  },
   "config": {
     "step": {
       "user": {

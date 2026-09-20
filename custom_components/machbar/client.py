@@ -6,7 +6,7 @@ from typing import Any
 
 from aiohttp import ClientError, ClientResponse, ClientSession, ClientTimeout
 
-from .const import CONTEXT_PATH, PAIR_PATH, PROTOCOL_VERSION
+from .const import CONTEXT_PATH, PAIR_PATH, PROTOCOL_VERSION, SYNC_TASK_PATH
 
 
 class MachbarError(Exception):
@@ -61,6 +61,13 @@ class MachbarClient:
     async def push_snapshot(self, snapshot: dict[str, Any]) -> None:
         """Post a complete physical-context snapshot."""
         await self._post(CONTEXT_PATH, snapshot, authenticated=True)
+
+    async def sync_task(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        """Reconcile one Home Assistant-managed task."""
+        response = await self._post(SYNC_TASK_PATH, payload, authenticated=True)
+        if response.status == 204:
+            return None
+        return await self._json(response)
 
     async def _post(
         self, path: str, payload: dict[str, Any], *, authenticated: bool
