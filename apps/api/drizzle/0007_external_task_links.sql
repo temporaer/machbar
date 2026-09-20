@@ -1,7 +1,6 @@
 CREATE TABLE `external_task_links` (
 	`id` integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 	`source` text NOT NULL,
-	`integration_id` text NOT NULL,
 	`source_key` text NOT NULL,
 	`task_id` integer NOT NULL,
 	`state` text DEFAULT 'active' NOT NULL,
@@ -11,4 +10,4 @@ CREATE TABLE `external_task_links` (
 );
 --> statement-breakpoint
 CREATE INDEX `external_task_links_task_idx` ON `external_task_links` (`task_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `external_task_links_identity_unique` ON `external_task_links` (`source`,`integration_id`,`source_key`);
+CREATE UNIQUE INDEX `external_task_links_identity_unique` ON `external_task_links` (`source`,`source_key`);

@@ -87,6 +87,7 @@ describe("Home Assistant physical contexts", () => {
         expectedRevision: child.revision,
       },
     });
+
     expect(explicit.json().explicitContexts).toEqual([
       expect.objectContaining({ id: context.id }),
     ]);
@@ -100,7 +101,54 @@ describe("Home Assistant physical contexts", () => {
         expectedRevision: explicit.json().revision,
       },
     });
+
     expect(cleared.json().effectiveContexts).toEqual([]);
+  });
+
+  it("limits the machine token to household task synchronization", async () => {
+    const token = await connect();
+    const response = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      { sourceKey: "api:task", relevant: true, title: "HA-Aufgabe" },
+      token.token,
+    );
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ state: "active" });
+    expect(ctx.handle.db.select().from(schema.workItems).get()!.scope).toBe(
+      "household",
+    );
+    expect(
+      (await post(
+        "/api/integrations/home-assistant/tasks/sync",
+        { sourceKey: "priority-1", relevant: true, title: "P1", priority: 1 },
+        token.token,
+      )).statusCode,
+    ).toBe(200);
+    expect(
+      (await post(
+        "/api/integrations/home-assistant/tasks/sync",
+        { sourceKey: "priority-5", relevant: true, title: "P5", priority: 5 },
+        token.token,
+      )).statusCode,
+    ).toBe(200);
+    expect(
+      (await post(
+        "/api/integrations/home-assistant/tasks/sync",
+        { sourceKey: "priority-0", relevant: true, title: "Invalid", priority: 0 },
+        token.token,
+      )).statusCode,
+    ).toBe(400);
+    expect(
+      (await post("/api/integrations/home-assistant/tasks/sync", {
+        sourceKey: "unauthenticated",
+        relevant: true,
+        title: "Nein",
+      })).statusCode,
+    ).toBe(401);
+    expect(
+      (await post("/api/tasks", { title: "Kein allgemeiner Zugriff" }, token.token))
+        .statusCode,
+    ).toBe(401);
   });
 
   it("pairs once, stores only hashes, and moves work between Today and Waiting", async () => {

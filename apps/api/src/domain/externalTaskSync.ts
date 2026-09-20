@@ -18,6 +18,10 @@ export interface ExternalTaskSyncInput {
   size?: TaskSize | null;
 }
 
+/**
+ * Notes are intentionally create-time only. Home Assistant must not overwrite
+ * arbitrary human-authored notes during later desired-state reconciliation.
+ */
 const SOURCE = "home_assistant";
 
 function nowIso(): string {
@@ -63,7 +67,6 @@ export function syncExternalTask(
       .where(
         and(
           eq(schema.externalTaskLinks.source, SOURCE),
-          eq(schema.externalTaskLinks.integrationId, String(integrationId)),
           eq(schema.externalTaskLinks.sourceKey, input.sourceKey),
         ),
       )
@@ -82,9 +85,7 @@ export function syncExternalTask(
           state: existing.state as "active" | "withdrawn",
         };
       }
-      if (task && task.status !== "done" && task.status !== "cancelled") {
-        cancelTask(txDb, existing.taskId, "leave_open");
-      }
+      cancelTask(txDb, existing.taskId, "leave_open");
       if (existing.state !== "withdrawn") {
         tx
           .update(schema.externalTaskLinks)
@@ -101,8 +102,15 @@ export function syncExternalTask(
     }
 
     if (!existing) {
+      if (input.title === undefined) {
+        throw AppError.badRequest(
+          "external_task_title_required",
+          "A title is required when creating a new externally managed task.",
+          { sourceKey: input.sourceKey },
+        );
+      }
       const task = createTask(txDb, {
-        title: input.title ?? input.sourceKey,
+        title: input.title,
         notes: input.notes ?? undefined,
         status: "actionable",
         scope: "household",
@@ -118,7 +126,6 @@ export function syncExternalTask(
         .insert(schema.externalTaskLinks)
         .values({
           source: SOURCE,
-          integrationId: String(integrationId),
           sourceKey: input.sourceKey,
           taskId: task.id,
           state: "active",

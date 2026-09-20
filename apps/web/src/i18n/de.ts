@@ -1146,6 +1146,8 @@ const extra = {
     role_conversion_invalid:
       "Diese Aufgabe kann erst in ein Projekt umgewandelt werden, wenn widersprechende Aufgaben-Eigenschaften entfernt wurden.",
     task_title_required: "Bitte gib einen Aufgabentitel ein.",
+    external_task_title_required:
+      "Beim Erstellen einer extern verwalteten Aufgabe ist ein Titel erforderlich.",
     external_wait_reason_required:
       "Bitte gib an, worauf diese Aufgabe wartet.",
     waiting_query_invalid: "Die Wartelisten-Abfrage ist ungültig.",

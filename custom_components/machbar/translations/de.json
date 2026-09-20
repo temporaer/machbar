@@ -3,7 +3,19 @@
   "services": {
     "sync_task": {
       "name": "Aufgabe synchronisieren",
-      "description": "Eine von Home Assistant verwaltete Machbar-Aufgabe abgleichen."
+      "description": "Eine von Home Assistant verwaltete Machbar-Aufgabe abgleichen.",
+      "fields": {
+        "config_entry_id": {"name": "Machbar-Verbindung", "description": "Zu verwendende Machbar-Verbindung."},
+        "source_key": {"name": "Referenz", "description": "Stabile externe Aufgabenreferenz."},
+        "relevant": {"name": "Relevant", "description": "Ob die Aufgabe als offene Arbeit bestehen soll."},
+        "title": {"name": "Titel", "description": "Titel beim Erstellen oder Abgleichen."},
+        "person": {"name": "Zuständig", "description": "Home-Assistant-Person für die Aufgabe."},
+        "scheduled_date": {"name": "Geplant für", "description": "Geplantes Kalenderdatum."},
+        "due_date": {"name": "Fällig am", "description": "Frist der Aufgabe."},
+        "notes": {"name": "Notiz", "description": "Wird nur beim Erstellen als Anfangsnotiz verwendet."},
+        "priority": {"name": "Priorität", "description": "Machbar-Priorität von 1 (höchste) bis 5 (niedrigste)."},
+        "size": {"name": "Größe", "description": "Aufgabengröße."}
+      }
     }
   },
   "config": {

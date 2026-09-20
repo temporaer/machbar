@@ -657,7 +657,6 @@ export const externalTaskLinks = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     source: text("source").notNull(),
-    integrationId: text("integration_id").notNull(),
     sourceKey: text("source_key").notNull(),
     taskId: integer("task_id")
       .notNull()
@@ -673,11 +672,7 @@ export const externalTaskLinks = sqliteTable(
       .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
   },
   (t) => [
-    unique("external_task_links_identity_unique").on(
-      t.source,
-      t.integrationId,
-      t.sourceKey,
-    ),
+    unique("external_task_links_identity_unique").on(t.source, t.sourceKey),
     index("external_task_links_task_idx").on(t.taskId),
   ],
 );

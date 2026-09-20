@@ -62,11 +62,8 @@ export const homeAssistantSyncTaskSchema = z
     scheduledDate: isoDate.nullable().optional(),
     dueDate: isoDate.nullable().optional(),
     notes: z.string().nullable().optional(),
-    priority: z.number().int().nullable().optional(),
+    priority: z.number().int().min(1).max(5).nullable().optional(),
     size: z.enum(taskSizes).nullable().optional(),
-  })
-  .refine((value) => value.relevant || Object.keys(value).every((key) => key === "sourceKey" || key === "relevant"), {
-    message: "Withdrawals may only specify sourceKey and relevant.",
   });
 
 export const createProjectSchema = z.object({

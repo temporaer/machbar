@@ -1141,6 +1141,8 @@ const en = {
     role_conversion_invalid:
       "Remove conflicting task-only details before converting this task to a project.",
     task_title_required: "Enter a task title.",
+    external_task_title_required:
+      "A title is required when creating an externally managed task.",
     external_wait_reason_required: "Enter what this task is waiting for.",
     waiting_query_invalid: "The Waiting query is invalid.",
     inbox_query_invalid: "The Inbox query is invalid.",

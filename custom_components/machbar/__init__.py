@@ -9,7 +9,11 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    ServiceValidationError,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers import selector
@@ -31,20 +35,19 @@ SERVICE_SYNC_TASK = "sync_task"
 def _sync_task_schema() -> vol.Schema:
     return vol.Schema(
         {
-            vol.Required("source_key"): str,
+            vol.Required("config_entry_id"): str,
+            vol.Required("source_key"): selector.TemplateSelector(),
             vol.Required("relevant"): bool,
             vol.Optional("title"): str,
-            vol.Optional("person"): selector.EntitySelector(
-                selector.EntitySelectorConfig(domain="person")
+            vol.Optional("person"): vol.Any(
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="person")),
+                None,
             ),
-            vol.Optional("scheduled_date"): str,
-            vol.Optional("due_date"): str,
+            vol.Optional("scheduled_date"): vol.Any(str, None),
+            vol.Optional("due_date"): vol.Any(str, None),
             vol.Optional("notes"): vol.Any(str, None),
             vol.Optional("priority"): vol.Any(int, None),
-            vol.Optional("size"): vol.In(["S", "M", "L", "XL"]),
-            vol.Optional("config_entry"): selector.ConfigEntrySelector(
-                selector.ConfigEntrySelectorConfig(integration=DOMAIN)
-            ),
+            vol.Optional("size"): vol.Any(vol.In(["S", "M", "L", "XL"]), None),
         }
     )
 
@@ -55,21 +58,16 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
         return True
 
     async def handle_sync_task(call: Any) -> None:
-        requested_entry = call.data.get("config_entry")
-        target = (
-            hass.config_entries.async_get_entry(requested_entry)
-            if requested_entry
-            else next(
-                (
-                    configured
-                    for configured in hass.config_entries.async_entries(DOMAIN)
-                    if configured.domain == DOMAIN
-                ),
-                None,
-            )
-        )
+        requested_entry = call.data["config_entry_id"]
+        target = hass.config_entries.async_get_entry(requested_entry)
         if target is None or target.domain != DOMAIN:
-            raise ValueError("No usable Machbar config entry is configured")
+            raise ServiceValidationError(
+                "The selected config entry is not a Machbar integration."
+            )
+        if CONF_ORIGIN not in target.data or CONF_TOKEN not in target.data:
+            raise ServiceValidationError(
+                "The selected Machbar config entry is not usable."
+            )
         client = MachbarClient(
             async_get_clientsession(hass),
             target.data[CONF_ORIGIN],
