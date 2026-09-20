@@ -231,12 +231,12 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     expect(within(chips).queryByRole("button", { name: "Später" })).not.toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
-    expect(within(chips).queryByRole("button", { name: "Auf später verschieben" })).not.toBeInTheDocument();
+    expect(within(chips).queryByRole("button", { name: "Zurückstellen …" })).not.toBeInTheDocument();
     expect(within(chips).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
 
     swipeRow(row, 100);
     const lifecycle = within(row).getByRole("group", { name: "Status" });
-    expect(within(lifecycle).getByRole("button", { name: "Auf später verschieben" })).toBeInTheDocument();
+    expect(within(lifecycle).getByRole("button", { name: "Zurückstellen …" })).toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
