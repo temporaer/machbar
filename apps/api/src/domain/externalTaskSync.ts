@@ -106,6 +106,10 @@ export function syncExternalTask(
           { sourceKey: input.sourceKey },
         );
       }
+      const personMemberId =
+        input.person !== undefined && input.person !== null
+          ? mappedMemberId(txDb, integrationId, input.person)
+          : undefined;
       const task = createTask(txDb, {
         title: input.title,
         notes: input.notes ?? undefined,
