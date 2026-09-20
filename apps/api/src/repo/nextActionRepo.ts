@@ -25,7 +25,6 @@ import type { Db } from "../db/client.js";
  */
 export interface NextActionTaskIdsByProject {
   available: Map<number, number[]>;
-  deferred: Map<number, number[]>;
   ordered: Map<number, Array<{ taskId: number; availability: "available" | "deferred" }>>;
 }
 
@@ -92,19 +91,19 @@ export function getNextActionTaskIdsByProjectProjection(
     ORDER BY project_id, key
   `);
   const available = new Map<number, number[]>();
-  const deferred = new Map<number, number[]>();
   const ordered = new Map<
     number,
     Array<{ taskId: number; availability: "available" | "deferred" }>
   >();
   for (const row of rows) {
-    const result = row.availability === "available" ? available : deferred;
-    const ids = result.get(row.project_id) ?? [];
-    ids.push(row.task_id);
-    result.set(row.project_id, ids);
+    if (row.availability === "available") {
+      const ids = available.get(row.project_id) ?? [];
+      ids.push(row.task_id);
+      available.set(row.project_id, ids);
+    }
     const candidates = ordered.get(row.project_id) ?? [];
     candidates.push({ taskId: row.task_id, availability: row.availability });
     ordered.set(row.project_id, candidates);
   }
-  return { available, deferred, ordered };
+  return { available, ordered };
 }
