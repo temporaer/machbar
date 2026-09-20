@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.exceptions import (
@@ -63,6 +63,10 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
         if target is None or target.domain != DOMAIN:
             raise ServiceValidationError(
                 "The selected config entry is not a Machbar integration."
+            )
+        if target.state is not ConfigEntryState.LOADED:
+            raise ServiceValidationError(
+                "The selected Machbar config entry is not loaded."
             )
         if CONF_ORIGIN not in target.data or CONF_TOKEN not in target.data:
             raise ServiceValidationError(

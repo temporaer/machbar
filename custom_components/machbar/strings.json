@@ -1,23 +1,5 @@
 {
   "title": "Machbar",
-  "services": {
-    "sync_task": {
-      "name": "Synchronize task",
-      "description": "Reconcile a Home Assistant-managed Machbar task.",
-      "fields": {
-        "config_entry_id": {"name": "Machbar connection", "description": "Machbar connection to use."},
-        "source_key": {"name": "Reference", "description": "Stable external task reference."},
-        "relevant": {"name": "Relevant", "description": "Whether the task should exist as open work."},
-        "title": {"name": "Title", "description": "Task title used when creating or reconciling."},
-        "person": {"name": "Assignee", "description": "Home Assistant person assigned to the task."},
-        "scheduled_date": {"name": "Scheduled for", "description": "Planned calendar date."},
-        "due_date": {"name": "Due date", "description": "Task deadline."},
-        "notes": {"name": "Notes", "description": "Initial notes used only when creating the task."},
-        "priority": {"name": "Priority", "description": "Machbar priority from 1 (highest) to 5 (lowest)."},
-        "size": {"name": "Size", "description": "Task size."}
-      }
-    }
-  },
   "config": {
     "step": {
       "user": {

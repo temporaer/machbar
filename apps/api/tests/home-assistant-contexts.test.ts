@@ -147,6 +147,71 @@ describe("Home Assistant physical contexts", () => {
     ).toBe(401);
   });
 
+  it("resolves mapped people and rejects unmapped or unknown people", async () => {
+    const member = (await post("/api/members", { name: "Hannes" })).json() as {
+      id: number;
+    };
+    const token = await connect();
+    await post("/api/integrations/home-assistant/context", {
+      protocolVersion: 1,
+      observedAt: new Date().toISOString(),
+      contexts: [],
+      people: [
+        { externalId: "person.hannes", name: "Hannes", state: "known", contexts: [] },
+        { externalId: "person.unmapped", name: "Unmapped", state: "known", contexts: [] },
+      ],
+    }, token.token);
+    await ctx.app.inject({
+      method: "PUT",
+      url: "/api/integrations/home-assistant/people/person.hannes/mapping",
+      payload: { memberId: member.id },
+      headers: { authorization: "Bearer " + token.token },
+    });
+
+    const mapped = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      {
+        sourceKey: "mapped-owner",
+        relevant: true,
+        title: "Assigned task",
+        person: "person.hannes",
+      },
+      token.token,
+    );
+    expect(mapped.statusCode).toBe(200);
+    expect(ctx.handle.db.select().from(schema.workItems).get()?.ownerMemberId)
+      .toBe(member.id);
+
+    const unmapped = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      { sourceKey: "unmapped-owner", relevant: true, title: "Unmapped", person: "person.unmapped" },
+      token.token,
+    );
+    expect(unmapped.statusCode).toBe(400);
+    expect(unmapped.json().code).toBe("identifier_invalid");
+
+    const unknown = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      { sourceKey: "unknown-owner", relevant: true, title: "Unknown", person: "person.unknown" },
+      token.token,
+    );
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.json().code).toBe("identifier_invalid");
+  });
+
+  it("rejects a revoked Home Assistant token for task synchronization", async () => {
+    const token = await connect();
+    expect((await post("/api/integrations/home-assistant/connection", undefined, token.token))
+      .statusCode).toBe(204);
+    const response = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      { sourceKey: "revoked", relevant: true, title: "Revoked" },
+      token.token,
+    );
+    expect(response.statusCode).toBe(401);
+    expect(response.json().code).toBe("integration_token_revoked");
+  });
+
   it("pairs once, stores only hashes, and moves work between Today and Waiting", async () => {
     const member = (
       await post("/api/members", { name: "Mira" })

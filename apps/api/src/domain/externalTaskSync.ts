@@ -141,7 +141,15 @@ export function syncExternalTask(
       .where(eq(schema.workItems.id, existing.taskId))
       .get();
     if (!task) throw AppError.notFound("task_not_found", "The linked task was not found.");
-    if (task.status === "done") return { taskId: task.id, state: "active" as const };
+    if (task.status === "done") {
+      if (existing.state !== "active" || existing.withdrawnTaskRevision !== null) {
+        tx.update(schema.externalTaskLinks)
+          .set({ state: "active", withdrawnTaskRevision: null, updatedAt: nowIso() })
+          .where(eq(schema.externalTaskLinks.id, existing.id))
+          .run();
+      }
+      return { taskId: task.id, state: "active" as const };
+    }
     if (task.status === "cancelled" && existing.state === "withdrawn") {
       if (existing.withdrawnTaskRevision === task.revision) {
         reopenTask(txDb, task.id);

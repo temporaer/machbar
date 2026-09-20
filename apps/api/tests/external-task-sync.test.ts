@@ -118,7 +118,11 @@ describe("Home Assistant external task reconciliation", () => {
     });
     let task = ctx.handle.db.select().from(schema.workItems)
       .where(eq(schema.workItems.id, created.taskId)).get()!;
+    let link = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
     expect(task.status).toBe("cancelled");
+    expect(link.state).toBe("withdrawn");
+    expect(link.withdrawnTaskRevision).toBe(task.revision);
     expect(ctx.handle.db.select().from(schema.contributionEvents).all()).toHaveLength(0);
     syncExternalTask(ctx.handle.db, integrationId, {
       sourceKey: "chores:bin",
@@ -129,6 +133,72 @@ describe("Home Assistant external task reconciliation", () => {
       .where(eq(schema.workItems.id, created.taskId)).get()!;
     expect(task.status).toBe("active");
     expect(task.title).toBe("Müll rausbringen");
+    link = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    expect(link.state).toBe("active");
+    expect(link.withdrawnTaskRevision).toBeNull();
+  });
+
+  it("preserves omitted fields and clears explicit nullable fields", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "nullable-fields",
+      relevant: true,
+      title: "Initial",
+      person: "person.hannes",
+      scheduledDate: "2026-09-23",
+      dueDate: "2026-09-24",
+      priority: 1,
+      size: "L",
+    })!;
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "nullable-fields",
+      relevant: true,
+      title: "Changed",
+    });
+    let task = ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()!;
+    expect(task).toMatchObject({
+      title: "Changed",
+      ownerMemberId: memberId,
+      scheduledDate: "2026-09-23",
+      dueDate: "2026-09-24",
+      priority: 1,
+      size: "L",
+    });
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "nullable-fields",
+      relevant: true,
+      person: null,
+      scheduledDate: null,
+      dueDate: null,
+      priority: null,
+      size: null,
+    });
+    task = ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()!;
+    expect(task.ownerMemberId).toBeNull();
+    expect(task.scheduledDate).toBeNull();
+    expect(task.dueDate).toBeNull();
+    expect(task.priority).toBeNull();
+    expect(task.size).toBeNull();
+  });
+
+  it("does not overwrite human notes during reconciliation", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "notes",
+      relevant: true,
+      title: "Notizen",
+      notes: "Initial HA note",
+    })!;
+    updateTask(ctx.handle.db, created.taskId, { notes: "Human note" });
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "notes",
+      relevant: true,
+      notes: "New HA note",
+    });
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()?.notes)
+      .toBe("Human note");
   });
 
   it("preserves human cancellation and completion", () => {
@@ -158,9 +228,13 @@ describe("Home Assistant external task reconciliation", () => {
       relevant: true,
       title: "Nicht wieder öffnen",
     });
+    const doneLink = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, completed.taskId)).get()!;
     expect(ctx.handle.db.select().from(schema.workItems)
       .where(and(eq(schema.workItems.id, completed.taskId), eq(schema.workItems.status, "done")))
       .get()?.title).toBe("Erledigt");
+    expect(doneLink.state).toBe("active");
+    expect(doneLink.withdrawnTaskRevision).toBeNull();
   });
 
   it("does not let stale external withdrawal authority reopen a human cancellation", () => {
@@ -205,5 +279,22 @@ describe("Home Assistant external task reconciliation", () => {
       relevant: true,
       person: "person.unknown",
     })).not.toThrow();
+  });
+
+  it("does not resolve an owner for cancelled terminal no-ops", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "cancelled-owner",
+      relevant: true,
+      title: "Abgebrochen",
+    })!;
+    cancelTask(ctx.handle.db, created.taskId, "leave_open");
+    expect(() => syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "cancelled-owner",
+      relevant: true,
+      person: "person.unknown",
+    })).not.toThrow();
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()?.status)
+      .toBe("cancelled");
   });
 });
