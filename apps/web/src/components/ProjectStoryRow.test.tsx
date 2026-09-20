@@ -565,7 +565,7 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
 
     const lifecycle = openLifecycleRail(container);
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Zurückstellen …" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -666,6 +666,7 @@ describe("ProjectStoryRow – activation preparation", () => {
     };
     const assigned = {
       ...story,
+      revision: 2,
       ownerMemberId: 2,
       activationReadiness: { ...story.activationReadiness, hasDriver: true },
     };
@@ -708,7 +709,7 @@ describe("ProjectStoryRow – activation preparation", () => {
 
     await waitFor(() =>
       expect(mockedApi.activateProject).toHaveBeenCalledWith(33, {
-        expectedRevision: 1,
+        expectedRevision: 2,
       }),
     );
     expect(mockedApi.activateProject).toHaveBeenCalledTimes(1);
@@ -774,7 +775,7 @@ describe("ProjectStoryRow – activation preparation", () => {
 
     const lifecycle = openLifecycleRail(container);
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
-    fireEvent.click(within(lifecycle).getByRole("button", { name: "Zurückstellen …" }));
+    fireEvent.click(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" }));
     await act(async () => {
       await flushMicrotasks();
     });
@@ -843,7 +844,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     const { container } = renderWithProviders(<Harness story={archived} />);
     await screen.findByText("Archivierte Geschichte");
     lifecycle = openLifecycleRail(container);
-    expect(within(lifecycle).getByRole("button", { name: "Zurückstellen …" })).toBeInTheDocument();
+    expect(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" })).toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });

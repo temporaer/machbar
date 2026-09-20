@@ -767,6 +767,7 @@ const extra = {
   openProject: "Projekt öffnen",
   projectDangerSection: "Projekt löschen",
   returnToBacklogStory: "Zurückstellen …",
+  restoreProjectToBacklog: "In Backlog zurückholen",
   completeStory: "Abschließen",
   taskProgress: "Aufgaben",
   addCriterion: "Punkt hinzufügen",

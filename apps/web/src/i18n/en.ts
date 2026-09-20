@@ -772,6 +772,7 @@ const en = {
   openProject: "Open project",
   projectDangerSection: "Delete project",
   returnToBacklogStory: "Defer project …",
+  restoreProjectToBacklog: "Restore to backlog",
   completeStory: "Complete",
   taskProgress: "Tasks",
   addCriterion: "Add item",

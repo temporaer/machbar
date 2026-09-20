@@ -513,7 +513,7 @@ export function ProjectDetailPage() {
                           dispatch(storyWorkflowCommand(project, action));
                         }}
                       >
-                        {projectWorkflowLabel(action, strings)}
+                        {projectWorkflowLabel(action, strings, project.status)}
                       </button>
                     ))}
                   </div>

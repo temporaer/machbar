@@ -34,7 +34,11 @@ export const statusAfterAction: Record<ProjectWorkflowAction, ProjectStatus> = {
 export function projectWorkflowLabel(
   action: ProjectWorkflowAction,
   strings: Strings,
+  status?: ProjectStatus,
 ): string {
+  if (action === "return_to_backlog" && status === "archived") {
+    return strings.restoreProjectToBacklog;
+  }
   return {
     activate: strings.activateStory,
     return_to_backlog: strings.returnToBacklogStory,

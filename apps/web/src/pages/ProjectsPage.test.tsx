@@ -236,7 +236,7 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
 
     swipeRow(row, 100);
     const lifecycle = within(row).getByRole("group", { name: "Status" });
-    expect(within(lifecycle).getByRole("button", { name: "Zurückstellen …" })).toBeInTheDocument();
+    expect(within(lifecycle).getByRole("button", { name: "In Backlog zurückholen" })).toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Aktiv machen" })).not.toBeInTheDocument();
     expect(within(lifecycle).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
   });
