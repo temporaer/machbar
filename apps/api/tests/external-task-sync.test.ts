@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { and, eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import { syncExternalTask } from "../src/domain/externalTaskSync.js";
+import { updateTask } from "../src/domain/taskCrud.js";
 import { cancelTask, completeTask, reopenTask } from "../src/domain/taskWorkflow.js";
 import {
   closeTestContext,

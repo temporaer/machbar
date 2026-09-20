@@ -188,7 +188,7 @@ describe("Home Assistant physical contexts", () => {
       token.token,
     );
     expect(unmapped.statusCode).toBe(400);
-    expect(unmapped.json().code).toBe("identifier_invalid");
+    expect(unmapped.json().error.code).toBe("identifier_invalid");
 
     const unknown = await post(
       "/api/integrations/home-assistant/tasks/sync",
@@ -196,12 +196,16 @@ describe("Home Assistant physical contexts", () => {
       token.token,
     );
     expect(unknown.statusCode).toBe(400);
-    expect(unknown.json().code).toBe("identifier_invalid");
+    expect(unknown.json().error.code).toBe("identifier_invalid");
   });
 
   it("rejects a revoked Home Assistant token for task synchronization", async () => {
     const token = await connect();
-    expect((await post("/api/integrations/home-assistant/connection", undefined, token.token))
+    expect((await ctx.app.inject({
+      method: "DELETE",
+      url: "/api/integrations/home-assistant/connection",
+      headers: { authorization: "Bearer " + token.token },
+    }))
       .statusCode).toBe(204);
     const response = await post(
       "/api/integrations/home-assistant/tasks/sync",
@@ -209,7 +213,7 @@ describe("Home Assistant physical contexts", () => {
       token.token,
     );
     expect(response.statusCode).toBe(401);
-    expect(response.json().code).toBe("integration_token_revoked");
+    expect(response.json().error.code).toBe("integration_token_revoked");
   });
 
   it("pairs once, stores only hashes, and moves work between Today and Waiting", async () => {
