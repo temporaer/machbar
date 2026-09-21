@@ -109,7 +109,9 @@ describe("SharePage reference destinations", () => {
       await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
       "Schweiz",
     );
-    await userEvent.click(screen.getByRole("button", { name: /Schweiz Urlaub/ }));
+    await userEvent.click(
+      screen.getAllByRole("button", { name: /Schweiz Urlaub/ }).at(-1)!,
+    );
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith({
@@ -212,7 +214,9 @@ describe("SharePage reference destinations", () => {
       await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
       "Schweiz",
     );
-    await userEvent.click(screen.getByRole("button", { name: /Schweiz Urlaub/ }));
+    await userEvent.click(
+      screen.getAllByRole("button", { name: /Schweiz Urlaub/ }).at(-1)!,
+    );
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith({
