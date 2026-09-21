@@ -148,7 +148,10 @@ describe("SharePage reference destinations", () => {
       "Unterkunft",
     );
     expect(screen.getByText("Material · Schweiz Urlaub")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /Unterkunft/ }));
+    const matchingDestinations = screen.getAllByRole("button", {
+      name: /Unterkunft/,
+    });
+    await userEvent.click(matchingDestinations.at(-1)!);
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith({
