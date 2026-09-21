@@ -1,0 +1,47 @@
+sync_task:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: machbar
+    source_key:
+      required: true
+      selector:
+        template:
+    relevant:
+      required: true
+      selector:
+        boolean:
+    title:
+      selector:
+        text:
+    person:
+      selector:
+        entity:
+          domain: person
+    scheduled_date:
+      selector:
+        date:
+    due_date:
+      selector:
+        date:
+    notes:
+      selector:
+        text:
+          multiline: true
+    priority:
+      selector:
+        number:
+          min: 1
+          max: 5
+          step: 1
+          mode: slider
+    size:
+      selector:
+        select:
+          options:
+            - S
+            - M
+            - L
+            - XL

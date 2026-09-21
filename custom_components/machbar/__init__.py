@@ -6,12 +6,18 @@ import asyncio
 import logging
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    ServiceValidationError,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers import selector
+import voluptuous as vol
 
 from .client import CannotConnect, InvalidAuth, MachbarClient, MachbarError
 from .const import (
@@ -23,6 +29,78 @@ from .const import (
 from .snapshot import build_snapshot
 
 _LOGGER = logging.getLogger(__name__)
+SERVICE_SYNC_TASK = "sync_task"
+
+
+def _sync_task_schema() -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required("config_entry_id"): str,
+            vol.Required("source_key"): selector.TemplateSelector(),
+            vol.Required("relevant"): bool,
+            vol.Optional("title"): str,
+            vol.Optional("person"): vol.Any(
+                selector.EntitySelector(selector.EntitySelectorConfig(domain="person")),
+                None,
+            ),
+            vol.Optional("scheduled_date"): vol.Any(str, None),
+            vol.Optional("due_date"): vol.Any(str, None),
+            vol.Optional("notes"): vol.Any(str, None),
+            vol.Optional("priority"): vol.Any(int, None),
+            vol.Optional("size"): vol.Any(vol.In(["S", "M", "L", "XL"]), None),
+        }
+    )
+
+
+async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
+    """Register the action independently of config-entry availability."""
+    if hass.services.has_service(DOMAIN, SERVICE_SYNC_TASK):
+        return True
+
+    async def handle_sync_task(call: Any) -> None:
+        requested_entry = call.data["config_entry_id"]
+        target = hass.config_entries.async_get_entry(requested_entry)
+        if target is None or target.domain != DOMAIN:
+            raise ServiceValidationError(
+                "The selected config entry is not a Machbar integration."
+            )
+        if target.state is not ConfigEntryState.LOADED:
+            raise ServiceValidationError(
+                "The selected Machbar config entry is not loaded."
+            )
+        if CONF_ORIGIN not in target.data or CONF_TOKEN not in target.data:
+            raise ServiceValidationError(
+                "The selected Machbar config entry is not usable."
+            )
+        client = MachbarClient(
+            async_get_clientsession(hass),
+            target.data[CONF_ORIGIN],
+            target.data[CONF_TOKEN],
+        )
+        payload = {
+            "sourceKey": call.data["source_key"],
+            "relevant": call.data["relevant"],
+        }
+        for source, target_name in (
+            ("title", "title"),
+            ("person", "person"),
+            ("scheduled_date", "scheduledDate"),
+            ("due_date", "dueDate"),
+            ("notes", "notes"),
+            ("priority", "priority"),
+            ("size", "size"),
+        ):
+            if source in call.data:
+                payload[target_name] = call.data[source]
+        await client.sync_task(payload)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SYNC_TASK,
+        handle_sync_task,
+        schema=_sync_task_schema(),
+    )
+    return True
 
 
 class SnapshotPublisher:

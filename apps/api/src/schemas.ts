@@ -53,6 +53,19 @@ export const taskReminderInputSchema = z.discriminatedUnion("kind", [
 ]);
 export const taskRemindersSchema = z.array(taskReminderInputSchema);
 
+export const homeAssistantSyncTaskSchema = z
+  .object({
+    sourceKey: z.string().min(1),
+    relevant: z.boolean(),
+    title: z.string().min(1).optional(),
+    person: z.string().min(1).nullable().optional(),
+    scheduledDate: isoDate.nullable().optional(),
+    dueDate: isoDate.nullable().optional(),
+    notes: z.string().nullable().optional(),
+    priority: z.number().int().min(1).max(5).nullable().optional(),
+    size: z.enum(taskSizes).nullable().optional(),
+  });
+
 export const createProjectSchema = z.object({
   title: z.string().min(1, "Project title must not be empty."),
   notes: z.string().optional(),
