@@ -13,6 +13,7 @@ import {
   wouldCreateDependencyCycle,
 } from "../repo/index.js";
 import { getTaskOrThrow } from "./taskCrud.js";
+import { assertDependencyCapableTask } from "./taskKindGuard.js";
 import {
   MutationContext,
   actor,
@@ -440,6 +441,8 @@ export function addDependency(
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
     const dependency = getTaskOrThrow(txDb, dependsOnTaskId);
+    assertDependencyCapableTask(task);
+    assertDependencyCapableTask(dependency);
     const hadNextAction =
       task.projectId === null
         ? true

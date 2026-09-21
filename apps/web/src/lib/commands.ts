@@ -54,6 +54,7 @@ export type WorkItemCommand =
   | { type: "task.toggleDone"; task: Task }
   | { type: "task.toggleAdditionalNextAction"; task: Task }
   | { type: "task.primaryAction"; task: Task }
+  | { type: "task.makeAction"; task: Task }
   | { type: "workItem.schedule"; item: WeekTaskPlanningItem; date: string | null }
   | { type: "workItem.setDeadline"; item: WeekPlanningItem; date: string | null }
   | { type: "workItem.setRevisitDate"; item: WeekPlanningItem; date: string | null }

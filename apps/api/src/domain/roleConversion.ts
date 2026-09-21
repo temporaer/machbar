@@ -23,6 +23,8 @@ import {
   assertProjectActivationReady,
   enqueueProjectAssignment,
   nowIso,
+  projectHasNextAction,
+  projectHasTaskPlan,
 } from "./workItemShared.js";
 
 export interface ConvertTaskToStoryInput {
@@ -332,5 +334,104 @@ export function convertStoryToTask(
       metadata: { changedFields: ["role"] },
     });
     return task;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Reference -> action promotion
+// ---------------------------------------------------------------------------
+
+export interface MakeTaskActionInput {
+  expectedRevision?: number;
+}
+
+/**
+ * Promotes a `kind: "reference"` outline node to a real `kind: "action"`
+ * task in place: same row/id, same parent/project/position/children/notes/
+ * Paperless references, just a `taskKind`/`status` change plus a revision
+ * bump. This mirrors `convertTaskToStory`/`convertStoryToTask`'s established
+ * single-UPDATE-in-a-transaction pattern; unlike those, the entity type
+ * ("task") never changes here, so activity/notification/contribution rows
+ * never need reassigning.
+ */
+export function makeTaskAction(
+  db: Db,
+  taskId: number,
+  input: MakeTaskActionInput = {},
+  context?: MutationContext,
+) {
+  return db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    const task = getTaskOrThrow(txDb, taskId);
+    assertExpectedRevision("task", taskId, task.revision, input.expectedRevision);
+    if (task.kind !== "reference") {
+      throw AppError.conflict(
+        "reference_promotion_invalid",
+        "Only reference material can be promoted to an action.",
+        { taskId, reason: "not_reference" },
+      );
+    }
+    // Mirrors `insertTask`'s root-vs-filed default: a root standalone item
+    // starts in the inbox (captured), while an item already filed under a
+    // project/parent becomes a regular actionable task straight away.
+    const isRoot = task.parentTaskId === null && task.projectId === null;
+    const nextStatus: TaskStatus = isRoot ? "captured" : "actionable";
+
+    const hadNextAction =
+      task.projectId !== null ? projectHasNextAction(txDb, task.projectId) : true;
+    const hadTaskPlan =
+      task.projectId !== null ? projectHasTaskPlan(txDb, task.projectId) : true;
+
+    tx.update(schema.workItems)
+      .set({
+        taskKind: "action",
+        status: taskStatusToStored(nextStatus),
+        needsClarification: nextStatus === "captured",
+        revision: sql`${schema.workItems.revision} + 1`,
+        updatedAt: nowIso(),
+      })
+      .where(eq(schema.workItems.id, taskId))
+      .run();
+
+    const updated = getTaskOrThrow(txDb, taskId);
+    const activityEventId = recordActivity(txDb, {
+      actorMemberId: actor(context),
+      kind: "task_kind_changed",
+      entityType: "task",
+      entityTitle: updated.title,
+      taskId,
+      projectId: updated.projectId,
+      metadata: { changedFields: ["kind"] },
+    });
+    if (
+      updated.projectId !== null &&
+      !hadNextAction &&
+      projectHasNextAction(txDb, updated.projectId)
+    ) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_next_action_added",
+        entityType: "project",
+        entityId: updated.projectId,
+        personalEligible: true,
+      });
+    } else if (
+      updated.projectId !== null &&
+      !hadTaskPlan &&
+      projectHasTaskPlan(txDb, updated.projectId)
+    ) {
+      recordContribution(txDb, {
+        activityEventId,
+        actorMemberId: actor(context),
+        category: "planning",
+        reason: "project_due_plan_added",
+        entityType: "project",
+        entityId: updated.projectId,
+        personalEligible: true,
+      });
+    }
+    return updated;
   });
 }

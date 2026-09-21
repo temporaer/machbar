@@ -128,7 +128,7 @@ function loadFilteredOpenTasks(
   const projectStatusById = new Map(
     [...graph.projectsById.values()].map((project) => [project.id, project.status]),
   );
-  const allTasks = graph.allTasks().map((task): OpenTaskRow => ({
+  const allTasks = graph.allActions().map((task): OpenTaskRow => ({
     id: task.id,
     revision: task.revision,
     title: task.title,
@@ -250,7 +250,7 @@ export function getRefinementTasks(
     ]),
   );
   return graph
-    .allTasks()
+    .allActions()
     .filter((task) => {
       if (!isOpenStatus(task.status)) return false;
       if (!isTaskInWorkingSystem(task, projectStatusById)) return false;

@@ -260,6 +260,10 @@ const extra = {
   moveFailed: "Verschieben fehlgeschlagen",
   dropTopLevel: "Auf oberste Ebene",
   dropUnder: "Unter",
+  materialLabel: "Material",
+  makeAction: "Als Aufgabe behandeln",
+  makeActionFailed: "Konnte nicht in eine Aufgabe umgewandelt werden",
+  openLink: "Link öffnen",
   dropPosition: "Position",
   selectParent: "Übergeordnete Aufgabe wählen",
   selectProject: "Projekt wählen",
@@ -786,6 +790,10 @@ const extra = {
   searchShareTargets: "Aufgaben und Projekte durchsuchen",
   sharing: "Wird hinzugefügt …",
   sharedWith: (title: string) => `Zu „${title}“ hinzugefügt`,
+  addShareNote: "+ Notiz hinzufügen",
+  shareNoteLabel: "Notiz",
+  shareNotePlaceholder: "Warum ist das interessant?",
+  materialDestination: (project: string) => `Material · ${project}`,
   openSharedTarget: "Ziel öffnen",
   share: "Teilen",
   shareCompleted: "Geteilt",
@@ -1157,6 +1165,14 @@ const extra = {
     external_wait_status_invalid:
       "Ein externer Wartepunkt ist für diesen Aufgabenstatus nicht möglich.",
     task_reminder_invalid: "Diese Erinnerung ist ungültig.",
+    reference_field_not_allowed:
+      "Diese Eigenschaft ist bei Material nicht verfügbar.",
+    reference_action_not_allowed:
+      "Diese Aktion ist bei Material nicht verfügbar.",
+    reference_promotion_invalid:
+      "Dieser Eintrag kann in seinem aktuellen Zustand nicht in eine Aufgabe umgewandelt werden.",
+    reference_dependency_not_allowed:
+      "Material kann keine Abhängigkeit zu einer Aufgabe haben.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `Eine Person mit dem Namen „${name}“ ist bereits vorhanden.`,

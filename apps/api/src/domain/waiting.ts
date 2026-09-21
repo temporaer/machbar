@@ -52,6 +52,7 @@ export function buildWaitingEntries(
     .allTasks()
     .filter(
       (task) =>
+        task.kind === "action" &&
         task.status === "actionable" &&
         isTaskInWorkingSystem(task, projectStatusById) &&
         matchesOwnerScope(task, options.memberId, options.scope) &&

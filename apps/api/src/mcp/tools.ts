@@ -28,6 +28,7 @@ import {
   updateTask,
 } from "../domain/taskCrud.js";
 import { cancelTask, completeTask } from "../domain/taskWorkflow.js";
+import { makeTaskAction } from "../domain/roleConversion.js";
 import { buildWaitingEntries } from "../domain/waiting.js";
 import { isIsoCalendarDate } from "../domain/calendarDate.js";
 import { getMemberOrThrow, listMembers } from "../domain/members.js";
@@ -99,6 +100,7 @@ type McpTaskSource = Pick<
   | "id"
   | "revision"
   | "title"
+  | "kind"
   | "status"
   | "projectId"
   | "projectTitle"
@@ -128,6 +130,7 @@ function compactTask(task: McpTaskSource) {
     id: task.id,
     revision: task.revision,
     title: task.title,
+    kind: task.kind,
     status: task.status,
     projectId: task.projectId,
     projectTitle: task.projectTitle ?? null,
@@ -386,6 +389,12 @@ export function createMachbarMcpServer({
         projectId: z.number().int().positive().optional(),
         ownerId: z.number().int().positive().nullable().optional(),
         tagIds: z.array(z.number().int().positive()).optional(),
+        kinds: z
+          .array(z.enum(["action", "reference"]))
+          .optional()
+          .describe(
+            "Restrict results to actions and/or references. Omitted (default) returns both. Actionable-work callers (e.g. dependency resolution) should pass [\"action\"].",
+          ),
         status: z
           .enum(["captured", "actionable", "someday", "done", "cancelled"])
           .optional(),
@@ -690,6 +699,56 @@ export function createMachbarMcpServer({
           mcpReminders !== undefined,
         ),
       );
+    },
+  );
+
+  server.registerTool(
+    "machbar_create_reference",
+    {
+      description:
+        "Create a reference/material node (heading, link, document, note, idea) in the outline. References are not actionable work: they never get scheduling, reminders, priority, dependencies, or lifecycle status, and never appear in Today/Week/Waiting/Review/Refinement. Use machbar_create_task for real work; use this only for material to file away or revisit, such as a link, document, or note. Promote a reference to a task later with machbar_make_action.",
+      inputSchema: {
+        title: z.string().min(1),
+        notes: z.string().optional(),
+        projectId: z.number().int().positive().nullable().optional(),
+        parentTaskId: z.number().int().positive().nullable().optional(),
+      },
+    },
+    async ({ title, notes, projectId, parentTaskId }) => {
+      if (parentTaskId !== undefined && parentTaskId !== null) {
+        scopedTaskOrThrow(parentTaskId);
+      }
+      if (projectId !== undefined && projectId !== null) {
+        scopedProjectOrThrow(projectId);
+      }
+      const created = createTask(
+        db,
+        {
+          title,
+          notes,
+          kind: "reference",
+          projectId,
+          parentTaskId,
+          scope: agentScope,
+          createdByMemberId: memberId,
+        },
+        mutationContext,
+      );
+      return result(compactTaskMutation(scopedTaskOrThrow(created.id)));
+    },
+  );
+
+  server.registerTool(
+    "machbar_make_action",
+    {
+      description:
+        "Promote a reference/material node to a real action, preserving its id, title, notes, attachments, tree position, and children. Requires the reference's current revision.",
+      inputSchema: { taskId, expectedRevision },
+    },
+    async ({ taskId, expectedRevision }) => {
+      scopedTaskOrThrow(taskId);
+      makeTaskAction(db, taskId, { expectedRevision }, mutationContext);
+      return result(compactTaskMutation(scopedTaskOrThrow(taskId)));
     },
   );
 

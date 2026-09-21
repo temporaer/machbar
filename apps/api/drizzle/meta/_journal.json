@@ -57,6 +57,13 @@
       "when": 1789920296376,
       "tag": "0007_external_task_links",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789976238194,
+      "tag": "0008_add_task_kind",
+      "breakpoints": true
     }
   ]
 }

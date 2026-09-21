@@ -104,6 +104,7 @@ export function createAgendaSelection(
   const isOperationalTask = (task: TaskRecord) =>
     isTaskInWorkingSystem(task, projectStatusById);
   const isAgendaTask = (task: TaskRecord) =>
+    task.kind === "action" &&
     isOpenTask(task) &&
     task.status === "actionable" &&
     !task.needsClarification &&

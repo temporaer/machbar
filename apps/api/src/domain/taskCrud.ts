@@ -6,6 +6,7 @@
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type {
   InheritanceMode,
+  TaskKind,
   TaskReminderInput,
   TaskSize,
   TaskStatus,
@@ -25,6 +26,8 @@ import { addCalendarDays, isIsoCalendarDate } from "./calendarDate.js";
 import { Graph } from "./graph.js";
 import { deletePendingTaskReminderEvents } from "../notifications/outbox.js";
 import { getProjectOrThrow } from "./storyCrud.js";
+import { assertReferenceCapableInput } from "./taskKindGuard.js";
+import { assertActionTask } from "./taskKindGuard.js";
 import {
   MutationContext,
   actor,
@@ -71,6 +74,10 @@ export interface CreateTaskInput {
   parentTaskId?: number | null;
   title: string;
   notes?: string;
+  /** "action" (default) = actionable work; "reference" = non-actionable
+   * outline material. A reference input must not set any task-only field
+   * below — see `assertReferenceCapableInput`. */
+  kind?: TaskKind;
   status?: TaskStatus;
   needsClarification?: boolean;
   ownerMemberId?: number | null;
@@ -415,6 +422,10 @@ function insertTask(
       "The task title must not be empty.",
     );
   }
+  const kind: TaskKind = input.kind ?? "action";
+  if (kind === "reference") {
+    assertReferenceCapableInput(input as unknown as Record<string, unknown>);
+  }
   let projectId = input.projectId ?? null;
   const parentTaskId = input.parentTaskId ?? null;
   let scope: WorkItemScope;
@@ -448,27 +459,38 @@ function insertTask(
 
   const position =
     positionOverride ?? nextPositionForGroup(db, parentTaskId, projectId);
-  const status = normalizeTaskStatus(
-    input.status,
-    input.needsClarification,
-    projectId === null && parentTaskId === null ? "captured" : "actionable",
-  );
-  const repeatAfterDays = input.repeatAfterDays ?? null;
-  const allowedDeviationDays = input.allowedDeviationDays ?? null;
-  const scheduledDate = input.scheduledDate ?? null;
-  const notBeforeAt = input.notBeforeAt ?? null;
-  const notBeforeDate = input.notBeforeDate ?? null;
+  // A reference is never actionable work, so it always uses the neutral
+  // "captured" stored status rather than participating in the
+  // captured/actionable/someday lifecycle; it is excluded from every work
+  // projection by `kind`, not by this status value (see
+  // `Graph.allActions()`/`actionsForProject()`).
+  const status =
+    kind === "reference"
+      ? "captured"
+      : normalizeTaskStatus(
+          input.status,
+          input.needsClarification,
+          projectId === null && parentTaskId === null ? "captured" : "actionable",
+        );
+  const repeatAfterDays = kind === "reference" ? null : input.repeatAfterDays ?? null;
+  const allowedDeviationDays =
+    kind === "reference" ? null : input.allowedDeviationDays ?? null;
+  const scheduledDate = kind === "reference" ? null : input.scheduledDate ?? null;
+  const notBeforeAt = kind === "reference" ? null : input.notBeforeAt ?? null;
+  const notBeforeDate = kind === "reference" ? null : input.notBeforeDate ?? null;
   assertScheduleNotBeforeAvailability(scheduledDate, notBeforeAt, notBeforeDate);
   const recurrence = recurrenceDates(
     repeatAfterDays,
     allowedDeviationDays,
     scheduledDate,
-    input.dueDate,
+    kind === "reference" ? null : input.dueDate,
   );
-  assertCapturedTaskShape(status, {
-    repeatAfterDays,
-    hasReminders: (input.reminders ?? []).length > 0,
-  });
+  if (kind === "action") {
+    assertCapturedTaskShape(status, {
+      repeatAfterDays,
+      hasReminders: (input.reminders ?? []).length > 0,
+    });
+  }
   if (recurrence.enabled && status === "done") {
     throw AppError.badRequest(
       "recurrence_completion_date_required",
@@ -480,6 +502,7 @@ function insertTask(
     .insert(schema.workItems)
     .values({
       role: "task",
+      taskKind: kind,
       parentId: parentTaskId ?? projectId,
       title: input.title.trim(),
       notes: input.notes ?? "",
@@ -490,12 +513,17 @@ function insertTask(
       physicalContextInheritanceMode: input.contextInheritanceMode ?? "inherit",
       createdByMemberId: input.createdByMemberId ?? null,
       scope,
-      dueDate: recurrence.enabled ? recurrence.dueDate : input.dueDate ?? null,
+      dueDate:
+        kind === "reference"
+          ? null
+          : recurrence.enabled
+            ? recurrence.dueDate
+            : input.dueDate ?? null,
       scheduledDate,
       notBeforeAt,
       notBeforeDate,
-      priority: input.priority ?? null,
-      size: input.size ?? null,
+      priority: kind === "reference" ? null : input.priority ?? null,
+      size: kind === "reference" ? null : input.size ?? null,
       repeatAfterDays,
       allowedDeviationDays,
       position,
@@ -675,6 +703,7 @@ export function createTaskSuccessor(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const predecessor = getTaskOrThrow(txDb, taskId);
+    assertActionTask(predecessor, "createSuccessor");
     const hadNextAction =
       predecessor.projectId === null
         ? true
@@ -798,6 +827,9 @@ export function updateTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const currentTask = getTaskOrThrow(txDb, id);
+    if (currentTask.kind === "reference") {
+      assertReferenceCapableInput(input as unknown as Record<string, unknown>);
+    }
     const currentExternalWait = tx
       .select()
       .from(schema.taskExternalWaits)

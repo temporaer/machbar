@@ -28,10 +28,8 @@ import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
 import { RowSwipeBackgrounds, RowKebabButton, RowErrorBanner } from "./WorkItemRowChrome";
 import { useHorizontalSwipe, DEEP_ACTION_THRESHOLD } from "../lib/useHorizontalSwipe";
-import {
-  extractPaperlessReferences,
-  markdownWithoutPaperlessReferences,
-} from "../lib/paperlessAttachments";
+import { extractPaperlessReferences, markdownWithoutPaperlessReferences } from "../lib/paperlessAttachments";
+import { parseReferenceContent } from "../lib/referenceContent";
 import { TaskRowAttachmentPreview } from "./TaskRowAttachmentPreview";
 import { WorkItemActionRail } from "./WorkItemActionRail";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
@@ -145,6 +143,7 @@ export function TaskRow({
   // state cycle (for example erledigt -> wieder offen).
   const retainedTask = retained.get(taskProp.id);
   const task = retainedTask ?? taskProp;
+  const isReference = task.kind === "reference";
   const nextActionBadge = useNextActionBadge(task);
   const attachments = useMemo(
     () => extractPaperlessReferences(task.notes),
@@ -153,6 +152,10 @@ export function TaskRow({
   const notesWithoutAttachments = useMemo(
     () => markdownWithoutPaperlessReferences(task.notes),
     [task.notes],
+  );
+  const referenceContent = useMemo(
+    () => (isReference ? parseReferenceContent(task.notes) : null),
+    [isReference, task.notes],
   );
   const isRetained = Boolean(retainedTask);
   const statusError = errors[taskProp.id];
@@ -241,7 +244,7 @@ export function TaskRow({
     handlers: swipeHandlers,
     cancel: cancelSwipe,
   } = useHorizontalSwipe<HTMLDivElement>({
-    disabled: busy || organize?.activeId != null,
+    disabled: busy || organize?.activeId != null || isReference,
     onPrimary: () => dispatch({ type: "task.primaryAction", task }),
     onDeepPrimary: () => scope.setOpenLifecycle(taskProp.id),
     onSecondary: () => scope.setOpenRail(taskProp.id),
@@ -250,9 +253,9 @@ export function TaskRow({
   // Only one swipe background may be visible at a time — mid-drag it
   // follows the live direction, and once a left-swipe has opened the chip
   // strip the red "more actions" background stays shown until the chips close.
-  const showCompleteBg = dragX > 0;
-  const showCancelBg = dragX < 0 || chipsOpen;
-  const lifecycleOpen = scope.openLifecycleId === taskProp.id;
+  const showCompleteBg = !isReference && dragX > 0;
+  const showCancelBg = !isReference && (dragX < 0 || chipsOpen);
+  const lifecycleOpen = !isReference && scope.openLifecycleId === taskProp.id;
   // Live feedback that continuing the drag will open the status rail
   // instead of running the primary action, updated during the drag itself
   // (not just on release) so the switch is visible as it happens.
@@ -262,7 +265,7 @@ export function TaskRow({
     : primaryActionBgLabel(task, primarySwipeAction, strings);
   const swipeCoach = useSwipeCoach(
     `task:${task.id}`,
-    !busy && !isRetained && !chipsOpen,
+    !isReference && !busy && !isRetained && !chipsOpen,
   );
 
   const handlePointerDown = useCallback(
@@ -284,13 +287,19 @@ export function TaskRow({
     [busy, task.id, organize, organizeEnabled, cancelSwipe],
   );
 
-  const runRailCommand = (command: "task.availability" | "task.plan" | "task.open") => {
+  const runRailCommand = (
+    command: "task.availability" | "task.plan" | "task.open" | "task.makeAction",
+  ) => {
     // Move focus to the kebab before the rail unmounts, so a focused-
     // workflow sheet's opener-restore targets a control that stays
     // connected across the close/open transition instead of losing focus
     // to <body>.
     kebabButtonRef.current?.focus();
     scope.setOpenRail(null);
+    if (command === "task.makeAction") {
+      dispatch({ type: "task.makeAction", task });
+      return;
+    }
     dispatch({ type: command, taskId: task.id });
   };
 
@@ -398,16 +407,24 @@ export function TaskRow({
           cover that role there. Kept for mouse/keyboard use, and the
           detail sheet's explicit Erledigen/Wieder-öffnen button (opened by
           tapping the row) remains a non-gesture path everywhere.
+          A reference is never actionable, so it renders a static glyph in
+          this slot instead -- no lifecycle affordance at all.
         */}
-        <button
-          type="button"
-          className={`task-row-checkbox${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}
-          aria-label={isDone || isCancelled ? strings.reopen : strings.done}
-          disabled={busy}
-          onClick={() => dispatch({ type: "task.toggleDone", task })}
-        >
-          {isDone ? "✓" : isCancelled ? "×" : ""}
-        </button>
+        {isReference ? (
+          <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true">
+            🗎
+          </span>
+        ) : (
+          <button
+            type="button"
+            className={`task-row-checkbox${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}
+            aria-label={isDone || isCancelled ? strings.reopen : strings.done}
+            disabled={busy}
+            onClick={() => dispatch({ type: "task.toggleDone", task })}
+          >
+            {isDone ? "✓" : isCancelled ? "×" : ""}
+          </button>
+        )}
         <div className="task-row-main-wrap">
           <button
             type="button"
@@ -417,100 +434,142 @@ export function TaskRow({
             disabled={outlineRefreshing}
             onClick={() => dispatch({ type: "task.open", taskId: task.id })}
           >
-            <div className="task-row-header">
-              {isCompact ? null : (
-                <TaskCardTags
-                  tags={task.effectiveTags}
-                  contexts={task.effectiveContexts}
-                />
-              )}
-              <div className={`task-row-title${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}>
-                {task.title}
-                {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
-                {task.reminders.length > 0 ? <span aria-label={strings.reminders}> 🔔</span> : null}
-              </div>
-            </div>
-            <div className="task-row-meta">
-              {isCompact ? null : nextActionBadge ? (
-                <span
-                  className={`task-row-meta-item task-row-next-action-badge task-row-next-action-${nextActionBadge}`}
-                >
-                  {nextActionBadge === "canonical"
-                    ? strings.nextActionBadgeCanonical
-                    : nextActionBadge === "additional"
-                      ? strings.nextActionBadgeAdditional
-                      : strings.nextActionBadgeMarked}
-                </span>
-              ) : null}
-              {isCompact ? null : task.status !== "actionable" ? (
-                <span className={`task-row-meta-item task-row-state task-row-state-${task.status}`}>
-                  {strings.taskStatusLabels[task.status]}
-                </span>
-              ) : null}
-              {task.externalWait?.waitingFor?.trim() ? (
-                <span className="task-row-meta-item">
-                  {strings.waitingFor}: {task.externalWait.waitingFor.trim()}
-                </span>
-              ) : null}
-              {task.dependencies
-                .filter((dependency) => !dependency.resolved)
-                .map((dependency) => (
-                  <span className="task-row-meta-item" key={dependency.id}>
-                    {strings.blockedBy}: {dependency.title ?? `#${dependency.dependsOnTaskId}`}
-                  </span>
-                ))}
-              {due ? (
-                <span className={`task-row-meta-item${overdue ? " overdue" : ""}`}>
-                  {strings.due}: {due}
-                </span>
-              ) : null}
-              {isCompact ? null : notBefore ? (
-                <span className="task-row-meta-item">
-                  {strings.notBefore}: {notBefore}
-                </span>
-              ) : null}
-              {isCompact ? null : scheduled ? (
-                <span className="task-row-meta-item">
-                  {strings.scheduled}: {scheduled}
-                </span>
-              ) : null}
-              {isCompact ? null : revisitRelative && revisitExact ? (
-                <span
-                  className="task-row-meta-item"
-                  title={`${strings.revisitDate}: ${revisitExact}`}
-                  aria-label={`${strings.revisitDate}: ${revisitRelative} (${revisitExact})`}
-                >
-                  {strings.revisitDate}: {revisitRelative}
-                </span>
-              ) : null}
-              {isCompact ? null : projectDueRelative && projectDueExact ? (
-                <span
-                  className="task-row-meta-item task-row-project-due"
-                  title={`${strings.projectDue}: ${projectDueExact}`}
-                  aria-label={`${strings.projectDue}: ${projectDueRelative} (${projectDueExact})`}
-                >
-                  {strings.projectDue}: {projectDueRelative}
-                </span>
-              ) : null}
-              {children.length ? (
-                <span className="task-row-meta-item">
-                  {children.filter((c) => c.status === "done" || c.status === "cancelled").length}/{children.length}
-                </span>
-              ) : null}
-            </div>
-            {isCompact ? null : attachments[0] ? (
-              <TaskRowAttachmentPreview
-                key={attachments[0].id}
-                attachment={attachments[0]}
-                count={attachments.length}
-              />
-            ) : null}
+            {isReference ? (
+              <>
+                <div className="task-row-header">
+                  <div className="task-row-title">{task.title}</div>
+                </div>
+                {children.length ? (
+                  <div className="task-row-meta">
+                    <span className="task-row-meta-item">
+                      {children.filter((c) => c.status === "done" || c.status === "cancelled").length}/{children.length}
+                    </span>
+                  </div>
+                ) : null}
+                {referenceContent?.primaryWebLink ? (
+                  <a
+                    href={referenceContent.primaryWebLink.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="task-row-reference-link"
+                    aria-label={`${strings.openLink}: ${referenceContent.primaryWebLink.label}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {referenceContent.primaryWebLink.label} ↗
+                  </a>
+                ) : null}
+                {attachments[0] ? (
+                  <TaskRowAttachmentPreview
+                    key={attachments[0].id}
+                    attachment={attachments[0]}
+                    count={attachments.length}
+                  />
+                ) : null}
+              </>
+            ) : (
+              <>
+                <div className="task-row-header">
+                  {isCompact ? null : (
+                    <TaskCardTags
+                      tags={task.effectiveTags}
+                      contexts={task.effectiveContexts}
+                    />
+                  )}
+                  <div className={`task-row-title${isDone ? " done" : ""}${isCancelled ? " cancelled" : ""}`}>
+                    {task.title}
+                    {task.blocked ? <span aria-label={strings.blockedBy}> 🔒</span> : null}
+                    {task.reminders.length > 0 ? <span aria-label={strings.reminders}> 🔔</span> : null}
+                  </div>
+                </div>
+                <div className="task-row-meta">
+                  {isCompact ? null : nextActionBadge ? (
+                    <span
+                      className={`task-row-meta-item task-row-next-action-badge task-row-next-action-${nextActionBadge}`}
+                    >
+                      {nextActionBadge === "canonical"
+                        ? strings.nextActionBadgeCanonical
+                        : nextActionBadge === "additional"
+                          ? strings.nextActionBadgeAdditional
+                          : strings.nextActionBadgeMarked}
+                    </span>
+                  ) : null}
+                  {isCompact ? null : task.status !== "actionable" ? (
+                    <span className={`task-row-meta-item task-row-state task-row-state-${task.status}`}>
+                      {strings.taskStatusLabels[task.status]}
+                    </span>
+                  ) : null}
+                  {task.externalWait?.waitingFor?.trim() ? (
+                    <span className="task-row-meta-item">
+                      {strings.waitingFor}: {task.externalWait.waitingFor.trim()}
+                    </span>
+                  ) : null}
+                  {task.dependencies
+                    .filter((dependency) => !dependency.resolved)
+                    .map((dependency) => (
+                      <span className="task-row-meta-item" key={dependency.id}>
+                        {strings.blockedBy}: {dependency.title ?? `#${dependency.dependsOnTaskId}`}
+                      </span>
+                    ))}
+                  {due ? (
+                    <span className={`task-row-meta-item${overdue ? " overdue" : ""}`}>
+                      {strings.due}: {due}
+                    </span>
+                  ) : null}
+                  {isCompact ? null : notBefore ? (
+                    <span className="task-row-meta-item">
+                      {strings.notBefore}: {notBefore}
+                    </span>
+                  ) : null}
+                  {isCompact ? null : scheduled ? (
+                    <span className="task-row-meta-item">
+                      {strings.scheduled}: {scheduled}
+                    </span>
+                  ) : null}
+                  {isCompact ? null : revisitRelative && revisitExact ? (
+                    <span
+                      className="task-row-meta-item"
+                      title={`${strings.revisitDate}: ${revisitExact}`}
+                      aria-label={`${strings.revisitDate}: ${revisitRelative} (${revisitExact})`}
+                    >
+                      {strings.revisitDate}: {revisitRelative}
+                    </span>
+                  ) : null}
+                  {isCompact ? null : projectDueRelative && projectDueExact ? (
+                    <span
+                      className="task-row-meta-item task-row-project-due"
+                      title={`${strings.projectDue}: ${projectDueExact}`}
+                      aria-label={`${strings.projectDue}: ${projectDueRelative} (${projectDueExact})`}
+                    >
+                      {strings.projectDue}: {projectDueRelative}
+                    </span>
+                  ) : null}
+                  {children.length ? (
+                    <span className="task-row-meta-item">
+                      {children.filter((c) => c.status === "done" || c.status === "cancelled").length}/{children.length}
+                    </span>
+                  ) : null}
+                </div>
+                {isCompact ? null : attachments[0] ? (
+                  <TaskRowAttachmentPreview
+                    key={attachments[0].id}
+                    attachment={attachments[0]}
+                    count={attachments.length}
+                  />
+                ) : null}
+              </>
+            )}
           </button>
-          {isCompact ? null : notesWithoutAttachments ? (
-            <MarkdownNotes value={notesWithoutAttachments} className="task-row-notes" />
-          ) : null}
+          {isReference
+            ? referenceContent?.remainingText
+              ? <MarkdownNotes value={referenceContent.remainingText} className="task-row-notes" />
+              : null
+            : isCompact
+              ? null
+              : notesWithoutAttachments
+                ? <MarkdownNotes value={notesWithoutAttachments} className="task-row-notes" />
+                : null}
         </div>
-        {ownerMember ? (
+        {!isReference && ownerMember ? (
           <button
             type="button"
             className="task-row-owner-avatar"
@@ -532,7 +591,7 @@ export function TaskRow({
           }
         />
       </div>
-      {swipeCoach.active ? (
+      {!isReference && swipeCoach.active ? (
         <SwipeCoachHint primaryAction={primarySwipeLabel} onDismiss={swipeCoach.dismiss} />
       ) : null}
 
@@ -541,11 +600,18 @@ export function TaskRow({
           kind="task"
           disabled={busy}
           groupLabel={strings.moreActions}
-          actions={[
-            { label: strings.railAvailableFrom, onSelect: () => runRailCommand("task.availability") },
-            { label: strings.railPlan, onSelect: () => runRailCommand("task.plan") },
-            { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
-          ]}
+          actions={
+            isReference
+              ? [
+                  { label: strings.makeAction, onSelect: () => runRailCommand("task.makeAction") },
+                  { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
+                ]
+              : [
+                  { label: strings.railAvailableFrom, onSelect: () => runRailCommand("task.availability") },
+                  { label: strings.railPlan, onSelect: () => runRailCommand("task.plan") },
+                  { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
+                ]
+          }
         />
       ) : null}
       {lifecycleOpen ? (

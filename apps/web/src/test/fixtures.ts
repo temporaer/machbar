@@ -64,6 +64,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     parentTaskId: null,
     title: "Beispielaufgabe",
     notes: "",
+    kind: "action",
     ownerMemberId: null,
     ownerInheritanceMode: "inherit",
     contextInheritanceMode: "inherit",

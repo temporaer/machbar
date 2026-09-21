@@ -205,6 +205,7 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       .allTasks()
       .filter(
         (task) =>
+          task.kind === "action" &&
           task.status === "captured" &&
           isTaskInWorkingSystem(task, projectStatusById) &&
           selection.matchesScope(task) &&

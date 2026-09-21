@@ -42,12 +42,14 @@ import {
 interface ShareOption {
   key: string;
   kind: "task" | "project";
+  taskKind?: "action" | "reference";
   id: number;
   title: string;
   subtitle: string;
   notes: string;
   dueDate: string | null;
   revision: number;
+  projectId: number | null;
 }
 
 interface CompletedShare {
@@ -57,17 +59,24 @@ interface CompletedShare {
 }
 
 function optionForTask(task: Task, strings: Strings): ShareOption {
+  const isReference = task.kind === "reference";
   return {
     key: `task:${task.id}`,
     kind: "task",
+    taskKind: task.kind,
     id: task.id,
     title: task.title,
-    subtitle: task.projectTitle
-      ? `${strings.task} · ${task.projectTitle}`
-      : strings.task,
+    subtitle: isReference
+      ? task.projectTitle
+        ? strings.materialDestination(task.projectTitle)
+        : strings.materialLabel
+      : task.projectTitle
+        ? `${strings.task} · ${task.projectTitle}`
+        : strings.task,
     notes: task.notes,
     dueDate: task.dueDate,
     revision: task.revision,
+    projectId: task.projectId,
   };
 }
 
@@ -84,6 +93,7 @@ function optionForProject(
     notes: project.notes,
     dueDate: project.dueDate,
     revision: project.revision,
+    projectId: project.id,
   };
 }
 
@@ -237,12 +247,17 @@ function SharePageContent({
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState<CompletedShare | null>(null);
   const [pendingConflict, setPendingConflict] = useState<ShareOption | null>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [note, setNote] = useState("");
   const attachmentUploads = useRef(
     new Map<number, Promise<UploadedPaperlessAttachment>>(),
   );
 
   const projectsState = useAsync(() => api.getProjects(), []);
-  const tasksState = useAsync(() => api.searchTasks({}), []);
+  const tasksState = useAsync(
+    () => api.searchTasks({ kinds: ["action", "reference"] }),
+    [],
+  );
   const agendaState = useAsync(() => api.getAgenda(currentMemberId), [currentMemberId]);
 
   const allOptions = useMemo(
@@ -338,14 +353,23 @@ function SharePageContent({
     return paperlessAttachmentBlock(uploads);
   };
 
-  const resolveAppendBlock = async () =>
-    appendTextBlock(appendBlock, await resolveAttachmentBlock());
+  const resolveAppendBlock = async (base: string) => {
+    const withImportedContent = appendTextBlock(
+      base,
+      await resolveAttachmentBlock(),
+    );
+    return appendTextBlock(withImportedContent, note.trim());
+  };
 
   const reloadTargets = () => {
     projectsState.reload();
     tasksState.reload();
     agendaState.reload();
   };
+
+  const isReferenceDestination = (option: ShareOption) =>
+    option.kind === "project" ||
+    (option.kind === "task" && option.taskKind === "reference");
 
   const applyTo = async (
     option: ShareOption,
@@ -355,22 +379,33 @@ function SharePageContent({
     setBusyKey(option.key);
     setError(null);
     try {
-      const resolvedBlock = await resolveAppendBlock();
-      if (deadlineAction === "calendar" && calendarDueDate) {
-        const patch = {
+      if (isReferenceDestination(option)) {
+        // Sharing to a project/reference creates a new material node rather
+        // than appending to the destination's own notes — the destination's
+        // deadline is never touched here (Google Calendar dates stay in the
+        // reference's notes as plain text, not as a due date). The new
+        // reference's own `title` field already carries the incoming title,
+        // so the notes body is built from `captureDraft.notes`, which
+        // already excludes it (matching the Capture flow's dedup rules)
+        // instead of the append-block form used for existing entities.
+        const resolvedBlock = await resolveAppendBlock(captureDraft.notes);
+        await api.createTask({
+          kind: "reference",
+          title: captureDraft.title,
+          notes: resolvedBlock,
+          projectId: option.kind === "project" ? option.id : option.projectId,
+          parentTaskId: option.kind === "task" ? option.id : null,
+        });
+      } else if (deadlineAction === "calendar" && calendarDueDate) {
+        const resolvedBlock = await resolveAppendBlock(appendBlock);
+        await api.updateTask(option.id, {
           notes: appendTextBlock(option.notes, resolvedBlock),
           dueDate: calendarDueDate,
           expectedRevision: option.revision,
-        };
-        if (option.kind === "task") {
-          await api.updateTask(option.id, patch);
-        } else {
-          await api.updateProject(option.id, patch);
-        }
-      } else if (option.kind === "task") {
-        await api.appendTaskNotes(option.id, resolvedBlock);
+        });
       } else {
-        await api.appendProjectNotes(option.id, resolvedBlock);
+        const resolvedBlock = await resolveAppendBlock(appendBlock);
+        await api.appendTaskNotes(option.id, resolvedBlock);
       }
       completeShare(option);
     } catch (cause) {
@@ -386,7 +421,11 @@ function SharePageContent({
   };
 
   const appendTo = (option: ShareOption) => {
-    if (!calendarDueDate || option.dueDate === calendarDueDate) {
+    if (
+      isReferenceDestination(option) ||
+      !calendarDueDate ||
+      option.dueDate === calendarDueDate
+    ) {
       void applyTo(option, "append");
       return;
     }
@@ -450,6 +489,26 @@ function SharePageContent({
           <p>{strings.sharedAttachments(incoming.files.length)}</p>
         ) : null}
       </section>
+
+      {noteOpen ? (
+        <label className="field">
+          <span>{strings.shareNoteLabel}</span>
+          <input
+            type="text"
+            value={note}
+            placeholder={strings.shareNotePlaceholder}
+            onChange={(event) => setNote(event.target.value)}
+          />
+        </label>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-ghost share-note-toggle"
+          onClick={() => setNoteOpen(true)}
+        >
+          {strings.addShareNote}
+        </button>
+      )}
 
       {pendingConflict && formattedCalendarDueDate ? (
         <section className="card stack share-deadline-conflict" role="alert">

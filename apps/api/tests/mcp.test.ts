@@ -1120,4 +1120,67 @@ describe("MCP integration", () => {
     await client.close();
     await server.close();
   });
+
+  it("exposes kind on search results, creates references, and promotes them to actions", async () => {
+    const member = await createMember();
+    const project = insertTestProject(ctx.handle.db, { title: "Schweiz Urlaub" });
+    const { client, server } = await connectMcp(member.id, "household");
+
+    const created = await client.callTool({
+      name: "machbar_create_reference",
+      arguments: {
+        title: "Camping Wang",
+        notes: "https://camping-wang.ch/",
+        projectId: project.id,
+      },
+    });
+    expect(created.structuredContent).toEqual({
+      result: expect.objectContaining({
+        kind: "reference",
+        title: "Camping Wang",
+      }),
+    });
+    const referenceId = (
+      created.structuredContent as { result: { id: number; revision: number } }
+    ).result.id;
+    const referenceRevision = (
+      created.structuredContent as { result: { id: number; revision: number } }
+    ).result.revision;
+
+    const search = await client.callTool({
+      name: "machbar_search",
+      arguments: { text: "Camping Wang" },
+    });
+    expect(search.structuredContent).toEqual({
+      result: {
+        items: [expect.objectContaining({ id: referenceId, kind: "reference" })],
+        returned: 1,
+        truncated: false,
+      },
+    });
+
+    const actionOnlySearch = await client.callTool({
+      name: "machbar_search",
+      arguments: { text: "Camping Wang", kinds: ["action"] },
+    });
+    expect(
+      (actionOnlySearch.structuredContent as { result: { items: unknown[] } })
+        .result.items,
+    ).toHaveLength(0);
+
+    const promoted = await client.callTool({
+      name: "machbar_make_action",
+      arguments: { taskId: referenceId, expectedRevision: referenceRevision },
+    });
+    expect(promoted.structuredContent).toEqual({
+      result: expect.objectContaining({
+        id: referenceId,
+        kind: "action",
+        title: "Camping Wang",
+      }),
+    });
+
+    await client.close();
+    await server.close();
+  });
 });

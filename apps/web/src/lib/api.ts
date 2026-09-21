@@ -30,6 +30,7 @@ import type {
   TagGroupingMode,
   TagKind,
   Task,
+  TaskKind,
   TaskRecurrenceHistory,
   TaskReminderInput,
   TaskSize,
@@ -177,6 +178,7 @@ export interface MoveTaskInput {
 export interface CreateTaskInput {
   title: string;
   notes?: string;
+  kind?: TaskKind;
   needsClarification?: boolean;
   projectId?: number | null;
   parentTaskId?: number | null;
@@ -721,6 +723,11 @@ export const api = {
     request<Task>(`/projects/${id}/convert-to-task`, {
       method: "POST",
       body: JSON.stringify(input),
+    }),
+  makeTaskAction: (id: number, expectedRevision?: number) =>
+    request<Task>(`/tasks/${id}/make-action`, {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision }),
     }),
   setExternalWait: (id: number, input: ExternalWaitInput) =>
     request<Task>(`/tasks/${id}/external-wait`, {

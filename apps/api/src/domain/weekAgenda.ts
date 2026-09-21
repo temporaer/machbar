@@ -32,6 +32,7 @@ function isWeekDatedTask(
   selection: ReturnType<typeof createAgendaSelection>,
 ): boolean {
   if (
+    task.kind !== "action" ||
     task.status !== "actionable" ||
     task.needsClarification ||
     !selection.matchesOwner(task) ||

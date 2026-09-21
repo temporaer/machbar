@@ -162,6 +162,11 @@ export function projectHasTaskPlan(db: Db, projectId: number): boolean {
       and(
         inArray(schema.workItems.id, taskIds),
         inArray(schema.workItems.status, ["captured", "active", "backlog"]),
+        // Defense-in-depth: reference material never carries a due/
+        // scheduled date server-side, so this is a no-op today, but a
+        // project filed with only reference material must not be
+        // considered "planned" even if that guarantee were ever loosened.
+        sql`(${schema.workItems.taskKind} IS NULL OR ${schema.workItems.taskKind} = 'action')`,
       ),
     )
     .all()

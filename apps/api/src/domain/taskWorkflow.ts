@@ -13,6 +13,7 @@ import {
   recordContribution,
 } from "../repo/index.js";
 import { getTaskOrThrow, listDescendants, updateTask } from "./taskCrud.js";
+import { assertActionTask } from "./taskKindGuard.js";
 import {
   MutationContext,
   actor,
@@ -68,8 +69,14 @@ export type CompleteDescendantsPolicy = DescendantsPolicy;
 export type CancelDescendantsPolicy = DescendantsPolicy;
 
 function openDescendants(db: Db, id: number) {
+  // References are transparent containers for this check: an action's
+  // completion/cancellation prompt (and its cascade) only ever considers
+  // open *actionable* descendants. A reference itself is never included
+  // here and must never be mutated by a completion/cancellation cascade,
+  // even when it sits between the ancestor action and an open descendant
+  // action.
   return listDescendants(db, id).filter(
-    (t) => t.status !== "done" && t.status !== "cancelled",
+    (t) => t.kind === "action" && t.status !== "done" && t.status !== "cancelled",
   );
 }
 
@@ -82,6 +89,7 @@ export function completeTask(
   expectedRevision?: number,
 ) {
   const current = getTaskOrThrow(db, id);
+  assertActionTask(current, "complete");
   if (current.repeatAfterDays !== null) {
     return updateTask(
       db,
@@ -226,6 +234,7 @@ export function cancelTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
+    assertActionTask(task, "cancel");
     assertExpectedRevision("task", id, task.revision, expectedRevision);
     const projectHadNextAction =
       task.projectId === null ? true : projectHasNextAction(txDb, task.projectId);
@@ -382,6 +391,7 @@ export function reopenTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
+    assertActionTask(task, "reopen");
     assertExpectedRevision("task", id, task.revision, expectedRevision);
     if (task.status === "actionable") return task;
     const now = nowIso();

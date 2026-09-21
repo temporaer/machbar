@@ -135,6 +135,7 @@ export function buildReviewItems(
   const brokenRootKeys = new Set<string>();
 
   for (const task of graph.allTasks()) {
+    if (task.kind !== "action") continue;
     if (!isOpen(task)) continue;
     if (!isTaskInWorkingSystem(task, projectStatuses)) continue;
 
@@ -191,6 +192,7 @@ export function buildReviewItems(
   // system), so gating on working-system membership would hide the
   // exact case this is meant to catch.
   for (const task of graph.allTasks()) {
+    if (task.kind !== "action") continue;
     if (!isOpen(task)) continue;
     if (task.projectId === null) continue;
     const project = graph.projectsById.get(task.projectId);
@@ -217,7 +219,7 @@ export function buildReviewItems(
   }
 
   for (const project of graph.listProjectsWithComputed()) {
-    const tasks = graph.tasksForProject(project.id);
+    const tasks = graph.actionsForProject(project.id);
 
     if (
       project.dueDate !== null &&
@@ -366,6 +368,7 @@ export function buildReviewItems(
 
   for (const task of graph.allTasks()) {
     if (
+      task.kind === "action" &&
       task.projectId === null &&
       task.status === "someday" &&
       attentionAt(task).slice(0, 10) <=

@@ -15,6 +15,7 @@ export const projectStatuses = [
 export const inheritanceModes = ["inherit", "explicit", "none"] as const;
 export const workItemScopes = ["household", "work"] as const;
 export const taskSizes = ["S", "M", "L", "XL"] as const;
+export const taskKinds = ["action", "reference"] as const;
 export const tagKinds = ["area", "actor", "plain"] as const;
 export const tagGroupingModes = ["auto", "pinned", "hidden"] as const;
 export const activityEventKinds = [
@@ -41,6 +42,7 @@ export const activityEventKinds = [
   "project_acceptance_criterion_checked",
   "project_acceptance_criterion_removed",
   "work_item_role_converted",
+  "task_kind_changed",
 ] as const;
 export const activityEntityTypes = ["task", "project"] as const;
 export const contributionCategories = ["completion", "planning"] as const;
@@ -81,6 +83,11 @@ export type InheritanceMode = (typeof inheritanceModes)[number];
  * contributes to household points. Uniform down an item's whole subtree. */
 export type WorkItemScope = (typeof workItemScopes)[number];
 export type TaskSize = (typeof taskSizes)[number];
+/** "action" = actionable work, the default for a task node. "reference" =
+ * non-actionable outline material (headings, links, documents, notes) that
+ * participates in the outline hierarchy but never in the work/task
+ * lifecycle, next-action selection, dependencies, or contribution points. */
+export type TaskKind = (typeof taskKinds)[number];
 export type TagKind = (typeof tagKinds)[number];
 export type TagGroupingMode = (typeof tagGroupingModes)[number];
 export type ActivityEventKind = (typeof activityEventKinds)[number];
@@ -163,6 +170,10 @@ export type ApiErrorCode =
   | "push_member_required"
   | "push_not_configured"
   | "push_subscription_missing"
+  | "reference_field_not_allowed"
+  | "reference_action_not_allowed"
+  | "reference_promotion_invalid"
+  | "reference_dependency_not_allowed"
   | "refinement_filters_invalid"
   | "request_body_invalid"
   | "request_origin_forbidden"
@@ -520,6 +531,9 @@ export interface Task {
   title: string;
   notes: string;
   status: TaskStatus;
+  /** "action" = actionable work; "reference" = non-actionable outline
+   * material. See TaskKind. */
+  kind: TaskKind;
   needsClarification: boolean;
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
@@ -993,4 +1007,13 @@ export interface SearchFilters {
    * this and get done/cancelled excluded by default.
    */
   includeTerminal?: boolean;
+  /**
+   * Restricts results to the given task kinds. Omitted (default) includes
+   * both actions and references — appropriate for global/Share-destination
+   * search. Operational pickers that only make sense for actionable work
+   * (dependencies, refinement, other action-only pickers) should pass
+   * `["action"]` explicitly rather than relying on the caller to filter
+   * references out of the result set themselves.
+   */
+  kinds?: TaskKind[];
 }

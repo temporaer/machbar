@@ -6,6 +6,7 @@ import {
   projectStatuses,
   tagGroupingModes,
   tagKinds,
+  taskKinds,
   taskSizes,
   taskStatuses,
   workItemScopes,
@@ -133,6 +134,7 @@ export const createTaskSchema = z.object({
   parentTaskId: z.number().int().nullable().optional(),
   title: z.string().min(1, "Task title must not be empty."),
   notes: z.string().optional(),
+  kind: z.enum(taskKinds).optional(),
   status: z.enum(taskStatuses).optional(),
   needsClarification: z.boolean().optional(),
   ownerMemberId: z.number().int().nullable().optional(),
@@ -359,6 +361,11 @@ export const searchQuerySchema = z.object({
   blocked: queryBoolean.optional(),
   externalWait: queryBoolean.optional(),
   includeTerminal: queryBoolean.optional(),
+  kinds: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v.split(",").map((s) => s.trim()) : undefined))
+    .pipe(z.array(z.enum(taskKinds)).optional()),
 });
 
 export const activityQuerySchema = z.object({
