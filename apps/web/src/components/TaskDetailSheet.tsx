@@ -62,6 +62,7 @@ import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
 import { WorkItemDetailDisclosure } from "./WorkItemDetailSection";
 import { ActionTileGrid } from "./ActionTileGrid";
 import { formatReminderSummary } from "../lib/reminderLabels";
+import { parseReferenceContent } from "../lib/referenceContent";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -128,6 +129,8 @@ export function TaskDetailSheet() {
   const [lifecycleOpen, setLifecycleOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [makeActionBusy, setMakeActionBusy] = useState(false);
+  const [makeActionError, setMakeActionError] = useState<string | null>(null);
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [classificationBusy, setClassificationBusy] = useState(false);
   const [convertedProject, setConvertedProject] =
@@ -399,7 +402,10 @@ export function TaskDetailSheet() {
       return;
     }
     try {
-      const results = await api.searchTasks({ text: value });
+      const results = await api.searchTasks({
+        text: value,
+        kinds: ["action"],
+      });
       setDepResults(
         task
           ? sortDependencyCandidates(results, task, value, locale, {
@@ -439,11 +445,13 @@ export function TaskDetailSheet() {
     }
   };
 
-  const taskIsCapturedInboxItem = task ? isCapturedInboxItem(task) : false;
+  const isReference = task?.kind === "reference";
+  const taskIsCapturedInboxItem = task && !isReference ? isCapturedInboxItem(task) : false;
   const taskMutationPending = task ? taskActions.isPending(task.id) : false;
   const unresolvedDependencyCount =
     task?.dependencies.filter((dependency) => !dependency.resolved).length ?? 0;
   const attachments = extractPaperlessReferences(notesDraft);
+  const referenceContent = task && isReference ? parseReferenceContent(task.notes) : null;
   const projectOwner = task
     ? members.find((member) => member.id === task.projectOwnerMemberId)
     : undefined;
@@ -614,6 +622,54 @@ export function TaskDetailSheet() {
             )}
           </div>
 
+          {isReference ? (
+            <div className="task-detail-reference-header">
+              {task.projectId !== null && task.projectTitle ? (
+                <span className="detail-meta-static">
+                  <span className="detail-meta-label">{strings.project}</span>
+                  <Link
+                    className="task-project-context-link"
+                    to={`/projects/${task.projectId}`}
+                    onClick={close}
+                  >
+                    {task.projectTitle}
+                  </Link>
+                </span>
+              ) : null}
+              {referenceContent?.primaryWebLink ? (
+                <a
+                  href={referenceContent.primaryWebLink.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="task-row-reference-link"
+                >
+                  {referenceContent.primaryWebLink.label} ↗
+                </a>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={makeActionBusy || taskMutationPending}
+                onClick={() => {
+                  setMakeActionError(null);
+                  setMakeActionBusy(true);
+                  void taskActions
+                    .makeAction(task)
+                    .catch((cause) => {
+                      setMakeActionError(localizedErrorMessage(cause, strings));
+                    })
+                    .finally(() => setMakeActionBusy(false));
+                }}
+              >
+                {strings.makeAction}
+              </button>
+              {makeActionError ? (
+                <WorkItemInlineError message={makeActionError} />
+              ) : null}
+            </div>
+          ) : null}
+
+          {!isReference ? (
           <div className="detail-meta-row">
             {taskIsCapturedInboxItem ? <span className="sr-only">{strings.status}: </span> : null}
             <StatusBadge
@@ -773,6 +829,7 @@ export function TaskDetailSheet() {
               </DetailPropertyPill>
             )}
           </div>
+          ) : null}
 
           {lifecycleOpen ? (
             <div className="task-row-lifecycle" role="group" aria-label={strings.status}>
@@ -903,26 +960,32 @@ export function TaskDetailSheet() {
               {sortByPosition(task.children).map((child) => (
                 <li key={child.id} className="row-between">
                   <span className="row">
-                    <button
-                      type="button"
-                      className={`task-row-checkbox${child.status === "done" ? " done" : ""}${child.status === "cancelled" ? " cancelled" : ""}`}
-                      aria-label={child.status === "done" || child.status === "cancelled" ? strings.reopen : strings.done}
-                      onClick={() => {
-                        taskActions.requestToggle(child);
-                        reload();
-                      }}
-                    >
-                      {child.status === "done" ? "✓" : child.status === "cancelled" ? "×" : ""}
-                    </button>
+                    {child.kind === "reference" ? (
+                      <span className="task-row-checkbox task-row-reference-glyph" aria-hidden="true">
+                        🗎
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className={`task-row-checkbox${child.status === "done" ? " done" : ""}${child.status === "cancelled" ? " cancelled" : ""}`}
+                        aria-label={child.status === "done" || child.status === "cancelled" ? strings.reopen : strings.done}
+                        onClick={() => {
+                          taskActions.requestToggle(child);
+                          reload();
+                        }}
+                      >
+                        {child.status === "done" ? "✓" : child.status === "cancelled" ? "×" : ""}
+                      </button>
+                    )}
                     <button type="button" className="link-plain" onClick={() => open(child.id)}>
                       {child.title}
                     </button>
                   </span>
-                  <StatusBadge status={child.status} />
+                  {child.kind === "reference" ? null : <StatusBadge status={child.status} />}
                 </li>
               ))}
             </ul>
-            {task.repeatAfterDays === null && !taskIsCapturedInboxItem ? (
+            {!isReference && task.repeatAfterDays === null && !taskIsCapturedInboxItem ? (
               <div className="row">
                 <button
                   type="button"
@@ -938,6 +1001,7 @@ export function TaskDetailSheet() {
             </div>
           </WorkItemDetailDisclosure>
 
+          {!isReference ? (
           <WorkItemDetailDisclosure
             title={strings.dependencies}
             summary={
@@ -1039,6 +1103,7 @@ export function TaskDetailSheet() {
               )}
             </div>
           </WorkItemDetailDisclosure>
+          ) : null}
 
           {task ? (
             <WorkItemDetailDisclosure
@@ -1048,7 +1113,7 @@ export function TaskDetailSheet() {
             >
               <ActionTileGrid
                 items={[
-                  ...(task.priority === null
+                  ...(!isReference && task.priority === null
                     ? [
                         {
                           key: "task.priority",
@@ -1064,7 +1129,7 @@ export function TaskDetailSheet() {
                     label: strings.actionTileLabels["task.structure"],
                     onClick: () => runCommand("task.structure"),
                   },
-                  ...(task.repeatAfterDays === null
+                  ...(!isReference && task.repeatAfterDays === null
                     ? [
                         {
                           key: "task.recurrence",
@@ -1074,7 +1139,7 @@ export function TaskDetailSheet() {
                         },
                       ]
                     : []),
-                  ...(!taskIsCapturedInboxItem && task.projectId !== null
+                  ...(!isReference && !taskIsCapturedInboxItem && task.projectId !== null
                     ? [
                         {
                           key: "task.toggleAdditionalNextAction",

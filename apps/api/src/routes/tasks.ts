@@ -3,7 +3,7 @@ import type { Db } from "../db/client.js";
 import { AppError } from "../errors.js";
 import { Graph, type TaskDetailRecord } from "../domain/graph.js";
 import { getTaskRecurrenceHistory } from "../repo/recurrenceRepo.js";
-import { convertTaskToStory } from "../domain/roleConversion.js";
+import { convertTaskToStory, makeTaskAction } from "../domain/roleConversion.js";
 import { moveTask } from "../domain/structuralMoves.js";
 import {
   addDependency,
@@ -235,6 +235,18 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       const graph = Graph.load(db, undefined, viewerMemberId(request));
       reply.status(201);
       return graph.projectWithComputed(project.id);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/api/tasks/:id/make-action",
+    async (request) => {
+      const id = parseId(request.params.id);
+      const body = parseOrThrow(taskLifecycleSchema, request.body ?? {});
+      makeTaskAction(db, id, body, {
+        actorMemberId: request.activityActor?.id ?? null,
+      });
+      return taskOrThrow(db, id, viewerMemberId(request));
     },
   );
 

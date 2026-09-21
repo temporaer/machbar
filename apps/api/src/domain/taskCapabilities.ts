@@ -14,6 +14,10 @@ import {
 } from "../repo/index.js";
 import { getTaskOrThrow } from "./taskCrud.js";
 import {
+  assertActionTask,
+  assertDependencyCapableTask,
+} from "./taskKindGuard.js";
+import {
   MutationContext,
   actor,
   appendNoteContent,
@@ -68,6 +72,7 @@ export function followUpExternalWait(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "followUpExternalWait");
     assertExpectedRevision(
       "task",
       taskId,
@@ -232,6 +237,7 @@ export function upsertExternalWait(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "upsertExternalWait");
     assertExpectedRevision(
       "task",
       taskId,
@@ -360,6 +366,7 @@ export function resolveExternalWait(
   db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "resolveExternalWait");
     assertExpectedRevision(
       "task",
       taskId,
@@ -440,6 +447,8 @@ export function addDependency(
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
     const dependency = getTaskOrThrow(txDb, dependsOnTaskId);
+    assertDependencyCapableTask(task);
+    assertDependencyCapableTask(dependency);
     const hadNextAction =
       task.projectId === null
         ? true
@@ -567,6 +576,7 @@ export function addTaskTag(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "addTaskTag");
     const existing = tx.select().from(schema.workItemTags)
       .where(and(eq(schema.workItemTags.workItemId, taskId), eq(schema.workItemTags.tagId, tagId)))
       .get();
@@ -594,6 +604,7 @@ export function removeTaskTag(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "removeTaskTag");
     const deleted = tx.delete(schema.workItemTags)
       .where(and(eq(schema.workItemTags.workItemId, taskId), eq(schema.workItemTags.tagId, tagId)))
       .run();
@@ -621,6 +632,7 @@ export function addExcludedTag(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "addExcludedTag");
     const existing = tx.select().from(schema.taskExcludedTags)
       .where(
         and(
@@ -653,6 +665,7 @@ export function removeExcludedTag(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "removeExcludedTag");
     const deleted = tx.delete(schema.taskExcludedTags)
       .where(
         and(

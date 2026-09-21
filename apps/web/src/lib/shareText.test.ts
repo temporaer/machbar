@@ -10,6 +10,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     parentTaskId: null,
     title: "Angebot einholen",
     notes: "",
+    kind: "action",
     status: "actionable",
     needsClarification: false,
     ownerMemberId: null,

@@ -10,6 +10,10 @@ import {
   createAgendaSelection,
   selectCurrentAvailableWork,
 } from "./agendaSelection.js";
+import {
+  pruneProjectForCompiledView,
+  pruneReferenceContainers,
+} from "./compiledViewProjection.js";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -169,6 +173,8 @@ export function buildAgenda(
     .map((task) => ({ ...task, children: [] }));
 
   const projectDueLimit = addDaysIso(today, 7);
+  const pruneTask = (task: TaskRecord | null): TaskRecord | null =>
+    task ? pruneReferenceContainers(task) : null;
   const stuckByProject = new Map(
     graph.listStuckProjects().map((project) => [project.id, project]),
   );
@@ -207,19 +213,29 @@ export function buildAgenda(
         selection.laneSelection,
         isContextAvailable,
       );
+      const projectForAgenda = pruneProjectForCompiledView({
+        ...computed,
+        nextAction: pruneTask(computed.nextAction ?? null),
+        deferredNextAction: pruneTask(computed.deferredNextAction ?? null),
+        additionalNextActions: (computed.additionalNextActions ?? []).map(
+          pruneReferenceContainers,
+        ),
+      });
       const stuckProject = canonicalNextAction
         ? undefined
         : stuckByProject.get(project.id);
       return [
         {
-          project: computed,
+          project: projectForAgenda,
           qualification: "due",
           attentionBucket,
-          nextAction,
+          nextAction: pruneTask(nextAction),
           nextActionContextAvailability: nextAction
             ? contextAvailability(nextAction)
             : null,
-          additionalNextActions,
+          additionalNextActions: additionalNextActions.map(
+            pruneReferenceContainers,
+          ),
           stuck: stuckProject
             ? {
                 reason: stuckProject.stuckReason,
@@ -246,13 +262,13 @@ export function buildAgenda(
     });
 
   return {
-    planned,
-    overdue,
-    dueToday,
-    dueSoon,
-    shared,
-    unscheduled,
-    revisit,
+    planned: planned.map(pruneReferenceContainers),
+    overdue: overdue.map(pruneReferenceContainers),
+    dueToday: dueToday.map(pruneReferenceContainers),
+    dueSoon: dueSoon.map(pruneReferenceContainers),
+    shared: shared.map(pruneReferenceContainers),
+    unscheduled: unscheduled.map(pruneReferenceContainers),
+    revisit: revisit.map(pruneReferenceContainers),
     completedToday,
     projects,
   };

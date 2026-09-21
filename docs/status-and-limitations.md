@@ -71,9 +71,8 @@ fans out to every subscription for the member. Notifications are shown by the
 service worker without requiring an open Machbar tab; clicking one opens or
 focuses the relevant task or project. Entering a non-home Home Assistant zone
 also produces notifications for actionable tasks that become available there.
-Members can independently disable project-assignment, task-reminder, and
-place-entry notifications across all their subscribed devices. Task
-assignments do not produce notifications.
+Members can independently disable task-reminder and place-entry notifications
+across all their subscribed devices. Assignments do not produce notifications.
 
 Machbar does not currently provide a notification inbox, comments, mentions,
 ordinary due-date notifications, or a daily digest. Push availability depends

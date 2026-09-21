@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, notInArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import type {
   NotificationEntityType,
   NotificationKind,
@@ -111,12 +111,14 @@ export function enqueueDueReminders(
       id: schema.workItems.id,
       title: schema.workItems.title,
       dueDate: schema.workItems.dueDate,
+      taskKind: schema.workItems.taskKind,
     })
     .from(schema.workItems)
     .where(
       and(
         eq(schema.workItems.role, "task"),
         inArray(schema.workItems.id, taskIds),
+        sql`(${schema.workItems.taskKind} IS NULL OR ${schema.workItems.taskKind} = 'action')`,
         notInArray(schema.workItems.status, ["done", "cancelled"]),
       ),
     )
@@ -194,10 +196,10 @@ export function deletePendingTaskReminderEvents(db: Db, taskId: number): void {
 
 export function hasOpenDescendants(db: Db, taskId: number): boolean {
   const rows = db
-  .select({ id: schema.workItems.id, parentTaskId: schema.workItems.parentId })
-  .from(schema.workItems)
-  .where(eq(schema.workItems.role, "task"))
-  .all();
+    .select({ id: schema.workItems.id, parentTaskId: schema.workItems.parentId })
+    .from(schema.workItems)
+    .where(eq(schema.workItems.role, "task"))
+    .all();
   const descendants = new Set<number>();
   let frontier = [taskId];
   while (frontier.length > 0) {
@@ -220,6 +222,7 @@ export function hasOpenDescendants(db: Db, taskId: number): boolean {
       .where(
         and(
           inArray(schema.workItems.id, [...descendants]),
+          sql`(${schema.workItems.taskKind} IS NULL OR ${schema.workItems.taskKind} = 'action')`,
           notInArray(schema.workItems.status, ["done", "cancelled"]),
         ),
       )
@@ -227,4 +230,3 @@ export function hasOpenDescendants(db: Db, taskId: number): boolean {
       .get() !== undefined
   );
 }
-

@@ -22,6 +22,16 @@ function isOpen(task: TaskRecord): boolean {
   return task.status !== "done" && task.status !== "cancelled";
 }
 
+function hasOpenActionableDescendant(task: TaskRecord): boolean {
+  const descendants = [...task.children];
+  while (descendants.length > 0) {
+    const descendant = descendants.pop()!;
+    if (descendant.kind === "action" && isOpen(descendant)) return true;
+    descendants.push(...descendant.children);
+  }
+  return false;
+}
+
 function attentionAt(entity: {
   updatedAt: string;
   reviewedAt: string | null;
@@ -135,6 +145,7 @@ export function buildReviewItems(
   const brokenRootKeys = new Set<string>();
 
   for (const task of graph.allTasks()) {
+    if (task.kind !== "action") continue;
     if (!isOpen(task)) continue;
     if (!isTaskInWorkingSystem(task, projectStatuses)) continue;
 
@@ -174,7 +185,7 @@ export function buildReviewItems(
     if (
       task.status === "actionable" &&
       task.size === "XL" &&
-      !task.children.some(isOpen)
+      !hasOpenActionableDescendant(task)
     ) {
       items.push(
         taskItem(task, "clarification_repair", "xl_without_children", {
@@ -191,6 +202,7 @@ export function buildReviewItems(
   // system), so gating on working-system membership would hide the
   // exact case this is meant to catch.
   for (const task of graph.allTasks()) {
+    if (task.kind !== "action") continue;
     if (!isOpen(task)) continue;
     if (task.projectId === null) continue;
     const project = graph.projectsById.get(task.projectId);
@@ -217,7 +229,7 @@ export function buildReviewItems(
   }
 
   for (const project of graph.listProjectsWithComputed()) {
-    const tasks = graph.tasksForProject(project.id);
+    const tasks = graph.actionsForProject(project.id);
 
     if (
       project.dueDate !== null &&
@@ -366,6 +378,7 @@ export function buildReviewItems(
 
   for (const task of graph.allTasks()) {
     if (
+      task.kind === "action" &&
       task.projectId === null &&
       task.status === "someday" &&
       attentionAt(task).slice(0, 10) <=

@@ -4,6 +4,7 @@ import type {
   WaitingReason,
 } from "@machbar/shared";
 import type { Graph, TaskRecord } from "./graph.js";
+import { pruneReferenceContainers } from "./compiledViewProjection.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
 
 export interface BuildWaitingOptions {
@@ -52,6 +53,7 @@ export function buildWaitingEntries(
     .allTasks()
     .filter(
       (task) =>
+        task.kind === "action" &&
         task.status === "actionable" &&
         isTaskInWorkingSystem(task, projectStatusById) &&
         matchesOwnerScope(task, options.memberId, options.scope) &&
@@ -80,7 +82,9 @@ export function buildWaitingEntries(
           });
         }
       }
-      return reasons.length > 0 ? [{ task, reasons }] : [];
+      return reasons.length > 0
+        ? [{ task: pruneReferenceContainers(task), reasons }]
+        : [];
     })
     .sort((a, b) => {
       const externalA = a.reasons.find((reason) => reason.type === "external");

@@ -41,6 +41,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.toggleDone":
     case "task.toggleAdditionalNextAction":
     case "task.primaryAction":
+    case "task.makeAction":
       return "task" in command ? command.task.id : command.taskId;
     case "workItem.schedule":
     case "workItem.setDeadline":
@@ -96,6 +97,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.toggleDone":
     case "task.toggleAdditionalNextAction":
     case "task.primaryAction":
+    case "task.makeAction":
       return "task";
     case "story.activate":
     case "story.deferProject":
@@ -308,6 +310,9 @@ export function useWorkItemCommands() {
           // The configured primary swipe action (someday/cancel/complete);
           // `requestPrimarySwipe` already resolves reopen/clarify first.
           taskActions.requestPrimarySwipe(command.task, primarySwipeAction);
+          return;
+        case "task.makeAction":
+          void taskActions.makeAction(command.task);
           return;
         case "workItem.schedule":
           return taskActions.update(

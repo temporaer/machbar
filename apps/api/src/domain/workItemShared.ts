@@ -11,7 +11,6 @@ import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { getEffectiveOwners, getNextActionTaskIdsByProject } from "../repo/index.js";
-import { enqueueNotification } from "../notifications/outbox.js";
 import { getProjectActivationReadiness } from "./projectReadiness.js";
 import { getTaskIdsForStory } from "../repo/treeRepo.js";
 
@@ -21,24 +20,6 @@ export interface MutationContext {
 
 export function actor(context?: MutationContext): number | null {
   return context?.actorMemberId ?? null;
-}
-
-export function enqueueProjectAssignment(
-  db: Db,
-  project: { id: number; title: string; ownerMemberId: number | null },
-  activityEventId: number,
-  context?: MutationContext,
-): void {
-  if (project.ownerMemberId === null) return;
-  enqueueNotification(db, {
-    kind: "project_assigned",
-    recipientMemberId: project.ownerMemberId,
-    actorMemberId: actor(context),
-    entityType: "project",
-    entityId: project.id,
-    entityTitle: project.title,
-    sourceKey: `project:${project.id}:assigned:event:${activityEventId}`,
-  });
 }
 
 export function sameIds(a: number[], b: number[]): boolean {
@@ -162,6 +143,11 @@ export function projectHasTaskPlan(db: Db, projectId: number): boolean {
       and(
         inArray(schema.workItems.id, taskIds),
         inArray(schema.workItems.status, ["captured", "active", "backlog"]),
+        // Defense-in-depth: reference material never carries a due/
+        // scheduled date server-side, so this is a no-op today, but a
+        // project filed with only reference material must not be
+        // considered "planned" even if that guarantee were ever loosened.
+        sql`(${schema.workItems.taskKind} IS NULL OR ${schema.workItems.taskKind} = 'action')`,
       ),
     )
     .all()

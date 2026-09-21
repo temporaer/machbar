@@ -178,6 +178,10 @@ describe("task <-> story role conversion", () => {
       status: "backlog",
       title: "Someday wird Projekt",
     });
+    const actionableRow = ctx.handle.sqlite
+      .prepare("SELECT role, task_kind FROM work_items WHERE id = ?")
+      .get(actionable.id) as { role: string; task_kind: string | null };
+    expect(actionableRow).toEqual({ role: "story", task_kind: null });
   });
 
   it("preserves hierarchy, compatible metadata, and activity identity", async () => {
@@ -457,6 +461,42 @@ describe("task <-> story role conversion", () => {
     });
   });
 
+  it("rejects converting reference material to a story and leaves the row untouched", async () => {
+    const reference = (
+      await post("/api/tasks", {
+        title: "Campingliste",
+        kind: "reference",
+      })
+    ).json();
+
+    const response = await post(`/api/tasks/${reference.id}/convert-to-story`, {
+      status: "backlog",
+      expectedRevision: reference.revision,
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({
+      code: "role_conversion_invalid",
+      message: expect.stringContaining("make-action"),
+      details: { reason: "is_reference" },
+    });
+    expect(
+      (
+        await ctx.app.inject({
+          method: "GET",
+          url: `/api/tasks/${reference.id}`,
+        })
+      ).json(),
+    ).toMatchObject({
+      id: reference.id,
+      kind: "reference",
+    });
+    const row = ctx.handle.sqlite
+      .prepare("SELECT role, task_kind FROM work_items WHERE id = ?")
+      .get(reference.id) as { role: string; task_kind: string | null };
+    expect(row).toEqual({ role: "task", task_kind: "reference" });
+  });
+
   it("rejects task-only relations before converting a task to a story", async () => {
     const waiting = (
       await post("/api/tasks", { title: "Wartet extern", status: "actionable" })
@@ -552,6 +592,10 @@ describe("task <-> story role conversion", () => {
       notBeforeAt: null,
       notBeforeDate: null,
     });
+    const revertedRow = ctx.handle.sqlite
+      .prepare("SELECT role, task_kind FROM work_items WHERE id = ?")
+      .get(project.id) as { role: string; task_kind: string | null };
+    expect(revertedRow).toEqual({ role: "task", task_kind: "action" });
     expect(
       await ctx.app.inject({
         method: "GET",

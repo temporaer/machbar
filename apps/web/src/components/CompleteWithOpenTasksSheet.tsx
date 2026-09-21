@@ -6,8 +6,35 @@ import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { BottomSheet } from "./BottomSheet";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 
-function isOpenTask(task: Task): boolean {
-  return task.status !== "done" && task.status !== "cancelled";
+function isOpenAction(task: Task): boolean {
+  return (
+    task.kind === "action" &&
+    task.status !== "done" &&
+    task.status !== "cancelled"
+  );
+}
+
+function openActionsInOutlineOrder(
+  tasks: readonly Task[],
+  retained: ReadonlyMap<number, Task>,
+): Task[] {
+  const openActions: Task[] = [];
+
+  const visit = (fetchedTask: Task) => {
+    const task = retained.get(fetchedTask.id) ?? fetchedTask;
+    if (isOpenAction(task)) {
+      openActions.push(task);
+    }
+    for (const child of task.children) {
+      visit(child);
+    }
+  };
+
+  for (const task of tasks) {
+    visit(task);
+  }
+
+  return openActions;
 }
 
 /**
@@ -34,9 +61,7 @@ export function CompleteWithOpenTasksSheet({
   const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
 
-  const openTasks = story.tasks
-    .map((task) => taskActions.retained.get(task.id) ?? task)
-    .filter(isOpenTask);
+  const openTasks = openActionsInOutlineOrder(story.tasks, taskActions.retained);
   const allResolved = openTasks.length === 0;
 
   return (

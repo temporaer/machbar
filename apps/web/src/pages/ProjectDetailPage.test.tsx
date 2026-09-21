@@ -161,7 +161,7 @@ function renderProjectRoute(entry: string, initialEntries = [entry]) {
 describe("ProjectDetailPage task explanations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.localStorage.clear();
+    window.localStorage?.clear();
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
     mockedApi.getTags.mockResolvedValue([]);
     mockedApi.getProjects.mockResolvedValue([]);
@@ -974,6 +974,50 @@ describe("ProjectDetailPage task explanations", () => {
     );
     expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|7");
     expect(screen.getByLabelText("task-route-state")).toHaveTextContent("none|none");
+  });
+
+  it("skips an unplanned reference and plans the first unplanned action instead", async () => {
+    mockedApi.getTask.mockImplementation(async (id) =>
+      makeTask({
+        id,
+        projectId: 42,
+        title: id === 71 ? "Moderatorin anfragen" : "Ablaufideen",
+        kind: id === 70 ? "reference" : "action",
+      }),
+    );
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
+      tasks: [
+        makeTask({
+          id: 70,
+          projectId: 42,
+          kind: "reference",
+          title: "Ablaufideen",
+          children: [
+            makeTask({
+              id: 71,
+              projectId: 42,
+              parentTaskId: 70,
+              title: "Moderatorin anfragen",
+            }),
+          ],
+        }),
+      ],
+    });
+
+    renderProjectRoute("/projects/42?focus=planning");
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: `${strings.plan}: Moderatorin anfragen`,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", {
+        name: `${strings.plan}: Ablaufideen`,
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|71");
   });
 
   it("keeps the initial planning target open until its planning workflow commits", async () => {

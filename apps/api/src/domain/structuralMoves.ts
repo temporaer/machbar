@@ -149,6 +149,7 @@ export function moveTask(
     // normal actionable state in the same transaction as the reparent below,
     // instead of requiring a separate promotion step first.
     const refilesCapturedInboxItem =
+      task.kind === "action" &&
       task.status === "captured" &&
       task.projectId === null &&
       task.parentTaskId === null &&

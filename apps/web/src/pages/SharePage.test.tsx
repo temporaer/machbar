@@ -43,6 +43,24 @@ const mockedApi = vi.mocked(api, true);
 const mockedReadPendingShareTarget = vi.mocked(readPendingShareTarget);
 const mockedDeletePendingShareTarget = vi.mocked(deletePendingShareTarget);
 
+function createLocalStorageMock() {
+  let store = new Map<string, string>();
+  return {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    clear: () => {
+      store = new Map<string, string>();
+    },
+  };
+}
+
+const localStorageMock = createLocalStorageMock();
+
 const emptyAgenda = {
   projects: [],
   planned: [],
@@ -68,6 +86,10 @@ function renderPage() {
 describe("SharePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(window, "localStorage", {
+      value: localStorageMock,
+      configurable: true,
+    });
     window.localStorage.clear();
     mockedApi.getProjects.mockResolvedValue([]);
     mockedApi.getTags.mockResolvedValue([]);
@@ -155,10 +177,12 @@ describe("SharePage", () => {
     expect(await screen.findByText("Zu „Urlaub planen“ hinzugefügt")).toBeInTheDocument();
   });
 
-  it("shows a recent project before Today targets and appends to it", async () => {
+  it("shows a recent project before Today targets and creates a Reference under it", async () => {
     const project = makeProject({ id: 4, title: "Geburtstag" });
     mockedApi.getProjects.mockResolvedValue([project as never]);
-    mockedApi.appendProjectNotes.mockResolvedValue(project as never);
+    mockedApi.createTask.mockResolvedValue(
+      makeTask({ id: 90, kind: "reference", title: "Kuchenidee", projectId: 4 }),
+    );
     window.localStorage.setItem(
       "machbar:recent-share-targets",
       JSON.stringify([{ kind: "project", id: 4 }]),
@@ -169,8 +193,15 @@ describe("SharePage", () => {
     expect(await screen.findByRole("heading", { name: "Zuletzt verwendet" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Geburtstag/ }));
     await waitFor(() =>
-      expect(mockedApi.appendProjectNotes).toHaveBeenCalledWith(4, "Kuchenidee"),
+      expect(mockedApi.createTask).toHaveBeenCalledWith({
+        kind: "reference",
+        title: "Kuchenidee",
+        notes: "",
+        projectId: 4,
+        parentTaskId: null,
+      }),
     );
+    expect(mockedApi.appendProjectNotes).not.toHaveBeenCalled();
   });
 
   it("previews and applies a Calendar deadline atomically to a Task without one", async () => {
@@ -211,14 +242,16 @@ describe("SharePage", () => {
     expect(mockedApi.appendTaskNotes).not.toHaveBeenCalled();
   });
 
-  it("uses the normal append endpoint when a Project already has the Calendar deadline", async () => {
+  it("creates a Reference for a Project destination and never applies a Calendar deadline", async () => {
     const project = makeProject({
       id: 4,
       title: "Geburtstag",
       dueDate: "2026-09-21",
     });
     mockedApi.getProjects.mockResolvedValue([project]);
-    mockedApi.appendProjectNotes.mockResolvedValue(project);
+    mockedApi.createTask.mockResolvedValue(
+      makeTask({ id: 90, kind: "reference", title: "Pauls Geburtstag", projectId: 4 }),
+    );
     window.history.replaceState(
       null,
       "",
@@ -233,12 +266,16 @@ describe("SharePage", () => {
     await userEvent.click(screen.getByRole("button", { name: /Geburtstag/ }));
 
     await waitFor(() =>
-      expect(mockedApi.appendProjectNotes).toHaveBeenCalledWith(
-        4,
-        "Pauls Geburtstag\n\n21. September 2026 • 15:00\nhttps://calendar.app.google/birthday",
-      ),
+      expect(mockedApi.createTask).toHaveBeenCalledWith({
+        kind: "reference",
+        title: "Pauls Geburtstag",
+        notes: "21. September 2026 • 15:00\nhttps://calendar.app.google/birthday",
+        projectId: 4,
+        parentTaskId: null,
+      }),
     );
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
+    expect(mockedApi.appendProjectNotes).not.toHaveBeenCalled();
   });
 
   it("keeps an existing Task deadline after an inline Calendar conflict choice", async () => {
@@ -275,45 +312,6 @@ describe("SharePage", () => {
       expect(mockedApi.appendTaskNotes).toHaveBeenCalledOnce(),
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
-  });
-
-  it("replaces a conflicting Project deadline with one revision-checked PATCH", async () => {
-    const project = makeProject({
-      id: 4,
-      revision: 5,
-      title: "Geburtstag",
-      notes: "Geschenkliste",
-      dueDate: "2026-09-20",
-    });
-    mockedApi.getProjects.mockResolvedValue([project]);
-    mockedApi.updateProject.mockResolvedValue(
-      makeProject({ ...project, revision: 6, dueDate: "2026-09-21" }),
-    );
-    window.history.replaceState(
-      null,
-      "",
-      "/?title=Pauls%20Geburtstag&text=21.%20September%202026%20%E2%80%A2%2015%3A00%0Ahttps%3A%2F%2Fcalendar.app.google%2Fbirthday#/share",
-    );
-    renderPage();
-
-    await userEvent.type(
-      await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
-      "Geburtstag",
-    );
-    await userEvent.click(screen.getByRole("button", { name: /Geburtstag/ }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "21.09.2026 übernehmen" }),
-    );
-
-    await waitFor(() =>
-      expect(mockedApi.updateProject).toHaveBeenCalledWith(4, {
-        notes:
-          "Geschenkliste\n\nPauls Geburtstag\n\n21. September 2026 • 15:00\nhttps://calendar.app.google/birthday",
-        dueDate: "2026-09-21",
-        expectedRevision: 5,
-      }),
-    );
-    expect(mockedApi.appendProjectNotes).not.toHaveBeenCalled();
   });
 
   it("prefills the existing Capture form with the parsed Calendar deadline", async () => {
@@ -454,6 +452,43 @@ describe("SharePage", () => {
       ),
     );
     expect(mockedDeletePendingShareTarget).toHaveBeenCalledWith("pending-2");
+  });
+
+  it("preserves the optional share note when creating a new task", async () => {
+    const file = new File(["pdf"], "receipt.pdf", {
+      type: "application/pdf",
+    });
+    mockedReadPendingShareTarget.mockResolvedValue({
+      title: "Beleg",
+      text: "Bitte ablegen",
+      url: "",
+      files: [file],
+    });
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 52,
+      title: "receipt",
+      originalFileName: "receipt.pdf",
+      mimeType: "application/pdf",
+    });
+    const createdTask = makeTask({ id: 52, title: "Beleg" });
+    mockedApi.createTask.mockResolvedValue(createdTask);
+    window.history.replaceState(null, "", "/?shareId=pending-4#/share");
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: "+ Notiz hinzufügen" }));
+    await userEvent.type(screen.getByLabelText("Notiz"), "Für die Steuer");
+    await userEvent.click(screen.getByRole("button", { name: "+ Neue Aufgabe" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Beleg",
+          notes:
+            "Bitte ablegen\n\n[receipt.pdf](paperless:52)\n\nFür die Steuer",
+        }),
+      ),
+    );
   });
 
   it("reuses successful uploads when appending is retried", async () => {

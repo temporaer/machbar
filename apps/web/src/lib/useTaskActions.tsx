@@ -233,6 +233,26 @@ function useTaskActionsState() {
   );
 
   /**
+   * Promotes a `kind: "reference"` outline node to a real `kind: "action"`
+   * task in place (same id/title/notes/parent/project/position/children).
+   * No optimistic snapshot: this is a deliberate, infrequent action, and
+   * the promoted row needs its full action-only affordances (status,
+   * scheduling, …) as soon as the server confirms, so an immediate refresh
+   * is simpler and safer than reconstructing that projection client-side.
+   */
+  const makeAction = useCallback(
+    (task: Task) =>
+      run({
+        id: task.id,
+        mutate: () => api.makeTaskAction(task.id, task.revision),
+        retain: false,
+        refreshImmediately: true,
+        throwOnError: true,
+      }),
+    [run],
+  );
+
+  /**
    * Applies a focused metadata edit while retaining the row in its current
    * view. This gives quick sheets the same stable, optimistic UX as status
    * swipes without opening the full task editor.
@@ -473,6 +493,7 @@ function useTaskActionsState() {
     requestPrimarySwipe,
     setStatus,
     clarify,
+    makeAction,
     update,
     assignOwner,
     setContexts,

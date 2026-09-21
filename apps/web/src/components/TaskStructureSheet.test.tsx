@@ -168,4 +168,24 @@ describe("TaskStructureSheet routing", () => {
       await screen.findByRole("dialog", { name: "In anderes Projekt verschieben" }),
     ).toBeInTheDocument();
   });
+
+  it("hides split and conversion for a reference task but still offers move", async () => {
+    const task = makeTask({
+      id: 77,
+      title: "Fahrplan",
+      kind: "reference",
+      status: "captured",
+      projectId: 2,
+      parentTaskId: 61,
+    });
+    mockedApi.getTask.mockResolvedValue(task);
+    renderStructure(77);
+
+    await userEvent.click(screen.getByRole("button", { name: "open structure" }));
+    await screen.findByRole("dialog", { name: "Struktur: Fahrplan" });
+
+    expect(screen.queryByRole("button", { name: "Aufteilen" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Zum Projekt machen" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Verschieben …" })).toBeInTheDocument();
+  });
 });

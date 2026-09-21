@@ -51,6 +51,7 @@ vi.mock("../lib/api", () => ({
     getActivity: vi.fn(),
     uploadPaperlessDocument: vi.fn(),
     searchPaperlessDocuments: vi.fn(),
+    makeTaskAction: vi.fn(),
   },
 }));
 
@@ -159,6 +160,7 @@ describe("TaskDetailSheet", () => {
     mockedApi.reopenTask.mockResolvedValue(makeTask({ status: "actionable" }));
     mockedApi.addDependency.mockResolvedValue(makeTask());
     mockedApi.getActivity.mockResolvedValue({ items: [], nextCursor: null });
+    mockedApi.makeTaskAction.mockResolvedValue(makeTask({ kind: "action" }));
     mockedApi.getTaskRecurrenceHistory.mockResolvedValue({
       summary: { hitCount: 0, missCount: 0, totalCount: 0, hitRate: null },
       occurrences: [],
@@ -601,6 +603,10 @@ describe("TaskDetailSheet", () => {
     });
     await userEvent.click(result);
 
+    expect(mockedApi.searchTasks).toHaveBeenCalledWith({
+      text: "Freigabe",
+      kinds: ["action"],
+    });
     expect(
       await screen.findByText(
         "„Freigabe einholen“ hängt bereits direkt oder indirekt von „Reparaturziel“ ab. Die umgekehrte Abhängigkeit würde einen Kreis erzeugen.",
@@ -672,6 +678,10 @@ describe("TaskDetailSheet", () => {
       "Freigabe",
     );
 
+    expect(mockedApi.searchTasks).toHaveBeenCalledWith({
+      text: "Freigabe",
+      kinds: ["action"],
+    });
     const results = await screen.findAllByRole("button", {
       name: /^Abhängigkeit hinzufügen:/,
     });
@@ -1697,4 +1707,48 @@ describe("TaskDetailSheet", () => {
   // The `Zum Projekt machen` conversion workflow is now reached only via the
   // row rail's Struktur sheet, not from the task detail's own commands — see
   // `TaskStructureSheet.test.tsx` for its conversion-flow coverage.
+
+  describe("reference variant", () => {
+    it("hides task-only sections and shows a promotion action for a reference", async () => {
+      mockedApi.getTask.mockResolvedValue(
+        makeTask({
+          id: 70,
+          kind: "reference",
+          title: "Unterkunft",
+          notes: "https://camping-wang.ch/\n\nGute Lage.",
+          status: "captured",
+          projectId: 5,
+          projectTitle: "Schweiz Urlaub",
+        }),
+      );
+      renderSheet(70);
+      await userEvent.click(screen.getByText("open"));
+      await waitForTaskTitle("Unterkunft");
+
+      expect(screen.queryByRole("group", { name: strings.status })).not.toBeInTheDocument();
+      expect(screen.queryByText(strings.dependencies)).not.toBeInTheDocument();
+      expect(screen.queryByText(strings.addOwner)).not.toBeInTheDocument();
+      expect(
+        within(
+          document.querySelector(".task-detail-reference-header") as HTMLElement,
+        ).getByRole("link", { name: /camping-wang\.ch/ }),
+      ).toHaveAttribute("href", "https://camping-wang.ch/");
+      expect(
+        screen.getByRole("button", { name: strings.makeAction }),
+      ).toBeInTheDocument();
+    });
+
+    it("promotes a reference to an action via the detail sheet", async () => {
+      mockedApi.getTask.mockResolvedValue(
+        makeTask({ id: 71, kind: "reference", title: "Fahrplan" }),
+      );
+      renderSheet(71);
+      await userEvent.click(screen.getByText("open"));
+      await waitForTaskTitle("Fahrplan");
+
+      await userEvent.click(screen.getByRole("button", { name: strings.makeAction }));
+
+      await waitFor(() => expect(mockedApi.makeTaskAction).toHaveBeenCalledWith(71, 1));
+    });
+  });
 });

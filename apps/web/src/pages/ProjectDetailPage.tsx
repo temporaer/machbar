@@ -273,6 +273,7 @@ export function ProjectDetailPage() {
     }
     const taskToPlan = flattenTasks(project.tasks).find(
       (task) =>
+        task.kind === "action" &&
         task.status !== "done" &&
         task.status !== "cancelled" &&
         !task.dueDate &&

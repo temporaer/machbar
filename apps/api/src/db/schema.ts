@@ -44,6 +44,7 @@ const activityEventKinds = [
   "project_acceptance_criterion_checked",
   "project_acceptance_criterion_removed",
   "work_item_role_converted",
+  "task_kind_changed",
 ] as const satisfies readonly ActivityEventKind[];
 
 const activityEntityTypes = [
@@ -356,6 +357,15 @@ export const workItems = sqliteTable(
     notBeforeDate: text("not_before_date"),
     priority: integer("priority"),
     size: text("size"), // task-only, nullable S | M | L | XL
+    // task-only, nullable. "action" = actionable work (the historical
+    // default for every role="task" row); "reference" = non-actionable
+    // outline material (headings, links, documents, notes). Null for
+    // role="story" rows. Domain code must treat "reference" as transparent
+    // for outline/tree purposes but excluded from every work projection
+    // (Today/Week/Waiting/Review/Refinement/Inbox), next-action selection,
+    // dependencies, and contribution bookkeeping — see Graph.allActions()/
+    // actionsForProject() and taskKindGuard.ts.
+    taskKind: text("task_kind", { enum: ["action", "reference"] }),
     position: integer("position").notNull().default(0),
     completedAt: text("completed_at"),
     cancelledAt: text("cancelled_at"),

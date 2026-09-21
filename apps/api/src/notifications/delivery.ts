@@ -81,12 +81,19 @@ export function buildNotificationPayload(
 
   if (event.kind === "task_reminder") {
     const task = db
-      .select()
+      .select({
+        id: schema.workItems.id,
+        revision: schema.workItems.revision,
+        repeatAfterDays: schema.workItems.repeatAfterDays,
+        status: schema.workItems.status,
+        taskKind: schema.workItems.taskKind,
+      })
       .from(schema.workItems)
       .where(and(eq(schema.workItems.id, event.entityId), eq(schema.workItems.role, "task")))
       .get();
     if (
       task &&
+      (task.taskKind === null || task.taskKind === "action") &&
       task.status !== "done" &&
       task.status !== "cancelled" &&
       task.repeatAfterDays === null &&
@@ -174,9 +181,19 @@ export async function dispatchNotificationEvents(
     .all();
 
   for (const event of events) {
+    if (event.kind === "project_assigned" || event.kind === "task_assigned") {
+      db.update(schema.notificationEvents)
+        .set({ processedAt: now.toISOString() })
+        .where(eq(schema.notificationEvents.id, event.id))
+        .run();
+      continue;
+    }
     if (event.kind === "task_reminder") {
       const task = db
-        .select({ status: schema.workItems.status })
+        .select({
+          status: schema.workItems.status,
+          taskKind: schema.workItems.taskKind,
+        })
         .from(schema.workItems)
         .where(
           and(
@@ -189,7 +206,12 @@ export async function dispatchNotificationEvents(
       // reminder was enqueued: the reminder is intentionally moot, not a
       // delivery failure, so mark it processed without sending or
       // retrying.
-      if (!task || task.status === "done" || task.status === "cancelled") {
+      if (
+        !task ||
+        (task.taskKind !== null && task.taskKind !== "action") ||
+        task.status === "done" ||
+        task.status === "cancelled"
+      ) {
         db.update(schema.notificationEvents)
           .set({ processedAt: now.toISOString() })
           .where(eq(schema.notificationEvents.id, event.id))
@@ -208,8 +230,6 @@ export async function dispatchNotificationEvents(
       )
       .get();
     const disabled =
-      (event.kind === "project_assigned" &&
-        preferences?.projectAssigned === false) ||
       (event.kind === "task_reminder" &&
         preferences?.taskReminder === false) ||
       (event.kind === "context_entered" &&

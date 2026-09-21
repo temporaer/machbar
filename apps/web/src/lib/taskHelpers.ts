@@ -4,6 +4,10 @@ function isOpen(task: Task): boolean {
   return task.status !== "done" && task.status !== "cancelled";
 }
 
+function isOpenAction(task: Task): boolean {
+  return task.kind === "action" && isOpen(task);
+}
+
 /**
  * An unclassified root capture: still `captured`, never filed under a
  * project or parent task. Filing it into a project/parent via
@@ -23,9 +27,7 @@ export function isCapturedInboxItem(task: Task): boolean {
 }
 
 export function hasOpenDescendants(task: Task): boolean {
-  return task.children.some(
-    (child) => isOpen(child) || hasOpenDescendants(child),
-  );
+  return task.children.some((child) => isOpenAction(child) || hasOpenDescendants(child));
 }
 
 /**
@@ -42,7 +44,7 @@ export function markOpenDescendantsTerminal(
     const alreadyClosed = child.status === "done" || child.status === "cancelled";
     return {
       ...child,
-      ...(alreadyClosed
+      ...(child.kind !== "action" || alreadyClosed
         ? {}
         : {
             status,
@@ -63,7 +65,7 @@ export function openDescendantRoots(task: Task): Task[] {
   const roots: Task[] = [];
   const walk = (children: Task[]) => {
     for (const child of children) {
-      if (isOpen(child)) roots.push(child);
+      if (isOpenAction(child)) roots.push(child);
       else walk(child.children);
     }
   };
@@ -80,8 +82,10 @@ export function countTasks(tasks: Task[]): { open: number; done: number } {
   let done = 0;
   const walk = (list: Task[]) => {
     for (const t of list) {
-      if (t.status === "done" || t.status === "cancelled") done += 1;
-      else open += 1;
+      if (t.kind === "action") {
+        if (t.status === "done" || t.status === "cancelled") done += 1;
+        else open += 1;
+      }
       if (t.children.length) walk(t.children);
     }
   };

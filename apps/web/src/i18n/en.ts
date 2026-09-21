@@ -275,6 +275,10 @@ const en = {
   moveFailed: "Could not move task",
   dropTopLevel: "Top level",
   dropUnder: "Under",
+  materialLabel: "Material",
+  makeAction: "Treat as a task",
+  makeActionFailed: "Could not convert to a task",
+  openLink: "Open link",
   dropPosition: "Position",
   selectParent: "Choose parent task",
   selectProject: "Choose project",
@@ -791,6 +795,10 @@ const en = {
   searchShareTargets: "Search tasks and projects",
   sharing: "Adding…",
   sharedWith: (title: string) => `Added to “${title}”`,
+  addShareNote: "+ Add note",
+  shareNoteLabel: "Note",
+  shareNotePlaceholder: "Why is this interesting?",
+  materialDestination: (project: string) => `Material · ${project}`,
   openSharedTarget: "Open destination",
   share: "Share",
   shareCompleted: "Shared",
@@ -854,9 +862,6 @@ const en = {
   pushTypesTitle: "Types",
   pushTypesHint:
     "Applies to every device where you have enabled notifications.",
-  pushProjectAssignments: "Project assignments",
-  pushProjectAssignmentsHint:
-    "When someone else makes you responsible for a project.",
   pushTaskReminders: "Task reminders",
   pushTaskRemindersHint: "When a scheduled reminder becomes due.",
   pushContextEntered: "Place-based tasks",
@@ -1151,6 +1156,14 @@ const en = {
     external_wait_status_invalid:
       "An external wait is not allowed for this task status.",
     task_reminder_invalid: "This reminder is invalid.",
+    reference_field_not_allowed:
+      "This property is not available for reference material.",
+    reference_action_not_allowed:
+      "This action is not available for reference material.",
+    reference_promotion_invalid:
+      "This item cannot be converted to a task in its current state.",
+    reference_dependency_not_allowed:
+      "Reference material cannot have a dependency relationship with a task.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `A person named “${name}” already exists.`,

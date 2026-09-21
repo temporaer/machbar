@@ -23,7 +23,7 @@ export function TaskStructureSheet({ task, onClose }: { task: Task; onClose: () 
   // clarification path — `task.changeProject` files it into a project (and
   // optionally a parent task) and atomically classifies it out of
   // `captured` in the same request, so that tile stays visible.
-  const hideSplit = isCapturedInboxItem(task);
+  const hideSplit = task.kind === "reference" || isCapturedInboxItem(task);
 
   return (
     <BottomSheet title={`${strings.structure}: ${task.title}`} onClose={onClose}>
@@ -44,13 +44,15 @@ export function TaskStructureSheet({ task, onClose }: { task: Task; onClose: () 
         >
           {strings.structureMove}
         </button>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => dispatch({ type: "task.convertToProject", taskId: task.id })}
-        >
-          {strings.structureConvertToProject}
-        </button>
+        {task.kind !== "reference" ? (
+          <button
+            type="button"
+            className="btn"
+            onClick={() => dispatch({ type: "task.convertToProject", taskId: task.id })}
+          >
+            {strings.structureConvertToProject}
+          </button>
+        ) : null}
         <button type="button" className="btn btn-ghost" onClick={onClose}>
           {strings.cancel}
         </button>

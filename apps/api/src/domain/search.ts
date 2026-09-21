@@ -69,6 +69,11 @@ function scoreNotes(query: string, queryTokens: Set<string>, notes: string): num
 export function searchTasks(graph: Graph, filters: SearchFilters): TaskRecord[] {
   let results = graph.allTasks();
 
+  if (filters.kinds !== undefined) {
+    const wantedKinds = new Set(filters.kinds);
+    results = results.filter((task) => wantedKinds.has(task.kind));
+  }
+
   // Default interactive search focuses on live work: terminal tasks (done,
   // cancelled) are excluded unless the caller explicitly asked for one via
   // `filters.status`, or opted the whole view into exhaustive inventory via
@@ -110,7 +115,9 @@ export function searchTasks(graph: Graph, filters: SearchFilters): TaskRecord[] 
     });
   }
   if (filters.status !== undefined) {
-    results = results.filter((t) => t.status === filters.status);
+    results = results.filter(
+      (t) => t.kind === "action" && t.status === filters.status,
+    );
   }
   if (filters.dueFrom !== undefined) {
     results = results.filter((t) => !!t.dueDate && t.dueDate >= filters.dueFrom!);

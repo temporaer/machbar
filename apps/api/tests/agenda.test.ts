@@ -35,6 +35,16 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     return res.json();
   }
 
+  async function createReference(payload: Record<string, unknown>) {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { kind: "reference", ...payload },
+    });
+    expect(res.statusCode).toBe(201);
+    return res.json();
+  }
+
   async function addDependency(taskId: number, dependsOnTaskId: number) {
     const res = await ctx.app.inject({
       method: "POST",
@@ -67,6 +77,19 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
 
   function titlesOf(tasks: Array<{ title: string }>): string[] {
     return tasks.map((t) => t.title);
+  }
+
+  interface TaskTreeNode {
+    title: string;
+    kind: string;
+    children: TaskTreeNode[];
+  }
+
+  function expectNoReferenceNodes(tasks: TaskTreeNode[]) {
+    for (const task of tasks) {
+      expect(task.kind).not.toBe("reference");
+      expectNoReferenceNodes(task.children);
+    }
   }
 
   const bucketKeys = [
@@ -153,6 +176,50 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
         task.children.map((child) => child.title),
       ),
     ).toContain("Nur als Unteraufgabe sichtbar");
+  });
+
+  it("keeps reference descendants visible while pruning the reference container from Today tasks", async () => {
+    const parent = await createTask({
+      title: "Heute erledigen",
+      scheduledDate: today,
+    });
+    const reference = await createReference({
+      title: "Unterlagen",
+      parentTaskId: parent.id,
+    });
+    await createTask({
+      title: "Formular ausfuellen",
+      parentTaskId: reference.id,
+    });
+
+    const agenda = await getAgenda();
+    const task = agenda.planned.find(
+      (entry: { title: string }) => entry.title === "Heute erledigen",
+    );
+
+    expect(task.children.map((child: { title: string }) => child.title)).toEqual([
+      "Formular ausfuellen",
+    ]);
+    expectNoReferenceNodes(agenda.planned);
+  });
+
+  it("drops a leaf reference child instead of returning it as a Today row", async () => {
+    const parent = await createTask({
+      title: "Heute vorbereiten",
+      scheduledDate: today,
+    });
+    await createReference({
+      title: "Nur Material",
+      parentTaskId: parent.id,
+    });
+
+    const agenda = await getAgenda();
+    const task = agenda.planned.find(
+      (entry: { title: string }) => entry.title === "Heute vorbereiten",
+    );
+
+    expect(task.children).toEqual([]);
+    expectNoReferenceNodes(agenda.planned);
   });
 
   it("keeps executable tasks discoverable before their deadline enters due soon", async () => {
@@ -1103,6 +1170,16 @@ describe("Heute agenda: compiled project prompts", () => {
     return response.json();
   }
 
+  async function createReference(payload: Record<string, unknown>) {
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { kind: "reference", ...payload },
+    });
+    expect(response.statusCode).toBe(201);
+    return response.json();
+  }
+
   async function projectPrompts(memberId?: number) {
     const query = new URLSearchParams({ date: localTodayIso() });
     if (memberId !== undefined) query.set("memberId", String(memberId));
@@ -1117,6 +1194,11 @@ describe("Heute agenda: compiled project prompts", () => {
         title: string;
         dueDate: string | null;
         scheduledDate: string | null;
+        nextAction?: { id: number; title: string } | null;
+        childStories?: Array<{
+          id: number;
+          nextAction?: { id: number; title: string } | null;
+        }>;
       };
       qualification: "due" | "scheduled" | "both";
       attentionBucket: "overdue" | "dueToday" | "dueSoon" | "planned";
@@ -1334,5 +1416,50 @@ describe("Heute agenda: compiled project prompts", () => {
     expect(capturedEntry?.nextAction).toBeNull();
     expect(capturedEntry?.stuck?.reason).toBe("no_next_action");
     expect(capturedEntry?.stuck).toEqual({ reason: "no_next_action" });
+  });
+
+  it("prunes references recursively from compiled project prompts", async () => {
+    const today = localTodayIso();
+    const parentProject = await createActiveProject({
+      title: "Parent Project",
+      dueDate: today,
+    });
+    const childProject = await createActiveProject({
+      title: "Child Project",
+      parentId: parentProject.id,
+    });
+    const actionA = await createTask({
+      projectId: childProject.id,
+      title: "Action A",
+      additionalNextAction: true,
+    });
+    const reference = await createReference({
+      projectId: childProject.id,
+      parentTaskId: actionA.id,
+      kind: "reference",
+      title: "Reference R",
+    });
+    await createTask({
+      projectId: childProject.id,
+      parentTaskId: reference.id,
+      title: "Action B",
+    });
+
+    const agenda = await projectPrompts();
+    const entry = agenda.find(
+      (candidate) => candidate.project.id === parentProject.id,
+    );
+
+    expect(entry?.project).toMatchObject({
+      id: parentProject.id,
+      childStories: [
+        expect.objectContaining({
+          id: childProject.id,
+          nextAction: expect.objectContaining({ title: "Action B" }),
+        }),
+      ],
+    });
+    expect(JSON.stringify(entry)).not.toContain('"kind":"reference"');
+    expect(JSON.stringify(entry)).toContain("Action B");
   });
 });

@@ -42,6 +42,7 @@ export function getBlockedTaskIds(db: Db): Set<number> {
     SELECT t.id AS id
     FROM work_items t
     WHERE t.role = 'task'
+      AND (t.task_kind IS NULL OR t.task_kind = 'action')
       AND t.status = 'active'
       AND (
         EXISTS (
@@ -52,6 +53,7 @@ export function getBlockedTaskIds(db: Db): Set<number> {
           JOIN work_items dep ON dep.id = td.depends_on_task_id
           WHERE td.task_id = t.id
             AND dep.role = 'task'
+            AND (dep.task_kind IS NULL OR dep.task_kind = 'action')
             AND dep.status NOT IN ('done', 'cancelled')
         )
       )

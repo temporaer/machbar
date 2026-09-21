@@ -22,7 +22,6 @@ import {
   assertExpectedRevision,
   assertPhysicalContextsExist,
   assertProjectActivationReady,
-  enqueueProjectAssignment,
   nowIso,
   sameIds,
   sortedIds,
@@ -183,12 +182,6 @@ export function createProject(
       projectId: project.id,
       metadata: {},
     });
-    enqueueProjectAssignment(
-      txDb,
-      returned,
-      activityEventId,
-      context,
-    );
     return returned;
   });
 }
@@ -412,12 +405,6 @@ export function updateProject(
           entityType: "project",
           entityId: id,
         });
-      }
-      if (
-        project.ownerMemberId !== updated.ownerMemberId &&
-        updated.ownerMemberId !== null
-      ) {
-        enqueueProjectAssignment(txDb, updated, activityEventId, context);
       }
     } else if (tagsChanged || contextsChanged) {
       recordActivity(txDb, {

@@ -9,6 +9,7 @@ import type {
   StuckReason,
   Tag,
   Task as SharedTask,
+  TaskKind,
   TaskReminder,
   TaskSize,
   TaskStatus,
@@ -82,6 +83,7 @@ interface RawTask {
   title: string;
   notes: string;
   status: TaskStatus;
+  kind: TaskKind;
   needsClarification: boolean;
   ownerMemberId: number | null;
   ownerInheritanceMode: InheritanceMode;
@@ -340,6 +342,7 @@ export class Graph {
         title: row.title,
         notes: row.notes,
         status: taskStatusFromStored(row.status as StoredWorkItemStatus),
+        kind: (row.taskKind as TaskKind | null) ?? "action",
         needsClarification: row.status === "captured",
         ownerMemberId: row.ownerMemberId,
         ownerInheritanceMode: row.ownerInheritanceMode as InheritanceMode,
@@ -685,6 +688,7 @@ export class Graph {
         title: raw.title,
         notes: raw.notes,
         status: raw.status,
+        kind: raw.kind,
         needsClarification: raw.status === "captured",
         ownerMemberId: raw.ownerMemberId,
         ownerInheritanceMode: raw.ownerInheritanceMode,
@@ -765,7 +769,7 @@ export class Graph {
 
     for (const project of graph.projectsById.values()) {
       if (project.status !== "active") continue;
-      const tasks = graph.tasksForProject(project.id);
+      const tasks = graph.actionsForProject(project.id);
       const openTasks = tasks.filter(
         (task) => task.status !== "done" && task.status !== "cancelled",
       );
@@ -802,14 +806,30 @@ export class Graph {
     return graph;
   }
 
-  /** All tasks belonging to a project, flattened regardless of depth. */
+  /** All tasks belonging to a project, flattened regardless of depth,
+   * including reference nodes. */
   tasksForProject(projectId: number): TaskRecord[] {
     return this.tasksByProject.get(projectId) ?? [];
   }
 
-  /** Every task in the graph, flattened. */
+  /** Every task in the graph, flattened, including reference nodes. */
   allTasks(): TaskRecord[] {
     return [...this.tasksById.values()];
+  }
+
+  /** Every actionable task in the graph — excludes reference nodes. Use
+   * this (not `allTasks()`) for any work projection: Today/Week/Waiting/
+   * Review/Refinement/Inbox, dependency candidates, and contribution-
+   * relevant checks. */
+  allActions(): TaskRecord[] {
+    return this.allTasks().filter((t) => t.kind === "action");
+  }
+
+  /** Actionable tasks belonging to a project, flattened regardless of
+   * depth — excludes reference nodes. Use for project open/done counts and
+   * stuck detection. */
+  actionsForProject(projectId: number): TaskRecord[] {
+    return this.tasksForProject(projectId).filter((t) => t.kind === "action");
   }
 
   nextActionFor(projectId: number): TaskRecord | null {
@@ -968,7 +988,7 @@ export class Graph {
     if (seen.has(projectId)) return project;
     const nextSeen = new Set(seen);
     nextSeen.add(projectId);
-    const tasks = this.tasksForProject(projectId);
+    const tasks = this.actionsForProject(projectId);
     const openCount = tasks.filter(
       (t) => t.status !== "done" && t.status !== "cancelled",
     ).length;

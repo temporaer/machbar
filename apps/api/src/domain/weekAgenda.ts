@@ -11,6 +11,10 @@ import {
   createAgendaSelection,
   selectCurrentAvailableWork,
 } from "./agendaSelection.js";
+import {
+  pruneProjectForCompiledView,
+  pruneReferenceContainers,
+} from "./compiledViewProjection.js";
 
 function addDaysIso(dateIso: string, days: number): string {
   const date = new Date(`${dateIso}T00:00:00.000Z`);
@@ -32,6 +36,7 @@ function isWeekDatedTask(
   selection: ReturnType<typeof createAgendaSelection>,
 ): boolean {
   if (
+    task.kind !== "action" ||
     task.status !== "actionable" ||
     task.needsClarification ||
     !selection.matchesOwner(task) ||
@@ -105,7 +110,7 @@ function taskSummary(
     blocked: task.blocked,
     executable: task.executable,
     stuckReason: null,
-    task,
+    task: pruneReferenceContainers(task),
     project: null,
   };
 }
@@ -140,7 +145,7 @@ function storySummary(
     executable: story.nextAction !== null,
     stuckReason: story.stuckReason ?? null,
     task: null,
-    project: story,
+    project: pruneProjectForCompiledView(story),
   };
 }
 

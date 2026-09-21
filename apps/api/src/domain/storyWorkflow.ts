@@ -19,7 +19,6 @@ import {
   actor,
   assertExpectedRevision,
   assertProjectActivationReady,
-  enqueueProjectAssignment,
   nowIso,
 } from "./workItemShared.js";
 
@@ -137,12 +136,6 @@ export function activateProject(
         entityId: id,
         personalEligible: true,
       });
-    }
-    if (
-      project.ownerMemberId !== updated.ownerMemberId &&
-      updated.ownerMemberId !== null
-    ) {
-      enqueueProjectAssignment(txDb, updated, activityEventId, context);
     }
     return updated;
   });

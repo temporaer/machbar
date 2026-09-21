@@ -154,6 +154,11 @@ export function formatActivityDescription(
       return event.entity.type === "project"
         ? strings.activityText.convertedToStory
         : strings.activityText.convertedToTask;
+    case "task_kind_changed":
+      return strings.activityText.entityUpdated(
+        "task",
+        changedFields(event.metadata, strings),
+      );
   }
 }
 

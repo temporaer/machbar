@@ -23,6 +23,15 @@ describe("canonical hierarchy moves", () => {
     return res.json();
   }
 
+  async function createReference(payload: Record<string, unknown>) {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { kind: "reference", ...payload },
+    });
+    return res.json();
+  }
+
   async function getProjectTasks(projectId: number) {
     const res = await ctx.app.inject({ method: "GET", url: `/api/projects/${projectId}` });
     return res.json().tasks as Array<{
@@ -287,6 +296,71 @@ describe("canonical hierarchy moves", () => {
     expect(moved.needsClarification).toBe(false);
     expect(moved.parentTaskId).toBe(parent.id);
     expect(moved.projectId).toBe(project.id);
+  });
+
+  it("files a root reference into a project without classifying it", async () => {
+    const reference = await createReference({ title: "Reiseinfos" });
+    const project = await createProject("Ziel-Projekt");
+
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${reference.id}/move`,
+      payload: {
+        projectId: project.id,
+        expectedRevision: reference.revision,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      id: reference.id,
+      kind: "reference",
+      status: "captured",
+      projectId: project.id,
+      parentTaskId: null,
+    });
+  });
+
+  it("files a root reference below another reference without classifying either item", async () => {
+    const parent = await createReference({ title: "Reiseinfos" });
+    const child = await createReference({ title: "Unterkunft" });
+
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${child.id}/move`,
+      payload: {
+        parentTaskId: parent.id,
+        expectedRevision: child.revision,
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      id: child.id,
+      kind: "reference",
+      status: "captured",
+      parentTaskId: parent.id,
+      projectId: null,
+    });
+
+    const activityKinds = ctx.handle.db
+      .select({ kind: schema.activityEvents.kind })
+      .from(schema.activityEvents)
+      .all()
+      .map((event) => event.kind);
+    expect(activityKinds).toEqual(
+      expect.arrayContaining(["task_created", "task_moved"]),
+    );
+
+    const contributionReasons = ctx.handle.db
+      .select({ reason: schema.contributionEvents.reason })
+      .from(schema.contributionEvents)
+      .all()
+      .map((event) => event.reason);
+    expect(contributionReasons).not.toContain("task_clarified");
+    expect(contributionReasons).not.toContain("task_planned");
+    expect(contributionReasons).not.toContain("project_next_action_added");
+    expect(contributionReasons).not.toContain("project_due_plan_added");
   });
 
   it("applies owner inheritance when refiling a captured inbox item into an owned project", async () => {
