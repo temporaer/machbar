@@ -43,6 +43,24 @@ const mockedApi = vi.mocked(api, true);
 const mockedReadPendingShareTarget = vi.mocked(readPendingShareTarget);
 const mockedDeletePendingShareTarget = vi.mocked(deletePendingShareTarget);
 
+function createLocalStorageMock() {
+  let store = new Map<string, string>();
+  return {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    clear: () => {
+      store = new Map<string, string>();
+    },
+  };
+}
+
+const localStorageMock = createLocalStorageMock();
+
 const emptyAgenda = {
   projects: [],
   planned: [],
@@ -68,6 +86,10 @@ function renderPage() {
 describe("SharePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(window, "localStorage", {
+      value: localStorageMock,
+      configurable: true,
+    });
     window.localStorage.clear();
     mockedApi.getProjects.mockResolvedValue([]);
     mockedApi.getTags.mockResolvedValue([]);
@@ -430,6 +452,43 @@ describe("SharePage", () => {
       ),
     );
     expect(mockedDeletePendingShareTarget).toHaveBeenCalledWith("pending-2");
+  });
+
+  it("preserves the optional share note when creating a new task", async () => {
+    const file = new File(["pdf"], "receipt.pdf", {
+      type: "application/pdf",
+    });
+    mockedReadPendingShareTarget.mockResolvedValue({
+      title: "Beleg",
+      text: "Bitte ablegen",
+      url: "",
+      files: [file],
+    });
+    mockedApi.uploadPaperlessDocument.mockResolvedValue({
+      id: 52,
+      title: "receipt",
+      originalFileName: "receipt.pdf",
+      mimeType: "application/pdf",
+    });
+    const createdTask = makeTask({ id: 52, title: "Beleg" });
+    mockedApi.createTask.mockResolvedValue(createdTask);
+    window.history.replaceState(null, "", "/?shareId=pending-4#/share");
+    renderPage();
+
+    await userEvent.click(await screen.findByRole("button", { name: "+ Notiz hinzufügen" }));
+    await userEvent.type(screen.getByLabelText("Notiz"), "Für die Steuer");
+    await userEvent.click(screen.getByRole("button", { name: "+ Neue Aufgabe" }));
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Beleg",
+          notes:
+            "Bitte ablegen\n\n[receipt.pdf](paperless:52)\n\nFür die Steuer",
+        }),
+      ),
+    );
   });
 
   it("reuses successful uploads when appending is retried", async () => {

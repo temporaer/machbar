@@ -31,6 +31,16 @@ describe("week planning agenda", () => {
     return res.json();
   }
 
+  async function createReference(payload: Record<string, unknown>) {
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { kind: "reference", ...payload },
+    });
+    expect(res.statusCode).toBe(201);
+    return res.json();
+  }
+
   async function createMember(name: string) {
     const res = await ctx.app.inject({
       method: "POST",
@@ -97,6 +107,19 @@ describe("week planning agenda", () => {
 
   function titles(items: Array<{ title: string }>) {
     return items.map((item) => item.title);
+  }
+
+  interface TaskTreeNode {
+    title: string;
+    kind: string;
+    children: TaskTreeNode[];
+  }
+
+  function expectNoReferenceNodes(tasks: TaskTreeNode[]) {
+    for (const task of tasks) {
+      expect(task.kind).not.toBe("reference");
+      expectNoReferenceNodes(task.children);
+    }
   }
 
   it("groups the requested seven-day window", async () => {
@@ -373,6 +396,50 @@ describe("week planning agenda", () => {
 
     expect(titles(week.days[0].items)).not.toContain("Haus verbessern");
     expect(titles(week.days[0].items)).not.toContain("Rauchmelder kaufen");
+  });
+
+  it("keeps nested action descendants visible while pruning reference containers from Week items", async () => {
+    const parent = await createTask({
+      title: "Dienstag vorbereiten",
+      scheduledDate: tuesday,
+    });
+    const reference = await createReference({
+      title: "Packliste",
+      parentTaskId: parent.id,
+    });
+    await createTask({
+      title: "Reisepass einpacken",
+      parentTaskId: reference.id,
+    });
+
+    const week = await getWeek();
+    const item = week.days[1].items.find(
+      (entry: { title: string }) => entry.title === "Dienstag vorbereiten",
+    );
+
+    expect(
+      item.task.children.map((child: { title: string }) => child.title),
+    ).toEqual(["Reisepass einpacken"]);
+    expectNoReferenceNodes([item.task]);
+  });
+
+  it("drops a leaf reference child from the Week task tree", async () => {
+    const parent = await createTask({
+      title: "Nur Materialtermin",
+      scheduledDate: tuesday,
+    });
+    await createReference({
+      title: "Checkliste",
+      parentTaskId: parent.id,
+    });
+
+    const week = await getWeek();
+    const item = week.days[1].items.find(
+      (entry: { title: string }) => entry.title === "Nur Materialtermin",
+    );
+
+    expect(item.task.children).toEqual([]);
+    expectNoReferenceNodes([item.task]);
   });
 
   it("places a task with a revisit date inside the week on that day as a revisit", async () => {

@@ -81,12 +81,19 @@ export function buildNotificationPayload(
 
   if (event.kind === "task_reminder") {
     const task = db
-      .select()
+      .select({
+        id: schema.workItems.id,
+        revision: schema.workItems.revision,
+        repeatAfterDays: schema.workItems.repeatAfterDays,
+        status: schema.workItems.status,
+        taskKind: schema.workItems.taskKind,
+      })
       .from(schema.workItems)
       .where(and(eq(schema.workItems.id, event.entityId), eq(schema.workItems.role, "task")))
       .get();
     if (
       task &&
+      (task.taskKind === null || task.taskKind === "action") &&
       task.status !== "done" &&
       task.status !== "cancelled" &&
       task.repeatAfterDays === null &&

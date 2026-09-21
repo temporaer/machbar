@@ -37,6 +37,7 @@ export interface ConvertTaskToStoryInput {
 type TaskToStoryInvalidReason =
   | "not_root"
   | "inside_story"
+  | "is_reference"
   | "unsupported_status"
   | "task_only_relations";
 
@@ -87,6 +88,12 @@ export function convertTaskToStory(
         "inside_story",
         "A task inside a story cannot be converted independently.",
         { projectId: task.projectId },
+      );
+    }
+    if (task.kind === "reference") {
+      reject(
+        "is_reference",
+        "Reference material cannot be converted to a story. Use make-action first.",
       );
     }
     if (!["captured", "actionable", "someday"].includes(task.status)) {
@@ -141,6 +148,7 @@ export function convertTaskToStory(
     tx.update(schema.workItems)
       .set({
         role: "story",
+        taskKind: null,
         parentId: null,
         title,
         notes: input.notes ?? task.notes,
@@ -277,6 +285,7 @@ export function convertStoryToTask(
     tx.update(schema.workItems)
       .set({
         role: "task",
+        taskKind: "action",
         parentId: null,
         title,
         notes: input.notes ?? project.notes,

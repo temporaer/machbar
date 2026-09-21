@@ -446,18 +446,6 @@ export function TaskRow({
                     </span>
                   </div>
                 ) : null}
-                {referenceContent?.primaryWebLink ? (
-                  <a
-                    href={referenceContent.primaryWebLink.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="task-row-reference-link"
-                    aria-label={`${strings.openLink}: ${referenceContent.primaryWebLink.label}`}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {referenceContent.primaryWebLink.label} ↗
-                  </a>
-                ) : null}
                 {attachments[0] ? (
                   <TaskRowAttachmentPreview
                     key={attachments[0].id}
@@ -559,6 +547,17 @@ export function TaskRow({
               </>
             )}
           </button>
+          {isReference && referenceContent?.primaryWebLink ? (
+            <a
+              href={referenceContent.primaryWebLink.url}
+              target="_blank"
+              rel="noreferrer"
+              className="task-row-reference-link"
+              aria-label={`${strings.openLink}: ${referenceContent.primaryWebLink.label}`}
+            >
+              {referenceContent.primaryWebLink.label} ↗
+            </a>
+          ) : null}
           {isReference
             ? referenceContent?.remainingText
               ? <MarkdownNotes value={referenceContent.remainingText} className="task-row-notes" />
@@ -695,7 +694,7 @@ export function TaskRow({
         </ul>
       ) : null}
     </li>
-    {organizeEnabled ? (
+    {organizeEnabled && !isReference ? (
       <li className="task-row-successor-slot" style={{ listStyle: "none" }}>
         {successorComposerOpen ? (
           <InlineSuccessorComposer

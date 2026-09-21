@@ -13,6 +13,7 @@ import {
 import {
   enqueueDueReminders,
   enqueueNotification,
+  hasOpenDescendants,
 } from "../src/notifications/outbox.js";
 import { createSession } from "../src/auth/repository.js";
 import { SESSION_COOKIE } from "../src/auth/routes.js";
@@ -742,6 +743,103 @@ describe("reminders and Push delivery", () => {
         kind: "context_entered",
         title: "Hier machbar",
         body: "Post: Paket abholen",
+        actions: [{ action: "open", title: "Öffnen" }],
+      }),
+    );
+  });
+
+  it("offers quick-complete for a reminder when the only open descendant is reference material", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, {
+      title: "Zug buchen",
+      status: "actionable",
+    });
+    createTask(ctx.handle.db, {
+      title: "Fahrplan",
+      kind: "reference",
+      parentTaskId: task.id,
+    });
+    expect(hasOpenDescendants(ctx.handle.db, task.id)).toBe(false);
+
+    enqueueNotification(ctx.handle.db, {
+      kind: "task_reminder",
+      recipientMemberId: hannes.id,
+      actorMemberId: null,
+      entityType: "task",
+      entityId: task.id,
+      entityTitle: task.title,
+      sourceKey: "reference-only-child",
+    });
+    const event = ctx.handle.db.select().from(schema.notificationEvents).get()!;
+    expect(buildNotificationPayload(ctx.handle.db, event, "de")).toEqual(
+      expect.objectContaining({
+        kind: "task_reminder",
+        actions: expect.arrayContaining([
+          expect.objectContaining({ action: "complete" }),
+          expect.objectContaining({ action: "open" }),
+        ]),
+        taskRevision: task.revision,
+        recurringTask: false,
+      }),
+    );
+  });
+
+  it("does not offer quick-complete when an open action sits under a reference descendant", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, {
+      title: "Urlaub organisieren",
+      status: "actionable",
+    });
+    const reference = createTask(ctx.handle.db, {
+      title: "Unterkunft",
+      kind: "reference",
+      parentTaskId: task.id,
+    });
+    createTask(ctx.handle.db, {
+      title: "Hotel buchen",
+      status: "actionable",
+      parentTaskId: reference.id,
+    });
+    expect(hasOpenDescendants(ctx.handle.db, task.id)).toBe(true);
+
+    enqueueNotification(ctx.handle.db, {
+      kind: "task_reminder",
+      recipientMemberId: hannes.id,
+      actorMemberId: null,
+      entityType: "task",
+      entityId: task.id,
+      entityTitle: task.title,
+      sourceKey: "nested-action-under-reference",
+    });
+    const event = ctx.handle.db.select().from(schema.notificationEvents).get()!;
+    expect(buildNotificationPayload(ctx.handle.db, event, "de")).toEqual(
+      expect.objectContaining({
+        kind: "task_reminder",
+        actions: [{ action: "open", title: "Öffnen" }],
+      }),
+    );
+  });
+
+  it("never offers quick-complete for a reference reminder payload itself", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const reference = createTask(ctx.handle.db, {
+      title: "Fahrplan",
+      kind: "reference",
+    });
+
+    enqueueNotification(ctx.handle.db, {
+      kind: "task_reminder",
+      recipientMemberId: hannes.id,
+      actorMemberId: null,
+      entityType: "task",
+      entityId: reference.id,
+      entityTitle: reference.title,
+      sourceKey: "reference-reminder",
+    });
+    const event = ctx.handle.db.select().from(schema.notificationEvents).get()!;
+    expect(buildNotificationPayload(ctx.handle.db, event, "de")).toEqual(
+      expect.objectContaining({
+        kind: "task_reminder",
         actions: [{ action: "open", title: "Öffnen" }],
       }),
     );

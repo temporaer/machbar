@@ -13,7 +13,10 @@ import {
   wouldCreateDependencyCycle,
 } from "../repo/index.js";
 import { getTaskOrThrow } from "./taskCrud.js";
-import { assertDependencyCapableTask } from "./taskKindGuard.js";
+import {
+  assertActionTask,
+  assertDependencyCapableTask,
+} from "./taskKindGuard.js";
 import {
   MutationContext,
   actor,
@@ -570,6 +573,7 @@ export function addTaskTag(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "addTaskTag");
     const existing = tx.select().from(schema.workItemTags)
       .where(and(eq(schema.workItemTags.workItemId, taskId), eq(schema.workItemTags.tagId, tagId)))
       .get();
@@ -597,6 +601,7 @@ export function removeTaskTag(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "removeTaskTag");
     const deleted = tx.delete(schema.workItemTags)
       .where(and(eq(schema.workItemTags.workItemId, taskId), eq(schema.workItemTags.tagId, tagId)))
       .run();
@@ -624,6 +629,7 @@ export function addExcludedTag(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "addExcludedTag");
     const existing = tx.select().from(schema.taskExcludedTags)
       .where(
         and(
@@ -656,6 +662,7 @@ export function removeExcludedTag(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "removeExcludedTag");
     const deleted = tx.delete(schema.taskExcludedTags)
       .where(
         and(

@@ -613,7 +613,7 @@ export function createChildTask(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const parent = getTaskOrThrow(txDb, parentTaskId);
-    if (parent.status === "captured") {
+    if (parent.kind === "action" && parent.status === "captured") {
       throw AppError.conflict(
         "task_promotion_invalid",
         "Promote the captured item to a project before adding steps.",
@@ -632,7 +632,13 @@ export function createChildTask(
     const hadOpenChild = txDb
       .select({ status: schema.workItems.status })
       .from(schema.workItems)
-      .where(and(eq(schema.workItems.role, "task"), eq(schema.workItems.parentId, parentTaskId)))
+      .where(
+        and(
+          eq(schema.workItems.role, "task"),
+          eq(schema.workItems.parentId, parentTaskId),
+          eq(schema.workItems.taskKind, "action"),
+        ),
+      )
       .all()
       .some((child) => child.status !== "done" && child.status !== "cancelled");
     const task = insertTask(txDb, { ...input, parentTaskId });
@@ -647,6 +653,7 @@ export function createChildTask(
     });
     if (
       parent.size === "XL" &&
+      task.kind === "action" &&
       !hadOpenChild &&
       task.status !== "done" &&
       task.status !== "cancelled"

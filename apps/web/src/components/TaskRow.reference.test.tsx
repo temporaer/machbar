@@ -51,7 +51,24 @@ describe("TaskRow – reference presentation", () => {
 
     const link = await screen.findByRole("link", { name: /camping-wang\.ch/ });
     expect(link).toHaveAttribute("href", "https://camping-wang.ch/");
+    expect(link.closest("button")).toBeNull();
     expect(await screen.findByText("Direkt am See")).toBeInTheDocument();
+  });
+
+  it("does not render the successor '+' affordance for a reference even in an organizable outline", async () => {
+    const reference = makeTask({
+      id: 1,
+      kind: "reference",
+      title: "Camping Wang",
+    });
+    renderWithProviders(
+      <TaskOutline tasks={[reference]} emptyMessage="Nichts da" organizable />,
+    );
+
+    await screen.findByText("Camping Wang");
+    expect(
+      screen.queryByRole("button", { name: "Aufgabe danach hinzufügen" }),
+    ).not.toBeInTheDocument();
   });
 
   it("offers 'Als Aufgabe behandeln' from the reference's action menu and calls the promotion endpoint", async () => {

@@ -550,9 +550,7 @@ function SharePageContent({
             showNotes
             showDueDate={calendarDueDate !== null}
             pendingFiles={incoming.files}
-            prepareNotes={async (notes) =>
-              appendTextBlock(notes, await resolveAttachmentBlock())
-            }
+            prepareNotes={resolveAppendBlock}
             onCancel={() => setCaptureOpen(false)}
             onCaptured={completeCapture}
           />

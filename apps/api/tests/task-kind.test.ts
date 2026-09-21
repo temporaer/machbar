@@ -60,6 +60,14 @@ describe("task kind (reference/material nodes)", () => {
     return res;
   }
 
+  function tagId(name = "Haus") {
+    return (
+      ctx.handle.sqlite
+        .prepare("SELECT id FROM tags WHERE name = ?")
+        .get(name) as { id: number }
+    ).id;
+  }
+
   function graph() {
     return Graph.load(ctx.handle.db, "2026-08-31");
   }
@@ -115,6 +123,76 @@ describe("task kind (reference/material nodes)", () => {
       parentTaskId: actionUnderProject.json().id,
     });
     expect(refUnderAction.statusCode).toBe(201);
+  });
+
+  it("allows creating an action child under a reference via the children endpoint", async () => {
+    const project = await createProject();
+    const parent = await createReference({
+      title: "Unterkunft",
+      projectId: project.id,
+    });
+
+    const child = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.json().id}/children`,
+      payload: { title: "Hotel buchen", kind: "action" },
+    });
+
+    expect(child.statusCode).toBe(201);
+    expect(child.json()).toMatchObject({
+      title: "Hotel buchen",
+      kind: "action",
+      parentTaskId: parent.json().id,
+      projectId: project.id,
+      status: "actionable",
+    });
+  });
+
+  it("allows creating a reference child under a reference via the children endpoint", async () => {
+    const project = await createProject();
+    const parent = await createReference({
+      title: "Reiseinfos",
+      projectId: project.id,
+    });
+
+    const child = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.json().id}/children`,
+      payload: { title: "Packliste", kind: "reference" },
+    });
+
+    expect(child.statusCode).toBe(201);
+    expect(child.json()).toMatchObject({
+      title: "Packliste",
+      kind: "reference",
+      parentTaskId: parent.json().id,
+      projectId: project.id,
+      status: "captured",
+    });
+  });
+
+  it("still rejects children under a genuinely captured action parent", async () => {
+    const parent = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title: "Inbox item" },
+    });
+    expect(parent.statusCode).toBe(201);
+
+    const child = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.json().id}/children`,
+      payload: { title: "Should fail" },
+    });
+
+    expect(child.statusCode).toBe(409);
+    expect(child.json().error).toMatchObject({
+      code: "task_promotion_invalid",
+      details: {
+        taskId: parent.json().id,
+        reason: "captured_child_forbidden",
+      },
+    });
   });
 
   it("an action is not selected as next action if its only child is a reference containing an open action", async () => {
@@ -245,6 +323,49 @@ describe("task kind (reference/material nodes)", () => {
     expect(refAfter.json().status).not.toBe("cancelled");
   });
 
+  it("records task_broken_down only when an action child is added to an XL parent", async () => {
+    const parent = await createTask({
+      title: "Reise planen",
+      status: "actionable",
+      size: "XL",
+    });
+    const member = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Mira", color: "#123456" })
+      .returning()
+      .get();
+
+    const referenceChild = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.json().id}/children`,
+      payload: { title: "Material", kind: "reference" },
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(member.id) },
+    });
+    expect(referenceChild.statusCode).toBe(201);
+
+    const beforeAction = ctx.handle.sqlite
+      .prepare(
+        "SELECT COUNT(*) as c FROM contribution_events WHERE reason = 'task_broken_down' AND entity_id = ?",
+      )
+      .get(parent.json().id) as { c: number };
+    expect(beforeAction.c).toBe(0);
+
+    const actionChild = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${parent.json().id}/children`,
+      payload: { title: "Zug buchen", kind: "action" },
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(member.id) },
+    });
+    expect(actionChild.statusCode).toBe(201);
+
+    const afterAction = ctx.handle.sqlite
+      .prepare(
+        "SELECT COUNT(*) as c FROM contribution_events WHERE reason = 'task_broken_down' AND entity_id = ?",
+      )
+      .get(parent.json().id) as { c: number };
+    expect(afterAction.c).toBe(1);
+  });
+
   it("rejects lifecycle transitions on a reference", async () => {
     const project = await createProject();
     const ref = await createReference({
@@ -324,6 +445,156 @@ describe("task kind (reference/material nodes)", () => {
     expect(actionDependsOnRef.json().error.code).toBe(
       "reference_dependency_not_allowed",
     );
+  });
+
+  it("rejects adding a direct tag to a reference and still allows it for an action", async () => {
+    const project = await createProject();
+    const action = await createTask({ title: "Do it", projectId: project.id });
+    const ref = await createReference({
+      title: "Material",
+      projectId: project.id,
+    });
+    const existingTagId = tagId();
+
+    const reject = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${ref.json().id}/tags`,
+      payload: { tagId: existingTagId },
+    });
+    expect(reject.statusCode).toBe(409);
+    expect(reject.json().error.code).toBe("reference_action_not_allowed");
+
+    const allow = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${action.json().id}/tags`,
+      payload: { tagId: existingTagId },
+    });
+    expect(allow.statusCode).toBe(201);
+    expect(
+      ctx.handle.sqlite
+        .prepare(
+          "SELECT 1 AS present FROM work_item_tags WHERE work_item_id = ? AND tag_id = ?",
+        )
+        .get(action.json().id, existingTagId),
+    ).toEqual({ present: 1 });
+  });
+
+  it("rejects removing a direct tag from a reference and still allows it for an action", async () => {
+    const project = await createProject();
+    const action = await createTask({ title: "Do it", projectId: project.id });
+    const ref = await createReference({
+      title: "Material",
+      projectId: project.id,
+    });
+    const existingTagId = tagId();
+    ctx.handle.sqlite
+      .prepare("INSERT INTO work_item_tags (work_item_id, tag_id) VALUES (?, ?)")
+      .run(action.json().id, existingTagId);
+    ctx.handle.sqlite
+      .prepare("INSERT INTO work_item_tags (work_item_id, tag_id) VALUES (?, ?)")
+      .run(ref.json().id, existingTagId);
+
+    const reject = await ctx.app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${ref.json().id}/tags/${existingTagId}`,
+    });
+    expect(reject.statusCode).toBe(409);
+    expect(reject.json().error.code).toBe("reference_action_not_allowed");
+    expect(
+      ctx.handle.sqlite
+        .prepare(
+          "SELECT 1 AS present FROM work_item_tags WHERE work_item_id = ? AND tag_id = ?",
+        )
+        .get(ref.json().id, existingTagId),
+    ).toEqual({ present: 1 });
+
+    const allow = await ctx.app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${action.json().id}/tags/${existingTagId}`,
+    });
+    expect(allow.statusCode).toBe(200);
+    expect(
+      ctx.handle.sqlite
+        .prepare(
+          "SELECT 1 AS present FROM work_item_tags WHERE work_item_id = ? AND tag_id = ?",
+        )
+        .get(action.json().id, existingTagId),
+    ).toBeUndefined();
+  });
+
+  it("rejects adding an excluded tag to a reference and still allows it for an action", async () => {
+    const project = await createProject();
+    const action = await createTask({ title: "Do it", projectId: project.id });
+    const ref = await createReference({
+      title: "Material",
+      projectId: project.id,
+    });
+    const existingTagId = tagId();
+
+    const reject = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${ref.json().id}/excluded-tags`,
+      payload: { tagId: existingTagId },
+    });
+    expect(reject.statusCode).toBe(409);
+    expect(reject.json().error.code).toBe("reference_action_not_allowed");
+
+    const allow = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${action.json().id}/excluded-tags`,
+      payload: { tagId: existingTagId },
+    });
+    expect(allow.statusCode).toBe(201);
+    expect(
+      ctx.handle.sqlite
+        .prepare(
+          "SELECT 1 AS present FROM task_excluded_tags WHERE task_id = ? AND tag_id = ?",
+        )
+        .get(action.json().id, existingTagId),
+    ).toEqual({ present: 1 });
+  });
+
+  it("rejects removing an excluded tag from a reference and still allows it for an action", async () => {
+    const project = await createProject();
+    const action = await createTask({ title: "Do it", projectId: project.id });
+    const ref = await createReference({
+      title: "Material",
+      projectId: project.id,
+    });
+    const existingTagId = tagId();
+    ctx.handle.sqlite
+      .prepare("INSERT INTO task_excluded_tags (task_id, tag_id) VALUES (?, ?)")
+      .run(action.json().id, existingTagId);
+    ctx.handle.sqlite
+      .prepare("INSERT INTO task_excluded_tags (task_id, tag_id) VALUES (?, ?)")
+      .run(ref.json().id, existingTagId);
+
+    const reject = await ctx.app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${ref.json().id}/excluded-tags/${existingTagId}`,
+    });
+    expect(reject.statusCode).toBe(409);
+    expect(reject.json().error.code).toBe("reference_action_not_allowed");
+    expect(
+      ctx.handle.sqlite
+        .prepare(
+          "SELECT 1 AS present FROM task_excluded_tags WHERE task_id = ? AND tag_id = ?",
+        )
+        .get(ref.json().id, existingTagId),
+    ).toEqual({ present: 1 });
+
+    const allow = await ctx.app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${action.json().id}/excluded-tags/${existingTagId}`,
+    });
+    expect(allow.statusCode).toBe(200);
+    expect(
+      ctx.handle.sqlite
+        .prepare(
+          "SELECT 1 AS present FROM task_excluded_tags WHERE task_id = ? AND tag_id = ?",
+        )
+        .get(action.json().id, existingTagId),
+    ).toBeUndefined();
   });
 
   it("references never appear in Today/Week/Waiting/Inbox/Review/Refinement", async () => {

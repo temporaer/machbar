@@ -402,7 +402,10 @@ export function TaskDetailSheet() {
       return;
     }
     try {
-      const results = await api.searchTasks({ text: value });
+      const results = await api.searchTasks({
+        text: value,
+        kinds: ["action"],
+      });
       setDepResults(
         task
           ? sortDependencyCandidates(results, task, value, locale, {

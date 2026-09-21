@@ -27,6 +27,29 @@ describe("task external waits", () => {
     return response.json();
   }
 
+  async function createReference(payload: Record<string, unknown>) {
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { kind: "reference", ...payload },
+    });
+    expect(response.statusCode).toBe(201);
+    return response.json();
+  }
+
+  interface TaskTreeNode {
+    title: string;
+    kind: string;
+    children: TaskTreeNode[];
+  }
+
+  function expectNoReferenceNodes(tasks: TaskTreeNode[]) {
+    for (const task of tasks) {
+      expect(task.kind).not.toBe("reference");
+      expectNoReferenceNodes(task.children);
+    }
+  }
+
   it("requires a reason before a task becomes externally blocked", async () => {
     const task = await createTask({ title: "Schrank aufbauen" });
     const response = await ctx.app.inject({
@@ -179,6 +202,62 @@ describe("task external waits", () => {
         expect.objectContaining({ type: "external" }),
       ]),
     );
+  });
+
+  it("keeps nested action descendants visible while pruning reference containers from Waiting", async () => {
+    const parent = await createTask({ title: "Auf Rueckmeldung warten" });
+    const reference = await createReference({
+      title: "Anhang",
+      parentTaskId: parent.id,
+    });
+    await createTask({
+      title: "Antwort dokumentieren",
+      parentTaskId: reference.id,
+    });
+    await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${parent.id}/external-wait`,
+      payload: { waitingFor: "Behörde" },
+    });
+
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: "/api/waiting",
+    });
+    expect(response.statusCode).toBe(200);
+    const row = response
+      .json()
+      .find((entry: { task: { title: string } }) => entry.task.title === "Auf Rueckmeldung warten");
+
+    expect(row.task.children.map((child: { title: string }) => child.title)).toEqual([
+      "Antwort dokumentieren",
+    ]);
+    expectNoReferenceNodes([row.task]);
+  });
+
+  it("drops a leaf reference child from the Waiting task tree", async () => {
+    const parent = await createTask({ title: "Nur Material wartet" });
+    await createReference({
+      title: "Notizen",
+      parentTaskId: parent.id,
+    });
+    await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${parent.id}/external-wait`,
+      payload: { waitingFor: "Freigabe" },
+    });
+
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: "/api/waiting",
+    });
+    expect(response.statusCode).toBe(200);
+    const row = response
+      .json()
+      .find((entry: { task: { title: string } }) => entry.task.title === "Nur Material wartet");
+
+    expect(row.task.children).toEqual([]);
+    expectNoReferenceNodes([row.task]);
   });
 
   it("orders waiting work by attention, due date, title, and ID with missing dates last", async () => {

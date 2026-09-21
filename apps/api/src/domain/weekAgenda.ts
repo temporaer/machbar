@@ -11,6 +11,7 @@ import {
   createAgendaSelection,
   selectCurrentAvailableWork,
 } from "./agendaSelection.js";
+import { pruneReferenceContainers } from "./compiledViewProjection.js";
 
 function addDaysIso(dateIso: string, days: number): string {
   const date = new Date(`${dateIso}T00:00:00.000Z`);
@@ -106,7 +107,7 @@ function taskSummary(
     blocked: task.blocked,
     executable: task.executable,
     stuckReason: null,
-    task,
+    task: pruneReferenceContainers(task),
     project: null,
   };
 }

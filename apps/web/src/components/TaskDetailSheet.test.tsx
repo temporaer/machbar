@@ -603,6 +603,10 @@ describe("TaskDetailSheet", () => {
     });
     await userEvent.click(result);
 
+    expect(mockedApi.searchTasks).toHaveBeenCalledWith({
+      text: "Freigabe",
+      kinds: ["action"],
+    });
     expect(
       await screen.findByText(
         "„Freigabe einholen“ hängt bereits direkt oder indirekt von „Reparaturziel“ ab. Die umgekehrte Abhängigkeit würde einen Kreis erzeugen.",
@@ -674,6 +678,10 @@ describe("TaskDetailSheet", () => {
       "Freigabe",
     );
 
+    expect(mockedApi.searchTasks).toHaveBeenCalledWith({
+      text: "Freigabe",
+      kinds: ["action"],
+    });
     const results = await screen.findAllByRole("button", {
       name: /^Abhängigkeit hinzufügen:/,
     });
