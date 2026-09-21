@@ -111,12 +111,14 @@ export function enqueueDueReminders(
       id: schema.workItems.id,
       title: schema.workItems.title,
       dueDate: schema.workItems.dueDate,
+      taskKind: schema.workItems.taskKind,
     })
     .from(schema.workItems)
     .where(
       and(
         eq(schema.workItems.role, "task"),
         inArray(schema.workItems.id, taskIds),
+        sql`(${schema.workItems.taskKind} IS NULL OR ${schema.workItems.taskKind} = 'action')`,
         notInArray(schema.workItems.status, ["done", "cancelled"]),
       ),
     )

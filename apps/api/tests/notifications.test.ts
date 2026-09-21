@@ -124,13 +124,16 @@ describe("Push subscription API", () => {
       headers: { [ACTIVITY_ACTOR_HEADER]: String(hannes.id) },
     });
     expect(defaults.json()).toEqual({
-      project_assigned: true,
       task_reminder: true,
       context_entered: true,
     });
 
+    ctx.handle.db.insert(schema.pushNotificationPreferences).values({
+      memberId: hannes.id,
+      projectAssigned: false,
+    }).run();
+
     const preferences = {
-      project_assigned: false,
       task_reminder: true,
       context_entered: false,
     };
@@ -155,10 +158,23 @@ describe("Push subscription API", () => {
       headers: { [ACTIVITY_ACTOR_HEADER]: String(sarah.id) },
     });
     expect(otherMember.json()).toEqual({
-      project_assigned: true,
       task_reminder: true,
       context_entered: true,
     });
+
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.pushNotificationPreferences)
+        .where(eq(schema.pushNotificationPreferences.memberId, hannes.id))
+        .get(),
+    ).toEqual(
+      expect.objectContaining({
+        projectAssigned: false,
+        taskReminder: true,
+        contextEntered: false,
+      }),
+    );
   });
 
   it("sends a localized test notification only to the requesting browser", async () => {
@@ -339,7 +355,7 @@ describe("notification event creation", () => {
     expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([]);
   });
 
-  it("emits one project assignment without inherited child fan-out", () => {
+  it("does not emit project assignment pushes when assigning a project", () => {
     const hannes = addMember(ctx, "Hannes");
     const sarah = addMember(ctx, "Sarah");
     const project = createProject(ctx.handle.db, { title: "Kinderzimmer" });
@@ -353,16 +369,10 @@ describe("notification event creation", () => {
       { ownerMemberId: hannes.id },
       { actorMemberId: sarah.id },
     );
-    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([
-      expect.objectContaining({
-        kind: "project_assigned",
-        recipientMemberId: hannes.id,
-        entityTitle: "Kinderzimmer",
-      }),
-    ]);
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([]);
   });
 
-  it("notifies the new project driver on reassignment", () => {
+  it("does not emit project assignment pushes on reassignment", () => {
     const hannes = addMember(ctx, "Hannes");
     const sarah = addMember(ctx, "Sarah");
     const project = createProject(ctx.handle.db, {
@@ -376,16 +386,10 @@ describe("notification event creation", () => {
       { ownerMemberId: hannes.id },
       { actorMemberId: sarah.id },
     );
-    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([
-      expect.objectContaining({
-        kind: "project_assigned",
-        recipientMemberId: hannes.id,
-        actorMemberId: sarah.id,
-      }),
-    ]);
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([]);
   });
 
-  it("records assignment when project activation supplies the driver", () => {
+  it("does not emit project assignment pushes when activation supplies the driver", () => {
     const hannes = addMember(ctx, "Hannes");
     const sarah = addMember(ctx, "Sarah");
     const project = createProject(ctx.handle.db, { title: "Kinderzimmer" });
@@ -400,9 +404,7 @@ describe("notification event creation", () => {
       { ownerMemberId: hannes.id },
       { actorMemberId: sarah.id },
     );
-    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([
-      expect.objectContaining({ kind: "project_assigned" }),
-    ]);
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([]);
   });
 });
 
@@ -843,6 +845,103 @@ describe("reminders and Push delivery", () => {
         actions: [{ action: "open", title: "Öffnen" }],
       }),
     );
+  });
+
+  it("does not enqueue reminders for corrupt reference reminder rows", () => {
+    const reference = createTask(ctx.handle.db, {
+      title: "Fahrplan",
+      kind: "reference",
+    });
+    ctx.handle.db.insert(schema.taskReminders).values({
+      taskId: reference.id,
+      kind: "absolute",
+      at: "2026-09-01T08:00:00.000Z",
+    }).run();
+
+    expect(
+      enqueueDueReminders(ctx.handle.db, new Date("2026-09-01T09:00:00Z")),
+    ).toBe(0);
+    expect(ctx.handle.db.select().from(schema.notificationEvents).all()).toEqual([]);
+  });
+
+  it("consumes stale reference reminder events without delivery or retry", async () => {
+    const hannes = addMember(ctx, "Hannes");
+    const reference = createTask(ctx.handle.db, {
+      title: "Fahrplan",
+      kind: "reference",
+    });
+    ctx.handle.db.insert(schema.pushSubscriptions).values({
+      endpoint: "https://push.example/device",
+      memberId: hannes.id,
+      p256dh: "key",
+      auth: "auth",
+      locale: "de",
+    }).run();
+    enqueueNotification(ctx.handle.db, {
+      kind: "task_reminder",
+      recipientMemberId: hannes.id,
+      actorMemberId: null,
+      entityType: "task",
+      entityId: reference.id,
+      entityTitle: reference.title,
+      sourceKey: "stale-reference-reminder",
+    });
+    const send = vi.fn<PushTransport["send"]>().mockResolvedValue(undefined);
+
+    await dispatchNotificationEvents(ctx.handle.db, { send }, { error: vi.fn() });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.notificationEvents)
+        .where(isNull(schema.notificationEvents.processedAt))
+        .all(),
+    ).toEqual([]);
+  });
+
+  it("consumes historical assignment events without delivery or retry", async () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, { title: "Paket abholen" });
+    ctx.handle.db.insert(schema.pushSubscriptions).values({
+      endpoint: "https://push.example/device",
+      memberId: hannes.id,
+      p256dh: "key",
+      auth: "auth",
+      locale: "de",
+    }).run();
+    ctx.handle.db.insert(schema.notificationEvents).values([
+      {
+        kind: "project_assigned",
+        recipientMemberId: hannes.id,
+        actorMemberId: null,
+        entityType: "project",
+        entityId: task.id,
+        entityTitle: task.title,
+        sourceKey: "historical-project-assignment",
+      },
+      {
+        kind: "task_assigned",
+        recipientMemberId: hannes.id,
+        actorMemberId: null,
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        sourceKey: "historical-task-assignment",
+      },
+    ]).run();
+    const send = vi.fn<PushTransport["send"]>().mockResolvedValue(undefined);
+
+    await dispatchNotificationEvents(ctx.handle.db, { send }, { error: vi.fn() });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.notificationEvents)
+        .where(isNull(schema.notificationEvents.processedAt))
+        .all(),
+    ).toEqual([]);
   });
 
   it("sends real notifications with the explicit 7-day TTL", async () => {

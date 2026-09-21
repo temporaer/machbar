@@ -858,9 +858,6 @@ const extra = {
   pushTypesTitle: "Arten",
   pushTypesHint:
     "Gilt für alle Geräte, auf denen du Benachrichtigungen aktiviert hast.",
-  pushProjectAssignments: "Projektzuweisungen",
-  pushProjectAssignmentsHint:
-    "Wenn dir jemand anderes die Verantwortung für ein Projekt überträgt.",
   pushTaskReminders: "Aufgabenerinnerungen",
   pushTaskRemindersHint: "Wenn eine eingestellte Erinnerung fällig ist.",
   pushContextEntered: "Ortsaufgaben",

@@ -97,8 +97,7 @@ subscription, so the same member can receive notifications on a desktop and a
 phone. Permission is requested only after pressing the enable button.
 Service-worker delivery does not require an open Machbar window; clicking a
 notification opens or focuses the relevant task or project. Machbar currently
-notifies a member about assignments made by another person and explicit task
-reminders.
+notifies members about explicit task reminders and place-entry events.
 
 ## Stop or inspect the service
 

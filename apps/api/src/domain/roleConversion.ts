@@ -21,7 +21,6 @@ import {
   actor,
   assertExpectedRevision,
   assertProjectActivationReady,
-  enqueueProjectAssignment,
   nowIso,
   projectHasNextAction,
   projectHasTaskPlan,
@@ -221,7 +220,6 @@ export function convertTaskToStory(
       entityId: project.id,
       personalEligible: true,
     });
-    enqueueProjectAssignment(txDb, project, activityEventId, context);
     return project;
   });
 }

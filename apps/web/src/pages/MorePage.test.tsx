@@ -17,7 +17,6 @@ vi.mock("../lib/api", () => ({
       publicKey: null,
     }),
     getPushNotificationPreferences: vi.fn().mockResolvedValue({
-      project_assigned: true,
       task_reminder: true,
       context_entered: true,
     }),

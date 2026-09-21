@@ -281,11 +281,6 @@ export function PushNotificationSettings() {
             {(
               [
                 {
-                  kind: "project_assigned",
-                  label: strings.pushProjectAssignments,
-                  hint: strings.pushProjectAssignmentsHint,
-                },
-                {
                   kind: "task_reminder",
                   label: strings.pushTaskReminders,
                   hint: strings.pushTaskRemindersHint,

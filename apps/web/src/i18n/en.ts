@@ -862,9 +862,6 @@ const en = {
   pushTypesTitle: "Types",
   pushTypesHint:
     "Applies to every device where you have enabled notifications.",
-  pushProjectAssignments: "Project assignments",
-  pushProjectAssignmentsHint:
-    "When someone else makes you responsible for a project.",
   pushTaskReminders: "Task reminders",
   pushTaskRemindersHint: "When a scheduled reminder becomes due.",
   pushContextEntered: "Place-based tasks",

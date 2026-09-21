@@ -31,7 +31,6 @@ function currentMemberId(request: {
 }
 
 const defaultPreferences: PushNotificationPreferences = {
-  project_assigned: true,
   task_reminder: true,
   context_entered: true,
 };
@@ -47,7 +46,6 @@ function getPreferences(
     .get();
   return row
     ? {
-        project_assigned: row.projectAssigned,
         task_reminder: row.taskReminder,
         context_entered: row.contextEntered,
       }
@@ -77,9 +75,9 @@ export function registerPushRoutes(
       pushNotificationPreferencesSchema,
       request.body,
     );
+    // project_assigned remains in the legacy table column, but is no longer an active preference.
     const values = {
       memberId,
-      projectAssigned: preferences.project_assigned,
       taskReminder: preferences.task_reminder,
       contextEntered: preferences.context_entered,
       updatedAt: new Date().toISOString(),

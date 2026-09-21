@@ -82,7 +82,6 @@ describe("PushNotificationSettings", () => {
       publicKey: "AQAB",
     });
     mockedApi.getPushNotificationPreferences.mockResolvedValue({
-      project_assigned: true,
       task_reminder: true,
       context_entered: true,
     });
@@ -168,7 +167,6 @@ describe("PushNotificationSettings", () => {
 
     await waitFor(() =>
       expect(mockedApi.updatePushNotificationPreferences).toHaveBeenCalledWith({
-        project_assigned: true,
         task_reminder: true,
         context_entered: false,
       }),

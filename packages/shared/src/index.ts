@@ -69,7 +69,6 @@ export const notificationKinds = [
   "context_entered",
 ] as const;
 export const pushNotificationPreferenceKinds = [
-  "project_assigned",
   "task_reminder",
   "context_entered",
 ] as const;

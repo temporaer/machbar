@@ -115,7 +115,9 @@ export function searchTasks(graph: Graph, filters: SearchFilters): TaskRecord[] 
     });
   }
   if (filters.status !== undefined) {
-    results = results.filter((t) => t.status === filters.status);
+    results = results.filter(
+      (t) => t.kind === "action" && t.status === filters.status,
+    );
   }
   if (filters.dueFrom !== undefined) {
     results = results.filter((t) => !!t.dueDate && t.dueDate >= filters.dueFrom!);

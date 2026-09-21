@@ -202,6 +202,30 @@ describe("search/filter and project CRUD/archive", () => {
     );
   });
 
+  it("applies lifecycle status filters only to actions while preserving reference discovery", () => {
+    const reference = createTask(ctx.handle.db, {
+      title: "Camping reference",
+      kind: "reference",
+      notes: "Useful reference material",
+    });
+    const action = createTask(ctx.handle.db, {
+      title: "Camping action",
+      status: "captured",
+    });
+    const graph = Graph.load(ctx.handle.db);
+
+    const captured = searchTasks(graph, { status: "captured" });
+    expect(captured.map((task) => task.id)).toContain(action.id);
+    expect(captured.map((task) => task.id)).not.toContain(reference.id);
+    expect(captured.every((task) => task.kind === "action")).toBe(true);
+    expect(searchTasks(graph, { text: "Camping reference" }).map((task) => task.id)).toEqual([
+      reference.id,
+    ]);
+    expect(searchTasks(graph, { kinds: ["reference"] }).map((task) => task.id)).toEqual([
+      reference.id,
+    ]);
+  });
+
   it("filters search results by canonical external-wait state", async () => {
     const res = await ctx.app.inject({
       method: "GET",
