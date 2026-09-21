@@ -11,7 +11,10 @@ import {
   createAgendaSelection,
   selectCurrentAvailableWork,
 } from "./agendaSelection.js";
-import { pruneReferenceContainers } from "./compiledViewProjection.js";
+import {
+  pruneProjectForCompiledView,
+  pruneReferenceContainers,
+} from "./compiledViewProjection.js";
 
 function addDaysIso(dateIso: string, days: number): string {
   const date = new Date(`${dateIso}T00:00:00.000Z`);
@@ -142,7 +145,7 @@ function storySummary(
     executable: story.nextAction !== null,
     stuckReason: story.stuckReason ?? null,
     task: null,
-    project: story,
+    project: pruneProjectForCompiledView(story),
   };
 }
 

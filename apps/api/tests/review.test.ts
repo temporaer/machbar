@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import { Graph } from "../src/domain/graph.js";
 import {
@@ -635,6 +636,153 @@ describe("review queue", () => {
     expect(items.some((item) => item.entityId === dueWait.id)).toBe(false);
   });
 
+  it("flags an XL action whose only child is a reference", () => {
+    const member = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "XL reference owner", color: "#abcdef" })
+      .returning()
+      .get();
+    const project = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        title: "Reference-only project",
+        status: "active",
+        ownerMemberId: member.id,
+      })
+      .returning()
+      .get();
+    const parent = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: project.id,
+        title: "Large work",
+        status: "active",
+        size: "XL",
+      })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: parent.id,
+        title: "Reference",
+        status: "captured",
+        taskKind: "reference",
+      })
+      .run();
+
+    expect(
+      reviewItems().some(
+        (item) =>
+          item.entityId === parent.id && item.reason === "xl_without_children",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not flag an XL action with an open action below a reference", () => {
+    const member = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "XL nested owner", color: "#abcdef" })
+      .returning()
+      .get();
+    const project = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        title: "Nested action project",
+        status: "active",
+        ownerMemberId: member.id,
+      })
+      .returning()
+      .get();
+    const parent = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: project.id,
+        title: "Large work",
+        status: "active",
+        size: "XL",
+      })
+      .returning()
+      .get();
+    const reference = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: parent.id,
+        title: "Reference",
+        status: "captured",
+        taskKind: "reference",
+      })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: reference.id,
+        title: "Open action",
+        status: "active",
+      })
+      .run();
+
+    expect(
+      reviewItems().some(
+        (item) =>
+          item.entityId === parent.id && item.reason === "xl_without_children",
+      ),
+    ).toBe(false);
+  });
+
+  it("preserves XL-without-children review for a done action child", () => {
+    const member = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "XL done owner", color: "#abcdef" })
+      .returning()
+      .get();
+    const project = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        title: "Done child project",
+        status: "active",
+        ownerMemberId: member.id,
+      })
+      .returning()
+      .get();
+    const parent = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: project.id,
+        title: "Large work",
+        status: "active",
+        size: "XL",
+      })
+      .returning()
+      .get();
+    ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        parentId: parent.id,
+        title: "Done action",
+        status: "done",
+      })
+      .run();
+
+    expect(
+      reviewItems().some(
+        (item) =>
+          item.entityId === parent.id && item.reason === "xl_without_children",
+      ),
+    ).toBe(true);
+  });
+
   it("acknowledges project and task review revision-safely without touching updatedAt or awarding points", async () => {
     const project = ctx.handle.db
       .insert(schema.workItems)
@@ -679,6 +827,38 @@ describe("review queue", () => {
     });
     expect(stale.statusCode).toBe(409);
     expect(stale.json().error.code).toBe("stale_write_conflict");
+  });
+
+  it("rejects acknowledging review on reference material through the action guard", async () => {
+    const reference = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "task",
+        taskKind: "reference",
+        title: "Reference material",
+        status: "captured",
+      })
+      .returning()
+      .get();
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${reference.id}/review`,
+      payload: { expectedRevision: reference.revision },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({
+      code: "reference_action_not_allowed",
+      details: { taskId: reference.id, operation: "acknowledgeTaskReview" },
+    });
+    expect(
+      ctx.handle.db
+        .select({ reviewedAt: schema.workItems.reviewedAt })
+        .from(schema.workItems)
+        .where(eq(schema.workItems.id, reference.id))
+        .get(),
+    ).toEqual({ reviewedAt: null });
   });
 
   it("returns the same derived queue and count from review endpoints", async () => {

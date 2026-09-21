@@ -10,7 +10,10 @@ import {
   createAgendaSelection,
   selectCurrentAvailableWork,
 } from "./agendaSelection.js";
-import { pruneReferenceContainers } from "./compiledViewProjection.js";
+import {
+  pruneProjectForCompiledView,
+  pruneReferenceContainers,
+} from "./compiledViewProjection.js";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -210,14 +213,14 @@ export function buildAgenda(
         selection.laneSelection,
         isContextAvailable,
       );
-      const projectForAgenda = {
+      const projectForAgenda = pruneProjectForCompiledView({
         ...computed,
         nextAction: pruneTask(computed.nextAction ?? null),
         deferredNextAction: pruneTask(computed.deferredNextAction ?? null),
         additionalNextActions: (computed.additionalNextActions ?? []).map(
           pruneReferenceContainers,
         ),
-      };
+      });
       const stuckProject = canonicalNextAction
         ? undefined
         : stuckByProject.get(project.id);

@@ -33,6 +33,7 @@ export function acknowledgeTaskReview(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
+    assertActionTask(task, "acknowledgeTaskReview");
     assertExpectedRevision("task", id, task.revision, expectedRevision);
     const updated = tx
       .update(schema.workItems)

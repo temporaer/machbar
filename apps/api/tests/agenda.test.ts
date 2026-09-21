@@ -1170,6 +1170,16 @@ describe("Heute agenda: compiled project prompts", () => {
     return response.json();
   }
 
+  async function createReference(payload: Record<string, unknown>) {
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { kind: "reference", ...payload },
+    });
+    expect(response.statusCode).toBe(201);
+    return response.json();
+  }
+
   async function projectPrompts(memberId?: number) {
     const query = new URLSearchParams({ date: localTodayIso() });
     if (memberId !== undefined) query.set("memberId", String(memberId));
@@ -1184,6 +1194,11 @@ describe("Heute agenda: compiled project prompts", () => {
         title: string;
         dueDate: string | null;
         scheduledDate: string | null;
+        nextAction?: { id: number; title: string } | null;
+        childStories?: Array<{
+          id: number;
+          nextAction?: { id: number; title: string } | null;
+        }>;
       };
       qualification: "due" | "scheduled" | "both";
       attentionBucket: "overdue" | "dueToday" | "dueSoon" | "planned";
@@ -1401,5 +1416,50 @@ describe("Heute agenda: compiled project prompts", () => {
     expect(capturedEntry?.nextAction).toBeNull();
     expect(capturedEntry?.stuck?.reason).toBe("no_next_action");
     expect(capturedEntry?.stuck).toEqual({ reason: "no_next_action" });
+  });
+
+  it("prunes references recursively from compiled project prompts", async () => {
+    const today = localTodayIso();
+    const parentProject = await createActiveProject({
+      title: "Parent Project",
+      dueDate: today,
+    });
+    const childProject = await createActiveProject({
+      title: "Child Project",
+      parentId: parentProject.id,
+    });
+    const actionA = await createTask({
+      projectId: childProject.id,
+      title: "Action A",
+      additionalNextAction: true,
+    });
+    const reference = await createReference({
+      projectId: childProject.id,
+      parentTaskId: actionA.id,
+      kind: "reference",
+      title: "Reference R",
+    });
+    await createTask({
+      projectId: childProject.id,
+      parentTaskId: reference.id,
+      title: "Action B",
+    });
+
+    const agenda = await projectPrompts();
+    const entry = agenda.find(
+      (candidate) => candidate.project.id === parentProject.id,
+    );
+
+    expect(entry?.project).toMatchObject({
+      id: parentProject.id,
+      childStories: [
+        expect.objectContaining({
+          id: childProject.id,
+          nextAction: expect.objectContaining({ title: "Action B" }),
+        }),
+      ],
+    });
+    expect(JSON.stringify(entry)).not.toContain('"kind":"reference"');
+    expect(JSON.stringify(entry)).toContain("Action B");
   });
 });

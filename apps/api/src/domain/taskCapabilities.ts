@@ -72,6 +72,7 @@ export function followUpExternalWait(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "followUpExternalWait");
     assertExpectedRevision(
       "task",
       taskId,
@@ -236,6 +237,7 @@ export function upsertExternalWait(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "upsertExternalWait");
     assertExpectedRevision(
       "task",
       taskId,
@@ -364,6 +366,7 @@ export function resolveExternalWait(
   db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, taskId);
+    assertActionTask(task, "resolveExternalWait");
     assertExpectedRevision(
       "task",
       taskId,

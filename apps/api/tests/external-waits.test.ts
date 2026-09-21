@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
+import * as schema from "../src/db/schema.js";
 import {
   closeTestContext,
   createTestContext,
@@ -74,6 +75,53 @@ describe("task external waits", () => {
       blocked: false,
       executable: true,
       revision: task.revision,
+    });
+  });
+
+  it("rejects every external-wait operation for reference material through the action guard", async () => {
+    const reference = await createReference({ title: "Reference material" });
+
+    const upsert = await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${reference.id}/external-wait`,
+      payload: { waitingFor: "Someone else" },
+    });
+    expect(upsert.statusCode).toBe(409);
+    expect(upsert.json().error).toMatchObject({
+      code: "reference_action_not_allowed",
+      details: { taskId: reference.id, operation: "upsertExternalWait" },
+    });
+
+    ctx.handle.db
+      .insert(schema.taskExternalWaits)
+      .values({
+        taskId: reference.id,
+        waitingFor: "Someone else",
+        revisitDate: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+      .run();
+    const followUp = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${reference.id}/external-wait/follow-up`,
+      payload: { action: "resolve", content: "Follow up" },
+    });
+    expect(followUp.statusCode).toBe(409);
+    expect(followUp.json().error).toMatchObject({
+      code: "reference_action_not_allowed",
+      details: { taskId: reference.id, operation: "followUpExternalWait" },
+    });
+
+    const resolve = await ctx.app.inject({
+      method: "DELETE",
+      url: `/api/tasks/${reference.id}/external-wait`,
+      payload: {},
+    });
+    expect(resolve.statusCode).toBe(409);
+    expect(resolve.json().error).toMatchObject({
+      code: "reference_action_not_allowed",
+      details: { taskId: reference.id, operation: "resolveExternalWait" },
     });
   });
 

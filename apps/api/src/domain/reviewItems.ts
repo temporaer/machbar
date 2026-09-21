@@ -22,6 +22,16 @@ function isOpen(task: TaskRecord): boolean {
   return task.status !== "done" && task.status !== "cancelled";
 }
 
+function hasOpenActionableDescendant(task: TaskRecord): boolean {
+  const descendants = [...task.children];
+  while (descendants.length > 0) {
+    const descendant = descendants.pop()!;
+    if (descendant.kind === "action" && isOpen(descendant)) return true;
+    descendants.push(...descendant.children);
+  }
+  return false;
+}
+
 function attentionAt(entity: {
   updatedAt: string;
   reviewedAt: string | null;
@@ -175,7 +185,7 @@ export function buildReviewItems(
     if (
       task.status === "actionable" &&
       task.size === "XL" &&
-      !task.children.some(isOpen)
+      !hasOpenActionableDescendant(task)
     ) {
       items.push(
         taskItem(task, "clarification_repair", "xl_without_children", {
