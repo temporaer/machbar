@@ -249,7 +249,10 @@ describe("SharePage reference destinations", () => {
       await screen.findByLabelText("Aufgaben und Projekte durchsuchen"),
       "Unterkunft",
     );
-    await userEvent.click(screen.getByRole("button", { name: /Unterkunft/ }));
+    const matchingDestinations = screen.getAllByRole("button", {
+      name: /Unterkunft/,
+    });
+    await userEvent.click(matchingDestinations.at(-1)!);
 
     await waitFor(() =>
       expect(mockedApi.createTask).toHaveBeenCalledWith(
