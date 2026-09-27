@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { intakeDraftIssues, type IntakeDraft, type IntakeDraftCalendarEvent, type IntakeDraftWorkItem, type IntakeIssue, type IntakeRecord } from "@machbar/shared";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
@@ -20,6 +20,12 @@ function IssueText({ issues, path }: { issues: IntakeIssue[]; path: (string | nu
   ));
 }
 
+type DateValidityChange = (key: string, valid: boolean) => void;
+
+function useDateValidityCallback(key: string, onDateValidityChange: DateValidityChange) {
+  return useCallback((valid: boolean) => onDateValidityChange(key, valid), [key, onDateValidityChange]);
+}
+
 export function IntakeReviewPage() {
   const { id = "" } = useParams();
   const strings = useStrings();
@@ -32,6 +38,40 @@ export function IntakeReviewPage() {
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [invalidDateKeys, setInvalidDateKeys] = useState<Set<string>>(() => new Set());
+  const onDateValidityChange = useCallback<DateValidityChange>((key, valid) => {
+    setInvalidDateKeys((previous) => {
+      if (previous.has(key) === !valid) return previous;
+      const next = new Set(previous);
+      if (valid) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  const activeDateKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const event of draft?.calendarEvents ?? []) {
+      if (!event.allDay) {
+        keys.add(`calendar:${event.key}:start`);
+        keys.add(`calendar:${event.key}:end`);
+      }
+    }
+    for (const item of draft?.workItems ?? []) {
+      if (item.kind !== "reference") keys.add(`work:${item.key}:due`);
+      if (item.kind === "action") {
+        keys.add(`work:${item.key}:scheduled`);
+        keys.add(`work:${item.key}:reminder-date`);
+      }
+    }
+    return keys;
+  }, [draft]);
+  const hasInvalidInputs = [...invalidDateKeys].some((key) => activeDateKeys.has(key));
+  useEffect(() => {
+    setInvalidDateKeys((previous) => {
+      if ([...previous].every((key) => activeDateKeys.has(key))) return previous;
+      return new Set([...previous].filter((key) => activeDateKeys.has(key)));
+    });
+  }, [activeDateKeys]);
   const recordRef = useRef<IntakeRecord | null>(null);
   const revisionRef = useRef<number | null>(null);
   const latestDraftRef = useRef<IntakeDraft | null>(null);
@@ -179,7 +219,7 @@ export function IntakeReviewPage() {
     try { setRecord(await api.retryIntake(id)); } finally { setBusy(false); }
   };
   const applyInitial = async () => {
-    if (record.status !== "ready" || !draft || issues.length || applyingRef.current) return;
+    if (record.status !== "ready" || !draft || busy || issues.length || hasInvalidInputs || applyingRef.current) return;
     applyingRef.current = true;
     setApplyError(null);
     setBusy(true);
@@ -244,7 +284,7 @@ export function IntakeReviewPage() {
   }
   if (record.status === "queued") return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeQueued}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
   if (record.status === "analyzing") return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeAnalyzing}</p></section>;
-  if (record.status === "applying") return <section className="card stack"><h1>{strings.intakeApply}</h1><p>{strings.intakeApplying}</p></section>;
+  if (record.status === "applying") return <section className="card stack"><h1>{strings.intakeApply}</h1><p>{strings.intakeApplying}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
   if (record.status === "applied" || record.status === "partially_applied") {
     return <section className="card stack"><h1>{record.status === "applied" ? strings.intakeApplied : strings.intakePartiallyApplied}</h1>
       {record.status === "partially_applied" && record.error ? <p role="alert">{record.error.message}</p> : null}
@@ -262,10 +302,10 @@ export function IntakeReviewPage() {
     <h1>{strings.intakeReady}</h1>
     {draft.summary.trim() ? <p>{draft.summary}</p> : null}
     {draft.warnings.length ? <section role="status"><h2>{strings.intakeWarnings}</h2><ul>{draft.warnings.map((warning, index) => <li key={index}>{warning.message}</li>)}</ul></section> : null}
-    <h2>{strings.intakeCalendar}</h2>
-    {draft.calendarEvents.map((event, index) => <CalendarEditor key={event.key} event={event} index={index} issues={issues} onChange={(next) => updateDraft({ ...draft, calendarEvents: draft.calendarEvents.map((item, i) => i === index ? next : item) })} />)}
-    <h2>{strings.intakeMachbar}</h2>
-    {draft.workItems.map((item, index) => <WorkEditor key={item.key} item={item} index={index} depth={workItemDepth[index] ?? 0} onKindChange={(kind) => updateDraft({ ...draft, workItems: transitionWorkItemKind(draft.workItems, item.key, kind) })} members={members} issues={issues} onChange={(next) => {
+    {draft.calendarEvents.length > 0 ? <h2>{strings.intakeCalendar}</h2> : null}
+    {draft.calendarEvents.map((event, index) => <CalendarEditor key={event.key} event={event} index={index} issues={issues} onDateValidityChange={onDateValidityChange} onChange={(next) => updateDraft({ ...draft, calendarEvents: draft.calendarEvents.map((item, i) => i === index ? next : item) })} />)}
+    {draft.workItems.length > 0 ? <h2>{strings.intakeMachbar}</h2> : null}
+    {draft.workItems.map((item, index) => <WorkEditor key={item.key} item={item} index={index} depth={workItemDepth[index] ?? 0} onDateValidityChange={onDateValidityChange} onKindChange={(kind) => updateDraft({ ...draft, workItems: transitionWorkItemKind(draft.workItems, item.key, kind) })} members={members} issues={issues} onChange={(next) => {
       const items = draft.workItems.map((value, i) => i === index ? next : value);
       if (!next.enabled) {
         const disabled = new Set([next.key]);
@@ -284,14 +324,14 @@ export function IntakeReviewPage() {
         updateDraft({ ...draft, workItems: items });
       }
     }} />)}
-    <div className="row"><button className="btn btn-primary" disabled={busy || issues.length > 0} onClick={() => void applyInitial()}>{strings.intakeApply}</button><button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button></div>
+    <div className="row"><button className="btn btn-primary" disabled={busy || issues.length > 0 || hasInvalidInputs} onClick={() => void applyInitial()}>{strings.intakeApply}</button><button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button></div>
     {applyError ? <p role="alert">{applyError}</p> : null}
     {saveError ? <p role="alert">{saveError}</p> : null}
     {issues.length ? <p role="alert">{issues[0]?.message}</p> : null}
   </section>;
 }
 
-function CalendarEditor({ event, index, issues, onChange }: { event: IntakeDraftCalendarEvent; index: number; issues: IntakeIssue[]; onChange: (event: IntakeDraftCalendarEvent) => void }) {
+function CalendarEditor({ event, index, issues, onDateValidityChange, onChange }: { event: IntakeDraftCalendarEvent; index: number; issues: IntakeIssue[]; onDateValidityChange: DateValidityChange; onChange: (event: IntakeDraftCalendarEvent) => void }) {
   const strings = useStrings();
   const startPath = ["calendarEvents", index, event.allDay ? "startDate" : "startDateTime"];
   const endPath = ["calendarEvents", index, event.allDay ? "endDate" : "endDateTime"];
@@ -304,8 +344,8 @@ function CalendarEditor({ event, index, issues, onChange }: { event: IntakeDraft
       <label htmlFor={`intake-event-${event.key}-end`}>{strings.intakeEndDate}</label>
       <input id={`intake-event-${event.key}-end`} type="date" value={event.endDate ?? ""} onChange={(e) => onChange({ ...event, endDate: e.target.value || null })} />
     </> : <>
-      <LocalDateTimeField key={`${event.key}-start`} id={`intake-event-${event.key}-start`} label={strings.intakeStartDate} value={event.startDateTime} onChange={(value) => onChange({ ...event, startDateTime: value })} />
-      <LocalDateTimeField key={`${event.key}-end`} id={`intake-event-${event.key}-end`} label={strings.intakeEndDate} value={event.endDateTime} onChange={(value) => onChange({ ...event, endDateTime: value, durationAssumed: false })} />
+      <LocalDateTimeField key={`${event.key}-start`} id={`intake-event-${event.key}-start`} fieldKey={`calendar:${event.key}:start`} onDateValidityChange={onDateValidityChange} label={strings.intakeStartDate} value={event.startDateTime} onChange={(value) => onChange({ ...event, startDateTime: value })} />
+      <LocalDateTimeField key={`${event.key}-end`} id={`intake-event-${event.key}-end`} fieldKey={`calendar:${event.key}:end`} onDateValidityChange={onDateValidityChange} label={strings.intakeEndDate} value={event.endDateTime} onChange={(value) => onChange({ ...event, endDateTime: value, durationAssumed: false })} />
     </>}
     <IssueText issues={issues} path={startPath} />
     <IssueText issues={issues} path={endPath} />
@@ -317,8 +357,9 @@ function CalendarEditor({ event, index, issues, onChange }: { event: IntakeDraft
   </article>;
 }
 
-function LocalDateTimeField({ id, label, value, onChange }: { id: string; label: string; value: string | null; onChange: (value: string | null) => void }) {
+function LocalDateTimeField({ id, fieldKey, label, value, onDateValidityChange, onChange }: { id: string; fieldKey: string; label: string; value: string | null; onDateValidityChange: DateValidityChange; onChange: (value: string | null) => void }) {
   const strings = useStrings();
+  const onValidityChange = useDateValidityCallback(fieldKey, onDateValidityChange);
   const [date, setDate] = useState(() => value ? localDateForInstant(value) ?? "" : "");
   const [time, setTime] = useState(() => value ? taskAvailabilityClock(value) ?? "" : "");
   useEffect(() => {
@@ -335,7 +376,7 @@ function LocalDateTimeField({ id, label, value, onChange }: { id: string; label:
   };
   return <>
     <label htmlFor={`${id}-date`}>{label}</label>
-    <HumanDateInput id={`${id}-date`} value={date} onChange={(next) => {
+    <HumanDateInput id={`${id}-date`} value={date} onValidityChange={onValidityChange} onChange={(next) => {
       const nextDate = next ?? "";
       setDate(nextDate);
       commit(nextDate, time);
@@ -348,8 +389,10 @@ function LocalDateTimeField({ id, label, value, onChange }: { id: string; label:
   </>;
 }
 
-function WorkEditor({ item, index, depth, onKindChange, members, issues, onChange }: { item: IntakeDraftWorkItem; index: number; depth: number; onKindChange: (kind: IntakeDraftWorkItem["kind"]) => void; members: { id: number; name: string }[]; issues: IntakeIssue[]; onChange: (item: IntakeDraftWorkItem) => void }) {
+function WorkEditor({ item, index, depth, onKindChange, members, issues, onDateValidityChange, onChange }: { item: IntakeDraftWorkItem; index: number; depth: number; onKindChange: (kind: IntakeDraftWorkItem["kind"]) => void; members: { id: number; name: string }[]; issues: IntakeIssue[]; onDateValidityChange: DateValidityChange; onChange: (item: IntakeDraftWorkItem) => void }) {
   const strings = useStrings();
+  const onDueValidityChange = useDateValidityCallback(`work:${item.key}:due`, onDateValidityChange);
+  const onScheduledValidityChange = useDateValidityCallback(`work:${item.key}:scheduled`, onDateValidityChange);
   const path = ["workItems", index];
   const currentClock = taskAvailabilityClock(item.notBeforeAt);
   const hasTime = currentClock !== null && currentClock !== "00:00";
@@ -366,16 +409,16 @@ function WorkEditor({ item, index, depth, onKindChange, members, issues, onChang
     <input value={item.title} onChange={(e) => onChange({ ...item, title: e.target.value })} />
     {item.kind !== "reference" ? <><select aria-label={strings.owner} value={item.ownerMemberId ?? ""} onChange={(e) => onChange({ ...item, ownerMemberId: e.target.value ? Number(e.target.value) : null })}><option value="">—</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select><IssueText issues={issues} path={[...path, "ownerMemberId"]} /></> : null}
     <textarea aria-label={strings.notes} value={item.notes ?? ""} onChange={(e) => onChange({ ...item, notes: e.target.value || null })} />
-    {item.kind !== "reference" ? <><label htmlFor={`intake-work-${item.key}-due`}>{strings.due}</label><HumanDateInput id={`intake-work-${item.key}-due`} value={item.dueDate} onChange={(value) => onChange({ ...item, dueDate: value })} /><IssueText issues={issues} path={[...path, "dueDate"]} /></> : null}
+    {item.kind !== "reference" ? <><label htmlFor={`intake-work-${item.key}-due`}>{strings.due}</label><HumanDateInput id={`intake-work-${item.key}-due`} value={item.dueDate} onValidityChange={onDueValidityChange} onChange={(value) => onChange({ ...item, dueDate: value })} /><IssueText issues={issues} path={[...path, "dueDate"]} /></> : null}
     {item.kind === "action" ? <>
-      <label htmlFor={`intake-work-${item.key}-scheduled`}>{strings.scheduled}</label><HumanDateInput id={`intake-work-${item.key}-scheduled`} value={item.scheduledDate} onChange={(value) => onChange({ ...item, scheduledDate: value })} /><IssueText issues={issues} path={[...path, "scheduledDate"]} />
+      <label htmlFor={`intake-work-${item.key}-scheduled`}>{strings.scheduled}</label><HumanDateInput id={`intake-work-${item.key}-scheduled`} value={item.scheduledDate} onValidityChange={onScheduledValidityChange} onChange={(value) => onChange({ ...item, scheduledDate: value })} /><IssueText issues={issues} path={[...path, "scheduledDate"]} />
       <label>{strings.notBefore}<input type="date" value={item.notBeforeDate ?? ""} onChange={(e) => updateAvailability(e.target.value, hasTime ? currentClock : null)} /></label>
       <label><input type="checkbox" checked={hasTime} disabled={!item.notBeforeDate} onChange={(e) => updateAvailability(item.notBeforeDate ?? "", e.target.checked ? (currentClock && currentClock !== "00:00" ? currentClock : "08:00") : null)} /> {strings.availabilityCustomTime}</label>
       {hasTime ? <input aria-label={strings.availabilityCustomTime} type="time" value={currentClock ?? ""} onChange={(e) => updateAvailability(item.notBeforeDate ?? "", e.target.value || null)} /> : null}
       <IssueText issues={issues} path={[...path, "notBeforeDate"]} />
       <IssueText issues={issues} path={path} />
       <button type="button" className="btn" disabled={!item.notBeforeDate} onClick={() => updateAvailability("", null)}>{strings.clearNotBefore}</button>
-      <LocalDateTimeField id={`intake-work-${item.key}-reminder`} label={strings.reminder} value={item.reminderAt} onChange={(value) => onChange({ ...item, reminderAt: value })} />
+      <LocalDateTimeField id={`intake-work-${item.key}-reminder`} fieldKey={`work:${item.key}:reminder-date`} onDateValidityChange={onDateValidityChange} label={strings.reminder} value={item.reminderAt} onChange={(value) => onChange({ ...item, reminderAt: value })} />
       <IssueText issues={issues} path={[...path, "reminderAt"]} />
       <label><input type="checkbox" checked={item.needsClarification} onChange={(e) => onChange({ ...item, needsClarification: e.target.checked, reminderAt: e.target.checked ? null : item.reminderAt })} /> Klärung nötig</label>
     </> : null}

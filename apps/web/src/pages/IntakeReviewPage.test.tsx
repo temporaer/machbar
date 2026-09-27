@@ -138,6 +138,67 @@ describe("IntakeReviewPage", () => {
     expect(screen.queryByText("Schulfest")).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["Beginn", "Elternabend"],
+    ["Ende", "Elternabend"],
+    ["Fällig", "Rückmeldezettel abgeben"],
+    ["Geplant für", "Rückmeldezettel abgeben"],
+    ["Erinnerung", "Rückmeldezettel abgeben"],
+  ])("blocks Apply for an invalid %s date and enables it when corrected", async (label, title) => {
+    renderPage();
+    const card = (await screen.findByDisplayValue(title)).closest("article")!;
+    const input = within(card).getByLabelText(label);
+    fireEvent.change(input, { target: { value: "not a date" } });
+    fireEvent.blur(input);
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(within(card).getByText("Datum nicht erkannt")).toHaveAttribute("role", "alert");
+    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    expect(mockedApi.applyIntake).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: label === "Geplant für" ? "01.10.2026" : "08.10.2026" } });
+    fireEvent.blur(input);
+    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeEnabled();
+  });
+
+  it("forgets invalid calendar and work dates when their controls disappear", async () => {
+    renderPage();
+    const eventCard = (await screen.findByDisplayValue("Elternabend")).closest("article")!;
+    const start = within(eventCard).getByLabelText("Beginn");
+    fireEvent.change(start, { target: { value: "not a date" } });
+    fireEvent.blur(start);
+    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled();
+    fireEvent.click(within(eventCard).getByRole("checkbox", { name: "Ganztägig" }));
+    expect(within(eventCard).getByLabelText("Beginn")).toHaveAttribute("type", "date");
+    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeEnabled();
+
+    const workCard = screen.getByDisplayValue("Rückmeldezettel abgeben").closest("article")!;
+    const due = within(workCard).getByLabelText("Fällig");
+    fireEvent.change(due, { target: { value: "not a date" } });
+    fireEvent.blur(due);
+    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled();
+    fireEvent.change(within(workCard).getAllByRole("combobox")[0]!, { target: { value: "reference" } });
+    expect(within(workCard).queryByLabelText("Fällig")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeEnabled();
+  });
+
+  it.each([
+    ["calendar", { ...draft, workItems: [] }],
+    ["work", { ...draft, calendarEvents: [] }],
+  ])("only displays the %s heading when that section has items", async (section, sectionDraft) => {
+    mockedApi.getIntake.mockResolvedValue({ ...record(), draft: sectionDraft } as never);
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "Vorschlag prüfen" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Kalender" }) !== null).toBe(section === "calendar");
+    expect(screen.queryByRole("heading", { name: "Machbar" }) !== null).toBe(section === "work");
+  });
+
+  it("shows the offline hint while applying without an online Home Assistant worker", async () => {
+    mockedApi.getIntake.mockResolvedValue({ ...record("applying"), homeAssistant: { workerOnline: false } } as never);
+    renderPage();
+    expect(await screen.findByText("Wird übernommen …")).toBeInTheDocument();
+    expect(screen.getByText("Home Assistant ist gerade nicht erreichbar – die Verarbeitung läuft weiter, sobald es wieder online ist.")).toHaveAttribute("role", "status");
+  });
+
   it("uses localized all-day and kind choices with date-only inputs", async () => {
     mockedApi.getIntake.mockResolvedValue({
       ...record(),
