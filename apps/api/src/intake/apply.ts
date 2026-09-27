@@ -78,6 +78,16 @@ export async function applyIntake(
   let stored = db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
   if (!stored) throw AppError.notFound("intake_not_found", "The intake was not found.");
   if (stored.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  const revisionBeforeRecovery = stored.revision;
+  if (
+    stored.status === "applying"
+    && stored.applyClaimToken !== null
+    && stored.applyClaimExpiresAt !== null
+    && stored.applyClaimExpiresAt <= nowIso()
+    && input.expectedRevision !== revisionBeforeRecovery
+  ) {
+    throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
+  }
   if (recoverExpiredApplyClaim(db, stored)) {
     stored = db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
     if (!stored) throw AppError.notFound("intake_not_found", "The intake was not found.");
@@ -179,7 +189,9 @@ export async function applyIntake(
       }
     } catch (error) {
       if (error instanceof AppError && error.code === "stale_write_conflict") throw error;
-      throw new AppError(502, "intake_source_retention_failed", "The source could not be retained in Paperless.", { cause: error instanceof Error ? error.message : String(error) });
+      if (logger) logger.error({ err: error }, "Intake Paperless retention failed.");
+      else console.error("Intake Paperless retention failed.", error);
+      throw new AppError(502, "intake_source_retention_failed", "The source could not be retained in Paperless.");
     }
   }
 

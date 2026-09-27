@@ -281,6 +281,85 @@ describe("intake apply", () => {
     expect(completed.acceptedDraftJson).toBe(JSON.stringify(accepted));
   });
 
+  it("rejects a stale direct retry before recovering an expired claim", async () => {
+    const setup = await prepare();
+    const accepted = draft([
+      { key: "accepted", kind: "action", title: "Not created by stale retry", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+    ]);
+    const expiredAt = new Date(Date.now() - 60_000).toISOString();
+    ctx.handle.db.update(schema.intakeJobs).set({
+      status: "applying",
+      acceptedDraftJson: JSON.stringify(accepted),
+      applyClaimToken: "expired-stale-claim",
+      applyClaimExpiresAt: expiredAt,
+      revision: setup.revision + 1,
+    }).where(eq(schema.intakeJobs.id, setup.id)).run();
+
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id, {
+      expectedRevision: setup.revision,
+    }, { actorMemberId: setup.member.id }, setup.member.id)).rejects.toMatchObject({ code: "stale_write_conflict" });
+    const unchanged = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+    expect(unchanged).toMatchObject({
+      status: "applying",
+      revision: setup.revision + 1,
+      applyClaimToken: "expired-stale-claim",
+      applyClaimExpiresAt: expiredAt,
+      acceptedDraftJson: JSON.stringify(accepted),
+    });
+    expect(unchanged.applyResultsJson).toBeNull();
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Not created by stale retry")).all()).toHaveLength(0);
+  });
+
+  it("does not disclose a Paperless failure cause in the Apply API response", async () => {
+    await closeTestContext(ctx);
+    const secret = "private-paperless-failure-detail-91";
+    const paperlessClient: PaperlessClient = {
+      upload: async () => { throw new Error(secret); },
+      awaitDocumentId: async () => { throw new Error("unexpected document resolution"); },
+      getDocument: async () => { throw new Error("unexpected document lookup"); },
+      search: async () => ({ results: [], count: 0, next: null, previous: null }),
+      thumbnail: async () => ({ contentType: "text/plain", contentLength: 0, filename: null, body: Readable.from([]) }),
+      preview: async () => ({ contentType: "text/plain", contentLength: 0, filename: null, body: Readable.from([]) }),
+      download: async () => ({ contentType: "text/plain", contentLength: 0, filename: null, body: Readable.from([]) }),
+    };
+    ctx = createTestContext({ paperlessClient });
+    const setup = await prepare();
+    const attachmentId = randomUUID();
+    const bytes = Buffer.from("Paperless source");
+    await writeAttachment(env(ctx.dataDir), setup.id, attachmentId, bytes);
+    ctx.handle.db.insert(schema.intakeAttachments).values({
+      id: attachmentId,
+      intakeJobId: setup.id,
+      filename: "source.txt",
+      mimeType: "text/plain",
+      sizeBytes: bytes.length,
+      sha256: "hash",
+      createdAt: new Date().toISOString(),
+    }).run();
+    ctx.handle.db.update(schema.intakeJobs).set({ createdByMemberId: null })
+      .where(eq(schema.intakeJobs.id, setup.id)).run();
+    const accepted = draft([
+      { key: "task", kind: "action", title: "Retain source", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+    ]);
+    accepted.retainSourceInPaperless = true;
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/intake/${setup.id}/apply`,
+      payload: { expectedRevision: setup.revision, draft: accepted },
+    });
+    expect(response.statusCode).toBe(502);
+    expect(response.json().error).toEqual({
+      code: "intake_source_retention_failed",
+      message: "The source could not be retained in Paperless.",
+    });
+    expect(response.body).not.toContain(secret);
+    const detail = await ctx.app.inject({ method: "GET", url: `/api/intake/${setup.id}` });
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json().status).toBe("partially_applied");
+    expect(detail.body).not.toContain(secret);
+  });
+
   it("persists only a generic error for unexpected post-claim failures", async () => {
     const setup = await prepare();
     const unsafeMessage = "sensitive internal detail must not be persisted";
