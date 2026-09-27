@@ -147,8 +147,9 @@ describe("IntakeReviewPage", () => {
   ])("blocks Apply for an invalid %s date and enables it when corrected", async (label, title) => {
     renderPage();
     const card = (await screen.findByDisplayValue(title)).closest("article")!;
-    const input = within(card).getByLabelText(label);
-    fireEvent.change(input, { target: { value: "not a date" } });
+    const input = within(card).getByRole("textbox", { name: label });
+    expect(input).toHaveAttribute("type", "text");
+    fireEvent.change(input, { target: { value: "32.13.2026" } });
     fireEvent.blur(input);
     expect(input).toHaveAttribute("aria-invalid", "true");
     expect(within(card).getByText("Datum nicht erkannt")).toHaveAttribute("role", "alert");
@@ -163,18 +164,20 @@ describe("IntakeReviewPage", () => {
   it("forgets invalid calendar and work dates when their controls disappear", async () => {
     renderPage();
     const eventCard = (await screen.findByDisplayValue("Elternabend")).closest("article")!;
-    const start = within(eventCard).getByLabelText("Beginn");
-    fireEvent.change(start, { target: { value: "not a date" } });
+    const start = within(eventCard).getByRole("textbox", { name: "Beginn" });
+    fireEvent.change(start, { target: { value: "32.13.2026" } });
     fireEvent.blur(start);
+    expect(start).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled();
     fireEvent.click(within(eventCard).getByRole("checkbox", { name: "Ganztägig" }));
     expect(within(eventCard).getByLabelText("Beginn")).toHaveAttribute("type", "date");
     expect(screen.getByRole("button", { name: "Übernehmen" })).toBeEnabled();
 
     const workCard = screen.getByDisplayValue("Rückmeldezettel abgeben").closest("article")!;
-    const due = within(workCard).getByLabelText("Fällig");
-    fireEvent.change(due, { target: { value: "not a date" } });
+    const due = within(workCard).getByRole("textbox", { name: "Fällig" });
+    fireEvent.change(due, { target: { value: "32.13.2026" } });
     fireEvent.blur(due);
+    expect(due).toHaveAttribute("aria-invalid", "true");
     expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled();
     fireEvent.change(within(workCard).getAllByRole("combobox")[0]!, { target: { value: "reference" } });
     expect(within(workCard).queryByLabelText("Fällig")).not.toBeInTheDocument();
