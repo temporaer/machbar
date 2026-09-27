@@ -1,4 +1,9 @@
-import type { PaperlessDocumentSummary } from "@machbar/shared";
+import {
+  isPaperlessImage,
+  paperlessMarkdownReference,
+  markdownLabel,
+  type PaperlessDocumentSummary,
+} from "@machbar/shared";
 import type { Nodes, Parent } from "mdast";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { api } from "./api";
@@ -125,36 +130,7 @@ export function containsPaperlessReference(
     : false;
 }
 
-function markdownLabel(value: string): string {
-  return value
-    .replace(/\r?\n/g, " ")
-    .replace(/\\/g, "\\\\")
-    .replace(/([\[\]])/g, "\\$1")
-    .trim();
-}
-
-function documentLabel(document: PaperlessDocumentSummary): string {
-  return document.originalFileName.trim() || document.title.trim() || `paperless-${document.id}`;
-}
-
-export function isPaperlessImage(
-  document: Pick<PaperlessDocumentSummary, "mimeType">,
-): boolean {
-  return document.mimeType?.toLowerCase().startsWith("image/") ?? false;
-}
-
-export function paperlessMarkdownReference(
-  document: PaperlessDocumentSummary,
-  label = documentLabel(document),
-): string {
-  if (paperlessDocumentId(`paperless:${document.id}`) === null) {
-    throw new Error("Paperless document IDs must be positive integers.");
-  }
-  const escapedLabel = markdownLabel(label) || `paperless-${document.id}`;
-  return isPaperlessImage(document)
-    ? `![${escapedLabel}](paperless:${document.id})`
-    : `[${escapedLabel}](paperless:${document.id})`;
-}
+export { isPaperlessImage, paperlessMarkdownReference, markdownLabel };
 
 export async function uploadPaperlessFile(
   file: File,

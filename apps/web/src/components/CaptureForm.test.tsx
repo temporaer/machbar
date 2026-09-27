@@ -43,6 +43,12 @@ describe("CaptureForm", () => {
       connectedAt: null,
       lastUpdateAt: null,
       stale: false,
+      supportedProtocolVersion: 2,
+      protocolOutdated: false,
+      lastRequestPollAt: null,
+      workerOnline: false,
+      intake: null,
+      intakeReady: false,
       people: [],
       contexts: [],
     });

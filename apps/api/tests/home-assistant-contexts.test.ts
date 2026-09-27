@@ -43,7 +43,7 @@ describe("Home Assistant physical contexts", () => {
     return (
       await post("/api/integrations/home-assistant/pair", {
         pairingCode: pairing.code,
-        protocolVersion: 1,
+        protocolVersion: 2,
       })
     ).json() as { token: string };
   }
@@ -153,13 +153,17 @@ describe("Home Assistant physical contexts", () => {
     };
     const token = await connect();
     await post("/api/integrations/home-assistant/context", {
-      protocolVersion: 1,
+      protocolVersion: 2,
       observedAt: new Date().toISOString(),
       contexts: [],
       people: [
         { externalId: "person.hannes", name: "Hannes", state: "known", contexts: [] },
         { externalId: "person.unmapped", name: "Unmapped", state: "known", contexts: [] },
       ],
+      intake: {
+        aiTask: { entityId: null, state: "not_configured", supportsAttachments: false },
+        calendar: { entityId: null, state: "not_configured" },
+      },
     }, token.token);
     await ctx.app.inject({
       method: "PUT",
@@ -226,7 +230,7 @@ describe("Home Assistant physical contexts", () => {
     const paired = (
       await post("/api/integrations/home-assistant/pair", {
         pairingCode: pairing.code,
-        protocolVersion: 1,
+        protocolVersion: 2,
       })
     ).json() as { token: string };
     expect(
@@ -241,7 +245,7 @@ describe("Home Assistant physical contexts", () => {
       (
         await post("/api/integrations/home-assistant/pair", {
           pairingCode: pairing.code,
-          protocolVersion: 1,
+          protocolVersion: 2,
         })
       ).statusCode,
     ).toBe(401);
@@ -251,7 +255,7 @@ describe("Home Assistant physical contexts", () => {
       post(
         "/api/integrations/home-assistant/context",
         {
-          protocolVersion: 1,
+          protocolVersion: 2,
           observedAt: new Date(Date.now() + snapshotSequence++).toISOString(),
           contexts: [
             { externalId: "zone.home", name: "Zuhause" },
@@ -265,6 +269,10 @@ describe("Home Assistant physical contexts", () => {
               contexts,
             },
           ],
+          intake: {
+            aiTask: { entityId: null, state: "not_configured", supportsAttachments: false },
+            calendar: { entityId: null, state: "not_configured" },
+          },
         },
         paired.token,
       );
@@ -372,10 +380,14 @@ describe("Home Assistant physical contexts", () => {
     expect(
       (
         await post("/api/integrations/home-assistant/context", {
-          protocolVersion: 1,
+          protocolVersion: 2,
           observedAt: new Date().toISOString(),
           contexts: [],
           people: [],
+          intake: {
+            aiTask: { entityId: null, state: "not_configured", supportsAttachments: false },
+            calendar: { entityId: null, state: "not_configured" },
+          },
         })
       ).statusCode,
     ).toBe(401);
@@ -385,10 +397,14 @@ describe("Home Assistant physical contexts", () => {
         await post(
           "/api/integrations/home-assistant/context",
           {
-            protocolVersion: 1,
+            protocolVersion: 2,
             observedAt: new Date().toISOString(),
             contexts: [],
             people: [],
+            intake: {
+              aiTask: { entityId: null, state: "not_configured", supportsAttachments: false },
+              calendar: { entityId: null, state: "not_configured" },
+            },
           },
           token,
         )
@@ -405,7 +421,7 @@ describe("Home Assistant physical contexts", () => {
       await post(
         "/api/integrations/home-assistant/context",
         {
-          protocolVersion: 1,
+          protocolVersion: 2,
           observedAt: new Date().toISOString(),
           contexts: [{ externalId: "zone.home", name: "Zuhause" }],
           people: [
@@ -416,6 +432,10 @@ describe("Home Assistant physical contexts", () => {
               contexts,
             },
           ],
+          intake: {
+            aiTask: { entityId: null, state: "not_configured", supportsAttachments: false },
+            calendar: { entityId: null, state: "not_configured" },
+          },
         },
         token,
       );
@@ -469,7 +489,7 @@ describe("Home Assistant physical contexts", () => {
     await post(
       "/api/integrations/home-assistant/context",
       {
-        protocolVersion: 1,
+        protocolVersion: 2,
         observedAt: new Date().toISOString(),
         contexts: [],
         people: [
@@ -480,6 +500,10 @@ describe("Home Assistant physical contexts", () => {
             contexts: [],
           },
         ],
+        intake: {
+          aiTask: { entityId: null, state: "not_configured", supportsAttachments: false },
+          calendar: { entityId: null, state: "not_configured" },
+        },
       },
       paired.token,
     );

@@ -19,6 +19,8 @@ import { registerHomeAssistantRoutes } from "./homeAssistant.js";
 import { registerMcpRoutes } from "./mcp.js";
 import { registerMcpOAuthRoutes } from "./mcpOAuth.js";
 import type { McpOAuthProvider } from "../integrations/mcpOAuth.js";
+import type { HomeAssistantRequestSignal } from "../integrations/homeAssistantRequests.js";
+import { registerIntakeRoutes } from "./intake.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -27,6 +29,7 @@ export function registerRoutes(
   pushTransport?: PushTransport,
   paperlessClient?: PaperlessClient,
   mcpOAuthProvider?: McpOAuthProvider,
+  homeAssistantRequestSignal?: HomeAssistantRequestSignal,
 ) {
   registerActivityRoutes(app, db);
   registerContributionRoutes(app, db);
@@ -40,7 +43,8 @@ export function registerRoutes(
   registerDebugRoutes(app, db);
   registerPushRoutes(app, db, env, pushTransport);
   registerPaperlessRoutes(app, env, paperlessClient);
-  registerHomeAssistantRoutes(app, db);
+  registerHomeAssistantRoutes(app, db, env, homeAssistantRequestSignal);
+  registerIntakeRoutes(app, db, env, paperlessClient, homeAssistantRequestSignal);
   registerMcpOAuthRoutes(app, env, mcpOAuthProvider);
   registerMcpRoutes(app, db);
 }

@@ -5,6 +5,7 @@ import sharp from "sharp";
 import type { Env } from "../env.js";
 import { AppError } from "../errors.js";
 import type { PaperlessBinary, PaperlessClient } from "../paperless/client.js";
+import { uploadAndResolveDocument } from "../paperless/upload.js";
 
 const BASE_PATH = "/api/integrations/paperless/documents";
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
@@ -125,13 +126,11 @@ export function registerPaperlessRoutes(
         const paperless = requireClient(env, client);
         const file = await readUpload(request);
 
-        const { taskId } = await paperless.upload({
+        return uploadAndResolveDocument(paperless, {
           filename: file.filename,
           contentType: file.mimetype,
           data: file.data,
         });
-        const documentId = await paperless.awaitDocumentId(taskId);
-        return paperless.getDocument(documentId);
       },
     );
 

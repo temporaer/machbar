@@ -17,7 +17,11 @@ behavior from possible future work.
 - outbound Web Share with clipboard fallback;
 - single-process/container deployment with SQLite;
 - reverse-proxy and URL sub-path support;
-- a push-only HACS Home Assistant integration for physical contexts.
+- a HACS Home Assistant integration for physical contexts and the fixed
+  Verarbeiten reverse-request bridge.
+- a Home Assistant-backed **Verarbeiten** intake path for text, photos, and
+  files, with a human-editable proposal for Machbar work and optional
+  calendar events.
 
 ## Current limitations
 
@@ -84,6 +88,35 @@ The incoming PWA share target accepts text, URLs, images, and files. File
 storage requires the optional Paperless-ngx integration and has a 25 MB
 per-file upload limit. Web Share, file capture, and PWA share-target
 availability depend on browser and operating-system support.
+
+### AI intake and calendar bridge
+
+Verarbeiten is a temporary intake/clarification adapter. The paired Machbar
+Home Assistant integration must be online and configured with an AI Task
+entity; image and PDF intake additionally requires that provider to support
+AI Task attachments. `.txt` uploads are decoded as UTF-8 and included as
+delimited source text; invalid UTF-8 is rejected. Intake accepts up to five
+files, each at most 25 MB, and the combined typed text plus decoded text-file
+content is limited to 20,000 characters. A writable calendar entity is
+required only when a reviewed event is selected. The integration and Machbar
+server use protocol 2 and must be upgraded together.
+
+Intake review state and uploaded scratch files expire automatically after
+24 hours. There is no durable intake history or list of in-progress intakes.
+Text-only sources are not retained in Paperless; **Original als Material
+behalten** is offered only for file-based sources when Paperless is configured.
+
+Calendar creation is one-way provenance. Machbar records the recovered
+calendar UID, but there is no calendar lifecycle synchronization, deletion or
+rescheduling sync, and no event URL is fabricated. UID recovery depends on the
+calendar provider exposing the created event description and UID through its
+Home Assistant entity. Timed events without an end time receive an assumed
+60-minute end in review; the person must confirm or edit it before Apply.
+
+Machbar does not store AI-provider credentials, an OpenAI key, Google
+credentials, or a Home Assistant access token. Home Assistant remains
+authoritative for AI execution and calendar objects; Machbar is not a calendar
+system or AI assistant.
 
 ### Authentication
 

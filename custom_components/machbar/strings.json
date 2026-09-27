@@ -21,5 +21,21 @@
     "abort": {
       "already_configured": "This Machbar instance is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure intake",
+        "description": "Select the AI Task and calendar entities used for intake.",
+        "data": {
+          "ai_task_entity_id": "AI Task entity",
+          "calendar_entity_id": "Calendar entity"
+        }
+      }
+    },
+    "error": {
+      "ai_task_no_generate_data": "The selected AI Task cannot generate structured data.",
+      "calendar_not_writable": "The selected calendar cannot create events."
+    }
   }
 }

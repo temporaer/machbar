@@ -1,0 +1,31 @@
+{
+  "summary": "Elternabend und Rückmeldung vorbereiten",
+  "calendarEvents": [{
+    "key": "elternabend",
+    "title": "Elternabend",
+    "description": null,
+    "location": "Schule",
+    "allDay": false,
+    "startDate": null,
+    "endDate": null,
+    "startDateTime": "2026-10-08T19:00:00+02:00",
+    "endDateTime": null,
+    "relatedWorkKeys": ["rueckmeldezettel"]
+  }],
+  "workItems": [{
+    "key": "rueckmeldezettel",
+    "kind": "action",
+    "title": "Rückmeldezettel abgeben",
+    "notes": null,
+    "parentKey": null,
+    "ownerName": null,
+    "dueDate": "2026-10-02",
+    "scheduledDate": null,
+    "notBeforeDate": null,
+    "notBeforeAt": null,
+    "reminderAt": null,
+    "needsClarification": false,
+    "relatedCalendarKeys": []
+  }],
+  "warnings": [{ "message": "No end time in source; 60 min assumed" }]
+}

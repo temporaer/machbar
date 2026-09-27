@@ -7,8 +7,11 @@ from typing import Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, State
+from homeassistant.config_entries import ConfigEntry
 
 from .const import PROTOCOL_VERSION
+from . import calendar_bridge, intake
+from .const import CONF_AI_TASK_ENTITY, CONF_CALENDAR_ENTITY
 
 _ATTR_IN_ZONES = "in_zones"
 
@@ -17,7 +20,7 @@ def _name(state: State) -> str:
     return str(state.attributes.get("friendly_name") or state.name)
 
 
-def build_snapshot(hass: HomeAssistant) -> dict[str, Any]:
+def build_snapshot(hass: HomeAssistant, entry: ConfigEntry | None = None) -> dict[str, Any]:
     """Build a complete snapshot without transmitting coordinates."""
     zone_states = sorted(
         hass.states.async_all("zone"), key=lambda state: state.entity_id
@@ -55,4 +58,12 @@ def build_snapshot(hass: HomeAssistant) -> dict[str, Any]:
         "observedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "contexts": contexts,
         "people": people,
+        "intake": {
+            "aiTask": intake.ai_task_capabilities(
+                hass, (entry.options if entry else {}).get(CONF_AI_TASK_ENTITY)
+            ),
+            "calendar": calendar_bridge.calendar_capabilities(
+                hass, (entry.options if entry else {}).get(CONF_CALENDAR_ENTITY)
+            ),
+        },
     }

@@ -192,6 +192,24 @@ describe("TaskDetailSheet", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders calendar external references from the detail response", async () => {
+    mockedApi.getTask.mockResolvedValue({
+      ...makeTask({ id: 42, title: "Elternabend" }),
+      externalRefs: [{
+        source: "home_assistant_calendar",
+        calendarEntityId: "calendar.family",
+        uid: "event-1",
+        recurrenceId: null,
+        summary: "Elternabend",
+        start: "2026-10-08T19:00:00+02:00",
+        end: "2026-10-08T20:00:00+02:00",
+      }],
+    });
+    renderSheet(42);
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+    expect(await screen.findByText(/Kalender: Elternabend/)).toBeInTheDocument();
+  });
+
   it("does not show Calendar export for a Task without a deadline", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({ id: 42, title: "Ohne Termin", dueDate: null }),

@@ -61,6 +61,7 @@ export interface TaskRecord extends SharedTask {
  */
 export interface TaskDetailRecord extends TaskRecord {
   ancestors: WorkItemAncestor[];
+  externalRefs: import("@machbar/shared").ExternalWorkItemRef[];
 }
 
 export interface StuckProjectRecord extends ProjectRecord {

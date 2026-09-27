@@ -50,6 +50,7 @@ import {
   resolveExternalWaitSchema,
 } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
+import { listExternalWorkItemRefs } from "../domain/externalWorkItemRefs.js";
 
 function parseId(raw: string): number {
   const id = Number.parseInt(raw, 10);
@@ -86,7 +87,7 @@ function taskOrThrow(
       { taskId: id },
     );
   }
-  return { ...task, ancestors: graph.taskAncestorsFor(id) };
+  return { ...task, ancestors: graph.taskAncestorsFor(id), externalRefs: listExternalWorkItemRefs(db, id) };
 }
 
 export function registerTaskRoutes(app: FastifyInstance, db: Db) {

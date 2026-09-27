@@ -16,8 +16,9 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers import selector
+from homeassistant.helpers import config_validation as cv, selector
 import voluptuous as vol
+from dataclasses import dataclass
 
 from .client import CannotConnect, InvalidAuth, MachbarClient, MachbarError
 from .const import (
@@ -27,9 +28,16 @@ from .const import (
     PUSH_DELAY_SECONDS,
 )
 from .snapshot import build_snapshot
+from .worker import RequestWorker
 
 _LOGGER = logging.getLogger(__name__)
 SERVICE_SYNC_TASK = "sync_task"
+
+
+@dataclass
+class MachbarRuntime:
+    publisher: "SnapshotPublisher"
+    worker: RequestWorker
 
 
 def _sync_task_schema() -> vol.Schema:
@@ -50,6 +58,9 @@ def _sync_task_schema() -> vol.Schema:
             vol.Optional("size"): vol.Any(vol.In(["S", "M", "L", "XL"]), None),
         }
     )
+
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
@@ -129,7 +140,11 @@ class SnapshotPublisher:
     @callback
     def _state_changed(self, event: Event) -> None:
         entity_id = event.data.get("entity_id", "")
-        if not entity_id.startswith(("person.", "zone.")):
+        configured = {
+            self._entry.options.get("ai_task_entity_id"),
+            self._entry.options.get("calendar_entity_id"),
+        }
+        if not entity_id.startswith(("person.", "zone.")) and entity_id not in configured:
             return
         if self._cancel_scheduled is not None:
             self._cancel_scheduled()
@@ -147,7 +162,7 @@ class SnapshotPublisher:
         )
 
     async def _async_push(self) -> None:
-        await self._client.push_snapshot(build_snapshot(self._hass))
+        await self._client.push_snapshot(build_snapshot(self._hass, self._entry))
 
     async def _async_push_safely(self) -> None:
         try:
@@ -182,7 +197,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except CannotConnect as err:
         raise ConfigEntryNotReady("Unable to connect to Machbar") from err
 
-    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = publisher
+    worker = RequestWorker(hass, entry)
+    await worker.async_start()
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = MachbarRuntime(publisher, worker)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
 
@@ -193,11 +210,12 @@ async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a Machbar config entry."""
-    publisher: SnapshotPublisher | None = hass.data.get(DOMAIN, {}).pop(
+    runtime: MachbarRuntime | None = hass.data.get(DOMAIN, {}).pop(
         entry.entry_id, None
     )
-    if publisher is not None:
-        await publisher.async_stop()
+    if runtime is not None:
+        await runtime.publisher.async_stop()
+        await runtime.worker.async_stop()
     if not hass.data.get(DOMAIN):
         hass.data.pop(DOMAIN, None)
     return True

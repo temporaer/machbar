@@ -23,6 +23,8 @@ import {
   createPaperlessClient,
   type PaperlessClient,
 } from "./paperless/client.js";
+import { HomeAssistantRequestSignal } from "./integrations/homeAssistantRequests.js";
+import { registerIntakeCleanup } from "./intake/cleanup.js";
 
 export interface BuildAppOptions {
   db: Db;
@@ -48,6 +50,7 @@ export function buildApp({
   mcpOAuthProvider: suppliedMcpOAuthProvider,
 }: BuildAppOptions): FastifyInstance {
   const app = Fastify({ logger });
+  const homeAssistantRequestSignal = new HomeAssistantRequestSignal();
   const notificationTransport =
     pushTransport ??
     (env.push ? createWebPushTransport(env.push) : undefined);
@@ -115,8 +118,10 @@ export function buildApp({
     notificationTransport,
     paperless,
     mcpOAuthProvider,
+    homeAssistantRequestSignal,
   );
   registerNotificationRunner(app, db, env.push, notificationTransport);
+  registerIntakeCleanup(app, db, env);
   registerStatic(app, env);
 
   return app;
