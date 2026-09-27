@@ -30,7 +30,100 @@ The API serves the compiled frontend from `apps/web/dist/` as static files, so *
 
 ---
 
-## 2. SQLite Data Model — Hierarchy and Inheritance
+## 2. AI intake (“Verarbeiten”)
+
+AI intake is a clarification adapter, not a second task system, calendar
+system, or AI assistant. A person starts **Verarbeiten** from Quick Add or the
+share target. Machbar stores a short-lived intake job and asks the paired Home
+Assistant integration to run the configured AI Task entity:
+
+The ordinary Quick Add **Aufgabe** capture remains its existing direct task
+capture path. **Verarbeiten** is a separate choice and does not change the
+semantics of ordinary capture.
+
+```text
+Quick Add / SharePage
+  └─ POST /api/intake (text and/or files)
+       ├─ intake_jobs + intake_attachments
+       ├─ <DATA_DIR>/intake/<job>/<attachment>
+       └─ reverse request: intake_analyze
+            └─ HA worker → configured ai_task.* entity → IntakePlan
+                 └─ review at /intake/:id
+                      └─ human edits and POST /api/intake/:id/apply
+                           ├─ normal Machbar project/task creation primitives
+                           └─ reverse request: calendar_create
+                                └─ configured writable calendar entity
+```
+
+The paired Machbar custom integration must be upgraded together with the
+server. Protocol version **2** is required; there is no v1 compatibility
+path. Home Assistant must have a configured, attachment-capable `ai_task.*`
+entity for photo/file intake and a writable `calendar.*` entity. Both are
+selected in the integration's options flow. Machbar does not store an
+AI-provider credential, OpenAI key, Google credential, or Home Assistant access
+token.
+
+### Contract and execution
+
+`@machbar/shared` owns the dependency-free `IntakePlan`/`IntakeDraft` contract
+and the shared invariant checks. `intakePlanIssues()` validates the model
+proposal (including the single key namespace, dates, hierarchy, references,
+and legal fields); `buildDraftFromPlan()` resolves owner names to household
+members and assumes a 60-minute end for a timed event when the source omitted
+one; `intakeDraftIssues()` validates the human-editable proposal before save
+and Apply. API Zod schemas provide structural validation around the same
+contract.
+
+The reverse bridge is deliberately narrow. It has exactly two request kinds:
+`intake_analyze` and `calendar_create`. Requests use long-polling, leases, and
+bounded retries; the bridge is not arbitrary Home Assistant RPC. The AI phase
+never mutates Machbar or the calendar. Only the human Apply command creates
+Machbar work, using `createProject()`, `createTask()`, and
+`createChildTask()` so normal hierarchy, activity, status, and contribution
+semantics remain in force.
+
+### Persistence, expiry, and idempotency
+
+`intake_jobs`, `intake_attachments`, and `home_assistant_requests` are
+operational state for one intake. Uploaded files are kept below
+`<DATA_DIR>/intake` and the job, request rows, and files expire after **24
+hours**; cleanup removes them automatically. This is temporary review state,
+not durable household history. Source retention is optional and is offered
+only for file-based intakes when Paperless-ngx is configured; **Original als
+Material behalten** uploads those files to Paperless, never the text-only
+source.
+
+Calendar creation is idempotent by a `machbar-ref:<correlation-id>` marker in
+the event description. The HA adapter searches that marker, creates at most
+one event, and retries UID recovery after creation; it never matches by title
+or time. Recovered events are recorded in `external_work_item_refs` with
+source `home_assistant_calendar` and external ID
+`<calendarEntityId>:<uid>`. These are provenance references, not lifecycle
+links: they are intentionally distinct from `external_task_links`, and there
+is no calendar lifecycle synchronization.
+
+### Intake states and errors
+
+The review page distinguishes `queued`, `analyzing`, `analysis_failed`,
+`ready`, `applying`, `applied`, and `partially_applied`. Typical actionable
+errors are:
+
+While an intake is `queued`, `workerOnline=false` is shown as a temporary
+offline hint rather than a separate failure state.
+
+| Area | Error codes |
+|------|-------------|
+| Connection/readiness | `home_assistant_not_connected`, `home_assistant_protocol_outdated`, `ai_task_not_configured`, `ai_task_attachments_unsupported`, `calendar_not_configured`, `calendar_not_writable` |
+| AI analysis | `ai_task_failed`, `ai_task_invalid_response`, `intake_attachment_download_failed` |
+| Calendar execution | `calendar_create_failed`, `calendar_uid_not_recovered`, `home_assistant_request_lease_lost`, `home_assistant_request_exhausted` |
+| Input and review | `intake_input_required`, `intake_file_rejected`, `intake_file_too_large`, `intake_too_many_files`, `intake_draft_invalid`, `stale_write_conflict`, `intake_state_conflict` |
+| Lifecycle/retention | `intake_not_found`, `intake_expired`, `intake_apply_partial`, `intake_source_retention_failed` |
+
+External systems remain authoritative for their domains: Home Assistant
+chooses and runs the AI provider and owns the calendar event; Machbar owns the
+review and the resulting household work.
+
+## 3. SQLite Data Model — Hierarchy and Inheritance
 
 ### Entity hierarchy
 
@@ -125,7 +218,7 @@ and projects without a qualifying area appear under **Ohne Bereich**.
 
 ---
 
-## 3. Compiled / Resolved Views
+## 4. Compiled / Resolved Views
 
 The API computes several derived fields before returning tasks to the client:
 
@@ -269,7 +362,7 @@ decision. Project dates never become task dates.
 
 ---
 
-## 4. Transaction Rules
+## 5. Transaction Rules
 
 - Every write that touches more than one table (e.g. creating a task + adding tags) uses an explicit SQLite transaction.
 - Every structural task change uses revision-safe
@@ -311,7 +404,7 @@ the supported single-process deployment model.
 
 ---
 
-## 5. Base Path and integrations
+## 6. Base Path and integrations
 
 The `BASE_PATH` environment variable (default `/`) tells the server where static UI routes are mounted:
 
@@ -399,7 +492,7 @@ routes. MCP must not become a second mutation architecture.
 
 ---
 
-## 6. Status Lifecycle
+## 7. Status Lifecycle
 
 ### Tasks
 
@@ -557,7 +650,7 @@ from outline order and eligibility.
 
 ---
 
-## 7. Review and exhaustive inventory
+## 8. Review and exhaustive inventory
 
 ### Derived Review — `/more/review`
 
@@ -711,7 +804,7 @@ owner × effort row so regrouping waits until the retention window elapses.
 
 ---
 
-## 8. Web Interaction Patterns
+## 9. Web Interaction Patterns
 
 ### Three editing contracts
 
@@ -1004,7 +1097,7 @@ worker never forwards the operating-system POST or bypasses API authentication.
 
 ---
 
-## 9. WorkItem projection and interaction architecture
+## 10. WorkItem projection and interaction architecture
 
 Tasks and projects/stories now share one physical `work_items` table (see
 §2). The public API remains role-specific for compatibility, but the storage,
@@ -1151,7 +1244,7 @@ semantics, chip strips, and field sets) between the task and story cases.
 
 ---
 
-## 10. Migrations
+## 11. Migrations
 
 Drizzle migrations live in `apps/api/drizzle/` and are applied on every server start.
 
