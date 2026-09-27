@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import type { PaperlessDocumentSummary, IntakeDraft, IntakeApplyResults, IntakeErrorInfo } from "@machbar/shared";
 import { intakeDraftIssues, paperlessMarkdownReference } from "@machbar/shared";
 import type { Db } from "../db/client.js";
+import type { FastifyBaseLogger } from "fastify";
 import * as schema from "../db/schema.js";
 import type { Env } from "../env.js";
 import { AppError } from "../errors.js";
@@ -46,13 +47,18 @@ function failApplyClaim(
   )).run();
 }
 
-function applyFailureInfo(error: unknown): IntakeErrorInfo {
+function applyFailureInfo(
+  error: unknown,
+  logger?: Pick<FastifyBaseLogger, "error">,
+): IntakeErrorInfo {
   if (error instanceof AppError && error.code === "intake_source_retention_failed") {
     return { code: "intake_source_retention_failed", message: error.message, retryable: true };
   }
+  if (logger) logger.error({ err: error }, "Intake Apply failed.");
+  else console.error("Intake Apply failed.", error);
   return {
     code: "intake_apply_partial",
-    message: error instanceof Error ? error.message : "The intake could not be fully applied.",
+    message: "The intake could not be fully applied.",
     retryable: true,
   };
 }
@@ -66,17 +72,20 @@ export async function applyIntake(
   input: { expectedRevision: number; draft?: IntakeDraft },
   context: MutationContext,
   viewerMemberId: number | null,
+  logger?: Pick<FastifyBaseLogger, "error">,
 ): Promise<void> {
+  let effectiveExpectedRevision = input.expectedRevision;
   let stored = db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
   if (!stored) throw AppError.notFound("intake_not_found", "The intake was not found.");
   if (stored.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
   if (recoverExpiredApplyClaim(db, stored)) {
     stored = db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
     if (!stored) throw AppError.notFound("intake_not_found", "The intake was not found.");
+    effectiveExpectedRevision = stored.revision;
   }
   if (stored.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
   if (stored.status !== "ready" && stored.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not ready to apply.");
-  if (stored.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
+  if (stored.revision !== effectiveExpectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
   if (stored.status === "partially_applied" && stored.acceptedDraftJson === null) {
     throw AppError.conflict("intake_state_conflict", "This partially applied intake has no accepted draft and cannot be safely retried.");
   }
@@ -108,7 +117,7 @@ export async function applyIntake(
     if (!current) throw AppError.notFound("intake_not_found", "The intake was not found.");
     if (current.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
     if (current.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
-    if (current.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
+    if (current.revision !== effectiveExpectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
     if (current.status !== "ready" && current.status !== "partially_applied") {
       throw AppError.conflict("intake_state_conflict", "The intake is not ready to apply.");
     }
@@ -125,19 +134,19 @@ export async function applyIntake(
         status: "applying",
         applyClaimToken: claimToken,
         applyClaimExpiresAt: new Date(Date.parse(claimNow) + APPLY_CLAIM_MS).toISOString(),
-        revision: input.expectedRevision + 1,
+        revision: effectiveExpectedRevision + 1,
         updatedAt: claimNow,
       })
       .where(and(
         eq(schema.intakeJobs.id, id),
-        eq(schema.intakeJobs.revision, input.expectedRevision),
+        eq(schema.intakeJobs.revision, effectiveExpectedRevision),
         eq(schema.intakeJobs.status, current.status),
       ))
       .run();
     if (updated.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
-    return { acceptedDraft: claimDraft, claimToken, claimRevision: input.expectedRevision + 1 };
+    return { acceptedDraft: claimDraft, claimToken, claimRevision: effectiveExpectedRevision + 1 };
   });
-  const fail = (error: unknown) => failApplyClaim(db, id, claim.claimToken, claim.claimRevision, applyFailureInfo(error));
+  const fail = (error: unknown) => failApplyClaim(db, id, claim.claimToken, claim.claimRevision, applyFailureInfo(error, logger));
 
   try {
   const draft = claim.acceptedDraft;

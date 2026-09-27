@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import type { FastifyBaseLogger } from "fastify";
 import type { IntakeDraft, IntakeDraftCalendarEvent, IntakeDraftWorkItem } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
 import { applyIntake } from "../src/intake/apply.js";
@@ -251,6 +252,68 @@ describe("intake apply", () => {
     const completed = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
     expect(completed.status).toBe("applied");
     expect(completed.acceptedDraftJson).toBe(JSON.stringify(accepted));
+  });
+
+  it("directly retries an expired apply claim using its frozen draft and previous revision", async () => {
+    const setup = await prepare();
+    const accepted = draft([
+      { key: "accepted", kind: "action", title: "Recovered accepted task", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+    ]);
+    ctx.handle.db.update(schema.intakeJobs).set({
+      status: "applying",
+      acceptedDraftJson: JSON.stringify(accepted),
+      applyClaimToken: "expired-direct-claim",
+      applyClaimExpiresAt: new Date(Date.now() - 60_000).toISOString(),
+      revision: setup.revision + 1,
+    }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const before = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+    const changedDraft = draft([
+      { key: "changed", kind: "action", title: "Should not be created", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+    ]);
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id, {
+      expectedRevision: before.revision,
+      draft: changedDraft,
+    }, { actorMemberId: setup.member.id }, setup.member.id);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Recovered accepted task")).all()).toHaveLength(1);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Should not be created")).all()).toHaveLength(0);
+    const completed = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+    expect(completed.status).toBe("applied");
+    expect(completed.acceptedDraftJson).toBe(JSON.stringify(accepted));
+  });
+
+  it("persists only a generic error for unexpected post-claim failures", async () => {
+    const setup = await prepare();
+    const unsafeMessage = "sensitive internal detail must not be persisted";
+    const calendarDraft = draft([], [{
+      key: "event",
+      title: "Local apply failure",
+      description: null,
+      location: null,
+      allDay: false,
+      startDate: null,
+      endDate: null,
+      startDateTime: "2026-10-03T10:00:00+02:00",
+      endDateTime: "2026-10-03T11:00:00+02:00",
+      relatedWorkKeys: [],
+      enabled: true,
+      durationAssumed: false,
+    }]);
+    const signal = new HomeAssistantRequestSignal();
+    signal.notify = () => { throw new Error(unsafeMessage); };
+    const logger = { error: vi.fn() } as unknown as Pick<FastifyBaseLogger, "error">;
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, {
+      expectedRevision: setup.revision,
+      draft: calendarDraft,
+    }, { actorMemberId: setup.member.id }, setup.member.id, logger)).rejects.toThrow(unsafeMessage);
+    const record = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    expect(record.status).toBe("partially_applied");
+    expect(record.error).toEqual({
+      code: "intake_apply_partial",
+      message: "The intake could not be fully applied.",
+      retryable: true,
+    });
+    expect(JSON.stringify(record.error)).not.toContain(unsafeMessage);
+    expect(logger.error).toHaveBeenCalledWith({ err: expect.any(Error) }, "Intake Apply failed.");
   });
 
   it("does not recover calendar-wait or active local apply states", async () => {

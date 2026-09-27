@@ -125,7 +125,7 @@ export function registerIntakeRoutes(
       expectedRevision: z.number().int().positive(),
       draft: intakeDraftSchema.optional(),
     }).strict(), request.body);
-    await applyIntake(db, env, paperless, signal, request.params.id, body, { actorMemberId: request.activityActor?.id ?? null }, request.authMember?.id ?? request.activityActor?.id ?? null);
+    await applyIntake(db, env, paperless, signal, request.params.id, body, { actorMemberId: request.activityActor?.id ?? null }, request.authMember?.id ?? request.activityActor?.id ?? null, request.log);
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
   });
 
