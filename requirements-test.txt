@@ -1,2 +1,6 @@
-pytest==8.3.4
-pytest-homeassistant-custom-component==0.13.205
+pytest==9.0.0
+pytest-homeassistant-custom-component==0.13.300
+hassil==3.5.0
+home-assistant-intents==2025.12.2
+PyTurboJPEG==2.5.0
+pycares<5

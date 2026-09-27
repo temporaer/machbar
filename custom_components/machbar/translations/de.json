@@ -36,6 +36,22 @@
       "invalid_pairing": "Der Kopplungscode ist ungültig oder abgelaufen.",
       "unsupported_version": "Dieser Machbar-Server unterstützt die Protokollversion der Integration nicht."
     },
+    "options": {
+      "step": {
+        "init": {
+          "title": "KI-Verarbeitung konfigurieren",
+          "description": "Wähle die AI-Task- und Kalender-Entität für die Verarbeitung.",
+          "data": {
+            "ai_task_entity_id": "AI-Task-Entität",
+            "calendar_entity_id": "Kalender-Entität"
+          }
+        }
+      },
+      "error": {
+        "ai_task_no_generate_data": "Die ausgewählte AI-Task-Entität unterstützt keine strukturierte Datengenerierung.",
+        "calendar_not_writable": "Der ausgewählte Kalender kann keine Termine erstellen."
+      }
+    },
     "abort": {
       "already_configured": "Diese Machbar-Instanz ist bereits konfiguriert."
     }

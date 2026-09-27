@@ -7,6 +7,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers import selector
 from yarl import URL
 
 from .client import (
@@ -24,6 +25,8 @@ from .const import (
     CONF_PROTOCOL_VERSION,
     CONF_TOKEN,
     DOMAIN,
+    CONF_AI_TASK_ENTITY,
+    CONF_CALENDAR_ENTITY,
 )
 
 
@@ -91,3 +94,51 @@ class MachbarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+
+    @staticmethod
+    def async_get_options_flow(entry: config_entries.ConfigEntry):
+        return MachbarOptionsFlow(entry)
+
+
+class MachbarOptionsFlow(config_entries.OptionsFlow):
+    """Configure the optional AI Task and calendar entities."""
+
+    def __init__(self, entry: config_entries.ConfigEntry) -> None:
+        self._entry = entry
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            from homeassistant.components import ai_task, calendar
+            from homeassistant.components.ai_task.const import AITaskEntityFeature
+            from homeassistant.components.calendar import CalendarEntityFeature
+
+            ai_id = user_input.get(CONF_AI_TASK_ENTITY)
+            cal_id = user_input.get(CONF_CALENDAR_ENTITY)
+            if ai_id:
+                entity = hass_entity = self.hass.data.get(ai_task.DATA_COMPONENT, {}).get_entity(ai_id)
+                if entity is None or not entity.supported_features & AITaskEntityFeature.GENERATE_DATA:
+                    errors["base"] = "ai_task_no_generate_data"
+            if not errors and cal_id:
+                entity = self.hass.data.get(calendar.DATA_COMPONENT, {}).get_entity(cal_id)
+                if entity is None or not entity.supported_features & CalendarEntityFeature.CREATE_EVENT:
+                    errors["base"] = "calendar_not_writable"
+            if not errors:
+                return self.async_create_entry(title="", data=user_input)
+        ai_entities = self.hass.states.async_entity_ids("ai_task")
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_AI_TASK_ENTITY, default=self._entry.options.get(CONF_AI_TASK_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="ai_task")
+                ),
+                vol.Optional(CONF_CALENDAR_ENTITY, default=self._entry.options.get(CONF_CALENDAR_ENTITY)): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="calendar")
+                ),
+            }
+        )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"ai_task_hint": "Add an AI Task entity in your AI provider integration." if not ai_entities else ""},
+        )
