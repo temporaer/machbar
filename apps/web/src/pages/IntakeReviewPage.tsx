@@ -175,8 +175,8 @@ export function IntakeReviewPage() {
     setBusy(true);
     try { setRecord(await api.retryIntake(id)); } finally { setBusy(false); }
   };
-  const apply = async () => {
-    if (!draft || issues.length || applyingRef.current) return;
+  const applyInitial = async () => {
+    if (record.status !== "ready" || !draft || issues.length || applyingRef.current) return;
     applyingRef.current = true;
     setApplyError(null);
     setBusy(true);
@@ -209,6 +209,29 @@ export function IntakeReviewPage() {
       setBusy(false);
     }
   };
+  const retryApply = async () => {
+    if (record.status !== "partially_applied" || applyingRef.current) return;
+    applyingRef.current = true;
+    setApplyError(null);
+    setBusy(true);
+    try {
+      const nextRecord = await api.applyIntake(id, { expectedRevision: record.revision });
+      recordRef.current = nextRecord;
+      revisionRef.current = nextRecord.revision;
+      setRecord(nextRecord);
+      setApplyError(null);
+    } catch (cause) {
+      if (isStaleWriteConflict(cause)) {
+        conflictPendingRef.current = true;
+        state.reload();
+      } else {
+        setApplyError(localizedErrorMessage(cause, strings));
+      }
+    } finally {
+      applyingRef.current = false;
+      setBusy(false);
+    }
+  };
   const discard = async () => {
     setBusy(true);
     try { await api.deleteIntake(id); navigate("/today"); } finally { setBusy(false); }
@@ -221,8 +244,13 @@ export function IntakeReviewPage() {
   if (record.status === "applying") return <section className="card stack"><h1>{strings.intakeApply}</h1><p>{strings.intakeApplying}</p></section>;
   if (record.status === "applied" || record.status === "partially_applied") {
     return <section className="card stack"><h1>{record.status === "applied" ? strings.intakeApplied : strings.intakePartiallyApplied}</h1>
+      {record.status === "partially_applied" && record.error ? <p role="alert">{record.error.message}</p> : null}
+      {record.status === "partially_applied" ? record.applyResults?.calendar.filter((result) => result.status === "failed").map((result) => (
+        <p key={result.key} role="alert">{result.error?.message ?? strings.error}</p>
+      )) : null}
       {record.applyResults?.work.map((item) => <Link key={item.key} to={item.role === "story" ? `/projects/${item.workItemId}` : `/tasks/${item.workItemId}`}>{item.key}</Link>)}
-      {record.status === "partially_applied" ? <button className="btn btn-primary" disabled={busy} onClick={() => void apply()}>{strings.intakeRetryApply}</button> : null}
+      {record.status === "partially_applied" && applyError ? <p role="alert">{applyError}</p> : null}
+      {record.status === "partially_applied" ? <button className="btn btn-primary" disabled={busy} onClick={() => void retryApply()}>{strings.intakeRetryApply}</button> : null}
     </section>;
   }
   if (!draft) return <LoadingState />;
@@ -252,7 +280,7 @@ export function IntakeReviewPage() {
         updateDraft({ ...draft, workItems: items });
       }
     }} />)}
-    <div className="row"><button className="btn btn-primary" disabled={busy || issues.length > 0} onClick={() => void apply()}>{strings.intakeApply}</button><button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button></div>
+    <div className="row"><button className="btn btn-primary" disabled={busy || issues.length > 0} onClick={() => void applyInitial()}>{strings.intakeApply}</button><button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button></div>
     {applyError ? <p role="alert">{applyError}</p> : null}
     {saveError ? <p role="alert">{saveError}</p> : null}
     {issues.length ? <p role="alert">{issues[0]?.message}</p> : null}

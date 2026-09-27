@@ -237,6 +237,8 @@ export const intakeJobs = sqliteTable(
     planJson: text("plan_json"),
     draftJson: text("draft_json"),
     acceptedDraftJson: text("accepted_draft_json"),
+    applyClaimToken: text("apply_claim_token"),
+    applyClaimExpiresAt: text("apply_claim_expires_at"),
     errorJson: text("error_json"),
     applyResultsJson: text("apply_results_json"),
     createdAt: text("created_at").notNull(),

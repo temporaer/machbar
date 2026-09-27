@@ -51,6 +51,38 @@ function jobOrThrow(db: Db, id: string) {
   return job;
 }
 
+export function recoverExpiredApplyClaim(
+  db: Db,
+  job: typeof schema.intakeJobs.$inferSelect,
+  now = nowIso(),
+): boolean {
+  if (
+    job.status !== "applying"
+    || job.applyClaimToken === null
+    || job.applyClaimExpiresAt === null
+    || job.applyClaimExpiresAt > now
+  ) return false;
+  const error: IntakeErrorInfo = {
+    code: "intake_apply_partial",
+    message: "The previous Apply was interrupted and can be retried.",
+    retryable: true,
+  };
+  const recovered = db.update(schema.intakeJobs).set({
+    status: "partially_applied",
+    applyClaimToken: null,
+    applyClaimExpiresAt: null,
+    errorJson: JSON.stringify(error),
+    revision: job.revision + 1,
+    updatedAt: now,
+  }).where(and(
+    eq(schema.intakeJobs.id, job.id),
+    eq(schema.intakeJobs.status, "applying"),
+    eq(schema.intakeJobs.applyClaimToken, job.applyClaimToken),
+    lte(schema.intakeJobs.applyClaimExpiresAt, now),
+  )).run();
+  return recovered.changes === 1;
+}
+
 export async function createIntakeJob(
   db: Db,
   env: Env,
@@ -151,8 +183,9 @@ export function getIntake(
   viewerMemberId: number | null,
   paperlessAvailable = false,
 ): IntakeRecord {
-  const job = jobOrThrow(db, id);
+  let job = jobOrThrow(db, id);
   if (job.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  if (recoverExpiredApplyClaim(db, job)) job = jobOrThrow(db, id);
   const request = db.select().from(schema.homeAssistantRequests).where(and(
     eq(schema.homeAssistantRequests.intakeJobId, id),
     eq(schema.homeAssistantRequests.kind, "intake_analyze"),

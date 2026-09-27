@@ -134,8 +134,8 @@ describe("IntakeReviewPage", () => {
     expect(mockedApi.applyIntake).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalled());
-    expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft.calendarEvents[0]?.title).toBe("Neuer Elternabend");
-    expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft.workItems[1]?.enabled).toBe(false);
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.calendarEvents[0]?.title).toBe("Neuer Elternabend");
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[1]?.enabled).toBe(false);
   });
 
   it("does not autosave a loaded draft when only its revision is present", async () => {
@@ -360,7 +360,7 @@ describe("IntakeReviewPage", () => {
     fireEvent.change(dates[0]!, { target: { value: "2026-10-12" } });
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalled());
-    const availability = mockedApi.applyIntake.mock.calls[0]?.[1].draft.workItems[0];
+    const availability = mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0];
     expect(availability?.notBeforeDate).toBe("2026-10-12");
     expect(availability?.notBeforeAt).toBeTruthy();
     expect(new Date(availability!.notBeforeAt!).getHours()).toBe(0);
@@ -380,7 +380,7 @@ describe("IntakeReviewPage", () => {
     expect(screen.getAllByRole("checkbox", { name: "Uhrzeit" })[0]).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalled());
-    const availability = mockedApi.applyIntake.mock.calls[0]?.[1].draft.workItems[0];
+    const availability = mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0];
     expect(availability?.notBeforeDate).toBeNull();
     expect(availability?.notBeforeAt).toBeNull();
   });
@@ -405,6 +405,68 @@ describe("IntakeReviewPage", () => {
     mockedApi.getIntake.mockResolvedValue(record(status) as never);
     renderPage();
     expect(await screen.findByText(text)).toBeInTheDocument();
+  });
+
+  it("shows persisted partial errors and created work without rendering editors", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record("partially_applied", {
+        code: "intake_apply_partial",
+        message: "Previous Apply was interrupted and can be retried.",
+        retryable: true,
+      }),
+      applyResults: {
+        work: [{ key: "created", role: "task", kind: "action", workItemId: 27 }],
+        calendar: [
+          { key: "failed-event", status: "failed", correlationId: "c1", error: { code: "calendar_create_failed", message: "Calendar creation failed", retryable: true }, event: null },
+          { key: "pending-event", status: "pending", correlationId: "c2", error: null, event: null },
+        ],
+        paperlessDocumentIds: [],
+      },
+    } as never);
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "Teilweise übernommen" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "created" })).toHaveAttribute("href", "/tasks/27");
+    expect(screen.getByText("Previous Apply was interrupted and can be retried.")).toHaveAttribute("role", "alert");
+    expect(screen.getByText("Calendar creation failed")).toHaveAttribute("role", "alert");
+    expect(screen.queryByText("pending-event")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+  });
+
+  it("retries a partial result exactly once without requiring a valid draft or PATCH", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record("partially_applied"),
+      draft: { ...draft, calendarEvents: [{ ...draft.calendarEvents[0]!, endDateTime: null }] },
+    } as never);
+    renderPage();
+    await screen.findByRole("heading", { name: "Teilweise übernommen" });
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Erneut versuchen" }));
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+    expect(mockedApi.applyIntake).toHaveBeenCalledWith("i1", { expectedRevision: 2 });
+    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    expect(await screen.findByRole("heading", { name: "Verarbeitung übernommen" })).toBeInTheDocument();
+  });
+
+  it.each([
+    ["calendar_not_configured", "Kein Kalender ist konfiguriert."],
+    ["unexpected_error", "Etwas ist schiefgelaufen."],
+  ])("displays synchronous partial retry failure %s and clears it on success", async (code, message) => {
+    mockedApi.getIntake.mockResolvedValue(record("partially_applied") as never);
+    mockedApi.applyIntake.mockRejectedValueOnce(
+      Object.assign(new Error("raw API text"), { name: "ApiError", code }),
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "Teilweise übernommen" });
+    fireEvent.click(screen.getByRole("button", { name: "Erneut versuchen" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByRole("heading", { name: "Teilweise übernommen" })).toBeInTheDocument();
+    expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1);
+    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Erneut versuchen" }));
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
+    expect(mockedApi.applyIntake.mock.calls[1]?.[1]).toEqual({ expectedRevision: 2 });
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
   });
 
   it.each([

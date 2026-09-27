@@ -19,6 +19,7 @@ import {
 import { applyIntake } from "../intake/apply.js";
 import { HomeAssistantRequestSignal } from "../integrations/homeAssistantRequests.js";
 import { intakeDraftSchema } from "../schemas.js";
+import { z } from "zod";
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif", "application/pdf", "text/plain"]);
@@ -120,9 +121,11 @@ export function registerIntakeRoutes(
   });
 
   app.post<{ Params: { id: string } }>("/api/intake/:id/apply", async (request) => {
-    const body = request.body as { expectedRevision: number; draft: unknown };
-    const draft = parseOrThrow(intakeDraftSchema, body?.draft);
-    await applyIntake(db, env, paperless, signal, request.params.id, { expectedRevision: body.expectedRevision, draft }, { actorMemberId: request.activityActor?.id ?? null }, request.authMember?.id ?? request.activityActor?.id ?? null);
+    const body = parseOrThrow(z.object({
+      expectedRevision: z.number().int().positive(),
+      draft: intakeDraftSchema.optional(),
+    }).strict(), request.body);
+    await applyIntake(db, env, paperless, signal, request.params.id, body, { actorMemberId: request.activityActor?.id ?? null }, request.authMember?.id ?? request.activityActor?.id ?? null);
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
   });
 

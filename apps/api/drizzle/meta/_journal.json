@@ -78,6 +78,13 @@
       "when": 1790540388730,
       "tag": "0010_intake_accepted_draft",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1790542613230,
+      "tag": "0011_intake_apply_claim_lease",
+      "breakpoints": true
     }
   ]
 }

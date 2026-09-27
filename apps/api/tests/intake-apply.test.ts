@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import type { IntakeDraft, IntakeDraftCalendarEvent, IntakeDraftWorkItem } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
 import { applyIntake } from "../src/intake/apply.js";
-import { updateIntakeDraft } from "../src/intake/jobs.js";
+import { getIntake, updateIntakeDraft } from "../src/intake/jobs.js";
 import { HomeAssistantRequestSignal } from "../src/integrations/homeAssistantRequests.js";
 import { writeAttachment } from "../src/intake/storage.js";
 import type { PaperlessClient } from "../src/paperless/client.js";
@@ -24,8 +24,8 @@ describe("intake apply", () => {
   beforeEach(() => { ctx = createTestContext(); });
   afterEach(async () => { await closeTestContext(ctx); });
 
-  async function prepare() {
-    const member = ctx.handle.db.insert(schema.members).values({ name: "Alex", color: "#123456" }).returning().get();
+  async function prepare(name = "Alex") {
+    const member = ctx.handle.db.insert(schema.members).values({ name, color: "#123456" }).returning().get();
     const code = (await ctx.app.inject({
       method: "POST",
       url: "/api/integrations/home-assistant/pairing-code",
@@ -220,6 +220,63 @@ describe("intake apply", () => {
     }, { actorMemberId: setup.member.id }, setup.member.id)).rejects.toThrowError(/expired/);
   });
 
+  it("recovers an abandoned local apply lease without changing the accepted draft", async () => {
+    const setup = await prepare();
+    const accepted = draft([
+      { key: "task-a", kind: "action", title: "Accepted task A", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+    ]);
+    ctx.handle.db.update(schema.intakeJobs).set({
+      status: "applying",
+      acceptedDraftJson: JSON.stringify(accepted),
+      applyClaimToken: "dead-claim",
+      applyClaimExpiresAt: new Date(Date.now() - 60_000).toISOString(),
+      revision: setup.revision + 1,
+    }).where(eq(schema.intakeJobs.id, setup.id)).run();
+
+    const recovered = getIntake(ctx.handle.db, setup.id, setup.member.id);
+    expect(recovered.status).toBe("partially_applied");
+    expect(recovered.error).toMatchObject({
+      code: "intake_apply_partial",
+      message: "The previous Apply was interrupted and can be retried.",
+    });
+    const saved = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+    expect(saved.applyClaimToken).toBeNull();
+    expect(saved.applyClaimExpiresAt).toBeNull();
+    expect(saved.acceptedDraftJson).toBe(JSON.stringify(accepted));
+
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id, {
+      expectedRevision: recovered.revision,
+    }, { actorMemberId: setup.member.id }, setup.member.id);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Accepted task A")).all()).toHaveLength(1);
+    const completed = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+    expect(completed.status).toBe("applied");
+    expect(completed.acceptedDraftJson).toBe(JSON.stringify(accepted));
+  });
+
+  it("does not recover calendar-wait or active local apply states", async () => {
+    const waiting = await prepare();
+    const waitResults = { work: [], calendar: [{ key: "event", correlationId: "event-correlation", status: "pending", error: null, event: null }], paperlessDocumentIds: [] };
+    ctx.handle.db.update(schema.intakeJobs).set({
+      status: "applying",
+      acceptedDraftJson: JSON.stringify(draft([])),
+      applyResultsJson: JSON.stringify(waitResults),
+      applyClaimToken: null,
+      applyClaimExpiresAt: null,
+    }).where(eq(schema.intakeJobs.id, waiting.id)).run();
+    expect(getIntake(ctx.handle.db, waiting.id, waiting.member.id).status).toBe("applying");
+
+    const active = await prepare("Jordan");
+    ctx.handle.db.update(schema.intakeJobs).set({
+      status: "applying",
+      acceptedDraftJson: JSON.stringify(draft([])),
+      applyClaimToken: "active-claim",
+      applyClaimExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    }).where(eq(schema.intakeJobs.id, active.id)).run();
+    expect(getIntake(ctx.handle.db, active.id, active.member.id).status).toBe("applying");
+    const activeRow = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, active.id)).get()!;
+    expect(activeRow.applyClaimToken).toBe("active-claim");
+  });
+
   it("uses the accepted draft for calendar refs and exposes project refs on project details", async () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
@@ -246,6 +303,9 @@ describe("intake apply", () => {
     await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, { expectedRevision: setup.revision, draft: d }, { actorMemberId: setup.member.id }, setup.member.id);
     const accepted = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
     expect(JSON.parse(accepted.acceptedDraftJson!)).toEqual(d);
+    expect(accepted.status).toBe("applying");
+    expect(accepted.applyClaimToken).toBeNull();
+    expect(accepted.applyClaimExpiresAt).toBeNull();
     const requests = ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.kind, "calendar_create")).all();
     expect(requests).toHaveLength(1);
     const initialRequest = requests[0]!;
@@ -358,10 +418,24 @@ describe("intake apply", () => {
     let uploadCount = 0;
     let acceptedDraftAtUpload: unknown;
     let patchBlockedAfterClaim = false;
+    let firstClaimToken: string | null = null;
+    let firstClaimExpiry: string | null = null;
+    let firstClaimRevision: number | null = null;
+    let heartbeatVerified = false;
     const paperless: PaperlessClient = {
       upload: async () => {
         const job = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
         acceptedDraftAtUpload = JSON.parse(job.acceptedDraftJson!);
+        if (uploadCount === 0) {
+          firstClaimToken = job.applyClaimToken;
+          firstClaimExpiry = job.applyClaimExpiresAt;
+          firstClaimRevision = job.revision;
+        } else {
+          heartbeatVerified = job.applyClaimToken === firstClaimToken
+            && job.applyClaimExpiresAt !== null
+            && job.applyClaimExpiresAt > firstClaimExpiry!
+            && job.revision === firstClaimRevision;
+        }
         try {
           updateIntakeDraft(ctx.handle.db, setup.id, setup.member.id, {
             expectedRevision: job.revision,
@@ -373,6 +447,7 @@ describe("intake apply", () => {
         return { taskId: `task-${++uploadCount}` };
       },
       awaitDocumentId: async (taskId) => {
+        if (taskId === "task-1") return new Promise<number>((resolve) => setTimeout(() => resolve(101), 10));
         if (taskId === "task-2" && uploadCount === 2) throw new Error("temporary failure");
         return taskId === "task-1" ? 101 : 202;
       },
@@ -390,9 +465,19 @@ describe("intake apply", () => {
     expect(uploadCount).toBe(2);
     expect(acceptedDraftAtUpload).toEqual(draftWithRetention);
     expect(patchBlockedAfterClaim).toBe(true);
+    expect(heartbeatVerified).toBe(true);
     const partial = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+    expect(partial.status).toBe("partially_applied");
+    expect(partial.status === "ready" && partial.acceptedDraftJson !== null).toBe(false);
+    expect(partial.applyClaimToken).toBeNull();
+    expect(partial.applyClaimExpiresAt).toBeNull();
     expect(JSON.parse(partial.applyResultsJson!).paperlessDocumentIds).toEqual([101]);
     expect(JSON.parse(partial.acceptedDraftJson!)).toEqual(draftWithRetention);
+    expect(partial.acceptedDraftJson).not.toBeNull();
+    expect(() => updateIntakeDraft(ctx.handle.db, setup.id, setup.member.id, {
+      expectedRevision: partial.revision,
+      draft: draftWithRetention,
+    })).toThrowError(/only be edited before Apply starts/);
     const changedRetryDraft = draft([
       { key: "changed", kind: "action", title: "Changed during retry", notes: null, parentKey: null, dueDate: "2026-12-31", scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: setup.member.id },
     ]);
