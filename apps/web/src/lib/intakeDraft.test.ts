@@ -84,7 +84,7 @@ describe("AI intake draft helpers", () => {
     const project = item("project", "project", null, { scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false });
     const actionParent = item("parent", "action", "project");
     const action = item("child", "action", "parent");
-    const next = transitionWorkItemKind(action, "project", [project, actionParent, action]);
+    const next = transitionWorkItemKind([project, actionParent, action], action.key, "project")[2];
     expect(next).toMatchObject({
       kind: "project",
       title: action.title,
@@ -103,7 +103,7 @@ describe("AI intake draft helpers", () => {
   it("converts action to reference retaining title, notes, and legal parent only", () => {
     const project = item("project", "project");
     const action = item("child", "action", "project");
-    const next = transitionWorkItemKind(action, "reference", [project, action]);
+    const next = transitionWorkItemKind([project, action], action.key, "reference")[1];
     expect(next).toMatchObject({
       kind: "reference",
       title: action.title,
@@ -127,7 +127,7 @@ describe("AI intake draft helpers", () => {
       reminderAt: null,
       needsClarification: false,
     });
-    expect(transitionWorkItemKind(project, "action", [project])).toMatchObject({
+    expect(transitionWorkItemKind([project], project.key, "action")[0]).toMatchObject({
       kind: "action",
       title: project.title,
       notes: project.notes,
@@ -144,7 +144,7 @@ describe("AI intake draft helpers", () => {
   it("converts project to reference while preserving a legal parent", () => {
     const parent = item("parent", "project", null);
     const project = item("project", "project", "parent");
-    expect(transitionWorkItemKind(project, "reference", [parent, project])).toMatchObject({
+    expect(transitionWorkItemKind([parent, project], project.key, "reference")[1]).toMatchObject({
       kind: "reference",
       parentKey: "parent",
       ownerMemberId: null,
@@ -167,7 +167,7 @@ describe("AI intake draft helpers", () => {
       reminderAt: null,
       needsClarification: false,
     });
-    expect(transitionWorkItemKind(reference, "action", [reference])).toMatchObject({
+    expect(transitionWorkItemKind([reference], reference.key, "action")[0]).toMatchObject({
       kind: "action",
       title: reference.title,
       notes: reference.notes,
@@ -191,7 +191,7 @@ describe("AI intake draft helpers", () => {
       reminderAt: null,
       needsClarification: false,
     });
-    expect(transitionWorkItemKind(reference, "project", [reference])).toMatchObject({
+    expect(transitionWorkItemKind([reference], reference.key, "project")[0]).toMatchObject({
       kind: "project",
       dueDate: null,
       ownerMemberId: null,
@@ -201,6 +201,60 @@ describe("AI intake draft helpers", () => {
       reminderAt: null,
       needsClarification: false,
     });
+  });
+
+  it.each(["action", "reference"] as const)(
+    "moves project children to a legal ancestor when a project becomes %s",
+    (kind) => {
+      const ancestor = item("ancestor", "project", null);
+      const project = item("target", "project", "ancestor");
+      const childProject = item("child-project", "project", "target");
+      const childAction = item("child-action", "action", "target");
+      const childReference = item("child-reference", "reference", "target");
+      const grandchild = item("grandchild", "action", "child-action");
+      const sibling = item("sibling", "action", "ancestor");
+      const items = [ancestor, project, childProject, childAction, grandchild, childReference, sibling];
+      const transitioned = transitionWorkItemKind(items, project.key, kind);
+      expect(transitioned.map((entry) => entry.key)).toEqual(items.map((entry) => entry.key));
+      expect(transitioned[2]?.parentKey).toBe("ancestor");
+      expect(transitioned[3]?.parentKey).toBe(kind === "action" ? "target" : "ancestor");
+      expect(transitioned[4]?.parentKey).toBe("child-action");
+      expect(transitioned[5]?.parentKey).toBe(kind === "action" ? "target" : "ancestor");
+      expect(transitioned[6]).toBe(sibling);
+    },
+  );
+
+  it("reparents action children on action-to-reference and keeps their descendants", () => {
+    const root = item("root", "project", null);
+    const parent = item("parent", "action", "root");
+    const child = item("child", "action", "parent");
+    const grandchild = item("grandchild", "reference", "child");
+    const transitioned = transitionWorkItemKind([root, parent, child, grandchild], "parent", "reference");
+    expect(transitioned.map((entry) => entry.parentKey)).toEqual([null, "root", "root", "child"]);
+  });
+
+  it("moves project children to root when there is no legal ancestor", () => {
+    const parent = item("parent", "project");
+    const child = item("child", "project", "parent");
+    expect(transitionWorkItemKind([parent, child], "parent", "action")[1]?.parentKey).toBeNull();
+  });
+
+  it("preserves legal children when action or reference becomes a project", () => {
+    const root = item("root", "project");
+    const action = item("action", "action", "root");
+    const actionChild = item("action-child", "action", "action");
+    expect(transitionWorkItemKind([root, action, actionChild], "action", "project")[2]?.parentKey).toBe("action");
+    const reference = item("reference", "reference", "root", {
+      ownerMemberId: null,
+      dueDate: null,
+      scheduledDate: null,
+      notBeforeDate: null,
+      notBeforeAt: null,
+      reminderAt: null,
+      needsClarification: false,
+    });
+    expect(transitionWorkItemKind([root, reference, item("child", "project", "reference")], "reference", "project")[2]?.parentKey).toBe("reference");
+    expect(transitionWorkItemKind([root, reference, item("child", "action", "reference")], "reference", "action")[2]?.parentKey).toBe("reference");
   });
 
   it("derives indentation from parent depth rather than list position", () => {

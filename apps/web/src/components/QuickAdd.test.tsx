@@ -52,7 +52,7 @@ async function openCapture() {
   expect(screen.getByText("Nur Titel reicht")).toBeInTheDocument();
 }
 
-async function cropCapturedPhoto() {
+async function cropCapturedPhoto(index = 0, croppedName = "photo-cropped.jpg") {
   Object.defineProperties(URL, {
     createObjectURL: { configurable: true, value: vi.fn(() => "blob:prepared") },
     revokeObjectURL: { configurable: true, value: vi.fn() },
@@ -66,7 +66,7 @@ async function cropCapturedPhoto() {
   vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
     (callback) => callback(new Blob(["cropped"], { type: "image/jpeg" })),
   );
-  await userEvent.click(await screen.findByRole("button", { name: "Foto zuschneiden" }));
+  await userEvent.click((await screen.findAllByRole("button", { name: "Foto zuschneiden" }))[index]!);
   const image = await screen.findByAltText("Vorschau des Bildausschnitts");
   Object.defineProperties(image, {
     naturalWidth: { configurable: true, value: 1000 },
@@ -74,7 +74,7 @@ async function cropCapturedPhoto() {
   });
   fireEvent.load(image);
   await userEvent.click(await screen.findByRole("button", { name: "Ausschnitt verwenden" }));
-  expect(await screen.findByText("photo-cropped.jpg")).toBeInTheDocument();
+  expect(await screen.findByText(croppedName)).toBeInTheDocument();
 }
 
 function OpenTaskProbe() {
@@ -354,29 +354,34 @@ describe("QuickAdd", () => {
 
   it("submits the cropped current file when cropping after switching to AI processing", async () => {
     mockedApi.createIntake.mockResolvedValue({ id: "intake-1" } as never);
+    const original = new File(["photo"], "photo.jpg", { type: "image/jpeg" });
     renderWithProviders(<QuickAdd />);
     await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
     await userEvent.upload(
       screen.getByLabelText("Datei auswählen"),
-      new File(["photo"], "photo.jpg", { type: "image/jpeg" }),
+      original,
     );
     await userEvent.click(await screen.findByRole("button", { name: "Verarbeiten" }));
     await cropCapturedPhoto();
     await userEvent.click(screen.getByRole("button", { name: "Verarbeiten" }));
 
     await waitFor(() => expect(mockedApi.createIntake).toHaveBeenCalledTimes(1));
-    const submitted = mockedApi.createIntake.mock.calls[0]?.[0].files?.[0];
+    const submittedFiles = mockedApi.createIntake.mock.calls[0]?.[0].files;
+    expect(submittedFiles).toHaveLength(1);
+    const submitted = submittedFiles?.[0];
     expect(submitted).toBeInstanceOf(File);
     expect(submitted?.name).toBe("photo-cropped.jpg");
+    expect(submitted).not.toBe(original);
   });
 
   it("keeps a crop from the normal capture form when switching to AI processing", async () => {
     mockedApi.createIntake.mockResolvedValue({ id: "intake-2" } as never);
+    const original = new File(["photo"], "photo.jpg", { type: "image/jpeg" });
     renderWithProviders(<QuickAdd />);
     await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
     await userEvent.upload(
       screen.getByLabelText("Datei auswählen"),
-      new File(["photo"], "photo.jpg", { type: "image/jpeg" }),
+      original,
     );
     await cropCapturedPhoto();
     await userEvent.click(await screen.findByRole("button", { name: "Verarbeiten" }));
@@ -384,7 +389,65 @@ describe("QuickAdd", () => {
     await userEvent.click(screen.getByRole("button", { name: "Verarbeiten" }));
 
     await waitFor(() => expect(mockedApi.createIntake).toHaveBeenCalledTimes(1));
-    expect(mockedApi.createIntake.mock.calls[0]?.[0].files?.[0]?.name).toBe("photo-cropped.jpg");
+    const submittedFiles = mockedApi.createIntake.mock.calls[0]?.[0].files;
+    expect(submittedFiles).toHaveLength(1);
+    expect(submittedFiles?.[0]?.name).toBe("photo-cropped.jpg");
+    expect(submittedFiles?.[0]).not.toBe(original);
+  });
+
+  it("crops a locally added intake file without replacing the seeded capture or other files", async () => {
+    mockedApi.createIntake.mockResolvedValue({ id: "intake-3" } as never);
+    const seeded = new File(["seed"], "photo.jpg", { type: "image/jpeg" });
+    const local = new File(["extra"], "extra.jpg", { type: "image/jpeg" });
+    const other = new File(["notes"], "notes.pdf", { type: "application/pdf" });
+    renderWithProviders(<QuickAdd />);
+    await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
+    await userEvent.upload(screen.getByLabelText("Datei auswählen"), seeded);
+    await userEvent.click(await screen.findByRole("button", { name: "Verarbeiten" }));
+    await userEvent.upload(screen.getByLabelText("Datei auswählen"), [local, other]);
+    await cropCapturedPhoto(1, "extra-cropped.jpg");
+    await userEvent.click(screen.getByRole("button", { name: "Verarbeiten" }));
+    await waitFor(() => expect(mockedApi.createIntake).toHaveBeenCalledTimes(1));
+    const files = mockedApi.createIntake.mock.calls[0]?.[0].files;
+    expect(files?.map((file) => file.name)).toEqual(["photo.jpg", "extra-cropped.jpg", "notes.pdf"]);
+    expect(files?.[0]).toBe(seeded);
+    expect(files?.[1]).not.toBe(local);
+    expect(files?.[2]).toBe(other);
+  });
+
+  it("replaces the seeded crop in place while retaining locally selected files", async () => {
+    mockedApi.createIntake.mockResolvedValue({ id: "intake-5" } as never);
+    const seeded = new File(["seed"], "photo.jpg", { type: "image/jpeg" });
+    const extra = new File(["extra"], "extra.jpg", { type: "image/jpeg" });
+    renderWithProviders(<QuickAdd />);
+    await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
+    await userEvent.upload(screen.getByLabelText("Datei auswählen"), seeded);
+    await userEvent.click(await screen.findByRole("button", { name: "Verarbeiten" }));
+    await userEvent.upload(screen.getByLabelText("Datei auswählen"), extra);
+    await cropCapturedPhoto();
+    await userEvent.click(screen.getByRole("button", { name: "Verarbeiten" }));
+    await waitFor(() => expect(mockedApi.createIntake).toHaveBeenCalledTimes(1));
+    const files = mockedApi.createIntake.mock.calls[0]?.[0].files;
+    expect(files?.map((file) => file.name)).toEqual(["photo-cropped.jpg", "extra.jpg"]);
+    expect(files?.[0]).not.toBe(seeded);
+    expect(files?.[1]).toBe(extra);
+  });
+
+  it("crops a chosen local intake file with no seeded capture without creating a parent pending file", async () => {
+    mockedApi.createIntake.mockResolvedValue({ id: "intake-4" } as never);
+    const first = new File(["first"], "first.jpg", { type: "image/jpeg" });
+    const second = new File(["second"], "photo.jpg", { type: "image/jpeg" });
+    renderWithProviders(<QuickAdd />);
+    await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Verarbeiten" }));
+    await userEvent.upload(screen.getByLabelText("Datei auswählen"), [first, second]);
+    await cropCapturedPhoto(1);
+    await userEvent.click(screen.getByRole("button", { name: "Verarbeiten" }));
+    await waitFor(() => expect(mockedApi.createIntake).toHaveBeenCalledTimes(1));
+    const files = mockedApi.createIntake.mock.calls[0]?.[0].files;
+    expect(files?.map((file) => file.name)).toEqual(["first.jpg", "photo-cropped.jpg"]);
+    expect(files?.[0]).toBe(first);
+    expect(files?.[1]).not.toBe(second);
   });
 
   it("opens the bounded in-app camera instead of the file capture intent", async () => {

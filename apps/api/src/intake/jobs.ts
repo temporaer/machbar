@@ -264,6 +264,14 @@ export function onCalendarCreated(
 }
 
 export function updateIntakeDraft(db: Db, id: string, viewerMemberId: number | null, input: { expectedRevision: number; draft: IntakeDraft }, options = { paperlessAvailable: false, hasFiles: false }): void {
+  const current = db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
+  if (!current) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  if (current.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
+  if (current.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  if (current.status !== "ready" || current.acceptedDraftJson !== null) {
+    throw AppError.conflict("intake_state_conflict", "The intake can only be edited before Apply starts.");
+  }
+  if (current.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.", { expectedRevision: input.expectedRevision, actualRevision: current.revision });
   const memberIds = db.select({ id: schema.members.id }).from(schema.members).all().map((m) => m.id);
   const issues = intakeDraftIssues(input.draft, { memberIds, ...options });
   if (issues.length > 0) throw AppError.badRequest("intake_draft_invalid", "The intake draft is invalid.", { issues });
@@ -272,12 +280,13 @@ export function updateIntakeDraft(db: Db, id: string, viewerMemberId: number | n
     if (!job) throw AppError.notFound("intake_not_found", "The intake was not found.");
     if (job.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
     if (job.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
-    if (job.status !== "ready" && job.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not editable in its current state.");
+    if (job.status !== "ready" || job.acceptedDraftJson !== null) {
+      throw AppError.conflict("intake_state_conflict", "The intake can only be edited before Apply starts.");
+    }
     if (job.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.", { expectedRevision: input.expectedRevision, actualRevision: job.revision });
     const updated = tx.update(schema.intakeJobs)
       .set({
         draftJson: JSON.stringify(input.draft),
-        acceptedDraftJson: null,
         revision: input.expectedRevision + 1,
         updatedAt: nowIso(),
       })

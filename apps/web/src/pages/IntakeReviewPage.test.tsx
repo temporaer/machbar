@@ -246,6 +246,77 @@ describe("IntakeReviewPage", () => {
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
   });
 
+  it("does not PATCH an invalid all-day-to-timed draft, then saves exactly once after its end is entered", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: {
+        ...draft,
+        calendarEvents: [{
+          ...draft.calendarEvents[0],
+          allDay: true,
+          startDate: "2026-10-08",
+          endDate: "2026-10-08",
+          startDateTime: null,
+          endDateTime: null,
+        }],
+      },
+    } as never);
+    renderPage();
+    const eventCard = (await screen.findByDisplayValue("Elternabend")).closest("article")!;
+    vi.useFakeTimers();
+    fireEvent.click(within(eventCard).getAllByRole("checkbox")[1]!);
+    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
+    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    fireEvent.change(within(eventCard).getByLabelText("end"), { target: { value: "2026-10-08T20:00:00+02:00" } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a non-stale rejected snapshot until the draft changes", async () => {
+    mockedApi.updateIntakeDraft
+      .mockRejectedValueOnce(new Error("Save unavailable"))
+      .mockImplementation(async (_id, body) => ({ ...record(), revision: 3, draft: body.draft } as never));
+    renderPage();
+    const summary = await screen.findByDisplayValue("Schulfest");
+    vi.useFakeTimers();
+    fireEvent.change(summary, { target: { value: "First edit" } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(screen.getByRole("alert")).toHaveTextContent("Save unavailable");
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
+    fireEvent.change(summary, { target: { value: "Second edit" } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(2);
+    expect(mockedApi.updateIntakeDraft.mock.calls[1]?.[1].draft.summary).toBe("Second edit");
+    expect(screen.queryByText("Save unavailable")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["calendar_not_configured", "Kein Kalender ist konfiguriert."],
+    ["calendar_not_writable", "Der Kalender kann nicht beschrieben werden."],
+    ["intake_source_retention_failed", "Das Original konnte nicht behalten werden."],
+    ["unexpected_error", "Etwas ist schiefgelaufen."],
+  ])("shows localized Apply failure %s and permits retry with the same draft", async (code, message) => {
+    mockedApi.applyIntake.mockRejectedValueOnce(
+      Object.assign(new Error("raw API text"), { name: "ApiError", code }),
+    );
+    renderPage();
+    await screen.findByDisplayValue("Schulfest");
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByDisplayValue("Schulfest")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText(message)).not.toBeInTheDocument();
+  });
+
   it("renders validation errors against the actual non-first calendar event", async () => {
     const secondEvent = {
       ...draft.calendarEvents[0]!,

@@ -27,6 +27,8 @@ export function IntakeReviewPage() {
   const [record, setRecord] = useState(state.data);
   const [draft, setDraft] = useState<IntakeDraft | null>(null);
   const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
   const recordRef = useRef<IntakeRecord | null>(null);
   const revisionRef = useRef<number | null>(null);
   const latestDraftRef = useRef<IntakeDraft | null>(null);
@@ -35,6 +37,17 @@ export function IntakeReviewPage() {
   const debounceRef = useRef<number | null>(null);
   const conflictPendingRef = useRef(false);
   const applyingRef = useRef(false);
+  const failedSnapshotRef = useRef<string | null>(null);
+  const issues = useMemo(
+    () => (draft ? intakeDraftIssues(draft, {
+      memberIds: members.map((member) => member.id),
+      paperlessAvailable: record?.paperlessAvailable ?? false,
+      hasFiles: (record?.attachments.length ?? 0) > 0,
+    }) : []),
+    [draft, members, record],
+  );
+  const latestIssuesRef = useRef(issues);
+  latestIssuesRef.current = issues;
 
   useEffect(() => {
     if (state.data) {
@@ -48,7 +61,9 @@ export function IntakeReviewPage() {
       )) {
         latestDraftRef.current = state.data.draft;
         cleanDraftSnapshotRef.current = JSON.stringify(state.data.draft);
+        failedSnapshotRef.current = null;
         conflictPendingRef.current = false;
+        setSaveError(null);
         setDraft(state.data.draft);
       }
     }
@@ -58,13 +73,15 @@ export function IntakeReviewPage() {
     if (savePromiseRef.current) return savePromiseRef.current;
     const current = latestDraftRef.current;
     const revision = revisionRef.current;
-    if (!current || revision === null || recordRef.current?.status !== "ready") return false;
+    if (!current || revision === null || recordRef.current?.status !== "ready" || conflictPendingRef.current || latestIssuesRef.current.length) return false;
     if (JSON.stringify(current) === cleanDraftSnapshotRef.current) return true;
+    if (JSON.stringify(current) === failedSnapshotRef.current) return false;
     const save = (async () => {
       while (latestDraftRef.current) {
         const nextDraft = latestDraftRef.current;
         const snapshot = JSON.stringify(nextDraft);
         if (snapshot === cleanDraftSnapshotRef.current) return true;
+        if (latestIssuesRef.current.length || snapshot === failedSnapshotRef.current) return false;
         const expectedRevision = revisionRef.current;
         if (expectedRevision === null) return false;
         try {
@@ -74,12 +91,18 @@ export function IntakeReviewPage() {
           });
           revisionRef.current = nextRecord.revision;
           cleanDraftSnapshotRef.current = snapshot;
+          failedSnapshotRef.current = null;
+          setSaveError(null);
           recordRef.current = nextRecord;
           setRecord({ ...nextRecord, draft: latestDraftRef.current });
         } catch (cause) {
           if (isStaleWriteConflict(cause)) {
             conflictPendingRef.current = true;
+            setSaveError(null);
             state.reload();
+          } else {
+            failedSnapshotRef.current = snapshot;
+            setSaveError(localizedErrorMessage(cause, strings));
           }
           return false;
         }
@@ -94,8 +117,10 @@ export function IntakeReviewPage() {
       if (
         !applyingRef.current &&
         !conflictPendingRef.current &&
+        !latestIssuesRef.current.length &&
         latestDraftRef.current &&
-        JSON.stringify(latestDraftRef.current) !== cleanDraftSnapshotRef.current
+        JSON.stringify(latestDraftRef.current) !== cleanDraftSnapshotRef.current &&
+        JSON.stringify(latestDraftRef.current) !== failedSnapshotRef.current
       ) {
         if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
         debounceRef.current = window.setTimeout(() => {
@@ -107,7 +132,7 @@ export function IntakeReviewPage() {
   };
 
   useEffect(() => {
-    if (!draft || record?.status !== "ready" || conflictPendingRef.current || JSON.stringify(draft) === cleanDraftSnapshotRef.current) return;
+    if (!draft || record?.status !== "ready" || issues.length || conflictPendingRef.current || JSON.stringify(draft) === cleanDraftSnapshotRef.current || JSON.stringify(draft) === failedSnapshotRef.current) return;
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       debounceRef.current = null;
@@ -117,21 +142,13 @@ export function IntakeReviewPage() {
       if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
       debounceRef.current = null;
     };
-  }, [draft, id, record?.status]);
+  }, [draft, id, record?.status, issues.length]);
   useEffect(() => {
     if (!record || !["queued", "analyzing", "applying"].includes(record.status)) return;
     const timer = window.setInterval(state.reload, 2_000);
     return () => window.clearInterval(timer);
   }, [record?.status, state.reload, version]);
 
-  const issues = useMemo(
-    () => (draft ? intakeDraftIssues(draft, {
-      memberIds: members.map((member) => member.id),
-      paperlessAvailable: record?.paperlessAvailable ?? false,
-      hasFiles: (record?.attachments.length ?? 0) > 0,
-    }) : []),
-    [draft, members, record],
-  );
   const workItemDepth = useMemo(
     () => (draft ? workItemDepths(draft.workItems) : []),
     [draft?.workItems],
@@ -144,6 +161,10 @@ export function IntakeReviewPage() {
 
   const updateDraft = (next: IntakeDraft) => {
     if (applyingRef.current) return;
+    if (JSON.stringify(next) !== failedSnapshotRef.current) {
+      failedSnapshotRef.current = null;
+      setSaveError(null);
+    }
     latestDraftRef.current = next;
     setDraft(next);
     const nextRecord = { ...record, draft: next };
@@ -157,6 +178,7 @@ export function IntakeReviewPage() {
   const apply = async () => {
     if (!draft || issues.length || applyingRef.current) return;
     applyingRef.current = true;
+    setApplyError(null);
     setBusy(true);
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
     debounceRef.current = null;
@@ -173,11 +195,14 @@ export function IntakeReviewPage() {
       recordRef.current = nextRecord;
       revisionRef.current = nextRecord.revision;
       setRecord(nextRecord);
+      setApplyError(null);
     }
     catch (cause) {
       if (isStaleWriteConflict(cause)) {
         conflictPendingRef.current = true;
         state.reload();
+      } else {
+        setApplyError(localizedErrorMessage(cause, strings));
       }
     } finally {
       applyingRef.current = false;
@@ -208,7 +233,7 @@ export function IntakeReviewPage() {
     <h2>{strings.intakeCalendar}</h2>
     {draft.calendarEvents.map((event, index) => <CalendarEditor key={event.key} event={event} index={index} issues={issues} onChange={(next) => updateDraft({ ...draft, calendarEvents: draft.calendarEvents.map((item, i) => i === index ? next : item) })} />)}
     <h2>{strings.intakeMachbar}</h2>
-    {draft.workItems.map((item, index) => <WorkEditor key={item.key} item={item} index={index} depth={workItemDepth[index] ?? 0} items={draft.workItems} members={members} issues={issues} onChange={(next) => {
+    {draft.workItems.map((item, index) => <WorkEditor key={item.key} item={item} index={index} depth={workItemDepth[index] ?? 0} onKindChange={(kind) => updateDraft({ ...draft, workItems: transitionWorkItemKind(draft.workItems, item.key, kind) })} members={members} issues={issues} onChange={(next) => {
       const items = draft.workItems.map((value, i) => i === index ? next : value);
       if (!next.enabled) {
         const disabled = new Set([next.key]);
@@ -224,20 +249,12 @@ export function IntakeReviewPage() {
         }
         updateDraft({ ...draft, workItems: items.map((value) => disabled.has(value.key) ? { ...value, enabled: false } : value) });
       } else {
-        const changedItems = next.kind === "reference" && item.kind !== "reference"
-          ? items.map((value) => {
-            if (value.parentKey !== next.key) return value;
-            const parent = items.find((candidate) => candidate.key === next.parentKey);
-            const legalForChild = value.kind === "project"
-              ? parent?.kind === "project"
-              : parent?.kind === "project" || parent?.kind === "action";
-            return { ...value, parentKey: legalForChild ? next.parentKey : null };
-          })
-          : items;
-        updateDraft({ ...draft, workItems: changedItems });
+        updateDraft({ ...draft, workItems: items });
       }
     }} />)}
     <div className="row"><button className="btn btn-primary" disabled={busy || issues.length > 0} onClick={() => void apply()}>{strings.intakeApply}</button><button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button></div>
+    {applyError ? <p role="alert">{applyError}</p> : null}
+    {saveError ? <p role="alert">{saveError}</p> : null}
     {issues.length ? <p role="alert">{issues[0]?.message}</p> : null}
   </section>;
 }
@@ -261,7 +278,7 @@ function CalendarEditor({ event, index, issues, onChange }: { event: IntakeDraft
   </article>;
 }
 
-function WorkEditor({ item, index, depth, items, members, issues, onChange }: { item: IntakeDraftWorkItem; index: number; depth: number; items: IntakeDraftWorkItem[]; members: { id: number; name: string }[]; issues: IntakeIssue[]; onChange: (item: IntakeDraftWorkItem) => void }) {
+function WorkEditor({ item, index, depth, onKindChange, members, issues, onChange }: { item: IntakeDraftWorkItem; index: number; depth: number; onKindChange: (kind: IntakeDraftWorkItem["kind"]) => void; members: { id: number; name: string }[]; issues: IntakeIssue[]; onChange: (item: IntakeDraftWorkItem) => void }) {
   const strings = useStrings();
   const path = ["workItems", index];
   const currentClock = taskAvailabilityClock(item.notBeforeAt);
@@ -275,7 +292,7 @@ function WorkEditor({ item, index, depth, items, members, issues, onChange }: { 
     if (availability) onChange({ ...item, ...availability });
   };
   return <article className="card stack" style={{ marginInlineStart: `${Math.min(depth, 5)}rem` }}><label><input type="checkbox" checked={item.enabled} onChange={(e) => onChange({ ...item, enabled: e.target.checked })} /> {item.title}</label>
-    <select value={item.kind} onChange={(e) => onChange(transitionWorkItemKind(item, e.target.value as IntakeDraftWorkItem["kind"], items))}><option value="action">Action</option><option value="project">Project</option><option value="reference">Reference</option></select>
+    <select value={item.kind} onChange={(e) => onKindChange(e.target.value as IntakeDraftWorkItem["kind"])}><option value="action">Action</option><option value="project">Project</option><option value="reference">Reference</option></select>
     <input value={item.title} onChange={(e) => onChange({ ...item, title: e.target.value })} />
     {item.kind !== "reference" ? <><select aria-label={strings.owner} value={item.ownerMemberId ?? ""} onChange={(e) => onChange({ ...item, ownerMemberId: e.target.value ? Number(e.target.value) : null })}><option value="">—</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select><IssueText issues={issues} path={[...path, "ownerMemberId"]} /></> : null}
     <textarea aria-label={strings.notes} value={item.notes ?? ""} onChange={(e) => onChange({ ...item, notes: e.target.value || null })} />

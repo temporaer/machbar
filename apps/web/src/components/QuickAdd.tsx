@@ -50,7 +50,10 @@ export function QuickAdd({
     autoOpen ? "form" : "choose",
   );
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [cropFile, setCropFile] = useState<File | null>(null);
+  const [cropTarget, setCropTarget] = useState<{
+    file: File;
+    onApply?: (croppedFile: File) => void;
+  } | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -79,7 +82,7 @@ export function QuickAdd({
     setOpen(false);
     setCaptureStep("choose");
     setPendingFile(null);
-    setCropFile(null);
+    setCropTarget(null);
     setCameraOpen(false);
     uploadedAttachmentRef.current = null;
     if (autoOpen) onAutoOpenClose?.(captured);
@@ -179,7 +182,16 @@ export function QuickAdd({
             <IntakeComposer
               initialFile={pendingFile}
               {...(defaultScope ? { defaultScope } : {})}
-              onCropPendingFile={(file) => setCropFile(file)}
+              onCropPendingFile={(file, onApply, seeded) => setCropTarget({
+                file,
+                onApply: (croppedFile) => {
+                  onApply(croppedFile);
+                  if (seeded) {
+                    setPendingFile(croppedFile);
+                    uploadedAttachmentRef.current = null;
+                  }
+                },
+              })}
               onCancel={close}
             />
           ) : (
@@ -187,7 +199,7 @@ export function QuickAdd({
               projectId={projectId}
               parentTaskId={null}
               pendingFiles={pendingFile ? [pendingFile] : []}
-              onCropPendingFile={(file) => setCropFile(file)}
+              onCropPendingFile={(file) => setCropTarget({ file })}
               {...(pendingFile ? { prepareNotes: prepareMaterialNotes } : {})}
               {...(pendingFile
                 ? {
@@ -212,15 +224,18 @@ export function QuickAdd({
           )}
         </BottomSheet>
       ) : null}
-      {cropFile ? (
+      {cropTarget ? (
         <ImageCropSheet
-          file={cropFile}
-          onClose={() => setCropFile(null)}
-          onUseOriginal={() => setCropFile(null)}
+          file={cropTarget.file}
+          onClose={() => setCropTarget(null)}
+          onUseOriginal={() => setCropTarget(null)}
           onApply={(croppedFile) => {
-            setPendingFile(croppedFile);
-            uploadedAttachmentRef.current = null;
-            setCropFile(null);
+            if (cropTarget.onApply) cropTarget.onApply(croppedFile);
+            else {
+              setPendingFile(croppedFile);
+              uploadedAttachmentRef.current = null;
+            }
+            setCropTarget(null);
           }}
         />
       ) : null}

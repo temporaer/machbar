@@ -11,7 +11,7 @@ export function IntakeComposer({
 }: {
   initialFile?: File | null;
   defaultScope?: "work";
-  onCropPendingFile?: (file: File) => void;
+  onCropPendingFile?: (file: File, onApply: (croppedFile: File) => void, seeded: boolean) => void;
   onCancel: () => void;
 }) {
   const strings = useStrings();
@@ -58,7 +58,15 @@ export function IntakeComposer({
       </label>
       <PendingMaterialPreview
         files={files}
-        onCrop={onCropPendingFile ? (file) => onCropPendingFile(file) : undefined}
+        onCrop={onCropPendingFile ? (file, index) => {
+          const seeded = file === seededFile.current && index === files.indexOf(seededFile.current);
+          onCropPendingFile(file, (croppedFile) => {
+            if (seeded && seededFile.current === file) seededFile.current = croppedFile;
+            setFiles((current) => current.map((entry, position) =>
+              position === index && entry === file ? croppedFile : entry
+            ));
+          }, seeded);
+        } : undefined}
       />
       {error ? <p className="capture-error" role="alert">{error}</p> : null}
       <div className="row">

@@ -1,5 +1,4 @@
 import type {
-  IntakeDraft,
   IntakeDraftCalendarEvent,
   IntakeDraftWorkItem,
   IntakeIssue,
@@ -93,17 +92,24 @@ export function transitionCalendarAllDay(
   };
 }
 
+function canParent(
+  parent: IntakeDraftWorkItem,
+  childKind: IntakeDraftWorkItem["kind"],
+): boolean {
+  return parent.kind === "project" ||
+    (parent.kind === "action" && childKind !== "project");
+}
+
 function nearestLegalParent(
-  item: IntakeDraftWorkItem,
+  key: string,
   parentKey: string | null,
-  items: readonly IntakeDraftWorkItem[],
-  legalKinds: readonly IntakeDraftWorkItem["kind"][],
+  kind: IntakeDraftWorkItem["kind"],
+  byKey: ReadonlyMap<string, IntakeDraftWorkItem>,
 ): string | null {
-  const byKey = new Map(items.map((candidate) => [candidate.key, candidate]));
   let parent = parentKey ? byKey.get(parentKey) : undefined;
   const seen = new Set<string>();
   while (parent && !seen.has(parent.key)) {
-    if (parent.key !== item.key && legalKinds.includes(parent.kind)) {
+    if (parent.key !== key && canParent(parent, kind)) {
       return parent.key;
     }
     seen.add(parent.key);
@@ -112,18 +118,11 @@ function nearestLegalParent(
   return null;
 }
 
-export function transitionWorkItemKind(
+function normalizedWorkItemKind(
   item: IntakeDraftWorkItem,
   kind: IntakeDraftWorkItem["kind"],
-  items: readonly IntakeDraftWorkItem[],
+  parentKey: string | null,
 ): IntakeDraftWorkItem {
-  if (item.kind === kind) return item;
-  const parentKey = nearestLegalParent(
-    item,
-    item.parentKey,
-    items,
-    kind === "project" ? ["project"] : ["project", "action"],
-  );
   const base = { ...item, kind, parentKey };
   if (kind === "project") {
     return {
@@ -155,6 +154,27 @@ export function transitionWorkItemKind(
     reminderAt: null,
     needsClarification: false,
   };
+}
+
+export function transitionWorkItemKind(
+  items: readonly IntakeDraftWorkItem[],
+  key: string,
+  kind: IntakeDraftWorkItem["kind"],
+): IntakeDraftWorkItem[] {
+  const selected = items.find((item) => item.key === key);
+  if (!selected || selected.kind === kind) return [...items];
+  const byKey = new Map(items.map((item) => [item.key, item]));
+  const parentKey = nearestLegalParent(key, selected.parentKey, kind, byKey);
+  const changed = normalizedWorkItemKind(selected, kind, parentKey);
+  byKey.set(key, changed);
+  return items.map((item) => {
+    if (item.key === key) return changed;
+    if (item.parentKey !== key || canParent(changed, item.kind)) return item;
+    return {
+      ...item,
+      parentKey: nearestLegalParent(item.key, changed.parentKey, item.kind, byKey),
+    };
+  });
 }
 
 export function workItemDepths(items: readonly IntakeDraftWorkItem[]): number[] {

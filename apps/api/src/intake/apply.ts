@@ -39,6 +39,9 @@ export async function applyIntake(
   if (stored.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
   if (stored.status !== "ready" && stored.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not ready to apply.");
   if (stored.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
+  if (stored.status === "partially_applied" && stored.acceptedDraftJson === null) {
+    throw AppError.conflict("intake_state_conflict", "This partially applied intake has no accepted draft and cannot be safely retried.");
+  }
   const draft = parse<IntakeDraft>(stored.acceptedDraftJson) ?? input.draft;
   const memberIds = db.select({ id: schema.members.id }).from(schema.members).all().map((member) => member.id);
   const attachments = db.select().from(schema.intakeAttachments)
@@ -60,6 +63,52 @@ export async function applyIntake(
     if (capabilities?.calendar?.state !== "ok") throw AppError.conflict("calendar_not_configured", "No writable calendar is configured.");
   }
 
+  const claim = db.transaction((tx) => {
+    const current = tx.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
+    if (!current) throw AppError.notFound("intake_not_found", "The intake was not found.");
+    if (current.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
+    if (current.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+    if (current.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
+    if (current.status !== "ready" && current.status !== "partially_applied") {
+      throw AppError.conflict("intake_state_conflict", "The intake is not ready to apply.");
+    }
+    if (current.status === "partially_applied" && current.acceptedDraftJson === null) {
+      throw AppError.conflict("intake_state_conflict", "This partially applied intake has no accepted draft and cannot be safely retried.");
+    }
+    const acceptedDraft = parse<IntakeDraft>(current.acceptedDraftJson) ?? input.draft;
+    const previousStatus = current.status;
+    const updated = tx.update(schema.intakeJobs)
+      .set({
+        acceptedDraftJson: current.acceptedDraftJson ?? JSON.stringify(acceptedDraft),
+        status: "applying",
+        revision: input.expectedRevision + 1,
+        updatedAt: nowIso(),
+      })
+      .where(and(
+        eq(schema.intakeJobs.id, id),
+        eq(schema.intakeJobs.revision, input.expectedRevision),
+        eq(schema.intakeJobs.status, current.status),
+      ))
+      .run();
+    if (updated.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
+    return { acceptedDraft, previousStatus, revision: input.expectedRevision + 1 };
+  });
+  const releaseClaim = () => {
+    db.update(schema.intakeJobs)
+      .set({
+        status: claim.previousStatus,
+        revision: claim.revision + 1,
+        updatedAt: nowIso(),
+      })
+      .where(and(
+        eq(schema.intakeJobs.id, id),
+        eq(schema.intakeJobs.revision, claim.revision),
+        eq(schema.intakeJobs.status, "applying"),
+      ))
+      .run();
+  };
+  const acceptedDraft = claim.acceptedDraft;
+
   let results = parse<IntakeApplyResults>(stored.applyResultsJson) ?? { work: [], calendar: [], paperlessDocumentIds: [] };
   if (draft.retainSourceInPaperless && results.paperlessDocumentIds.length < attachments.length) {
     if (!paperless) throw AppError.conflict("intake_source_retention_failed", "Paperless is not configured.");
@@ -72,23 +121,30 @@ export async function applyIntake(
           data: bytes,
         });
         results.paperlessDocumentIds.push(document.id);
-        db.update(schema.intakeJobs)
+        const saved = db.update(schema.intakeJobs)
           .set({ applyResultsJson: JSON.stringify(results), updatedAt: nowIso() })
-          .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, stored.revision)))
+          .where(and(
+            eq(schema.intakeJobs.id, id),
+            eq(schema.intakeJobs.revision, claim.revision),
+            eq(schema.intakeJobs.status, "applying"),
+          ))
           .run();
+        if (saved.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake apply claim was lost.");
       }
     } catch (error) {
+      releaseClaim();
       throw new AppError(502, "intake_source_retention_failed", "The source could not be retained in Paperless.", { cause: error instanceof Error ? error.message : String(error) });
     }
   }
 
+  try {
   db.transaction((tx) => {
     const jobNow = tx.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
     if (!jobNow) throw new AppError(410, "intake_expired", "The intake has expired.");
     if (jobNow.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
     if (jobNow.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
-    if (jobNow.status !== "ready" && jobNow.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not ready to apply.");
-    if (jobNow.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
+    if (jobNow.status !== "applying") throw AppError.conflict("intake_state_conflict", "The intake apply claim was lost.");
+    if (jobNow.revision !== claim.revision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
     const existingKeys = new Set(results.work.map((item) => item.key));
     const enabled = draft.workItems.filter((item) => item.enabled);
     const byKey = new Map(enabled.map((item) => [item.key, item]));
@@ -194,12 +250,20 @@ export async function applyIntake(
       .set({
         status,
         applyResultsJson: JSON.stringify(results),
-        acceptedDraftJson: jobNow.acceptedDraftJson ?? JSON.stringify(draft),
-        revision: input.expectedRevision + 1,
+        acceptedDraftJson: jobNow.acceptedDraftJson ?? JSON.stringify(acceptedDraft),
+        revision: claim.revision + 1,
         updatedAt: nowIso(),
       })
-      .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, input.expectedRevision)))
+      .where(and(
+        eq(schema.intakeJobs.id, id),
+        eq(schema.intakeJobs.revision, claim.revision),
+        eq(schema.intakeJobs.status, "applying"),
+      ))
       .run();
     if (updated.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
   });
+  } catch (error) {
+    releaseClaim();
+    throw error;
+  }
 }
