@@ -351,7 +351,11 @@ export function applyHomeAssistantSnapshot(
     }
     const txDb = tx as unknown as Db;
     tx.update(schema.homeAssistantIntegrations)
-      .set({ lastUpdateAt: nowIso() })
+      .set({
+        lastUpdateAt: nowIso(),
+        protocolVersion: HOME_ASSISTANT_PROTOCOL_VERSION,
+        capabilitiesJson: JSON.stringify(snapshot.intake),
+      })
       .where(eq(schema.homeAssistantIntegrations.id, integrationId))
       .run();
     if (enteredContexts.length > 0) {
@@ -387,12 +391,16 @@ export function applyHomeAssistantSnapshot(
   });
 }
 
-function activeIntegration(db: Db) {
+export function activeHomeAssistantIntegration(db: Db) {
   return db
     .select()
     .from(schema.homeAssistantIntegrations)
     .where(isNull(schema.homeAssistantIntegrations.revokedAt))
     .get();
+}
+
+function activeIntegration(db: Db) {
+  return activeHomeAssistantIntegration(db);
 }
 
 function isFresh(value: string | null, now: Date): boolean {
@@ -440,6 +448,14 @@ export function homeAssistantStatus(
     .from(schema.homeAssistantPersonContexts)
     .all();
   const mappings = db.select().from(schema.homeAssistantMemberMappings).all();
+  const intake = integration.capabilitiesJson
+    ? (JSON.parse(integration.capabilitiesJson) as HomeAssistantIntegrationStatus["intake"])
+    : null;
+  const protocolOutdated =
+    integration.protocolVersion !== HOME_ASSISTANT_PROTOCOL_VERSION;
+  const workerOnline =
+    integration.lastRequestPollAt !== null &&
+    now.getTime() - new Date(integration.lastRequestPollAt).getTime() < 90_000;
   return {
     connected: true,
     instanceId: integration.instanceId,
@@ -463,12 +479,13 @@ export function homeAssistantStatus(
       observedAt: person.observedAt,
     })),
     supportedProtocolVersion: HOME_ASSISTANT_PROTOCOL_VERSION,
-    protocolOutdated:
-      integration.protocolVersion !== HOME_ASSISTANT_PROTOCOL_VERSION,
-    lastRequestPollAt: null,
-    workerOnline: false,
-    intake: null,
-    intakeReady: false,
+    protocolOutdated,
+    lastRequestPollAt: integration.lastRequestPollAt,
+    workerOnline,
+    intake,
+    intakeReady:
+      !protocolOutdated &&
+      intake?.aiTask.state === "ok",
   };
 }
 

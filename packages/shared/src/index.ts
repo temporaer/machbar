@@ -232,7 +232,8 @@ export type ApiErrorCode =
   | "intake_state_conflict"
   | "intake_source_retention_failed"
   | "home_assistant_request_lease_lost"
-  | "home_assistant_request_exhausted";
+  | "home_assistant_request_exhausted"
+  | "home_assistant_request_not_found";
 
 export interface ApiErrorPayload {
   code: ApiErrorCode;
@@ -795,6 +796,12 @@ export interface ExternalWorkItemRef {
   start: string;
   end: string;
 }
+
+export {
+  isPaperlessImage,
+  markdownLabel,
+  paperlessMarkdownReference,
+} from "./paperlessMarkdown.js";
 
 export interface Agenda {
   projects: ProjectAgendaEntry[];

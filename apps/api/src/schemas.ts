@@ -303,11 +303,11 @@ export const updateTagSchema = z.object({
 
 export const homeAssistantPairSchema = z.object({
   pairingCode: z.string().min(1),
-  protocolVersion: z.literal(2),
+  protocolVersion: z.number().int(),
 });
 
 export const homeAssistantSnapshotSchema = z.object({
-  protocolVersion: z.literal(2),
+  protocolVersion: z.number().int(),
   observedAt: isoDateTime,
   contexts: z.array(
     z.object({
@@ -337,6 +337,32 @@ export const homeAssistantSnapshotSchema = z.object({
     })
     .strict(),
 });
+
+export const homeAssistantCalendarEventRefSchema = z.object({
+  calendarEntityId: z.string().min(1),
+  uid: z.string().min(1),
+  recurrenceId: z.string().nullable(),
+  summary: z.string(),
+  start: z.string(),
+  end: z.string(),
+  correlationId: z.string().uuid(),
+}).strict();
+
+export const homeAssistantRequestCompletionSchema = z.discriminatedUnion("outcome", [
+  z.object({
+    leaseToken: z.string().min(1),
+    outcome: z.literal("succeeded"),
+    result: z.unknown(),
+  }),
+  z.object({
+    leaseToken: z.string().min(1),
+    outcome: z.literal("failed"),
+    error: z.object({
+      code: z.string().min(1),
+      message: z.string().min(1),
+    }).strict(),
+  }),
+]);
 
 const intakeKeySchema = z.string().regex(INTAKE_KEY_PATTERN);
 const intakeDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);

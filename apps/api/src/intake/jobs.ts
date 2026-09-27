@@ -1,0 +1,307 @@
+import { createHash, randomUUID } from "node:crypto";
+import { and, desc, eq, lte } from "drizzle-orm";
+import type {
+  HomeAssistantCalendarEventRef,
+  HomeAssistantRequestErrorCode,
+  IntakeDraft,
+  IntakeErrorInfo,
+  IntakePlan,
+  IntakeRecord,
+  WorkItemScope,
+} from "@machbar/shared";
+import {
+  buildDraftFromPlan,
+  intakeDraftIssues,
+  intakePlanIssues,
+} from "@machbar/shared";
+import type { Db } from "../db/client.js";
+import * as schema from "../db/schema.js";
+import type { Env } from "../env.js";
+import { AppError } from "../errors.js";
+import { activeHomeAssistantIntegration } from "../integrations/homeAssistant.js";
+import {
+  enqueueHomeAssistantRequest,
+  type HomeAssistantRequestSignal,
+} from "../integrations/homeAssistantRequests.js";
+import { intakePlanSchema } from "../schemas.js";
+import { nowIso } from "../domain/workItemShared.js";
+import { buildIntakeInstructions } from "./prompt.js";
+import { deleteJobFiles, writeAttachment } from "./storage.js";
+import { addExternalWorkItemRef } from "../domain/externalWorkItemRefs.js";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function errorInfo(
+  code: IntakeErrorInfo["code"],
+  message: string,
+  retryable = true,
+  details?: Record<string, unknown>,
+): IntakeErrorInfo & { details?: Record<string, unknown> } {
+  return { code, message, retryable, ...(details ? { details } : {}) };
+}
+
+function parseJson<T>(value: string | null): T | null {
+  return value === null ? null : JSON.parse(value) as T;
+}
+
+function jobOrThrow(db: Db, id: string) {
+  const job = db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
+  if (!job) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  if (job.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
+  return job;
+}
+
+export async function createIntakeJob(
+  db: Db,
+  env: Env,
+  signal: HomeAssistantRequestSignal,
+  input: {
+    text: string | null;
+    files: Array<{ id?: string; filename: string; mimeType: string; data: Buffer }>;
+    actorMemberId: number | null;
+    createdByMemberId: number | null;
+    scope: WorkItemScope;
+  },
+): Promise<string> {
+  const integration = activeHomeAssistantIntegration(db);
+  if (!integration) throw AppError.conflict("home_assistant_not_connected", "Home Assistant is not connected.");
+  if (integration.protocolVersion !== 2) throw AppError.conflict("home_assistant_protocol_outdated", "The Home Assistant integration must be updated.");
+  const capabilities = integration.capabilitiesJson ? JSON.parse(integration.capabilitiesJson) as {
+    aiTask?: { state?: string; supportsAttachments?: boolean };
+  } : null;
+  if (capabilities?.aiTask?.state && capabilities.aiTask.state !== "ok") {
+    throw AppError.conflict("ai_task_not_configured", "No usable Home Assistant AI Task is configured.");
+  }
+  if (input.files.length > 0 && capabilities?.aiTask?.supportsAttachments === false) {
+    throw AppError.conflict("ai_task_attachments_unsupported", "The configured AI Task does not support attachments.");
+  }
+
+  const id = randomUUID();
+  const attachmentRows: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number; sha256: string }> = [];
+  try {
+    for (const file of input.files) {
+      const attachmentId = file.id ?? randomUUID();
+      await writeAttachment(env, id, attachmentId, file.data);
+      attachmentRows.push({
+        id: attachmentId,
+        filename: file.filename,
+        mimeType: file.mimeType,
+        sizeBytes: file.data.length,
+        sha256: createHash("sha256").update(file.data).digest("hex"),
+      });
+    }
+    const members = db.select({ name: schema.members.name }).from(schema.members).all();
+    const createdAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + DAY_MS).toISOString();
+    db.transaction((tx) => {
+      tx.insert(schema.intakeJobs).values({
+        id,
+        createdByMemberId: input.createdByMemberId,
+        actorMemberId: input.actorMemberId,
+        scope: input.scope,
+        status: "queued",
+        revision: 1,
+        text: input.text,
+        createdAt,
+        updatedAt: createdAt,
+        expiresAt,
+      }).run();
+      for (const attachment of attachmentRows) {
+        tx.insert(schema.intakeAttachments).values({
+          id: attachment.id,
+          intakeJobId: id,
+          filename: attachment.filename,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          sha256: attachment.sha256,
+          createdAt,
+        }).run();
+      }
+      enqueueHomeAssistantRequest(tx as unknown as Db, {
+        integrationId: integration.id,
+        intakeJobId: id,
+        kind: "intake_analyze",
+        payload: {
+          intakeId: id,
+          taskName: "Machbar intake",
+          instructions: buildIntakeInstructions({
+            today: new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date()),
+            timezone: "Europe/Berlin",
+            memberNames: members.map((member) => member.name),
+            hasText: input.text !== null,
+            attachmentCount: attachmentRows.length,
+          }),
+          text: input.text,
+          attachments: attachmentRows.map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes })),
+        },
+      }, signal);
+    });
+    return id;
+  } catch (error) {
+    await deleteJobFiles(env, id);
+    throw error;
+  }
+}
+
+export function getIntake(
+  db: Db,
+  id: string,
+  viewerMemberId: number | null,
+  paperlessAvailable = false,
+): IntakeRecord {
+  const job = jobOrThrow(db, id);
+  if (job.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  const request = db.select().from(schema.homeAssistantRequests).where(and(
+    eq(schema.homeAssistantRequests.intakeJobId, id),
+    eq(schema.homeAssistantRequests.kind, "intake_analyze"),
+  )).orderBy(desc(schema.homeAssistantRequests.createdAt)).get();
+  const draft = parseJson<IntakeDraft>(job.draftJson);
+  const error = parseJson<IntakeErrorInfo>(job.errorJson);
+  return {
+    id: job.id,
+    status: (job.status === "queued" && request?.status === "leased" ? "analyzing" : job.status) as IntakeRecord["status"],
+    revision: job.revision,
+    createdAt: job.createdAt,
+    expiresAt: job.expiresAt,
+    text: job.text,
+    attachments: db.select().from(schema.intakeAttachments).where(eq(schema.intakeAttachments.intakeJobId, id)).all()
+      .map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })),
+    draft,
+    error,
+    applyResults: parseJson(job.applyResultsJson),
+    homeAssistant: { workerOnline: Boolean(activeHomeAssistantIntegration(db)?.lastRequestPollAt && Date.now() - new Date(activeHomeAssistantIntegration(db)!.lastRequestPollAt!).getTime() < 90_000) },
+    paperlessAvailable,
+  };
+}
+
+export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSelect, plan: IntakePlan): void {
+  const parsed = intakePlanSchema.safeParse(plan);
+  const issues = parsed.success ? intakePlanIssues(parsed.data) : [];
+  if (!parsed.success || issues.length > 0) {
+    const details = parsed.success ? { issues } : { issues: parsed.error.issues };
+    const info = errorInfo("ai_task_invalid_response", "The AI Task returned an invalid intake plan.", true, details);
+    db.update(schema.intakeJobs).set({
+      status: "analysis_failed",
+      errorJson: JSON.stringify(info),
+      updatedAt: nowIso(),
+      revision: job.revision + 1,
+    }).where(eq(schema.intakeJobs.id, job.id)).run();
+    return;
+  }
+  const members = db.select({ id: schema.members.id, name: schema.members.name }).from(schema.members).all();
+  const draft = buildDraftFromPlan(parsed.data, members);
+  db.update(schema.intakeJobs).set({
+    status: "ready",
+    planJson: JSON.stringify(parsed.data),
+    draftJson: JSON.stringify(draft),
+    errorJson: null,
+    updatedAt: nowIso(),
+    revision: job.revision + 1,
+  }).where(eq(schema.intakeJobs.id, job.id)).run();
+}
+
+export function onIntakeRequestFailed(
+  db: Db,
+  job: typeof schema.intakeJobs.$inferSelect,
+  request: typeof schema.homeAssistantRequests.$inferSelect,
+  error: { code: string; message: string },
+): void {
+  if (request.kind === "intake_analyze") {
+    db.update(schema.intakeJobs).set({
+      status: "analysis_failed",
+      errorJson: JSON.stringify(errorInfo((error.code as IntakeErrorInfo["code"]) || "ai_task_failed", error.message)),
+      updatedAt: nowIso(),
+      revision: job.revision + 1,
+    }).where(eq(schema.intakeJobs.id, job.id)).run();
+    return;
+  }
+  const results = parseJson<{ work: unknown[]; calendar: Array<{ key: string; correlationId: string; status: string; error: unknown; event: unknown }>; paperlessDocumentIds: number[] }>(job.applyResultsJson);
+  if (!results) return;
+  const requestPayload = JSON.parse(request.payloadJson) as { correlationId: string };
+  const result = results.calendar.find((item) => item.correlationId === requestPayload.correlationId);
+  if (result) {
+    result.status = "failed";
+    result.error = errorInfo((error.code as IntakeErrorInfo["code"]) || "calendar_create_failed", error.message);
+  }
+  const status = results.calendar.some((item) => item.status === "pending") ? "applying" : "partially_applied";
+  db.update(schema.intakeJobs).set({ status, applyResultsJson: JSON.stringify(results), updatedAt: nowIso(), revision: job.revision + 1 }).where(eq(schema.intakeJobs.id, job.id)).run();
+}
+
+export function onCalendarCreated(
+  db: Db,
+  job: typeof schema.intakeJobs.$inferSelect,
+  request: typeof schema.homeAssistantRequests.$inferSelect,
+  ref: HomeAssistantCalendarEventRef,
+): void {
+  const payload = JSON.parse(request.payloadJson) as { correlationId: string; title: string };
+  if (payload.correlationId !== ref.correlationId) {
+    onIntakeRequestFailed(db, job, request, { code: "calendar_create_failed", message: "The calendar correlation ID did not match." });
+    return;
+  }
+  const results = parseJson<{ work: Array<{ key: string; workItemId: number }>; calendar: Array<{ key: string; correlationId: string; status: string; error: unknown; event: unknown }>; paperlessDocumentIds: number[] }>(job.applyResultsJson);
+  if (!results) return;
+  const event = results.calendar.find((item) => item.correlationId === ref.correlationId);
+  if (!event) return;
+  event.status = "succeeded";
+  event.error = null;
+  event.event = { calendarEntityId: ref.calendarEntityId, uid: ref.uid, recurrenceId: ref.recurrenceId, summary: ref.summary, start: ref.start, end: ref.end };
+  const plan = parseJson<IntakePlan>(job.planJson);
+  const eventPlan = plan?.calendarEvents.find((item) => item.key === event.key);
+  if (plan && eventPlan) {
+    const workKeys = new Set([...eventPlan.relatedWorkKeys]);
+    for (const item of plan.workItems) if (item.relatedCalendarKeys.includes(eventPlan.key)) workKeys.add(item.key);
+    for (const work of results.work) if (workKeys.has(work.key)) {
+      addExternalWorkItemRef(db, work.workItemId, { source: "home_assistant_calendar", calendarEntityId: ref.calendarEntityId, uid: ref.uid, recurrenceId: ref.recurrenceId, summary: ref.summary, start: ref.start, end: ref.end, correlationId: ref.correlationId });
+    }
+  }
+  const status = results.calendar.some((item) => item.status === "pending") ? "applying" : results.calendar.some((item) => item.status === "failed") ? "partially_applied" : "applied";
+  db.update(schema.intakeJobs).set({ status, applyResultsJson: JSON.stringify(results), updatedAt: nowIso(), revision: job.revision + 1 }).where(eq(schema.intakeJobs.id, job.id)).run();
+}
+
+export function updateIntakeDraft(db: Db, id: string, viewerMemberId: number | null, input: { expectedRevision: number; draft: IntakeDraft }, options = { paperlessAvailable: false, hasFiles: false }): void {
+  const job = jobOrThrow(db, id);
+  if (job.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  if (job.status !== "ready" && job.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not editable in its current state.");
+  if (job.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.", { expectedRevision: input.expectedRevision, actualRevision: job.revision });
+  const memberIds = db.select({ id: schema.members.id }).from(schema.members).all().map((m) => m.id);
+  const issues = intakeDraftIssues(input.draft, { memberIds, ...options });
+  if (issues.length > 0) throw AppError.badRequest("intake_draft_invalid", "The intake draft is invalid.", { issues });
+  db.update(schema.intakeJobs).set({ draftJson: JSON.stringify(input.draft), revision: job.revision + 1, updatedAt: nowIso() }).where(eq(schema.intakeJobs.id, id)).run();
+}
+
+export async function retryIntakeAnalysis(db: Db, env: Env, signal: HomeAssistantRequestSignal, id: string, viewerMemberId: number | null): Promise<void> {
+  const job = jobOrThrow(db, id);
+  if (job.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  if (job.status !== "analysis_failed") throw AppError.conflict("intake_state_conflict", "Only failed analyses can be retried.");
+  const integration = activeHomeAssistantIntegration(db);
+  if (!integration) throw AppError.conflict("home_assistant_not_connected", "Home Assistant is not connected.");
+  const attachments = db.select().from(schema.intakeAttachments).where(eq(schema.intakeAttachments.intakeJobId, id)).all();
+  const members = db.select({ name: schema.members.name }).from(schema.members).all();
+  db.transaction((tx) => {
+    tx.update(schema.intakeJobs).set({ status: "queued", errorJson: null, revision: job.revision + 1, updatedAt: nowIso() }).where(eq(schema.intakeJobs.id, id)).run();
+    enqueueHomeAssistantRequest(tx as unknown as Db, {
+      integrationId: integration.id, intakeJobId: id, kind: "intake_analyze",
+      payload: { intakeId: id, taskName: "Machbar intake", instructions: buildIntakeInstructions({ today: new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date()), timezone: "Europe/Berlin", memberNames: members.map((m) => m.name), hasText: job.text !== null, attachmentCount: attachments.length }), text: job.text, attachments: attachments.map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })) },
+    }, signal);
+  });
+}
+
+export async function deleteIntake(db: Db, env: Env, id: string, viewerMemberId: number | null): Promise<void> {
+  const job = jobOrThrow(db, id);
+  if (job.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  db.delete(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).run();
+  await deleteJobFiles(env, id);
+}
+
+export function purgeExpiredIntakes(db: Db, env: Env, now = new Date()): Promise<void> {
+  const jobs = db.select({ id: schema.intakeJobs.id }).from(schema.intakeJobs).where(lte(schema.intakeJobs.expiresAt, now.toISOString())).all();
+  for (const job of jobs) db.delete(schema.intakeJobs).where(eq(schema.intakeJobs.id, job.id)).run();
+  return Promise.all(jobs.map((job) => deleteJobFiles(env, job.id))).then(async () => {
+    const root = env.dataDir + "/intake";
+    try {
+      const entries = await (await import("node:fs/promises")).readdir(root, { withFileTypes: true });
+      const known = new Set(db.select({ id: schema.intakeJobs.id }).from(schema.intakeJobs).all().map((job) => job.id));
+      await Promise.all(entries.filter((entry) => entry.isDirectory() && !known.has(entry.name)).map((entry) => deleteJobFiles(env, entry.name).catch(() => undefined)));
+    } catch { /* absent root is fine */ }
+  });
+}

@@ -57,6 +57,13 @@ export function authPolicyForRoute(path: string): RouteAuthPolicy {
   if (path === "/api/integrations/home-assistant/tasks/sync") {
     return "home_assistant";
   }
+  if (
+    path === "/api/integrations/home-assistant/requests/next" ||
+    path === "/api/integrations/home-assistant/requests/:id/complete" ||
+    path === "/api/integrations/home-assistant/intake/:jobId/attachments/:attachmentId"
+  ) {
+    return "home_assistant";
+  }
   if (path === "/api/mcp") return "mcp";
   return "human";
 }
