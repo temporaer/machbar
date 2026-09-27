@@ -209,7 +209,30 @@ export type ApiErrorCode =
   | "external_task_title_required"
   | "waiting_query_invalid"
   | "inbox_query_invalid"
-  | "unsupported_protocol_version";
+  | "unsupported_protocol_version"
+  | "home_assistant_not_connected"
+  | "home_assistant_protocol_outdated"
+  | "ai_task_not_configured"
+  | "ai_task_attachments_unsupported"
+  | "ai_task_failed"
+  | "ai_task_invalid_response"
+  | "calendar_not_configured"
+  | "calendar_not_writable"
+  | "calendar_create_failed"
+  | "calendar_uid_not_recovered"
+  | "intake_apply_partial"
+  | "intake_attachment_download_failed"
+  | "intake_not_found"
+  | "intake_expired"
+  | "intake_input_required"
+  | "intake_file_rejected"
+  | "intake_file_too_large"
+  | "intake_too_many_files"
+  | "intake_draft_invalid"
+  | "intake_state_conflict"
+  | "intake_source_retention_failed"
+  | "home_assistant_request_lease_lost"
+  | "home_assistant_request_exhausted";
 
 export interface ApiErrorPayload {
   code: ApiErrorCode;
@@ -702,6 +725,12 @@ export interface HomeAssistantIntegrationStatus {
   stale: boolean;
   contexts: PhysicalContext[];
   people: HomeAssistantPerson[];
+  supportedProtocolVersion: 2;
+  protocolOutdated: boolean;
+  lastRequestPollAt: string | null;
+  workerOnline: boolean;
+  intake: HomeAssistantContextSnapshot["intake"] | null;
+  intakeReady: boolean;
 }
 
 export interface HomeAssistantPairingCode {
@@ -712,7 +741,7 @@ export interface HomeAssistantPairingCode {
 export interface HomeAssistantPairingResponse {
   token: string;
   instanceId: string;
-  protocolVersion: 1;
+  protocolVersion: 2;
 }
 
 export interface McpAgent {
@@ -732,7 +761,7 @@ export interface McpAgentToken {
 }
 
 export interface HomeAssistantContextSnapshot {
-  protocolVersion: 1;
+  protocolVersion: 2;
   observedAt: string;
   contexts: Array<{
     externalId: string;
@@ -744,6 +773,27 @@ export interface HomeAssistantContextSnapshot {
     state: "known" | "unknown";
     contexts: string[];
   }>;
+  intake: {
+    aiTask: {
+      entityId: string | null;
+      state: "ok" | "not_configured" | "missing" | "no_generate_data";
+      supportsAttachments: boolean;
+    };
+    calendar: {
+      entityId: string | null;
+      state: "ok" | "not_configured" | "missing" | "not_writable";
+    };
+  };
+}
+
+export interface ExternalWorkItemRef {
+  source: "home_assistant_calendar";
+  calendarEntityId: string;
+  uid: string;
+  recurrenceId: string | null;
+  summary: string;
+  start: string;
+  end: string;
 }
 
 export interface Agenda {
@@ -764,6 +814,8 @@ export interface Agenda {
 }
 
 export type WeekWorkItemRole = "task" | "story";
+
+export * from "./intake.js";
 
 export type WeekWorkItemPlacement =
   | "scheduled"

@@ -1,0 +1,37 @@
+{
+  "summary": "Umzug organisieren",
+  "calendarEvents": [],
+  "workItems": [
+    {
+      "key": "umzug",
+      "kind": "project",
+      "title": "Umzug organisieren",
+      "notes": null,
+      "parentKey": null,
+      "ownerName": null,
+      "dueDate": "2026-11-01",
+      "scheduledDate": null,
+      "notBeforeDate": null,
+      "notBeforeAt": null,
+      "reminderAt": null,
+      "needsClarification": false,
+      "relatedCalendarKeys": []
+    },
+    {
+      "key": "kartons",
+      "kind": "action",
+      "title": "Kartons packen",
+      "notes": null,
+      "parentKey": "umzug",
+      "ownerName": "Alex",
+      "dueDate": null,
+      "scheduledDate": null,
+      "notBeforeDate": null,
+      "notBeforeAt": null,
+      "reminderAt": null,
+      "needsClarification": false,
+      "relatedCalendarKeys": []
+    }
+  ],
+  "warnings": []
+}

@@ -19,7 +19,7 @@ import { Graph } from "../domain/graph.js";
 import { AppError } from "../errors.js";
 import { enqueueNotification } from "../notifications/outbox.js";
 
-export const HOME_ASSISTANT_PROTOCOL_VERSION = 1 as const;
+export const HOME_ASSISTANT_PROTOCOL_VERSION = 2 as const;
 export const HOME_ASSISTANT_STALE_MS = 30 * 60 * 1_000;
 const PAIRING_TTL_MS = 10 * 60 * 1_000;
 const PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -50,7 +50,7 @@ function normalizePairingCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
-function assertProtocolVersion(version: number): asserts version is 1 {
+function assertProtocolVersion(version: number): asserts version is 2 {
   if (version !== HOME_ASSISTANT_PROTOCOL_VERSION) {
     throw AppError.badRequest(
       "unsupported_protocol_version",
@@ -422,6 +422,12 @@ export function homeAssistantStatus(
       stale: false,
       contexts,
       people: [],
+      supportedProtocolVersion: HOME_ASSISTANT_PROTOCOL_VERSION,
+      protocolOutdated: false,
+      lastRequestPollAt: null,
+      workerOnline: false,
+      intake: null,
+      intakeReady: false,
     };
   }
   const people = db
@@ -456,6 +462,13 @@ export function homeAssistantStatus(
         )?.memberId ?? null,
       observedAt: person.observedAt,
     })),
+    supportedProtocolVersion: HOME_ASSISTANT_PROTOCOL_VERSION,
+    protocolOutdated:
+      integration.protocolVersion !== HOME_ASSISTANT_PROTOCOL_VERSION,
+    lastRequestPollAt: null,
+    workerOnline: false,
+    intake: null,
+    intakeReady: false,
   };
 }
 

@@ -177,9 +177,87 @@ export const homeAssistantIntegrations = sqliteTable(
     protocolVersion: integer("protocol_version").notNull(),
     connectedAt: text("connected_at").notNull(),
     lastUpdateAt: text("last_update_at"),
+    capabilitiesJson: text("capabilities_json"),
+    lastRequestPollAt: text("last_request_poll_at"),
     revokedAt: text("revoked_at"),
   },
   (t) => [index("home_assistant_integrations_active_idx").on(t.revokedAt)],
+);
+
+/** Operational reverse bridge state; rows are short-lived work leases. */
+export const homeAssistantRequests = sqliteTable(
+  "home_assistant_requests",
+  {
+    id: text("id").primaryKey(),
+    integrationId: integer("integration_id")
+      .notNull()
+      .references(() => homeAssistantIntegrations.id, { onDelete: "cascade" }),
+    intakeJobId: text("intake_job_id")
+      .notNull()
+      .references(() => intakeJobs.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["intake_analyze", "calendar_create"] }).notNull(),
+    payloadJson: text("payload_json").notNull(),
+    status: text("status", {
+      enum: ["queued", "leased", "succeeded", "failed"],
+    })
+      .notNull()
+      .default("queued"),
+    attempts: integer("attempts").notNull().default(0),
+    leaseToken: text("lease_token"),
+    leaseExpiresAt: text("lease_expires_at"),
+    resultJson: text("result_json"),
+    error: text("error"),
+    createdAt: text("created_at").notNull(),
+    completedAt: text("completed_at"),
+  },
+  (t) => [
+    index("home_assistant_requests_status_lease_idx").on(
+      t.status,
+      t.leaseExpiresAt,
+    ),
+    index("home_assistant_requests_intake_job_idx").on(t.intakeJobId),
+  ],
+);
+
+/** 24-hour scratch state for one human-triggered intake operation. */
+export const intakeJobs = sqliteTable(
+  "intake_jobs",
+  {
+    id: text("id").primaryKey(),
+    createdByMemberId: integer("created_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    actorMemberId: integer("actor_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    scope: text("scope", { enum: ["household", "work"] }).notNull().default("household"),
+    status: text("status").notNull(),
+    revision: integer("revision").notNull().default(1),
+    text: text("text"),
+    planJson: text("plan_json"),
+    draftJson: text("draft_json"),
+    errorJson: text("error_json"),
+    applyResultsJson: text("apply_results_json"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+  },
+  (t) => [index("intake_jobs_expires_idx").on(t.expiresAt)],
+);
+
+export const intakeAttachments = sqliteTable(
+  "intake_attachments",
+  {
+    id: text("id").primaryKey(),
+    intakeJobId: text("intake_job_id")
+      .notNull()
+      .references(() => intakeJobs.id, { onDelete: "cascade" }),
+    filename: text("filename").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sha256: text("sha256").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
 );
 
 export const mcpAgents = sqliteTable(
@@ -685,6 +763,36 @@ export const externalTaskLinks = sqliteTable(
   (t) => [
     unique("external_task_links_identity_unique").on(t.source, t.sourceKey),
     index("external_task_links_task_idx").on(t.taskId),
+  ],
+);
+
+/**
+ * Provenance for calendar objects created by intake. This is not lifecycle
+ * authority; unlike externalTaskLinks it never reconciles or withdraws work.
+ */
+export const externalWorkItemRefs = sqliteTable(
+  "external_work_item_refs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    workItemId: integer("work_item_id")
+      .notNull()
+      .references(() => workItems.id, { onDelete: "cascade" }),
+    source: text("source").notNull(),
+    externalId: text("external_id").notNull(),
+    metadataJson: text("metadata_json").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (t) => [
+    unique("external_work_item_refs_unique").on(
+      t.workItemId,
+      t.source,
+      t.externalId,
+    ),
+    index("external_work_item_refs_source_external_idx").on(
+      t.source,
+      t.externalId,
+    ),
+    index("external_work_item_refs_work_item_idx").on(t.workItemId),
   ],
 );
 

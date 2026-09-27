@@ -1,5 +1,8 @@
 import { z } from "zod";
 import {
+  intakeDraftIssues,
+  intakePlanIssues,
+  INTAKE_KEY_PATTERN,
   inheritanceModes,
   pushNotificationPreferenceKinds,
   pushLocales,
@@ -11,6 +14,7 @@ import {
   taskStatuses,
   workItemScopes,
 } from "@machbar/shared";
+import type { IntakeDraft, IntakePlan } from "@machbar/shared";
 
 const isoDate = z
   .string()
@@ -299,11 +303,11 @@ export const updateTagSchema = z.object({
 
 export const homeAssistantPairSchema = z.object({
   pairingCode: z.string().min(1),
-  protocolVersion: z.number().int(),
+  protocolVersion: z.literal(2),
 });
 
 export const homeAssistantSnapshotSchema = z.object({
-  protocolVersion: z.literal(1),
+  protocolVersion: z.literal(2),
   observedAt: isoDateTime,
   contexts: z.array(
     z.object({
@@ -319,7 +323,108 @@ export const homeAssistantSnapshotSchema = z.object({
       contexts: z.array(z.string().trim().min(1).max(255)),
     }),
   ),
+  intake: z
+    .object({
+      aiTask: z.object({
+        entityId: z.string().trim().min(1).nullable(),
+        state: z.enum(["ok", "not_configured", "missing", "no_generate_data"]),
+        supportsAttachments: z.boolean(),
+      }).strict(),
+      calendar: z.object({
+        entityId: z.string().trim().min(1).nullable(),
+        state: z.enum(["ok", "not_configured", "missing", "not_writable"]),
+      }).strict(),
+    })
+    .strict(),
 });
+
+const intakeKeySchema = z.string().regex(INTAKE_KEY_PATTERN);
+const intakeDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const intakeDateTimeSchema = z.string().datetime({ offset: true });
+const intakeCalendarEventSchema = z
+  .object({
+    key: intakeKeySchema,
+    title: z.string().trim().min(1).max(200),
+    description: z.string().max(4000).nullable(),
+    location: z.string().max(300).nullable(),
+    allDay: z.boolean(),
+    startDate: intakeDateSchema.nullable(),
+    endDate: intakeDateSchema.nullable(),
+    startDateTime: intakeDateTimeSchema.nullable(),
+    endDateTime: intakeDateTimeSchema.nullable(),
+    relatedWorkKeys: z.array(intakeKeySchema),
+  })
+  .strict();
+const intakeWorkItemSchema = z
+  .object({
+    key: intakeKeySchema,
+    kind: z.enum(["action", "project", "reference"]),
+    title: z.string().trim().min(1).max(200),
+    notes: z.string().max(8000).nullable(),
+    parentKey: intakeKeySchema.nullable(),
+    ownerName: z.string().nullable(),
+    dueDate: intakeDateSchema.nullable(),
+    scheduledDate: intakeDateSchema.nullable(),
+    notBeforeDate: intakeDateSchema.nullable(),
+    notBeforeAt: intakeDateTimeSchema.nullable(),
+    reminderAt: intakeDateTimeSchema.nullable(),
+    needsClarification: z.boolean(),
+    relatedCalendarKeys: z.array(intakeKeySchema),
+  })
+  .strict();
+export const intakePlanSchema = z
+  .object({
+    summary: z.string().max(1000),
+    calendarEvents: z.array(intakeCalendarEventSchema).max(20),
+    workItems: z.array(intakeWorkItemSchema).max(50),
+    warnings: z.array(z.object({ message: z.string().trim().min(1).max(500) }).strict()).max(20),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    for (const item of intakePlanIssues(value as IntakePlan)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: item.path,
+        message: item.message,
+        params: { code: item.code },
+      });
+    }
+  });
+
+const intakeDraftCalendarEventSchema = intakeCalendarEventSchema.extend({
+  enabled: z.boolean(),
+  durationAssumed: z.boolean(),
+}).strict();
+const intakeDraftWorkItemSchema = intakeWorkItemSchema.omit({ ownerName: true }).extend({
+  enabled: z.boolean(),
+  ownerMemberId: z.number().int().positive().nullable(),
+}).strict();
+export const intakeDraftSchema = z
+  .object({
+    summary: z.string().max(1000),
+    calendarEvents: z.array(intakeDraftCalendarEventSchema).max(20),
+    workItems: z.array(intakeDraftWorkItemSchema).max(50),
+    warnings: z.array(z.object({ message: z.string().trim().min(1).max(500) }).strict()).max(20),
+    retainSourceInPaperless: z.boolean(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const memberIds = value.workItems
+      .map((item) => item.ownerMemberId)
+      .filter((id): id is number => id !== null);
+    for (const item of intakeDraftIssues(value as IntakeDraft, {
+      memberIds,
+      paperlessAvailable: true,
+      hasFiles: true,
+    })) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: item.path,
+        message: item.message,
+        params: { code: item.code },
+      });
+    }
+  });
 
 export const homeAssistantMappingSchema = z.object({
   memberId: z.number().int().positive().nullable(),

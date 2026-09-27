@@ -1,0 +1,17 @@
+{
+  "summary": "Ferien",
+  "calendarEvents": [{
+    "key": "ferien",
+    "title": "Ferien",
+    "description": null,
+    "location": null,
+    "allDay": true,
+    "startDate": "2026-10-12",
+    "endDate": "2026-10-16",
+    "startDateTime": null,
+    "endDateTime": null,
+    "relatedWorkKeys": []
+  }],
+  "workItems": [],
+  "warnings": []
+}
