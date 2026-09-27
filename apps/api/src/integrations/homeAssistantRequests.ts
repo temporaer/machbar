@@ -128,12 +128,17 @@ export function completeHomeAssistantRequest(
       eq(schema.homeAssistantRequests.integrationId, integrationId),
     )).get();
     if (!row) throw AppError.notFound("home_assistant_request_not_found", "The Home Assistant request was not found.");
-    if (row.status !== "leased" || row.leaseToken !== completion.leaseToken) {
+    const now = new Date().toISOString();
+    if (
+      row.status !== "leased"
+      || row.leaseToken !== completion.leaseToken
+      || row.leaseExpiresAt === null
+      || row.leaseExpiresAt <= now
+    ) {
       throw AppError.conflict("home_assistant_request_lease_lost", "The Home Assistant request lease is no longer valid.");
     }
     const job = tx.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, row.intakeJobId)).get();
     if (!job) throw AppError.notFound("home_assistant_request_not_found", "The intake request no longer exists.");
-    const now = new Date().toISOString();
     if (completion.outcome === "failed") {
       tx.update(schema.homeAssistantRequests).set({
         status: "failed",

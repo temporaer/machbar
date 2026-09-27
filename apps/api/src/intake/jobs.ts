@@ -259,14 +259,22 @@ export function onCalendarCreated(
 }
 
 export function updateIntakeDraft(db: Db, id: string, viewerMemberId: number | null, input: { expectedRevision: number; draft: IntakeDraft }, options = { paperlessAvailable: false, hasFiles: false }): void {
-  const job = jobOrThrow(db, id);
-  if (job.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
-  if (job.status !== "ready" && job.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not editable in its current state.");
-  if (job.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.", { expectedRevision: input.expectedRevision, actualRevision: job.revision });
   const memberIds = db.select({ id: schema.members.id }).from(schema.members).all().map((m) => m.id);
   const issues = intakeDraftIssues(input.draft, { memberIds, ...options });
   if (issues.length > 0) throw AppError.badRequest("intake_draft_invalid", "The intake draft is invalid.", { issues });
-  db.update(schema.intakeJobs).set({ draftJson: JSON.stringify(input.draft), revision: job.revision + 1, updatedAt: nowIso() }).where(eq(schema.intakeJobs.id, id)).run();
+  db.transaction((tx) => {
+    const job = tx.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
+    if (!job) throw AppError.notFound("intake_not_found", "The intake was not found.");
+    if (job.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
+    if (job.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+    if (job.status !== "ready" && job.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not editable in its current state.");
+    if (job.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.", { expectedRevision: input.expectedRevision, actualRevision: job.revision });
+    const updated = tx.update(schema.intakeJobs)
+      .set({ draftJson: JSON.stringify(input.draft), revision: input.expectedRevision + 1, updatedAt: nowIso() })
+      .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, input.expectedRevision)))
+      .run();
+    if (updated.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
+  });
 }
 
 export async function retryIntakeAnalysis(db: Db, env: Env, signal: HomeAssistantRequestSignal, id: string, viewerMemberId: number | null): Promise<void> {

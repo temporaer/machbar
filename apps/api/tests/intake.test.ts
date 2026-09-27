@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import { purgeExpiredIntakes } from "../src/intake/jobs.js";
+import { updateIntakeDraft } from "../src/intake/jobs.js";
 import {
   closeTestContext,
   createTestContext,
@@ -178,12 +179,29 @@ describe("intake lifecycle", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { leaseToken: request.leaseToken, outcome: "succeeded", result: validPlan },
     });
+
     const record = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
     expect(record.statusCode).toBe(200);
     expect(record.json().status).toBe("ready");
     expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
     expect(ctx.handle.db.select().from(schema.homeAssistantRequests)
       .where(eq(schema.homeAssistantRequests.kind, "calendar_create")).all()).toHaveLength(0);
+  });
+
+  it("rejects a second draft update using the same revision", async () => {
+    const token = await pairAndSnapshot();
+    const id = await createIntake(token);
+    const request = await lease(token);
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${request.id}/complete`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { leaseToken: request.leaseToken, outcome: "succeeded", result: validPlan },
+    });
+    const record = (await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` })).json();
+    updateIntakeDraft(ctx.handle.db, id, null, { expectedRevision: record.revision, draft: record.draft });
+    expect(() => updateIntakeDraft(ctx.handle.db, id, null, { expectedRevision: record.revision, draft: record.draft }))
+      .toThrowError(/changed since it was read/);
   });
 
   it("purges expired jobs, files, and requests", async () => {

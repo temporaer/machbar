@@ -111,6 +111,7 @@ describe("Home Assistant reverse request bridge", () => {
       url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
       headers: { authorization: `Bearer ${token}` },
     });
+
     const id = first.json().id as string;
     ctx.handle.db.update(schema.homeAssistantRequests).set({
       leaseExpiresAt: new Date(0).toISOString(),
@@ -120,6 +121,7 @@ describe("Home Assistant reverse request bridge", () => {
       url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
       headers: { authorization: `Bearer ${token}` },
     });
+
     expect(second.statusCode).toBe(200);
     expect(second.json().id).toBe(id);
     expect(second.json().leaseToken).not.toBe(first.json().leaseToken);
@@ -158,6 +160,34 @@ describe("Home Assistant reverse request bridge", () => {
       url: "/api/integrations/home-assistant/requests/next?protocolVersion=1&waitSeconds=0",
       headers: { authorization: `Bearer ${token}` },
     })).statusCode).toBe(400);
+  });
+
+  it("rejects completion after the lease expires", async () => {
+    const token = await configuredToken();
+    await queueIntake();
+    const first = await ctx.app.inject({
+      method: "GET",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    const id = first.json().id as string;
+    ctx.handle.db.update(schema.homeAssistantRequests).set({
+      leaseExpiresAt: new Date(0).toISOString(),
+    }).where(eq(schema.homeAssistantRequests.id, id)).run();
+    const completion = await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${id}/complete`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { leaseToken: first.json().leaseToken, outcome: "succeeded", result: plan },
+    });
+    expect(completion.statusCode).toBe(409);
+    const reLeased = await ctx.app.inject({
+      method: "GET",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(reLeased.statusCode).toBe(200);
+    expect(reLeased.json().id).toBe(id);
   });
 
   it("protects attachment downloads with the active lease and confined paths", async () => {

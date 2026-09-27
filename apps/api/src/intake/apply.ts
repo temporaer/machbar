@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { PaperlessDocumentSummary, IntakeDraft, IntakeApplyResults } from "@machbar/shared";
 import { intakeDraftIssues, paperlessMarkdownReference } from "@machbar/shared";
 import type { Db } from "../db/client.js";
@@ -37,6 +37,7 @@ export async function applyIntake(
   const stored = db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
   if (!stored) throw AppError.notFound("intake_not_found", "The intake was not found.");
   if (stored.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  if (stored.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
   if (stored.status !== "ready" && stored.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not ready to apply.");
   if (stored.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
   const memberIds = db.select({ id: schema.members.id }).from(schema.members).all().map((member) => member.id);
@@ -59,11 +60,10 @@ export async function applyIntake(
   }
 
   let results = parse<IntakeApplyResults>(stored.applyResultsJson) ?? { work: [], calendar: [], paperlessDocumentIds: [] };
-  if (input.draft.retainSourceInPaperless && results.paperlessDocumentIds.length === 0) {
+  if (input.draft.retainSourceInPaperless && results.paperlessDocumentIds.length < attachments.length) {
     if (!paperless) throw AppError.conflict("intake_source_retention_failed", "Paperless is not configured.");
     try {
-      results.paperlessDocumentIds = [];
-      for (const attachment of attachments) {
+      for (const attachment of attachments.slice(results.paperlessDocumentIds.length)) {
         const bytes = await readFile(attachmentPath(env, id, attachment.id));
         const document = await uploadAndResolveDocument(paperless, {
           filename: attachment.filename,
@@ -71,15 +71,23 @@ export async function applyIntake(
           data: bytes,
         });
         results.paperlessDocumentIds.push(document.id);
+        db.update(schema.intakeJobs)
+          .set({ applyResultsJson: JSON.stringify(results), updatedAt: nowIso() })
+          .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, stored.revision)))
+          .run();
       }
-      db.update(schema.intakeJobs).set({ applyResultsJson: JSON.stringify(results), updatedAt: nowIso() }).where(eq(schema.intakeJobs.id, id)).run();
     } catch (error) {
       throw new AppError(502, "intake_source_retention_failed", "The source could not be retained in Paperless.", { cause: error instanceof Error ? error.message : String(error) });
     }
   }
 
   db.transaction((tx) => {
-    const jobNow = tx.select().from(schema.intakeJobs).all().find((candidate) => candidate.id === id)!;
+    const jobNow = tx.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
+    if (!jobNow) throw new AppError(410, "intake_expired", "The intake has expired.");
+    if (jobNow.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
+    if (jobNow.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+    if (jobNow.status !== "ready" && jobNow.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not ready to apply.");
+    if (jobNow.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
     const existingKeys = new Set(results.work.map((item) => item.key));
     const enabled = input.draft.workItems.filter((item) => item.enabled);
     const byKey = new Map(enabled.map((item) => [item.key, item]));
@@ -97,7 +105,7 @@ export async function applyIntake(
       }
       if (!progressed) throw AppError.badRequest("intake_draft_invalid", "The enabled work hierarchy is cyclic.");
     }
-    const ids = new Map<string, number>();
+    const ids = new Map(results.work.map((item) => [item.key, item.workItemId]));
     const paperlessDocs = results.paperlessDocumentIds.map((documentId) => ({ id: documentId, title: "", originalFileName: "", mimeType: null } as PaperlessDocumentSummary));
     let retentionTarget: number | null = null;
     for (const item of sorted) {
@@ -115,7 +123,7 @@ export async function applyIntake(
           title: item.title,
           notes,
           parentId: parent?.kind === "project" ? parentId : null,
-          ownerMemberId: item.ownerMemberId,
+          ...(item.ownerMemberId === null ? {} : { ownerMemberId: item.ownerMemberId }),
           dueDate: item.dueDate,
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
         }, context);
@@ -132,7 +140,7 @@ export async function applyIntake(
           notes,
           kind: "action" as const,
           needsClarification: item.needsClarification,
-          ownerMemberId: item.ownerMemberId,
+          ...(item.ownerMemberId === null ? {} : { ownerMemberId: item.ownerMemberId }),
           ownerInheritanceMode: item.ownerMemberId === null ? undefined : "explicit" as const,
           dueDate: item.dueDate,
           scheduledDate: item.scheduledDate,
@@ -174,6 +182,10 @@ export async function applyIntake(
       }, signal);
     }
     const status = results.calendar.some((event) => event.status === "pending") ? "applying" : results.calendar.some((event) => event.status === "failed") ? "partially_applied" : "applied";
-    tx.update(schema.intakeJobs).set({ status, applyResultsJson: JSON.stringify(results), revision: jobNow.revision + 1, updatedAt: nowIso() }).where(eq(schema.intakeJobs.id, id)).run();
+    const updated = tx.update(schema.intakeJobs)
+      .set({ status, applyResultsJson: JSON.stringify(results), revision: input.expectedRevision + 1, updatedAt: nowIso() })
+      .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, input.expectedRevision)))
+      .run();
+    if (updated.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
   });
 }

@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Readable } from "node:stream";
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import * as schema from "../src/db/schema.js";
 import { applyIntake } from "../src/intake/apply.js";
 import { HomeAssistantRequestSignal } from "../src/integrations/homeAssistantRequests.js";
+import { writeAttachment } from "../src/intake/storage.js";
+import type { PaperlessClient } from "../src/paperless/client.js";
 import {
   closeTestContext,
   createTestContext,
@@ -147,6 +151,59 @@ describe("intake apply", () => {
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Unique task")).all()).toHaveLength(1);
   });
 
+  it("rejects a second apply with the original revision and creates work once", async () => {
+    const setup = await prepare();
+    const signal = new HomeAssistantRequestSignal();
+    const d = draft([
+      { key: "task", kind: "action", title: "Only once", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+    ]);
+    const input = { expectedRevision: setup.revision, draft: d };
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, input, { actorMemberId: setup.member.id }, setup.member.id);
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, input, { actorMemberId: setup.member.id }, setup.member.id))
+      .rejects.toThrowError(/not ready|changed since it was read/);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Only once")).all()).toHaveLength(1);
+  });
+
+  it("seeds existing parent IDs when a later apply adds a child", async () => {
+    const setup = await prepare();
+    const signal = new HomeAssistantRequestSignal();
+    const parentDraft = draft([
+      { key: "parent", kind: "action", title: "Existing parent", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+    ]);
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, { expectedRevision: setup.revision, draft: parentDraft }, { actorMemberId: setup.member.id }, setup.member.id);
+    const applied = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+    ctx.handle.db.update(schema.intakeJobs).set({ status: "partially_applied", revision: applied.revision + 1 }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const childDraft = draft([
+      ...parentDraft.workItems,
+      { key: "child", kind: "action", title: "New child", notes: null, parentKey: "parent", dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+    ]);
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, { expectedRevision: applied.revision + 1, draft: childDraft }, { actorMemberId: setup.member.id }, setup.member.id);
+    const parent = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Existing parent")).get()!;
+    const child = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "New child")).get()!;
+    expect(child.parentId).toBe(parent.id);
+  });
+
+  it("assigns a work-scope root action to the actor when no owner is selected", async () => {
+    const setup = await prepare();
+    ctx.handle.db.update(schema.intakeJobs).set({ scope: "work" }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    const signal = new HomeAssistantRequestSignal();
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, {
+      expectedRevision: setup.revision,
+      draft: draft([{ key: "task", kind: "action", title: "Owned by actor", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null }]),
+    }, { actorMemberId: setup.member.id }, setup.member.id);
+    const task = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Owned by actor")).get()!;
+    expect(task.ownerMemberId).toBe(setup.member.id);
+  });
+
+  it("reports an expired cleanup race as intake_expired", async () => {
+    const setup = await prepare();
+    ctx.handle.db.update(schema.intakeJobs).set({ expiresAt: new Date(0).toISOString() }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id, {
+      expectedRevision: setup.revision,
+      draft: draft([]),
+    }, { actorMemberId: setup.member.id }, setup.member.id)).rejects.toThrowError(/expired/);
+  });
+
   it("stores calendar external refs and exposes them on task and project details", async () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
@@ -163,7 +220,11 @@ describe("intake apply", () => {
     await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, { expectedRevision: setup.revision, draft: d }, { actorMemberId: setup.member.id }, setup.member.id);
     const request = ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.kind, "calendar_create")).get()!;
     const lease = { ...request, leaseToken: "test" };
-    ctx.handle.db.update(schema.homeAssistantRequests).set({ status: "leased", leaseToken: lease.leaseToken }).where(eq(schema.homeAssistantRequests.id, request.id)).run();
+    ctx.handle.db.update(schema.homeAssistantRequests).set({
+      status: "leased",
+      leaseToken: lease.leaseToken,
+      leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    }).where(eq(schema.homeAssistantRequests.id, request.id)).run();
     const completion = await ctx.app.inject({
       method: "POST",
       url: `/api/integrations/home-assistant/requests/${request.id}/complete`,
@@ -182,5 +243,56 @@ describe("intake apply", () => {
     expect(refs[0]!.externalId).toBe("calendar.family:uid-1");
     expect(refs[0]!.metadataJson).toContain("rec-1");
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json().externalRefs).toHaveLength(1);
+  });
+
+  it("persists successful Paperless uploads and retries only the failed attachment", async () => {
+    const setup = await prepare();
+    const attachments = [
+      { id: randomUUID(), filename: "one.txt", mimeType: "text/plain", data: Buffer.from("one") },
+      { id: randomUUID(), filename: "two.txt", mimeType: "text/plain", data: Buffer.from("two") },
+    ];
+    for (const attachment of attachments) {
+      await writeAttachment(env(ctx.dataDir), setup.id, attachment.id, attachment.data);
+      ctx.handle.db.insert(schema.intakeAttachments).values({
+        id: attachment.id,
+        intakeJobId: setup.id,
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.data.length,
+        sha256: "hash",
+        createdAt: new Date().toISOString(),
+      }).run();
+    }
+    let uploadCount = 0;
+    const paperless: PaperlessClient = {
+      upload: async () => ({ taskId: `task-${++uploadCount}` }),
+      awaitDocumentId: async (taskId) => {
+        if (taskId === "task-2" && uploadCount === 2) throw new Error("temporary failure");
+        return taskId === "task-1" ? 101 : 202;
+      },
+      getDocument: async (id) => ({ id, title: `doc-${id}`, originalFileName: `doc-${id}.txt`, mimeType: "text/plain" }),
+      search: async () => ({ results: [], count: 0, next: null, previous: null }),
+      thumbnail: async () => ({ contentType: "text/plain", contentLength: 0, filename: null, body: Readable.from([]) }),
+      preview: async () => ({ contentType: "text/plain", contentLength: 0, filename: null, body: Readable.from([]) }),
+      download: async () => ({ contentType: "text/plain", contentLength: 0, filename: null, body: Readable.from([]) }),
+    };
+    const draftWithRetention = draft([
+      { key: "retention", kind: "action", title: "Retained", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+    ]);
+    draftWithRetention.retainSourceInPaperless = true;
+    const signal = new HomeAssistantRequestSignal();
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), paperless, signal, setup.id, {
+      expectedRevision: setup.revision,
+      draft: draftWithRetention,
+    }, { actorMemberId: setup.member.id }, setup.member.id)).rejects.toThrow();
+    expect(uploadCount).toBe(2);
+    const partial = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+    expect(JSON.parse(partial.applyResultsJson!).paperlessDocumentIds).toEqual([101]);
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), paperless, signal, setup.id, {
+      expectedRevision: setup.revision,
+      draft: draftWithRetention,
+    }, { actorMemberId: setup.member.id }, setup.member.id);
+    expect(uploadCount).toBe(3);
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Retained")).all()).toHaveLength(1);
   });
 });
