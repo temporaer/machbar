@@ -10,6 +10,9 @@ import { localizedErrorMessage, isStaleWriteConflict } from "../lib/errorMessage
 import { LoadingState } from "../components/AsyncStates";
 import { issuesForPath, transitionCalendarAllDay, transitionWorkItemKind, workItemDepths } from "../lib/intakeDraft";
 import { taskAvailabilityClock, taskAvailabilityForLocalDate } from "../lib/taskAvailability";
+import { localDateForInstant, localDateTimeToIso } from "../lib/localDateTime";
+import { HumanDateInput } from "../components/HumanDateInput";
+import { ClockTimePicker } from "../components/ClockTimePicker";
 
 function IssueText({ issues, path }: { issues: IntakeIssue[]; path: (string | number)[] }) {
   return issuesForPath(issues, path).map((issue, index) => (
@@ -246,17 +249,18 @@ export function IntakeReviewPage() {
     return <section className="card stack"><h1>{record.status === "applied" ? strings.intakeApplied : strings.intakePartiallyApplied}</h1>
       {record.status === "partially_applied" && record.error ? <p role="alert">{record.error.message}</p> : null}
       {record.status === "partially_applied" ? record.applyResults?.calendar.filter((result) => result.status === "failed").map((result) => (
-        <p key={result.key} role="alert">{result.error?.message ?? strings.error}</p>
+        <p key={result.key} role="alert">{record.draft?.calendarEvents.find((event) => event.key === result.key)?.title ?? result.key}: {result.error?.message ?? strings.error}</p>
       )) : null}
-      {record.applyResults?.work.map((item) => <Link key={item.key} to={item.role === "story" ? `/projects/${item.workItemId}` : `/tasks/${item.workItemId}`}>{item.key}</Link>)}
+      {record.applyResults?.work.map((item) => <Link key={item.key} to={item.role === "story" ? `/projects/${item.workItemId}` : `/tasks/${item.workItemId}`}>{record.draft?.workItems.find((work) => work.key === item.key)?.title ?? item.key}</Link>)}
       {record.status === "partially_applied" && applyError ? <p role="alert">{applyError}</p> : null}
       {record.status === "partially_applied" ? <button className="btn btn-primary" disabled={busy} onClick={() => void retryApply()}>{strings.intakeRetryApply}</button> : null}
+      <Link className="btn" to="/today">{strings.toMachbar}</Link>
     </section>;
   }
   if (!draft) return <LoadingState />;
   return <section className="stack intake-review">
     <h1>{strings.intakeReady}</h1>
-    <label className="field"><span>{strings.notes}</span><textarea value={draft.summary} onChange={(event) => updateDraft({ ...draft, summary: event.target.value })} /></label>
+    {draft.summary.trim() ? <p>{draft.summary}</p> : null}
     {draft.warnings.length ? <section role="status"><h2>{strings.intakeWarnings}</h2><ul>{draft.warnings.map((warning, index) => <li key={index}>{warning.message}</li>)}</ul></section> : null}
     <h2>{strings.intakeCalendar}</h2>
     {draft.calendarEvents.map((event, index) => <CalendarEditor key={event.key} event={event} index={index} issues={issues} onChange={(next) => updateDraft({ ...draft, calendarEvents: draft.calendarEvents.map((item, i) => i === index ? next : item) })} />)}
@@ -293,9 +297,16 @@ function CalendarEditor({ event, index, issues, onChange }: { event: IntakeDraft
   const endPath = ["calendarEvents", index, event.allDay ? "endDate" : "endDateTime"];
   return <article className="card stack"><label><input type="checkbox" checked={event.enabled} onChange={(e) => onChange({ ...event, enabled: e.target.checked })} /> {event.title}</label>
     <input value={event.title} onChange={(e) => onChange({ ...event, title: e.target.value })} />
-    <label><input type="checkbox" checked={event.allDay} onChange={(e) => onChange(transitionCalendarAllDay(event, e.target.checked))} /> {strings.intakeCalendar}</label>
-    <input aria-label="start" value={event.allDay ? event.startDate ?? "" : event.startDateTime ?? ""} onChange={(e) => onChange(event.allDay ? { ...event, startDate: e.target.value } : { ...event, startDateTime: e.target.value })} />
-    <input aria-label="end" value={event.allDay ? event.endDate ?? "" : event.endDateTime ?? ""} onChange={(e) => onChange(event.allDay ? { ...event, endDate: e.target.value } : { ...event, endDateTime: e.target.value, durationAssumed: false })} />
+    <label><input type="checkbox" checked={event.allDay} onChange={(e) => onChange(transitionCalendarAllDay(event, e.target.checked))} /> {strings.intakeAllDay}</label>
+    {event.allDay ? <>
+      <label htmlFor={`intake-event-${event.key}-start`}>{strings.intakeStartDate}</label>
+      <input id={`intake-event-${event.key}-start`} type="date" value={event.startDate ?? ""} onChange={(e) => onChange({ ...event, startDate: e.target.value || null })} />
+      <label htmlFor={`intake-event-${event.key}-end`}>{strings.intakeEndDate}</label>
+      <input id={`intake-event-${event.key}-end`} type="date" value={event.endDate ?? ""} onChange={(e) => onChange({ ...event, endDate: e.target.value || null })} />
+    </> : <>
+      <LocalDateTimeField key={`${event.key}-start`} id={`intake-event-${event.key}-start`} label={strings.intakeStartDate} value={event.startDateTime} onChange={(value) => onChange({ ...event, startDateTime: value })} />
+      <LocalDateTimeField key={`${event.key}-end`} id={`intake-event-${event.key}-end`} label={strings.intakeEndDate} value={event.endDateTime} onChange={(value) => onChange({ ...event, endDateTime: value, durationAssumed: false })} />
+    </>}
     <IssueText issues={issues} path={startPath} />
     <IssueText issues={issues} path={endPath} />
     <IssueText issues={issues} path={["calendarEvents", index]} />
@@ -304,6 +315,37 @@ function CalendarEditor({ event, index, issues, onChange }: { event: IntakeDraft
     <textarea aria-label="description" value={event.description ?? ""} onChange={(e) => onChange({ ...event, description: e.target.value || null })} />
     {event.durationAssumed ? <span className="badge">{strings.intakeAssumedDuration}</span> : null}
   </article>;
+}
+
+function LocalDateTimeField({ id, label, value, onChange }: { id: string; label: string; value: string | null; onChange: (value: string | null) => void }) {
+  const strings = useStrings();
+  const [date, setDate] = useState(() => value ? localDateForInstant(value) ?? "" : "");
+  const [time, setTime] = useState(() => value ? taskAvailabilityClock(value) ?? "" : "");
+  useEffect(() => {
+    setDate(value ? localDateForInstant(value) ?? "" : "");
+    setTime(value ? taskAvailabilityClock(value) ?? "" : "");
+  }, [value]);
+  const commit = (nextDate: string, nextTime: string) => {
+    if (!nextDate || !nextTime) {
+      if (value) onChange(null);
+      return;
+    }
+    const nextValue = localDateTimeToIso(nextDate, nextTime);
+    if (nextValue && nextValue !== value) onChange(nextValue);
+  };
+  return <>
+    <label htmlFor={`${id}-date`}>{label}</label>
+    <HumanDateInput id={`${id}-date`} value={date} onChange={(next) => {
+      const nextDate = next ?? "";
+      setDate(nextDate);
+      commit(nextDate, time);
+    }} />
+    <label htmlFor={`${id}-time`}>{strings.availabilityCustomTime}</label>
+    <ClockTimePicker id={`${id}-time`} value={time} onChange={(next) => {
+      setTime(next);
+      commit(date, next);
+    }} />
+  </>;
 }
 
 function WorkEditor({ item, index, depth, onKindChange, members, issues, onChange }: { item: IntakeDraftWorkItem; index: number; depth: number; onKindChange: (kind: IntakeDraftWorkItem["kind"]) => void; members: { id: number; name: string }[]; issues: IntakeIssue[]; onChange: (item: IntakeDraftWorkItem) => void }) {
@@ -320,20 +362,20 @@ function WorkEditor({ item, index, depth, onKindChange, members, issues, onChang
     if (availability) onChange({ ...item, ...availability });
   };
   return <article className="card stack" style={{ marginInlineStart: `${Math.min(depth, 5)}rem` }}><label><input type="checkbox" checked={item.enabled} onChange={(e) => onChange({ ...item, enabled: e.target.checked })} /> {item.title}</label>
-    <select value={item.kind} onChange={(e) => onKindChange(e.target.value as IntakeDraftWorkItem["kind"])}><option value="action">Action</option><option value="project">Project</option><option value="reference">Reference</option></select>
+    <select value={item.kind} onChange={(e) => onKindChange(e.target.value as IntakeDraftWorkItem["kind"])}><option value="action">{strings.task}</option><option value="project">{strings.project}</option><option value="reference">{strings.materialLabel}</option></select>
     <input value={item.title} onChange={(e) => onChange({ ...item, title: e.target.value })} />
     {item.kind !== "reference" ? <><select aria-label={strings.owner} value={item.ownerMemberId ?? ""} onChange={(e) => onChange({ ...item, ownerMemberId: e.target.value ? Number(e.target.value) : null })}><option value="">—</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select><IssueText issues={issues} path={[...path, "ownerMemberId"]} /></> : null}
     <textarea aria-label={strings.notes} value={item.notes ?? ""} onChange={(e) => onChange({ ...item, notes: e.target.value || null })} />
-    {item.kind !== "reference" ? <><label>{strings.due}<input value={item.dueDate ?? ""} onChange={(e) => onChange({ ...item, dueDate: e.target.value || null })} /></label><IssueText issues={issues} path={[...path, "dueDate"]} /></> : null}
+    {item.kind !== "reference" ? <><label htmlFor={`intake-work-${item.key}-due`}>{strings.due}</label><HumanDateInput id={`intake-work-${item.key}-due`} value={item.dueDate} onChange={(value) => onChange({ ...item, dueDate: value })} /><IssueText issues={issues} path={[...path, "dueDate"]} /></> : null}
     {item.kind === "action" ? <>
-      <label>{strings.scheduled}<input value={item.scheduledDate ?? ""} onChange={(e) => onChange({ ...item, scheduledDate: e.target.value || null })} /></label><IssueText issues={issues} path={[...path, "scheduledDate"]} />
+      <label htmlFor={`intake-work-${item.key}-scheduled`}>{strings.scheduled}</label><HumanDateInput id={`intake-work-${item.key}-scheduled`} value={item.scheduledDate} onChange={(value) => onChange({ ...item, scheduledDate: value })} /><IssueText issues={issues} path={[...path, "scheduledDate"]} />
       <label>{strings.notBefore}<input type="date" value={item.notBeforeDate ?? ""} onChange={(e) => updateAvailability(e.target.value, hasTime ? currentClock : null)} /></label>
       <label><input type="checkbox" checked={hasTime} disabled={!item.notBeforeDate} onChange={(e) => updateAvailability(item.notBeforeDate ?? "", e.target.checked ? (currentClock && currentClock !== "00:00" ? currentClock : "08:00") : null)} /> {strings.availabilityCustomTime}</label>
       {hasTime ? <input aria-label={strings.availabilityCustomTime} type="time" value={currentClock ?? ""} onChange={(e) => updateAvailability(item.notBeforeDate ?? "", e.target.value || null)} /> : null}
       <IssueText issues={issues} path={[...path, "notBeforeDate"]} />
       <IssueText issues={issues} path={path} />
       <button type="button" className="btn" disabled={!item.notBeforeDate} onClick={() => updateAvailability("", null)}>{strings.clearNotBefore}</button>
-      <label>{strings.reminder}<input value={item.reminderAt ?? ""} onChange={(e) => onChange({ ...item, reminderAt: e.target.value || null })} /></label>
+      <LocalDateTimeField id={`intake-work-${item.key}-reminder`} label={strings.reminder} value={item.reminderAt} onChange={(value) => onChange({ ...item, reminderAt: value })} />
       <IssueText issues={issues} path={[...path, "reminderAt"]} />
       <label><input type="checkbox" checked={item.needsClarification} onChange={(e) => onChange({ ...item, needsClarification: e.target.checked, reminderAt: e.target.checked ? null : item.reminderAt })} /> Klärung nötig</label>
     </> : null}

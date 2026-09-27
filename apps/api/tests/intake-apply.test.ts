@@ -278,6 +278,7 @@ describe("intake apply", () => {
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Should not be created")).all()).toHaveLength(0);
     const completed = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
     expect(completed.status).toBe("applied");
+    expect(completed.revision).toBe(before.revision + 3);
     expect(completed.acceptedDraftJson).toBe(JSON.stringify(accepted));
   });
 
@@ -308,6 +309,7 @@ describe("intake apply", () => {
     });
     expect(unchanged.applyResultsJson).toBeNull();
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Not created by stale retry")).all()).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.kind, "calendar_create")).all()).toHaveLength(0);
   });
 
   it("does not disclose a Paperless failure cause in the Apply API response", async () => {

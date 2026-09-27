@@ -447,7 +447,7 @@ function SharePageContent({
   };
 
   const processShared = () => {
-    void startIntake({ text: appendBlock, files: incoming.files }).then(() => {
+    void startIntake({ text: appendTextBlock(appendBlock, note.trim()), files: incoming.files }).then(() => {
       clearPendingShare();
     }).catch(() => undefined);
   };

@@ -21,6 +21,11 @@ vi.mock("../lib/api", () => ({
   },
 }));
 
+vi.mock("../components/ClockTimePicker", () => ({
+  ClockTimePicker: ({ id, value, onChange }: { id: string; value: string; onChange: (value: string) => void }) =>
+    <input id={id} type="time" value={value} onChange={(event) => onChange(event.target.value)} />,
+}));
+
 const draft = {
   summary: "Schulfest",
   calendarEvents: [{
@@ -121,6 +126,63 @@ describe("IntakeReviewPage", () => {
     expect(screen.getByDisplayValue("Rückmeldezettel abgeben")).toBeInTheDocument();
     expect(screen.getByText("No end time in source; 60 min assumed")).toBeInTheDocument();
     expect(screen.getByText("Dauer angenommen")).toBeInTheDocument();
+    expect(screen.getByText("Schulfest")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Schulfest")).not.toBeInTheDocument();
+  });
+
+  it("renders an empty summary without an editable summary field", async () => {
+    mockedApi.getIntake.mockResolvedValue({ ...record(), draft: { ...draft, summary: "" } } as never);
+    renderPage();
+    await screen.findByDisplayValue("Elternabend");
+    expect(screen.queryByDisplayValue("Schulfest")).not.toBeInTheDocument();
+    expect(screen.queryByText("Schulfest")).not.toBeInTheDocument();
+  });
+
+  it("uses localized all-day and kind choices with date-only inputs", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: { ...draft, calendarEvents: [{ ...draft.calendarEvents[0]!, allDay: true, startDate: "2026-10-08", endDate: "2026-10-08", startDateTime: null, endDateTime: null }] },
+    } as never);
+    renderPage();
+    const card = (await screen.findByDisplayValue("Elternabend")).closest("article")!;
+    expect(within(card).getByRole("checkbox", { name: "Ganztägig" })).toBeChecked();
+    expect(within(card).getByLabelText("Beginn")).toHaveAttribute("type", "date");
+    expect(within(card).getByLabelText("Ende")).toHaveAttribute("type", "date");
+    const kind = screen.getAllByRole("combobox")[0]!;
+    expect(within(kind).getByRole("option", { name: "Aufgabe" })).toBeInTheDocument();
+    expect(within(kind).getByRole("option", { name: "Projekt" })).toBeInTheDocument();
+    expect(within(kind).getByRole("option", { name: "Material" })).toBeInTheDocument();
+    fireEvent.change(within(card).getByLabelText("Ende"), { target: { value: "2026-10-09" } });
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.calendarEvents[0]?.endDate).toBe("2026-10-09");
+  });
+
+  it("writes calendar and reminder local date/time controls as canonical ISO values", async () => {
+    renderPage();
+    const eventCard = (await screen.findByDisplayValue("Elternabend")).closest("article")!;
+    fireEvent.change(within(eventCard).getByLabelText("Beginn"), { target: { value: "09.10.2026" } });
+    fireEvent.blur(within(eventCard).getByLabelText("Beginn"));
+    fireEvent.change(within(eventCard).getAllByLabelText("Uhrzeit")[0]!, { target: { value: "16:30" } });
+    fireEvent.change(within(eventCard).getByLabelText("Ende"), { target: { value: "09.10.2026" } });
+    fireEvent.blur(within(eventCard).getByLabelText("Ende"));
+    const workCard = (screen.getByDisplayValue("Rückmeldezettel abgeben")).closest("article")!;
+    fireEvent.change(within(workCard).getByLabelText("Fällig"), { target: { value: "20.10.2026" } });
+    fireEvent.blur(within(workCard).getByLabelText("Fällig"));
+    fireEvent.change(within(workCard).getByLabelText("Geplant für"), { target: { value: "11.10.2026" } });
+    fireEvent.blur(within(workCard).getByLabelText("Geplant für"));
+    fireEvent.change(within(workCard).getByLabelText("Erinnerung"), { target: { value: "10.10.2026" } });
+    fireEvent.blur(within(workCard).getByLabelText("Erinnerung"));
+    fireEvent.change(within(workCard).getAllByLabelText("Uhrzeit")[1]!, { target: { value: "08:30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+    const applied = mockedApi.applyIntake.mock.calls[0]![1].draft!;
+    expect(applied.calendarEvents[0]?.startDateTime).toBe(new Date(2026, 9, 9, 16, 30).toISOString());
+    expect(applied.workItems[0]).toMatchObject({
+      dueDate: "2026-10-20",
+      scheduledDate: "2026-10-11",
+      reminderAt: new Date(2026, 9, 10, 8, 30).toISOString(),
+    });
   });
 
   it("changes the apply payload only after Übernehmen and cascades parent disabling", async () => {
@@ -150,9 +212,9 @@ describe("IntakeReviewPage", () => {
 
   it("debounces one actual edit by one second", async () => {
     renderPage();
-    const summary = await screen.findByDisplayValue("Schulfest");
+    const title = await screen.findByDisplayValue("Elternabend");
     vi.useFakeTimers();
-    fireEvent.change(summary, { target: { value: "Neues Schulfest" } });
+    fireEvent.change(title, { target: { value: "Neuer Termin" } });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(999);
     });
@@ -161,7 +223,7 @@ describe("IntakeReviewPage", () => {
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
-    expect(mockedApi.updateIntakeDraft.mock.calls[0]?.[1].draft.summary).toBe("Neues Schulfest");
+    expect(mockedApi.updateIntakeDraft.mock.calls[0]?.[1].draft.calendarEvents[0]?.title).toBe("Neuer Termin");
   });
 
   it("saves edits made during an in-flight autosave using the newest revision", async () => {
@@ -173,9 +235,9 @@ describe("IntakeReviewPage", () => {
       .mockReturnValueOnce(firstSave as never)
       .mockImplementation(async (_id, body) => ({ ...record(), revision: 4, draft: body.draft } as never));
     renderPage();
-    const summary = await screen.findByDisplayValue("Schulfest");
+    const title = await screen.findByDisplayValue("Elternabend");
     vi.useFakeTimers();
-    fireEvent.change(summary, { target: { value: "Erster Stand" } });
+    fireEvent.change(title, { target: { value: "Erster Stand" } });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
@@ -189,7 +251,7 @@ describe("IntakeReviewPage", () => {
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(2);
     expect(mockedApi.updateIntakeDraft.mock.calls[1]?.[1]).toMatchObject({
       expectedRevision: 3,
-      draft: { summary: "Neuester Stand" },
+      draft: { calendarEvents: [expect.objectContaining({ title: "Neuester Stand" })] },
     });
   });
 
@@ -200,9 +262,9 @@ describe("IntakeReviewPage", () => {
     });
     mockedApi.updateIntakeDraft.mockReturnValueOnce(save as never);
     renderPage();
-    const summary = await screen.findByDisplayValue("Schulfest");
+    const title = await screen.findByDisplayValue("Elternabend");
     vi.useFakeTimers();
-    fireEvent.change(summary, { target: { value: "Aktualisiert" } });
+    fireEvent.change(title, { target: { value: "Aktualisiert" } });
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
     expect(mockedApi.applyIntake).not.toHaveBeenCalled();
@@ -214,7 +276,7 @@ describe("IntakeReviewPage", () => {
     expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1);
     expect(mockedApi.applyIntake.mock.calls[0]?.[1]).toMatchObject({
       expectedRevision: 3,
-      draft: { summary: "Aktualisiert" },
+      draft: { calendarEvents: [expect.objectContaining({ title: "Aktualisiert" })] },
     });
   });
 
@@ -224,15 +286,15 @@ describe("IntakeReviewPage", () => {
       .mockResolvedValueOnce({
         ...record(),
         revision: 3,
-        draft: { ...draft, summary: "Server update" },
+        draft: { ...draft, calendarEvents: [{ ...draft.calendarEvents[0]!, title: "Server update" }] },
       } as never);
     mockedApi.updateIntakeDraft.mockRejectedValueOnce(
       Object.assign(new Error("stale"), { name: "ApiError", code: "stale_write_conflict" }),
     );
     renderPage();
-    const summary = await screen.findByDisplayValue("Schulfest");
+    const title = await screen.findByDisplayValue("Elternabend");
     vi.useFakeTimers();
-    fireEvent.change(summary, { target: { value: "Local update" } });
+    fireEvent.change(title, { target: { value: "Local update" } });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
       await Promise.resolve();
@@ -268,7 +330,9 @@ describe("IntakeReviewPage", () => {
     expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled();
     await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
     expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
-    fireEvent.change(within(eventCard).getByLabelText("end"), { target: { value: "2026-10-08T20:00:00+02:00" } });
+    fireEvent.change(within(eventCard).getByLabelText("Ende"), { target: { value: "08.10.2026" } });
+    fireEvent.blur(within(eventCard).getByLabelText("Ende"));
+    fireEvent.change(within(eventCard).getAllByLabelText("Uhrzeit")[1]!, { target: { value: "20:00" } });
     await act(async () => { await vi.advanceTimersByTimeAsync(999); });
     expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
@@ -282,19 +346,19 @@ describe("IntakeReviewPage", () => {
       .mockRejectedValueOnce(new Error("Save unavailable"))
       .mockImplementation(async (_id, body) => ({ ...record(), revision: 3, draft: body.draft } as never));
     renderPage();
-    const summary = await screen.findByDisplayValue("Schulfest");
+    const title = await screen.findByDisplayValue("Elternabend");
     vi.useFakeTimers();
-    fireEvent.change(summary, { target: { value: "First edit" } });
+    fireEvent.change(title, { target: { value: "First edit" } });
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
     expect(screen.getByRole("alert")).toHaveTextContent("Save unavailable");
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
-    fireEvent.change(summary, { target: { value: "Second edit" } });
+    fireEvent.change(title, { target: { value: "Second edit" } });
     await act(async () => { await vi.advanceTimersByTimeAsync(999); });
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(2);
-    expect(mockedApi.updateIntakeDraft.mock.calls[1]?.[1].draft.summary).toBe("Second edit");
+    expect(mockedApi.updateIntakeDraft.mock.calls[1]?.[1].draft.calendarEvents[0]?.title).toBe("Second edit");
     expect(screen.queryByText("Save unavailable")).not.toBeInTheDocument();
   });
 
@@ -308,10 +372,10 @@ describe("IntakeReviewPage", () => {
       Object.assign(new Error("raw API text"), { name: "ApiError", code }),
     );
     renderPage();
-    await screen.findByDisplayValue("Schulfest");
+    await screen.findByDisplayValue("Elternabend");
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
-    expect(screen.getByDisplayValue("Schulfest")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Elternabend")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
     expect(screen.queryByText(message)).not.toBeInTheDocument();
@@ -329,7 +393,7 @@ describe("IntakeReviewPage", () => {
       draft: { ...draft, calendarEvents: [draft.calendarEvents[0]!, secondEvent] },
     } as never);
     renderPage();
-    const endInputs = await screen.findAllByLabelText("end");
+    const endInputs = await screen.findAllByLabelText("Ende");
     expect(within(endInputs[0]!.closest("article")!).queryByRole("alert")).not.toBeInTheDocument();
     expect(within(endInputs[1]!.closest("article")!).getByText("Enabled timed events require an end.")).toBeInTheDocument();
   });
@@ -351,7 +415,7 @@ describe("IntakeReviewPage", () => {
     const eventCard = (await screen.findByDisplayValue("Elternabend")).closest("article")!;
     fireEvent.click(within(eventCard).getAllByRole("checkbox")[1]!);
     expect(within(eventCard).getByText("Bitte eine Endzeit ergänzen; es wird keine Dauer angenommen.")).toBeInTheDocument();
-    expect(within(eventCard).getByLabelText("end")).toHaveValue("");
+    expect(within(eventCard).getByLabelText("Ende")).toHaveValue("");
   });
 
   it("supports a date-only availability value and keeps the API pair coherent", async () => {
@@ -414,6 +478,11 @@ describe("IntakeReviewPage", () => {
         message: "Previous Apply was interrupted and can be retried.",
         retryable: true,
       }),
+      draft: {
+        ...draft,
+        calendarEvents: [{ ...draft.calendarEvents[0]!, key: "failed-event", title: "Elternabend" }],
+        workItems: [{ ...draft.workItems[0]!, key: "created", title: "Rückmeldezettel abgeben" }],
+      },
       applyResults: {
         work: [{ key: "created", role: "task", kind: "action", workItemId: 27 }],
         calendar: [
@@ -425,12 +494,24 @@ describe("IntakeReviewPage", () => {
     } as never);
     renderPage();
     expect(await screen.findByRole("heading", { name: "Teilweise übernommen" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "created" })).toHaveAttribute("href", "/tasks/27");
+    expect(screen.getByRole("link", { name: "Rückmeldezettel abgeben" })).toHaveAttribute("href", "/tasks/27");
     expect(screen.getByText("Previous Apply was interrupted and can be retried.")).toHaveAttribute("role", "alert");
-    expect(screen.getByText("Calendar creation failed")).toHaveAttribute("role", "alert");
+    expect(screen.getByText("Elternabend: Calendar creation failed")).toHaveAttribute("role", "alert");
     expect(screen.queryByText("pending-event")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Zu Machbar" })).toHaveAttribute("href", "/today");
+  });
+
+  it("provides an exit for calendar-only applied results with no created work", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record("applied"),
+      draft: { ...draft, workItems: [] },
+      applyResults: { work: [], calendar: [{ key: "event", status: "succeeded", correlationId: "c1", error: null, event: null }], paperlessDocumentIds: [] },
+    } as never);
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "Verarbeitung übernommen" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Zu Machbar" })).toHaveAttribute("href", "/today");
   });
 
   it("retries a partial result exactly once without requiring a valid draft or PATCH", async () => {

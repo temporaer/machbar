@@ -78,14 +78,9 @@ export async function applyIntake(
   let stored = db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
   if (!stored) throw AppError.notFound("intake_not_found", "The intake was not found.");
   if (stored.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
+  if (stored.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
   const revisionBeforeRecovery = stored.revision;
-  if (
-    stored.status === "applying"
-    && stored.applyClaimToken !== null
-    && stored.applyClaimExpiresAt !== null
-    && stored.applyClaimExpiresAt <= nowIso()
-    && input.expectedRevision !== revisionBeforeRecovery
-  ) {
+  if (revisionBeforeRecovery !== input.expectedRevision) {
     throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
   }
   if (recoverExpiredApplyClaim(db, stored)) {
@@ -93,7 +88,6 @@ export async function applyIntake(
     if (!stored) throw AppError.notFound("intake_not_found", "The intake was not found.");
     effectiveExpectedRevision = stored.revision;
   }
-  if (stored.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
   if (stored.status !== "ready" && stored.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not ready to apply.");
   if (stored.revision !== effectiveExpectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
   if (stored.status === "partially_applied" && stored.acceptedDraftJson === null) {

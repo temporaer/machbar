@@ -25,6 +25,7 @@ vi.mock("../lib/api", () => ({
     createTask: vi.fn(),
     createProject: vi.fn(),
     uploadPaperlessDocument: vi.fn(),
+    createIntake: vi.fn(),
   },
   paperlessDocumentThumbnailUrl: (id: number) =>
     `/api/integrations/paperless/documents/${id}/thumbnail`,
@@ -128,6 +129,26 @@ describe("SharePage", () => {
     expect(screen.getByLabelText("Nur Titel reicht")).toHaveValue("Farmladen");
     expect(screen.getByLabelText("Notizen")).toHaveValue("https://maps.example/farm");
     expect(window.location.search).toBe("");
+  });
+
+  it.each([
+    ["  Für später  ", "Geteilte Nachricht\n\nhttps://example.com/story\n\nFür später"],
+    ["   ", "Geteilte Nachricht\n\nhttps://example.com/story"],
+  ])("passes shared text/link and optional note to Verarbeiten (%s)", async (note, expectedText) => {
+    mockedApi.createIntake.mockResolvedValue({ id: "intake-1" });
+    window.history.replaceState(
+      null,
+      "",
+      "/?text=Geteilte%20Nachricht&url=https%3A%2F%2Fexample.com%2Fstory#/share",
+    );
+    renderPage();
+    await userEvent.click(screen.getByRole("button", { name: "+ Notiz hinzufügen" }));
+    await userEvent.type(screen.getByLabelText("Notiz"), note);
+    await userEvent.click(screen.getByRole("button", { name: "Verarbeiten" }));
+    await waitFor(() => expect(mockedApi.createIntake).toHaveBeenCalledWith({
+      text: expectedText,
+      files: [],
+    }));
   });
 
   it("shows an explicit exit instead of inert targets for an empty payload", async () => {
