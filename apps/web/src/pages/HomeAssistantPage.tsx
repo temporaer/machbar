@@ -46,6 +46,20 @@ export function HomeAssistantPage() {
       {status ? (
         <div className="stack">
           <section className="card more-setting-card">
+            <h2>{strings.intakeCapabilities}</h2>
+            {status.protocolOutdated ? <p role="alert">{strings.intakeProtocolOutdated}</p> : null}
+            <p>{status.workerOnline ? strings.intakeWorkerOnline : strings.intakeWorkerOffline}</p>
+            {status.lastRequestPollAt ? <p>{strings.homeAssistantLastUpdate}: {new Date(status.lastRequestPollAt).toLocaleString()}</p> : null}
+            {status.intake ? (
+              <div className="stack">
+                <p><strong>{strings.intakeAiTask}:</strong> {status.intake.aiTask.entityId ?? strings.homeAssistantDisconnected} ({status.intake.aiTask.state})</p>
+                <p>{status.intake.aiTask.supportsAttachments ? "Attachments: yes" : "Attachments: no"}</p>
+                <p><strong>{strings.intakeCalendarEntity}:</strong> {status.intake.calendar.entityId ?? strings.homeAssistantDisconnected} ({status.intake.calendar.state})</p>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="card more-setting-card">
             <h2>{strings.homeAssistantConnection}</h2>
             <p className="text-muted">
               {status.connected

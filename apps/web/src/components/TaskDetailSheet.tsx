@@ -17,6 +17,7 @@ import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { WorkItemBreadcrumbs } from "./WorkItemBreadcrumbs";
 import { useStrings } from "../lib/strings";
+import { ExternalRefBadge } from "./ExternalRefBadge";
 import { formatDateTime } from "../lib/format";
 import { formatExactLocalDate } from "../lib/relativeDate";
 import { isCapturedInboxItem, sortByPosition } from "../lib/taskHelpers";
@@ -621,6 +622,7 @@ export function TaskDetailSheet() {
               </div>
             )}
           </div>
+          <ExternalRefBadge refs={loadedTask?.externalRefs ?? []} />
 
           {isReference ? (
             <div className="task-detail-reference-header">

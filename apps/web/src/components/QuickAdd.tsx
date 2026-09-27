@@ -13,6 +13,7 @@ import { IconActionGlyph } from "./IconActionButton";
 import { ImageCropSheet } from "./ImageCropSheet";
 import { CameraCaptureSheet } from "./CameraCaptureSheet";
 import { useOptionalInteractionScope } from "../lib/interactionScope";
+import { IntakeComposer } from "./IntakeComposer";
 
 /**
  * Global quick-add: a single always-reachable floating button. Essential
@@ -45,7 +46,7 @@ export function QuickAdd({
   const projectId =
     scope?.captureTarget.kind === "story" ? scope.captureTarget.storyId : null;
   const [open, setOpen] = useState(autoOpen);
-  const [captureStep, setCaptureStep] = useState<"choose" | "form">(
+  const [captureStep, setCaptureStep] = useState<"choose" | "form" | "intake">(
     autoOpen ? "form" : "choose",
   );
   const [pendingFile, setPendingFile] = useState<File | null>(null);
@@ -165,7 +166,22 @@ export function QuickAdd({
                 <span aria-hidden="true"><IconActionGlyph kind="upload" /></span>
                 <strong>{strings.captureFile}</strong>
               </button>
+              <button
+                type="button"
+                className="btn btn-block quick-capture-choice"
+                onClick={() => setCaptureStep("intake")}
+              >
+                <span aria-hidden="true">✦</span>
+                <strong>{strings.intakeProcess}</strong>
+              </button>
             </div>
+          ) : captureStep === "intake" ? (
+            <IntakeComposer
+              initialFile={pendingFile}
+              {...(defaultScope ? { defaultScope } : {})}
+              onCropPendingFile={(file) => setCropFile(file)}
+              onCancel={close}
+            />
           ) : (
             <CaptureForm
               projectId={projectId}
@@ -173,6 +189,14 @@ export function QuickAdd({
               pendingFiles={pendingFile ? [pendingFile] : []}
               onCropPendingFile={(file) => setCropFile(file)}
               {...(pendingFile ? { prepareNotes: prepareMaterialNotes } : {})}
+              {...(pendingFile
+                ? {
+                    secondaryAction: {
+                      label: strings.intakeProcess,
+                      onClick: () => setCaptureStep("intake"),
+                    },
+                  }
+                : {})}
               {...(defaultScope ? { defaultScope } : {})}
               onCancel={close}
               onCaptured={(result) => {

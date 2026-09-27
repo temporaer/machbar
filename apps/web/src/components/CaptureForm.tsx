@@ -43,6 +43,7 @@ export interface CaptureFormProps {
   onCropPendingFile?: ((file: File, index: number) => void) | undefined;
   onCancel: () => void;
   onCaptured: (result: CaptureResult) => void;
+  secondaryAction?: { label: string; onClick: () => void };
   /** Set on capture only when the currently active view is the Work
    * scope; omitted (server default `"household"` applies) otherwise. */
   defaultScope?: "work";
@@ -63,6 +64,7 @@ export function CaptureForm({
   onCropPendingFile,
   onCancel,
   onCaptured,
+  secondaryAction,
   defaultScope,
 }: CaptureFormProps) {
   const strings = useStrings();
@@ -418,6 +420,11 @@ export function CaptureForm({
         <button type="button" className="btn" onClick={onCancel}>
           {strings.cancel}
         </button>
+        {secondaryAction ? (
+          <button type="button" className="btn" onClick={secondaryAction.onClick}>
+            {secondaryAction.label}
+          </button>
+        ) : null}
         <button
           type="submit"
           className="btn btn-primary"

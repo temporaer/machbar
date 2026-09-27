@@ -30,6 +30,7 @@ import { ActivityPage } from "./pages/ActivityPage";
 import { DebugPage } from "./pages/DebugPage";
 import { HomeAssistantPage } from "./pages/HomeAssistantPage";
 import { McpPage } from "./pages/McpPage";
+import { IntakeReviewPage } from "./pages/IntakeReviewPage";
 import { LocaleProvider } from "./lib/locale";
 import { ThemeProvider } from "./lib/theme";
 import { SwipeCoachProvider } from "./lib/swipeCoach";
@@ -94,6 +95,7 @@ function Shell() {
               }
             />
             <Route path="/share" element={<SharePage />} />
+            <Route path="/intake/:id" element={<IntakeReviewPage />} />
             <Route path="/tasks/:id" element={<TaskDeepLinkPage />} />
             <Route path="*" element={<Navigate to="/today" replace />} />
           </Routes>
