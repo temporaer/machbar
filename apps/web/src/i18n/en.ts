@@ -106,6 +106,22 @@ const en = {
   intakeWorkerOffline: "Worker offline",
   intakeAiTask: "AI Task entity",
   intakeCalendarEntity: "Calendar entity",
+  intakeReadyStatus: "Processing ready",
+  intakeNotReadyStatus: "Processing not ready",
+  intakeEntityNotConfigured: "No entity selected",
+  intakeAiTaskOk: "AI Task is available",
+  intakeAiTaskNotConfigured:
+    "No AI Task entity selected. In Home Assistant, configure an AI Task entry for your existing AI provider (for example, OpenAI Conversation) and select it in the Machbar integration options.",
+  intakeAiTaskMissing: "The selected AI Task entity is unavailable.",
+  intakeAiTaskNoGenerateData:
+    "The selected AI Task entity does not support processing input.",
+  intakeAttachmentsSupported: "Attachments: yes — photos and files can be processed.",
+  intakeAttachmentsUnsupported:
+    "Attachments: no — text-only processing works, but photos and files do not.",
+  intakeCalendarOk: "Calendar is available and writable",
+  intakeCalendarNotConfigured: "No calendar selected.",
+  intakeCalendarMissing: "The selected calendar is unavailable.",
+  intakeCalendarNotWritable: "The selected calendar is not writable.",
   cameraPreview: "Camera preview",
   cameraStarting: "Starting camera…",
   cameraCapturing: "Capturing photo…",

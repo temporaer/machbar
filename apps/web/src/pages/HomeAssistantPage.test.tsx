@@ -90,6 +90,12 @@ describe("HomeAssistantPage", () => {
     const first = renderWithProviders(<HomeAssistantPage />);
     expect(await screen.findByText("Worker online")).toBeInTheDocument();
     expect(screen.getByText(/ai_task.school/)).toBeInTheDocument();
+    expect(screen.getByText("Verarbeiten bereit")).toBeInTheDocument();
+    expect(screen.getByText(/AI-Task verfügbar/, { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("Anhänge: Ja – Fotos und Dateien können verarbeitet werden."))
+      .toBeInTheDocument();
+    expect(screen.getByText(/Kalender verfügbar und beschreibbar/, { exact: false }))
+      .toBeInTheDocument();
 
     first.unmount();
     getHomeAssistantStatus.mockResolvedValueOnce({
@@ -101,8 +107,12 @@ describe("HomeAssistantPage", () => {
     });
     renderWithProviders(<HomeAssistantPage />);
     expect(await screen.findByText("Worker offline")).toBeInTheDocument();
-    expect(screen.getByText(/not_configured/)).toBeInTheDocument();
-    expect(screen.getByText(/not_writable/)).toBeInTheDocument();
+    expect(screen.getByText("Verarbeiten noch nicht bereit")).toBeInTheDocument();
+    expect(screen.getByText(/Kein AI-Task-Entity gewählt\./)).toBeInTheDocument();
+    expect(screen.getByText(/Der gewählte Kalender ist nicht beschreibbar\./, { exact: false }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Anhänge: Ja – Fotos und Dateien können verarbeitet werden."))
+      .toBeInTheDocument();
 
     getHomeAssistantStatus.mockResolvedValueOnce({
       connected: true, instanceId: "ha", protocolVersion: 1, connectedAt: null,

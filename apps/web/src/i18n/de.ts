@@ -84,6 +84,22 @@ const base = {
   intakeWorkerOffline: "Worker offline",
   intakeAiTask: "AI-Task-Entity",
   intakeCalendarEntity: "Kalender-Entity",
+  intakeReadyStatus: "Verarbeiten bereit",
+  intakeNotReadyStatus: "Verarbeiten noch nicht bereit",
+  intakeEntityNotConfigured: "Keine Entity gewählt",
+  intakeAiTaskOk: "AI-Task verfügbar",
+  intakeAiTaskNotConfigured:
+    "Kein AI-Task-Entity gewählt. Richte in Home Assistant bei deinem bestehenden KI-Anbieter (z. B. OpenAI Conversation) einen AI-Task-Eintrag ein und wähle ihn in den Optionen der Machbar-Integration.",
+  intakeAiTaskMissing: "Die gewählte AI-Task-Entity ist nicht verfügbar.",
+  intakeAiTaskNoGenerateData:
+    "Die gewählte AI-Task-Entity unterstützt keine Verarbeitung von Eingaben.",
+  intakeAttachmentsSupported: "Anhänge: Ja – Fotos und Dateien können verarbeitet werden.",
+  intakeAttachmentsUnsupported:
+    "Anhänge: Nein – Textverarbeitung funktioniert, Fotos und Dateien jedoch nicht.",
+  intakeCalendarOk: "Kalender verfügbar und beschreibbar",
+  intakeCalendarNotConfigured: "Kein Kalender gewählt.",
+  intakeCalendarMissing: "Der gewählte Kalender ist nicht verfügbar.",
+  intakeCalendarNotWritable: "Der gewählte Kalender ist nicht beschreibbar.",
   cameraPreview: "Kameravorschau",
   cameraStarting: "Kamera wird gestartet…",
   cameraCapturing: "Foto wird aufgenommen…",
