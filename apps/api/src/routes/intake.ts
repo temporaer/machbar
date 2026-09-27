@@ -1,6 +1,7 @@
 import multipart from "@fastify/multipart";
 import sharp from "sharp";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import type { Env } from "../env.js";
@@ -26,25 +27,34 @@ function actor(request: { activityActor?: { id: number } | null; authMember?: { 
   return request.activityActor?.id ?? null;
 }
 
-async function parseMultipart(request: any) {
+async function parseMultipart(request: FastifyRequest) {
   let text: string | null = null;
+  const sourceFiles: string[] = [];
   let scope: "household" | "work" = "household";
   const files: Array<{ filename: string; mimeType: string; data: Buffer }> = [];
   for await (const part of request.parts({ limits: { files: 5, fileSize: MAX_BYTES, fields: 3 } })) {
     if (part.type === "field") {
-    if (part.fieldname === "text") {
-      const value = String(part.value).trim();
-      if (value.length > 20_000) {
-        throw AppError.badRequest("intake_file_too_large", "The intake text exceeds the 20,000 character limit.");
+      if (part.fieldname === "text") {
+        text = String(part.value).trim() || null;
       }
-      text = value || null;
-    }
       if (part.fieldname === "scope" && (part.value === "household" || part.value === "work")) scope = part.value;
       continue;
     }
     if (!ALLOWED.has(part.mimetype)) throw AppError.badRequest("intake_file_rejected", "This file type is not supported.");
     const data = await part.toBuffer();
     if (data.length > MAX_BYTES || part.file.truncated) throw AppError.badRequest("intake_file_too_large", "The uploaded file exceeds the 25MB limit.");
+    if (part.mimetype === "text/plain") {
+      let contents: string;
+      try {
+        contents = new TextDecoder("utf-8", { fatal: true }).decode(data);
+      } catch {
+        throw AppError.badRequest("intake_file_rejected", "A text file is not valid UTF-8.", { reason: "invalid_utf8" });
+      }
+      const filename = part.filename.replace(/[\r\n]/g, " ").trim() || "unnamed";
+      sourceFiles.push(`SOURCE FILE: ${filename}\n<<<\n${contents}\n>>>`);
+      files.push({ filename: part.filename, mimeType: part.mimetype, data });
+      continue;
+    }
     let normalized = data;
     let mimeType = part.mimetype;
     if (part.mimetype.startsWith("image/")) {
@@ -56,6 +66,15 @@ async function parseMultipart(request: any) {
       }
     }
     files.push({ filename: part.filename, mimeType, data: normalized });
+  }
+  if (sourceFiles.length > 0) {
+    const sourceText = [text, ...sourceFiles].filter((value): value is string => value !== null).join("\n\n");
+    if (sourceText.length > 20_000) {
+      throw AppError.badRequest("intake_file_too_large", "The combined intake text exceeds the 20,000 character limit.");
+    }
+    text = sourceText;
+  } else if (text !== null && text.length > 20_000) {
+    throw AppError.badRequest("intake_file_too_large", "The intake text exceeds the 20,000 character limit.");
   }
   if (!text && files.length === 0) throw AppError.badRequest("intake_input_required", "Text or at least one file is required.");
   return { text, scope, files };
@@ -94,7 +113,8 @@ export function registerIntakeRoutes(
       draft,
     }, {
       paperlessAvailable: Boolean(paperless),
-      hasFiles: Boolean(db.select().from(schema.intakeAttachments).all().find((file) => file.intakeJobId === request.params.id)),
+      hasFiles: Boolean(db.select({ id: schema.intakeAttachments.id }).from(schema.intakeAttachments)
+        .where(eq(schema.intakeAttachments.intakeJobId, request.params.id)).get()),
     });
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
   });

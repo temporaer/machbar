@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStrings } from "../lib/strings";
 import { useStartIntake } from "../lib/useStartIntake";
 import { PendingMaterialPreview } from "./PendingMaterialPreview";
@@ -19,6 +19,18 @@ export function IntakeComposer({
   const [files, setFiles] = useState<readonly File[]>(
     initialFile ? [initialFile] : [],
   );
+  const seededFile = useRef(initialFile);
+  useEffect(() => {
+    const previous = seededFile.current;
+    if (previous === initialFile) return;
+    seededFile.current = initialFile;
+    setFiles((current) => {
+      const index = previous ? current.indexOf(previous) : -1;
+      if (index < 0) return initialFile ? [initialFile, ...current] : current;
+      if (!initialFile) return current.filter((_, fileIndex) => fileIndex !== index);
+      return current.map((file, fileIndex) => fileIndex === index ? initialFile : file);
+    });
+  }, [initialFile]);
   const { start, pending, error } = useStartIntake();
   const disabled = pending || (!text.trim() && files.length === 0);
   return (
@@ -30,6 +42,18 @@ export function IntakeComposer({
           placeholder={strings.intakeTextPlaceholder}
           onChange={(event) => setText(event.target.value)}
           rows={6}
+        />
+      </label>
+      <label className="field">
+        <span>{strings.chooseFile}</span>
+        <input
+          type="file"
+          multiple
+          onChange={(event) => {
+            const selected = Array.from(event.target.files ?? []);
+            if (selected.length) setFiles((current) => [...current, ...selected]);
+            event.target.value = "";
+          }}
         />
       </label>
       <PendingMaterialPreview

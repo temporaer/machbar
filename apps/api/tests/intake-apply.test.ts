@@ -2,11 +2,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import type { IntakeDraft, IntakeDraftCalendarEvent, IntakeDraftWorkItem } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
 import { applyIntake } from "../src/intake/apply.js";
+import { updateIntakeDraft } from "../src/intake/jobs.js";
 import { HomeAssistantRequestSignal } from "../src/integrations/homeAssistantRequests.js";
 import { writeAttachment } from "../src/intake/storage.js";
 import type { PaperlessClient } from "../src/paperless/client.js";
+import { createProject } from "../src/domain/storyCrud.js";
+import { createTask } from "../src/domain/taskCrud.js";
 import {
   closeTestContext,
   createTestContext,
@@ -83,7 +87,10 @@ describe("intake apply", () => {
     return { id, member, token, revision: job.revision };
   }
 
-  function draft(workItems: any[], calendarEvents: any[] = []) {
+  function draft(
+    workItems: IntakeDraftWorkItem[],
+    calendarEvents: IntakeDraftCalendarEvent[] = [],
+  ): IntakeDraft {
     return {
       summary: "Source",
       calendarEvents,
@@ -177,7 +184,12 @@ describe("intake apply", () => {
       ...parentDraft.workItems,
       { key: "child", kind: "action", title: "New child", notes: null, parentKey: "parent", dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
     ]);
-    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, { expectedRevision: applied.revision + 1, draft: childDraft }, { actorMemberId: setup.member.id }, setup.member.id);
+    updateIntakeDraft(ctx.handle.db, setup.id, setup.member.id, {
+      expectedRevision: applied.revision + 1,
+      draft: childDraft,
+    });
+    const revised = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, { expectedRevision: revised.revision, draft: childDraft }, { actorMemberId: setup.member.id }, setup.member.id);
     const parent = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Existing parent")).get()!;
     const child = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "New child")).get()!;
     expect(child.parentId).toBe(parent.id);
@@ -204,21 +216,57 @@ describe("intake apply", () => {
     }, { actorMemberId: setup.member.id }, setup.member.id)).rejects.toThrowError(/expired/);
   });
 
-  it("stores calendar external refs and exposes them on task and project details", async () => {
+  it("uses the accepted draft for calendar refs and exposes project refs on project details", async () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
     const d = draft([
-      { key: "task", kind: "action", title: "Calendar task", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: ["event"], enabled: true, ownerMemberId: null },
+      { key: "project", kind: "project", title: "Calendar project", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: ["event"], enabled: true, ownerMemberId: null },
+      { key: "disabled-task", kind: "action", title: "Disabled task", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: ["event", "disabled-event"], enabled: false, ownerMemberId: null },
     ], [{
       key: "event", title: "Appointment", description: null, location: null, allDay: false,
       startDate: null, endDate: null, startDateTime: "2026-10-01T10:00:00+02:00", endDateTime: "2026-10-01T11:00:00+02:00",
-      relatedWorkKeys: ["task"], enabled: true, durationAssumed: false,
+      relatedWorkKeys: ["project", "disabled-task"], enabled: true, durationAssumed: false,
+    }, {
+      key: "disabled-event", title: "Disabled event", description: null, location: null, allDay: false,
+      startDate: null, endDate: null, startDateTime: "2026-10-02T10:00:00+02:00", endDateTime: "2026-10-02T11:00:00+02:00",
+      relatedWorkKeys: ["disabled-task"], enabled: false, durationAssumed: false,
     }]);
     ctx.handle.db.update(schema.intakeJobs).set({
-      planJson: JSON.stringify({ summary: "Source", calendarEvents: d.calendarEvents, workItems: d.workItems, warnings: [] }),
+      planJson: JSON.stringify({
+        summary: "Source",
+        calendarEvents: [{ ...d.calendarEvents[0], relatedWorkKeys: ["disabled-task"] }],
+        workItems: [{ ...d.workItems[1], relatedCalendarKeys: ["event"] }],
+        warnings: [],
+      }),
     }).where(eq(schema.intakeJobs.id, setup.id)).run();
     await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, { expectedRevision: setup.revision, draft: d }, { actorMemberId: setup.member.id }, setup.member.id);
-    const request = ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.kind, "calendar_create")).get()!;
+    const requests = ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.kind, "calendar_create")).all();
+    expect(requests).toHaveLength(1);
+    const initialRequest = requests[0]!;
+    ctx.handle.db.update(schema.homeAssistantRequests).set({
+      status: "leased",
+      leaseToken: "failed-attempt",
+      leaseExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    }).where(eq(schema.homeAssistantRequests.id, initialRequest.id)).run();
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${initialRequest.id}/complete`,
+      headers: { authorization: `Bearer ${setup.token}` },
+      payload: {
+        leaseToken: "failed-attempt",
+        outcome: "failed",
+        error: { code: "calendar_create_failed", message: "Retry this accepted event." },
+      },
+    });
+    const failedJob = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, {
+      expectedRevision: failedJob.revision,
+      draft: draft([], []),
+    }, { actorMemberId: setup.member.id }, setup.member.id);
+    const retriedRequests = ctx.handle.db.select().from(schema.homeAssistantRequests)
+      .where(eq(schema.homeAssistantRequests.kind, "calendar_create")).all();
+    expect(retriedRequests).toHaveLength(2);
+    const request = retriedRequests[1]!;
     const lease = { ...request, leaseToken: "test" };
     ctx.handle.db.update(schema.homeAssistantRequests).set({
       status: "leased",
@@ -236,17 +284,31 @@ describe("intake apply", () => {
       },
     });
     expect(completion.statusCode, completion.body).toBe(204);
-    const task = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Calendar task")).get()!;
-    const refs = ctx.handle.db.select().from(schema.externalWorkItemRefs).where(eq(schema.externalWorkItemRefs.workItemId, task.id)).all();
+    const project = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Calendar project")).get()!;
+    const disabledTask = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Disabled task")).get();
+    const refs = ctx.handle.db.select().from(schema.externalWorkItemRefs).where(eq(schema.externalWorkItemRefs.workItemId, project.id)).all();
     expect(refs).toHaveLength(1);
     expect(refs[0]!.source).toBe("home_assistant_calendar");
     expect(refs[0]!.externalId).toBe("calendar.family:uid-1");
     expect(refs[0]!.metadataJson).toContain("rec-1");
-    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json().externalRefs).toHaveLength(1);
+    expect(disabledTask).toBeUndefined();
+    const projectDetail = await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` });
+    expect(projectDetail.json().externalRefs).toHaveLength(1);
   });
 
   it("persists successful Paperless uploads and retries only the failed attachment", async () => {
     const setup = await prepare();
+    const existingTask = createTask(ctx.handle.db, {
+      title: "Retained",
+      notes: "Keep this note\n\n[older document](paperless:10)",
+    });
+    ctx.handle.db.update(schema.intakeJobs).set({
+      applyResultsJson: JSON.stringify({
+        work: [{ key: "retention", kind: "action", workItemId: existingTask.id, role: "task" }],
+        calendar: [],
+        paperlessDocumentIds: [],
+      }),
+    }).where(eq(schema.intakeJobs.id, setup.id)).run();
     const attachments = [
       { id: randomUUID(), filename: "one.txt", mimeType: "text/plain", data: Buffer.from("one") },
       { id: randomUUID(), filename: "two.txt", mimeType: "text/plain", data: Buffer.from("two") },
@@ -294,5 +356,56 @@ describe("intake apply", () => {
     }, { actorMemberId: setup.member.id }, setup.member.id);
     expect(uploadCount).toBe(3);
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Retained")).all()).toHaveLength(1);
+    const retained = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, existingTask.id)).get()!;
+    expect(retained.notes).toContain("Keep this note");
+    expect(retained.notes).toContain("paperless:10");
+    expect(retained.notes).toContain("paperless:101");
+    expect(retained.notes.match(/paperless:101/g)).toHaveLength(1);
+    expect(retained.notes.match(/paperless:202/g)).toHaveLength(1);
+  });
+
+  it("retains Paperless references on a project target", async () => {
+    const setup = await prepare();
+    const project = createProject(ctx.handle.db, { title: "Paperless project", notes: "Existing project note" });
+    const attachmentId = randomUUID();
+    await writeAttachment(env(ctx.dataDir), setup.id, attachmentId, Buffer.from("source"));
+    ctx.handle.db.insert(schema.intakeAttachments).values({
+      id: attachmentId,
+      intakeJobId: setup.id,
+      filename: "source.txt",
+      mimeType: "text/plain",
+      sizeBytes: 6,
+      sha256: "hash",
+      createdAt: new Date().toISOString(),
+    }).run();
+    let uploads = 0;
+    const paperless: PaperlessClient = {
+      upload: async () => ({ taskId: `upload-${++uploads}` }),
+      awaitDocumentId: async () => 303,
+      getDocument: async (id) => ({ id, title: "source", originalFileName: "source.txt", mimeType: "text/plain" }),
+      search: async () => ({ results: [], count: 0, next: null, previous: null }),
+      thumbnail: async () => ({ contentType: "text/plain", contentLength: 0, filename: null, body: Readable.from([]) }),
+      preview: async () => ({ contentType: "text/plain", contentLength: 0, filename: null, body: Readable.from([]) }),
+      download: async () => ({ contentType: "text/plain", contentLength: 0, filename: null, body: Readable.from([]) }),
+    };
+    const acceptedDraft = draft([
+      { key: "project", kind: "project", title: "Paperless project", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+    ]);
+    acceptedDraft.retainSourceInPaperless = true;
+    ctx.handle.db.update(schema.intakeJobs).set({
+      applyResultsJson: JSON.stringify({
+        work: [{ key: "project", kind: "project", workItemId: project.id, role: "story" }],
+        calendar: [],
+        paperlessDocumentIds: [],
+      }),
+    }).where(eq(schema.intakeJobs.id, setup.id)).run();
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), paperless, new HomeAssistantRequestSignal(), setup.id, {
+      expectedRevision: setup.revision,
+      draft: acceptedDraft,
+    }, { actorMemberId: setup.member.id }, setup.member.id);
+    const retained = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, project.id)).get()!;
+    expect(uploads).toBe(1);
+    expect(retained.notes).toContain("Existing project note");
+    expect(retained.notes).toContain("paperless:303");
   });
 });

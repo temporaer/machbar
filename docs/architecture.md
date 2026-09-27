@@ -58,10 +58,17 @@ Quick Add / SharePage
 The paired Machbar custom integration must be upgraded together with the
 server. Protocol version **2** is required; there is no v1 compatibility
 path. Home Assistant must have a configured, attachment-capable `ai_task.*`
-entity for photo/file intake and a writable `calendar.*` entity. Both are
-selected in the integration's options flow. Machbar does not store an
-AI-provider credential, OpenAI key, Google credential, or Home Assistant access
-token.
+entity for image/PDF intake and a writable `calendar.*` entity. Both are
+selected in the integration's options flow. An uploaded `.txt` file
+(`text/plain`) is decoded as UTF-8 by Machbar and appended to the AI Task
+source text as `SOURCE FILE: <filename>` followed by a delimited text block;
+it is not sent as a binary AI Task attachment. Images and PDFs remain
+attachments. Intake accepts up to five
+files of supported image, PDF, and `text/plain` MIME types, each at most
+25 MB. Invalid UTF-8 text files are rejected, and the combined typed text and
+decoded text-file content is limited to 20,000 characters. Machbar does not
+store an AI-provider credential, OpenAI key, Google credential, or Home
+Assistant access token.
 
 ### Contract and execution
 

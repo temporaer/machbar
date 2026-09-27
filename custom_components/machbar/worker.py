@@ -9,6 +9,7 @@ from typing import Any
 
 from .calendar_bridge import async_create_event
 from .client import (
+    ApplicationError,
     CannotConnect,
     InvalidAuth,
     LeaseLost,
@@ -64,7 +65,15 @@ class RequestWorker:
             except UnsupportedVersion:
                 _LOGGER.error("Machbar requires a newer Home Assistant integration")
                 return
-            except (CannotConnect, asyncio.TimeoutError, AttributeError):
+            except ApplicationError:
+                _LOGGER.error("Machbar rejected a worker request")
+                await asyncio.sleep(random.uniform(backoff * 0.5, backoff))
+                backoff = min(BACKOFF_MAX, backoff * 2)
+            except (CannotConnect, asyncio.TimeoutError):
+                await asyncio.sleep(random.uniform(backoff * 0.5, backoff))
+                backoff = min(BACKOFF_MAX, backoff * 2)
+            except Exception:
+                _LOGGER.exception("Unexpected error in the Machbar request worker")
                 await asyncio.sleep(random.uniform(backoff * 0.5, backoff))
                 backoff = min(BACKOFF_MAX, backoff * 2)
 
@@ -91,6 +100,20 @@ class RequestWorker:
             )
         except (LeaseLost, RequestGone):
             _LOGGER.debug("Machbar request %s is no longer active", request.get("id"))
+        except (InvalidAuth, UnsupportedVersion):
+            raise
+        except Exception:
+            _LOGGER.exception("Unexpected error processing Machbar request %s", request.get("id"))
+            await self._complete(
+                request,
+                {
+                    "outcome": "failed",
+                    "error": {
+                        "code": "unexpected_error",
+                        "message": "Home Assistant could not process this request.",
+                    },
+                },
+            )
 
     async def _complete(self, request: dict[str, Any], body: dict[str, Any]) -> None:
         deadline = request.get("leaseExpiresAt")

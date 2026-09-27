@@ -86,13 +86,18 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
   app.get<{ Params: { id: string } }>("/api/projects/:id", async (request) => {
     const id = parseId(request.params.id);
     const { graph, project } = projectOrThrow(db, id, viewerMemberId(request));
-    const attachRefs = (task: any): any => ({
-      ...task,
-      externalRefs: listExternalWorkItemRefs(db, task.id),
-      ...(task.children ? { children: task.children.map(attachRefs) } : {}),
-    });
+    function attachRefs<T extends { id: number; children?: T[] }>(
+      task: T,
+    ): T & { externalRefs: ReturnType<typeof listExternalWorkItemRefs> } {
+      return {
+        ...task,
+        externalRefs: listExternalWorkItemRefs(db, task.id),
+        ...(task.children ? { children: task.children.map(attachRefs) } : {}),
+      };
+    }
     return {
       ...project,
+      externalRefs: listExternalWorkItemRefs(db, project.id),
       tasks: (graph.rootsByProject.get(id) ?? []).map(attachRefs),
     };
   });

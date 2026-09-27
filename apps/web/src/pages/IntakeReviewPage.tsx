@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { intakeDraftIssues, type IntakeDraft, type IntakeDraftCalendarEvent, type IntakeDraftWorkItem, type IntakeIssue } from "@machbar/shared";
+import { intakeDraftIssues, type IntakeDraft, type IntakeDraftCalendarEvent, type IntakeDraftWorkItem, type IntakeIssue, type IntakeRecord } from "@machbar/shared";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -8,11 +8,13 @@ import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
 import { localizedErrorMessage, isStaleWriteConflict } from "../lib/errorMessage";
 import { LoadingState } from "../components/AsyncStates";
+import { issuesForPath, transitionCalendarAllDay, transitionWorkItemKind, workItemDepths } from "../lib/intakeDraft";
+import { taskAvailabilityClock, taskAvailabilityForLocalDate } from "../lib/taskAvailability";
 
-function IssueText({ issue, path }: { issue: IntakeIssue; path: (string | number)[] }) {
-  return JSON.stringify(issue.path) === JSON.stringify(path) ? (
-    <small className="field-error" role="alert">{issue.message}</small>
-  ) : null;
+function IssueText({ issues, path }: { issues: IntakeIssue[]; path: (string | number)[] }) {
+  return issuesForPath(issues, path).map((issue, index) => (
+    <small className="field-error" role="alert" key={`${issue.code}-${index}`}>{issue.message}</small>
+  ));
 }
 
 export function IntakeReviewPage() {
@@ -25,28 +27,97 @@ export function IntakeReviewPage() {
   const [record, setRecord] = useState(state.data);
   const [draft, setDraft] = useState<IntakeDraft | null>(null);
   const [busy, setBusy] = useState(false);
-  const draftLoaded = useRef(false);
+  const recordRef = useRef<IntakeRecord | null>(null);
+  const revisionRef = useRef<number | null>(null);
+  const latestDraftRef = useRef<IntakeDraft | null>(null);
+  const cleanDraftSnapshotRef = useRef<string | null>(null);
+  const savePromiseRef = useRef<Promise<boolean> | null>(null);
+  const debounceRef = useRef<number | null>(null);
+  const conflictPendingRef = useRef(false);
+  const applyingRef = useRef(false);
 
   useEffect(() => {
     if (state.data) {
+      recordRef.current = state.data;
+      revisionRef.current = state.data.revision;
       setRecord(state.data);
-      if (state.data.draft) setDraft(state.data.draft);
-      draftLoaded.current = true;
+      if (state.data.draft && (
+        latestDraftRef.current === null ||
+        conflictPendingRef.current ||
+        JSON.stringify(latestDraftRef.current) === cleanDraftSnapshotRef.current
+      )) {
+        latestDraftRef.current = state.data.draft;
+        cleanDraftSnapshotRef.current = JSON.stringify(state.data.draft);
+        conflictPendingRef.current = false;
+        setDraft(state.data.draft);
+      }
     }
   }, [state.data]);
+
+  const saveCurrentDraft = async (): Promise<boolean> => {
+    if (savePromiseRef.current) return savePromiseRef.current;
+    const current = latestDraftRef.current;
+    const revision = revisionRef.current;
+    if (!current || revision === null || recordRef.current?.status !== "ready") return false;
+    if (JSON.stringify(current) === cleanDraftSnapshotRef.current) return true;
+    const save = (async () => {
+      while (latestDraftRef.current) {
+        const nextDraft = latestDraftRef.current;
+        const snapshot = JSON.stringify(nextDraft);
+        if (snapshot === cleanDraftSnapshotRef.current) return true;
+        const expectedRevision = revisionRef.current;
+        if (expectedRevision === null) return false;
+        try {
+          const nextRecord = await api.updateIntakeDraft(id, {
+            expectedRevision,
+            draft: nextDraft,
+          });
+          revisionRef.current = nextRecord.revision;
+          cleanDraftSnapshotRef.current = snapshot;
+          recordRef.current = nextRecord;
+          setRecord({ ...nextRecord, draft: latestDraftRef.current });
+        } catch (cause) {
+          if (isStaleWriteConflict(cause)) {
+            conflictPendingRef.current = true;
+            state.reload();
+          }
+          return false;
+        }
+      }
+      return true;
+    })();
+    savePromiseRef.current = save;
+    try {
+      return await save;
+    } finally {
+      savePromiseRef.current = null;
+      if (
+        !applyingRef.current &&
+        !conflictPendingRef.current &&
+        latestDraftRef.current &&
+        JSON.stringify(latestDraftRef.current) !== cleanDraftSnapshotRef.current
+      ) {
+        if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+        debounceRef.current = window.setTimeout(() => {
+          debounceRef.current = null;
+          void saveCurrentDraft();
+        }, 1_000);
+      }
+    }
+  };
+
   useEffect(() => {
-    if (!draft || !draftLoaded.current || record?.status !== "ready" || !record) return;
-    const revision = record.revision;
-    const timer = window.setTimeout(() => {
-      void api.updateIntakeDraft(id, {
-        expectedRevision: revision,
-        draft,
-      }).then((next) => setRecord(next)).catch((cause) => {
-        if (isStaleWriteConflict(cause)) state.reload();
-      });
+    if (!draft || record?.status !== "ready" || conflictPendingRef.current || JSON.stringify(draft) === cleanDraftSnapshotRef.current) return;
+    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => {
+      debounceRef.current = null;
+      void saveCurrentDraft();
     }, 1_000);
-    return () => window.clearTimeout(timer);
-  }, [draft, id, record?.revision, record?.status, state.reload]);
+    return () => {
+      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    };
+  }, [draft, id, record?.status]);
   useEffect(() => {
     if (!record || !["queued", "analyzing", "applying"].includes(record.status)) return;
     const timer = window.setInterval(state.reload, 2_000);
@@ -61,6 +132,10 @@ export function IntakeReviewPage() {
     }) : []),
     [draft, members, record],
   );
+  const workItemDepth = useMemo(
+    () => (draft ? workItemDepths(draft.workItems) : []),
+    [draft?.workItems],
+  );
   if (state.loading && !record) return <LoadingState />;
   if (state.error && !record) {
     return <section className="card stack" role="alert"><h1>{strings.intakeExpired}</h1><p>{state.error}</p><Link className="btn" to="/today">{strings.toMachbar}</Link></section>;
@@ -68,20 +143,46 @@ export function IntakeReviewPage() {
   if (!record) return null;
 
   const updateDraft = (next: IntakeDraft) => {
+    if (applyingRef.current) return;
+    latestDraftRef.current = next;
     setDraft(next);
-    setRecord({ ...record, draft: next });
+    const nextRecord = { ...record, draft: next };
+    recordRef.current = nextRecord;
+    setRecord(nextRecord);
   };
   const retry = async () => {
     setBusy(true);
     try { setRecord(await api.retryIntake(id)); } finally { setBusy(false); }
   };
   const apply = async () => {
-    if (!draft || issues.length) return;
+    if (!draft || issues.length || applyingRef.current) return;
+    applyingRef.current = true;
     setBusy(true);
-    try { setRecord(await api.applyIntake(id, { expectedRevision: record.revision, draft })); }
+    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+    debounceRef.current = null;
+    try {
+      if (savePromiseRef.current && !(await savePromiseRef.current)) return;
+      if (JSON.stringify(latestDraftRef.current) !== cleanDraftSnapshotRef.current) {
+        const saved = await saveCurrentDraft();
+        if (!saved) return;
+      }
+      const latestDraft = latestDraftRef.current;
+      const expectedRevision = revisionRef.current;
+      if (!latestDraft || expectedRevision === null) return;
+      const nextRecord = await api.applyIntake(id, { expectedRevision, draft: latestDraft });
+      recordRef.current = nextRecord;
+      revisionRef.current = nextRecord.revision;
+      setRecord(nextRecord);
+    }
     catch (cause) {
-      if (isStaleWriteConflict(cause)) state.reload();
-    } finally { setBusy(false); }
+      if (isStaleWriteConflict(cause)) {
+        conflictPendingRef.current = true;
+        state.reload();
+      }
+    } finally {
+      applyingRef.current = false;
+      setBusy(false);
+    }
   };
   const discard = async () => {
     setBusy(true);
@@ -105,9 +206,9 @@ export function IntakeReviewPage() {
     <label className="field"><span>{strings.notes}</span><textarea value={draft.summary} onChange={(event) => updateDraft({ ...draft, summary: event.target.value })} /></label>
     {draft.warnings.length ? <section role="status"><h2>{strings.intakeWarnings}</h2><ul>{draft.warnings.map((warning, index) => <li key={index}>{warning.message}</li>)}</ul></section> : null}
     <h2>{strings.intakeCalendar}</h2>
-    {draft.calendarEvents.map((event, index) => <CalendarEditor key={event.key} event={event} issues={issues} onChange={(next) => updateDraft({ ...draft, calendarEvents: draft.calendarEvents.map((item, i) => i === index ? next : item) })} />)}
+    {draft.calendarEvents.map((event, index) => <CalendarEditor key={event.key} event={event} index={index} issues={issues} onChange={(next) => updateDraft({ ...draft, calendarEvents: draft.calendarEvents.map((item, i) => i === index ? next : item) })} />)}
     <h2>{strings.intakeMachbar}</h2>
-    {draft.workItems.map((item, index) => <WorkEditor key={item.key} item={item} index={index} members={members} issues={issues} onChange={(next) => {
+    {draft.workItems.map((item, index) => <WorkEditor key={item.key} item={item} index={index} depth={workItemDepth[index] ?? 0} items={draft.workItems} members={members} issues={issues} onChange={(next) => {
       const items = draft.workItems.map((value, i) => i === index ? next : value);
       if (!next.enabled) {
         const disabled = new Set([next.key]);
@@ -123,7 +224,17 @@ export function IntakeReviewPage() {
         }
         updateDraft({ ...draft, workItems: items.map((value) => disabled.has(value.key) ? { ...value, enabled: false } : value) });
       } else {
-        updateDraft({ ...draft, workItems: items });
+        const changedItems = next.kind === "reference" && item.kind !== "reference"
+          ? items.map((value) => {
+            if (value.parentKey !== next.key) return value;
+            const parent = items.find((candidate) => candidate.key === next.parentKey);
+            const legalForChild = value.kind === "project"
+              ? parent?.kind === "project"
+              : parent?.kind === "project" || parent?.kind === "action";
+            return { ...value, parentKey: legalForChild ? next.parentKey : null };
+          })
+          : items;
+        updateDraft({ ...draft, workItems: changedItems });
       }
     }} />)}
     <div className="row"><button className="btn btn-primary" disabled={busy || issues.length > 0} onClick={() => void apply()}>{strings.intakeApply}</button><button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button></div>
@@ -131,32 +242,57 @@ export function IntakeReviewPage() {
   </section>;
 }
 
-function CalendarEditor({ event, issues, onChange }: { event: IntakeDraftCalendarEvent; issues: IntakeIssue[]; onChange: (event: IntakeDraftCalendarEvent) => void }) {
+function CalendarEditor({ event, index, issues, onChange }: { event: IntakeDraftCalendarEvent; index: number; issues: IntakeIssue[]; onChange: (event: IntakeDraftCalendarEvent) => void }) {
   const strings = useStrings();
+  const startPath = ["calendarEvents", index, event.allDay ? "startDate" : "startDateTime"];
+  const endPath = ["calendarEvents", index, event.allDay ? "endDate" : "endDateTime"];
   return <article className="card stack"><label><input type="checkbox" checked={event.enabled} onChange={(e) => onChange({ ...event, enabled: e.target.checked })} /> {event.title}</label>
     <input value={event.title} onChange={(e) => onChange({ ...event, title: e.target.value })} />
-    <label><input type="checkbox" checked={event.allDay} onChange={(e) => onChange({ ...event, allDay: e.target.checked })} /> {strings.intakeCalendar}</label>
+    <label><input type="checkbox" checked={event.allDay} onChange={(e) => onChange(transitionCalendarAllDay(event, e.target.checked))} /> {strings.intakeCalendar}</label>
     <input aria-label="start" value={event.allDay ? event.startDate ?? "" : event.startDateTime ?? ""} onChange={(e) => onChange(event.allDay ? { ...event, startDate: e.target.value } : { ...event, startDateTime: e.target.value })} />
     <input aria-label="end" value={event.allDay ? event.endDate ?? "" : event.endDateTime ?? ""} onChange={(e) => onChange(event.allDay ? { ...event, endDate: e.target.value } : { ...event, endDateTime: e.target.value, durationAssumed: false })} />
+    <IssueText issues={issues} path={startPath} />
+    <IssueText issues={issues} path={endPath} />
+    <IssueText issues={issues} path={["calendarEvents", index]} />
+    {!event.allDay && !event.endDateTime ? <small className="text-muted">{strings.intakeTimedWarning}</small> : null}
     <input aria-label="location" value={event.location ?? ""} onChange={(e) => onChange({ ...event, location: e.target.value || null })} />
     <textarea aria-label="description" value={event.description ?? ""} onChange={(e) => onChange({ ...event, description: e.target.value || null })} />
-    {event.durationAssumed ? <span className="badge">{strings.intakeAssumedDuration}</span> : null}<IssueText issue={issues.find((i) => i.code === "timed_end_required") ?? { path: [], code: "timed_end_required", message: "" }} path={["calendarEvents", 0, "endDateTime"]} />
+    {event.durationAssumed ? <span className="badge">{strings.intakeAssumedDuration}</span> : null}
   </article>;
 }
 
-function WorkEditor({ item, index, members, issues, onChange }: { item: IntakeDraftWorkItem; index: number; members: { id: number; name: string }[]; issues: IntakeIssue[]; onChange: (item: IntakeDraftWorkItem) => void }) {
+function WorkEditor({ item, index, depth, items, members, issues, onChange }: { item: IntakeDraftWorkItem; index: number; depth: number; items: IntakeDraftWorkItem[]; members: { id: number; name: string }[]; issues: IntakeIssue[]; onChange: (item: IntakeDraftWorkItem) => void }) {
   const strings = useStrings();
-  return <article className="card stack" style={{ marginInlineStart: `${Math.min(index, 5) * 1}rem` }}><label><input type="checkbox" checked={item.enabled} onChange={(e) => onChange({ ...item, enabled: e.target.checked })} /> {item.title}</label>
-    <select value={item.kind} onChange={(e) => onChange({ ...item, kind: e.target.value as IntakeDraftWorkItem["kind"] })}><option value="action">Action</option><option value="project">Project</option><option value="reference">Reference</option></select>
+  const path = ["workItems", index];
+  const currentClock = taskAvailabilityClock(item.notBeforeAt);
+  const hasTime = currentClock !== null && currentClock !== "00:00";
+  const updateAvailability = (date: string, time: string | null) => {
+    if (!date) {
+      onChange({ ...item, notBeforeDate: null, notBeforeAt: null });
+      return;
+    }
+    const availability = taskAvailabilityForLocalDate(date, time);
+    if (availability) onChange({ ...item, ...availability });
+  };
+  return <article className="card stack" style={{ marginInlineStart: `${Math.min(depth, 5)}rem` }}><label><input type="checkbox" checked={item.enabled} onChange={(e) => onChange({ ...item, enabled: e.target.checked })} /> {item.title}</label>
+    <select value={item.kind} onChange={(e) => onChange(transitionWorkItemKind(item, e.target.value as IntakeDraftWorkItem["kind"], items))}><option value="action">Action</option><option value="project">Project</option><option value="reference">Reference</option></select>
     <input value={item.title} onChange={(e) => onChange({ ...item, title: e.target.value })} />
-    <select aria-label={strings.owner} value={item.ownerMemberId ?? ""} onChange={(e) => onChange({ ...item, ownerMemberId: e.target.value ? Number(e.target.value) : null })}><option value="">—</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select>
+    {item.kind !== "reference" ? <><select aria-label={strings.owner} value={item.ownerMemberId ?? ""} onChange={(e) => onChange({ ...item, ownerMemberId: e.target.value ? Number(e.target.value) : null })}><option value="">—</option>{members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select><IssueText issues={issues} path={[...path, "ownerMemberId"]} /></> : null}
     <textarea aria-label={strings.notes} value={item.notes ?? ""} onChange={(e) => onChange({ ...item, notes: e.target.value || null })} />
-    {item.kind !== "reference" ? <label>{strings.due}<input value={item.dueDate ?? ""} onChange={(e) => onChange({ ...item, dueDate: e.target.value || null })} /></label> : null}
+    {item.kind !== "reference" ? <><label>{strings.due}<input value={item.dueDate ?? ""} onChange={(e) => onChange({ ...item, dueDate: e.target.value || null })} /></label><IssueText issues={issues} path={[...path, "dueDate"]} /></> : null}
     {item.kind === "action" ? <>
-      <label>{strings.scheduled}<input value={item.scheduledDate ?? ""} onChange={(e) => onChange({ ...item, scheduledDate: e.target.value || null })} /></label>
-      <label>{strings.notBefore}<input value={item.notBeforeDate ?? ""} onChange={(e) => onChange({ ...item, notBeforeDate: e.target.value || null, notBeforeAt: e.target.value ? item.notBeforeAt : null })} /></label>
+      <label>{strings.scheduled}<input value={item.scheduledDate ?? ""} onChange={(e) => onChange({ ...item, scheduledDate: e.target.value || null })} /></label><IssueText issues={issues} path={[...path, "scheduledDate"]} />
+      <label>{strings.notBefore}<input type="date" value={item.notBeforeDate ?? ""} onChange={(e) => updateAvailability(e.target.value, hasTime ? currentClock : null)} /></label>
+      <label><input type="checkbox" checked={hasTime} disabled={!item.notBeforeDate} onChange={(e) => updateAvailability(item.notBeforeDate ?? "", e.target.checked ? (currentClock && currentClock !== "00:00" ? currentClock : "08:00") : null)} /> {strings.availabilityCustomTime}</label>
+      {hasTime ? <input aria-label={strings.availabilityCustomTime} type="time" value={currentClock ?? ""} onChange={(e) => updateAvailability(item.notBeforeDate ?? "", e.target.value || null)} /> : null}
+      <IssueText issues={issues} path={[...path, "notBeforeDate"]} />
+      <IssueText issues={issues} path={path} />
+      <button type="button" className="btn" disabled={!item.notBeforeDate} onClick={() => updateAvailability("", null)}>{strings.clearNotBefore}</button>
       <label>{strings.reminder}<input value={item.reminderAt ?? ""} onChange={(e) => onChange({ ...item, reminderAt: e.target.value || null })} /></label>
+      <IssueText issues={issues} path={[...path, "reminderAt"]} />
       <label><input type="checkbox" checked={item.needsClarification} onChange={(e) => onChange({ ...item, needsClarification: e.target.checked, reminderAt: e.target.checked ? null : item.reminderAt })} /> Klärung nötig</label>
     </> : null}
+    <IssueText issues={issues} path={[...path, "parentKey"]} />
+    <IssueText issues={issues} path={path} />
   </article>;
 }

@@ -128,9 +128,11 @@ Verarbeiten bridge.
 Requirements: Docker with the Compose plugin. Verarbeiten additionally
 requires the paired Machbar Home Assistant custom integration (protocol 2),
 Home Assistant 2025.8 or newer, a configured `ai_task.*` entity that supports
-attachments for photos/files, and a writable `calendar.*` entity selected in
-the integration options flow. Machbar stores no AI-provider credentials,
-Google credentials, or Home Assistant access token.
+attachments for images and PDFs, and a writable `calendar.*` entity selected in
+the integration options flow. `.txt` files are decoded as UTF-8 and included
+as delimited source text instead of binary attachments; invalid UTF-8 is
+rejected. Machbar stores no AI-provider credentials, Google credentials, or
+Home Assistant access token.
 
 ```bash
 git clone https://github.com/temporaer/machbar.git

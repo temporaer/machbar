@@ -1,0 +1,1 @@
+ALTER TABLE `intake_jobs` ADD `accepted_draft_json` text;

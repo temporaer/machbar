@@ -27,6 +27,10 @@ class CannotConnect(MachbarError):
     """Machbar could not be reached."""
 
 
+class ApplicationError(MachbarError):
+    """Machbar rejected a request that should not be retried unchanged."""
+
+
 class InvalidAuth(MachbarError):
     """Credentials were rejected."""
 
@@ -163,7 +167,7 @@ class MachbarClient:
             response.release()
             if error_code == "unsupported_protocol_version":
                 raise UnsupportedVersion
-            raise InvalidPairing if not authenticated else CannotConnect
+            raise InvalidPairing if not authenticated else ApplicationError
         if response.status == 409 and authenticated:
             response.release()
             raise LeaseLost
@@ -172,6 +176,8 @@ class MachbarClient:
             raise RequestGone
         if response.status >= 400:
             response.release()
+            if 400 <= response.status < 500 and response.status != 429:
+                raise ApplicationError
             raise CannotConnect
         return response
 

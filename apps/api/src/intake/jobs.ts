@@ -72,7 +72,8 @@ export async function createIntakeJob(
   if (capabilities?.aiTask?.state && capabilities.aiTask.state !== "ok") {
     throw AppError.conflict("ai_task_not_configured", "No usable Home Assistant AI Task is configured.");
   }
-  if (input.files.length > 0 && capabilities?.aiTask?.supportsAttachments === false) {
+  const binaryAttachments = input.files.filter((file) => file.mimeType !== "text/plain");
+  if (binaryAttachments.length > 0 && capabilities?.aiTask?.supportsAttachments === false) {
     throw AppError.conflict("ai_task_attachments_unsupported", "The configured AI Task does not support attachments.");
   }
 
@@ -129,10 +130,11 @@ export async function createIntakeJob(
             timezone: "Europe/Berlin",
             memberNames: members.map((member) => member.name),
             hasText: input.text !== null,
-            attachmentCount: attachmentRows.length,
+            attachmentCount: binaryAttachments.length,
           }),
           text: input.text,
-          attachments: attachmentRows.map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes })),
+          attachments: attachmentRows.filter((attachment) => attachment.mimeType !== "text/plain")
+            .map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes })),
         },
       }, signal);
     });
@@ -157,6 +159,7 @@ export function getIntake(
   )).orderBy(desc(schema.homeAssistantRequests.createdAt)).get();
   const draft = parseJson<IntakeDraft>(job.draftJson);
   const error = parseJson<IntakeErrorInfo>(job.errorJson);
+  const integration = activeHomeAssistantIntegration(db);
   return {
     id: job.id,
     status: (job.status === "queued" && request?.status === "leased" ? "analyzing" : job.status) as IntakeRecord["status"],
@@ -169,7 +172,7 @@ export function getIntake(
     draft,
     error,
     applyResults: parseJson(job.applyResultsJson),
-    homeAssistant: { workerOnline: Boolean(activeHomeAssistantIntegration(db)?.lastRequestPollAt && Date.now() - new Date(activeHomeAssistantIntegration(db)!.lastRequestPollAt!).getTime() < 90_000) },
+    homeAssistant: { workerOnline: Boolean(integration?.lastRequestPollAt && Date.now() - new Date(integration.lastRequestPollAt).getTime() < 90_000) },
     paperlessAvailable,
   };
 }
@@ -245,12 +248,14 @@ export function onCalendarCreated(
   event.status = "succeeded";
   event.error = null;
   event.event = { calendarEntityId: ref.calendarEntityId, uid: ref.uid, recurrenceId: ref.recurrenceId, summary: ref.summary, start: ref.start, end: ref.end };
-  const plan = parseJson<IntakePlan>(job.planJson);
-  const eventPlan = plan?.calendarEvents.find((item) => item.key === event.key);
-  if (plan && eventPlan) {
-    const workKeys = new Set([...eventPlan.relatedWorkKeys]);
-    for (const item of plan.workItems) if (item.relatedCalendarKeys.includes(eventPlan.key)) workKeys.add(item.key);
-    for (const work of results.work) if (workKeys.has(work.key)) {
+  const acceptedDraft = parseJson<IntakeDraft>(job.acceptedDraftJson);
+  const eventDraft = acceptedDraft?.calendarEvents.find((item) => item.key === event.key && item.enabled);
+  if (acceptedDraft && eventDraft) {
+    const workKeys = new Set(eventDraft.relatedWorkKeys);
+    for (const item of acceptedDraft.workItems) {
+      if (item.enabled && item.relatedCalendarKeys.includes(eventDraft.key)) workKeys.add(item.key);
+    }
+    for (const work of results.work) if (workKeys.has(work.key) && acceptedDraft.workItems.some((item) => item.enabled && item.key === work.key)) {
       addExternalWorkItemRef(db, work.workItemId, { source: "home_assistant_calendar", calendarEntityId: ref.calendarEntityId, uid: ref.uid, recurrenceId: ref.recurrenceId, summary: ref.summary, start: ref.start, end: ref.end, correlationId: ref.correlationId });
     }
   }
@@ -270,7 +275,12 @@ export function updateIntakeDraft(db: Db, id: string, viewerMemberId: number | n
     if (job.status !== "ready" && job.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not editable in its current state.");
     if (job.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.", { expectedRevision: input.expectedRevision, actualRevision: job.revision });
     const updated = tx.update(schema.intakeJobs)
-      .set({ draftJson: JSON.stringify(input.draft), revision: input.expectedRevision + 1, updatedAt: nowIso() })
+      .set({
+        draftJson: JSON.stringify(input.draft),
+        acceptedDraftJson: null,
+        revision: input.expectedRevision + 1,
+        updatedAt: nowIso(),
+      })
       .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, input.expectedRevision)))
       .run();
     if (updated.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
@@ -289,7 +299,7 @@ export async function retryIntakeAnalysis(db: Db, env: Env, signal: HomeAssistan
     tx.update(schema.intakeJobs).set({ status: "queued", errorJson: null, revision: job.revision + 1, updatedAt: nowIso() }).where(eq(schema.intakeJobs.id, id)).run();
     enqueueHomeAssistantRequest(tx as unknown as Db, {
       integrationId: integration.id, intakeJobId: id, kind: "intake_analyze",
-      payload: { intakeId: id, taskName: "Machbar intake", instructions: buildIntakeInstructions({ today: new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date()), timezone: "Europe/Berlin", memberNames: members.map((m) => m.name), hasText: job.text !== null, attachmentCount: attachments.length }), text: job.text, attachments: attachments.map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })) },
+      payload: { intakeId: id, taskName: "Machbar intake", instructions: buildIntakeInstructions({ today: new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date()), timezone: "Europe/Berlin", memberNames: members.map((m) => m.name), hasText: job.text !== null, attachmentCount: attachments.filter((attachment) => attachment.mimeType !== "text/plain").length }), text: job.text, attachments: attachments.filter((attachment) => attachment.mimeType !== "text/plain").map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })) },
     }, signal);
   });
 }

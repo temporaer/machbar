@@ -42,7 +42,9 @@ rotates the integration token; disconnecting revokes it immediately.
 Open **Settings → Devices & services → Machbar → Configure** and select:
 
 - an `ai_task.*` entity with the **Generate data** feature; for photos and
-  files, the entity must also support AI Task attachments;
+  PDFs, the entity must also support AI Task attachments. `.txt` uploads are
+  decoded as UTF-8 and appended to the source text rather than sent as
+  attachments (invalid UTF-8 is rejected);
 - a writable `calendar.*` entity with the **Create event** feature.
 
 The AI Task entity is required; Verarbeiten does not use

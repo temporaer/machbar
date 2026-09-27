@@ -10,7 +10,6 @@ from typing import Any
 
 import voluptuous as vol
 
-from .client import InvalidResponse
 from .const import MAX_ATTACHMENT_BYTES
 
 _NULL = vol.Any(None, str)

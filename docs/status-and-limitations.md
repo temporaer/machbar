@@ -93,10 +93,13 @@ availability depend on browser and operating-system support.
 
 Verarbeiten is a temporary intake/clarification adapter. The paired Machbar
 Home Assistant integration must be online and configured with an AI Task
-entity; photo and file intake additionally requires that provider to support
-AI Task attachments. A writable calendar entity is required only when a
-reviewed event is selected. The integration and Machbar server use protocol 2
-and must be upgraded together.
+entity; image and PDF intake additionally requires that provider to support
+AI Task attachments. `.txt` uploads are decoded as UTF-8 and included as
+delimited source text; invalid UTF-8 is rejected. Intake accepts up to five
+files, each at most 25 MB, and the combined typed text plus decoded text-file
+content is limited to 20,000 characters. A writable calendar entity is
+required only when a reviewed event is selected. The integration and Machbar
+server use protocol 2 and must be upgraded together.
 
 Intake review state and uploaded scratch files expire automatically after
 24 hours. There is no durable intake history or list of in-progress intakes.

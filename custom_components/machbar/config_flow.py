@@ -116,7 +116,7 @@ class MachbarOptionsFlow(config_entries.OptionsFlow):
             ai_id = user_input.get(CONF_AI_TASK_ENTITY)
             cal_id = user_input.get(CONF_CALENDAR_ENTITY)
             if ai_id:
-                entity = hass_entity = self.hass.data.get(ai_task.DATA_COMPONENT, {}).get_entity(ai_id)
+                entity = self.hass.data.get(ai_task.DATA_COMPONENT, {}).get_entity(ai_id)
                 if entity is None or not entity.supported_features & AITaskEntityFeature.GENERATE_DATA:
                     errors["base"] = "ai_task_no_generate_data"
             if not errors and cal_id:

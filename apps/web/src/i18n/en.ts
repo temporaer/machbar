@@ -94,6 +94,7 @@ const en = {
   intakeCalendar: "Calendar",
   intakeMachbar: "Machbar",
   intakeAssumedDuration: "Duration assumed",
+  intakeTimedWarning: "Add an end time; no duration has been assumed.",
   intakeOfflineHint: "Home Assistant is currently unreachable; processing will continue when it comes back online.",
   intakeExpired: "Processing expired",
   intakeApplied: "Processing applied",

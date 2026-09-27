@@ -72,6 +72,7 @@ const base = {
   intakeCalendar: "Kalender",
   intakeMachbar: "Machbar",
   intakeAssumedDuration: "Dauer angenommen",
+  intakeTimedWarning: "Bitte eine Endzeit ergänzen; es wird keine Dauer angenommen.",
   intakeOfflineHint: "Home Assistant ist gerade nicht erreichbar – die Verarbeitung läuft weiter, sobald es wieder online ist.",
   intakeExpired: "Verarbeitung abgelaufen",
   intakeApplied: "Verarbeitung übernommen",

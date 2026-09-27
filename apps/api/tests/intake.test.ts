@@ -128,6 +128,87 @@ describe("intake lifecycle", () => {
     expect(readdirSync(`${ctx.dataDir}/intake/${imageId}`)).toHaveLength(1);
   });
 
+  it("sends text files as bounded UTF-8 source text, not as AI Task attachments", async () => {
+    await pairAndSnapshot();
+    const textFile = { name: "files", filename: "meeting.txt", type: "text/plain", data: Buffer.from("Bring the forms.", "utf8") };
+    const textOnly = multipart([textFile]);
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/intake",
+      headers: { "content-type": `multipart/form-data; boundary=${textOnly.boundary}` },
+      payload: textOnly.body,
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const textRequest = ctx.handle.db.select().from(schema.homeAssistantRequests)
+      .where(eq(schema.homeAssistantRequests.intakeJobId, response.json().id)).get()!;
+    expect(JSON.parse(textRequest.payloadJson)).toMatchObject({
+      text: "SOURCE FILE: meeting.txt\n<<<\nBring the forms.\n>>>",
+      attachments: [],
+    });
+
+    const pdf = { name: "files", filename: "agenda.pdf", type: "application/pdf", data: Buffer.from("%PDF-test") };
+    const mixed = multipart([textFile, pdf]);
+    const mixedResponse = await ctx.app.inject({
+      method: "POST",
+      url: "/api/intake",
+      headers: { "content-type": `multipart/form-data; boundary=${mixed.boundary}` },
+      payload: mixed.body,
+    });
+    expect(mixedResponse.statusCode, mixedResponse.body).toBe(201);
+    const mixedRequest = ctx.handle.db.select().from(schema.homeAssistantRequests)
+      .where(eq(schema.homeAssistantRequests.intakeJobId, mixedResponse.json().id)).get()!;
+    expect(JSON.parse(mixedRequest.payloadJson)).toMatchObject({
+      text: "SOURCE FILE: meeting.txt\n<<<\nBring the forms.\n>>>",
+      attachments: [expect.objectContaining({ filename: "agenda.pdf", mimeType: "application/pdf" })],
+    });
+  });
+
+  it("rejects invalid UTF-8 and text beyond the source safety limit", async () => {
+    await pairAndSnapshot();
+    for (const [data, expectedCode, expectedMessage] of [
+      [Buffer.from([0xc3, 0x28]), "intake_file_rejected", "not valid UTF-8"],
+      [Buffer.from("x".repeat(20_001)), "intake_file_too_large", "20,000 character limit"],
+    ] as const) {
+      const body = multipart([{ name: "files", filename: "source.txt", type: "text/plain", data }]);
+      const response = await ctx.app.inject({
+        method: "POST",
+        url: "/api/intake",
+        headers: { "content-type": `multipart/form-data; boundary=${body.boundary}` },
+        payload: body.body,
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error.code).toBe(expectedCode);
+      expect(response.json().error.message).toContain(expectedMessage);
+      if (expectedCode === "intake_file_rejected") {
+        expect(response.json().error.details.reason).toBe("invalid_utf8");
+      }
+    }
+  });
+
+  it("normalizes intake images to a useful long edge", async () => {
+    await pairAndSnapshot();
+    const image = await sharp({
+      create: { width: 3200, height: 1800, channels: 3, background: { r: 20, g: 80, b: 120 } },
+    }).png().toBuffer();
+    const body = multipart([{ name: "files", filename: "large.png", type: "image/png", data: image }]);
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/intake",
+      headers: { "content-type": `multipart/form-data; boundary=${body.boundary}` },
+      payload: body.body,
+    });
+    expect(response.statusCode, response.body).toBe(201);
+    const intakeId = response.json().id as string;
+    const attachment = ctx.handle.db.select().from(schema.intakeAttachments)
+      .where(eq(schema.intakeAttachments.intakeJobId, intakeId)).get()!;
+    expect(attachment.mimeType).toBe("image/jpeg");
+    const storedImage = await import("node:fs/promises").then(({ readFile }) =>
+      readFile(`${ctx.dataDir}/intake/${intakeId}/${attachment.id}`));
+    const metadata = await sharp(storedImage).metadata();
+    expect(Math.max(metadata.width ?? 0, metadata.height ?? 0)).toBe(2048);
+    expect(Math.min(metadata.width ?? 0, metadata.height ?? 0)).toBe(1152);
+  });
+
   it("requires text or a file and surfaces capability failures", async () => {
     const empty = multipart([]);
     const emptyResponse = await ctx.app.inject({

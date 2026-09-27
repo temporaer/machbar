@@ -32,6 +32,7 @@ vi.mock("../lib/api", () => ({
     updateProject: vi.fn(),
     uploadPaperlessDocument: vi.fn(),
     preparePaperlessImageForCrop: vi.fn(),
+    createIntake: vi.fn(),
   },
 }));
 
@@ -49,6 +50,31 @@ async function openCapture() {
   await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
   await userEvent.click(screen.getByRole("button", { name: "Aufgabe erfassen" }));
   expect(screen.getByText("Nur Titel reicht")).toBeInTheDocument();
+}
+
+async function cropCapturedPhoto() {
+  Object.defineProperties(URL, {
+    createObjectURL: { configurable: true, value: vi.fn(() => "blob:prepared") },
+    revokeObjectURL: { configurable: true, value: vi.fn() },
+  });
+  mockedApi.preparePaperlessImageForCrop.mockResolvedValue(
+    new Blob(["prepared"], { type: "image/jpeg" }),
+  );
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    drawImage: vi.fn(),
+  } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
+    (callback) => callback(new Blob(["cropped"], { type: "image/jpeg" })),
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "Foto zuschneiden" }));
+  const image = await screen.findByAltText("Vorschau des Bildausschnitts");
+  Object.defineProperties(image, {
+    naturalWidth: { configurable: true, value: 1000 },
+    naturalHeight: { configurable: true, value: 800 },
+  });
+  fireEvent.load(image);
+  await userEvent.click(await screen.findByRole("button", { name: "Ausschnitt verwenden" }));
+  expect(await screen.findByText("photo-cropped.jpg")).toBeInTheDocument();
 }
 
 function OpenTaskProbe() {
@@ -269,6 +295,7 @@ describe("QuickAdd", () => {
       },
       revokeObjectURL: { configurable: true, value: vi.fn() },
     });
+
     mockedApi.preparePaperlessImageForCrop.mockResolvedValue(
       new Blob(["prepared"], { type: "image/jpeg" }),
     );
@@ -323,6 +350,41 @@ describe("QuickAdd", () => {
     const uploadedFile = mockedApi.uploadPaperlessDocument.mock.calls[0]?.[0];
     expect(uploadedFile).toBeInstanceOf(File);
     expect(uploadedFile?.name).toBe("photo-cropped.jpg");
+  });
+
+  it("submits the cropped current file when cropping after switching to AI processing", async () => {
+    mockedApi.createIntake.mockResolvedValue({ id: "intake-1" } as never);
+    renderWithProviders(<QuickAdd />);
+    await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
+    await userEvent.upload(
+      screen.getByLabelText("Datei auswählen"),
+      new File(["photo"], "photo.jpg", { type: "image/jpeg" }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Verarbeiten" }));
+    await cropCapturedPhoto();
+    await userEvent.click(screen.getByRole("button", { name: "Verarbeiten" }));
+
+    await waitFor(() => expect(mockedApi.createIntake).toHaveBeenCalledTimes(1));
+    const submitted = mockedApi.createIntake.mock.calls[0]?.[0].files?.[0];
+    expect(submitted).toBeInstanceOf(File);
+    expect(submitted?.name).toBe("photo-cropped.jpg");
+  });
+
+  it("keeps a crop from the normal capture form when switching to AI processing", async () => {
+    mockedApi.createIntake.mockResolvedValue({ id: "intake-2" } as never);
+    renderWithProviders(<QuickAdd />);
+    await userEvent.click(screen.getByRole("button", { name: "Schnell hinzufügen" }));
+    await userEvent.upload(
+      screen.getByLabelText("Datei auswählen"),
+      new File(["photo"], "photo.jpg", { type: "image/jpeg" }),
+    );
+    await cropCapturedPhoto();
+    await userEvent.click(await screen.findByRole("button", { name: "Verarbeiten" }));
+    expect(await screen.findByText("photo-cropped.jpg")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Verarbeiten" }));
+
+    await waitFor(() => expect(mockedApi.createIntake).toHaveBeenCalledTimes(1));
+    expect(mockedApi.createIntake.mock.calls[0]?.[0].files?.[0]?.name).toBe("photo-cropped.jpg");
   });
 
   it("opens the bounded in-app camera instead of the file capture intent", async () => {

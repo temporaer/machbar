@@ -9,12 +9,11 @@ import type { Env } from "../env.js";
 import { AppError } from "../errors.js";
 import { activeHomeAssistantIntegration } from "../integrations/homeAssistant.js";
 import { enqueueHomeAssistantRequest, type HomeAssistantRequestSignal } from "../integrations/homeAssistantRequests.js";
-import { createProject } from "../domain/storyCrud.js";
-import { createChildTask, createTask } from "../domain/taskCrud.js";
+import { appendProjectNotes, createProject } from "../domain/storyCrud.js";
+import { appendTaskNotes, createChildTask, createTask } from "../domain/taskCrud.js";
 import type { MutationContext } from "../domain/workItemShared.js";
 import type { PaperlessClient } from "../paperless/client.js";
 import { uploadAndResolveDocument } from "../paperless/upload.js";
-import { listExternalWorkItemRefs } from "../domain/externalWorkItemRefs.js";
 import { nowIso } from "../domain/workItemShared.js";
 import { attachmentPath } from "./storage.js";
 
@@ -40,18 +39,20 @@ export async function applyIntake(
   if (stored.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
   if (stored.status !== "ready" && stored.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not ready to apply.");
   if (stored.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
+  const draft = parse<IntakeDraft>(stored.acceptedDraftJson) ?? input.draft;
   const memberIds = db.select({ id: schema.members.id }).from(schema.members).all().map((member) => member.id);
-  const attachments = db.select().from(schema.intakeAttachments).all().filter((attachment) => attachment.intakeJobId === id);
-  const issues = intakeDraftIssues(input.draft, {
+  const attachments = db.select().from(schema.intakeAttachments)
+    .where(eq(schema.intakeAttachments.intakeJobId, id)).all();
+  const issues = intakeDraftIssues(draft, {
     memberIds,
     paperlessAvailable: Boolean(paperless),
     hasFiles: attachments.length > 0,
   });
   if (issues.length > 0) throw AppError.badRequest("intake_draft_invalid", "The intake draft is invalid.", { issues });
 
-  const enabledEvents = input.draft.calendarEvents.filter((event) => event.enabled);
+  const enabledEvents = draft.calendarEvents.filter((event) => event.enabled);
+  const integration = enabledEvents.length > 0 ? activeHomeAssistantIntegration(db) : null;
   if (enabledEvents.length > 0) {
-    const integration = activeHomeAssistantIntegration(db);
     if (!integration) throw AppError.conflict("home_assistant_not_connected", "Home Assistant is not connected.");
     if (integration.protocolVersion !== 2) throw AppError.conflict("home_assistant_protocol_outdated", "The Home Assistant integration must be updated.");
     const capabilities = integration.capabilitiesJson ? JSON.parse(integration.capabilitiesJson) as { calendar?: { state?: string } } : null;
@@ -60,7 +61,7 @@ export async function applyIntake(
   }
 
   let results = parse<IntakeApplyResults>(stored.applyResultsJson) ?? { work: [], calendar: [], paperlessDocumentIds: [] };
-  if (input.draft.retainSourceInPaperless && results.paperlessDocumentIds.length < attachments.length) {
+  if (draft.retainSourceInPaperless && results.paperlessDocumentIds.length < attachments.length) {
     if (!paperless) throw AppError.conflict("intake_source_retention_failed", "Paperless is not configured.");
     try {
       for (const attachment of attachments.slice(results.paperlessDocumentIds.length)) {
@@ -89,7 +90,7 @@ export async function applyIntake(
     if (jobNow.status !== "ready" && jobNow.status !== "partially_applied") throw AppError.conflict("intake_state_conflict", "The intake is not ready to apply.");
     if (jobNow.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
     const existingKeys = new Set(results.work.map((item) => item.key));
-    const enabled = input.draft.workItems.filter((item) => item.enabled);
+    const enabled = draft.workItems.filter((item) => item.enabled);
     const byKey = new Map(enabled.map((item) => [item.key, item]));
     const sorted: typeof enabled = [];
     const remaining = new Set(enabled.map((item) => item.key));
@@ -159,14 +160,21 @@ export async function applyIntake(
       results.work.push({ key: item.key, kind: item.kind, workItemId: created.id, role: created.role === "story" ? "story" : "task" });
       retentionTarget ??= isRoot ? created.id : null;
     }
-    if (input.draft.retainSourceInPaperless && retentionTarget !== null && paperlessDocs.length > 0) {
-      const row = tx.select().from(schema.workItems).all().find((candidate) => candidate.id === retentionTarget);
-      if (row && !row.notes.includes("paperless:")) {
-        const block = paperlessDocs.map((document) => paperlessMarkdownReference(document)).join("\n\n");
-        tx.update(schema.workItems).set({ notes: row.notes ? `${row.notes}\n\n${block}` : block }).where(eq(schema.workItems.id, retentionTarget)).run();
+    if (draft.retainSourceInPaperless && retentionTarget !== null && paperlessDocs.length > 0) {
+      const row = tx.select({ role: schema.workItems.role, notes: schema.workItems.notes })
+        .from(schema.workItems).where(eq(schema.workItems.id, retentionTarget)).get();
+      if (row) {
+        const retainedIds = new Set(
+          Array.from(row.notes.matchAll(/paperless:(\d+)\)/g), ([, id]) => Number(id)),
+        );
+        const newDocs = paperlessDocs.filter((document) => !retainedIds.has(document.id));
+        if (newDocs.length > 0) {
+          const block = newDocs.map((document) => paperlessMarkdownReference(document)).join("\n\n");
+          if (row.role === "story") appendProjectNotes(tx as unknown as Db, retentionTarget, block, context);
+          else appendTaskNotes(tx as unknown as Db, retentionTarget, block, context);
+        }
       }
     }
-    const integration = enabledEvents.length > 0 ? activeHomeAssistantIntegration(tx as unknown as Db) : null;
     for (const event of enabledEvents) {
       let result = results.calendar.find((candidate) => candidate.key === event.key);
       if (result?.status === "succeeded" || result?.status === "pending") continue;
@@ -183,7 +191,13 @@ export async function applyIntake(
     }
     const status = results.calendar.some((event) => event.status === "pending") ? "applying" : results.calendar.some((event) => event.status === "failed") ? "partially_applied" : "applied";
     const updated = tx.update(schema.intakeJobs)
-      .set({ status, applyResultsJson: JSON.stringify(results), revision: input.expectedRevision + 1, updatedAt: nowIso() })
+      .set({
+        status,
+        applyResultsJson: JSON.stringify(results),
+        acceptedDraftJson: jobNow.acceptedDraftJson ?? JSON.stringify(draft),
+        revision: input.expectedRevision + 1,
+        updatedAt: nowIso(),
+      })
       .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, input.expectedRevision)))
       .run();
     if (updated.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
