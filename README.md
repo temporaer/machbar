@@ -87,6 +87,22 @@ occurrence from actual completion, which works well for maintenance that never
 happens on a perfect calendar. Due-dated work can be exported as a one-off ICS
 file for an external calendar, without ongoing synchronization.
 
+## Work, not everything around the work
+
+Machbar deliberately does not try to become a family super-app. It is not a
+calendar, mail client, document store, shopping or meal planner, messaging
+system, parcel tracker, or generic workflow-automation tool.
+
+Those systems often contain information that changes what can be done next.
+Machbar integrates with them where useful, while they remain authoritative for
+their own state. Machbar owns the resulting work: commitments, responsibility,
+sequencing, waiting, follow-up, and the decision about what deserves attention
+now.
+
+New structure should earn its place by making that work easier to capture,
+understand, execute, or review—not by modelling every real-world process inside
+Machbar.
+
 ## For people who enjoy systems—but do not want to manage one
 
 Machbar borrows practical ideas from GTD, org-mode, and lightweight agile
