@@ -16,7 +16,7 @@ from homeassistant.exceptions import (
 )
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers import selector
+from homeassistant.helpers import config_validation as cv, selector
 import voluptuous as vol
 from dataclasses import dataclass
 
@@ -58,6 +58,9 @@ def _sync_task_schema() -> vol.Schema:
             vol.Optional("size"): vol.Any(vol.In(["S", "M", "L", "XL"]), None),
         }
     )
+
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:

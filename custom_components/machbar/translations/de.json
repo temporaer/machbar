@@ -5,16 +5,46 @@
       "name": "Aufgabe synchronisieren",
       "description": "Eine von Home Assistant verwaltete Machbar-Aufgabe abgleichen.",
       "fields": {
-        "config_entry_id": {"name": "Machbar-Verbindung", "description": "Zu verwendende Machbar-Verbindung."},
-        "source_key": {"name": "Referenz", "description": "Stabile externe Aufgabenreferenz."},
-        "relevant": {"name": "Relevant", "description": "Ob die Aufgabe als offene Arbeit bestehen soll."},
-        "title": {"name": "Titel", "description": "Titel beim Erstellen oder Abgleichen."},
-        "person": {"name": "Zuständig", "description": "Home-Assistant-Person für die Aufgabe."},
-        "scheduled_date": {"name": "Geplant für", "description": "Geplantes Kalenderdatum."},
-        "due_date": {"name": "Fällig am", "description": "Frist der Aufgabe."},
-        "notes": {"name": "Notiz", "description": "Wird nur beim Erstellen als Anfangsnotiz verwendet."},
-        "priority": {"name": "Priorität", "description": "Machbar-Priorität von 1 (höchste) bis 5 (niedrigste)."},
-        "size": {"name": "Größe", "description": "Aufgabengröße."}
+        "config_entry_id": {
+          "name": "Machbar-Verbindung",
+          "description": "Zu verwendende Machbar-Verbindung."
+        },
+        "source_key": {
+          "name": "Referenz",
+          "description": "Stabile externe Aufgabenreferenz."
+        },
+        "relevant": {
+          "name": "Relevant",
+          "description": "Ob die Aufgabe als offene Arbeit bestehen soll."
+        },
+        "title": {
+          "name": "Titel",
+          "description": "Titel beim Erstellen oder Abgleichen."
+        },
+        "person": {
+          "name": "Zuständig",
+          "description": "Home-Assistant-Person für die Aufgabe."
+        },
+        "scheduled_date": {
+          "name": "Geplant für",
+          "description": "Geplantes Kalenderdatum."
+        },
+        "due_date": {
+          "name": "Fällig am",
+          "description": "Frist der Aufgabe."
+        },
+        "notes": {
+          "name": "Notiz",
+          "description": "Wird nur beim Erstellen als Anfangsnotiz verwendet."
+        },
+        "priority": {
+          "name": "Priorität",
+          "description": "Machbar-Priorität von 1 (höchste) bis 5 (niedrigste)."
+        },
+        "size": {
+          "name": "Größe",
+          "description": "Aufgabengröße."
+        }
       }
     }
   },
@@ -36,24 +66,24 @@
       "invalid_pairing": "Der Kopplungscode ist ungültig oder abgelaufen.",
       "unsupported_version": "Dieser Machbar-Server unterstützt die Protokollversion der Integration nicht."
     },
-    "options": {
-      "step": {
-        "init": {
-          "title": "KI-Verarbeitung konfigurieren",
-          "description": "Wähle die AI-Task- und Kalender-Entität für die Verarbeitung.",
-          "data": {
-            "ai_task_entity_id": "AI-Task-Entität",
-            "calendar_entity_id": "Kalender-Entität"
-          }
-        }
-      },
-      "error": {
-        "ai_task_no_generate_data": "Die ausgewählte AI-Task-Entität unterstützt keine strukturierte Datengenerierung.",
-        "calendar_not_writable": "Der ausgewählte Kalender kann keine Termine erstellen."
-      }
-    },
     "abort": {
       "already_configured": "Diese Machbar-Instanz ist bereits konfiguriert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "KI-Verarbeitung konfigurieren",
+        "description": "Wähle die AI-Task- und Kalender-Entität für die Verarbeitung.",
+        "data": {
+          "ai_task_entity_id": "AI-Task-Entität",
+          "calendar_entity_id": "Kalender-Entität"
+        }
+      }
+    },
+    "error": {
+      "ai_task_no_generate_data": "Die ausgewählte AI-Task-Entität unterstützt keine strukturierte Datengenerierung.",
+      "calendar_not_writable": "Der ausgewählte Kalender kann keine Termine erstellen."
     }
   }
 }

@@ -1,13 +1,19 @@
 {
   "domain": "machbar",
   "name": "Machbar",
-  "codeowners": ["@temporaer"],
+  "after_dependencies": [
+    "ai_task",
+    "calendar",
+    "conversation"
+  ],
+  "codeowners": [
+    "@temporaer"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/temporaer/machbar",
   "integration_type": "service",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/temporaer/machbar/issues",
   "requirements": [],
-  "after_dependencies": ["ai_task", "calendar", "conversation"],
   "version": "0.2.0"
 }
