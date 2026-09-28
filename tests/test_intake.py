@@ -3,7 +3,7 @@
 import pytest
 import voluptuous as vol
 
-from custom_components.machbar.intake import INTAKE_STRUCTURE, normalize_plan
+from custom_components.machbar.intake import INTAKE_STRUCTURE, AdapterError, normalize_plan
 
 
 def _valid_plan():
@@ -75,3 +75,135 @@ def test_normalize_plan_drops_unknown_keys():
         }
     )
     assert plan == {"summary": "hello", "calendarEvents": [], "workItems": [], "warnings": []}
+
+
+_NULLABLE_WORK_FIELDS = (
+    "notes",
+    "parentKey",
+    "ownerName",
+    "dueDate",
+    "scheduledDate",
+    "notBeforeDate",
+    "notBeforeAt",
+    "reminderAt",
+)
+_NULLABLE_CALENDAR_FIELDS = (
+    "description",
+    "location",
+    "startDate",
+    "endDate",
+    "startDateTime",
+    "endDateTime",
+)
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t\n "])
+def test_normalize_plan_turns_blank_nullable_strings_into_none(blank):
+    plan = _valid_plan()
+    for field in _NULLABLE_CALENDAR_FIELDS:
+        plan["calendarEvents"][0][field] = blank
+    for field in _NULLABLE_WORK_FIELDS:
+        plan["workItems"][0][field] = blank
+
+    normalized = normalize_plan(plan)
+
+    for field in _NULLABLE_CALENDAR_FIELDS:
+        assert normalized["calendarEvents"][0][field] is None
+    for field in _NULLABLE_WORK_FIELDS:
+        assert normalized["workItems"][0][field] is None
+
+
+def test_normalize_plan_trims_non_empty_nullable_strings():
+    plan = _valid_plan()
+    plan["workItems"][0]["notes"] = "  bring cake \n"
+    plan["workItems"][0]["ownerName"] = " Anna "
+    plan["workItems"][0]["dueDate"] = " 2026-09-30 "
+    plan["calendarEvents"][0]["location"] = "\tSchool "
+
+    normalized = normalize_plan(plan)
+
+    assert normalized["workItems"][0]["notes"] == "bring cake"
+    assert normalized["workItems"][0]["ownerName"] == "Anna"
+    assert normalized["workItems"][0]["dueDate"] == "2026-09-30"
+    assert normalized["calendarEvents"][0]["location"] == "School"
+
+
+@pytest.mark.parametrize(
+    ("object_path", "field"),
+    [
+        (("workItems", 0), "key"),
+        (("workItems", 0), "title"),
+        (("calendarEvents", 0), "key"),
+        (("calendarEvents", 0), "title"),
+        (("warnings", 0), "message"),
+    ],
+)
+@pytest.mark.parametrize("bad_value", [None, 42, "MISSING"])
+def test_normalize_plan_rejects_missing_or_non_string_required_values(object_path, field, bad_value):
+    plan = _valid_plan()
+    target = plan
+    for part in object_path:
+        target = target[part]
+    if bad_value == "MISSING":
+        del target[field]
+    else:
+        target[field] = bad_value
+
+    with pytest.raises(AdapterError) as err:
+        normalize_plan(plan)
+    assert err.value.code == "ai_task_invalid_response"
+
+
+def test_normalize_plan_keeps_blank_required_strings_as_strings():
+    plan = _valid_plan()
+    plan["summary"] = "   "
+    plan["workItems"][0]["title"] = "  "
+
+    normalized = normalize_plan(plan)
+
+    assert normalized["summary"] == ""
+    assert normalized["workItems"][0]["title"] == ""
+
+
+def test_normalize_plan_normalizes_empty_strings_on_action_and_reference():
+    empty_fields = {
+        "notes": "",
+        "parentKey": "",
+        "ownerName": "",
+        "dueDate": "",
+        "scheduledDate": "",
+        "notBeforeDate": "",
+        "notBeforeAt": "",
+        "reminderAt": "",
+    }
+    plan = {
+        "summary": "Plan",
+        "calendarEvents": [],
+        "workItems": [
+            {
+                "key": "buy-cake",
+                "kind": "action",
+                "title": "Buy cake",
+                **empty_fields,
+                "needsClarification": False,
+                "relatedCalendarKeys": [],
+            },
+            {
+                "key": "menu",
+                "kind": "reference",
+                "title": "School menu",
+                **empty_fields,
+                "needsClarification": False,
+                "relatedCalendarKeys": [],
+            },
+        ],
+        "warnings": [],
+    }
+
+    normalized = normalize_plan(plan)
+
+    assert [item["kind"] for item in normalized["workItems"]] == ["action", "reference"]
+    for item in normalized["workItems"]:
+        for field in empty_fields:
+            assert item[field] is None
+    INTAKE_STRUCTURE(normalized)

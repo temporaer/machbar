@@ -20,6 +20,7 @@ const rules = [
   "19. Projects may only have dueDate; references have no dates, owner, or reminder.",
   "20. Put anything uncertain or ambiguous into warnings. Write a one-sentence summary.",
   "21. Do not output IDs, URLs, entity IDs, or service names.",
+  "22. For every nullable field without a value, output JSON null, never an empty string.",
 ];
 
 export function buildIntakeInstructions(input: {
