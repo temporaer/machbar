@@ -21,6 +21,7 @@ const rules = [
   "20. Put anything uncertain or ambiguous into warnings. Write a one-sentence summary.",
   "21. Do not output IDs, URLs, entity IDs, or service names.",
   "22. For every nullable field without a value, output JSON null, never an empty string.",
+  "23. Format every notes value as Markdown, preserving the source language and useful structure. For phone numbers in notes, use a Markdown link with a tel: URI, e.g. [0772123456](tel:0772123456); keep the link text faithful to the source and remove only visual separators from the URI.",
 ];
 
 export function buildIntakeInstructions(input: {
