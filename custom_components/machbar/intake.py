@@ -134,17 +134,30 @@ def normalize_plan(data: Any) -> dict[str, Any]:
         for raw in data.get("calendarEvents", []):
             if not isinstance(raw, dict):
                 raise AdapterError("ai_task_invalid_response")
+            all_day = raw.get("allDay", False)
+            if not isinstance(all_day, bool):
+                raise AdapterError("ai_task_invalid_response")
+            start_date = _normalize_string(raw.get("startDate"))
+            end_date = _normalize_string(raw.get("endDate"))
+            start_datetime = _normalize_string(raw.get("startDateTime"))
+            end_datetime = _normalize_string(raw.get("endDateTime"))
+            if all_day:
+                start_datetime = None
+                end_datetime = None
+            else:
+                start_date = None
+                end_date = None
             calendars.append(
                 {
                     "key": _normalize_string(raw.get("key"), False),
                     "title": _normalize_string(raw.get("title"), False),
                     "description": _normalize_string(raw.get("description")),
                     "location": _normalize_string(raw.get("location")),
-                    "allDay": raw.get("allDay", False) if isinstance(raw.get("allDay", False), bool) else (_ for _ in ()).throw(AdapterError("ai_task_invalid_response")),
-                    "startDate": _normalize_string(raw.get("startDate")),
-                    "endDate": _normalize_string(raw.get("endDate")),
-                    "startDateTime": _normalize_string(raw.get("startDateTime")),
-                    "endDateTime": _normalize_string(raw.get("endDateTime")),
+                    "allDay": all_day,
+                    "startDate": start_date,
+                    "endDate": end_date,
+                    "startDateTime": start_datetime,
+                    "endDateTime": end_datetime,
                     "relatedWorkKeys": _normalize_strings(raw.get("relatedWorkKeys", [])),
                 }
             )

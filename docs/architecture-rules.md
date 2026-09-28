@@ -38,6 +38,22 @@ The command itself commits. Complete, cancel, reopen, activate, archive,
 external-wait resolution, and hierarchy movement use this contract. A guard may
 collect additional information only when required by domain semantics.
 
+## Version bumps
+
+Every change intended to ship must bump the version of the root Machbar
+application and each affected workspace package in its `package.json`, using
+the matching `package-lock.json` metadata. Choose the smallest SemVer increment
+that communicates the change: patch for compatible fixes, minor for
+backward-compatible features, and major for breaking changes.
+
+Any change to `custom_components/machbar/` must also bump its HACS version in
+`custom_components/machbar/manifest.json`. Keep that version independently
+SemVer-compliant; do not rely on the Machbar server version or commit SHA to
+signal that Home Assistant must download an integration update. Changes to the
+HA integration require the user to install the updated component and restart
+Home Assistant before the new Python code is loaded. Bump only packages
+affected by the shipped change.
+
 ## Mutation architecture
 
 One domain operation has one canonical mutation path.

@@ -77,6 +77,41 @@ def test_normalize_plan_drops_unknown_keys():
     assert plan == {"summary": "hello", "calendarEvents": [], "workItems": [], "warnings": []}
 
 
+def test_normalize_plan_clears_datetimes_for_all_day_events():
+    plan = _valid_plan()
+    event = plan["calendarEvents"][0]
+    event["startDateTime"] = "2026-09-29T10:00:00+02:00"
+    event["endDateTime"] = "2026-09-29T11:00:00+02:00"
+
+    normalized = normalize_plan(plan)
+    normalized_event = normalized["calendarEvents"][0]
+
+    assert normalized_event["allDay"] is True
+    assert normalized_event["startDate"] == "2026-09-29"
+    assert normalized_event["endDate"] == "2026-09-30"
+    assert normalized_event["startDateTime"] is None
+    assert normalized_event["endDateTime"] is None
+    INTAKE_STRUCTURE(normalized)
+
+
+def test_normalize_plan_clears_dates_for_timed_events():
+    plan = _valid_plan()
+    event = plan["calendarEvents"][0]
+    event["allDay"] = False
+    event["startDateTime"] = "2026-09-29T10:00:00+02:00"
+    event["endDateTime"] = "2026-09-29T11:00:00+02:00"
+
+    normalized = normalize_plan(plan)
+    normalized_event = normalized["calendarEvents"][0]
+
+    assert normalized_event["allDay"] is False
+    assert normalized_event["startDate"] is None
+    assert normalized_event["endDate"] is None
+    assert normalized_event["startDateTime"] == "2026-09-29T10:00:00+02:00"
+    assert normalized_event["endDateTime"] == "2026-09-29T11:00:00+02:00"
+    INTAKE_STRUCTURE(normalized)
+
+
 _NULLABLE_WORK_FIELDS = (
     "notes",
     "parentKey",
