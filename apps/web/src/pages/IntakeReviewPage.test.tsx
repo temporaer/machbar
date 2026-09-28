@@ -105,6 +105,54 @@ function renderPage() {
   );
 }
 
+async function openEditor(title: string) {
+  const card = (await screen.findByRole("heading", { name: title })).closest("article")!;
+  fireEvent.click(
+    within(card).getByRole("button", { name: `Bearbeiten: ${title}` }),
+  );
+  return within(await screen.findByRole("dialog"));
+}
+
+function applyButton() {
+  return screen.getByRole("button", { name: /übernehmen$/i });
+}
+
+function authoredSection(editor: ReturnType<typeof within>, label: string) {
+  const match = editor
+    .getAllByText(label, { exact: true })
+    .find((element: HTMLElement) => element.tagName === "STRONG");
+  const section = match?.closest("section");
+  if (!section) throw new Error(`Could not find authored field: ${label}`);
+  return section;
+}
+
+function editTitleButton(editor: ReturnType<typeof within>) {
+  const titleSection = authoredSection(editor, "Titel");
+  return within(titleSection).getByRole("button", { name: "Bearbeiten" });
+}
+
+async function changeTitle(editor: ReturnType<typeof within>, title: string) {
+  fireEvent.click(editTitleButton(editor));
+  fireEvent.change(editor.getByRole("textbox", { name: "Titel" }), {
+    target: { value: title },
+  });
+  const titleSection = authoredSection(editor, "Titel");
+  fireEvent.click(within(titleSection).getByRole("button", { name: "Speichern" }));
+}
+
+function closeEditor(editor: ReturnType<typeof within>) {
+  fireEvent.click(editor.getByRole("button", { name: "Schließen" }));
+}
+
+function authoredField(editor: ReturnType<typeof within>, label: string) {
+  const match = editor
+    .getAllByText(label, { exact: true })
+    .find((element: HTMLElement) => element.tagName === "STRONG");
+  const section = match?.closest("section");
+  if (!section) throw new Error(`Could not find authored field: ${label}`);
+  return within(section);
+}
+
 describe("IntakeReviewPage", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -118,24 +166,153 @@ describe("IntakeReviewPage", () => {
     mockedApi.retryIntake.mockResolvedValue(record() as never);
   });
 
-  it("renders calendar events and Machbar items separately, warnings, and assumed duration", async () => {
+  it("renders compact approval cards without exposing the full editors", async () => {
     renderPage();
     expect(await screen.findByRole("heading", { name: "Kalender" })).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Elternabend")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Elternabend" })).toBeInTheDocument();
     expect(screen.getByText("Machbar")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("Rückmeldezettel abgeben")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Rückmeldezettel abgeben" })).toBeInTheDocument();
     expect(screen.getByText("No end time in source; 60 min assumed")).toBeInTheDocument();
     expect(screen.getByText("Dauer angenommen")).toBeInTheDocument();
     expect(screen.getByText("Schulfest")).toBeInTheDocument();
     expect(screen.queryByDisplayValue("Schulfest")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "3 Elemente übernehmen" })).toBeInTheDocument();
   });
 
   it("renders an empty summary without an editable summary field", async () => {
     mockedApi.getIntake.mockResolvedValue({ ...record(), draft: { ...draft, summary: "" } } as never);
     renderPage();
-    await screen.findByDisplayValue("Elternabend");
+    await screen.findByRole("heading", { name: "Elternabend" });
     expect(screen.queryByDisplayValue("Schulfest")).not.toBeInTheDocument();
     expect(screen.queryByText("Schulfest")).not.toBeInTheDocument();
+  });
+
+  it("renders existing metadata compactly and omits unset controls", async () => {
+    renderPage();
+    const card = (await screen.findByRole("heading", { name: "Rückmeldezettel abgeben" })).closest("article")!;
+    expect(within(card).getByText("Aufgabe")).toBeInTheDocument();
+    expect(within(card).getByText("Mira")).toBeInTheDocument();
+    expect(within(card).getByText(/Fällig\s+02\.10\.2026/)).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "+ Geplant für" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "+ Ab" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "+ Erinnerung" })).toBeInTheDocument();
+    expect(within(card).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(card).queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it("opens focused editors and cancels authored title and notes without changing the draft", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: {
+        ...draft,
+        workItems: [
+          { ...draft.workItems[0]!, notes: "Original **note**" },
+          draft.workItems[1]!,
+        ],
+      },
+    } as never);
+    renderPage();
+    const editor = await openEditor("Rückmeldezettel abgeben");
+    expect(editor.getByRole("combobox", { name: "Art" })).toBeInTheDocument();
+    expect(editor.getByRole("group", { name: "Zuständig" })).toBeInTheDocument();
+    expect(editor.getByText("Original", { exact: false })).toBeInTheDocument();
+
+    fireEvent.click(editTitleButton(editor));
+    fireEvent.change(editor.getByRole("textbox", { name: "Titel" }), {
+      target: { value: "Uncommitted title" },
+    });
+    fireEvent.click(authoredField(editor, "Titel").getByRole("button", { name: "Abbrechen" }));
+    fireEvent.click(authoredField(editor, "Notizen").getByRole("button", { name: "Bearbeiten" }));
+    fireEvent.change(editor.getByRole("textbox", { name: "Notizen" }), {
+      target: { value: "Uncommitted note" },
+    });
+    fireEvent.click(authoredField(editor, "Notizen").getByRole("button", { name: "Abbrechen" }));
+    closeEditor(editor);
+
+    expect(screen.getByRole("heading", { name: "Rückmeldezettel abgeben" })).toBeInTheDocument();
+    expect(screen.getByText("Original", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText("Uncommitted title")).not.toBeInTheDocument();
+    expect(screen.queryByText("Uncommitted note")).not.toBeInTheDocument();
+    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+  });
+
+  it("updates owner selection immediately in the intake draft", async () => {
+    renderPage();
+    const editor = await openEditor("Rückmeldezettel abgeben");
+    fireEvent.click(editor.getByRole("button", { name: "Gemeinsam" }));
+    expect(editor.getByRole("button", { name: "Gemeinsam" })).toHaveAttribute("aria-pressed", "true");
+    closeEditor(editor);
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0]?.ownerMemberId).toBeNull();
+  });
+
+  it("keeps invalid local date entries visible on their proposal card until corrected", async () => {
+    renderPage();
+    const editor = await openEditor("Elternabend");
+    const start = editor.getByRole("textbox", { name: "Beginn" });
+    fireEvent.change(start, { target: { value: "32.13.2026" } });
+    fireEvent.blur(start);
+    closeEditor(editor);
+    const card = screen.getByRole("heading", { name: "Elternabend" }).closest("article")!;
+    expect(within(card).getByText(/Ungültige Datumseingabe/)).toHaveAttribute("role", "alert");
+    expect(applyButton()).toBeDisabled();
+    const reopenedEditor = await openEditor("Elternabend");
+    const reopenedStart = reopenedEditor.getByRole("textbox", { name: "Beginn" });
+    fireEvent.change(reopenedStart, { target: { value: "08.10.2026" } });
+    fireEvent.blur(reopenedStart);
+    expect(applyButton()).toBeEnabled();
+    closeEditor(reopenedEditor);
+    expect(within(card).queryByText(/Ungültige Datumseingabe/)).not.toBeInTheDocument();
+  });
+
+  it("uses the enabled proposal count and allows disabled cards to be restored", async () => {
+    renderPage();
+    const eventCard = (await screen.findByRole("heading", { name: "Elternabend" })).closest("article")!;
+    expect(applyButton()).toHaveTextContent("3 Elemente übernehmen");
+    fireEvent.click(within(eventCard).getByRole("checkbox", { name: "In Vorschlag übernehmen: Elternabend" }));
+    expect(eventCard).toHaveClass("intake-proposal-disabled");
+    expect(applyButton()).toHaveTextContent("2 Elemente übernehmen");
+    fireEvent.click(within(eventCard).getByRole("checkbox", { name: "In Vorschlag übernehmen: Elternabend" }));
+    expect(eventCard).not.toHaveClass("intake-proposal-disabled");
+    expect(applyButton()).toHaveTextContent("3 Elemente übernehmen");
+  });
+
+  it("clears fields that are illegal when changing the proposed work kind", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: {
+        ...draft,
+        workItems: [
+          {
+            ...draft.workItems[0]!,
+            scheduledDate: "2026-10-03",
+            notBeforeDate: "2026-10-04",
+            notBeforeAt: "2026-10-04T00:00:00.000Z",
+            reminderAt: "2026-10-02T08:00:00.000Z",
+            needsClarification: true,
+          },
+          draft.workItems[1]!,
+        ],
+      },
+    } as never);
+    renderPage();
+    const editor = await openEditor("Rückmeldezettel abgeben");
+    fireEvent.change(editor.getByRole("combobox", { name: "Art" }), {
+      target: { value: "project" },
+    });
+    closeEditor(editor);
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0]).toMatchObject({
+      kind: "project",
+      scheduledDate: null,
+      notBeforeDate: null,
+      notBeforeAt: null,
+      reminderAt: null,
+      needsClarification: false,
+    });
   });
 
   it.each([
@@ -146,42 +323,46 @@ describe("IntakeReviewPage", () => {
     ["Erinnerung", "Rückmeldezettel abgeben"],
   ])("blocks Apply for an invalid %s date and enables it when corrected", async (label, title) => {
     renderPage();
-    const card = (await screen.findByDisplayValue(title)).closest("article")!;
-    const input = within(card).getByRole("textbox", { name: label });
+    const editor = await openEditor(title);
+    const input = editor.getByRole("textbox", { name: label });
     expect(input).toHaveAttribute("type", "text");
     fireEvent.change(input, { target: { value: "32.13.2026" } });
     fireEvent.blur(input);
     expect(input).toHaveAttribute("aria-invalid", "true");
-    expect(within(card).getByText("Datum nicht erkannt")).toHaveAttribute("role", "alert");
-    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    expect(editor.getByText("Datum nicht erkannt")).toHaveAttribute("role", "alert");
+    expect(applyButton()).toBeDisabled();
+    closeEditor(editor);
+    fireEvent.click(applyButton());
     expect(mockedApi.applyIntake).not.toHaveBeenCalled();
-    fireEvent.change(input, { target: { value: label === "Geplant für" ? "01.10.2026" : "08.10.2026" } });
-    fireEvent.blur(input);
-    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeEnabled();
+    const reopenedEditor = await openEditor(title);
+    const reopenedInput = reopenedEditor.getByRole("textbox", { name: label });
+    fireEvent.change(reopenedInput, { target: { value: label === "Geplant für" ? "01.10.2026" : "08.10.2026" } });
+    fireEvent.blur(reopenedInput);
+    expect(applyButton()).toBeEnabled();
   });
 
   it("forgets invalid calendar and work dates when their controls disappear", async () => {
     renderPage();
-    const eventCard = (await screen.findByDisplayValue("Elternabend")).closest("article")!;
-    const start = within(eventCard).getByRole("textbox", { name: "Beginn" });
+    const eventEditor = await openEditor("Elternabend");
+    const start = eventEditor.getByRole("textbox", { name: "Beginn" });
     fireEvent.change(start, { target: { value: "32.13.2026" } });
     fireEvent.blur(start);
     expect(start).toHaveAttribute("aria-invalid", "true");
-    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled();
-    fireEvent.click(within(eventCard).getByRole("checkbox", { name: "Ganztägig" }));
-    expect(within(eventCard).getByLabelText("Beginn")).toHaveAttribute("type", "date");
-    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeEnabled();
+    expect(applyButton()).toBeDisabled();
+    fireEvent.click(eventEditor.getByRole("checkbox", { name: "Ganztägig" }));
+    expect(eventEditor.getByLabelText("Beginn")).toHaveAttribute("type", "date");
+    expect(applyButton()).toBeEnabled();
+    closeEditor(eventEditor);
 
-    const workCard = screen.getByDisplayValue("Rückmeldezettel abgeben").closest("article")!;
-    const due = within(workCard).getByRole("textbox", { name: "Fällig" });
+    const workEditor = await openEditor("Rückmeldezettel abgeben");
+    const due = workEditor.getByRole("textbox", { name: "Fällig" });
     fireEvent.change(due, { target: { value: "32.13.2026" } });
     fireEvent.blur(due);
     expect(due).toHaveAttribute("aria-invalid", "true");
-    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled();
-    fireEvent.change(within(workCard).getAllByRole("combobox")[0]!, { target: { value: "reference" } });
-    expect(within(workCard).queryByLabelText("Fällig")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeEnabled();
+    expect(applyButton()).toBeDisabled();
+    fireEvent.change(workEditor.getByRole("combobox", { name: "Art" }), { target: { value: "reference" } });
+    expect(workEditor.queryByLabelText("Fällig")).not.toBeInTheDocument();
+    expect(applyButton()).toBeEnabled();
   });
 
   it.each([
@@ -208,37 +389,49 @@ describe("IntakeReviewPage", () => {
       draft: { ...draft, calendarEvents: [{ ...draft.calendarEvents[0]!, allDay: true, startDate: "2026-10-08", endDate: "2026-10-08", startDateTime: null, endDateTime: null }] },
     } as never);
     renderPage();
-    const card = (await screen.findByDisplayValue("Elternabend")).closest("article")!;
-    expect(within(card).getByRole("checkbox", { name: "Ganztägig" })).toBeChecked();
-    expect(within(card).getByLabelText("Beginn")).toHaveAttribute("type", "date");
-    expect(within(card).getByLabelText("Ende")).toHaveAttribute("type", "date");
-    const kind = screen.getAllByRole("combobox")[0]!;
+    const editor = await openEditor("Elternabend");
+    expect(editor.getByRole("checkbox", { name: "Ganztägig" })).toBeChecked();
+    expect(editor.getByLabelText("Beginn")).toHaveAttribute("type", "date");
+    expect(editor.getByLabelText("Ende")).toHaveAttribute("type", "date");
+    closeEditor(editor);
+    const workEditor = await openEditor("Rückmeldezettel abgeben");
+    const kind = workEditor.getByRole("combobox", { name: "Art" });
     expect(within(kind).getByRole("option", { name: "Aufgabe" })).toBeInTheDocument();
     expect(within(kind).getByRole("option", { name: "Projekt" })).toBeInTheDocument();
     expect(within(kind).getByRole("option", { name: "Material" })).toBeInTheDocument();
-    fireEvent.change(within(card).getByLabelText("Ende"), { target: { value: "2026-10-09" } });
-    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    closeEditor(workEditor);
+    const eventEditor = await openEditor("Elternabend");
+    fireEvent.change(eventEditor.getByLabelText("Ende"), { target: { value: "2026-10-09" } });
+    closeEditor(eventEditor);
+    fireEvent.click(applyButton());
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
     expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.calendarEvents[0]?.endDate).toBe("2026-10-09");
   });
 
   it("writes calendar and reminder local date/time controls as canonical ISO values", async () => {
     renderPage();
-    const eventCard = (await screen.findByDisplayValue("Elternabend")).closest("article")!;
-    fireEvent.change(within(eventCard).getByLabelText("Beginn"), { target: { value: "09.10.2026" } });
-    fireEvent.blur(within(eventCard).getByLabelText("Beginn"));
-    fireEvent.change(within(eventCard).getAllByLabelText("Uhrzeit")[0]!, { target: { value: "16:30" } });
-    fireEvent.change(within(eventCard).getByLabelText("Ende"), { target: { value: "09.10.2026" } });
-    fireEvent.blur(within(eventCard).getByLabelText("Ende"));
-    const workCard = (screen.getByDisplayValue("Rückmeldezettel abgeben")).closest("article")!;
-    fireEvent.change(within(workCard).getByLabelText("Fällig"), { target: { value: "20.10.2026" } });
-    fireEvent.blur(within(workCard).getByLabelText("Fällig"));
-    fireEvent.change(within(workCard).getByLabelText("Geplant für"), { target: { value: "11.10.2026" } });
-    fireEvent.blur(within(workCard).getByLabelText("Geplant für"));
-    fireEvent.change(within(workCard).getByLabelText("Erinnerung"), { target: { value: "10.10.2026" } });
-    fireEvent.blur(within(workCard).getByLabelText("Erinnerung"));
-    fireEvent.change(within(workCard).getAllByLabelText("Uhrzeit")[1]!, { target: { value: "08:30" } });
-    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    const eventEditor = await openEditor("Elternabend");
+    const eventStart = eventEditor.getByLabelText("Beginn");
+    fireEvent.change(eventStart, { target: { value: "09.10.2026" } });
+    fireEvent.blur(eventStart);
+    fireEvent.change(eventEditor.getAllByLabelText("Uhrzeit")[0]!, { target: { value: "16:30" } });
+    const eventEnd = eventEditor.getByLabelText("Ende");
+    fireEvent.change(eventEnd, { target: { value: "09.10.2026" } });
+    fireEvent.blur(eventEnd);
+    closeEditor(eventEditor);
+    const workEditor = await openEditor("Rückmeldezettel abgeben");
+    const due = workEditor.getByLabelText("Fällig");
+    fireEvent.change(due, { target: { value: "20.10.2026" } });
+    fireEvent.blur(due);
+    const scheduled = workEditor.getByLabelText("Geplant für");
+    fireEvent.change(scheduled, { target: { value: "11.10.2026" } });
+    fireEvent.blur(scheduled);
+    const reminder = workEditor.getByLabelText("Erinnerung");
+    fireEvent.change(reminder, { target: { value: "10.10.2026" } });
+    fireEvent.blur(reminder);
+    fireEvent.change(workEditor.getAllByLabelText("Uhrzeit")[1]!, { target: { value: "08:30" } });
+    closeEditor(workEditor);
+    fireEvent.click(applyButton());
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
     const applied = mockedApi.applyIntake.mock.calls[0]![1].draft!;
     expect(applied.calendarEvents[0]?.startDateTime).toBe(new Date(2026, 9, 9, 16, 30).toISOString());
@@ -251,14 +444,15 @@ describe("IntakeReviewPage", () => {
 
   it("changes the apply payload only after Übernehmen and cascades parent disabling", async () => {
     renderPage();
-    await screen.findByDisplayValue("Elternabend");
-    const title = screen.getByDisplayValue("Elternabend");
-    fireEvent.change(title, { target: { value: "Neuer Elternabend" } });
-    const checkboxes = screen.getAllByRole("checkbox");
-    fireEvent.click(checkboxes[2]!);
-    expect((checkboxes[3] as HTMLInputElement).checked).toBe(false);
+    const eventEditor = await openEditor("Elternabend");
+    await changeTitle(eventEditor, "Neuer Elternabend");
+    closeEditor(eventEditor);
+    const parent = (await screen.findByRole("heading", { name: "Rückmeldezettel abgeben" })).closest("article")!;
+    fireEvent.click(within(parent).getByRole("checkbox", { name: "In Vorschlag übernehmen: Rückmeldezettel abgeben" }));
+    const child = screen.getByRole("checkbox", { name: "In Vorschlag übernehmen: Formular mitbringen" });
+    expect(child).not.toBeChecked();
     expect(mockedApi.applyIntake).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    fireEvent.click(applyButton());
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalled());
     expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.calendarEvents[0]?.title).toBe("Neuer Elternabend");
     expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[1]?.enabled).toBe(false);
@@ -266,7 +460,7 @@ describe("IntakeReviewPage", () => {
 
   it("does not autosave a loaded draft when only its revision is present", async () => {
     renderPage();
-    await screen.findByDisplayValue("Elternabend");
+    await screen.findByRole("heading", { name: "Elternabend" });
     vi.useFakeTimers();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_200);
@@ -276,9 +470,9 @@ describe("IntakeReviewPage", () => {
 
   it("debounces one actual edit by one second", async () => {
     renderPage();
-    const title = await screen.findByDisplayValue("Elternabend");
+    const editor = await openEditor("Elternabend");
     vi.useFakeTimers();
-    fireEvent.change(title, { target: { value: "Neuer Termin" } });
+    await changeTitle(editor, "Neuer Termin");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(999);
     });
@@ -299,14 +493,14 @@ describe("IntakeReviewPage", () => {
       .mockReturnValueOnce(firstSave as never)
       .mockImplementation(async (_id, body) => ({ ...record(), revision: 4, draft: body.draft } as never));
     renderPage();
-    const title = await screen.findByDisplayValue("Elternabend");
+    const editor = await openEditor("Elternabend");
     vi.useFakeTimers();
-    fireEvent.change(title, { target: { value: "Erster Stand" } });
+    await changeTitle(editor, "Erster Stand");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
-    fireEvent.change(screen.getByDisplayValue("Erster Stand"), { target: { value: "Neuester Stand" } });
+    await changeTitle(editor, "Neuester Stand");
     await act(async () => {
       finishFirst({ ...record(), revision: 3, draft: mockedApi.updateIntakeDraft.mock.calls[0]![1].draft } as never);
       await Promise.resolve();
@@ -326,10 +520,11 @@ describe("IntakeReviewPage", () => {
     });
     mockedApi.updateIntakeDraft.mockReturnValueOnce(save as never);
     renderPage();
-    const title = await screen.findByDisplayValue("Elternabend");
+    const editor = await openEditor("Elternabend");
     vi.useFakeTimers();
-    fireEvent.change(title, { target: { value: "Aktualisiert" } });
-    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    await changeTitle(editor, "Aktualisiert");
+    closeEditor(editor);
+    fireEvent.click(applyButton());
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
     expect(mockedApi.applyIntake).not.toHaveBeenCalled();
     await act(async () => {
@@ -356,16 +551,16 @@ describe("IntakeReviewPage", () => {
       Object.assign(new Error("stale"), { name: "ApiError", code: "stale_write_conflict" }),
     );
     renderPage();
-    const title = await screen.findByDisplayValue("Elternabend");
+    const editor = await openEditor("Elternabend");
     vi.useFakeTimers();
-    fireEvent.change(title, { target: { value: "Local update" } });
+    await changeTitle(editor, "Local update");
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
       await Promise.resolve();
       await Promise.resolve();
     });
     expect(mockedApi.getIntake).toHaveBeenCalledTimes(2);
-    expect(screen.getByDisplayValue("Server update")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Server update" })).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3_000);
     });
@@ -388,15 +583,17 @@ describe("IntakeReviewPage", () => {
       },
     } as never);
     renderPage();
-    const eventCard = (await screen.findByDisplayValue("Elternabend")).closest("article")!;
+    const eventEditor = await openEditor("Elternabend");
     vi.useFakeTimers();
-    fireEvent.click(within(eventCard).getAllByRole("checkbox")[1]!);
-    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled();
+    fireEvent.click(eventEditor.getByRole("checkbox", { name: "Ganztägig" }));
+    expect(applyButton()).toBeDisabled();
     await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
     expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
-    fireEvent.change(within(eventCard).getByLabelText("Ende"), { target: { value: "08.10.2026" } });
-    fireEvent.blur(within(eventCard).getByLabelText("Ende"));
-    fireEvent.change(within(eventCard).getAllByLabelText("Uhrzeit")[1]!, { target: { value: "20:00" } });
+    const endDate = eventEditor.getByLabelText("Ende");
+    fireEvent.change(endDate, { target: { value: "08.10.2026" } });
+    fireEvent.blur(endDate);
+    fireEvent.change(eventEditor.getAllByLabelText("Uhrzeit")[1]!, { target: { value: "20:00" } });
+    closeEditor(eventEditor);
     await act(async () => { await vi.advanceTimersByTimeAsync(999); });
     expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
@@ -410,14 +607,14 @@ describe("IntakeReviewPage", () => {
       .mockRejectedValueOnce(new Error("Save unavailable"))
       .mockImplementation(async (_id, body) => ({ ...record(), revision: 3, draft: body.draft } as never));
     renderPage();
-    const title = await screen.findByDisplayValue("Elternabend");
+    const editor = await openEditor("Elternabend");
     vi.useFakeTimers();
-    fireEvent.change(title, { target: { value: "First edit" } });
+    await changeTitle(editor, "First edit");
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
     expect(screen.getByRole("alert")).toHaveTextContent("Save unavailable");
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
-    fireEvent.change(title, { target: { value: "Second edit" } });
+    await changeTitle(editor, "Second edit");
     await act(async () => { await vi.advanceTimersByTimeAsync(999); });
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
@@ -436,11 +633,11 @@ describe("IntakeReviewPage", () => {
       Object.assign(new Error("raw API text"), { name: "ApiError", code }),
     );
     renderPage();
-    await screen.findByDisplayValue("Elternabend");
-    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    await screen.findByRole("heading", { name: "Elternabend" });
+    fireEvent.click(applyButton());
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
-    expect(screen.getByDisplayValue("Elternabend")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    expect(screen.getByRole("heading", { name: "Elternabend" })).toBeInTheDocument();
+    fireEvent.click(applyButton());
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
     expect(screen.queryByText(message)).not.toBeInTheDocument();
   });
@@ -457,9 +654,12 @@ describe("IntakeReviewPage", () => {
       draft: { ...draft, calendarEvents: [draft.calendarEvents[0]!, secondEvent] },
     } as never);
     renderPage();
-    const endInputs = await screen.findAllByLabelText("Ende");
-    expect(within(endInputs[0]!.closest("article")!).queryByRole("alert")).not.toBeInTheDocument();
-    expect(within(endInputs[1]!.closest("article")!).getByText("Enabled timed events require an end.")).toBeInTheDocument();
+    const firstCard = (await screen.findByRole("heading", { name: "Elternabend" })).closest("article")!;
+    const secondCard = screen.getByRole("heading", { name: "Zweiter Termin" }).closest("article")!;
+    expect(within(firstCard).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(secondCard).getByText("Enabled timed events require an end.")).toBeInTheDocument();
+    const editor = await openEditor("Zweiter Termin");
+    expect(editor.getByText("Enabled timed events require an end.")).toBeInTheDocument();
   });
 
   it("shows a warning when an all-day event transitions to a timed event without an end", async () => {
@@ -476,17 +676,21 @@ describe("IntakeReviewPage", () => {
       draft: { ...draft, calendarEvents: [allDayEvent] },
     } as never);
     renderPage();
-    const eventCard = (await screen.findByDisplayValue("Elternabend")).closest("article")!;
-    fireEvent.click(within(eventCard).getAllByRole("checkbox")[1]!);
-    expect(within(eventCard).getByText("Bitte eine Endzeit ergänzen; es wird keine Dauer angenommen.")).toBeInTheDocument();
-    expect(within(eventCard).getByLabelText("Ende")).toHaveValue("");
+    const editor = await openEditor("Elternabend");
+    fireEvent.click(editor.getByRole("checkbox", { name: "Ganztägig" }));
+    const card = screen.getByRole("heading", { name: "Elternabend" }).closest("article")!;
+    expect(within(card).getByText("Bitte eine Endzeit ergänzen; es wird keine Dauer angenommen.")).toBeInTheDocument();
+    expect(editor.getByLabelText("Ende")).toHaveValue("");
   });
 
   it("supports a date-only availability value and keeps the API pair coherent", async () => {
     renderPage();
-    const dates = await screen.findAllByLabelText("Ab");
-    fireEvent.change(dates[0]!, { target: { value: "2026-10-12" } });
-    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    const editor = await openEditor("Rückmeldezettel abgeben");
+    const date = editor.getByRole("textbox", { name: "Ab" });
+    fireEvent.change(date, { target: { value: "12.10.2026" } });
+    fireEvent.blur(date);
+    closeEditor(editor);
+    fireEvent.click(applyButton());
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalled());
     const availability = mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0];
     expect(availability?.notBeforeDate).toBe("2026-10-12");
@@ -496,17 +700,22 @@ describe("IntakeReviewPage", () => {
 
   it("changes a timed availability date and clears both date and time fields", async () => {
     renderPage();
-    const dates = await screen.findAllByLabelText("Ab");
-    fireEvent.change(dates[0]!, { target: { value: "2026-10-12" } });
-    fireEvent.click(screen.getAllByRole("checkbox", { name: "Uhrzeit" })[0]!);
-    fireEvent.change(screen.getByDisplayValue("08:00"), { target: { value: "17:30" } });
-    fireEvent.change(dates[0]!, { target: { value: "2026-10-13" } });
-    expect(dates[0]).toHaveValue("2026-10-13");
-    expect(screen.getByDisplayValue("17:30")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: "Ab-Datum entfernen" })[0]!);
-    expect(dates[0]).toHaveValue("");
-    expect(screen.getAllByRole("checkbox", { name: "Uhrzeit" })[0]).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }));
+    const editor = await openEditor("Rückmeldezettel abgeben");
+    const date = editor.getByRole("textbox", { name: "Ab" });
+    fireEvent.change(date, { target: { value: "12.10.2026" } });
+    fireEvent.blur(date);
+    fireEvent.click(editor.getByRole("checkbox", { name: "Uhrzeit" }));
+    fireEvent.change(editor.getByDisplayValue("08:00"), { target: { value: "17:30" } });
+    fireEvent.change(date, { target: { value: "13.10.2026" } });
+    fireEvent.blur(date);
+    expect(date).toHaveValue("13.10.2026");
+    expect(editor.getByDisplayValue("17:30")).toBeInTheDocument();
+    fireEvent.change(date, { target: { value: "" } });
+    fireEvent.blur(date);
+    expect(date).toHaveValue("");
+    expect(editor.getByRole("checkbox", { name: "Uhrzeit" })).toBeDisabled();
+    closeEditor(editor);
+    fireEvent.click(applyButton());
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalled());
     const availability = mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0];
     expect(availability?.notBeforeDate).toBeNull();
