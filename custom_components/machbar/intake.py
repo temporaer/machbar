@@ -113,7 +113,11 @@ def _normalize_string(value: Any, nullable: bool = True) -> str | None:
         return None
     if not isinstance(value, str):
         raise AdapterError("ai_task_invalid_response")
-    return value.strip()
+    stripped = value.strip()
+    # Models often emit "" for absent nullable fields; Machbar expects null.
+    if not stripped and nullable:
+        return None
+    return stripped
 
 
 def _normalize_strings(value: Any) -> list[str]:
