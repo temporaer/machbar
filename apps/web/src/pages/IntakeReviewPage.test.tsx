@@ -113,6 +113,12 @@ async function openEditor(title: string) {
   return within(await screen.findByRole("dialog"));
 }
 
+async function openWorkPropertyEditor(title: string, propertyName: string) {
+  const card = (await screen.findByRole("heading", { name: title })).closest("article")!;
+  fireEvent.click(within(card).getByRole("button", { name: propertyName }));
+  return within(await screen.findByRole("dialog"));
+}
+
 function applyButton() {
   return screen.getByRole("button", { name: /übernehmen$/i });
 }
@@ -132,7 +138,8 @@ function editTitleButton(editor: ReturnType<typeof within>) {
 }
 
 async function changeTitle(editor: ReturnType<typeof within>, title: string) {
-  fireEvent.click(editTitleButton(editor));
+  const editButton = editor.queryByRole("button", { name: "Bearbeiten" });
+  if (editButton) fireEvent.click(editButton);
   fireEvent.change(editor.getByRole("textbox", { name: "Titel" }), {
     target: { value: title },
   });
@@ -193,7 +200,7 @@ describe("IntakeReviewPage", () => {
     const card = (await screen.findByRole("heading", { name: "Rückmeldezettel abgeben" })).closest("article")!;
     expect(within(card).getByText("Aufgabe")).toBeInTheDocument();
     expect(within(card).getByText("Mira")).toBeInTheDocument();
-    expect(within(card).getByText(/Fällig\s+02\.10\.2026/)).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "Fällig: 02.10.2026" })).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "+ Geplant für" })).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "+ Ab" })).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "+ Erinnerung" })).toBeInTheDocument();
@@ -215,7 +222,7 @@ describe("IntakeReviewPage", () => {
     renderPage();
     const editor = await openEditor("Rückmeldezettel abgeben");
     expect(editor.getByRole("combobox", { name: "Art" })).toBeInTheDocument();
-    expect(editor.getByRole("group", { name: "Zuständig" })).toBeInTheDocument();
+    expect(editor.queryByRole("group", { name: "Zuständig" })).not.toBeInTheDocument();
     expect(editor.getByText("Original", { exact: false })).toBeInTheDocument();
 
     fireEvent.click(editTitleButton(editor));
@@ -237,34 +244,92 @@ describe("IntakeReviewPage", () => {
     expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
   });
 
+  it("cancels calendar authored edits without changing the intake draft", async () => {
+    renderPage();
+    const editor = await openEditor("Elternabend");
+    const title = editor.getByRole("textbox", { name: "Titel" });
+    fireEvent.change(title, { target: { value: "Uncommitted event title" } });
+    fireEvent.click(authoredField(editor, "Titel").getByRole("button", { name: "Abbrechen" }));
+    expect(title).toHaveValue("Elternabend");
+    closeEditor(editor);
+    expect(screen.getByRole("heading", { name: "Elternabend" })).toBeInTheDocument();
+    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+  });
+
   it("updates owner selection immediately in the intake draft", async () => {
     renderPage();
-    const editor = await openEditor("Rückmeldezettel abgeben");
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "Zuständig: Mira");
+    expect(editor.getByRole("group", { name: "Zuständig" })).toBeInTheDocument();
     fireEvent.click(editor.getByRole("button", { name: "Gemeinsam" }));
-    expect(editor.getByRole("button", { name: "Gemeinsam" })).toHaveAttribute("aria-pressed", "true");
-    closeEditor(editor);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     fireEvent.click(applyButton());
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
     expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0]?.ownerMemberId).toBeNull();
   });
 
-  it("keeps invalid local date entries visible on their proposal card until corrected", async () => {
+  it("opens unset pills in focused editors and updates only the selected property", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Geplant für");
+    expect(editor.getByRole("textbox", { name: "Geplant für" })).toBeInTheDocument();
+    expect(editor.queryByLabelText("Fällig")).not.toBeInTheDocument();
+    expect(editor.queryByLabelText("Ab")).not.toBeInTheDocument();
+    const date = editor.getByRole("textbox", { name: "Geplant für" });
+    fireEvent.change(date, { target: { value: "12.10.2026" } });
+    fireEvent.blur(date);
+    closeEditor(editor);
+
+    const card = screen.getByRole("heading", { name: "Rückmeldezettel abgeben" }).closest("article")!;
+    const scheduledPill = within(card).getByRole("button", { name: "Geplant für: 12.10.2026" });
+    expect(scheduledPill).toBeInTheDocument();
+    fireEvent.click(scheduledPill);
+    const focusedEditor = within(await screen.findByRole("dialog"));
+    expect(focusedEditor.getByRole("textbox", { name: "Geplant für" })).toHaveValue("12.10.2026");
+    expect(focusedEditor.queryByLabelText("Fällig")).not.toBeInTheDocument();
+    expect(focusedEditor.queryByLabelText("Ab")).not.toBeInTheDocument();
+    closeEditor(focusedEditor);
+  });
+
+  it("autosaves a valid committed property edit normally", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "Fällig: 02.10.2026");
+    vi.useFakeTimers();
+    const date = editor.getByRole("textbox", { name: "Fällig" });
+    fireEvent.change(date, { target: { value: "20.10.2026" } });
+    fireEvent.blur(date);
+    expect(applyButton()).toBeEnabled();
+    closeEditor(editor);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+    });
+    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
+    expect(mockedApi.updateIntakeDraft.mock.calls[0]?.[1].draft.workItems[0]).toMatchObject({
+      dueDate: "2026-10-20",
+      scheduledDate: null,
+      notBeforeDate: null,
+      reminderAt: null,
+    });
+  });
+
+  it("clears an invalid local date when its focused editor is dismissed", async () => {
     renderPage();
     const editor = await openEditor("Elternabend");
     const start = editor.getByRole("textbox", { name: "Beginn" });
     fireEvent.change(start, { target: { value: "32.13.2026" } });
     fireEvent.blur(start);
+    expect(start).toHaveAttribute("aria-invalid", "true");
     closeEditor(editor);
     const card = screen.getByRole("heading", { name: "Elternabend" }).closest("article")!;
-    expect(within(card).getByText(/Ungültige Datumseingabe/)).toHaveAttribute("role", "alert");
-    expect(applyButton()).toBeDisabled();
+    expect(within(card).queryByText(/Ungültige Datumseingabe/)).not.toBeInTheDocument();
+    expect(applyButton()).toBeEnabled();
     const reopenedEditor = await openEditor("Elternabend");
     const reopenedStart = reopenedEditor.getByRole("textbox", { name: "Beginn" });
-    fireEvent.change(reopenedStart, { target: { value: "08.10.2026" } });
-    fireEvent.blur(reopenedStart);
+    expect(reopenedStart).toHaveValue("08.10.2026");
     expect(applyButton()).toBeEnabled();
     closeEditor(reopenedEditor);
-    expect(within(card).queryByText(/Ungültige Datumseingabe/)).not.toBeInTheDocument();
   });
 
   it("uses the enabled proposal count and allows disabled cards to be restored", async () => {
@@ -316,14 +381,16 @@ describe("IntakeReviewPage", () => {
   });
 
   it.each([
-    ["Beginn", "Elternabend"],
-    ["Ende", "Elternabend"],
-    ["Fällig", "Rückmeldezettel abgeben"],
-    ["Geplant für", "Rückmeldezettel abgeben"],
-    ["Erinnerung", "Rückmeldezettel abgeben"],
-  ])("blocks Apply for an invalid %s date and enables it when corrected", async (label, title) => {
+    ["Beginn", "Elternabend", null],
+    ["Ende", "Elternabend", null],
+    ["Fällig", "Rückmeldezettel abgeben", "Fällig: 02.10.2026"],
+    ["Geplant für", "Rückmeldezettel abgeben", "+ Geplant für"],
+    ["Erinnerung", "Rückmeldezettel abgeben", "+ Erinnerung"],
+  ])("blocks Apply for an invalid %s date while visible and clears it on dismiss", async (label, title, propertyName) => {
     renderPage();
-    const editor = await openEditor(title);
+    const editor = propertyName
+      ? await openWorkPropertyEditor(title, propertyName)
+      : await openEditor(title);
     const input = editor.getByRole("textbox", { name: label });
     expect(input).toHaveAttribute("type", "text");
     fireEvent.change(input, { target: { value: "32.13.2026" } });
@@ -332,13 +399,20 @@ describe("IntakeReviewPage", () => {
     expect(editor.getByText("Datum nicht erkannt")).toHaveAttribute("role", "alert");
     expect(applyButton()).toBeDisabled();
     closeEditor(editor);
-    fireEvent.click(applyButton());
-    expect(mockedApi.applyIntake).not.toHaveBeenCalled();
-    const reopenedEditor = await openEditor(title);
-    const reopenedInput = reopenedEditor.getByRole("textbox", { name: label });
-    fireEvent.change(reopenedInput, { target: { value: label === "Geplant für" ? "01.10.2026" : "08.10.2026" } });
-    fireEvent.blur(reopenedInput);
     expect(applyButton()).toBeEnabled();
+    const card = screen.getByRole("heading", { name: title }).closest("article")!;
+    expect(within(card).queryByText(/Ungültige Datumseingabe/)).not.toBeInTheDocument();
+    const reopenedEditor = propertyName
+      ? await openWorkPropertyEditor(title, propertyName)
+      : await openEditor(title);
+    const reopenedInput = reopenedEditor.getByRole("textbox", { name: label });
+    expect(reopenedInput).toHaveValue(
+      label === "Beginn" ? "08.10.2026" :
+      label === "Ende" ? "08.10.2026" :
+      label === "Fällig" ? "02.10.2026" : "",
+    );
+    expect(applyButton()).toBeEnabled();
+    closeEditor(reopenedEditor);
   });
 
   it("forgets invalid calendar and work dates when their controls disappear", async () => {
@@ -354,15 +428,19 @@ describe("IntakeReviewPage", () => {
     expect(applyButton()).toBeEnabled();
     closeEditor(eventEditor);
 
-    const workEditor = await openEditor("Rückmeldezettel abgeben");
+    const workEditor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "Fällig: 02.10.2026");
     const due = workEditor.getByRole("textbox", { name: "Fällig" });
     fireEvent.change(due, { target: { value: "32.13.2026" } });
     fireEvent.blur(due);
     expect(due).toHaveAttribute("aria-invalid", "true");
     expect(applyButton()).toBeDisabled();
-    fireEvent.change(workEditor.getByRole("combobox", { name: "Art" }), { target: { value: "reference" } });
-    expect(workEditor.queryByLabelText("Fällig")).not.toBeInTheDocument();
+    closeEditor(workEditor);
     expect(applyButton()).toBeEnabled();
+    const contentEditor = await openEditor("Rückmeldezettel abgeben");
+    fireEvent.change(contentEditor.getByRole("combobox", { name: "Art" }), { target: { value: "reference" } });
+    expect(contentEditor.queryByLabelText("Fällig")).not.toBeInTheDocument();
+    expect(applyButton()).toBeEnabled();
+    closeEditor(contentEditor);
   });
 
   it.each([
@@ -419,18 +497,22 @@ describe("IntakeReviewPage", () => {
     fireEvent.change(eventEnd, { target: { value: "09.10.2026" } });
     fireEvent.blur(eventEnd);
     closeEditor(eventEditor);
-    const workEditor = await openEditor("Rückmeldezettel abgeben");
+    const workEditor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "Fällig: 02.10.2026");
     const due = workEditor.getByLabelText("Fällig");
     fireEvent.change(due, { target: { value: "20.10.2026" } });
     fireEvent.blur(due);
-    const scheduled = workEditor.getByLabelText("Geplant für");
+    closeEditor(workEditor);
+    const planningEditor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Geplant für");
+    const scheduled = planningEditor.getByLabelText("Geplant für");
     fireEvent.change(scheduled, { target: { value: "11.10.2026" } });
     fireEvent.blur(scheduled);
-    const reminder = workEditor.getByLabelText("Erinnerung");
+    closeEditor(planningEditor);
+    const reminderEditor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
+    const reminder = reminderEditor.getByLabelText("Erinnerung");
     fireEvent.change(reminder, { target: { value: "10.10.2026" } });
     fireEvent.blur(reminder);
-    fireEvent.change(workEditor.getAllByLabelText("Uhrzeit")[1]!, { target: { value: "08:30" } });
-    closeEditor(workEditor);
+    fireEvent.change(reminderEditor.getByLabelText("Uhrzeit"), { target: { value: "08:30" } });
+    closeEditor(reminderEditor);
     fireEvent.click(applyButton());
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
     const applied = mockedApi.applyIntake.mock.calls[0]![1].draft!;
@@ -685,7 +767,7 @@ describe("IntakeReviewPage", () => {
 
   it("supports a date-only availability value and keeps the API pair coherent", async () => {
     renderPage();
-    const editor = await openEditor("Rückmeldezettel abgeben");
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Ab");
     const date = editor.getByRole("textbox", { name: "Ab" });
     fireEvent.change(date, { target: { value: "12.10.2026" } });
     fireEvent.blur(date);
@@ -700,7 +782,7 @@ describe("IntakeReviewPage", () => {
 
   it("changes a timed availability date and clears both date and time fields", async () => {
     renderPage();
-    const editor = await openEditor("Rückmeldezettel abgeben");
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Ab");
     const date = editor.getByRole("textbox", { name: "Ab" });
     fireEvent.change(date, { target: { value: "12.10.2026" } });
     fireEvent.blur(date);

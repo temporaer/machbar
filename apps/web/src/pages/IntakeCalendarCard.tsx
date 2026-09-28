@@ -1,11 +1,10 @@
 import { useState } from "react";
 import type { IntakeDraftCalendarEvent, IntakeIssue } from "@machbar/shared";
 import { useLocale } from "../lib/locale";
-import { transitionCalendarAllDay } from "../lib/intakeDraft";
 import { useStrings } from "../lib/strings";
-import { BottomSheet } from "../components/BottomSheet";
 import { MarkdownNotes } from "../components/MarkdownNotes";
-import { IntakeIssueText, IntakeLocalDateTimeField, type DateValidityChange } from "./IntakeReviewFields";
+import type { DateValidityChange } from "./IntakeReviewFields";
+import { IntakeCalendarEditSheet } from "./IntakeCalendarEditSheet";
 
 export function IntakeCalendarCard({
   event,
@@ -25,12 +24,6 @@ export function IntakeCalendarCard({
   const strings = useStrings();
   const { locale } = useLocale();
   const [editing, setEditing] = useState(false);
-  const [detailsEditing, setDetailsEditing] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(event.title);
-  const [locationDraft, setLocationDraft] = useState(event.location ?? "");
-  const [descriptionDraft, setDescriptionDraft] = useState(
-    event.description ?? "",
-  );
   const cardIssues = issues.filter(
     (issue) =>
       issue.path[0] === "calendarEvents" && issue.path[1] === index,
@@ -53,16 +46,8 @@ export function IntakeCalendarCard({
           minute: "2-digit",
         }).format(new Date(event.endDateTime))
       : null;
-  const eventWarning = !event.allDay && !event.endDateTime
-    ? strings.intakeTimedWarning
-    : null;
-  const openEditor = () => {
-    setTitleDraft(event.title);
-    setLocationDraft(event.location ?? "");
-    setDescriptionDraft(event.description ?? "");
-    setDetailsEditing(false);
-    setEditing(true);
-  };
+  const eventWarning =
+    !event.allDay && !event.endDateTime ? strings.intakeTimedWarning : null;
 
   return (
     <>
@@ -108,7 +93,9 @@ export function IntakeCalendarCard({
           <span className="badge">{strings.intakeAssumedDuration}</span>
         ) : null}
         {eventWarning ? (
-          <p className="intake-card-warning" role="status">{eventWarning}</p>
+          <p className="intake-card-warning" role="status">
+            {eventWarning}
+          </p>
         ) : null}
         {cardIssues.length ? (
           <div className="intake-card-issues" role="alert">
@@ -125,193 +112,23 @@ export function IntakeCalendarCard({
         <div className="intake-card-actions">
           <button
             type="button"
-            className="btn btn-small"
+            className="btn btn-sm"
             aria-label={`${strings.edit}: ${event.title}`}
-            onClick={openEditor}
+            onClick={() => setEditing(true)}
           >
             {strings.edit}
           </button>
         </div>
       </article>
       {editing ? (
-        <BottomSheet
-          title={`${strings.edit}: ${event.title}`}
+        <IntakeCalendarEditSheet
+          event={event}
+          index={index}
+          issues={issues}
+          onDateValidityChange={onDateValidityChange}
+          onChange={onChange}
           onClose={() => setEditing(false)}
-        >
-          <div className="stack intake-edit-sheet">
-            <section className="intake-authored-field">
-              <div className="intake-authored-heading">
-                <strong>{strings.intakeProposalTitle}</strong>
-                {!detailsEditing ? (
-                  <button
-                    type="button"
-                    className="btn btn-small"
-                    onClick={() => setDetailsEditing(true)}
-                  >
-                    {strings.edit}
-                  </button>
-                ) : null}
-              </div>
-              {detailsEditing ? (
-                <>
-                  <label>
-                    {strings.intakeProposalTitle}
-                    <input
-                      value={titleDraft}
-                      onChange={(input) => setTitleDraft(input.target.value)}
-                    />
-                  </label>
-                  <label>
-                    {strings.intakeLocation}
-                    <input
-                      value={locationDraft}
-                      onChange={(input) => setLocationDraft(input.target.value)}
-                    />
-                  </label>
-                  <label>
-                    {strings.intakeDescription}
-                    <textarea
-                      value={descriptionDraft}
-                      onChange={(input) =>
-                        setDescriptionDraft(input.target.value)
-                      }
-                    />
-                  </label>
-                  <div className="row">
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => {
-                        onChange({
-                          ...event,
-                          title: titleDraft,
-                          location: locationDraft || null,
-                          description: descriptionDraft || null,
-                        });
-                        setDetailsEditing(false);
-                      }}
-                    >
-                      {strings.save}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => {
-                        setTitleDraft(event.title);
-                        setLocationDraft(event.location ?? "");
-                        setDescriptionDraft(event.description ?? "");
-                        setDetailsEditing(false);
-                      }}
-                    >
-                      {strings.cancel}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <p>{event.title}</p>
-              )}
-            </section>
-            <label>
-              <input
-                type="checkbox"
-                checked={event.enabled}
-                onChange={(input) =>
-                  onChange({ ...event, enabled: input.target.checked })
-                }
-              />{" "}
-              {strings.intakeInclude}
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={event.allDay}
-                onChange={(input) =>
-                  onChange(transitionCalendarAllDay(event, input.target.checked))
-                }
-              />{" "}
-              {strings.intakeAllDay}
-            </label>
-            {event.allDay ? (
-              <>
-                <label>
-                  {strings.intakeStartDate}
-                  <input
-                    type="date"
-                    aria-label={strings.intakeStartDate}
-                    value={event.startDate ?? ""}
-                    onChange={(input) =>
-                      onChange({
-                        ...event,
-                        startDate: input.target.value || null,
-                      })
-                    }
-                  />
-                </label>
-                <label>
-                  {strings.intakeEndDate}
-                  <input
-                    type="date"
-                    aria-label={strings.intakeEndDate}
-                    value={event.endDate ?? ""}
-                    onChange={(input) =>
-                      onChange({
-                        ...event,
-                        endDate: input.target.value || null,
-                      })
-                    }
-                  />
-                </label>
-              </>
-            ) : (
-              <>
-                <IntakeLocalDateTimeField
-                  key={`${event.key}-start`}
-                  id={`intake-event-${event.key}-start`}
-                  fieldKey={`calendar:${event.key}:start`}
-                  onDateValidityChange={onDateValidityChange}
-                  label={strings.intakeStartDate}
-                  value={event.startDateTime}
-                  onChange={(startDateTime) =>
-                    onChange({ ...event, startDateTime })
-                  }
-                />
-                <IntakeIssueText
-                  issues={issues}
-                  path={["calendarEvents", index, "startDateTime"]}
-                />
-                <IntakeLocalDateTimeField
-                  key={`${event.key}-end`}
-                  id={`intake-event-${event.key}-end`}
-                  fieldKey={`calendar:${event.key}:end`}
-                  onDateValidityChange={onDateValidityChange}
-                  label={strings.intakeEndDate}
-                  value={event.endDateTime}
-                  onChange={(endDateTime) =>
-                    onChange({
-                      ...event,
-                      endDateTime,
-                      durationAssumed: false,
-                    })
-                  }
-                />
-                <IntakeIssueText
-                  issues={issues}
-                  path={["calendarEvents", index, "endDateTime"]}
-                />
-              </>
-            )}
-            <IntakeIssueText
-              issues={issues}
-              path={["calendarEvents", index]}
-            />
-            {event.durationAssumed ? (
-              <span className="badge">{strings.intakeAssumedDuration}</span>
-            ) : null}
-            {!event.allDay && !event.endDateTime ? (
-              <small className="text-muted">{strings.intakeTimedWarning}</small>
-            ) : null}
-          </div>
-        </BottomSheet>
+        />
       ) : null}
     </>
   );
