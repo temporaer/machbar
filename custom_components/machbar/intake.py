@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import tempfile
 from pathlib import Path
@@ -12,6 +13,7 @@ import voluptuous as vol
 
 from .const import MAX_ATTACHMENT_BYTES
 
+_LOGGER = logging.getLogger(__name__)
 _NULL = vol.Any(None, str)
 
 
@@ -33,7 +35,7 @@ def _calendar_schema() -> vol.Schema:
             _field("endDateTime", _NULL): _NULL,
             _field("relatedWorkKeys", [str]): [str],
         },
-        extra=vol.ALLOW_EXTRA,
+        extra=vol.PREVENT_EXTRA,
     )
 
 
@@ -56,7 +58,14 @@ def _work_schema() -> vol.Schema:
             _field("needsClarification", bool): bool,
             _field("relatedCalendarKeys", [str]): [str],
         },
-        extra=vol.ALLOW_EXTRA,
+        extra=vol.PREVENT_EXTRA,
+    )
+
+
+def _warning_schema() -> vol.Schema:
+    return vol.Schema(
+        {_field("message", str): str},
+        extra=vol.PREVENT_EXTRA,
     )
 
 
@@ -65,11 +74,9 @@ INTAKE_STRUCTURE = vol.Schema(
         _field("summary", str): str,
         _field("calendarEvents", [_calendar_schema()]): [_calendar_schema()],
         _field("workItems", [_work_schema()]): [_work_schema()],
-        _field("warnings", [{_field("message", str): str}]): [
-            {_field("message", str): str}
-        ],
+        _field("warnings", [_warning_schema()]): [_warning_schema()],
     },
-    extra=vol.ALLOW_EXTRA,
+    extra=vol.PREVENT_EXTRA,
 )
 
 
@@ -200,6 +207,7 @@ async def async_analyze(hass: Any, client: Any, entity_id: str | None, payload: 
                 instructions=instructions, structure=INTAKE_STRUCTURE
             )
         except Exception as err:
+            _LOGGER.exception("Machbar AI Task generation failed")
             raise AdapterError("ai_task_failed") from err
         return normalize_plan(result.data)
 
@@ -235,6 +243,7 @@ async def async_analyze(hass: Any, client: Any, entity_id: str | None, payload: 
                     ),
                 )
         except Exception as err:
+            _LOGGER.exception("Machbar AI Task generation failed")
             raise AdapterError("ai_task_failed") from err
         return normalize_plan(result.data)
     except AdapterError:
