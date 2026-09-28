@@ -14,7 +14,7 @@ const rules = [
   "13. If the source implies work but not a concrete next action, create an action with needsClarification=true rather than inventing details.",
   "14. Never invent dates, durations, times, locations, ownership, deadlines, or recurrence. Use null.",
   "15. If an event has a start time but no end time, set endDateTime=null and add a warning. Do not assume a duration.",
-  "16. All-day events use allDay=true with startDate/endDate (inclusive) and null datetimes. Timed events use the reverse.",
+  "16. All-day events use allDay=true with startDate/endDate (inclusive) and null datetimes. Timed events use startDateTime/endDateTime and null startDate/endDate. Never populate both date and date-time fields; use JSON null for the unused pair.",
   "17. Household members: {members}. Set ownerName only if the source explicitly names one of them (exact name); otherwise null.",
   "18. Keys are short lowercase slugs ([a-z0-9_-]), unique across events and work items; express hierarchy only via parentKey.",
   "19. Projects may only have dueDate; references have no dates, owner, or reminder.",
