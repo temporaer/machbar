@@ -38,6 +38,12 @@ MACHBAR_BIND_ADDRESS=0.0.0.0
 
 The named `machbar-data` volume is mounted at `/data`.
 
+The same data directory contains the temporary Verarbeiten scratch area at
+`<DATA_DIR>/intake`. Keep it on the persistent volume so an intake survives a
+container restart while it is being reviewed. Jobs, request rows, and uploaded
+files are cleaned up after 24 hours; excluding this subdirectory from backups
+is reasonable because it is not durable household history.
+
 ```bash
 docker compose logs -f
 docker compose down
@@ -94,6 +100,13 @@ docker compose up --build -d
 Pending migrations run during startup. Review release notes and migration
 changes before upgrading an important installation.
 
+When upgrading Verarbeiten, upgrade the paired Machbar Home Assistant custom
+integration at the same time. Protocol 2 has no v1 compatibility mode. After
+the Home Assistant component update, reopen its options flow and select the
+configured `ai_task.*` entity and writable `calendar.*` entity again if
+necessary. Home Assistant must be online for intake analysis and calendar
+creation.
+
 ## Health check
 
 `GET /api/health` returns a successful JSON response while the API is running.
@@ -131,6 +144,12 @@ With Compose, obtain the generated container name with `docker compose ps`.
 | `PAPERLESS_URL` | unset | HTTPS base URL of the optional Paperless-ngx instance |
 | `PAPERLESS_API_TOKEN` | unset | Server-only Paperless API token; configure together with `PAPERLESS_URL` |
 
+Verarbeiten requires no additional environment variable. Machbar stores no
+AI-provider credential or model key (including no OpenAI key), no Google
+credential, and no Home Assistant access token. The Home Assistant component
+uses its paired machine credential and provider/calendar credentials stay on
+Home Assistant.
+
 The application treats a partial OIDC configuration as a startup error.
 When `MCP_OAUTH_ENABLED=true`, complete OIDC configuration is also required.
 The MCP OAuth audience is derived exactly as `${OIDC_PUBLIC_URL}/api/mcp`.
@@ -165,6 +184,20 @@ device's native camera flow, choose an image/file, or search existing Paperless
 documents. Installed Android PWAs can also receive files through the system
 share sheet. Incoming files are staged locally until sign-in and destination
 selection complete, then uploaded with a 25 MB per-file limit.
+
+The Verarbeiten review option **Original als Material behalten** uses the same
+Paperless configuration and only applies to uploaded files. A text-only
+intake is never uploaded as a Paperless document.
+
+## Home Assistant prerequisites for Verarbeiten
+
+Install the paired Machbar custom integration from HACS (Home Assistant
+2025.8.0 or newer), pair it using protocol 2, and reopen **Configure** in the
+integration options. Select an AI Task entity from the `ai_task` domain and a
+calendar entity from the `calendar` domain. The AI Task must support
+`GENERATE_DATA`; photo/file intake also needs attachment support. The calendar
+must support `CREATE_EVENT`. These entities remain authoritative; Machbar only
+sends the fixed intake requests and stores review results and provenance.
 
 ## Web Push notifications
 

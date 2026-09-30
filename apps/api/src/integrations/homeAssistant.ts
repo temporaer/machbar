@@ -19,7 +19,7 @@ import { Graph } from "../domain/graph.js";
 import { AppError } from "../errors.js";
 import { enqueueNotification } from "../notifications/outbox.js";
 
-export const HOME_ASSISTANT_PROTOCOL_VERSION = 1 as const;
+export const HOME_ASSISTANT_PROTOCOL_VERSION = 2 as const;
 export const HOME_ASSISTANT_STALE_MS = 30 * 60 * 1_000;
 const PAIRING_TTL_MS = 10 * 60 * 1_000;
 const PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -50,7 +50,7 @@ function normalizePairingCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
-function assertProtocolVersion(version: number): asserts version is 1 {
+function assertProtocolVersion(version: number): asserts version is 2 {
   if (version !== HOME_ASSISTANT_PROTOCOL_VERSION) {
     throw AppError.badRequest(
       "unsupported_protocol_version",
@@ -351,7 +351,11 @@ export function applyHomeAssistantSnapshot(
     }
     const txDb = tx as unknown as Db;
     tx.update(schema.homeAssistantIntegrations)
-      .set({ lastUpdateAt: nowIso() })
+      .set({
+        lastUpdateAt: nowIso(),
+        protocolVersion: HOME_ASSISTANT_PROTOCOL_VERSION,
+        capabilitiesJson: JSON.stringify(snapshot.intake),
+      })
       .where(eq(schema.homeAssistantIntegrations.id, integrationId))
       .run();
     if (enteredContexts.length > 0) {
@@ -387,12 +391,16 @@ export function applyHomeAssistantSnapshot(
   });
 }
 
-function activeIntegration(db: Db) {
+export function activeHomeAssistantIntegration(db: Db) {
   return db
     .select()
     .from(schema.homeAssistantIntegrations)
     .where(isNull(schema.homeAssistantIntegrations.revokedAt))
     .get();
+}
+
+function activeIntegration(db: Db) {
+  return activeHomeAssistantIntegration(db);
 }
 
 function isFresh(value: string | null, now: Date): boolean {
@@ -422,6 +430,12 @@ export function homeAssistantStatus(
       stale: false,
       contexts,
       people: [],
+      supportedProtocolVersion: HOME_ASSISTANT_PROTOCOL_VERSION,
+      protocolOutdated: false,
+      lastRequestPollAt: null,
+      workerOnline: false,
+      intake: null,
+      intakeReady: false,
     };
   }
   const people = db
@@ -434,6 +448,14 @@ export function homeAssistantStatus(
     .from(schema.homeAssistantPersonContexts)
     .all();
   const mappings = db.select().from(schema.homeAssistantMemberMappings).all();
+  const intake = integration.capabilitiesJson
+    ? (JSON.parse(integration.capabilitiesJson) as HomeAssistantIntegrationStatus["intake"])
+    : null;
+  const protocolOutdated =
+    integration.protocolVersion !== HOME_ASSISTANT_PROTOCOL_VERSION;
+  const workerOnline =
+    integration.lastRequestPollAt !== null &&
+    now.getTime() - new Date(integration.lastRequestPollAt).getTime() < 90_000;
   return {
     connected: true,
     instanceId: integration.instanceId,
@@ -456,6 +478,14 @@ export function homeAssistantStatus(
         )?.memberId ?? null,
       observedAt: person.observedAt,
     })),
+    supportedProtocolVersion: HOME_ASSISTANT_PROTOCOL_VERSION,
+    protocolOutdated,
+    lastRequestPollAt: integration.lastRequestPollAt,
+    workerOnline,
+    intake,
+    intakeReady:
+      !protocolOutdated &&
+      intake?.aiTask.state === "ok",
   };
 }
 

@@ -1,5 +1,8 @@
 import { useState } from "react";
-import type { HomeAssistantPairingCode } from "@machbar/shared";
+import type {
+  HomeAssistantContextSnapshot,
+  HomeAssistantPairingCode,
+} from "@machbar/shared";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -9,6 +12,41 @@ import { localizedErrorMessage } from "../lib/errorMessage";
 import { PageHeader } from "../components/PageHeader";
 import { LoadingState, ErrorState } from "../components/AsyncStates";
 import { HomeAssistantPersonLocation } from "../components/HomeAssistantPersonLocation";
+
+type AiTaskState = HomeAssistantContextSnapshot["intake"]["aiTask"]["state"];
+type CalendarState = HomeAssistantContextSnapshot["intake"]["calendar"]["state"];
+
+function aiTaskStateMessage(
+  state: AiTaskState,
+  strings: ReturnType<typeof useStrings>,
+): string {
+  switch (state) {
+    case "ok":
+      return strings.intakeAiTaskOk;
+    case "not_configured":
+      return strings.intakeAiTaskNotConfigured;
+    case "missing":
+      return strings.intakeAiTaskMissing;
+    case "no_generate_data":
+      return strings.intakeAiTaskNoGenerateData;
+  }
+}
+
+function calendarStateMessage(
+  state: CalendarState,
+  strings: ReturnType<typeof useStrings>,
+): string {
+  switch (state) {
+    case "ok":
+      return strings.intakeCalendarOk;
+    case "not_configured":
+      return strings.intakeCalendarNotConfigured;
+    case "missing":
+      return strings.intakeCalendarMissing;
+    case "not_writable":
+      return strings.intakeCalendarNotWritable;
+  }
+}
 
 export function HomeAssistantPage() {
   const strings = useStrings();
@@ -45,6 +83,41 @@ export function HomeAssistantPage() {
       {actionError ? <p role="alert">{actionError}</p> : null}
       {status ? (
         <div className="stack">
+          <section className="card more-setting-card">
+            <h2>{strings.intakeCapabilities}</h2>
+            <p>
+              <strong>
+                {status.intakeReady
+                  ? strings.intakeReadyStatus
+                  : strings.intakeNotReadyStatus}
+              </strong>
+            </p>
+            {status.protocolOutdated ? <p role="alert">{strings.intakeProtocolOutdated}</p> : null}
+            <p>{status.workerOnline ? strings.intakeWorkerOnline : strings.intakeWorkerOffline}</p>
+            {status.lastRequestPollAt ? <p>{strings.homeAssistantLastUpdate}: {new Date(status.lastRequestPollAt).toLocaleString()}</p> : null}
+            {status.intake ? (
+              <div className="stack">
+                <p>
+                  <strong>{strings.intakeAiTask}:</strong>{" "}
+                  {status.intake.aiTask.entityId ?? strings.intakeEntityNotConfigured}
+                  {" — "}
+                  {aiTaskStateMessage(status.intake.aiTask.state, strings)}
+                </p>
+                <p>
+                  {status.intake.aiTask.supportsAttachments
+                    ? strings.intakeAttachmentsSupported
+                    : strings.intakeAttachmentsUnsupported}
+                </p>
+                <p>
+                  <strong>{strings.intakeCalendarEntity}:</strong>{" "}
+                  {status.intake.calendar.entityId ?? strings.intakeEntityNotConfigured}
+                  {" — "}
+                  {calendarStateMessage(status.intake.calendar.state, strings)}
+                </p>
+              </div>
+            ) : null}
+          </section>
+
           <section className="card more-setting-card">
             <h2>{strings.homeAssistantConnection}</h2>
             <p className="text-muted">

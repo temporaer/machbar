@@ -45,6 +45,7 @@ import {
   returnProjectToBacklog,
 } from "../domain/storyWorkflow.js";
 import { AppError } from "../errors.js";
+import { listExternalWorkItemRefs } from "../domain/externalWorkItemRefs.js";
 import {
   contextAvailabilityForHousehold,
   contextAvailabilityForMember,
@@ -235,7 +236,7 @@ function taskOrThrow(
       taskId: id,
     });
   }
-  return { ...task, ancestors: graph.taskAncestorsFor(id) };
+  return { ...task, ancestors: graph.taskAncestorsFor(id), externalRefs: listExternalWorkItemRefs(db, id) };
 }
 
 function projectOrThrow(db: Db, id: number, memberId: number) {

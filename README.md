@@ -37,6 +37,13 @@ refinement. If a captured task turns out to describe an outcome with several
 steps, promote it to a project when that becomes clear, instead of having to
 decide up front.
 
+For unclear text, photos, and files, **Verarbeiten** offers a separate intake
+and clarification path. It uses the paired Home Assistant integration and its
+configured `ai_task.*` entity to prepare an editable proposal of Machbar work
+and optional calendar events. Nothing is created until a person reviews and
+chooses **Übernehmen**. Home Assistant remains authoritative for the AI
+provider and calendar; Machbar is not an AI assistant or a calendar system.
+
 ### See what is genuinely actionable
 
 Today brings together planned and due work, reached follow-ups, and the next
@@ -127,12 +134,21 @@ It is private and self-hosted: one small service and one persistent SQLite
 database, with optional Pocket ID authentication. No hosted account or external
 database is required. An optional Paperless-ngx integration stores images and
 documents referenced from Markdown notes; Paperless owns the files and its API
-token remains on the Machbar server. An optional push-only Home Assistant
-integration can filter Today by a household member's current place.
+token remains on the Machbar server. The paired Home Assistant integration can
+filter Today by a household member's current place and, when configured with an
+attachment-capable AI Task entity and writable calendar, can execute the
+Verarbeiten bridge.
 
 ## Run it yourself in minutes
 
-Requirements: Docker with the Compose plugin.
+Requirements: Docker with the Compose plugin. Verarbeiten additionally
+requires the paired Machbar Home Assistant custom integration (protocol 2),
+Home Assistant 2025.8 or newer, a configured `ai_task.*` entity that supports
+attachments for images and PDFs, and a writable `calendar.*` entity selected in
+the integration options flow. `.txt` files are decoded as UTF-8 and included
+as delimited source text instead of binary attachments; invalid UTF-8 is
+rejected. Machbar stores no AI-provider credentials, Google credentials, or
+Home Assistant access token.
 
 ```bash
 git clone https://github.com/temporaer/machbar.git

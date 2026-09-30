@@ -39,6 +39,7 @@ import {
   updateProjectSchema,
 } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
+import { listExternalWorkItemRefs } from "../domain/externalWorkItemRefs.js";
 
 function parseId(raw: string): number {
   const id = Number.parseInt(raw, 10);
@@ -85,7 +86,20 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
   app.get<{ Params: { id: string } }>("/api/projects/:id", async (request) => {
     const id = parseId(request.params.id);
     const { graph, project } = projectOrThrow(db, id, viewerMemberId(request));
-    return { ...project, tasks: graph.rootsByProject.get(id) ?? [] };
+    function attachRefs<T extends { id: number; children?: T[] }>(
+      task: T,
+    ): T & { externalRefs: ReturnType<typeof listExternalWorkItemRefs> } {
+      return {
+        ...task,
+        externalRefs: listExternalWorkItemRefs(db, task.id),
+        ...(task.children ? { children: task.children.map(attachRefs) } : {}),
+      };
+    }
+    return {
+      ...project,
+      externalRefs: listExternalWorkItemRefs(db, project.id),
+      tasks: (graph.rootsByProject.get(id) ?? []).map(attachRefs),
+    };
   });
 
   app.post("/api/projects", async (request, reply) => {

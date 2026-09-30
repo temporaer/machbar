@@ -38,6 +38,22 @@ The command itself commits. Complete, cancel, reopen, activate, archive,
 external-wait resolution, and hierarchy movement use this contract. A guard may
 collect additional information only when required by domain semantics.
 
+## Version bumps
+
+Every change intended to ship must bump the version of the root Machbar
+application and each affected workspace package in its `package.json`, using
+the matching `package-lock.json` metadata. Choose the smallest SemVer increment
+that communicates the change: patch for compatible fixes, minor for
+backward-compatible features, and major for breaking changes.
+
+Any change to `custom_components/machbar/` must also bump its HACS version in
+`custom_components/machbar/manifest.json`. Keep that version independently
+SemVer-compliant; do not rely on the Machbar server version or commit SHA to
+signal that Home Assistant must download an integration update. Changes to the
+HA integration require the user to install the updated component and restart
+Home Assistant before the new Python code is loaded. Bump only packages
+affected by the shipped change.
+
 ## Mutation architecture
 
 One domain operation has one canonical mutation path.
@@ -146,13 +162,18 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 
 | Need | Canonical primitive or path |
 |------|-----------------------------|
+| AI intake plan contract and invariants | `packages/shared/src/intake.ts` (`IntakePlan`/`IntakeDraft`, `intakePlanIssues`, `intakeDraftIssues`, `buildDraftFromPlan`) plus Zod structural schemas in `apps/api/src/schemas.ts` |
+| AI intake execution (jobs, prompt, apply) | `apps/api/src/intake/` (`jobs.ts`, `prompt.ts`, `apply.ts`, `storage.ts`, `cleanup.ts`), `apps/api/src/routes/intake.ts`, `apps/web/src/pages/IntakeReviewPage.tsx`, and `apps/web/src/lib/useStartIntake.ts`; Apply uses the domain create primitives |
+| Home Assistant reverse request bridge | `apps/api/src/integrations/homeAssistantRequests.ts` and `custom_components/machbar/worker.py`; exactly `intake_analyze` and `calendar_create`, not an RPC mechanism |
+| Home Assistant AI Task and calendar adapters | `custom_components/machbar/intake.py` and `custom_components/machbar/calendar_bridge.py` |
+| Calendar external references | `external_work_item_refs` and `apps/api/src/domain/externalWorkItemRefs.ts`; provenance only and distinct from `external_task_links` |
 | Retained optimistic mutation | `apps/web/src/lib/useRetainedMutations.ts` |
 | Pure task metadata semantics | `apps/web/src/lib/taskMutations.ts` |
 | Task metadata and lifecycle actions | `apps/web/src/lib/useTaskActions.ts` |
 | External-wait actions | `apps/web/src/lib/useTaskActions.ts` |
 | Physical-context actions | `apps/web/src/lib/useTaskActions.ts` and `apps/web/src/lib/useProjectActions.ts` |
 | Physical-context availability | `apps/api/src/integrations/homeAssistant.ts`, consumed through agenda/waiting projections |
-| Home Assistant machine authentication | `apps/api/src/auth/routes.ts` route policy |
+| Home Assistant machine authentication | `apps/api/src/auth/routes.ts` route policy, including `/api/integrations/home-assistant/context`, `/tasks/sync`, `/requests/next`, `/requests/:id/complete`, and `/intake/:jobId/attachments/:attachmentId` |
 | Home Assistant task reconciliation | `apps/api/src/domain/externalTaskSync.ts` and `POST /api/integrations/home-assistant/tasks/sync` |
 | MCP authentication and fixed scope | `apps/api/src/integrations/mcp.ts` for explicit named/revocable agent tokens, `apps/api/src/integrations/mcpOAuth.ts` for delegated Pocket ID access-token validation, and the `mcp` policy in `apps/api/src/auth/routes.ts` as the common HTTP boundary |
 | MCP tools | `apps/api/src/mcp/tools.ts`; tools must call existing domain/repository primitives and must not introduce parallel mutation semantics |
@@ -180,7 +201,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Destination selection | `apps/web/src/components/DestinationPicker.tsx` |
 | Horizontal row swipe | `apps/web/src/lib/useHorizontalSwipe.ts` |
 | Paperless document access | `apps/api/src/integrations/paperless/` and `apps/api/src/routes/paperless.ts` |
-| Markdown attachment references and projections | `apps/web/src/lib/paperlessAttachments.ts`, `apps/web/src/components/MarkdownAttachmentSheet.tsx`, and `apps/web/src/components/MarkdownEditor.tsx` |
+| Markdown attachment references and projections | `packages/shared/src/paperlessMarkdown.ts`, `apps/web/src/lib/paperlessAttachments.ts`, `apps/web/src/components/MarkdownAttachmentSheet.tsx`, and `apps/web/src/components/MarkdownEditor.tsx` |
 | Memory-bounded photo cropping | `apps/web/src/components/ImageCropSheet.tsx` |
 | Memory-bounded camera capture | `apps/web/src/components/CameraCaptureSheet.tsx` |
 | Incoming file-share staging | `apps/web/public/sw.js` and `apps/web/src/lib/pendingShareTarget.ts` |

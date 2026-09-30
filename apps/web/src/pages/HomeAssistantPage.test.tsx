@@ -22,14 +22,24 @@ vi.mock("../lib/api", () => ({
 }));
 
 describe("HomeAssistantPage", () => {
+  const intake = (aiState: "ok" | "not_configured" = "ok", calendarState: "ok" | "not_writable" = "ok") => ({
+    aiTask: { entityId: aiState === "ok" ? "ai_task.school" : null, state: aiState, supportsAttachments: true },
+    calendar: { entityId: "calendar.family", state: calendarState },
+  });
   beforeEach(() => {
     getHomeAssistantStatus.mockResolvedValue({
       connected: true,
       instanceId: "ha-1",
-      protocolVersion: 1,
+      protocolVersion: 2,
       connectedAt: "2026-09-03T10:00:00.000Z",
       lastUpdateAt: "2026-09-03T12:00:00.000Z",
       stale: false,
+      supportedProtocolVersion: 2,
+      protocolOutdated: false,
+      lastRequestPollAt: null,
+      workerOnline: false,
+      intake: intake(),
+      intakeReady: true,
       contexts: [],
       people: [
         {
@@ -68,5 +78,50 @@ describe("HomeAssistantPage", () => {
       .toBeInTheDocument();
     expect(screen.getByText("Ort unbekannt", { exact: false }))
       .toBeInTheDocument();
+  });
+
+  it("shows AI and calendar readiness states", async () => {
+    getHomeAssistantStatus.mockResolvedValueOnce({
+      connected: true, instanceId: "ha", protocolVersion: 2, connectedAt: null,
+      lastUpdateAt: null, stale: false, supportedProtocolVersion: 2,
+      protocolOutdated: false, lastRequestPollAt: null, workerOnline: true,
+      intake: intake(), intakeReady: true, contexts: [], people: [],
+    });
+    const first = renderWithProviders(<HomeAssistantPage />);
+    expect(await screen.findByText("Worker online")).toBeInTheDocument();
+    expect(screen.getByText(/ai_task.school/)).toBeInTheDocument();
+    expect(screen.getByText("Verarbeiten bereit")).toBeInTheDocument();
+    expect(screen.getByText(/AI-Task verfügbar/, { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("Anhänge: Ja – Fotos und Dateien können verarbeitet werden."))
+      .toBeInTheDocument();
+    expect(screen.getByText(/Kalender verfügbar und beschreibbar/, { exact: false }))
+      .toBeInTheDocument();
+
+    first.unmount();
+    getHomeAssistantStatus.mockResolvedValueOnce({
+      connected: true, instanceId: "ha", protocolVersion: 2, connectedAt: null,
+      lastUpdateAt: null, stale: false, supportedProtocolVersion: 2,
+      protocolOutdated: false, lastRequestPollAt: null, workerOnline: false,
+      intake: intake("not_configured", "not_writable"), intakeReady: false,
+      contexts: [], people: [],
+    });
+    renderWithProviders(<HomeAssistantPage />);
+    expect(await screen.findByText("Worker offline")).toBeInTheDocument();
+    expect(screen.getByText("Verarbeiten noch nicht bereit")).toBeInTheDocument();
+    expect(screen.getByText(/Kein AI-Task-Entity gewählt\./)).toBeInTheDocument();
+    expect(screen.getByText(/Der gewählte Kalender ist nicht beschreibbar\./, { exact: false }))
+      .toBeInTheDocument();
+    expect(screen.getByText("Anhänge: Ja – Fotos und Dateien können verarbeitet werden."))
+      .toBeInTheDocument();
+
+    getHomeAssistantStatus.mockResolvedValueOnce({
+      connected: true, instanceId: "ha", protocolVersion: 1, connectedAt: null,
+      lastUpdateAt: null, stale: false, supportedProtocolVersion: 2,
+      protocolOutdated: true, lastRequestPollAt: null, workerOnline: false,
+      intake: intake(), intakeReady: false, contexts: [], people: [],
+    });
+    first.unmount();
+    renderWithProviders(<HomeAssistantPage />);
+    expect(await screen.findByText("Integration in Home Assistant aktualisieren und neu starten")).toBeInTheDocument();
   });
 });

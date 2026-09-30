@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
@@ -21,6 +22,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export interface TestContext {
   app: FastifyInstance;
   handle: DbHandle;
+  dataDir: string;
 }
 
 /** Builds a fresh in-memory database + Fastify app for a single test file. */
@@ -36,16 +38,18 @@ export function createTestContext(options?: {
   pushTransport?: PushTransport;
   paperless?: PaperlessConfig;
   paperlessClient?: PaperlessClient;
+  dataDir?: string;
 }): TestContext {
   const handle = openDb(":memory:");
   runMigrations(handle.db);
   if (options?.seed) {
     seedDatabase(handle.db);
   }
+  const dataDir = options?.dataDir ?? fs.mkdtempSync(path.join(__dirname, ".intake-data-"));
   const env: Env = {
     port: 0,
     host: "127.0.0.1",
-    dataDir: path.join(__dirname, "__fixtures__"),
+    dataDir,
     databaseFile: "unused.db",
     databasePath: ":memory:",
     basePath: options?.basePath ?? "/",
@@ -66,12 +70,13 @@ export function createTestContext(options?: {
     pushTransport: options?.pushTransport,
     paperlessClient: options?.paperlessClient,
   });
-  return { app, handle };
+  return { app, handle, dataDir };
 }
 
 export async function closeTestContext(ctx: TestContext) {
   await ctx.app.close();
   ctx.handle.close();
+  if (ctx.dataDir.includes(".intake-data-")) fs.rmSync(ctx.dataDir, { recursive: true, force: true });
 }
 
 export function insertTestProject(

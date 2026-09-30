@@ -28,6 +28,7 @@ import {
   localizedErrorMessage,
 } from "../lib/errorMessage";
 import { parseGoogleCalendarShare } from "../lib/googleCalendarShare";
+import { useStartIntake } from "../lib/useStartIntake";
 import { formatExactLocalDate } from "../lib/relativeDate";
 import {
   deletePendingShareTarget,
@@ -228,6 +229,7 @@ function SharePageContent({
   const navigate = useNavigate();
   const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
+  const { start: startIntake, pending: intakePending, error: intakeError } = useStartIntake();
   const captureDraft = useMemo(
     () => shareTargetToCaptureDraft(incoming, locale),
     [incoming, locale],
@@ -444,6 +446,12 @@ function SharePageContent({
     clearPendingShare();
   };
 
+  const processShared = () => {
+    void startIntake({ text: appendTextBlock(appendBlock, note.trim()), files: incoming.files }).then(() => {
+      clearPendingShare();
+    }).catch(() => undefined);
+  };
+
   if (completed) {
     return (
       <div className="share-page stack">
@@ -489,6 +497,15 @@ function SharePageContent({
           <p>{strings.sharedAttachments(incoming.files.length)}</p>
         ) : null}
       </section>
+      <button
+        type="button"
+        className="btn btn-primary btn-block"
+        disabled={intakePending}
+        onClick={processShared}
+      >
+        {intakePending ? strings.intakeStarting : strings.intakeProcess}
+      </button>
+      {intakeError ? <p className="capture-error" role="alert">{intakeError}</p> : null}
 
       {noteOpen ? (
         <label className="field">

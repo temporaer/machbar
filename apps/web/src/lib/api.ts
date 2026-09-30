@@ -9,6 +9,9 @@ import type {
   DebugMetrics,
   HomeAssistantIntegrationStatus,
   HomeAssistantPairingCode,
+  ExternalWorkItemRef,
+  IntakeDraft,
+  IntakeRecord,
   InheritanceMode,
   McpAgent,
   McpAgentToken,
@@ -277,10 +280,14 @@ export type ProjectDetail = ProjectWithActions & {
   tasks: Task[];
   childStories?: ProjectWithActions[];
   ancestors?: WorkItemAncestor[];
+  externalRefs?: ExternalWorkItemRef[];
 };
 
 /** Detail-only task response (`GET /api/tasks/:id`); list/tree tasks never carry ancestors. */
-export type TaskDetail = Task & { ancestors?: WorkItemAncestor[] };
+export type TaskDetail = Task & {
+  ancestors?: WorkItemAncestor[];
+  externalRefs?: ExternalWorkItemRef[];
+};
 
 export type WeekPlanningItem = Omit<WeekWorkItemSummary, "task" | "project"> &
   (
@@ -452,6 +459,40 @@ export const api = {
       body,
     });
   },
+  createIntake: (input: {
+    text?: string | null;
+    files?: readonly File[];
+    scope?: "household" | "work";
+  }) => {
+    const body = new FormData();
+    if (input.text?.trim()) body.append("text", input.text);
+    if (input.scope) body.append("scope", input.scope);
+    for (const file of input.files ?? []) body.append("files", file, file.name);
+    return request<{ id: string }>("/intake", { method: "POST", body });
+  },
+  getIntake: (id: string) => request<IntakeRecord>(`/intake/${encodeURIComponent(id)}`),
+  updateIntakeDraft: (
+    id: string,
+    body: { expectedRevision: number; draft: IntakeDraft },
+  ) =>
+    request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/plan`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  applyIntake: (
+    id: string,
+    body: { expectedRevision: number; draft?: IntakeDraft },
+  ) =>
+    request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/apply`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  retryIntake: (id: string) =>
+    request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/retry`, {
+      method: "POST",
+    }),
+  deleteIntake: (id: string) =>
+    request<void>(`/intake/${encodeURIComponent(id)}`, { method: "DELETE" }),
   preparePaperlessImageForCrop: (file: File, signal?: AbortSignal) => {
     const body = new FormData();
     body.append("document", file, file.name);

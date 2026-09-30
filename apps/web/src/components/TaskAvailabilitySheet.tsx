@@ -7,7 +7,8 @@ import {
   absolutePresetIsFuture,
   resolveAbsolutePreset,
 } from "../lib/reminderPresets";
-import { localDateForInstant, localDateTimeToIso } from "../lib/localDateTime";
+import { localDateForInstant } from "../lib/localDateTime";
+import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
 import { resolveScheduleShortcut } from "./ScheduleShortcuts";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { BottomSheet } from "./BottomSheet";
@@ -32,7 +33,7 @@ export function TaskAvailabilitySheet({ task, onClose }: { task: Task; onClose: 
 
   const customNotBeforeAt = () => {
     if (!customDate) return null;
-    return localDateTimeToIso(customDate, customTime);
+    return taskAvailabilityForLocalDate(customDate, customTime)?.notBeforeAt ?? null;
   };
 
   const applyNotBefore = async (notBeforeAt: string | null, notBeforeDate: string | null) => {
@@ -95,7 +96,8 @@ export function TaskAvailabilitySheet({ task, onClose }: { task: Task; onClose: 
               disabled={saving}
               onClick={() => {
                 const date = resolveScheduleShortcut("tomorrow");
-                if (date) void applyNotBefore(localDateTimeToIso(date, "00:00"), date);
+                const availability = date ? taskAvailabilityForLocalDate(date, "00:00") : null;
+                if (availability) void applyNotBefore(availability.notBeforeAt, availability.notBeforeDate);
               }}
             >
               {strings.scheduleShortcutLabels.tomorrow}
@@ -106,7 +108,8 @@ export function TaskAvailabilitySheet({ task, onClose }: { task: Task; onClose: 
               disabled={saving}
               onClick={() => {
                 const date = resolveScheduleShortcut("weekend");
-                if (date) void applyNotBefore(localDateTimeToIso(date, "00:00"), date);
+                const availability = date ? taskAvailabilityForLocalDate(date, "00:00") : null;
+                if (availability) void applyNotBefore(availability.notBeforeAt, availability.notBeforeDate);
               }}
             >
               {strings.scheduleShortcutLabels.weekend}
@@ -169,7 +172,10 @@ export function TaskAvailabilitySheet({ task, onClose }: { task: Task; onClose: 
             type="button"
             className="btn btn-primary"
             disabled={saving || !dateValid || customNotBeforeAt() === null}
-            onClick={() => void applyNotBefore(customNotBeforeAt(), customDate)}
+            onClick={() => {
+              const availability = taskAvailabilityForLocalDate(customDate, customTime);
+              if (availability) void applyNotBefore(availability.notBeforeAt, availability.notBeforeDate);
+            }}
           >
             {strings.confirmDone}
           </button>

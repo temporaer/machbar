@@ -17,6 +17,7 @@ import { countTasks, flattenTasks } from "../lib/taskHelpers";
 import { useIdentity } from "../lib/identity";
 import { formatDate } from "../lib/format";
 import { ProjectStuckNotice } from "../components/ProjectStuckNotice";
+import { ExternalRefBadge } from "../components/ExternalRefBadge";
 import { MarkdownNotes } from "../components/MarkdownNotes";
 import { NativeShareButton } from "../components/NativeShareButton";
 import { CalendarExportButton } from "../components/CalendarExportButton";
@@ -659,6 +660,7 @@ export function ProjectDetailPage() {
                 message={contentError ?? projectActions.errors[project.id]!}
               />
             ) : null}
+            <ExternalRefBadge refs={project.externalRefs ?? []} />
             <section className="section project-notes-section">
               <div className="row-between">
                 <h2 className="section-title" id="project-notes-label">
