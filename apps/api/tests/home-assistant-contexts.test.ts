@@ -248,6 +248,70 @@ describe("Home Assistant physical contexts", () => {
     expect(both.statusCode).toBe(400);
   });
 
+  it("validates nullable paired availability fields without partial writes", async () => {
+    const token = await connect();
+    const valid = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      {
+        sourceKey: "availability-valid",
+        relevant: true,
+        title: "Bibliothek",
+        notBeforeAt: "2026-10-13T22:00:00.000Z",
+        notBeforeDate: "2026-10-14",
+      },
+      token.token,
+    );
+    expect(valid.statusCode).toBe(200);
+    const task = ctx.handle.db.select().from(schema.workItems).get()!;
+    expect(task).toMatchObject({
+      notBeforeAt: "2026-10-13T22:00:00.000Z",
+      notBeforeDate: "2026-10-14",
+    });
+
+    const incomplete = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      {
+        sourceKey: "availability-incomplete",
+        relevant: true,
+        title: "Ungültig",
+        notBeforeAt: "2026-10-13T22:00:00.000Z",
+      },
+      token.token,
+    );
+    expect(incomplete.statusCode).toBe(400);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+
+    const mixed = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      {
+        sourceKey: "availability-mixed",
+        relevant: true,
+        title: "Ungültig",
+        notBeforeAt: null,
+        notBeforeDate: "2026-10-14",
+      },
+      token.token,
+    );
+    expect(mixed.statusCode).toBe(400);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+
+    const cleared = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      {
+        sourceKey: "availability-valid",
+        relevant: true,
+        notBeforeAt: null,
+        notBeforeDate: null,
+      },
+      token.token,
+    );
+    expect(cleared.statusCode).toBe(200);
+    expect(ctx.handle.db.select().from(schema.workItems).get()).toMatchObject({
+      notBeforeAt: null,
+      notBeforeDate: null,
+    });
+  });
+
   it("returns 204 without creating a task for an unknown irrelevant source", async () => {
     const token = await connect();
     const response = await post(

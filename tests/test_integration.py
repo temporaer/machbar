@@ -272,6 +272,67 @@ async def test_sync_task_service_maps_deadline_reminders_and_omits_them_when_abs
         await hass.config_entries.async_unload(entry.entry_id)
 
 
+async def test_sync_task_service_maps_availability_and_explicit_null(hass):
+    """Availability fields use API casing and preserve explicit null values."""
+    entry = _entry()
+    entry.add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.machbar.client.MachbarClient.push_snapshot",
+            AsyncMock(),
+        ),
+        patch(
+            "custom_components.machbar.client.MachbarClient.sync_task",
+            AsyncMock(),
+        ) as sync_task,
+        patch(
+            "custom_components.machbar.worker.RequestWorker.async_start",
+            AsyncMock(),
+        ),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        base = {
+            "config_entry_id": entry.entry_id,
+            "source_key": "service:availability",
+            "relevant": True,
+        }
+        await hass.services.async_call(
+            DOMAIN,
+            "sync_task",
+            {
+                **base,
+                "not_before_at": "2026-10-13T22:00:00.000Z",
+                "not_before_date": "2026-10-14",
+            },
+            blocking=True,
+        )
+        await hass.services.async_call(
+            DOMAIN,
+            "sync_task",
+            {
+                **base,
+                "not_before_at": None,
+                "not_before_date": None,
+            },
+            blocking=True,
+        )
+        await hass.services.async_call(
+            DOMAIN,
+            "sync_task",
+            {**base, "source_key": "service:availability-omitted"},
+            blocking=True,
+        )
+        assert sync_task.await_args_list[0].args[0]["notBeforeAt"] == (
+            "2026-10-13T22:00:00.000Z"
+        )
+        assert sync_task.await_args_list[0].args[0]["notBeforeDate"] == "2026-10-14"
+        assert sync_task.await_args_list[1].args[0]["notBeforeAt"] is None
+        assert sync_task.await_args_list[1].args[0]["notBeforeDate"] is None
+        assert "notBeforeAt" not in sync_task.await_args_list[2].args[0]
+        assert "notBeforeDate" not in sync_task.await_args_list[2].args[0]
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
 @pytest.mark.parametrize(
     ("state", "in_zones", "expected_state", "expected_contexts"),
     [

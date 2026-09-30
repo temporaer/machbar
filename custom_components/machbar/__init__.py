@@ -69,28 +69,52 @@ def _sync_task_schema() -> vol.Schema:
         return validated
 
     deadline_reminders_schema = validate_deadline_reminders
+
+    def validate_sync_task_availability(value: dict[str, Any]) -> dict[str, Any]:
+        has_at = "not_before_at" in value
+        has_date = "not_before_date" in value
+        if has_at != has_date:
+            raise vol.Invalid(
+                "not_before_at and not_before_date must be supplied together."
+            )
+        if (
+            has_at
+            and (value["not_before_at"] is None) != (value["not_before_date"] is None)
+        ):
+            raise vol.Invalid(
+                "not_before_at and not_before_date must both be set or both be null."
+            )
+        return value
+
     return vol.Schema(
-        {
-            vol.Required("config_entry_id"): str,
-            vol.Required("source_key"): selector.TemplateSelector(),
-            vol.Required("relevant"): bool,
-            vol.Optional("title"): str,
-            vol.Optional("person"): vol.Any(
-                selector.EntitySelector(selector.EntitySelectorConfig(domain="person")),
-                None,
-            ),
-            vol.Optional("scheduled_date"): vol.Any(str, None),
-            vol.Optional("due_date"): vol.Any(str, None),
-            vol.Optional("notes"): vol.Any(str, None),
-            vol.Optional("reactivate_completed", default=False): bool,
-            vol.Optional("overwrite_notes", default=False): bool,
-            vol.Optional("deadline_reminder"): vol.Any(None, deadline_reminder_schema),
-            vol.Optional("deadline_reminders"): vol.Any(
-                None, deadline_reminders_schema
-            ),
-            vol.Optional("priority"): vol.Any(int, None),
-            vol.Optional("size"): vol.Any(vol.In(["S", "M", "L", "XL"]), None),
-        }
+        vol.All(
+            {
+                vol.Required("config_entry_id"): str,
+                vol.Required("source_key"): selector.TemplateSelector(),
+                vol.Required("relevant"): bool,
+                vol.Optional("title"): str,
+                vol.Optional("person"): vol.Any(
+                    selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="person")
+                    ),
+                    None,
+                ),
+                vol.Optional("scheduled_date"): vol.Any(str, None),
+                vol.Optional("due_date"): vol.Any(str, None),
+                vol.Optional("not_before_at"): vol.Any(str, None),
+                vol.Optional("not_before_date"): vol.Any(str, None),
+                vol.Optional("notes"): vol.Any(str, None),
+                vol.Optional("reactivate_completed", default=False): bool,
+                vol.Optional("overwrite_notes", default=False): bool,
+                vol.Optional("deadline_reminder"): vol.Any(None, deadline_reminder_schema),
+                vol.Optional("deadline_reminders"): vol.Any(
+                    None, deadline_reminders_schema
+                ),
+                vol.Optional("priority"): vol.Any(int, None),
+                vol.Optional("size"): vol.Any(vol.In(["S", "M", "L", "XL"]), None),
+            },
+            validate_sync_task_availability,
+        )
     )
 
 
@@ -131,6 +155,8 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
             ("person", "person"),
             ("scheduled_date", "scheduledDate"),
             ("due_date", "dueDate"),
+            ("not_before_at", "notBeforeAt"),
+            ("not_before_date", "notBeforeDate"),
             ("notes", "notes"),
             ("reactivate_completed", "reactivateCompleted"),
             ("overwrite_notes", "overwriteNotes"),

@@ -33,6 +33,14 @@
           "name": "Fällig am",
           "description": "Frist der Aufgabe."
         },
+        "not_before_at": {
+          "name": "Verfügbar ab",
+          "description": "UTC-Zeitpunkt, ab dem die Aufgabe verfügbar wird; zusammen mit not_before_date angeben."
+        },
+        "not_before_date": {
+          "name": "Verfügbar-ab-Datum",
+          "description": "Lokales Kalenderdatum, ab dem die Aufgabe verfügbar wird. Steuert die Verfügbarkeit; scheduled_date hält fest, wann wir uns zur Erledigung verpflichtet haben."
+        },
         "notes": {
           "name": "Notiz",
           "description": "Wird beim Erstellen verwendet; spätere Änderungen benötigen das Überschreiben der Notiz."
