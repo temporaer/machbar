@@ -35,7 +35,19 @@
         },
         "notes": {
           "name": "Notes",
-          "description": "Initial notes used only when creating the task."
+          "description": "Notes used when creating the task; later changes require overwrite notes."
+        },
+        "reactivate_completed": {
+          "name": "Reactivate completed",
+          "description": "Reopen a linked completed task before applying supplied updates."
+        },
+        "overwrite_notes": {
+          "name": "Overwrite notes",
+          "description": "Replace or clear notes on later synchronizations when notes is supplied."
+        },
+        "deadline_reminder": {
+          "name": "Deadline reminder",
+          "description": "Create or update one Home Assistant-managed reminder relative to the task deadline, or clear it with null."
         },
         "priority": {
           "name": "Priority",

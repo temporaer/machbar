@@ -63,6 +63,157 @@ describe("Home Assistant external task reconciliation", () => {
     expect(task.priority).toBe(1);
   });
 
+  it("reconciles one managed deadline reminder without touching manual reminders", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "deadline-reminder",
+      relevant: true,
+      title: "Frist",
+      dueDate: "2026-10-10",
+      deadlineReminder: {
+        daysBefore: 1,
+        time: "19:00",
+        timezone: "Europe/Berlin",
+      },
+    })!;
+    let link = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    const managedId = link.managedReminderId!;
+    expect(ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.taskId, created.taskId)).all())
+      .toEqual([expect.objectContaining({
+        id: managedId,
+        kind: "deadline_relative",
+        daysBefore: 1,
+        time: "19:00",
+        timezone: "Europe/Berlin",
+      })]);
+
+    const manual = ctx.handle.db.insert(schema.taskReminders).values({
+      taskId: created.taskId,
+      kind: "absolute",
+      at: "2026-10-01T08:00:00.000Z",
+    }).returning().get();
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "deadline-reminder",
+      relevant: true,
+      deadlineReminder: {
+        daysBefore: 2,
+        time: "20:00",
+        timezone: "Europe/Berlin",
+      },
+    });
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "deadline-reminder",
+      relevant: true,
+      deadlineReminder: {
+        daysBefore: 2,
+        time: "20:00",
+        timezone: "Europe/Berlin",
+      },
+    });
+    let reminders = ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.taskId, created.taskId)).all();
+    expect(reminders).toHaveLength(2);
+    expect(reminders).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: managedId,
+        daysBefore: 2,
+        time: "20:00",
+      }),
+      expect.objectContaining({ id: manual.id, kind: "absolute" }),
+    ]));
+    link = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    expect(link.managedReminderId).toBe(managedId);
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "deadline-reminder",
+      relevant: true,
+    });
+    expect(ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.taskId, created.taskId)).all())
+      .toHaveLength(2);
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "deadline-reminder",
+      relevant: true,
+      deadlineReminder: null,
+    });
+    reminders = ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.taskId, created.taskId)).all();
+    expect(reminders).toEqual([expect.objectContaining({ id: manual.id, kind: "absolute" })]);
+    expect(ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()?.managedReminderId)
+      .toBeNull();
+  });
+
+  it("recreates a managed reminder after manual deletion", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "recreate-reminder",
+      relevant: true,
+      title: "Erinnerung",
+      deadlineReminder: {
+        daysBefore: 1,
+        time: "19:00",
+        timezone: "Europe/Berlin",
+      },
+    })!;
+    const firstLink = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    ctx.handle.db.delete(schema.taskReminders)
+      .where(eq(schema.taskReminders.id, firstLink.managedReminderId!)).run();
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "recreate-reminder",
+      relevant: true,
+      deadlineReminder: {
+        daysBefore: 1,
+        time: "19:00",
+        timezone: "Europe/Berlin",
+      },
+    });
+    const secondLink = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    expect(secondLink.managedReminderId).not.toBeNull();
+    expect(secondLink.managedReminderId).not.toBe(firstLink.managedReminderId);
+    expect(ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.taskId, created.taskId)).all()).toHaveLength(1);
+  });
+
+  it("applies a managed reminder when reopening a completed task", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "reopen-reminder",
+      relevant: true,
+      title: "Erledigt",
+    })!;
+    completeTask(ctx.handle.db, created.taskId, "leave_open");
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "reopen-reminder",
+      relevant: true,
+      reactivateCompleted: true,
+      dueDate: "2026-10-20",
+      deadlineReminder: {
+        daysBefore: 1,
+        time: "19:00",
+        timezone: "Europe/Berlin",
+      },
+    });
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get())
+      .toMatchObject({ status: "active", dueDate: "2026-10-20" });
+    expect(ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.taskId, created.taskId)).get())
+      .toMatchObject({ kind: "deadline_relative", daysBefore: 1 });
+  });
+
+  it("returns no task for an unknown irrelevant source", () => {
+    expect(syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "unknown-irrelevant",
+      relevant: false,
+    })).toBeNull();
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+  });
+
   it("keeps the link stable when Home Assistant is paired again", () => {
     const first = syncExternalTask(ctx.handle.db, integrationId, {
       sourceKey: "stable",
@@ -249,6 +400,54 @@ describe("Home Assistant external task reconciliation", () => {
       .toBe("Human note");
   });
 
+  it("overwrites, clears, and preserves notes only when explicitly requested", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "overwrite-notes",
+      relevant: true,
+      title: "Notizen",
+      notes: "Initial HA note",
+    })!;
+    updateTask(ctx.handle.db, created.taskId, { notes: "Human note" });
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "overwrite-notes",
+      relevant: true,
+      notes: "Ignored note",
+    });
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()?.notes)
+      .toBe("Human note");
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "overwrite-notes",
+      relevant: true,
+      overwriteNotes: true,
+      notes: "Replacement",
+    });
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()?.notes)
+      .toBe("Replacement");
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "overwrite-notes",
+      relevant: true,
+      overwriteNotes: true,
+      notes: null,
+    });
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()?.notes)
+      .toBe("");
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "overwrite-notes",
+      relevant: true,
+      overwriteNotes: true,
+    });
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()?.notes)
+      .toBe("");
+  });
+
   it("preserves human cancellation and completion", () => {
     const cancelled = syncExternalTask(ctx.handle.db, integrationId, {
       sourceKey: "human-cancel",
@@ -283,6 +482,54 @@ describe("Home Assistant external task reconciliation", () => {
       .get()?.title).toBe("Erledigt");
     expect(doneLink.state).toBe("active");
     expect(doneLink.withdrawnTaskRevision).toBeNull();
+  });
+
+  it("reactivates completed tasks only when explicitly requested", () => {
+    const protectedTask = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "completed-protected",
+      relevant: true,
+      title: "Geschützt",
+    })!;
+    completeTask(ctx.handle.db, protectedTask.taskId, "leave_open");
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "completed-protected",
+      relevant: true,
+      title: "Nicht ändern",
+      dueDate: "2026-10-01",
+    });
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, protectedTask.taskId)).get())
+      .toMatchObject({ status: "done", title: "Geschützt", dueDate: null });
+
+    const reopened = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "completed-protected",
+      relevant: true,
+      reactivateCompleted: true,
+      dueDate: "2026-10-02",
+    })!;
+    expect(reopened.taskId).toBe(protectedTask.taskId);
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, protectedTask.taskId)).get())
+      .toMatchObject({ status: "active", dueDate: "2026-10-02" });
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(1);
+  });
+
+  it("does not reactivate manually cancelled tasks", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "cancelled-protected",
+      relevant: true,
+      title: "Nicht öffnen",
+    })!;
+    cancelTask(ctx.handle.db, created.taskId, "leave_open");
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "cancelled-protected",
+      relevant: true,
+      reactivateCompleted: true,
+      dueDate: "2026-10-03",
+    });
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get())
+      .toMatchObject({ status: "cancelled", dueDate: null });
   });
 
   it("does not let stale external withdrawal authority reopen a human cancellation", () => {

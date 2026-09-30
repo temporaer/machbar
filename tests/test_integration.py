@@ -140,6 +140,100 @@ async def test_unload_cleans_up_listener_and_pending_push(hass):
     push.assert_awaited_once()
 
 
+async def test_sync_task_service_maps_reactivation_and_note_options(hass):
+    """The HA service forwards optional reconciliation controls in API casing."""
+    entry = _entry()
+    entry.add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.machbar.client.MachbarClient.push_snapshot",
+            AsyncMock(),
+        ),
+        patch(
+            "custom_components.machbar.client.MachbarClient.sync_task",
+            AsyncMock(),
+        ) as sync_task,
+        patch(
+            "custom_components.machbar.worker.RequestWorker.async_start",
+            AsyncMock(),
+        ),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.services.async_call(
+            DOMAIN,
+            "sync_task",
+            {
+                "config_entry_id": entry.entry_id,
+                "source_key": "service:test",
+                "relevant": True,
+                "reactivate_completed": True,
+                "overwrite_notes": True,
+                "notes": None,
+            },
+            blocking=True,
+        )
+        sync_task.assert_awaited_once_with({
+            "sourceKey": "service:test",
+            "relevant": True,
+            "reactivateCompleted": True,
+            "overwriteNotes": True,
+            "notes": None,
+        })
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
+async def test_sync_task_service_maps_nullable_deadline_reminder_and_omits_it_when_absent(hass):
+    """Deadline reminder payloads use the API contract and omitted values stay omitted."""
+    entry = _entry()
+    entry.add_to_hass(hass)
+    with (
+        patch(
+            "custom_components.machbar.client.MachbarClient.push_snapshot",
+            AsyncMock(),
+        ),
+        patch(
+            "custom_components.machbar.client.MachbarClient.sync_task",
+            AsyncMock(),
+        ) as sync_task,
+        patch(
+            "custom_components.machbar.worker.RequestWorker.async_start",
+            AsyncMock(),
+        ),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        base = {
+            "config_entry_id": entry.entry_id,
+            "source_key": "service:deadline",
+            "relevant": True,
+        }
+        await hass.services.async_call(
+            DOMAIN,
+            "sync_task",
+            {
+                **base,
+                "deadline_reminder": {
+                    "days_before": 1,
+                    "time": "19:00",
+                    "timezone": "Europe/Berlin",
+                },
+            },
+            blocking=True,
+        )
+        await hass.services.async_call(
+            DOMAIN,
+            "sync_task",
+            {**base, "source_key": "service:omitted"},
+            blocking=True,
+        )
+        assert sync_task.await_args_list[0].args[0]["deadlineReminder"] == {
+            "daysBefore": 1,
+            "time": "19:00",
+            "timezone": "Europe/Berlin",
+        }
+        assert "deadlineReminder" not in sync_task.await_args_list[1].args[0]
+        await hass.config_entries.async_unload(entry.entry_id)
+
+
 @pytest.mark.parametrize(
     ("state", "in_zones", "expected_state", "expected_contexts"),
     [

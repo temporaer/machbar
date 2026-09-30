@@ -756,6 +756,10 @@ export const externalTaskLinks = sqliteTable(
       .notNull()
       .default("active"),
     withdrawnTaskRevision: integer("withdrawn_task_revision"),
+    managedReminderId: integer("managed_reminder_id").references(
+      () => taskReminders.id,
+      { onDelete: "set null" },
+    ),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),

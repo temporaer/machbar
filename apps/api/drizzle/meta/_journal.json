@@ -85,6 +85,13 @@
       "when": 1790542613230,
       "tag": "0011_intake_apply_claim_lease",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1790804083468,
+      "tag": "0012_add_managed_external_reminder",
+      "breakpoints": true
     }
   ]
 }

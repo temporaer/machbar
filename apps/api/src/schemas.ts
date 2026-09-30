@@ -37,23 +37,26 @@ function isValidIanaTimezone(value: string): boolean {
   }
 }
 
+const deadlineRelativeReminderSchema = z.object({
+  daysBefore: z.number().int().min(0),
+  time: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Time must use HH:mm format."),
+  timezone: z
+    .string()
+    .min(1)
+    .refine(isValidIanaTimezone, "Timezone must be a valid IANA zone name."),
+});
+
 export const taskReminderInputSchema = z.discriminatedUnion("kind", [
   z.object({
     id: z.number().int().positive().optional(),
     kind: z.literal("absolute"),
     at: isoDateTime,
   }),
-  z.object({
+  deadlineRelativeReminderSchema.extend({
     id: z.number().int().positive().optional(),
     kind: z.literal("deadline_relative"),
-    daysBefore: z.number().int().min(0),
-    time: z
-      .string()
-      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Time must use HH:mm format."),
-    timezone: z
-      .string()
-      .min(1)
-      .refine(isValidIanaTimezone, "Timezone must be a valid IANA zone name."),
   }),
 ]);
 export const taskRemindersSchema = z.array(taskReminderInputSchema);
@@ -67,6 +70,9 @@ export const homeAssistantSyncTaskSchema = z
     scheduledDate: isoDate.nullable().optional(),
     dueDate: isoDate.nullable().optional(),
     notes: z.string().nullable().optional(),
+    reactivateCompleted: z.boolean().optional(),
+    overwriteNotes: z.boolean().optional(),
+    deadlineReminder: deadlineRelativeReminderSchema.nullable().optional(),
     priority: z.number().int().min(1).max(5).nullable().optional(),
     size: z.enum(taskSizes).nullable().optional(),
   });
