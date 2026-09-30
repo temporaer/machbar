@@ -49,6 +49,10 @@
           "name": "Fristerinnerung",
           "description": "Eine von Home Assistant verwaltete Erinnerung relativ zur Frist erstellen oder aktualisieren; mit null löschen."
         },
+        "deadline_reminders": {
+          "name": "Fristerinnerungen",
+          "description": "Die von Home Assistant verwalteten Fristerinnerungen nach Schlüssel ersetzen; mit null oder einer leeren Liste löschen."
+        },
         "priority": {
           "name": "Priorität",
           "description": "Machbar-Priorität von 1 (höchste) bis 5 (niedrigste)."

@@ -756,10 +756,6 @@ export const externalTaskLinks = sqliteTable(
       .notNull()
       .default("active"),
     withdrawnTaskRevision: integer("withdrawn_task_revision"),
-    managedReminderId: integer("managed_reminder_id").references(
-      () => taskReminders.id,
-      { onDelete: "set null" },
-    ),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
@@ -859,6 +855,27 @@ export const taskReminders = sqliteTable(
   (t) => [
     index("task_reminders_task_idx").on(t.taskId),
     index("task_reminders_absolute_due_idx").on(t.kind, t.at),
+  ],
+);
+
+export const externalTaskLinkManagedReminders = sqliteTable(
+  "external_task_link_managed_reminders",
+  {
+    externalTaskLinkId: integer("external_task_link_id")
+      .notNull()
+      .references(() => externalTaskLinks.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    reminderId: integer("reminder_id")
+      .notNull()
+      .references(() => taskReminders.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    unique("external_task_link_managed_reminders_link_key_unique").on(
+      t.externalTaskLinkId,
+      t.key,
+    ),
+    unique("external_task_link_managed_reminders_reminder_unique").on(t.reminderId),
+    index("external_task_link_managed_reminders_link_idx").on(t.externalTaskLinkId),
   ],
 );
 

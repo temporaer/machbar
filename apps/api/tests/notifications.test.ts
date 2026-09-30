@@ -661,6 +661,39 @@ describe("reminders and Push delivery", () => {
     expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-24T07:00:00Z"))).toBe(1);
   });
 
+  it("delivers keyed Home Assistant reminders five days before and on the eve of a deadline", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const integrationId = ctx.handle.db.insert(schema.homeAssistantIntegrations)
+      .values({
+        instanceId: "notifications-keyed",
+        tokenHash: "token-keyed",
+        protocolVersion: 2,
+        connectedAt: new Date().toISOString(),
+      })
+      .returning({ id: schema.homeAssistantIntegrations.id }).get().id;
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "notification-keyed",
+      relevant: true,
+      title: "Abgabe",
+      dueDate: "2026-10-10",
+      person: null,
+      deadlineReminders: [
+        { key: "early", daysBefore: 5, time: "19:00", timezone: "Europe/Berlin" },
+        { key: "eve", daysBefore: 1, time: "19:00", timezone: "Europe/Berlin" },
+      ],
+    })!;
+    updateTask(ctx.handle.db, created.taskId, {
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+    });
+    ctx.handle.db.delete(schema.notificationEvents).run();
+
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-10-05T16:59:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-10-05T17:00:00Z"))).toBe(1);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-10-09T16:59:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-10-09T17:00:00Z"))).toBe(1);
+  });
+
   it("deleting a reminder removes its still-pending notification", () => {
     const hannes = addMember(ctx, "Hannes");
     const task = createTask(ctx.handle.db, {

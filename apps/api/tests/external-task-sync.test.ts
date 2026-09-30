@@ -17,6 +17,7 @@ describe("Home Assistant external task reconciliation", () => {
 
   beforeEach(() => {
     ctx = createTestContext();
+    ctx.handle.sqlite.pragma("reverse_unordered_selects = ON");
     memberId = ctx.handle.db.insert(schema.members)
       .values({ name: "Hannes", color: "#123456" })
       .returning({ id: schema.members.id }).get().id;
@@ -77,7 +78,10 @@ describe("Home Assistant external task reconciliation", () => {
     })!;
     let link = ctx.handle.db.select().from(schema.externalTaskLinks)
       .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
-    const managedId = link.managedReminderId!;
+    const managedId = ctx.handle.db.select()
+      .from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, link.id))
+      .get()!.reminderId;
     expect(ctx.handle.db.select().from(schema.taskReminders)
       .where(eq(schema.taskReminders.taskId, created.taskId)).all())
       .toEqual([expect.objectContaining({
@@ -124,7 +128,10 @@ describe("Home Assistant external task reconciliation", () => {
     ]));
     link = ctx.handle.db.select().from(schema.externalTaskLinks)
       .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
-    expect(link.managedReminderId).toBe(managedId);
+    expect(ctx.handle.db.select()
+      .from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, link.id))
+      .get()?.reminderId).toBe(managedId);
 
     syncExternalTask(ctx.handle.db, integrationId, {
       sourceKey: "deadline-reminder",
@@ -142,9 +149,9 @@ describe("Home Assistant external task reconciliation", () => {
     reminders = ctx.handle.db.select().from(schema.taskReminders)
       .where(eq(schema.taskReminders.taskId, created.taskId)).all();
     expect(reminders).toEqual([expect.objectContaining({ id: manual.id, kind: "absolute" })]);
-    expect(ctx.handle.db.select().from(schema.externalTaskLinks)
-      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()?.managedReminderId)
-      .toBeNull();
+    expect(ctx.handle.db.select().from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, link.id))
+      .all()).toHaveLength(0);
   });
 
   it("recreates a managed reminder after manual deletion", () => {
@@ -160,8 +167,12 @@ describe("Home Assistant external task reconciliation", () => {
     })!;
     const firstLink = ctx.handle.db.select().from(schema.externalTaskLinks)
       .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    const firstMapping = ctx.handle.db.select()
+      .from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, firstLink.id))
+      .get()!;
     ctx.handle.db.delete(schema.taskReminders)
-      .where(eq(schema.taskReminders.id, firstLink.managedReminderId!)).run();
+      .where(eq(schema.taskReminders.id, firstMapping.reminderId)).run();
 
     syncExternalTask(ctx.handle.db, integrationId, {
       sourceKey: "recreate-reminder",
@@ -174,10 +185,222 @@ describe("Home Assistant external task reconciliation", () => {
     });
     const secondLink = ctx.handle.db.select().from(schema.externalTaskLinks)
       .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
-    expect(secondLink.managedReminderId).not.toBeNull();
-    expect(secondLink.managedReminderId).not.toBe(firstLink.managedReminderId);
+    const secondMapping = ctx.handle.db.select()
+      .from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, secondLink.id))
+      .get()!;
+    expect(secondMapping.reminderId).not.toBe(firstMapping.reminderId);
     expect(ctx.handle.db.select().from(schema.taskReminders)
       .where(eq(schema.taskReminders.taskId, created.taskId)).all()).toHaveLength(1);
+  });
+
+  it("reconciles keyed managed reminders without touching manual reminders", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "keyed-reminders",
+      relevant: true,
+      title: "Mehrere Erinnerungen",
+      dueDate: "2026-10-10",
+      deadlineReminders: [
+        { key: "early", daysBefore: 5, time: "19:00", timezone: "Europe/Berlin" },
+        { key: "eve", daysBefore: 1, time: "19:00", timezone: "Europe/Berlin" },
+      ],
+    })!;
+    const link = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    const firstMappings = ctx.handle.db.select()
+      .from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, link.id))
+      .all();
+    expect(firstMappings).toHaveLength(2);
+    const initialByKey = new Map(firstMappings.map((mapping) => [
+      mapping.key,
+      ctx.handle.db.select().from(schema.taskReminders)
+        .where(eq(schema.taskReminders.id, mapping.reminderId)).get()!,
+    ]));
+    expect(initialByKey.get("early")).toMatchObject({
+      daysBefore: 5,
+      time: "19:00",
+      timezone: "Europe/Berlin",
+    });
+    expect(initialByKey.get("eve")).toMatchObject({
+      daysBefore: 1,
+      time: "19:00",
+      timezone: "Europe/Berlin",
+    });
+
+    const manual = ctx.handle.db.insert(schema.taskReminders).values({
+      taskId: created.taskId,
+      kind: "absolute",
+      at: "2026-10-01T08:00:00.000Z",
+    }).returning().get();
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "keyed-reminders",
+      relevant: true,
+      deadlineReminders: [
+        { key: "early", daysBefore: 4, time: "20:00", timezone: "Europe/Berlin" },
+        { key: "new", daysBefore: 0, time: "08:00", timezone: "UTC" },
+      ],
+    });
+    const firstUpdatedMappings = ctx.handle.db.select()
+      .from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, link.id))
+      .all();
+    const firstNewId = firstUpdatedMappings.find((mapping) => mapping.key === "new")!.reminderId;
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "keyed-reminders",
+      relevant: true,
+      deadlineReminders: [
+        { key: "early", daysBefore: 4, time: "20:00", timezone: "Europe/Berlin" },
+        { key: "new", daysBefore: 0, time: "08:00", timezone: "UTC" },
+      ],
+    });
+
+    const secondMappings = ctx.handle.db.select()
+      .from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, link.id))
+      .all();
+    const early = secondMappings.find((mapping) => mapping.key === "early")!;
+    const createdNew = secondMappings.find((mapping) => mapping.key === "new")!;
+    expect(early.reminderId).toBe(
+      firstMappings.find((mapping) => mapping.key === "early")!.reminderId,
+    );
+    expect(secondMappings.find((mapping) => mapping.key === "eve")).toBeUndefined();
+    expect(createdNew.reminderId).not.toBe(
+      firstMappings.find((mapping) => mapping.key === "eve")!.reminderId,
+    );
+    expect(createdNew.reminderId).toBe(firstNewId);
+    expect(ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.id, createdNew.reminderId)).get())
+      .toMatchObject({ daysBefore: 0, time: "08:00", timezone: "UTC" });
+    expect(ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.taskId, created.taskId)).all())
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: early.reminderId,
+          daysBefore: 4,
+          time: "20:00",
+        }),
+        expect.objectContaining({ id: createdNew.reminderId, daysBefore: 0 }),
+        expect.objectContaining({ id: manual.id, kind: "absolute" }),
+      ]));
+
+    const deletedManaged = secondMappings.find((mapping) => mapping.key === "new")!;
+    ctx.handle.db.delete(schema.taskReminders)
+      .where(eq(schema.taskReminders.id, deletedManaged.reminderId)).run();
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "keyed-reminders",
+      relevant: true,
+      deadlineReminders: [
+        { key: "early", daysBefore: 4, time: "20:00", timezone: "Europe/Berlin" },
+        { key: "new", daysBefore: 0, time: "08:00", timezone: "UTC" },
+      ],
+    });
+    const recreated = ctx.handle.db.select()
+      .from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, link.id))
+      .all()
+      .find((mapping) => mapping.key === "new")!;
+    expect(recreated.reminderId).not.toBe(deletedManaged.reminderId);
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "keyed-reminders",
+      relevant: true,
+      deadlineReminder: {
+        daysBefore: 2,
+        time: "18:00",
+        timezone: "Europe/Berlin",
+      },
+    });
+    expect(ctx.handle.db.select().from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, link.id))
+      .all()
+      .map((mapping) => mapping.key)
+      .sort()).toEqual(["default", "early", "new"]);
+    expect(ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.id, early.reminderId)).get())
+      .toMatchObject({ daysBefore: 4, time: "20:00" });
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "keyed-reminders",
+      relevant: true,
+      deadlineReminder: null,
+    });
+    expect(ctx.handle.db.select().from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, link.id))
+      .all()
+      .map((mapping) => mapping.key)
+      .sort()).toEqual(["early", "new"]);
+  });
+
+  it("preserves non-default managed reminders during legacy singular reconciliation", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "legacy-preservation",
+      relevant: true,
+      title: "Legacy",
+      deadlineReminders: [
+        { key: "early", daysBefore: 5, time: "19:00", timezone: "Europe/Berlin" },
+        { key: "eve", daysBefore: 1, time: "19:00", timezone: "Europe/Berlin" },
+      ],
+    })!;
+    const link = ctx.handle.db.select().from(schema.externalTaskLinks)
+      .where(eq(schema.externalTaskLinks.taskId, created.taskId)).get()!;
+    const mappings = ctx.handle.db.select()
+      .from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, link.id))
+      .all();
+    const early = mappings.find((mapping) => mapping.key === "early")!;
+    const eve = mappings.find((mapping) => mapping.key === "eve")!;
+    updateTask(ctx.handle.db, created.taskId, {
+      reminders: [
+        {
+          id: early.reminderId,
+          kind: "absolute",
+          at: "2026-10-01T08:00:00.000Z",
+        },
+        {
+          id: eve.reminderId,
+          kind: "deadline_relative",
+          daysBefore: 1,
+          time: "19:00",
+          timezone: "Europe/Berlin",
+        },
+      ],
+    });
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "legacy-preservation",
+      relevant: true,
+      deadlineReminder: {
+        daysBefore: 2,
+        time: "18:00",
+        timezone: "Europe/Berlin",
+      },
+    });
+    expect(ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.id, early.reminderId)).get())
+      .toMatchObject({ id: early.reminderId, kind: "absolute", at: "2026-10-01T08:00:00.000Z" });
+    expect(ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.id, eve.reminderId)).get())
+      .toMatchObject({ id: eve.reminderId, daysBefore: 1, time: "19:00" });
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "legacy-preservation",
+      relevant: true,
+      deadlineReminder: null,
+    });
+    expect(ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.id, early.reminderId)).get())
+      .toMatchObject({ id: early.reminderId, kind: "absolute", at: "2026-10-01T08:00:00.000Z" });
+    expect(ctx.handle.db.select().from(schema.taskReminders)
+      .where(eq(schema.taskReminders.id, eve.reminderId)).get())
+      .toMatchObject({ id: eve.reminderId, daysBefore: 1, time: "19:00" });
+    expect(ctx.handle.db.select().from(schema.externalTaskLinkManagedReminders)
+      .where(eq(schema.externalTaskLinkManagedReminders.externalTaskLinkId, link.id))
+      .all()).toEqual(expect.arrayContaining([
+        expect.objectContaining({ key: "early", reminderId: early.reminderId }),
+        expect.objectContaining({ key: "eve", reminderId: eve.reminderId }),
+      ]));
   });
 
   it("applies a managed reminder when reopening a completed task", () => {

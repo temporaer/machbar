@@ -49,6 +49,10 @@
           "name": "Deadline reminder",
           "description": "Create or update one Home Assistant-managed reminder relative to the task deadline, or clear it with null."
         },
+        "deadline_reminders": {
+          "name": "Deadline reminders",
+          "description": "Replace the Home Assistant-managed deadline-relative reminders by key; use null or an empty list to remove them."
+        },
         "priority": {
           "name": "Priority",
           "description": "Machbar priority from 1 (highest) to 5 (lowest)."

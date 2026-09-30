@@ -192,6 +192,60 @@ describe("Home Assistant physical contexts", () => {
       token.token,
     );
     expect(invalid.statusCode).toBe(400);
+
+    const plural = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      {
+        sourceKey: "deadline-plural",
+        relevant: true,
+        title: "Mehrere Fristen",
+        deadlineReminders: [
+          {
+            key: "early",
+            daysBefore: 5,
+            time: "19:00",
+            timezone: "Europe/Berlin",
+          },
+          {
+            key: "eve",
+            daysBefore: 1,
+            time: "19:00",
+            timezone: "Europe/Berlin",
+          },
+        ],
+      },
+      token.token,
+    );
+    expect(plural.statusCode).toBe(200);
+    expect(ctx.handle.db.select().from(schema.taskReminders).all()).toHaveLength(3);
+
+    const duplicate = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      {
+        sourceKey: "deadline-duplicate",
+        relevant: true,
+        title: "Doppelt",
+        deadlineReminders: [
+          { key: "same", daysBefore: 1, time: "19:00", timezone: "Europe/Berlin" },
+          { key: "same", daysBefore: 2, time: "19:00", timezone: "Europe/Berlin" },
+        ],
+      },
+      token.token,
+    );
+    expect(duplicate.statusCode).toBe(400);
+
+    const both = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      {
+        sourceKey: "deadline-both",
+        relevant: true,
+        title: "Beide",
+        deadlineReminder: null,
+        deadlineReminders: [],
+      },
+      token.token,
+    );
+    expect(both.statusCode).toBe(400);
   });
 
   it("returns 204 without creating a task for an unknown irrelevant source", async () => {

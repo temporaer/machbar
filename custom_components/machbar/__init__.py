@@ -50,6 +50,25 @@ def _sync_task_schema() -> vol.Schema:
             vol.Required("timezone"): str,
         }
     )
+    deadline_reminder_item_schema = vol.Schema({
+        vol.Required("key"): vol.All(str, vol.Length(min=1)),
+        vol.Required("days_before"): vol.All(int, vol.Range(min=0)),
+        vol.Required("time"): vol.All(
+            str, cv.matches_regex(r"^([01]\d|2[0-3]):[0-5]\d$")
+        ),
+        vol.Required("timezone"): str,
+    })
+
+    def validate_deadline_reminders(value: Any) -> list[dict[str, Any]]:
+        if not isinstance(value, list):
+            raise vol.Invalid("Deadline reminders must be a list.")
+        validated = [deadline_reminder_item_schema(item) for item in value]
+        keys = [item["key"] for item in validated]
+        if len(keys) != len(set(keys)):
+            raise vol.Invalid("Deadline reminder keys must be unique.")
+        return validated
+
+    deadline_reminders_schema = validate_deadline_reminders
     return vol.Schema(
         {
             vol.Required("config_entry_id"): str,
@@ -66,6 +85,9 @@ def _sync_task_schema() -> vol.Schema:
             vol.Optional("reactivate_completed", default=False): bool,
             vol.Optional("overwrite_notes", default=False): bool,
             vol.Optional("deadline_reminder"): vol.Any(None, deadline_reminder_schema),
+            vol.Optional("deadline_reminders"): vol.Any(
+                None, deadline_reminders_schema
+            ),
             vol.Optional("priority"): vol.Any(int, None),
             vol.Optional("size"): vol.Any(vol.In(["S", "M", "L", "XL"]), None),
         }
@@ -113,6 +135,7 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
             ("reactivate_completed", "reactivateCompleted"),
             ("overwrite_notes", "overwriteNotes"),
             ("deadline_reminder", "deadlineReminder"),
+            ("deadline_reminders", "deadlineReminders"),
             ("priority", "priority"),
             ("size", "size"),
         ):
@@ -124,6 +147,16 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
                         "time": value["time"],
                         "timezone": value["timezone"],
                     }
+                if source == "deadline_reminders" and value is not None:
+                    value = [
+                        {
+                            "key": reminder["key"],
+                            "daysBefore": reminder["days_before"],
+                            "time": reminder["time"],
+                            "timezone": reminder["timezone"],
+                        }
+                        for reminder in value
+                    ]
                 payload[target_name] = value
         await client.sync_task(payload)
 
