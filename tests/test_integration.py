@@ -182,8 +182,8 @@ async def test_sync_task_service_maps_reactivation_and_note_options(hass):
         await hass.config_entries.async_unload(entry.entry_id)
 
 
-async def test_sync_task_service_maps_nullable_deadline_reminder_and_omits_it_when_absent(hass):
-    """Deadline reminder payloads use the API contract and omitted values stay omitted."""
+async def test_sync_task_service_maps_deadline_reminders_and_omits_them_when_absent(hass):
+    """Deadline reminder payloads use API casing and omitted values stay omitted."""
     entry = _entry()
     entry.add_to_hass(hass)
     with (
@@ -222,6 +222,29 @@ async def test_sync_task_service_maps_nullable_deadline_reminder_and_omits_it_wh
         await hass.services.async_call(
             DOMAIN,
             "sync_task",
+            {
+                **base,
+                "source_key": "service:plural",
+                "deadline_reminders": [
+                    {
+                        "key": "early",
+                        "days_before": 5,
+                        "time": "19:00",
+                        "timezone": "Europe/Berlin",
+                    },
+                    {
+                        "key": "eve",
+                        "days_before": 1,
+                        "time": "19:00",
+                        "timezone": "Europe/Berlin",
+                    },
+                ],
+            },
+            blocking=True,
+        )
+        await hass.services.async_call(
+            DOMAIN,
+            "sync_task",
             {**base, "source_key": "service:omitted"},
             blocking=True,
         )
@@ -230,7 +253,22 @@ async def test_sync_task_service_maps_nullable_deadline_reminder_and_omits_it_wh
             "time": "19:00",
             "timezone": "Europe/Berlin",
         }
-        assert "deadlineReminder" not in sync_task.await_args_list[1].args[0]
+        assert sync_task.await_args_list[1].args[0]["deadlineReminders"] == [
+            {
+                "key": "early",
+                "daysBefore": 5,
+                "time": "19:00",
+                "timezone": "Europe/Berlin",
+            },
+            {
+                "key": "eve",
+                "daysBefore": 1,
+                "time": "19:00",
+                "timezone": "Europe/Berlin",
+            },
+        ]
+        assert "deadlineReminder" not in sync_task.await_args_list[2].args[0]
+        assert "deadlineReminders" not in sync_task.await_args_list[2].args[0]
         await hass.config_entries.async_unload(entry.entry_id)
 
 

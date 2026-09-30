@@ -48,6 +48,25 @@ const deadlineRelativeReminderSchema = z.object({
     .refine(isValidIanaTimezone, "Timezone must be a valid IANA zone name."),
 });
 
+const managedDeadlineReminderSchema = deadlineRelativeReminderSchema.extend({
+  key: z.string().min(1),
+});
+
+const managedDeadlineRemindersSchema = z
+  .array(managedDeadlineReminderSchema)
+  .superRefine((reminders, context) => {
+    const keys = new Set<string>();
+    for (const reminder of reminders) {
+      if (keys.has(reminder.key)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Managed reminder keys must be unique.",
+        });
+      }
+      keys.add(reminder.key);
+    }
+  });
+
 export const taskReminderInputSchema = z.discriminatedUnion("kind", [
   z.object({
     id: z.number().int().positive().optional(),
@@ -73,8 +92,18 @@ export const homeAssistantSyncTaskSchema = z
     reactivateCompleted: z.boolean().optional(),
     overwriteNotes: z.boolean().optional(),
     deadlineReminder: deadlineRelativeReminderSchema.nullable().optional(),
+    deadlineReminders: managedDeadlineRemindersSchema.nullable().optional(),
     priority: z.number().int().min(1).max(5).nullable().optional(),
     size: z.enum(taskSizes).nullable().optional(),
+  })
+  .superRefine((input, context) => {
+    if (input.deadlineReminder !== undefined && input.deadlineReminders !== undefined) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["deadlineReminders"],
+        message: "Use either deadlineReminder or deadlineReminders, not both.",
+      });
+    }
   });
 
 export const createProjectSchema = z.object({

@@ -39,6 +39,9 @@ sync_task:
     deadline_reminder:
       selector:
         object:
+    deadline_reminders:
+      selector:
+        object:
     priority:
       selector:
         number:

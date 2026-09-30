@@ -92,6 +92,13 @@
       "when": 1790804083468,
       "tag": "0012_add_managed_external_reminder",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1790805761237,
+      "tag": "0013_add_keyed_managed_external_reminders",
+      "breakpoints": true
     }
   ]
 }
