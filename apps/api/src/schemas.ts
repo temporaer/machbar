@@ -88,6 +88,8 @@ export const homeAssistantSyncTaskSchema = z
     person: z.string().min(1).nullable().optional(),
     scheduledDate: isoDate.nullable().optional(),
     dueDate: isoDate.nullable().optional(),
+    notBeforeAt: isoDateTime.nullable().optional(),
+    notBeforeDate: isoDate.nullable().optional(),
     notes: z.string().nullable().optional(),
     reactivateCompleted: z.boolean().optional(),
     overwriteNotes: z.boolean().optional(),
@@ -97,6 +99,25 @@ export const homeAssistantSyncTaskSchema = z
     size: z.enum(taskSizes).nullable().optional(),
   })
   .superRefine((input, context) => {
+    const hasAt = input.notBeforeAt !== undefined;
+    const hasDate = input.notBeforeDate !== undefined;
+    if (hasAt !== hasDate) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["notBeforeAt"],
+        message: "notBeforeAt and notBeforeDate must be supplied together.",
+      });
+    } else if (
+      hasAt &&
+      hasDate &&
+      (input.notBeforeAt === null) !== (input.notBeforeDate === null)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["notBeforeDate"],
+        message: "notBeforeAt and notBeforeDate must both be set or both be null.",
+      });
+    }
     if (input.deadlineReminder !== undefined && input.deadlineReminders !== undefined) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

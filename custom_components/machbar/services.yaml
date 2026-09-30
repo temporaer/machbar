@@ -26,6 +26,12 @@ sync_task:
     due_date:
       selector:
         date:
+    not_before_at:
+      selector:
+        text:
+    not_before_date:
+      selector:
+        date:
     notes:
       selector:
         text:

@@ -13,6 +13,8 @@ export interface ExternalTaskSyncInput {
   person?: string | null;
   scheduledDate?: string | null;
   dueDate?: string | null;
+  notBeforeAt?: string | null;
+  notBeforeDate?: string | null;
   notes?: string | null;
   reactivateCompleted?: boolean;
   overwriteNotes?: boolean;
@@ -37,6 +39,35 @@ const SOURCE = "home_assistant";
 // Home Assistant. Any human lifecycle change invalidates that authority.
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function assertAvailabilityPair(input: ExternalTaskSyncInput): void {
+  const hasAt = input.notBeforeAt !== undefined;
+  const hasDate = input.notBeforeDate !== undefined;
+  if (hasAt !== hasDate) {
+    throw AppError.badRequest(
+      "task_availability_date_required",
+      "Task availability requires both an instant and a local calendar date.",
+      {
+        notBeforeAt: input.notBeforeAt,
+        notBeforeDate: input.notBeforeDate,
+      },
+    );
+  }
+  if (
+    hasAt &&
+    hasDate &&
+    (input.notBeforeAt === null) !== (input.notBeforeDate === null)
+  ) {
+    throw AppError.badRequest(
+      "task_availability_date_required",
+      "Task availability requires both fields to be set or both to be cleared.",
+      {
+        notBeforeAt: input.notBeforeAt,
+        notBeforeDate: input.notBeforeDate,
+      },
+    );
+  }
 }
 
 function mappedMemberId(db: Db, integrationId: number, person: string): number {
@@ -217,6 +248,7 @@ export function syncExternalTask(
   integrationId: number,
   input: ExternalTaskSyncInput,
 ) {
+  assertAvailabilityPair(input);
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const existing = tx
@@ -305,6 +337,8 @@ export function syncExternalTask(
           input.person === undefined || input.person === null ? "none" : "explicit",
         dueDate: input.dueDate,
         scheduledDate: input.scheduledDate,
+        notBeforeAt: input.notBeforeAt,
+        notBeforeDate: input.notBeforeDate,
         priority: input.priority,
         size: input.size,
         reminders: managedReminderRequest(input)?.reminders.map((reminder) => ({
@@ -396,6 +430,8 @@ export function syncExternalTask(
     if (input.title !== undefined) patch.title = input.title;
     if (input.scheduledDate !== undefined) patch.scheduledDate = input.scheduledDate;
     if (input.dueDate !== undefined) patch.dueDate = input.dueDate;
+    if (input.notBeforeAt !== undefined) patch.notBeforeAt = input.notBeforeAt;
+    if (input.notBeforeDate !== undefined) patch.notBeforeDate = input.notBeforeDate;
     if (input.priority !== undefined) patch.priority = input.priority;
     if (input.size !== undefined) patch.size = input.size;
     if (input.overwriteNotes === true && input.notes !== undefined) {

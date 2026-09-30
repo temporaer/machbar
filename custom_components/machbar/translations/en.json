@@ -33,6 +33,14 @@
           "name": "Due date",
           "description": "Task deadline."
         },
+        "not_before_at": {
+          "name": "Available from",
+          "description": "UTC instant when the task becomes available; provide together with the local not_before_date."
+        },
+        "not_before_date": {
+          "name": "Available from date",
+          "description": "Local calendar date when the task becomes available. This controls availability; scheduled_date records when we committed to doing it."
+        },
         "notes": {
           "name": "Notes",
           "description": "Notes used when creating the task; later changes require overwrite notes."

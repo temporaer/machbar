@@ -64,6 +64,109 @@ describe("Home Assistant external task reconciliation", () => {
     expect(task.priority).toBe(1);
   });
 
+  it("creates and reconciles availability independently from scheduled date", () => {
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "availability",
+      relevant: true,
+      title: "Bücher zurückgeben",
+      dueDate: "2026-10-20",
+      notBeforeAt: "2026-10-13T22:00:00.000Z",
+      notBeforeDate: "2026-10-14",
+    })!;
+    let task = ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()!;
+    expect(task).toMatchObject({
+      scheduledDate: null,
+      notBeforeAt: "2026-10-13T22:00:00.000Z",
+      notBeforeDate: "2026-10-14",
+    });
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "availability",
+      relevant: true,
+      scheduledDate: "2026-10-15",
+      notBeforeAt: "2026-10-14T22:00:00.000Z",
+      notBeforeDate: "2026-10-15",
+    });
+    task = ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()!;
+    expect(task).toMatchObject({
+      scheduledDate: "2026-10-15",
+      notBeforeAt: "2026-10-14T22:00:00.000Z",
+      notBeforeDate: "2026-10-15",
+    });
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "availability",
+      relevant: true,
+    });
+    task = ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()!;
+    expect(task).toMatchObject({
+      scheduledDate: "2026-10-15",
+      notBeforeAt: "2026-10-14T22:00:00.000Z",
+      notBeforeDate: "2026-10-15",
+    });
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "availability",
+      relevant: true,
+      notBeforeAt: null,
+      notBeforeDate: null,
+    });
+    task = ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get()!;
+    expect(task).toMatchObject({
+      scheduledDate: "2026-10-15",
+      notBeforeAt: null,
+      notBeforeDate: null,
+    });
+  });
+
+  it("rejects incomplete availability payloads without partial writes", () => {
+    expect(() => syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "availability-incomplete",
+      relevant: true,
+      title: "Ungültig",
+      notBeforeAt: "2026-10-13T22:00:00.000Z",
+    })).toThrowError(/both/i);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "availability-mixed",
+      relevant: true,
+      title: "Bestehend",
+      notBeforeAt: "2026-10-13T22:00:00.000Z",
+      notBeforeDate: "2026-10-14",
+    })!;
+    expect(() => syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "availability-mixed",
+      relevant: true,
+      title: "Nicht anwenden",
+      notBeforeAt: null,
+      notBeforeDate: "2026-10-15",
+    })).toThrowError(/both/i);
+    expect(ctx.handle.db.select().from(schema.workItems)
+      .where(eq(schema.workItems.id, created.taskId)).get())
+      .toMatchObject({
+        title: "Bestehend",
+        notBeforeAt: "2026-10-13T22:00:00.000Z",
+        notBeforeDate: "2026-10-14",
+      });
+  });
+
+  it("reuses existing availability validation when scheduling before availability", () => {
+    expect(() => syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "availability-schedule-conflict",
+      relevant: true,
+      title: "Zu früh geplant",
+      scheduledDate: "2026-10-13",
+      notBeforeAt: "2026-10-13T22:00:00.000Z",
+      notBeforeDate: "2026-10-14",
+    })).toThrowError(/before it becomes available/i);
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+  });
+
   it("reconciles one managed deadline reminder without touching manual reminders", () => {
     const created = syncExternalTask(ctx.handle.db, integrationId, {
       sourceKey: "deadline-reminder",
