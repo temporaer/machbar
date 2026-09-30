@@ -1,0 +1,1 @@
+ALTER TABLE `external_task_links` ADD `managed_reminder_id` integer REFERENCES task_reminders(id) ON DELETE SET NULL;

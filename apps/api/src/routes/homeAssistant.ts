@@ -69,9 +69,14 @@ export function registerHomeAssistantRoutes(
     return null;
   });
 
-  app.post(`${ROOT}/tasks/sync`, async (request) => {
+  app.post(`${ROOT}/tasks/sync`, async (request, reply) => {
     const body = parseOrThrow(homeAssistantSyncTaskSchema, request.body);
-    return syncExternalTask(db, request.homeAssistantIntegrationId!, body);
+    const result = syncExternalTask(db, request.homeAssistantIntegrationId!, body);
+    if (result === null) {
+      reply.status(204);
+      return null;
+    }
+    return result;
   });
 
   app.put<{ Params: { externalId: string } }>(

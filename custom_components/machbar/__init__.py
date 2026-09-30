@@ -41,6 +41,15 @@ class MachbarRuntime:
 
 
 def _sync_task_schema() -> vol.Schema:
+    deadline_reminder_schema = vol.Schema(
+        {
+            vol.Required("days_before"): vol.All(int, vol.Range(min=0)),
+            vol.Required("time"): vol.All(
+                str, cv.matches_regex(r"^([01]\d|2[0-3]):[0-5]\d$")
+            ),
+            vol.Required("timezone"): str,
+        }
+    )
     return vol.Schema(
         {
             vol.Required("config_entry_id"): str,
@@ -54,6 +63,9 @@ def _sync_task_schema() -> vol.Schema:
             vol.Optional("scheduled_date"): vol.Any(str, None),
             vol.Optional("due_date"): vol.Any(str, None),
             vol.Optional("notes"): vol.Any(str, None),
+            vol.Optional("reactivate_completed", default=False): bool,
+            vol.Optional("overwrite_notes", default=False): bool,
+            vol.Optional("deadline_reminder"): vol.Any(None, deadline_reminder_schema),
             vol.Optional("priority"): vol.Any(int, None),
             vol.Optional("size"): vol.Any(vol.In(["S", "M", "L", "XL"]), None),
         }
@@ -98,11 +110,21 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
             ("scheduled_date", "scheduledDate"),
             ("due_date", "dueDate"),
             ("notes", "notes"),
+            ("reactivate_completed", "reactivateCompleted"),
+            ("overwrite_notes", "overwriteNotes"),
+            ("deadline_reminder", "deadlineReminder"),
             ("priority", "priority"),
             ("size", "size"),
         ):
             if source in call.data:
-                payload[target_name] = call.data[source]
+                value = call.data[source]
+                if source == "deadline_reminder" and value is not None:
+                    value = {
+                        "daysBefore": value["days_before"],
+                        "time": value["time"],
+                        "timezone": value["timezone"],
+                    }
+                payload[target_name] = value
         await client.sync_task(payload)
 
     hass.services.async_register(

@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { TaskSize } from "@machbar/shared";
+import type { TaskReminderInput, TaskSize } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -14,14 +14,17 @@ export interface ExternalTaskSyncInput {
   scheduledDate?: string | null;
   dueDate?: string | null;
   notes?: string | null;
+  reactivateCompleted?: boolean;
+  overwriteNotes?: boolean;
+  deadlineReminder?: {
+    daysBefore: number;
+    time: string;
+    timezone: string;
+  } | null;
   priority?: number | null;
   size?: TaskSize | null;
 }
 
-/**
- * Notes are intentionally create-time only. Home Assistant must not overwrite
- * arbitrary human-authored notes during later desired-state reconciliation.
- */
 const SOURCE = "home_assistant";
 
 // A withdrawn link may reopen only the exact cancellation revision produced by
@@ -53,7 +56,78 @@ function mappedMemberId(db: Db, integrationId: number, person: string): number {
       { person },
     );
   }
+
   return mapping.memberId;
+}
+
+function reminderInput(row: typeof schema.taskReminders.$inferSelect): TaskReminderInput {
+  if (row.kind === "absolute") {
+    return { id: row.id, kind: "absolute", at: row.at! };
+  }
+  return {
+    id: row.id,
+    kind: "deadline_relative",
+    daysBefore: row.daysBefore!,
+    time: row.time!,
+    timezone: row.timezone!,
+  };
+}
+
+function reconcileManagedReminder(
+  db: Db,
+  taskId: number,
+  managedReminderId: number | null,
+  deadlineReminder: NonNullable<ExternalTaskSyncInput["deadlineReminder"]>,
+): number | null {
+  const current = db
+    .select()
+    .from(schema.taskReminders)
+    .where(eq(schema.taskReminders.taskId, taskId))
+    .all();
+  const currentIds = new Set(current.map((reminder) => reminder.id));
+  const managed = managedReminderId === null
+    ? undefined
+    : current.find((reminder) => reminder.id === managedReminderId);
+  const reminders = current.map(reminderInput);
+  if (managed) {
+    const index = reminders.findIndex((reminder) => reminder.id === managed.id);
+    reminders[index] = {
+      id: managed.id,
+      kind: "deadline_relative",
+      ...deadlineReminder,
+    };
+  } else {
+    reminders.push({ kind: "deadline_relative", ...deadlineReminder });
+  }
+  updateTask(db, taskId, { reminders });
+  if (managed) return managed.id;
+  const created = db
+    .select({ id: schema.taskReminders.id })
+    .from(schema.taskReminders)
+    .where(eq(schema.taskReminders.taskId, taskId))
+    .all()
+    .find((reminder) => !currentIds.has(reminder.id));
+  return created?.id ?? null;
+}
+
+function removeManagedReminder(
+  db: Db,
+  taskId: number,
+  managedReminderId: number | null,
+): number | null {
+  if (managedReminderId === null) return null;
+  const current = db
+    .select()
+    .from(schema.taskReminders)
+    .where(eq(schema.taskReminders.taskId, taskId))
+    .all();
+  if (!current.some((reminder) => reminder.id === managedReminderId)) return null;
+  updateTask(db, taskId, {
+    reminders: current
+      .filter((reminder) => reminder.id !== managedReminderId)
+      .map(reminderInput),
+  });
+  return null;
 }
 
 export function syncExternalTask(
@@ -151,7 +225,13 @@ export function syncExternalTask(
         scheduledDate: input.scheduledDate,
         priority: input.priority,
         size: input.size,
+        reminders: input.deadlineReminder === undefined || input.deadlineReminder === null
+          ? undefined
+          : [{ kind: "deadline_relative", ...input.deadlineReminder }],
       });
+      const managedReminderId = input.deadlineReminder
+        ? task.reminders.find((reminder) => reminder.kind === "deadline_relative")?.id ?? null
+        : null;
       tx
         .insert(schema.externalTaskLinks)
         .values({
@@ -159,6 +239,7 @@ export function syncExternalTask(
           sourceKey: input.sourceKey,
           taskId: task.id,
           state: "active",
+          managedReminderId,
         })
         .run();
       return { taskId: task.id, state: "active" as const };
@@ -171,13 +252,16 @@ export function syncExternalTask(
       .get();
     if (!task) throw AppError.notFound("task_not_found", "The linked task was not found.");
     if (task.status === "done") {
-      if (existing.state !== "active" || existing.withdrawnTaskRevision !== null) {
-        tx.update(schema.externalTaskLinks)
-          .set({ state: "active", withdrawnTaskRevision: null, updatedAt: nowIso() })
-          .where(eq(schema.externalTaskLinks.id, existing.id))
-          .run();
+      if (input.reactivateCompleted !== true) {
+        if (existing.state !== "active" || existing.withdrawnTaskRevision !== null) {
+          tx.update(schema.externalTaskLinks)
+            .set({ state: "active", withdrawnTaskRevision: null, updatedAt: nowIso() })
+            .where(eq(schema.externalTaskLinks.id, existing.id))
+            .run();
+        }
+        return { taskId: task.id, state: "active" as const };
       }
-      return { taskId: task.id, state: "active" as const };
+      reopenTask(txDb, task.id);
     }
     if (task.status === "cancelled" && existing.state === "withdrawn") {
       if (existing.withdrawnTaskRevision === task.revision) {
@@ -208,9 +292,27 @@ export function syncExternalTask(
     if (input.dueDate !== undefined) patch.dueDate = input.dueDate;
     if (input.priority !== undefined) patch.priority = input.priority;
     if (input.size !== undefined) patch.size = input.size;
+    if (input.overwriteNotes === true && input.notes !== undefined) {
+      patch.notes = input.notes ?? "";
+    }
     if (input.person !== undefined) {
       patch.ownerMemberId = personMemberId ?? null;
       patch.ownerInheritanceMode = personMemberId === undefined ? "none" : "explicit";
+    }
+    if (input.deadlineReminder !== undefined) {
+      const managedReminderId = input.deadlineReminder === null
+        ? removeManagedReminder(txDb, task.id, existing.managedReminderId)
+        : reconcileManagedReminder(
+            txDb,
+            task.id,
+            existing.managedReminderId,
+            input.deadlineReminder,
+          );
+      tx
+        .update(schema.externalTaskLinks)
+        .set({ managedReminderId, updatedAt: nowIso() })
+        .where(eq(schema.externalTaskLinks.id, existing.id))
+        .run();
     }
     if (Object.keys(patch).length > 0) updateTask(txDb, task.id, patch);
     tx

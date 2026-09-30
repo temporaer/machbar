@@ -1241,14 +1241,19 @@ export function updateTask(
     }
     const updated = getTaskOrThrow(txDb, id);
     const effectiveOwnerAfter = effectiveOwnerId(txDb, id);
-    // Editing reminders, or an effective-ownership change (which changes
-    // who the current/future reminder recipients are), can make an
-    // already-enqueued-but-undelivered `task_reminder` event stale: clear
-    // it so the next runner pass re-resolves recipients/occurrences from
-    // scratch instead of firing with obsolete recipient or timing.
+    // Editing reminders, a deadline (which changes relative occurrences), or
+    // an effective-ownership change (which changes who the current/future
+    // reminder recipients are) can make an already-enqueued-but-undelivered
+    // `task_reminder` event stale: clear it so the next runner pass
+    // re-resolves recipients/occurrences from scratch instead of firing with
+    // obsolete recipient or timing.
     // Already-delivered events are untouched (they are just dedup/history
     // state); this only ever removes still-pending ones.
-    if (remindersChanged || effectiveOwnerBefore !== effectiveOwnerAfter) {
+    if (
+      remindersChanged ||
+      changedFields.includes("dueDate") ||
+      effectiveOwnerBefore !== effectiveOwnerAfter
+    ) {
       deletePendingTaskReminderEvents(txDb, id);
     }
     const coalescedChangedFields = [

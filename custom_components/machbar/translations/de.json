@@ -35,7 +35,19 @@
         },
         "notes": {
           "name": "Notiz",
-          "description": "Wird nur beim Erstellen als Anfangsnotiz verwendet."
+          "description": "Wird beim Erstellen verwendet; spätere Änderungen benötigen das Überschreiben der Notiz."
+        },
+        "reactivate_completed": {
+          "name": "Erledigte reaktivieren",
+          "description": "Verknüpfte erledigte Aufgaben vor dem Anwenden der Angaben wieder öffnen."
+        },
+        "overwrite_notes": {
+          "name": "Notizen überschreiben",
+          "description": "Notizen bei späteren Abgleichen ersetzen oder löschen, wenn notes angegeben ist."
+        },
+        "deadline_reminder": {
+          "name": "Fristerinnerung",
+          "description": "Eine von Home Assistant verwaltete Erinnerung relativ zur Frist erstellen oder aktualisieren; mit null löschen."
         },
         "priority": {
           "name": "Priorität",

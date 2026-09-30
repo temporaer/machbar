@@ -127,7 +127,13 @@ describe("Home Assistant physical contexts", () => {
     expect(
       (await post(
         "/api/integrations/home-assistant/tasks/sync",
-        { sourceKey: "priority-5", relevant: true, title: "P5", priority: 5 },
+        {
+          sourceKey: "priority-5",
+          relevant: true,
+          title: "P5",
+          priority: 5,
+          deadlineReminder: null,
+        },
         token.token,
       )).statusCode,
     ).toBe(200);
@@ -145,6 +151,59 @@ describe("Home Assistant physical contexts", () => {
         title: "Nein",
       })).statusCode,
     ).toBe(401);
+  });
+
+  it("validates and accepts nullable deadline reminders", async () => {
+    const token = await connect();
+    const valid = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      {
+        sourceKey: "deadline-valid",
+        relevant: true,
+        title: "Frist",
+        deadlineReminder: {
+          daysBefore: 1,
+          time: "19:00",
+          timezone: "Europe/Berlin",
+        },
+      },
+      token.token,
+    );
+    expect(valid.statusCode).toBe(200);
+    expect(ctx.handle.db.select().from(schema.taskReminders).get()).toMatchObject({
+      kind: "deadline_relative",
+      daysBefore: 1,
+      time: "19:00",
+      timezone: "Europe/Berlin",
+    });
+
+    const invalid = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      {
+        sourceKey: "deadline-invalid",
+        relevant: true,
+        title: "Ungültig",
+        deadlineReminder: {
+          daysBefore: -1,
+          time: "19:00",
+          timezone: "Europe/Berlin",
+        },
+      },
+      token.token,
+    );
+    expect(invalid.statusCode).toBe(400);
+  });
+
+  it("returns 204 without creating a task for an unknown irrelevant source", async () => {
+    const token = await connect();
+    const response = await post(
+      "/api/integrations/home-assistant/tasks/sync",
+      { sourceKey: "unknown-irrelevant", relevant: false },
+      token.token,
+    );
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe("");
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
   });
 
   it("resolves mapped people and rejects unmapped or unknown people", async () => {

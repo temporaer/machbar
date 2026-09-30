@@ -30,6 +30,15 @@ sync_task:
       selector:
         text:
           multiline: true
+    reactivate_completed:
+      selector:
+        boolean:
+    overwrite_notes:
+      selector:
+        boolean:
+    deadline_reminder:
+      selector:
+        object:
     priority:
       selector:
         number:

@@ -5,6 +5,7 @@ import * as schema from "../src/db/schema.js";
 import { createProject, updateProject } from "../src/domain/storyCrud.js";
 import { activateProject } from "../src/domain/storyWorkflow.js";
 import { createTask, updateTask } from "../src/domain/taskCrud.js";
+import { syncExternalTask } from "../src/domain/externalTaskSync.js";
 import {
   buildNotificationPayload,
   dispatchNotificationEvents,
@@ -599,6 +600,7 @@ describe("reminders and Push delivery", () => {
         { kind: "absolute", at: "2026-09-02T08:00:00.000Z" },
       ],
     });
+
     const [first, second] = task.reminders;
     const firstAt = first && first.kind === "absolute" ? first.at : "";
     const updated = updateTask(ctx.handle.db, task.id, {
@@ -611,6 +613,52 @@ describe("reminders and Push delivery", () => {
     expect(
       ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, task.id)).all(),
     ).toHaveLength(2);
+  });
+
+  it("moves a Home Assistant managed reminder with the deadline and clears stale pending delivery", () => {
+    const hannes = addMember(ctx, "Hannes");
+    const integrationId = ctx.handle.db.insert(schema.homeAssistantIntegrations)
+      .values({
+        instanceId: "notifications",
+        tokenHash: "token",
+        protocolVersion: 2,
+        connectedAt: new Date().toISOString(),
+      })
+      .returning({ id: schema.homeAssistantIntegrations.id }).get().id;
+    const created = syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "notification-deadline",
+      relevant: true,
+      title: "Abgabe",
+      dueDate: "2026-09-20",
+      person: null,
+      deadlineReminder: {
+        daysBefore: 1,
+        time: "09:00",
+        timezone: "Europe/Berlin",
+      },
+    })!;
+    updateTask(ctx.handle.db, created.taskId, {
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+    });
+    ctx.handle.db.delete(schema.notificationEvents).run();
+
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-19T06:59:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-19T07:00:00Z"))).toBe(1);
+
+    syncExternalTask(ctx.handle.db, integrationId, {
+      sourceKey: "notification-deadline",
+      relevant: true,
+      dueDate: "2026-09-25",
+    });
+    expect(ctx.handle.db.select().from(schema.notificationEvents)
+      .where(and(
+        eq(schema.notificationEvents.kind, "task_reminder"),
+        isNull(schema.notificationEvents.processedAt),
+      )).all()).toEqual([]);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-19T07:00:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-24T06:59:00Z"))).toBe(0);
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-24T07:00:00Z"))).toBe(1);
   });
 
   it("deleting a reminder removes its still-pending notification", () => {
