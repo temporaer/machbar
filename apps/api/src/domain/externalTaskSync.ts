@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { TaskReminderInput, TaskSize } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -128,50 +128,75 @@ function reconcileManagedReminders(
     .all()
     .filter((mapping) => currentIds.has(mapping.reminderId));
   const managedByKey = new Map(mappings.map((mapping) => [mapping.key, mapping]));
-  const requested = request.mode === "all"
-    ? request.reminders
-    : [
-        ...mappings
-          .filter((mapping) => mapping.key !== "default")
-          .map((mapping) => {
-            const reminder = current.find((row) => row.id === mapping.reminderId)!;
-            return {
-              key: mapping.key,
-              daysBefore: reminder.daysBefore!,
-              time: reminder.time!,
-              timezone: reminder.timezone!,
-            };
-          }),
-        ...request.reminders,
-      ];
   const managedIds = new Set(mappings.map((mapping) => mapping.reminderId));
   const manualReminders = current
     .filter((reminder) => !managedIds.has(reminder.id))
     .map(reminderInput);
-  const managedReminders = requested.map((reminder) => {
-    const mapping = managedByKey.get(reminder.key);
-    return {
-      id: mapping?.reminderId,
-      kind: "deadline_relative" as const,
-      daysBefore: reminder.daysBefore,
-      time: reminder.time,
-      timezone: reminder.timezone,
-    };
-  });
+  const requested = request.mode === "all"
+    ? request.reminders
+    : request.reminders;
+  const preservedNonDefault = mappings
+    .filter((mapping) => mapping.key !== "default")
+    .map((mapping) => ({
+      key: mapping.key,
+      input: reminderInput(current.find((row) => row.id === mapping.reminderId)!),
+    }));
+  const managedReminders = request.mode === "all"
+    ? requested.map((reminder) => {
+        const mapping = managedByKey.get(reminder.key);
+        return {
+          key: reminder.key,
+          input: {
+            id: mapping?.reminderId,
+            kind: "deadline_relative" as const,
+            daysBefore: reminder.daysBefore,
+            time: reminder.time,
+            timezone: reminder.timezone,
+          },
+        };
+      })
+    : [
+        ...preservedNonDefault,
+        ...requested.map((reminder) => ({
+          key: reminder.key,
+          input: {
+            id: managedByKey.get(reminder.key)?.reminderId,
+            kind: "deadline_relative" as const,
+            daysBefore: reminder.daysBefore,
+            time: reminder.time,
+            timezone: reminder.timezone,
+          },
+        })),
+      ];
   const next = [
     ...manualReminders,
-    ...managedReminders,
+    ...managedReminders.map(({ input }) => input),
   ];
-  const updated = updateTask(db, taskId, { reminders: next });
-  const insertedIds = updated.reminders
-    .map((reminder) => reminder.id)
-    .filter((id): id is number => id !== undefined && !currentIds.has(id));
-  const resolvedMappings = requested.map((reminder) => {
-    const existing = managedByKey.get(reminder.key);
+  updateTask(db, taskId, { reminders: next });
+  const newReminderIds = db
+    .select({ id: schema.taskReminders.id })
+    .from(schema.taskReminders)
+    .where(eq(schema.taskReminders.taskId, taskId))
+    .orderBy(asc(schema.taskReminders.id))
+    .all()
+    .map(({ id }) => id)
+    .filter((id) => !currentIds.has(id));
+  const newKeys = managedReminders
+    .filter(({ input }) => input.id === undefined)
+    .map(({ key }) => key);
+  if (newReminderIds.length !== newKeys.length) {
+    throw AppError.badRequest(
+      "task_reminder_invalid",
+      "The managed reminder IDs could not be reconciled.",
+      { taskId, newKeys, newReminderIds },
+    );
+  }
+  const insertedIds = new Map(newKeys.map((key, index) => [key, newReminderIds[index]!]));
+  const resolvedMappings = managedReminders.map(({ key, input }) => {
     return {
       externalTaskLinkId,
-      key: reminder.key,
-      reminderId: existing?.reminderId ?? insertedIds.shift()!,
+      key,
+      reminderId: input.id ?? insertedIds.get(key)!,
     };
   });
   db.delete(schema.externalTaskLinkManagedReminders)
@@ -305,23 +330,22 @@ export function syncExternalTask(
           .select({ id: schema.taskReminders.id })
           .from(schema.taskReminders)
           .where(eq(schema.taskReminders.taskId, task.id))
+          .orderBy(asc(schema.taskReminders.id))
           .all();
+        const newKeys = requested.reminders.map(({ key }) => key);
+        if (reminderRows.length !== newKeys.length) {
+          throw AppError.badRequest(
+            "task_reminder_invalid",
+            "The managed reminder IDs could not be reconciled.",
+            { taskId: task.id, newKeys, reminderRows },
+          );
+        }
         tx.insert(schema.externalTaskLinkManagedReminders)
-          .values(requested.reminders.map((reminder, index) => {
-            const reminderRow = reminderRows[index];
-            if (!reminderRow) {
-              throw AppError.badRequest(
-                "task_reminder_invalid",
-                "The managed reminder rows could not be persisted.",
-                { taskId: task.id },
-              );
-            }
-            return {
-              externalTaskLinkId: link.id,
-              key: reminder.key,
-              reminderId: reminderRow.id,
-            };
-          }))
+          .values(newKeys.map((key, index) => ({
+            externalTaskLinkId: link.id,
+            key,
+            reminderId: reminderRows[index]!.id,
+          })))
           .run();
       }
       return { taskId: task.id, state: "active" as const };
