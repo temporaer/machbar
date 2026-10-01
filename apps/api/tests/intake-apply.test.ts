@@ -155,6 +155,99 @@ describe("intake apply", () => {
     expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
   });
 
+  it("applies only valid selected proposals when an invalid item is disabled", async () => {
+    const setup = await prepare();
+    const selected = draft([
+      {
+        key: "valid",
+        kind: "action",
+        title: "Keep this",
+        notes: null,
+        parentKey: null,
+        dueDate: null,
+        scheduledDate: null,
+        notBeforeDate: null,
+        notBeforeAt: null,
+        reminders: [],
+        needsClarification: false,
+        relatedCalendarKeys: [],
+        enabled: true,
+        ownerMemberId: null,
+      },
+      {
+        key: "invalid-disabled",
+        kind: "action",
+        title: "Do not create",
+        notes: null,
+        parentKey: null,
+        dueDate: null,
+        scheduledDate: null,
+        notBeforeDate: null,
+        notBeforeAt: null,
+        reminders: [{ kind: "absolute", at: "2026-10-01T08:00:00.000Z" }],
+        needsClarification: true,
+        relatedCalendarKeys: [],
+        enabled: false,
+        ownerMemberId: null,
+      },
+    ]);
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id, {
+      expectedRevision: setup.revision,
+      draft: selected,
+    }, { actorMemberId: setup.member.id }, setup.member.id);
+    expect(ctx.handle.db.select().from(schema.workItems).all().map((item) => item.title)).toEqual(["Keep this"]);
+  });
+
+  it("rejects an enabled child whose parent is disabled", async () => {
+    const setup = await prepare();
+    const selected = draft([
+      {
+        key: "parent",
+        kind: "action",
+        title: "Disabled parent",
+        notes: null,
+        parentKey: null,
+        dueDate: null,
+        scheduledDate: null,
+        notBeforeDate: null,
+        notBeforeAt: null,
+        reminders: [],
+        needsClarification: false,
+        relatedCalendarKeys: [],
+        enabled: false,
+        ownerMemberId: null,
+      },
+      {
+        key: "child",
+        kind: "action",
+        title: "Enabled child",
+        notes: null,
+        parentKey: "parent",
+        dueDate: null,
+        scheduledDate: null,
+        notBeforeDate: null,
+        notBeforeAt: null,
+        reminders: [],
+        needsClarification: false,
+        relatedCalendarKeys: [],
+        enabled: true,
+        ownerMemberId: null,
+      },
+    ]);
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id, {
+      expectedRevision: setup.revision,
+      draft: selected,
+    }, { actorMemberId: setup.member.id }, setup.member.id)).rejects.toMatchObject({
+      code: "intake_draft_invalid",
+      details: {
+        issues: expect.arrayContaining([
+          expect.objectContaining({ code: "parent_disabled", path: ["workItems", 1, "parentKey"] }),
+        ]),
+      },
+    });
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+  });
+
   it("does not duplicate work when a calendar apply is retried", async () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();

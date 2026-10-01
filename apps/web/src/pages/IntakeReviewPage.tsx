@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   intakeDraftIssues,
   intakeErrorIssues,
+  intakeSelectedDraftIssues,
   type IntakeDraft,
   type IntakeRecord,
 } from "@machbar/shared";
@@ -11,7 +12,11 @@ import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
-import { localizedErrorMessage, isStaleWriteConflict } from "../lib/errorMessage";
+import {
+  localizedApiErrorMessage,
+  localizedErrorMessage,
+  isStaleWriteConflict,
+} from "../lib/errorMessage";
 import { LoadingState } from "../components/AsyncStates";
 import { IntakeProposalReview } from "./IntakeProposalReview";
 import { type DateValidityChange } from "./IntakeReviewFields";
@@ -101,6 +106,8 @@ export function IntakeReviewPage() {
   const cleanDraftSnapshotRef = useRef<string | null>(null);
   const savePromiseRef = useRef<Promise<boolean> | null>(null);
   const debounceRef = useRef<number | null>(null);
+  const retryInFlightRef = useRef(false);
+  const retryHintDirtyRef = useRef(false);
   const conflictPendingRef = useRef(false);
   const applyingRef = useRef(false);
   const failedSnapshotRef = useRef<string | null>(null);
@@ -112,15 +119,28 @@ export function IntakeReviewPage() {
     }) : []),
     [draft, members, record],
   );
+  const selectedIssues = useMemo(
+    () => (draft ? intakeSelectedDraftIssues(draft, {
+      memberIds: members.map((member) => member.id),
+      paperlessAvailable: record?.paperlessAvailable ?? false,
+      hasFiles: (record?.attachments.length ?? 0) > 0,
+    }) : []),
+    [draft, members, record],
+  );
   const latestIssuesRef = useRef(issues);
   latestIssuesRef.current = issues;
 
   useEffect(() => {
     if (state.data) {
+      if (
+        recordRef.current &&
+        recordRef.current.status !== state.data.status &&
+        ["queued", "analyzing", "applying"].includes(recordRef.current.status)
+      ) return;
       recordRef.current = state.data;
       revisionRef.current = state.data.revision;
       setRecord(state.data);
-      if (state.data.status === "analysis_failed") {
+      if ((state.data.status === "analysis_failed" || state.data.status === "ready") && !retryHintDirtyRef.current) {
         setRetryHint(state.data.retryHint ?? "");
       }
       if (state.data.draft && (
@@ -132,7 +152,7 @@ export function IntakeReviewPage() {
         cleanDraftSnapshotRef.current = JSON.stringify(state.data.draft);
         failedSnapshotRef.current = null;
         conflictPendingRef.current = false;
-        setSaveError(null);
+        if (!retryInFlightRef.current) setSaveError(null);
         setDraft(state.data.draft);
       }
     }
@@ -238,15 +258,62 @@ export function IntakeReviewPage() {
     setRecord(nextRecord);
   };
   const retry = async () => {
+    if (retryInFlightRef.current || applyingRef.current || busy) return;
+    retryInFlightRef.current = true;
     setBusy(true);
+    setSaveError(null);
     try {
-      const nextRecord = await api.retryIntake(id, retryHint);
+      if (record.status === "ready") {
+        if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+        if (savePromiseRef.current && !(await savePromiseRef.current)) {
+          if (conflictPendingRef.current) {
+            setSaveError(localizedApiErrorMessage("stale_write_conflict", undefined, strings));
+          }
+          return;
+        }
+        if (JSON.stringify(latestDraftRef.current) !== cleanDraftSnapshotRef.current) {
+          if (!(await saveCurrentDraft())) {
+            if (conflictPendingRef.current) {
+              setSaveError(localizedApiErrorMessage("stale_write_conflict", undefined, strings));
+            }
+            return;
+          }
+        }
+        if (conflictPendingRef.current) {
+          setSaveError(localizedApiErrorMessage("stale_write_conflict", undefined, strings));
+          return;
+        }
+      }
+      const nextRecord = await api.retryIntake(
+        id,
+        retryHintDirtyRef.current ? retryHint : undefined,
+      );
+      recordRef.current = nextRecord;
+      revisionRef.current = nextRecord.revision;
+      latestDraftRef.current = null;
+      cleanDraftSnapshotRef.current = null;
+      failedSnapshotRef.current = null;
+      conflictPendingRef.current = false;
+      if (nextRecord.status === "ready" && nextRecord.draft) {
+        latestDraftRef.current = nextRecord.draft;
+        cleanDraftSnapshotRef.current = JSON.stringify(nextRecord.draft);
+        setDraft(nextRecord.draft);
+      } else {
+        setDraft(null);
+      }
       setRecord(nextRecord);
       setRetryHint(nextRecord.retryHint ?? "");
-    } finally { setBusy(false); }
+      retryHintDirtyRef.current = false;
+    } catch (cause) {
+      setSaveError(localizedErrorMessage(cause, strings));
+    } finally {
+      retryInFlightRef.current = false;
+      setBusy(false);
+    }
   };
   const applyInitial = async () => {
-    if (record.status !== "ready" || !draft || busy || issues.length || hasInvalidInputs || applyingRef.current) return;
+    if (record.status !== "ready" || !draft || busy || selectedIssues.length || hasInvalidInputs || applyingRef.current || retryInFlightRef.current) return;
     applyingRef.current = true;
     setApplyError(null);
     setBusy(true);
@@ -328,7 +395,11 @@ export function IntakeReviewPage() {
             rows={3}
             value={retryHint}
             placeholder={strings.intakeRetryHintPlaceholder}
-            onChange={(event) => setRetryHint(event.target.value)}
+            disabled={busy}
+            onChange={(event) => {
+              retryHintDirtyRef.current = true;
+              setRetryHint(event.target.value);
+            }}
           />
           <small>{strings.intakeRetryHintHelp}</small>
         </label>
@@ -342,6 +413,7 @@ export function IntakeReviewPage() {
           </details>
         ) : null}
         <p>{record.error?.message ?? strings.intakeAnalysisFailed}</p>
+        {saveError ? <p role="alert">{saveError}</p> : null}
         <button className="btn btn-primary" disabled={busy} onClick={() => void retry()}>{strings.intakeRetry}</button>
       </section>
     );
@@ -364,20 +436,36 @@ export function IntakeReviewPage() {
   if (!draft) return <LoadingState />;
   return (
     <section className="stack intake-review">
-      <IntakeProposalReview
-        draft={draft}
-        members={members}
-        issues={issues}
-        invalidDateKeys={invalidDateKeys}
-        onDateValidityChange={onDateValidityChange}
-        onChange={updateDraft}
-      />
+      <fieldset disabled={busy} className="intake-review-fields">
+        <IntakeProposalReview
+          draft={draft}
+          members={members}
+          issues={issues}
+          invalidDateKeys={invalidDateKeys}
+          onDateValidityChange={onDateValidityChange}
+          onChange={updateDraft}
+        />
+      </fieldset>
       {applyError ? <p role="alert">{applyError}</p> : null}
       {saveError ? <p role="alert">{saveError}</p> : null}
       {issues.length > 0 ? (
         <section className="card stack" role="alert">
           <p>{strings.intakeProposalNeedsFixing}</p>
           <p>{strings.intakeProposalReplacementWarning}</p>
+          <label className="stack">
+            <span>{strings.intakeRetryHintLabel}</span>
+            <textarea
+              rows={3}
+              value={retryHint}
+              placeholder={strings.intakeRetryHintPlaceholder}
+              disabled={busy}
+              onChange={(event) => {
+                retryHintDirtyRef.current = true;
+                setRetryHint(event.target.value);
+              }}
+            />
+            <small>{strings.intakeRetryHintHelp}</small>
+          </label>
           <button type="button" className="btn" disabled={busy} onClick={() => void retry()}>
             {strings.intakeRetry}
           </button>
@@ -387,7 +475,7 @@ export function IntakeReviewPage() {
         <button
           type="button"
           className="btn btn-primary intake-approval-button"
-          disabled={busy || issues.length > 0 || hasInvalidInputs}
+          disabled={busy || selectedIssues.length > 0 || hasInvalidInputs}
           onClick={() => void applyInitial()}
         >
           {strings.intakeApplyCount(enabledProposalCount)}

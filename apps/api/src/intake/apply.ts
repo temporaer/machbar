@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
 import type { PaperlessDocumentSummary, IntakeDraft, IntakeApplyResults, IntakeErrorInfo } from "@machbar/shared";
-import { intakeDraftIssues, paperlessMarkdownReference } from "@machbar/shared";
+import { intakeSelectedDraftIssues, paperlessMarkdownReference } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import type { FastifyBaseLogger } from "fastify";
 import * as schema from "../db/schema.js";
@@ -99,7 +99,7 @@ export async function applyIntake(
   const memberIds = db.select({ id: schema.members.id }).from(schema.members).all().map((member) => member.id);
   const attachments = db.select().from(schema.intakeAttachments)
     .where(eq(schema.intakeAttachments.intakeJobId, id)).all();
-  const issues = intakeDraftIssues(draftToValidate, {
+  const issues = intakeSelectedDraftIssues(draftToValidate, {
     memberIds,
     paperlessAvailable: Boolean(paperless),
     hasFiles: attachments.length > 0,

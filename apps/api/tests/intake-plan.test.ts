@@ -6,6 +6,7 @@ import {
   buildDraftFromPlan,
   intakeDraftIssues,
   intakePlanIssues,
+  intakeSelectedDraftIssues,
   normalizeIntakePlan,
   type IntakePlan,
 } from "@machbar/shared";
@@ -151,5 +152,44 @@ describe("intake plan contracts", () => {
         : undefined);
     expect(codes)
       .toContain("captured_reminder");
+  });
+
+  it("validates only selected output while retaining original diagnostic paths", () => {
+    const plan = readFixture("valid-project-tree.json") as IntakePlan;
+    const draft = buildDraftFromPlan(plan, []);
+    const disabledConflict = draft.workItems[0]!;
+    disabledConflict.enabled = false;
+    disabledConflict.needsClarification = true;
+    disabledConflict.reminders = [{ kind: "absolute", at: "2026-10-01T08:00:00+02:00" }];
+    const reviewCodes = intakeDraftIssues(draft, {
+      memberIds: [],
+      paperlessAvailable: true,
+      hasFiles: false,
+    }).map((item) => item.code);
+    expect(reviewCodes).toContain("captured_reminder");
+    expect(intakeSelectedDraftIssues(draft, {
+      memberIds: [],
+      paperlessAvailable: true,
+      hasFiles: false,
+    })).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "captured_reminder" }),
+    ]));
+
+    const child = draft.workItems.find((item) => item.parentKey !== null);
+    expect(child).toBeDefined();
+    const parent = draft.workItems.find((item) => item.key === child?.parentKey);
+    expect(parent).toBeDefined();
+    parent!.enabled = false;
+    const selectedIssues = intakeSelectedDraftIssues(draft, {
+      memberIds: [],
+      paperlessAvailable: true,
+      hasFiles: false,
+    });
+    expect(selectedIssues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "parent_disabled",
+        path: ["workItems", draft.workItems.indexOf(child!), "parentKey"],
+      }),
+    ]));
   });
 });

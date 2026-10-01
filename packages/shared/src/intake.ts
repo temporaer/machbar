@@ -537,15 +537,7 @@ export function intakeDraftIssues(
   draft: IntakeDraft,
   options: { memberIds: readonly number[]; paperlessAvailable: boolean; hasFiles: boolean },
 ): IntakeIssue[] {
-  const plan: IntakePlan = {
-    summary: draft.summary,
-    calendarEvents: draft.calendarEvents,
-    workItems: draft.workItems.map(({ ownerMemberId, ...item }) => ({
-      ...item,
-      ownerName: ownerMemberId === null ? null : String(ownerMemberId),
-    })),
-    warnings: draft.warnings,
-  };
+  const plan = intakeDraftPlan(draft);
   const issues = intakePlanIssues(plan);
   draft.calendarEvents.forEach((event, index) => {
     if (event.enabled && !event.allDay && event.endDateTime === null) {
@@ -568,6 +560,97 @@ export function intakeDraftIssues(
     issues.push(issue(["retainSourceInPaperless"], "paperless_unavailable", "Source retention requires Paperless, files, and an enabled work item."));
   }
   if (draft.calendarEvents.every((event) => !event.enabled) && draft.workItems.every((item) => !item.enabled)) {
+    issues.push(issue([], "nothing_selected", "At least one item or event must be enabled."));
+  }
+  return issues;
+}
+
+function intakeDraftPlan(draft: IntakeDraft): IntakePlan {
+  return {
+    summary: draft.summary,
+    calendarEvents: draft.calendarEvents,
+    workItems: draft.workItems.map(({ ownerMemberId, ...item }) => ({
+      ...item,
+      ownerName: ownerMemberId === null ? null : String(ownerMemberId),
+    })),
+    warnings: draft.warnings,
+  };
+}
+
+function remapSelectedIssuePath(
+  path: readonly (string | number)[],
+  workIndices: readonly number[],
+  calendarIndices: readonly number[],
+): (string | number)[] {
+  if (path.length < 2 || typeof path[1] !== "number") return [...path];
+  if (path[0] === "workItems") {
+    const originalIndex = workIndices[path[1]];
+    return originalIndex === undefined ? [...path] : [path[0], originalIndex, ...path.slice(2)];
+  }
+  if (path[0] === "calendarEvents") {
+    const originalIndex = calendarIndices[path[1]];
+    return originalIndex === undefined ? [...path] : [path[0], originalIndex, ...path.slice(2)];
+  }
+  return [...path];
+}
+
+/**
+ * Validate only the output selected for Apply. Review diagnostics continue to
+ * cover the complete proposal, including disabled cards.
+ */
+export function intakeSelectedDraftIssues(
+  draft: IntakeDraft,
+  options: { memberIds: readonly number[]; paperlessAvailable: boolean; hasFiles: boolean },
+): IntakeIssue[] {
+  const workIndices = draft.workItems
+    .map((item, index) => item.enabled ? index : -1)
+    .filter((index) => index >= 0);
+  const calendarIndices = draft.calendarEvents
+    .map((event, index) => event.enabled ? index : -1)
+    .filter((index) => index >= 0);
+  const enabledWork = workIndices.map((index) => draft.workItems[index]!);
+  const enabledCalendar = calendarIndices.map((index) => draft.calendarEvents[index]!);
+  const enabledWorkKeys = new Set(enabledWork.map((item) => item.key));
+  const enabledCalendarKeys = new Set(enabledCalendar.map((event) => event.key));
+  const selectedDraft: IntakeDraft = {
+    ...draft,
+    workItems: enabledWork.map((item) => ({
+      ...item,
+      parentKey: item.parentKey !== null && enabledWorkKeys.has(item.parentKey) ? item.parentKey : null,
+      relatedCalendarKeys: item.relatedCalendarKeys.filter((key) => enabledCalendarKeys.has(key)),
+    })),
+    calendarEvents: enabledCalendar.map((event) => ({
+      ...event,
+      relatedWorkKeys: event.relatedWorkKeys.filter((key) => enabledWorkKeys.has(key)),
+    })),
+  };
+  const planIssues = intakePlanIssues(intakeDraftPlan(selectedDraft));
+  const issues = planIssues.map((item) => ({
+    ...item,
+    path: remapSelectedIssuePath(item.path, workIndices, calendarIndices),
+  }));
+
+  enabledCalendar.forEach((event, selectedIndex) => {
+    if (!event.allDay && event.endDateTime === null) {
+      issues.push(issue(["calendarEvents", calendarIndices[selectedIndex]!, "endDateTime"], "timed_end_required", "Enabled timed events require an end."));
+    }
+  });
+  enabledWork.forEach((item, selectedIndex) => {
+    const originalIndex = workIndices[selectedIndex]!;
+    if (item.ownerMemberId !== null && !options.memberIds.includes(item.ownerMemberId)) {
+      issues.push(issue(["workItems", originalIndex, "ownerMemberId"], "owner_not_member", "Owner is not a household member."));
+    }
+    if (item.kind === "reference" && item.ownerMemberId !== null) {
+      issues.push(issue(["workItems", originalIndex, "ownerMemberId"], "reference_owner", "References cannot have an owner."));
+    }
+    if (item.parentKey !== null && !enabledWorkKeys.has(item.parentKey)) {
+      issues.push(issue(["workItems", originalIndex, "parentKey"], "parent_disabled", "An enabled item cannot have a disabled parent."));
+    }
+  });
+  if (draft.retainSourceInPaperless && (!options.paperlessAvailable || !options.hasFiles || enabledWork.length === 0)) {
+    issues.push(issue(["retainSourceInPaperless"], "paperless_unavailable", "Source retention requires Paperless, files, and an enabled work item."));
+  }
+  if (enabledCalendar.length === 0 && enabledWork.length === 0) {
     issues.push(issue([], "nothing_selected", "At least one item or event must be enabled."));
   }
   return issues;
