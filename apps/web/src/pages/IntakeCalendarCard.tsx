@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { IntakeDraftCalendarEvent, IntakeIssue } from "@machbar/shared";
 import { useLocale } from "../lib/locale";
 import { useStrings } from "../lib/strings";
+import { formatInvalidIntakeValue } from "../lib/intakeDisplay";
 import { MarkdownNotes } from "../components/MarkdownNotes";
 import type { DateValidityChange } from "./IntakeReviewFields";
 import { IntakeCalendarEditSheet } from "./IntakeCalendarEditSheet";
@@ -30,10 +31,12 @@ export function IntakeCalendarCard({
   );
   const date = event.allDay
     ? event.startDate
-      ? formatDateOnly(event.startDate, locale)
+      ? formatDateOnly(event.startDate, locale) ??
+        formatInvalidIntakeValue(event.startDate, strings)
       : null
     : event.startDateTime
-      ? formatEventDate(event.startDateTime, locale)
+      ? formatEventDate(event.startDateTime, locale) ??
+        formatInvalidIntakeValue(event.startDateTime, strings)
       : null;
   const startTime =
     !event.allDay && event.startDateTime
@@ -41,10 +44,13 @@ export function IntakeCalendarCard({
       : null;
   const endTime =
     !event.allDay && event.endDateTime
-      ? new Intl.DateTimeFormat(locale === "en" ? "en-US" : "de-DE", {
-          hour: "2-digit",
-          minute: "2-digit",
-        }).format(new Date(event.endDateTime))
+      ? formatEventTime(event.endDateTime, locale) ??
+        formatInvalidIntakeValue(event.endDateTime, strings)
+      : null;
+  const endDate =
+    event.allDay && event.endDate
+      ? formatDateOnly(event.endDate, locale) ??
+        formatInvalidIntakeValue(event.endDate, strings)
       : null;
   const eventWarning =
     !event.allDay && !event.endDateTime ? strings.intakeTimedWarning : null;
@@ -74,8 +80,8 @@ export function IntakeCalendarCard({
         </div>
         {date || endTime ? (
           <p className="intake-event-time">
-            {event.allDay && event.endDate && event.endDate !== event.startDate
-              ? `${date}–${formatDateOnly(event.endDate, locale)}`
+            {event.allDay && endDate && event.endDate !== event.startDate
+              ? `${date}–${endDate}`
               : date}
             {startTime ? ` · ${startTime}${endTime ? `–${endTime}` : ""}` : ""}
           </p>
@@ -138,6 +144,13 @@ function formatDateOnly(value: string, locale: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;
   const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  if (
+    date.getFullYear() !== Number(match[1]) ||
+    date.getMonth() !== Number(match[2]) - 1 ||
+    date.getDate() !== Number(match[3])
+  ) {
+    return null;
+  }
   return new Intl.DateTimeFormat(locale === "en" ? "en-US" : "de-DE", {
     day: "numeric",
     month: "short",
