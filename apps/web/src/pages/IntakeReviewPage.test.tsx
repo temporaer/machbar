@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Routes, Route } from "react-router-dom";
+import type { IntakeDraft } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { IntakeReviewPage } from "./IntakeReviewPage";
 import { api } from "../lib/api";
@@ -26,7 +27,7 @@ vi.mock("../components/ClockTimePicker", () => ({
     <input id={id} type="time" value={value} onChange={(event) => onChange(event.target.value)} />,
 }));
 
-const draft = {
+const draft: IntakeDraft = {
   summary: "Schulfest",
   calendarEvents: [{
     key: "event",
@@ -815,6 +816,175 @@ describe("IntakeReviewPage", () => {
     await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1", undefined));
   });
 
+  it("accepts leased analyzing and replacement ready states while polling after retry", async () => {
+    const conflictedDraft = {
+      ...draft,
+      workItems: [{
+        ...draft.workItems[0]!,
+        needsClarification: true,
+        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+      }, draft.workItems[1]!],
+    };
+    const replacementDraft = {
+      ...draft,
+      summary: "Ersetzte Analyse",
+    };
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record(), revision: 2, draft: conflictedDraft } as never)
+      .mockResolvedValueOnce({ ...record("analyzing"), revision: 3, draft: null } as never)
+      .mockResolvedValueOnce({ ...record(), revision: 4, draft: replacementDraft } as never);
+    mockedApi.retryIntake.mockResolvedValueOnce({ ...record("queued"), revision: 3, draft: null } as never);
+    vi.useFakeTimers();
+    renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("heading", { name: "Elternabend" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockedApi.retryIntake).toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(screen.getByText("Der Inhalt wird analysiert …")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(screen.getByText("Ersetzte Analyse")).toBeInTheDocument();
+  });
+
+  it("accepts an analysis failure delivered by polling", async () => {
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record("queued"), revision: 1, draft: null } as never)
+      .mockResolvedValueOnce({
+        ...record("analysis_failed", {
+          code: "ai_task_failed",
+          message: "Analyse fehlgeschlagen",
+          retryable: true,
+        }),
+        revision: 2,
+        draft: null,
+      } as never);
+    vi.useFakeTimers();
+    renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(screen.getByText("Analyse fehlgeschlagen")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["applied", "Verarbeitung übernommen"],
+    ["partially_applied", "Teilweise übernommen"],
+  ])("accepts %s delivered by polling", async (status, text) => {
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record("applying"), revision: 5, draft: null } as never)
+      .mockResolvedValueOnce({ ...record(status), revision: 6, draft: null } as never);
+    vi.useFakeTimers();
+    renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Wird übernommen …")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  it("accepts a lease-derived analyzing state without a revision increment", async () => {
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record("queued"), revision: 3, draft: null } as never)
+      .mockResolvedValueOnce({ ...record("analyzing"), revision: 3, draft: null } as never);
+    vi.useFakeTimers();
+    renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(screen.getByText("Der Inhalt wird analysiert …")).toBeInTheDocument();
+  });
+
+  it("ignores a delayed pre-retry response after the queued replacement is accepted", async () => {
+    const conflictedDraft = {
+      ...draft,
+      workItems: [{
+        ...draft.workItems[0]!,
+        needsClarification: true,
+        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+      }, draft.workItems[1]!],
+    };
+    let resolveStale!: (value: ReturnType<typeof record>) => void;
+    const staleResponse = new Promise<ReturnType<typeof record>>((resolve) => {
+      resolveStale = resolve;
+    });
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record(), revision: 2, draft: conflictedDraft } as never)
+      .mockReturnValueOnce(staleResponse as never);
+    mockedApi.retryIntake.mockResolvedValueOnce({ ...record("queued"), revision: 3, draft: null } as never);
+    renderPage();
+    await screen.findByRole("heading", { name: "Elternabend" });
+    vi.useFakeTimers();
+    window.dispatchEvent(new Event("focus"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+    await act(async () => {
+      resolveStale({ ...record(), revision: 2, draft: conflictedDraft });
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+  });
+
+  it("ignores a delayed pre-Apply response after applying starts", async () => {
+    let resolveStale!: (value: ReturnType<typeof record>) => void;
+    const staleResponse = new Promise<ReturnType<typeof record>>((resolve) => {
+      resolveStale = resolve;
+    });
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record(), revision: 2 } as never)
+      .mockReturnValueOnce(staleResponse as never);
+    mockedApi.applyIntake.mockResolvedValueOnce({ ...record("applying"), revision: 3, draft: null } as never);
+    renderPage();
+    await screen.findByRole("heading", { name: "Elternabend" });
+    vi.useFakeTimers();
+    window.dispatchEvent(new Event("focus"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    fireEvent.click(applyButton());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Wird übernommen …")).toBeInTheDocument();
+    await act(async () => {
+      resolveStale({ ...record(), revision: 2 });
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Wird übernommen …")).toBeInTheDocument();
+  });
+
   it("saves an immediate edit before reanalysis and replaces the completed proposal", async () => {
     const conflictedDraft = {
       ...draft,
@@ -899,6 +1069,27 @@ describe("IntakeReviewPage", () => {
       title: "Rückmeldezettel abgeben",
     });
     expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[1]?.enabled).toBe(true);
+  });
+
+  it("ignores invalid date input on a disabled card until it is re-enabled and corrected", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "Fällig: 02.10.2026");
+    const date = editor.getByRole("textbox", { name: "Fällig" });
+    fireEvent.change(date, { target: { value: "kein Datum" } });
+    fireEvent.blur(date);
+    expect(screen.getByText("Datum nicht erkannt")).toBeInTheDocument();
+    const checkbox = screen.getByRole("checkbox", {
+      name: "In Vorschlag übernehmen: Rückmeldezettel abgeben",
+    });
+    fireEvent.click(checkbox);
+    expect(applyButton()).not.toBeDisabled();
+    fireEvent.click(checkbox);
+    expect(applyButton()).toBeDisabled();
+    const correctedDate = editor.getByRole("textbox", { name: "Fällig" });
+    fireEvent.change(correctedDate, { target: { value: "03.10.2026" } });
+    fireEvent.blur(correctedDate);
+    closeEditor(editor);
+    expect(applyButton()).not.toBeDisabled();
   });
 
   it("clears a ready-proposal retry hint explicitly", async () => {

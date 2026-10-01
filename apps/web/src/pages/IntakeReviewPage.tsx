@@ -44,6 +44,51 @@ function intakeFailureExplanation(
   }
 }
 
+function acceptsIntakeRecord(
+  current: IntakeRecord | null,
+  incoming: IntakeRecord,
+): boolean {
+  if (!current) return true;
+  if (incoming.revision > current.revision) return true;
+  if (incoming.revision < current.revision) return false;
+  if (incoming.status === current.status) return true;
+  // `analyzing` is derived from the leased HA request and does not change
+  // the intake job revision.
+  return current.status === "queued" && incoming.status === "analyzing";
+}
+
+function intakeDateKeys(
+  draft: IntakeDraft | null,
+  enabledOnly: boolean,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const event of draft?.calendarEvents ?? []) {
+    if (enabledOnly && !event.enabled) continue;
+    if (!event.allDay) {
+      keys.add(`calendar:${event.key}:start`);
+      keys.add(`calendar:${event.key}:end`);
+    }
+  }
+  for (const item of draft?.workItems ?? []) {
+    if (enabledOnly && !item.enabled) continue;
+    if (item.kind !== "reference") {
+      keys.add(`work:${item.key}:due`);
+      keys.add(`work:${item.key}:scheduled`);
+    }
+    if (item.kind === "action") {
+      keys.add(`work:${item.key}:availability`);
+      if (item.reminders.length === 0) {
+        keys.add(`work:${item.key}:reminder-date`);
+      } else {
+        item.reminders.forEach((_, index) => {
+          keys.add(`work:${item.key}:reminder-date-${index}`);
+        });
+      }
+    }
+  }
+  return keys;
+}
+
 export function IntakeReviewPage() {
   const { id = "" } = useParams();
   const strings = useStrings();
@@ -67,43 +112,37 @@ export function IntakeReviewPage() {
       return next;
     });
   }, []);
-  const activeDateKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const event of draft?.calendarEvents ?? []) {
-      if (!event.allDay) {
-        keys.add(`calendar:${event.key}:start`);
-        keys.add(`calendar:${event.key}:end`);
-      }
-    }
-    for (const item of draft?.workItems ?? []) {
-      if (item.kind !== "reference") keys.add(`work:${item.key}:due`);
-      if (item.kind !== "reference") {
-        keys.add(`work:${item.key}:scheduled`);
-      }
-      if (item.kind === "action") {
-        keys.add(`work:${item.key}:availability`);
-        if (item.reminders.length === 0) {
-          keys.add(`work:${item.key}:reminder-date`);
-        } else {
-          item.reminders.forEach((_, index) => {
-            keys.add(`work:${item.key}:reminder-date-${index}`);
-          });
-        }
-      }
-    }
-    return keys;
-  }, [draft]);
+  const dateKeys = useMemo(() => intakeDateKeys(draft, false), [draft]);
+  const activeDateKeys = useMemo(() => intakeDateKeys(draft, true), [draft]);
   const hasInvalidInputs = [...invalidDateKeys].some((key) => activeDateKeys.has(key));
   useEffect(() => {
+    const signatures = new Map(
+      (draft?.workItems ?? [])
+        .filter((item) => item.kind === "action")
+        .map((item) => [item.key, JSON.stringify(item.reminders)] as const),
+    );
+    const changedReminderKeys = new Set(
+      [...signatures]
+        .filter(([key, signature]) => reminderSignaturesRef.current.get(key) !== signature)
+        .map(([key]) => key),
+    );
+    reminderSignaturesRef.current = signatures;
     setInvalidDateKeys((previous) => {
-      if ([...previous].every((key) => activeDateKeys.has(key))) return previous;
-      return new Set([...previous].filter((key) => activeDateKeys.has(key)));
+      const next = new Set([...previous].filter((key) => dateKeys.has(key)));
+      for (const key of changedReminderKeys) {
+        for (const invalidKey of next) {
+          if (invalidKey.startsWith(`work:${key}:reminder-date`)) next.delete(invalidKey);
+        }
+      }
+      if (next.size === previous.size && [...next].every((key) => previous.has(key))) return previous;
+      return next;
     });
-  }, [activeDateKeys]);
+  }, [dateKeys, draft]);
   const recordRef = useRef<IntakeRecord | null>(null);
   const revisionRef = useRef<number | null>(null);
   const latestDraftRef = useRef<IntakeDraft | null>(null);
   const cleanDraftSnapshotRef = useRef<string | null>(null);
+  const reminderSignaturesRef = useRef<Map<string, string>>(new Map());
   const savePromiseRef = useRef<Promise<boolean> | null>(null);
   const debounceRef = useRef<number | null>(null);
   const retryInFlightRef = useRef(false);
@@ -111,6 +150,7 @@ export function IntakeReviewPage() {
   const conflictPendingRef = useRef(false);
   const applyingRef = useRef(false);
   const failedSnapshotRef = useRef<string | null>(null);
+  const mutationBaselineRevisionRef = useRef<number | null>(null);
   const issues = useMemo(
     () => (draft ? intakeDraftIssues(draft, {
       memberIds: members.map((member) => member.id),
@@ -132,10 +172,11 @@ export function IntakeReviewPage() {
 
   useEffect(() => {
     if (state.data) {
+      if (!acceptsIntakeRecord(recordRef.current, state.data)) return;
       if (
-        recordRef.current &&
-        recordRef.current.status !== state.data.status &&
-        ["queued", "analyzing", "applying"].includes(recordRef.current.status)
+        mutationBaselineRevisionRef.current !== null &&
+        (retryInFlightRef.current || applyingRef.current) &&
+        state.data.revision <= mutationBaselineRevisionRef.current
       ) return;
       recordRef.current = state.data;
       revisionRef.current = state.data.revision;
@@ -260,6 +301,7 @@ export function IntakeReviewPage() {
   const retry = async () => {
     if (retryInFlightRef.current || applyingRef.current || busy) return;
     retryInFlightRef.current = true;
+    mutationBaselineRevisionRef.current = revisionRef.current;
     setBusy(true);
     setSaveError(null);
     try {
@@ -309,12 +351,14 @@ export function IntakeReviewPage() {
       setSaveError(localizedErrorMessage(cause, strings));
     } finally {
       retryInFlightRef.current = false;
+      mutationBaselineRevisionRef.current = null;
       setBusy(false);
     }
   };
   const applyInitial = async () => {
     if (record.status !== "ready" || !draft || busy || selectedIssues.length || hasInvalidInputs || applyingRef.current || retryInFlightRef.current) return;
     applyingRef.current = true;
+    mutationBaselineRevisionRef.current = revisionRef.current;
     setApplyError(null);
     setBusy(true);
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
@@ -343,12 +387,14 @@ export function IntakeReviewPage() {
       }
     } finally {
       applyingRef.current = false;
+      mutationBaselineRevisionRef.current = null;
       setBusy(false);
     }
   };
   const retryApply = async () => {
     if (record.status !== "partially_applied" || applyingRef.current) return;
     applyingRef.current = true;
+    mutationBaselineRevisionRef.current = revisionRef.current;
     setApplyError(null);
     setBusy(true);
     try {
@@ -366,6 +412,7 @@ export function IntakeReviewPage() {
       }
     } finally {
       applyingRef.current = false;
+      mutationBaselineRevisionRef.current = null;
       setBusy(false);
     }
   };
