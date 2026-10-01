@@ -85,6 +85,7 @@ function record(status: string = "ready", error: { code: string; message: string
     createdAt: "2026-09-27T10:00:00Z",
     expiresAt: "2026-09-28T10:00:00Z",
     text: "Schulfest",
+    retryHint: null,
     attachments: [{ id: "a1", filename: "flyer.jpg", mimeType: "image/jpeg", sizeBytes: 10 }],
     draft: status === "ready" ? draft : null,
     error,
@@ -649,7 +650,7 @@ describe("IntakeReviewPage", () => {
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
   });
 
-  it("does not PATCH an invalid all-day-to-timed draft, then saves exactly once after its end is entered", async () => {
+  it("saves an unresolved timed-event draft, then saves the corrected end exactly once more", async () => {
     mockedApi.getIntake.mockResolvedValue({
       ...record(),
       draft: {
@@ -670,18 +671,18 @@ describe("IntakeReviewPage", () => {
     fireEvent.click(eventEditor.getByRole("checkbox", { name: "Ganztägig" }));
     expect(applyButton()).toBeDisabled();
     await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
-    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
     const endDate = eventEditor.getByLabelText("Ende");
     fireEvent.change(endDate, { target: { value: "08.10.2026" } });
     fireEvent.blur(endDate);
     fireEvent.change(eventEditor.getAllByLabelText("Uhrzeit")[1]!, { target: { value: "20:00" } });
     closeEditor(eventEditor);
     await act(async () => { await vi.advanceTimersByTimeAsync(999); });
-    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(2);
     await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
-    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(2);
   });
 
   it("does not retry a non-stale rejected snapshot until the draft changes", async () => {
@@ -811,7 +812,28 @@ describe("IntakeReviewPage", () => {
     renderPage();
     expect(await screen.findByText("Analyse fehlgeschlagen")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
-    await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1"));
+    await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1", ""));
+  });
+
+  it("clears a persisted retry hint when the field is emptied", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record("analysis_failed", {
+        code: "ai_task_failed", message: "Analyse fehlgeschlagen", retryable: true,
+      }),
+      retryHint: "Bitte keine Erinnerung ergänzen.",
+    } as never);
+    mockedApi.retryIntake.mockResolvedValue({
+      ...record("queued"),
+      retryHint: null,
+    } as never);
+    renderPage();
+    const hintLabel = await screen.findByText("Hinweis für den nächsten Versuch");
+    const hint = within(hintLabel.closest("label")!).getByRole("textbox");
+    expect(hint).toHaveValue("Bitte keine Erinnerung ergänzen.");
+    fireEvent.change(hint, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
+    await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1", ""));
+    expect((await mockedApi.retryIntake.mock.results[0]?.value)?.retryHint).toBeNull();
   });
 
   it.each([

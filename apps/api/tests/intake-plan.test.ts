@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   buildDraftFromPlan,
+  intakeDraftIssues,
   intakePlanIssues,
+  normalizeIntakePlan,
   type IntakePlan,
 } from "@machbar/shared";
 import {
@@ -67,5 +69,87 @@ describe("intake plan contracts", () => {
     expect(draft.workItems[0]).toMatchObject({ enabled: true, ownerMemberId: null });
     expect(draft.warnings.some((warning) => warning.message.includes("60 min"))).toBe(true);
     expect(intakeDraftSchema.safeParse(draft).success).toBe(true);
+  });
+
+  it("normalizes recoverable relationships and availability idempotently", () => {
+    const plan: IntakePlan = {
+      summary: "Recovery",
+      calendarEvents: [{
+        key: "event",
+        title: "Termin",
+        description: null,
+        location: null,
+        allDay: true,
+        startDate: "2026-10-08",
+        endDate: "2026-10-08",
+        startDateTime: null,
+        endDateTime: null,
+        relatedWorkKeys: ["action", "action", "missing"],
+      }],
+      workItems: [{
+        key: "action",
+        kind: "action",
+        title: "Aktion",
+        notes: null,
+        parentKey: "child",
+        ownerName: null,
+        dueDate: "2026-10-01",
+        scheduledDate: "2026-10-02",
+        notBeforeDate: "2026-10-08",
+        notBeforeAt: null,
+        reminders: [{ kind: "absolute", at: "2026-10-01T08:00:00+02:00" }],
+        needsClarification: true,
+        relatedCalendarKeys: ["event", "event", "missing"],
+      }, {
+        key: "child",
+        kind: "action",
+        title: "Kind",
+        notes: null,
+        parentKey: "action",
+        ownerName: null,
+        dueDate: null,
+        scheduledDate: null,
+        notBeforeDate: null,
+        notBeforeAt: "2026-10-08T10:00:00+02:00",
+        reminders: [],
+        needsClarification: false,
+        relatedCalendarKeys: [],
+      }],
+      warnings: [],
+    };
+
+    const normalized = normalizeIntakePlan(plan);
+    expect(normalized.plan.calendarEvents[0]?.relatedWorkKeys).toEqual(["action"]);
+    expect(normalized.plan.workItems[0]?.relatedCalendarKeys).toEqual(["event"]);
+    expect(normalized.plan.workItems[0]?.notBeforeAt).toBe("2026-10-07T22:00:00.000Z");
+    expect(normalized.plan.workItems[1]?.notBeforeDate).toBe("2026-10-08");
+    expect(normalized.plan.workItems[1]?.parentKey).toBeNull();
+    expect(normalized.plan.workItems[0]?.parentKey).toBe("child");
+    expect(normalized.warnings.some((warning) => warning.message.includes("dangling"))).toBe(true);
+    expect(normalized.warnings.some((warning) => warning.message.includes("cycle"))).toBe(true);
+    expect(normalizeIntakePlan(normalized.plan).plan).toEqual(normalized.plan);
+
+    const semantic = intakePlanIssues(normalized.plan);
+    expect(semantic.map((item) => item.code)).toContain("captured_reminder");
+    expect(semantic.map((item) => item.code)).toContain("scheduling_order");
+    expect(intakeDraftIssues(buildDraftFromPlan(normalized.plan, []), {
+      memberIds: [],
+      paperlessAvailable: true,
+      hasFiles: false,
+    }).map((item) => item.code)).toContain("captured_reminder");
+  });
+
+  it("preserves semantic refinement codes in Zod issues", () => {
+    const plan = readFixture("valid-elternabend.json") as IntakePlan;
+    plan.workItems[0]!.needsClarification = true;
+    plan.workItems[0]!.reminders = [{ kind: "absolute", at: "2026-10-01T08:00:00+02:00" }];
+    const result = intakePlanSchema.safeParse(plan);
+    expect(result.success).toBe(false);
+    const codes = result.success ? [] : result.error.issues
+      .map((item) => ("params" in item && item.params && typeof item.params === "object")
+        ? (item.params as { code?: unknown }).code
+        : undefined);
+    expect(codes)
+      .toContain("captured_reminder");
   });
 });

@@ -127,6 +127,34 @@ describe("intake apply", () => {
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${action.id}` })).json().kind).toBe("action");
   });
 
+  it("rejects unresolved semantic conflicts at Apply without creating work", async () => {
+    const setup = await prepare();
+    const signal = new HomeAssistantRequestSignal();
+    const invalid = draft([{
+      key: "clarify",
+      kind: "action",
+      title: "Clarify",
+      notes: null,
+      parentKey: null,
+      dueDate: null,
+      scheduledDate: null,
+      notBeforeDate: null,
+      notBeforeAt: null,
+      reminders: [{ kind: "absolute", at: "2026-10-01T08:00:00.000Z" }],
+      needsClarification: true,
+      relatedCalendarKeys: [],
+      enabled: true,
+      ownerMemberId: setup.member.id,
+    }]);
+    await expect(applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, {
+      expectedRevision: setup.revision,
+      draft: invalid,
+    }, { actorMemberId: setup.member.id }, setup.member.id)).rejects.toMatchObject({
+      code: "intake_draft_invalid",
+    });
+    expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+  });
+
   it("does not duplicate work when a calendar apply is retried", async () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();

@@ -92,7 +92,9 @@ const en = {
   intakeTechnicalDetails: "Technical details",
   intakeRetryHintLabel: "Hint for the next attempt",
   intakeRetryHintPlaceholder: "For example: “This is an event, not a task.”",
-  intakeRetryHintHelp: "Optional. The hint is used only for the next analysis.",
+  intakeRetryHintHelp: "Optional. The hint is kept for later attempts until you change or clear it.",
+  intakeProposalNeedsFixing: "This proposal still has problems and can only be applied after they are fixed.",
+  intakeProposalReplacementWarning: "A new analysis will replace this edited proposal.",
   intakeReady: "Review proposal",
   intakeApply: "Apply",
   intakeApplyCount: (count: number) =>

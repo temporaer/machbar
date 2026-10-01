@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { intakeDraftIssues, type IntakeDraft, type IntakeRecord } from "@machbar/shared";
+import {
+  intakeDraftIssues,
+  intakeErrorIssues,
+  type IntakeDraft,
+  type IntakeRecord,
+} from "@machbar/shared";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -137,7 +142,7 @@ export function IntakeReviewPage() {
     if (savePromiseRef.current) return savePromiseRef.current;
     const current = latestDraftRef.current;
     const revision = revisionRef.current;
-    if (!current || revision === null || recordRef.current?.status !== "ready" || conflictPendingRef.current || latestIssuesRef.current.length) return false;
+    if (!current || revision === null || recordRef.current?.status !== "ready" || conflictPendingRef.current) return false;
     if (JSON.stringify(current) === cleanDraftSnapshotRef.current) return true;
     if (JSON.stringify(current) === failedSnapshotRef.current) return false;
     const save = (async () => {
@@ -145,7 +150,7 @@ export function IntakeReviewPage() {
         const nextDraft = latestDraftRef.current;
         const snapshot = JSON.stringify(nextDraft);
         if (snapshot === cleanDraftSnapshotRef.current) return true;
-        if (latestIssuesRef.current.length || snapshot === failedSnapshotRef.current) return false;
+        if (snapshot === failedSnapshotRef.current) return false;
         const expectedRevision = revisionRef.current;
         if (expectedRevision === null) return false;
         try {
@@ -181,7 +186,6 @@ export function IntakeReviewPage() {
       if (
         !applyingRef.current &&
         !conflictPendingRef.current &&
-        !latestIssuesRef.current.length &&
         latestDraftRef.current &&
         JSON.stringify(latestDraftRef.current) !== cleanDraftSnapshotRef.current &&
         JSON.stringify(latestDraftRef.current) !== failedSnapshotRef.current
@@ -196,7 +200,7 @@ export function IntakeReviewPage() {
   };
 
   useEffect(() => {
-    if (!draft || record?.status !== "ready" || issues.length || conflictPendingRef.current || JSON.stringify(draft) === cleanDraftSnapshotRef.current || JSON.stringify(draft) === failedSnapshotRef.current) return;
+    if (!draft || record?.status !== "ready" || conflictPendingRef.current || JSON.stringify(draft) === cleanDraftSnapshotRef.current || JSON.stringify(draft) === failedSnapshotRef.current) return;
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       debounceRef.current = null;
@@ -236,9 +240,7 @@ export function IntakeReviewPage() {
   const retry = async () => {
     setBusy(true);
     try {
-      const nextRecord = retryHint.trim()
-        ? await api.retryIntake(id, retryHint)
-        : await api.retryIntake(id);
+      const nextRecord = await api.retryIntake(id, retryHint);
       setRecord(nextRecord);
       setRetryHint(nextRecord.retryHint ?? "");
     } finally { setBusy(false); }
@@ -305,7 +307,7 @@ export function IntakeReviewPage() {
     try { await api.deleteIntake(id); navigate("/today"); } finally { setBusy(false); }
   };
   if (record.status === "analysis_failed") {
-    const validationIssues = record.error?.details?.issues ?? [];
+    const validationIssues = record.error ? intakeErrorIssues(record.error) : [];
     return (
       <section className="card stack" role="alert">
         <h1>{strings.intakeAnalysisFailed}</h1>
@@ -372,6 +374,15 @@ export function IntakeReviewPage() {
       />
       {applyError ? <p role="alert">{applyError}</p> : null}
       {saveError ? <p role="alert">{saveError}</p> : null}
+      {issues.length > 0 ? (
+        <section className="card stack" role="alert">
+          <p>{strings.intakeProposalNeedsFixing}</p>
+          <p>{strings.intakeProposalReplacementWarning}</p>
+          <button type="button" className="btn" disabled={busy} onClick={() => void retry()}>
+            {strings.intakeRetry}
+          </button>
+        </section>
+      ) : null}
       <div className="intake-approval-bar">
         <button
           type="button"

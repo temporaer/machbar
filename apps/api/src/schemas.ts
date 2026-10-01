@@ -469,14 +469,16 @@ const intakeWorkItemSchema = z
     relatedCalendarKeys: z.array(intakeKeySchema),
   })
   .strict();
-export const intakePlanSchema = z
+export const intakePlanStructureSchema = z
   .object({
     summary: z.string().max(1000),
     calendarEvents: z.array(intakeCalendarEventSchema).max(20),
     workItems: z.array(intakeWorkItemSchema).max(50),
     warnings: z.array(z.object({ message: z.string().trim().min(1).max(500) }).strict()).max(20),
   })
-  .strict()
+  .strict();
+
+export const intakePlanSchema = intakePlanStructureSchema
   .superRefine((value, ctx) => {
     for (const item of intakePlanIssues(value as IntakePlan)) {
       ctx.addIssue({
@@ -496,7 +498,7 @@ const intakeDraftWorkItemSchema = intakeWorkItemSchema.omit({ ownerName: true })
   enabled: z.boolean(),
   ownerMemberId: z.number().int().positive().nullable(),
 }).strict();
-export const intakeDraftSchema = z
+export const intakeDraftStructureSchema = z
   .object({
     summary: z.string().max(1000),
     calendarEvents: z.array(intakeDraftCalendarEventSchema).max(20),
@@ -504,7 +506,9 @@ export const intakeDraftSchema = z
     warnings: z.array(z.object({ message: z.string().trim().min(1).max(500) }).strict()).max(20),
     retainSourceInPaperless: z.boolean(),
   })
-  .strict()
+  .strict();
+
+export const intakeDraftSchema = intakeDraftStructureSchema
   .superRefine((value, ctx) => {
     const memberIds = value.workItems
       .map((item) => item.ownerMemberId)

@@ -70,7 +70,9 @@ const base = {
   intakeTechnicalDetails: "Technische Details",
   intakeRetryHintLabel: "Hinweis für den nächsten Versuch",
   intakeRetryHintPlaceholder: "Zum Beispiel: „Das ist ein Termin, keine Aufgabe.“",
-  intakeRetryHintHelp: "Optional. Der Hinweis wird nur für die nächste Analyse verwendet.",
+  intakeRetryHintHelp: "Optional. Der Hinweis bleibt für weitere Versuche erhalten, bis du ihn änderst oder löschst.",
+  intakeProposalNeedsFixing: "Der Vorschlag enthält noch Probleme und kann erst nach der Korrektur übernommen werden.",
+  intakeProposalReplacementWarning: "Eine neue Analyse ersetzt diesen bearbeiteten Vorschlag.",
   intakeReady: "Vorschlag prüfen",
   intakeApply: "Übernehmen",
   intakeApplyCount: (count: number) =>

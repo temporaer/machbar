@@ -282,6 +282,73 @@ describe("intake lifecycle", () => {
       .where(eq(schema.homeAssistantRequests.kind, "calendar_create")).all()).toHaveLength(0);
   });
 
+  it("keeps semantic conflicts reviewable and sends them when reanalyzing", async () => {
+    const token = await pairAndSnapshot();
+    const id = await createIntake(token);
+    const request = await lease(token);
+    const conflicted = {
+      ...validPlan,
+      workItems: [{
+        ...validPlan.workItems[0],
+        needsClarification: true,
+        reminders: [{ kind: "absolute", at: "2026-10-01T08:00:00+02:00" }],
+      }],
+    };
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${request.id}/complete`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { leaseToken: request.leaseToken, outcome: "succeeded", result: conflicted },
+    });
+    const ready = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
+    expect(ready.json().status).toBe("ready");
+    expect(ready.json().error).toBeNull();
+    expect(ready.json().draft.workItems[0].reminders).toHaveLength(1);
+    const retry = await ctx.app.inject({
+      method: "POST",
+      url: `/api/intake/${id}/retry`,
+      payload: { hint: "Bitte Konflikte korrigieren." },
+    });
+    expect(retry.statusCode).toBe(200);
+    const retryRequest = ctx.handle.db.select().from(schema.homeAssistantRequests)
+      .where(eq(schema.homeAssistantRequests.intakeJobId, id)).orderBy(schema.homeAssistantRequests.createdAt).all()[1]!;
+    const instructions = JSON.parse(retryRequest.payloadJson).instructions as string;
+    expect(instructions).toContain("captured_reminder");
+    expect(instructions).toContain("Bitte Konflikte korrigieren.");
+  });
+
+  it("includes HA normalization details in retry feedback", async () => {
+    const token = await pairAndSnapshot();
+    const id = await createIntake(token);
+    const request = await lease(token);
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${request.id}/complete`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        leaseToken: request.leaseToken,
+        outcome: "failed",
+        error: {
+          code: "ai_task_invalid_response",
+          message: "Invalid AI Task response.",
+          details: { path: ["workItems", 1, "reminders"], expectedType: "an array of reminder objects" },
+        },
+      },
+    });
+    const retry = await ctx.app.inject({
+      method: "POST",
+      url: `/api/intake/${id}/retry`,
+      payload: {},
+    });
+    expect(retry.statusCode).toBe(200);
+    const retryRequest = ctx.handle.db.select().from(schema.homeAssistantRequests)
+      .where(eq(schema.homeAssistantRequests.intakeJobId, id)).orderBy(schema.homeAssistantRequests.createdAt).all()[1]!;
+    const instructions = JSON.parse(retryRequest.payloadJson).instructions as string;
+    expect(instructions).toContain("workItems[1].reminders");
+    expect(instructions).toContain("schema_invalid");
+    expect(instructions).toContain("an array of reminder objects");
+  });
+
   it("rejects a second draft update using the same revision", async () => {
     const token = await pairAndSnapshot();
     const id = await createIntake(token);

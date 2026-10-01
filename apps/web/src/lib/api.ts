@@ -490,7 +490,7 @@ export const api = {
   retryIntake: (id: string, hint?: string | null) =>
     request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/retry`, {
       method: "POST",
-      body: JSON.stringify({ hint: hint?.trim() || null }),
+      body: JSON.stringify(hint === undefined ? {} : { hint: hint?.trim() || null }),
     }),
   deleteIntake: (id: string) =>
     request<void>(`/intake/${encodeURIComponent(id)}`, { method: "DELETE" }),

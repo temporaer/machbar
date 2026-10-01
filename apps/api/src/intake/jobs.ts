@@ -12,8 +12,10 @@ import type {
 } from "@machbar/shared";
 import {
   buildDraftFromPlan,
+  intakeErrorIssues,
   intakeDraftIssues,
-  intakePlanIssues,
+  isIntakeIssueCode,
+  normalizeIntakePlan,
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
@@ -24,7 +26,7 @@ import {
   enqueueHomeAssistantRequest,
   type HomeAssistantRequestSignal,
 } from "../integrations/homeAssistantRequests.js";
-import { intakePlanSchema } from "../schemas.js";
+import { intakePlanStructureSchema } from "../schemas.js";
 import { nowIso } from "../domain/workItemShared.js";
 import { buildIntakeInstructions } from "./prompt.js";
 import { deleteJobFiles, writeAttachment } from "./storage.js";
@@ -72,22 +74,7 @@ export function normalizeStoredIntakeDraft(value: unknown): IntakeDraft | null {
 }
 
 function retryValidationIssues(error: IntakeErrorInfo | null): IntakeIssue[] {
-  const issues = error?.details?.issues;
-  if (!Array.isArray(issues)) return [];
-  return issues
-    .slice(0, 50)
-    .filter((item): item is IntakeIssue => (
-      Boolean(item)
-      && typeof item === "object"
-      && Array.isArray((item as IntakeIssue).path)
-      && typeof (item as IntakeIssue).code === "string"
-      && typeof (item as IntakeIssue).message === "string"
-    ))
-    .map((item) => ({
-      path: item.path.filter((segment) => typeof segment === "string" || typeof segment === "number"),
-      code: item.code,
-      message: item.message.slice(0, 500),
-    }));
+  return intakeErrorIssues(error);
 }
 
 function jobOrThrow(db: Db, id: string) {
@@ -259,15 +246,18 @@ export function getIntake(
 }
 
 export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSelect, plan: IntakePlan): void {
-  const parsed = intakePlanSchema.safeParse(plan);
-  const issues: IntakeIssue[] = parsed.success
-    ? intakePlanIssues(parsed.data)
-    : parsed.error.issues.map((item) => ({
+  const parsed = intakePlanStructureSchema.safeParse(plan);
+  if (!parsed.success) {
+    const issues: IntakeIssue[] = parsed.error.issues.map((item) => {
+      const params = "params" in item && item.params && typeof item.params === "object"
+        ? item.params as { code?: unknown }
+        : undefined;
+      return {
         path: item.path,
-        code: "schema_invalid",
-        message: item.message,
-      }));
-  if (!parsed.success || issues.length > 0) {
+        code: isIntakeIssueCode(params?.code) ? params.code : "schema_invalid",
+        message: item.message.slice(0, 500),
+      };
+    });
     const info = errorInfo(
       "intake_plan_invalid",
       "The AI Task returned an intake plan that Machbar rejected.",
@@ -283,10 +273,11 @@ export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSel
     return;
   }
   const members = db.select({ id: schema.members.id, name: schema.members.name }).from(schema.members).all();
-  const draft = buildDraftFromPlan(parsed.data, members);
+  const normalized = normalizeIntakePlan(parsed.data);
+  const draft = buildDraftFromPlan(normalized.plan, members);
   db.update(schema.intakeJobs).set({
     status: "ready",
-    planJson: JSON.stringify(parsed.data),
+    planJson: JSON.stringify(normalized.plan),
     draftJson: JSON.stringify(draft),
     errorJson: null,
     updatedAt: nowIso(),
@@ -368,9 +359,6 @@ export function updateIntakeDraft(db: Db, id: string, viewerMemberId: number | n
     throw AppError.conflict("intake_state_conflict", "The intake can only be edited before Apply starts.");
   }
   if (current.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.", { expectedRevision: input.expectedRevision, actualRevision: current.revision });
-  const memberIds = db.select({ id: schema.members.id }).from(schema.members).all().map((m) => m.id);
-  const issues = intakeDraftIssues(input.draft, { memberIds, ...options });
-  if (issues.length > 0) throw AppError.badRequest("intake_draft_invalid", "The intake draft is invalid.", { issues });
   db.transaction((tx) => {
     const job = tx.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
     if (!job) throw AppError.notFound("intake_not_found", "The intake was not found.");
@@ -402,15 +390,26 @@ export async function retryIntakeAnalysis(
 ): Promise<void> {
   const job = jobOrThrow(db, id);
   if (job.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
-  if (job.status !== "analysis_failed") throw AppError.conflict("intake_state_conflict", "Only failed analyses can be retried.");
+  if (job.status !== "analysis_failed" && job.status !== "ready") {
+    throw AppError.conflict("intake_state_conflict", "Only failed or unapplied analyses can be retried.");
+  }
   const integration = activeHomeAssistantIntegration(db);
   if (!integration) throw AppError.conflict("home_assistant_not_connected", "Home Assistant is not connected.");
   if (integration.protocolVersion !== 3) throw AppError.conflict("home_assistant_protocol_outdated", "The Home Assistant integration must be updated.");
   const previousError = parseJson<IntakeErrorInfo>(job.errorJson);
+  const currentDraft = normalizeStoredIntakeDraft(parseJson<unknown>(job.draftJson));
+  const membersForValidation = db.select({ id: schema.members.id }).from(schema.members).all().map((member) => member.id);
+  const attachments = db.select().from(schema.intakeAttachments).where(eq(schema.intakeAttachments.intakeJobId, id)).all();
+  const validationIssues = job.status === "ready" && currentDraft
+    ? intakeDraftIssues(currentDraft, {
+        memberIds: membersForValidation,
+        paperlessAvailable: false,
+        hasFiles: attachments.length > 0,
+      })
+    : retryValidationIssues(previousError);
   const retryHint = userInstruction === undefined
     ? job.retryHint
     : userInstruction?.trim() || null;
-  const attachments = db.select().from(schema.intakeAttachments).where(eq(schema.intakeAttachments.intakeJobId, id)).all();
   const members = db.select({ name: schema.members.name }).from(schema.members).all();
   db.transaction((tx) => {
     tx.update(schema.intakeJobs).set({
@@ -431,7 +430,7 @@ export async function retryIntakeAnalysis(
           memberNames: members.map((m) => m.name),
           hasText: job.text !== null,
           attachmentCount: attachments.filter((attachment) => attachment.mimeType !== "text/plain").length,
-          validationIssues: retryValidationIssues(previousError),
+          validationIssues,
           userInstruction: retryHint,
         }),
         text: job.text,
