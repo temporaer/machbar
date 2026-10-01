@@ -22,6 +22,7 @@ type PropertyEditorProps = {
   item: IntakeDraftWorkItem;
   index: number;
   issues: IntakeIssue[];
+  reminderRowIds?: readonly string[];
   onDateValidityChange: DateValidityChange;
   onChange: (item: IntakeDraftWorkItem) => void;
   onClose: () => void;
@@ -215,6 +216,7 @@ export function IntakeReminderEditor({
   item,
   index,
   issues,
+  reminderRowIds,
   onDateValidityChange,
   onChange,
   onClose,
@@ -253,6 +255,8 @@ export function IntakeReminderEditor({
       title={strings.reminder}
       onClose={() => {
         onDateValidityChange(key, true);
+        (reminderRowIds ?? []).forEach((rowId) =>
+          onDateValidityChange(`${key}-${rowId}`, true));
         onClose();
       }}
     >
@@ -272,12 +276,14 @@ export function IntakeReminderEditor({
             }}
           />
         ) : null}
-        {item.reminders.map((reminder, reminderIndex) => (
-          <div className="stack" key={`${item.key}-reminder-${reminderIndex}`}>
+        {item.reminders.map((reminder, reminderIndex) => {
+          const rowId = reminderRowIds?.[reminderIndex] ?? String(reminderIndex);
+          return (
+          <div className="stack" key={`${item.key}-reminder-${rowId}`}>
             {reminder.kind === "absolute" ? (
               <IntakeLocalDateTimeField
-                id={`intake-work-${item.key}-reminder-${reminderIndex}`}
-                fieldKey={`${key}-${reminderIndex}`}
+                id={`intake-work-${item.key}-reminder-${rowId}`}
+                fieldKey={`${key}-${rowId}`}
                 onDateValidityChange={onDateValidityChange}
                 label={strings.reminder}
                 value={reminder.at}
@@ -328,7 +334,8 @@ export function IntakeReminderEditor({
               {strings.reminderRemove}
             </button>
           </div>
-        ))}
+          );
+        })}
         <div className="cluster">
           <button type="button" className="btn btn-sm" onClick={addAbsolute}>
             + {strings.reminder}

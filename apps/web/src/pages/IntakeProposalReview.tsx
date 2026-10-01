@@ -15,6 +15,7 @@ export function IntakeProposalReview({
   members,
   issues,
   invalidDateKeys,
+  reminderRowIds,
   onDateValidityChange,
   onChange,
 }: {
@@ -22,6 +23,7 @@ export function IntakeProposalReview({
   members: Member[];
   issues: IntakeIssue[];
   invalidDateKeys: ReadonlySet<string>;
+  reminderRowIds: ReadonlyMap<string, readonly string[]>;
   onDateValidityChange: DateValidityChange;
   onChange: (draft: IntakeDraft) => void;
 }) {
@@ -43,7 +45,8 @@ export function IntakeProposalReview({
     invalidDateKeys.has(`work:${item.key}:due`) ||
     invalidDateKeys.has(`work:${item.key}:scheduled`) ||
     invalidDateKeys.has(`work:${item.key}:availability`) ||
-    invalidDateKeys.has(`work:${item.key}:reminder-date`);
+    [...invalidDateKeys].some((key) =>
+      key.startsWith(`work:${item.key}:reminder-date`));
 
   return (
     <>
@@ -117,6 +120,7 @@ export function IntakeProposalReview({
                 }
                 members={members}
                 issues={issues}
+                reminderRowIds={reminderRowIds.get(item.key) ?? []}
                 onChange={(next) => {
                   const items = draft.workItems.map((value, itemIndex) =>
                     itemIndex === index ? next : value,

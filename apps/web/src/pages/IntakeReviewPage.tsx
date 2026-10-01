@@ -60,6 +60,7 @@ function acceptsIntakeRecord(
 function intakeDateKeys(
   draft: IntakeDraft | null,
   enabledOnly: boolean,
+  reminderRowIds: ReadonlyMap<string, readonly string[]>,
 ): Set<string> {
   const keys = new Set<string>();
   for (const event of draft?.calendarEvents ?? []) {
@@ -81,7 +82,8 @@ function intakeDateKeys(
         keys.add(`work:${item.key}:reminder-date`);
       } else {
         item.reminders.forEach((_, index) => {
-          keys.add(`work:${item.key}:reminder-date-${index}`);
+          const rowId = reminderRowIds.get(item.key)?.[index] ?? String(index);
+          keys.add(`work:${item.key}:reminder-date-${rowId}`);
         });
       }
     }
@@ -103,6 +105,23 @@ export function IntakeReviewPage() {
   const [applyError, setApplyError] = useState<string | null>(null);
   const [retryHint, setRetryHint] = useState("");
   const [invalidDateKeys, setInvalidDateKeys] = useState<Set<string>>(() => new Set());
+  const reminderRowIdsRef = useRef<WeakMap<object, string>>(new WeakMap());
+  const nextReminderRowIdRef = useRef(0);
+  const reminderRowIds = useMemo(() => {
+    const rows = new Map<string, string[]>();
+    for (const item of draft?.workItems ?? []) {
+      if (item.kind !== "action") continue;
+      rows.set(item.key, item.reminders.map((reminder) => {
+        let rowId = reminderRowIdsRef.current.get(reminder);
+        if (!rowId) {
+          rowId = `row-${nextReminderRowIdRef.current++}`;
+          reminderRowIdsRef.current.set(reminder, rowId);
+        }
+        return rowId;
+      }));
+    }
+    return rows;
+  }, [draft]);
   const onDateValidityChange = useCallback<DateValidityChange>((key, valid) => {
     setInvalidDateKeys((previous) => {
       if (previous.has(key) === !valid) return previous;
@@ -112,37 +131,20 @@ export function IntakeReviewPage() {
       return next;
     });
   }, []);
-  const dateKeys = useMemo(() => intakeDateKeys(draft, false), [draft]);
-  const activeDateKeys = useMemo(() => intakeDateKeys(draft, true), [draft]);
+  const dateKeys = useMemo(() => intakeDateKeys(draft, false, reminderRowIds), [draft, reminderRowIds]);
+  const activeDateKeys = useMemo(() => intakeDateKeys(draft, true, reminderRowIds), [draft, reminderRowIds]);
   const hasInvalidInputs = [...invalidDateKeys].some((key) => activeDateKeys.has(key));
   useEffect(() => {
-    const signatures = new Map(
-      (draft?.workItems ?? [])
-        .filter((item) => item.kind === "action")
-        .map((item) => [item.key, JSON.stringify(item.reminders)] as const),
-    );
-    const changedReminderKeys = new Set(
-      [...signatures]
-        .filter(([key, signature]) => reminderSignaturesRef.current.get(key) !== signature)
-        .map(([key]) => key),
-    );
-    reminderSignaturesRef.current = signatures;
     setInvalidDateKeys((previous) => {
       const next = new Set([...previous].filter((key) => dateKeys.has(key)));
-      for (const key of changedReminderKeys) {
-        for (const invalidKey of next) {
-          if (invalidKey.startsWith(`work:${key}:reminder-date`)) next.delete(invalidKey);
-        }
-      }
       if (next.size === previous.size && [...next].every((key) => previous.has(key))) return previous;
       return next;
     });
-  }, [dateKeys, draft]);
+  }, [dateKeys]);
   const recordRef = useRef<IntakeRecord | null>(null);
   const revisionRef = useRef<number | null>(null);
   const latestDraftRef = useRef<IntakeDraft | null>(null);
   const cleanDraftSnapshotRef = useRef<string | null>(null);
-  const reminderSignaturesRef = useRef<Map<string, string>>(new Map());
   const savePromiseRef = useRef<Promise<boolean> | null>(null);
   const debounceRef = useRef<number | null>(null);
   const retryInFlightRef = useRef(false);
@@ -489,6 +491,7 @@ export function IntakeReviewPage() {
           members={members}
           issues={issues}
           invalidDateKeys={invalidDateKeys}
+          reminderRowIds={reminderRowIds}
           onDateValidityChange={onDateValidityChange}
           onChange={updateDraft}
         />

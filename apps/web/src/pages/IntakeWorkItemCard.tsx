@@ -28,6 +28,7 @@ export function IntakeWorkItemCard({
   members,
   issues,
   hasInvalidInput,
+  reminderRowIds,
   onDateValidityChange,
   onChange,
   onKindChange,
@@ -39,6 +40,7 @@ export function IntakeWorkItemCard({
   members: Member[];
   issues: IntakeIssue[];
   hasInvalidInput: boolean;
+  reminderRowIds: readonly string[];
   onDateValidityChange: DateValidityChange;
   onChange: (item: IntakeDraftWorkItem) => void;
   onKindChange: (kind: IntakeDraftWorkItem["kind"]) => void;
@@ -241,6 +243,7 @@ export function IntakeWorkItemCard({
           index={index}
           members={members}
           issues={issues}
+          reminderRowIds={reminderRowIds}
           onDateValidityChange={onDateValidityChange}
           onChange={onChange}
           onClose={closeEditor}
@@ -281,6 +284,7 @@ export function IntakeWorkItemCard({
           item={item}
           index={index}
           issues={issues}
+          reminderRowIds={reminderRowIds}
           onDateValidityChange={onDateValidityChange}
           onChange={onChange}
           onClose={closeEditor}

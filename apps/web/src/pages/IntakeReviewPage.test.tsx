@@ -445,6 +445,108 @@ describe("IntakeReviewPage", () => {
     closeEditor(contentEditor);
   });
 
+  it("keeps reminder A blocked when reminder B is added or edited", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
+    let first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "10.10.2026" } });
+    fireEvent.change(editor.getByLabelText("Uhrzeit"), { target: { value: "08:00" } });
+    fireEvent.blur(first);
+    first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "kein Datum" } });
+    fireEvent.blur(first);
+    expect(applyButton()).toBeDisabled();
+    fireEvent.click(editor.getByRole("button", { name: "+ Erinnerung" }));
+    expect(editor.getAllByRole("textbox", { name: "Erinnerung" })).toHaveLength(2);
+    expect(applyButton()).toBeDisabled();
+    const second = editor.getAllByRole("textbox", { name: "Erinnerung" })[1]!;
+    fireEvent.change(second, { target: { value: "10.10.2026" } });
+    fireEvent.blur(second);
+    expect(applyButton()).toBeDisabled();
+  });
+
+  it("removes a reminder validity blocker only with the invalid row", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
+    const first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "10.10.2026" } });
+    fireEvent.change(editor.getByLabelText("Uhrzeit"), { target: { value: "08:00" } });
+    fireEvent.blur(first);
+    fireEvent.click(editor.getByRole("button", { name: "+ Erinnerung" }));
+    const rows = editor.getAllByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(rows[1]!, { target: { value: "kein Datum" } });
+    fireEvent.blur(rows[1]!);
+    expect(applyButton()).toBeDisabled();
+    fireEvent.click(editor.getAllByRole("button", { name: "Erinnerung entfernen" })[1]!);
+    expect(applyButton()).toBeEnabled();
+  });
+
+  it("keeps an invalid reminder blocked when an earlier row is removed", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
+    const first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "10.10.2026" } });
+    fireEvent.change(editor.getByLabelText("Uhrzeit"), { target: { value: "08:00" } });
+    fireEvent.blur(first);
+    fireEvent.click(editor.getByRole("button", { name: "+ Erinnerung" }));
+    const rows = editor.getAllByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(rows[1]!, { target: { value: "kein Datum" } });
+    fireEvent.blur(rows[1]!);
+    expect(applyButton()).toBeDisabled();
+    fireEvent.click(editor.getAllByRole("button", { name: "Erinnerung entfernen" })[0]!);
+    expect(applyButton()).toBeDisabled();
+  });
+
+  it("preserves reminder validity while a card is disabled and re-enabled", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
+    let first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "10.10.2026" } });
+    fireEvent.change(editor.getByLabelText("Uhrzeit"), { target: { value: "08:00" } });
+    fireEvent.blur(first);
+    first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "kein Datum" } });
+    fireEvent.blur(first);
+    const checkbox = screen.getByRole("checkbox", {
+      name: "In Vorschlag übernehmen: Rückmeldezettel abgeben",
+    });
+    fireEvent.click(checkbox);
+    expect(applyButton()).toBeEnabled();
+    fireEvent.click(checkbox);
+    expect(applyButton()).toBeDisabled();
+  });
+
+  it("does not retain reminder validity from a replaced proposal", async () => {
+    const conflictedDraft: IntakeDraft = {
+      ...draft,
+      workItems: [{
+        ...draft.workItems[0]!,
+        needsClarification: true,
+        reminders: [{ kind: "absolute", at: "2026-10-01T08:00:00+02:00" }],
+      }, draft.workItems[1]!],
+    };
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: conflictedDraft,
+    } as never);
+    mockedApi.retryIntake.mockResolvedValue({
+      ...record(),
+      draft: { ...draft, summary: "Neue Analyse" },
+    } as never);
+    renderPage();
+    const card = (await screen.findByRole("heading", { name: "Rückmeldezettel abgeben" })).closest("article")!;
+    fireEvent.click(within(card).getByRole("button", { name: /^Erinnerung:/ }));
+    const editor = within(await screen.findByRole("dialog"));
+    const first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "kein Datum" } });
+    fireEvent.blur(first);
+    expect(applyButton()).toBeDisabled();
+    closeEditor(editor);
+    fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
+    await waitFor(() => expect(screen.getByText("Neue Analyse")).toBeInTheDocument());
+    expect(applyButton()).toBeEnabled();
+  });
+
   it.each([
     ["calendar", { ...draft, workItems: [] }],
     ["work", { ...draft, calendarEvents: [] }],
