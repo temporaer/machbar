@@ -34,7 +34,7 @@ describe("intake apply", () => {
     const paired = await ctx.app.inject({
       method: "POST",
       url: "/api/integrations/home-assistant/pair",
-      payload: { pairingCode: code, protocolVersion: 2 },
+      payload: { pairingCode: code, protocolVersion: 3 },
     });
     const token = paired.json().token as string;
     await ctx.app.inject({
@@ -42,7 +42,7 @@ describe("intake apply", () => {
       url: "/api/integrations/home-assistant/context",
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        protocolVersion: 2,
+        protocolVersion: 3,
         observedAt: new Date().toISOString(),
         contexts: [],
         people: [],
@@ -62,7 +62,7 @@ describe("intake apply", () => {
     const id = created.json().id as string;
     const leased = await ctx.app.inject({
       method: "GET",
-      url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
       headers: { authorization: `Bearer ${token}` },
     });
     await ctx.app.inject({
@@ -105,10 +105,10 @@ describe("intake apply", () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
     const d = draft([
-      { key: "project", kind: "project", title: "Renovate", notes: "Plan", parentKey: null, dueDate: "2026-10-10", scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: setup.member.id },
-      { key: "action", kind: "action", title: "Buy paint", notes: null, parentKey: "project", dueDate: "2026-10-01", scheduledDate: "2026-09-29", notBeforeDate: null, notBeforeAt: null, reminderAt: "2026-09-28T09:00:00.000Z", needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: setup.member.id },
-      { key: "reference", kind: "reference", title: "Colour chart", notes: "Keep", parentKey: "action", dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
-      { key: "root", kind: "action", title: "Call contractor", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: true, relatedCalendarKeys: [], enabled: true, ownerMemberId: setup.member.id },
+      { key: "project", kind: "project", title: "Renovate", notes: "Plan", parentKey: null, dueDate: "2026-10-10", scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: setup.member.id },
+      { key: "action", kind: "action", title: "Buy paint", notes: null, parentKey: "project", dueDate: "2026-10-01", scheduledDate: "2026-09-29", notBeforeDate: null, notBeforeAt: null, reminders: [{ kind: "absolute", at: "2026-09-28T09:00:00.000Z" }], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: setup.member.id },
+      { key: "reference", kind: "reference", title: "Colour chart", notes: "Keep", parentKey: "action", dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+      { key: "root", kind: "action", title: "Call contractor", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: true, relatedCalendarKeys: [], enabled: true, ownerMemberId: setup.member.id },
     ]);
     await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, {
       expectedRevision: setup.revision,
@@ -131,7 +131,7 @@ describe("intake apply", () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
     const d = draft([
-      { key: "task", kind: "action", title: "Unique task", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: ["event"], enabled: true, ownerMemberId: null },
+      { key: "task", kind: "action", title: "Unique task", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: ["event"], enabled: true, ownerMemberId: null },
     ], [{
       key: "event", title: "Appointment", description: null, location: null, allDay: false,
       startDate: null, endDate: null, startDateTime: "2026-10-01T10:00:00+02:00", endDateTime: "2026-10-01T11:00:00+02:00",
@@ -163,7 +163,7 @@ describe("intake apply", () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
     const d = draft([
-      { key: "task", kind: "action", title: "Only once", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+      { key: "task", kind: "action", title: "Only once", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
     ]);
     const input = { expectedRevision: setup.revision, draft: d };
     await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, input, { actorMemberId: setup.member.id }, setup.member.id);
@@ -176,14 +176,14 @@ describe("intake apply", () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
     const parentDraft = draft([
-      { key: "parent", kind: "action", title: "Existing parent", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+      { key: "parent", kind: "action", title: "Existing parent", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
     ]);
     await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, { expectedRevision: setup.revision, draft: parentDraft }, { actorMemberId: setup.member.id }, setup.member.id);
     const applied = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
     ctx.handle.db.update(schema.intakeJobs).set({ status: "partially_applied", revision: applied.revision + 1 }).where(eq(schema.intakeJobs.id, setup.id)).run();
     const childDraft = draft([
       ...parentDraft.workItems,
-      { key: "child", kind: "action", title: "New child", notes: null, parentKey: "parent", dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+      { key: "child", kind: "action", title: "New child", notes: null, parentKey: "parent", dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
     ]);
     const partial = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
     expect(() => updateIntakeDraft(ctx.handle.db, setup.id, setup.member.id, {
@@ -206,7 +206,7 @@ describe("intake apply", () => {
     const signal = new HomeAssistantRequestSignal();
     await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, {
       expectedRevision: setup.revision,
-      draft: draft([{ key: "task", kind: "action", title: "Owned by actor", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null }]),
+      draft: draft([{ key: "task", kind: "action", title: "Owned by actor", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null }]),
     }, { actorMemberId: setup.member.id }, setup.member.id);
     const task = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Owned by actor")).get()!;
     expect(task.ownerMemberId).toBe(setup.member.id);
@@ -224,7 +224,7 @@ describe("intake apply", () => {
   it("recovers an abandoned local apply lease without changing the accepted draft", async () => {
     const setup = await prepare();
     const accepted = draft([
-      { key: "task-a", kind: "action", title: "Accepted task A", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+      { key: "task-a", kind: "action", title: "Accepted task A", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
     ]);
     ctx.handle.db.update(schema.intakeJobs).set({
       status: "applying",
@@ -257,7 +257,7 @@ describe("intake apply", () => {
   it("directly retries an expired apply claim using its frozen draft and previous revision", async () => {
     const setup = await prepare();
     const accepted = draft([
-      { key: "accepted", kind: "action", title: "Recovered accepted task", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+      { key: "accepted", kind: "action", title: "Recovered accepted task", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
     ]);
     ctx.handle.db.update(schema.intakeJobs).set({
       status: "applying",
@@ -268,7 +268,7 @@ describe("intake apply", () => {
     }).where(eq(schema.intakeJobs.id, setup.id)).run();
     const before = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
     const changedDraft = draft([
-      { key: "changed", kind: "action", title: "Should not be created", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+      { key: "changed", kind: "action", title: "Should not be created", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
     ]);
     await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, new HomeAssistantRequestSignal(), setup.id, {
       expectedRevision: before.revision,
@@ -285,7 +285,7 @@ describe("intake apply", () => {
   it("rejects a stale direct retry before recovering an expired claim", async () => {
     const setup = await prepare();
     const accepted = draft([
-      { key: "accepted", kind: "action", title: "Not created by stale retry", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+      { key: "accepted", kind: "action", title: "Not created by stale retry", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
     ]);
     const expiredAt = new Date(Date.now() - 60_000).toISOString();
     ctx.handle.db.update(schema.intakeJobs).set({
@@ -341,7 +341,7 @@ describe("intake apply", () => {
     ctx.handle.db.update(schema.intakeJobs).set({ createdByMemberId: null })
       .where(eq(schema.intakeJobs.id, setup.id)).run();
     const accepted = draft([
-      { key: "task", kind: "action", title: "Retain source", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+      { key: "task", kind: "action", title: "Retain source", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
     ]);
     accepted.retainSourceInPaperless = true;
 
@@ -425,8 +425,8 @@ describe("intake apply", () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
     const d = draft([
-      { key: "project", kind: "project", title: "Calendar project", notes: null, parentKey: null, dueDate: "2026-10-10", scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: ["event"], enabled: true, ownerMemberId: setup.member.id },
-      { key: "disabled-task", kind: "action", title: "Disabled task", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: ["event", "disabled-event"], enabled: false, ownerMemberId: null },
+      { key: "project", kind: "project", title: "Calendar project", notes: null, parentKey: null, dueDate: "2026-10-10", scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: ["event"], enabled: true, ownerMemberId: setup.member.id },
+      { key: "disabled-task", kind: "action", title: "Disabled task", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: ["event", "disabled-event"], enabled: false, ownerMemberId: null },
     ], [{
       key: "event", title: "Appointment", description: "Accepted event detail", location: "Library", allDay: false,
       startDate: null, endDate: null, startDateTime: "2026-10-01T10:00:00+02:00", endDateTime: "2026-10-01T11:00:00+02:00",
@@ -556,7 +556,7 @@ describe("intake apply", () => {
       }).run();
     }
     const draftWithRetention = draft([
-      { key: "retention", kind: "action", title: "Retained", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+      { key: "retention", kind: "action", title: "Retained", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
     ]);
     draftWithRetention.retainSourceInPaperless = true;
     let uploadCount = 0;
@@ -583,7 +583,7 @@ describe("intake apply", () => {
         try {
           updateIntakeDraft(ctx.handle.db, setup.id, setup.member.id, {
             expectedRevision: job.revision,
-            draft: draft([{ key: "changed", kind: "action", title: "Changed", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null }]),
+            draft: draft([{ key: "changed", kind: "action", title: "Changed", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null }]),
           }, { paperlessAvailable: true, hasFiles: true });
         } catch {
           patchBlockedAfterClaim = true;
@@ -623,7 +623,7 @@ describe("intake apply", () => {
       draft: draftWithRetention,
     })).toThrowError(/only be edited before Apply starts/);
     const changedRetryDraft = draft([
-      { key: "changed", kind: "action", title: "Changed during retry", notes: null, parentKey: null, dueDate: "2026-12-31", scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: setup.member.id },
+      { key: "changed", kind: "action", title: "Changed during retry", notes: null, parentKey: null, dueDate: "2026-12-31", scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: setup.member.id },
     ]);
     await applyIntake(ctx.handle.db, env(ctx.dataDir), paperless, signal, setup.id, {
       expectedRevision: partial.revision,
@@ -667,7 +667,7 @@ describe("intake apply", () => {
       download: async () => ({ contentType: "text/plain", contentLength: 0, filename: null, body: Readable.from([]) }),
     };
     const acceptedDraft = draft([
-      { key: "project", kind: "project", title: "Paperless project", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
+      { key: "project", kind: "project", title: "Paperless project", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: [], enabled: true, ownerMemberId: null },
     ]);
     acceptedDraft.retainSourceInPaperless = true;
     ctx.handle.db.update(schema.intakeJobs).set({

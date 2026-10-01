@@ -54,7 +54,7 @@ vi.mock("../lib/api", () => ({
       connectedAt: "2026-09-03T10:00:00.000Z",
       lastUpdateAt: "2026-09-03T12:00:00.000Z",
       stale: false,
-      supportedProtocolVersion: 2,
+      supportedProtocolVersion: 3,
       protocolOutdated: false,
       lastRequestPollAt: null,
       workerOnline: false,

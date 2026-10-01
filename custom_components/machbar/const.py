@@ -7,7 +7,7 @@ CONF_TOKEN = "token"
 CONF_INSTANCE_ID = "instanceId"
 CONF_PROTOCOL_VERSION = "protocolVersion"
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 PAIR_PATH = "/api/integrations/home-assistant/pair"
 CONTEXT_PATH = "/api/integrations/home-assistant/context"
 SYNC_TASK_PATH = "/api/integrations/home-assistant/tasks/sync"

@@ -1,4 +1,4 @@
-import type { IntakeDraftWorkItem, IntakeIssue, Member } from "@machbar/shared";
+import type { IntakeDraftWorkItem, IntakeIssue, Member, TaskReminderInput } from "@machbar/shared";
 import {
   taskAvailabilityClock,
   taskAvailabilityForLocalDate,
@@ -8,6 +8,9 @@ import { BottomSheet } from "../components/BottomSheet";
 import { HumanDateInput } from "../components/HumanDateInput";
 import { MemberChoiceGroup } from "../components/MemberChoiceGroup";
 import { ScheduleShortcuts } from "../components/ScheduleShortcuts";
+import { browserTimezone } from "../lib/browserTimezone";
+import { formatReminderLabel } from "../lib/reminderLabels";
+import { useLocale } from "../lib/locale";
 import {
   IntakeIssueText,
   IntakeLocalDateTimeField,
@@ -217,7 +220,34 @@ export function IntakeReminderEditor({
   onClose,
 }: PropertyEditorProps) {
   const strings = useStrings();
+  const { locale } = useLocale();
   const key = `work:${item.key}:reminder-date`;
+  const addAbsolute = () => onChange({
+    ...item,
+    reminders: [...item.reminders, {
+      kind: "absolute",
+      at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    }],
+  });
+  const addRelative = () => {
+    if (!item.dueDate) return;
+    onChange({
+      ...item,
+      reminders: [...item.reminders, {
+        kind: "deadline_relative",
+        daysBefore: 1,
+        time: "09:00",
+        timezone: browserTimezone() ?? "Europe/Berlin",
+      }],
+    });
+  };
+  const updateReminder = (index: number, reminder: TaskReminderInput) => {
+    onChange({
+      ...item,
+      reminders: item.reminders.map((current, currentIndex) =>
+        currentIndex === index ? reminder : current),
+    });
+  };
   return (
     <BottomSheet
       title={strings.reminder}
@@ -227,17 +257,91 @@ export function IntakeReminderEditor({
       }}
     >
       <div className="stack intake-edit-sheet">
-        <IntakeLocalDateTimeField
-          id={`intake-work-${item.key}-reminder`}
-          fieldKey={key}
-          onDateValidityChange={onDateValidityChange}
-          label={strings.reminder}
-          value={item.reminderAt}
-          onChange={(reminderAt) => onChange({ ...item, reminderAt })}
-        />
+        {!item.reminders.length ? (
+          <IntakeLocalDateTimeField
+            id={`intake-work-${item.key}-reminder`}
+            fieldKey={key}
+            onDateValidityChange={onDateValidityChange}
+            label={strings.reminder}
+            value={null}
+            onChange={(at) => {
+              if (at) onChange({
+                ...item,
+                reminders: [{ kind: "absolute", at }],
+              });
+            }}
+          />
+        ) : null}
+        {item.reminders.map((reminder, reminderIndex) => (
+          <div className="stack" key={`${item.key}-reminder-${reminderIndex}`}>
+            {reminder.kind === "absolute" ? (
+              <IntakeLocalDateTimeField
+                id={`intake-work-${item.key}-reminder-${reminderIndex}`}
+                fieldKey={`${key}-${reminderIndex}`}
+                onDateValidityChange={onDateValidityChange}
+                label={strings.reminder}
+                value={reminder.at}
+                onChange={(at) => onChange({
+                  ...item,
+                  reminders: at
+                    ? item.reminders.map((current, currentIndex) =>
+                      currentIndex === reminderIndex ? { kind: "absolute", at } : current)
+                    : item.reminders.filter((_, currentIndex) => currentIndex !== reminderIndex),
+                })}
+              />
+            ) : (
+              <>
+                <label>
+                  {strings.reminderDaysBeforeFieldLabel}
+                  <input
+                    type="number"
+                    min={0}
+                    value={reminder.daysBefore}
+                    onChange={(event) => updateReminder(reminderIndex, {
+                      ...reminder,
+                      daysBefore: Math.max(0, Number(event.target.value) || 0),
+                    })}
+                  />
+                </label>
+                <label>
+                  {strings.reminderTimeFieldLabel}
+                  <input
+                    type="time"
+                    value={reminder.time}
+                    onChange={(event) => updateReminder(reminderIndex, {
+                      ...reminder,
+                      time: event.target.value,
+                    })}
+                  />
+                </label>
+              </>
+            )}
+            <span>{formatReminderLabel(reminder, item.dueDate, strings, locale)}</span>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => onChange({
+                ...item,
+                reminders: item.reminders.filter((_, index) => index !== reminderIndex),
+              })}
+            >
+              {strings.reminderRemove}
+            </button>
+          </div>
+        ))}
+        <div className="cluster">
+          <button type="button" className="btn btn-sm" onClick={addAbsolute}>
+            + {strings.reminder}
+          </button>
+          {item.dueDate ? (
+            <button type="button" className="btn btn-sm" onClick={addRelative}>
+              + {strings.reminderDeadlineRelative}
+            </button>
+          ) : null}
+        </div>
         <IntakeIssueText
           issues={issues}
-          path={["workItems", index, "reminderAt"]}
+          path={["workItems", index, "reminders"]}
         />
       </div>
     </BottomSheet>

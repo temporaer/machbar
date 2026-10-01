@@ -621,7 +621,7 @@ describe("reminders and Push delivery", () => {
       .values({
         instanceId: "notifications",
         tokenHash: "token",
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectedAt: new Date().toISOString(),
       })
       .returning({ id: schema.homeAssistantIntegrations.id }).get().id;
@@ -667,7 +667,7 @@ describe("reminders and Push delivery", () => {
       .values({
         instanceId: "notifications-keyed",
         tokenHash: "token-keyed",
-        protocolVersion: 2,
+        protocolVersion: 3,
         connectedAt: new Date().toISOString(),
       })
       .returning({ id: schema.homeAssistantIntegrations.id }).get().id;

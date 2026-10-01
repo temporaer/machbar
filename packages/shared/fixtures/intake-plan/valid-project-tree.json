@@ -13,7 +13,7 @@
       "scheduledDate": null,
       "notBeforeDate": null,
       "notBeforeAt": null,
-      "reminderAt": null,
+      "reminders": [],
       "needsClarification": false,
       "relatedCalendarKeys": []
     },
@@ -28,7 +28,7 @@
       "scheduledDate": null,
       "notBeforeDate": null,
       "notBeforeAt": null,
-      "reminderAt": null,
+      "reminders": [],
       "needsClarification": false,
       "relatedCalendarKeys": []
     }

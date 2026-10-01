@@ -52,7 +52,7 @@ const draft = {
     scheduledDate: null,
     notBeforeDate: null,
     notBeforeAt: null,
-    reminderAt: null,
+    reminders: [],
     needsClarification: false,
     relatedCalendarKeys: ["event"],
     enabled: true,
@@ -67,7 +67,7 @@ const draft = {
     scheduledDate: null,
     notBeforeDate: null,
     notBeforeAt: null,
-    reminderAt: null,
+    reminders: [],
     needsClarification: false,
     relatedCalendarKeys: ["event"],
     enabled: true,
@@ -310,7 +310,7 @@ describe("IntakeReviewPage", () => {
       dueDate: "2026-10-20",
       scheduledDate: null,
       notBeforeDate: null,
-      reminderAt: null,
+      reminders: [],
     });
   });
 
@@ -355,7 +355,7 @@ describe("IntakeReviewPage", () => {
             scheduledDate: "2026-10-03",
             notBeforeDate: "2026-10-04",
             notBeforeAt: "2026-10-04T00:00:00.000Z",
-            reminderAt: "2026-10-02T08:00:00.000Z",
+            reminders: [{ kind: "absolute", at: "2026-10-02T08:00:00.000Z" }],
             needsClarification: true,
           },
           draft.workItems[1]!,
@@ -375,7 +375,7 @@ describe("IntakeReviewPage", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
   });
@@ -520,7 +520,7 @@ describe("IntakeReviewPage", () => {
     expect(applied.workItems[0]).toMatchObject({
       dueDate: "2026-10-20",
       scheduledDate: "2026-10-11",
-      reminderAt: new Date(2026, 9, 10, 8, 30).toISOString(),
+      reminders: [{ kind: "absolute", at: new Date(2026, 9, 10, 8, 30).toISOString() }],
     });
   });
 

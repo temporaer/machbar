@@ -11,6 +11,29 @@ import { LoadingState } from "../components/AsyncStates";
 import { IntakeProposalReview } from "./IntakeProposalReview";
 import { type DateValidityChange } from "./IntakeReviewFields";
 
+function intakeIssuePath(path: readonly (string | number)[]): string {
+  return path.reduce<string>((result, segment) =>
+    typeof segment === "number"
+      ? `${result}[${segment}]`
+      : result
+        ? `${result}.${segment}`
+        : segment, "");
+}
+
+function intakeFailureExplanation(
+  record: IntakeRecord,
+  strings: ReturnType<typeof useStrings>,
+): string {
+  switch (record.error?.code) {
+    case "intake_plan_invalid":
+      return strings.intakeErrorValidation;
+    case "ai_task_invalid_response":
+      return strings.intakeErrorNormalization;
+    default:
+      return strings.intakeErrorProvider;
+  }
+}
+
 export function IntakeReviewPage() {
   const { id = "" } = useParams();
   const strings = useStrings();
@@ -23,6 +46,7 @@ export function IntakeReviewPage() {
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [retryHint, setRetryHint] = useState("");
   const [invalidDateKeys, setInvalidDateKeys] = useState<Set<string>>(() => new Set());
   const onDateValidityChange = useCallback<DateValidityChange>((key, valid) => {
     setInvalidDateKeys((previous) => {
@@ -43,10 +67,18 @@ export function IntakeReviewPage() {
     }
     for (const item of draft?.workItems ?? []) {
       if (item.kind !== "reference") keys.add(`work:${item.key}:due`);
-      if (item.kind === "action") {
+      if (item.kind !== "reference") {
         keys.add(`work:${item.key}:scheduled`);
+      }
+      if (item.kind === "action") {
         keys.add(`work:${item.key}:availability`);
-        keys.add(`work:${item.key}:reminder-date`);
+        if (item.reminders.length === 0) {
+          keys.add(`work:${item.key}:reminder-date`);
+        } else {
+          item.reminders.forEach((_, index) => {
+            keys.add(`work:${item.key}:reminder-date-${index}`);
+          });
+        }
       }
     }
     return keys;
@@ -83,6 +115,9 @@ export function IntakeReviewPage() {
       recordRef.current = state.data;
       revisionRef.current = state.data.revision;
       setRecord(state.data);
+      if (state.data.status === "analysis_failed") {
+        setRetryHint(state.data.retryHint ?? "");
+      }
       if (state.data.draft && (
         latestDraftRef.current === null ||
         conflictPendingRef.current ||
@@ -200,7 +235,13 @@ export function IntakeReviewPage() {
   };
   const retry = async () => {
     setBusy(true);
-    try { setRecord(await api.retryIntake(id)); } finally { setBusy(false); }
+    try {
+      const nextRecord = retryHint.trim()
+        ? await api.retryIntake(id, retryHint)
+        : await api.retryIntake(id);
+      setRecord(nextRecord);
+      setRetryHint(nextRecord.retryHint ?? "");
+    } finally { setBusy(false); }
   };
   const applyInitial = async () => {
     if (record.status !== "ready" || !draft || busy || issues.length || hasInvalidInputs || applyingRef.current) return;
@@ -264,7 +305,44 @@ export function IntakeReviewPage() {
     try { await api.deleteIntake(id); navigate("/today"); } finally { setBusy(false); }
   };
   if (record.status === "analysis_failed") {
-    return <section className="card stack" role="alert"><h1>{strings.intakeAnalysisFailed}</h1><p>{record.error?.message ?? strings.intakeAnalysisFailed}</p><button className="btn btn-primary" disabled={busy} onClick={() => void retry()}>{strings.intakeRetry}</button></section>;
+    const validationIssues = record.error?.details?.issues ?? [];
+    return (
+      <section className="card stack" role="alert">
+        <h1>{strings.intakeAnalysisFailed}</h1>
+        <p>{intakeFailureExplanation(record, strings)}</p>
+        {validationIssues.length ? (
+          <div className="stack">
+            <h2>{strings.intakeValidationProblems}</h2>
+            {validationIssues.map((issue, index) => (
+              <p key={`${intakeIssuePath(issue.path)}-${issue.code}-${index}`}>
+                <code>{intakeIssuePath(issue.path)}</code>: {issue.message}
+              </p>
+            ))}
+          </div>
+        ) : null}
+        <label className="stack">
+          <span>{strings.intakeRetryHintLabel}</span>
+          <textarea
+            rows={3}
+            value={retryHint}
+            placeholder={strings.intakeRetryHintPlaceholder}
+            onChange={(event) => setRetryHint(event.target.value)}
+          />
+          <small>{strings.intakeRetryHintHelp}</small>
+        </label>
+        {record.error ? (
+          <details>
+            <summary>{strings.intakeTechnicalDetails}</summary>
+            <pre>{JSON.stringify({
+              code: record.error.code,
+              details: record.error.details,
+            }, null, 2)}</pre>
+          </details>
+        ) : null}
+        <p>{record.error?.message ?? strings.intakeAnalysisFailed}</p>
+        <button className="btn btn-primary" disabled={busy} onClick={() => void retry()}>{strings.intakeRetry}</button>
+      </section>
+    );
   }
   if (record.status === "queued") return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeQueued}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
   if (record.status === "analyzing") return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeAnalyzing}</p></section>;

@@ -130,7 +130,7 @@ function normalizedWorkItemKind(
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     };
   }
@@ -142,7 +142,7 @@ function normalizedWorkItemKind(
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     };
   }
@@ -151,7 +151,7 @@ function normalizedWorkItemKind(
     scheduledDate: null,
     notBeforeDate: null,
     notBeforeAt: null,
-    reminderAt: null,
+    reminders: [],
     needsClarification: false,
   };
 }

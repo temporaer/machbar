@@ -25,7 +25,7 @@ const validPlan = {
     scheduledDate: null,
     notBeforeDate: null,
     notBeforeAt: null,
-    reminderAt: null,
+    reminders: [],
     needsClarification: false,
     relatedCalendarKeys: [],
   }],
@@ -62,7 +62,7 @@ describe("intake lifecycle", () => {
     const paired = await ctx.app.inject({
       method: "POST",
       url: "/api/integrations/home-assistant/pair",
-      payload: { pairingCode: code, protocolVersion: 2 },
+      payload: { pairingCode: code, protocolVersion: 3 },
     });
     const token = paired.json().token as string;
     await ctx.app.inject({
@@ -70,7 +70,7 @@ describe("intake lifecycle", () => {
       url: "/api/integrations/home-assistant/context",
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        protocolVersion: 2,
+        protocolVersion: 3,
         observedAt: new Date().toISOString(),
         contexts: [],
         people: [],
@@ -103,7 +103,7 @@ describe("intake lifecycle", () => {
   async function lease(token: string) {
     const response = await ctx.app.inject({
       method: "GET",
-      url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
       headers: { authorization: `Bearer ${token}` },
     });
     expect(response.statusCode).toBe(200);
@@ -242,9 +242,22 @@ describe("intake lifecycle", () => {
     });
     const failed = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!;
     expect(failed.status).toBe("analysis_failed");
-    expect(JSON.parse(failed.errorJson!).code).toBe("ai_task_invalid_response");
-    const retry = await ctx.app.inject({ method: "POST", url: `/api/intake/${id}/retry` });
+    expect(JSON.parse(failed.errorJson!).code).toBe("intake_plan_invalid");
+    expect(JSON.parse(failed.errorJson!).details.issues[0]).toMatchObject({
+      path: ["summary"],
+      code: "schema_invalid",
+    });
+    const retry = await ctx.app.inject({
+      method: "POST",
+      url: `/api/intake/${id}/retry`,
+      payload: { hint: "Bitte den vollständigen Plan mit den fehlenden Feldern zurückgeben." },
+    });
     expect(retry.statusCode).toBe(200);
+    expect(retry.json().retryHint).toContain("vollständigen Plan");
+    const retryRequest = ctx.handle.db.select().from(schema.homeAssistantRequests)
+      .where(eq(schema.homeAssistantRequests.intakeJobId, id)).orderBy(schema.homeAssistantRequests.createdAt).all()[1]!;
+    expect(JSON.parse(retryRequest.payloadJson).instructions).toContain("schema_invalid");
+    expect(JSON.parse(retryRequest.payloadJson).instructions).toContain("vollständigen Plan");
     expect(ctx.handle.db.select().from(schema.homeAssistantRequests)
       .where(eq(schema.homeAssistantRequests.intakeJobId, id)).all()).toHaveLength(2);
     expect(readdirSync(`${ctx.dataDir}/intake/${id}`)).toHaveLength(1);

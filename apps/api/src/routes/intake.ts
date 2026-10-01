@@ -130,7 +130,17 @@ export function registerIntakeRoutes(
   });
 
   app.post<{ Params: { id: string } }>("/api/intake/:id/retry", async (request) => {
-    await retryIntakeAnalysis(db, env, signal, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null);
+    const body = parseOrThrow(z.object({
+      hint: z.string().max(2_000).nullable().optional(),
+    }).strict(), request.body ?? {});
+    await retryIntakeAnalysis(
+      db,
+      env,
+      signal,
+      request.params.id,
+      request.authMember?.id ?? request.activityActor?.id ?? null,
+      body.hint,
+    );
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
   });
 

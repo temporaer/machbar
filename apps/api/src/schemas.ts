@@ -416,13 +416,28 @@ export const homeAssistantRequestCompletionSchema = z.discriminatedUnion("outcom
     error: z.object({
       code: z.string().min(1),
       message: z.string().min(1),
+      details: z.object({
+        path: z.array(z.union([z.string(), z.number().int().nonnegative()])).optional(),
+        expectedType: z.string().min(1).optional(),
+        issues: z.array(z.object({
+          path: z.array(z.union([z.string(), z.number().int().nonnegative()])),
+          code: z.string().min(1),
+          message: z.string().min(1),
+        }).strict()).max(50).optional(),
+      }).strict().optional(),
     }).strict(),
   }),
 ]);
 
 const intakeKeySchema = z.string().regex(INTAKE_KEY_PATTERN);
 const intakeDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const intakeDateTimeSchema = z.string().datetime({ offset: true });
+const intakeDateTimeSchema = z
+  .string()
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/,
+    "Date-time must include seconds and an explicit timezone offset.",
+  )
+  .refine((value) => !Number.isNaN(Date.parse(value)), "Date-time must be valid.");
 const intakeCalendarEventSchema = z
   .object({
     key: intakeKeySchema,
@@ -449,7 +464,7 @@ const intakeWorkItemSchema = z
     scheduledDate: intakeDateSchema.nullable(),
     notBeforeDate: intakeDateSchema.nullable(),
     notBeforeAt: intakeDateTimeSchema.nullable(),
-    reminderAt: intakeDateTimeSchema.nullable(),
+    reminders: z.array(taskReminderInputSchema),
     needsClarification: z.boolean(),
     relatedCalendarKeys: z.array(intakeKeySchema),
   })

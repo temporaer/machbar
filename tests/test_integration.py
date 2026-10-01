@@ -29,7 +29,7 @@ def _entry() -> MockConfigEntry:
             "origin": "https://machbar.example",
             "token": "secret-token",
             "instanceId": "instance-1",
-            "protocolVersion": 2,
+            "protocolVersion": 3,
         },
         unique_id="instance-1",
     )
@@ -105,7 +105,7 @@ async def test_state_change_pushes_complete_snapshot(hass):
 
     assert push.await_count == 2
     snapshot = push.await_args.args[0]
-    assert snapshot["protocolVersion"] == 2
+    assert snapshot["protocolVersion"] == 3
     assert "intake" in snapshot
     assert snapshot["contexts"] == [
         {"externalId": "zone.home", "name": "Home"}

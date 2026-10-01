@@ -1,3 +1,5 @@
+import type { TaskReminderInput } from "./index.js";
+
 export const INTAKE_TIMEZONE = "Europe/Berlin" as const;
 export const INTAKE_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 export const INTAKE_MAX_CALENDAR_EVENTS = 20;
@@ -30,7 +32,7 @@ export interface IntakeWorkItem {
   scheduledDate: string | null;
   notBeforeDate: string | null;
   notBeforeAt: string | null;
-  reminderAt: string | null;
+  reminders: TaskReminderInput[];
   needsClarification: boolean;
   relatedCalendarKeys: string[];
 }
@@ -86,13 +88,15 @@ export type IntakeIssueCode =
   | "dangling_related_key"
   | "duplicate_related_key"
   | "scheduling_order"
+  | "deadline_relative_without_due"
   | "captured_reminder"
   | "timed_end_required"
   | "parent_disabled"
   | "owner_not_member"
   | "reference_owner"
   | "paperless_unavailable"
-  | "nothing_selected";
+  | "nothing_selected"
+  | "schema_invalid";
 
 export interface IntakeIssue {
   path: (string | number)[];
@@ -118,7 +122,9 @@ function validDate(value: string): boolean {
 }
 
 function validDateTime(value: string): boolean {
-  if (!/T/.test(value) || !/(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return false;
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+  ) return false;
   return !Number.isNaN(Date.parse(value));
 }
 
@@ -233,7 +239,18 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
     addIssueForDate(issues, [...path, "scheduledDate"], item.scheduledDate);
     addIssueForDate(issues, [...path, "notBeforeDate"], item.notBeforeDate);
     addIssueForDateTime(issues, [...path, "notBeforeAt"], item.notBeforeAt);
-    addIssueForDateTime(issues, [...path, "reminderAt"], item.reminderAt);
+    for (const [reminderIndex, reminder] of item.reminders.entries()) {
+      const reminderPath = [...path, "reminders", reminderIndex] as (string | number)[];
+      if (reminder.kind === "absolute") {
+        addIssueForDateTime(issues, [...reminderPath, "at"], reminder.at);
+      } else if (item.dueDate === null) {
+        issues.push(issue(
+          reminderPath,
+          "deadline_relative_without_due",
+          "Deadline-relative reminders require a usable deadline.",
+        ));
+      }
+    }
     if ((item.notBeforeAt === null) !== (item.notBeforeDate === null)) {
       issues.push(issue(path, "not_before_pair", "notBeforeDate and notBeforeAt must be set together."));
     } else if (item.notBeforeAt && item.notBeforeDate && validDateTime(item.notBeforeAt) && validDate(item.notBeforeDate)) {
@@ -244,19 +261,19 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
     if (item.scheduledDate && item.dueDate && item.scheduledDate > item.dueDate) {
       issues.push(issue(path, "scheduling_order", "Scheduled date must not be after the due date."));
     }
-    if (item.needsClarification && item.reminderAt !== null) {
-      issues.push(issue([...path, "reminderAt"], "captured_reminder", "Clarifying items cannot have reminders."));
+    if (item.needsClarification && item.reminders.length > 0) {
+      issues.push(issue([...path, "reminders"], "captured_reminder", "Clarifying items cannot have reminders."));
     }
     if (item.kind === "project") {
-      if (item.scheduledDate !== null || item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminderAt !== null || item.needsClarification) {
-        issues.push(issue(path, "project_field_not_allowed", "Projects may only have a due date."));
+      if (item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminders.length > 0 || item.needsClarification) {
+        issues.push(issue(path, "project_field_not_allowed", "Projects may have a scheduled date and due date, but no availability, reminders, or clarification fields."));
       }
       if (item.parentKey !== null && !plan.workItems.some((parent) => parent.key === item.parentKey && parent.kind === "project")) {
         issues.push(issue([...path, "parentKey"], "invalid_parent", "Projects can only be children of projects."));
       }
     } else if (item.kind === "reference") {
-      if (item.ownerName !== null || item.dueDate !== null || item.scheduledDate !== null || item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminderAt !== null || item.needsClarification) {
-        issues.push(issue(path, "reference_field_not_allowed", "References cannot carry scheduling, owner, or clarification fields."));
+      if (item.ownerName !== null || item.dueDate !== null || item.scheduledDate !== null || item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminders.length > 0 || item.needsClarification) {
+        issues.push(issue(path, "reference_field_not_allowed", "References cannot carry ownership, scheduling, reminders, or clarification fields."));
       }
       if (item.parentKey !== null && !plan.workItems.some((parent) => parent.key === item.parentKey && (parent.kind === "project" || parent.kind === "action"))) {
         issues.push(issue([...path, "parentKey"], "invalid_parent", "References may only be children of projects or actions."));
@@ -391,6 +408,7 @@ export type IntakeErrorCode =
   | "ai_task_attachments_unsupported"
   | "ai_task_failed"
   | "ai_task_invalid_response"
+  | "intake_plan_invalid"
   | "calendar_not_configured"
   | "calendar_not_writable"
   | "calendar_create_failed"
@@ -408,10 +426,18 @@ export type IntakeErrorCode =
   | "intake_source_retention_failed"
   | "home_assistant_request_lease_lost"
   | "home_assistant_request_exhausted";
+
+export interface IntakeErrorDetails {
+  issues?: IntakeIssue[];
+  path?: (string | number)[];
+  expectedType?: string;
+}
+
 export interface IntakeErrorInfo {
   code: IntakeErrorCode;
   message: string;
   retryable: boolean;
+  details?: IntakeErrorDetails;
 }
 
 export interface HomeAssistantCalendarEventRef {
@@ -443,7 +469,15 @@ export type HomeAssistantLeasedRequest =
 export type HomeAssistantRequestCompletion =
   | { leaseToken: string; outcome: "succeeded"; result: IntakePlan }
   | { leaseToken: string; outcome: "succeeded"; result: HomeAssistantCalendarEventRef }
-  | { leaseToken: string; outcome: "failed"; error: { code: HomeAssistantRequestErrorCode; message: string } };
+  | {
+      leaseToken: string;
+      outcome: "failed";
+      error: {
+        code: HomeAssistantRequestErrorCode;
+        message: string;
+        details?: IntakeErrorDetails;
+      };
+    };
 
 export interface IntakeCalendarApplyResult {
   key: string;
@@ -470,6 +504,7 @@ export interface IntakeRecord {
   createdAt: string;
   expiresAt: string;
   text: string | null;
+  retryHint: string | null;
   attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>;
   draft: IntakeDraft | null;
   error: IntakeErrorInfo | null;

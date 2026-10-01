@@ -35,7 +35,7 @@ def _valid_plan():
                 "scheduledDate": "2026-09-29",
                 "notBeforeDate": None,
                 "notBeforeAt": None,
-                "reminderAt": None,
+                "reminders": [],
                 "needsClarification": False,
                 "relatedCalendarKeys": ["calendar-1"],
             }
@@ -120,7 +120,6 @@ _NULLABLE_WORK_FIELDS = (
     "scheduledDate",
     "notBeforeDate",
     "notBeforeAt",
-    "reminderAt",
 )
 _NULLABLE_CALENDAR_FIELDS = (
     "description",
@@ -209,7 +208,7 @@ def test_normalize_plan_normalizes_empty_strings_on_action_and_reference():
         "scheduledDate": "",
         "notBeforeDate": "",
         "notBeforeAt": "",
-        "reminderAt": "",
+        "reminders": [],
     }
     plan = {
         "summary": "Plan",

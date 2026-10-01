@@ -5,6 +5,7 @@ import type {
   HomeAssistantRequestErrorCode,
   IntakeDraft,
   IntakeErrorInfo,
+  IntakeIssue,
   IntakePlan,
   IntakeRecord,
   WorkItemScope,
@@ -35,13 +36,58 @@ function errorInfo(
   code: IntakeErrorInfo["code"],
   message: string,
   retryable = true,
-  details?: Record<string, unknown>,
-): IntakeErrorInfo & { details?: Record<string, unknown> } {
+  details?: IntakeErrorInfo["details"],
+): IntakeErrorInfo {
   return { code, message, retryable, ...(details ? { details } : {}) };
 }
 
 function parseJson<T>(value: string | null): T | null {
   return value === null ? null : JSON.parse(value) as T;
+}
+
+/**
+ * Intake jobs can outlive a server deployment. Convert the retired
+ * single-reminder field only when the new collection is absent; the old
+ * value has the same absolute-instant meaning and is therefore lossless.
+ */
+export function normalizeStoredIntakeDraft(value: unknown): IntakeDraft | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as { workItems?: unknown };
+  if (!Array.isArray(candidate.workItems)) return null;
+  let changed = false;
+  const workItems = candidate.workItems.map((item) => {
+    if (!item || typeof item !== "object") return item;
+    const workItem = item as Record<string, unknown>;
+    if ("reminders" in workItem) return workItem;
+    changed = true;
+    const reminderAt = workItem.reminderAt;
+    const reminders = typeof reminderAt === "string"
+      ? [{ kind: "absolute" as const, at: reminderAt }]
+      : [];
+    const { reminderAt: _legacyReminderAt, ...withoutLegacyReminder } = workItem;
+    return { ...withoutLegacyReminder, reminders };
+  });
+  if (!changed) return value as IntakeDraft;
+  return { ...(candidate as object), workItems } as IntakeDraft;
+}
+
+function retryValidationIssues(error: IntakeErrorInfo | null): IntakeIssue[] {
+  const issues = error?.details?.issues;
+  if (!Array.isArray(issues)) return [];
+  return issues
+    .slice(0, 50)
+    .filter((item): item is IntakeIssue => (
+      Boolean(item)
+      && typeof item === "object"
+      && Array.isArray((item as IntakeIssue).path)
+      && typeof (item as IntakeIssue).code === "string"
+      && typeof (item as IntakeIssue).message === "string"
+    ))
+    .map((item) => ({
+      path: item.path.filter((segment) => typeof segment === "string" || typeof segment === "number"),
+      code: item.code,
+      message: item.message.slice(0, 500),
+    }));
 }
 
 function jobOrThrow(db: Db, id: string) {
@@ -97,7 +143,7 @@ export async function createIntakeJob(
 ): Promise<string> {
   const integration = activeHomeAssistantIntegration(db);
   if (!integration) throw AppError.conflict("home_assistant_not_connected", "Home Assistant is not connected.");
-  if (integration.protocolVersion !== 2) throw AppError.conflict("home_assistant_protocol_outdated", "The Home Assistant integration must be updated.");
+  if (integration.protocolVersion !== 3) throw AppError.conflict("home_assistant_protocol_outdated", "The Home Assistant integration must be updated.");
   const capabilities = integration.capabilitiesJson ? JSON.parse(integration.capabilitiesJson) as {
     aiTask?: { state?: string; supportsAttachments?: boolean };
   } : null;
@@ -135,6 +181,7 @@ export async function createIntakeJob(
         status: "queued",
         revision: 1,
         text: input.text,
+        retryHint: null,
         createdAt,
         updatedAt: createdAt,
         expiresAt,
@@ -190,7 +237,7 @@ export function getIntake(
     eq(schema.homeAssistantRequests.intakeJobId, id),
     eq(schema.homeAssistantRequests.kind, "intake_analyze"),
   )).orderBy(desc(schema.homeAssistantRequests.createdAt)).get();
-  const draft = parseJson<IntakeDraft>(job.draftJson);
+  const draft = normalizeStoredIntakeDraft(parseJson<unknown>(job.draftJson));
   const error = parseJson<IntakeErrorInfo>(job.errorJson);
   const integration = activeHomeAssistantIntegration(db);
   return {
@@ -200,6 +247,7 @@ export function getIntake(
     createdAt: job.createdAt,
     expiresAt: job.expiresAt,
     text: job.text,
+    retryHint: job.retryHint,
     attachments: db.select().from(schema.intakeAttachments).where(eq(schema.intakeAttachments.intakeJobId, id)).all()
       .map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })),
     draft,
@@ -212,10 +260,20 @@ export function getIntake(
 
 export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSelect, plan: IntakePlan): void {
   const parsed = intakePlanSchema.safeParse(plan);
-  const issues = parsed.success ? intakePlanIssues(parsed.data) : [];
+  const issues: IntakeIssue[] = parsed.success
+    ? intakePlanIssues(parsed.data)
+    : parsed.error.issues.map((item) => ({
+        path: item.path,
+        code: "schema_invalid",
+        message: item.message,
+      }));
   if (!parsed.success || issues.length > 0) {
-    const details = parsed.success ? { issues } : { issues: parsed.error.issues };
-    const info = errorInfo("ai_task_invalid_response", "The AI Task returned an invalid intake plan.", true, details);
+    const info = errorInfo(
+      "intake_plan_invalid",
+      "The AI Task returned an intake plan that Machbar rejected.",
+      true,
+      { issues },
+    );
     db.update(schema.intakeJobs).set({
       status: "analysis_failed",
       errorJson: JSON.stringify(info),
@@ -240,12 +298,17 @@ export function onIntakeRequestFailed(
   db: Db,
   job: typeof schema.intakeJobs.$inferSelect,
   request: typeof schema.homeAssistantRequests.$inferSelect,
-  error: { code: string; message: string },
+  error: { code: string; message: string; details?: IntakeErrorInfo["details"] },
 ): void {
   if (request.kind === "intake_analyze") {
     db.update(schema.intakeJobs).set({
       status: "analysis_failed",
-      errorJson: JSON.stringify(errorInfo((error.code as IntakeErrorInfo["code"]) || "ai_task_failed", error.message)),
+      errorJson: JSON.stringify(errorInfo(
+        (error.code as IntakeErrorInfo["code"]) || "ai_task_failed",
+        error.message,
+        true,
+        error.details,
+      )),
       updatedAt: nowIso(),
       revision: job.revision + 1,
     }).where(eq(schema.intakeJobs.id, job.id)).run();
@@ -281,7 +344,7 @@ export function onCalendarCreated(
   event.status = "succeeded";
   event.error = null;
   event.event = { calendarEntityId: ref.calendarEntityId, uid: ref.uid, recurrenceId: ref.recurrenceId, summary: ref.summary, start: ref.start, end: ref.end };
-  const acceptedDraft = parseJson<IntakeDraft>(job.acceptedDraftJson);
+  const acceptedDraft = normalizeStoredIntakeDraft(parseJson<unknown>(job.acceptedDraftJson));
   const eventDraft = acceptedDraft?.calendarEvents.find((item) => item.key === event.key && item.enabled);
   if (acceptedDraft && eventDraft) {
     const workKeys = new Set(eventDraft.relatedWorkKeys);
@@ -329,19 +392,53 @@ export function updateIntakeDraft(db: Db, id: string, viewerMemberId: number | n
   });
 }
 
-export async function retryIntakeAnalysis(db: Db, env: Env, signal: HomeAssistantRequestSignal, id: string, viewerMemberId: number | null): Promise<void> {
+export async function retryIntakeAnalysis(
+  db: Db,
+  env: Env,
+  signal: HomeAssistantRequestSignal,
+  id: string,
+  viewerMemberId: number | null,
+  userInstruction?: string | null,
+): Promise<void> {
   const job = jobOrThrow(db, id);
   if (job.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
   if (job.status !== "analysis_failed") throw AppError.conflict("intake_state_conflict", "Only failed analyses can be retried.");
   const integration = activeHomeAssistantIntegration(db);
   if (!integration) throw AppError.conflict("home_assistant_not_connected", "Home Assistant is not connected.");
+  if (integration.protocolVersion !== 3) throw AppError.conflict("home_assistant_protocol_outdated", "The Home Assistant integration must be updated.");
+  const previousError = parseJson<IntakeErrorInfo>(job.errorJson);
+  const retryHint = userInstruction === undefined
+    ? job.retryHint
+    : userInstruction?.trim() || null;
   const attachments = db.select().from(schema.intakeAttachments).where(eq(schema.intakeAttachments.intakeJobId, id)).all();
   const members = db.select({ name: schema.members.name }).from(schema.members).all();
   db.transaction((tx) => {
-    tx.update(schema.intakeJobs).set({ status: "queued", errorJson: null, revision: job.revision + 1, updatedAt: nowIso() }).where(eq(schema.intakeJobs.id, id)).run();
+    tx.update(schema.intakeJobs).set({
+      status: "queued",
+      errorJson: null,
+      retryHint,
+      revision: job.revision + 1,
+      updatedAt: nowIso(),
+    }).where(eq(schema.intakeJobs.id, id)).run();
     enqueueHomeAssistantRequest(tx as unknown as Db, {
       integrationId: integration.id, intakeJobId: id, kind: "intake_analyze",
-      payload: { intakeId: id, taskName: "Machbar intake", instructions: buildIntakeInstructions({ today: new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date()), timezone: "Europe/Berlin", memberNames: members.map((m) => m.name), hasText: job.text !== null, attachmentCount: attachments.filter((attachment) => attachment.mimeType !== "text/plain").length }), text: job.text, attachments: attachments.filter((attachment) => attachment.mimeType !== "text/plain").map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })) },
+      payload: {
+        intakeId: id,
+        taskName: "Machbar intake",
+        instructions: buildIntakeInstructions({
+          today: new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date()),
+          timezone: "Europe/Berlin",
+          memberNames: members.map((m) => m.name),
+          hasText: job.text !== null,
+          attachmentCount: attachments.filter((attachment) => attachment.mimeType !== "text/plain").length,
+          validationIssues: retryValidationIssues(previousError),
+          userInstruction: retryHint,
+        }),
+        text: job.text,
+        attachments: attachments
+          .filter((attachment) => attachment.mimeType !== "text/plain")
+          .map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })),
+      },
     }, signal);
   });
 }

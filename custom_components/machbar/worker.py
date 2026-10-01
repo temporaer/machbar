@@ -94,9 +94,12 @@ class RequestWorker:
                 return
             await self._complete(request, {"outcome": "succeeded", "result": result})
         except AdapterError as err:
+            error: dict[str, Any] = {"code": err.code, "message": str(err)}
+            if err.details:
+                error["details"] = err.details
             await self._complete(
                 request,
-                {"outcome": "failed", "error": {"code": err.code, "message": str(err)}},
+                {"outcome": "failed", "error": error},
             )
         except (LeaseLost, RequestGone):
             _LOGGER.debug("Machbar request %s is no longer active", request.get("id"))

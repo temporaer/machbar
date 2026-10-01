@@ -1,0 +1,1 @@
+ALTER TABLE `intake_jobs` ADD `retry_hint` text;

@@ -17,7 +17,7 @@ import type { PaperlessClient } from "../paperless/client.js";
 import { uploadAndResolveDocument } from "../paperless/upload.js";
 import { nowIso } from "../domain/workItemShared.js";
 import { attachmentPath } from "./storage.js";
-import { recoverExpiredApplyClaim } from "./jobs.js";
+import { normalizeStoredIntakeDraft, recoverExpiredApplyClaim } from "./jobs.js";
 
 const APPLY_CLAIM_MS = 10 * 60 * 1000;
 
@@ -93,7 +93,7 @@ export async function applyIntake(
   if (stored.status === "partially_applied" && stored.acceptedDraftJson === null) {
     throw AppError.conflict("intake_state_conflict", "This partially applied intake has no accepted draft and cannot be safely retried.");
   }
-  const acceptedDraft = parse<IntakeDraft>(stored.acceptedDraftJson);
+  const acceptedDraft = normalizeStoredIntakeDraft(parse<unknown>(stored.acceptedDraftJson));
   const draftToValidate = acceptedDraft ?? input.draft;
   if (draftToValidate === undefined) throw AppError.badRequest("intake_draft_invalid", "A draft is required for the initial apply.");
   const memberIds = db.select({ id: schema.members.id }).from(schema.members).all().map((member) => member.id);
@@ -110,7 +110,7 @@ export async function applyIntake(
   const integration = enabledEvents.length > 0 ? activeHomeAssistantIntegration(db) : null;
   if (enabledEvents.length > 0) {
     if (!integration) throw AppError.conflict("home_assistant_not_connected", "Home Assistant is not connected.");
-    if (integration.protocolVersion !== 2) throw AppError.conflict("home_assistant_protocol_outdated", "The Home Assistant integration must be updated.");
+    if (integration.protocolVersion !== 3) throw AppError.conflict("home_assistant_protocol_outdated", "The Home Assistant integration must be updated.");
     const capabilities = integration.capabilitiesJson ? JSON.parse(integration.capabilitiesJson) as { calendar?: { state?: string } } : null;
     if (capabilities?.calendar?.state === "not_writable") throw AppError.conflict("calendar_not_writable", "The configured calendar is not writable.");
     if (capabilities?.calendar?.state !== "ok") throw AppError.conflict("calendar_not_configured", "No writable calendar is configured.");
@@ -128,13 +128,13 @@ export async function applyIntake(
     if (current.status === "partially_applied" && current.acceptedDraftJson === null) {
       throw AppError.conflict("intake_state_conflict", "This partially applied intake has no accepted draft and cannot be safely retried.");
     }
-    const claimDraft = parse<IntakeDraft>(current.acceptedDraftJson) ?? input.draft;
+    const claimDraft = normalizeStoredIntakeDraft(parse<unknown>(current.acceptedDraftJson)) ?? input.draft;
     if (claimDraft === undefined) throw AppError.badRequest("intake_draft_invalid", "A draft is required for the initial apply.");
     const claimToken = randomUUID();
     const claimNow = nowIso();
     const updated = tx.update(schema.intakeJobs)
       .set({
-        acceptedDraftJson: current.acceptedDraftJson ?? JSON.stringify(claimDraft),
+        acceptedDraftJson: JSON.stringify(claimDraft),
         status: "applying",
         applyClaimToken: claimToken,
         applyClaimExpiresAt: new Date(Date.parse(claimNow) + APPLY_CLAIM_MS).toISOString(),
@@ -233,6 +233,7 @@ export async function applyIntake(
           parentId: parent?.kind === "project" ? parentId : null,
           ...(item.ownerMemberId === null ? {} : { ownerMemberId: item.ownerMemberId }),
           dueDate: item.dueDate,
+          scheduledDate: item.scheduledDate,
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
         }, context);
         created = { id: project.id, title: project.title, role: "story" };
@@ -254,7 +255,7 @@ export async function applyIntake(
           scheduledDate: item.scheduledDate,
           notBeforeDate: item.notBeforeDate,
           notBeforeAt: item.notBeforeAt,
-          reminders: item.reminderAt === null ? undefined : [{ kind: "absolute" as const, at: item.reminderAt }],
+          reminders: item.reminders.length > 0 ? item.reminders : undefined,
           createdByMemberId: jobNow.createdByMemberId,
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
         };

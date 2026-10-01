@@ -43,7 +43,7 @@ describe("Home Assistant physical contexts", () => {
     return (
       await post("/api/integrations/home-assistant/pair", {
         pairingCode: pairing.code,
-        protocolVersion: 2,
+        protocolVersion: 3,
       })
     ).json() as { token: string };
   }
@@ -330,7 +330,7 @@ describe("Home Assistant physical contexts", () => {
     };
     const token = await connect();
     await post("/api/integrations/home-assistant/context", {
-      protocolVersion: 2,
+      protocolVersion: 3,
       observedAt: new Date().toISOString(),
       contexts: [],
       people: [
@@ -407,7 +407,7 @@ describe("Home Assistant physical contexts", () => {
     const paired = (
       await post("/api/integrations/home-assistant/pair", {
         pairingCode: pairing.code,
-        protocolVersion: 2,
+        protocolVersion: 3,
       })
     ).json() as { token: string };
     expect(
@@ -422,7 +422,7 @@ describe("Home Assistant physical contexts", () => {
       (
         await post("/api/integrations/home-assistant/pair", {
           pairingCode: pairing.code,
-          protocolVersion: 2,
+          protocolVersion: 3,
         })
       ).statusCode,
     ).toBe(401);
@@ -432,7 +432,7 @@ describe("Home Assistant physical contexts", () => {
       post(
         "/api/integrations/home-assistant/context",
         {
-          protocolVersion: 2,
+          protocolVersion: 3,
           observedAt: new Date(Date.now() + snapshotSequence++).toISOString(),
           contexts: [
             { externalId: "zone.home", name: "Zuhause" },
@@ -557,7 +557,7 @@ describe("Home Assistant physical contexts", () => {
     expect(
       (
         await post("/api/integrations/home-assistant/context", {
-          protocolVersion: 2,
+          protocolVersion: 3,
           observedAt: new Date().toISOString(),
           contexts: [],
           people: [],
@@ -574,7 +574,7 @@ describe("Home Assistant physical contexts", () => {
         await post(
           "/api/integrations/home-assistant/context",
           {
-            protocolVersion: 2,
+            protocolVersion: 3,
             observedAt: new Date().toISOString(),
             contexts: [],
             people: [],
@@ -598,7 +598,7 @@ describe("Home Assistant physical contexts", () => {
       await post(
         "/api/integrations/home-assistant/context",
         {
-          protocolVersion: 2,
+          protocolVersion: 3,
           observedAt: new Date().toISOString(),
           contexts: [{ externalId: "zone.home", name: "Zuhause" }],
           people: [
@@ -666,7 +666,7 @@ describe("Home Assistant physical contexts", () => {
     await post(
       "/api/integrations/home-assistant/context",
       {
-        protocolVersion: 2,
+        protocolVersion: 3,
         observedAt: new Date().toISOString(),
         contexts: [],
         people: [

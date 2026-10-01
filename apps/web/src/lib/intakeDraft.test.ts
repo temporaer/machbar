@@ -40,7 +40,7 @@ function item(
     scheduledDate: "2026-10-10",
     notBeforeDate: "2026-10-09",
     notBeforeAt: "2026-10-09T06:00:00.000Z",
-    reminderAt: "2026-10-10T06:00:00.000Z",
+    reminders: [{ kind: "absolute", at: "2026-10-10T06:00:00.000Z" }],
     needsClarification: true,
     relatedCalendarKeys: ["event"],
     enabled: true,
@@ -81,7 +81,7 @@ describe("AI intake draft helpers", () => {
   });
 
   it("converts action to project while retaining meaningful fields and legalizing its parent", () => {
-    const project = item("project", "project", null, { scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminderAt: null, needsClarification: false });
+    const project = item("project", "project", null, { scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false });
     const actionParent = item("parent", "action", "project");
     const action = item("child", "action", "parent");
     const next = transitionWorkItemKind([project, actionParent, action], action.key, "project")[2];
@@ -95,7 +95,7 @@ describe("AI intake draft helpers", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
   });
@@ -114,7 +114,7 @@ describe("AI intake draft helpers", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
   });
@@ -124,7 +124,7 @@ describe("AI intake draft helpers", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
     expect(transitionWorkItemKind([project], project.key, "action")[0]).toMatchObject({
@@ -136,7 +136,7 @@ describe("AI intake draft helpers", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
   });
@@ -152,7 +152,7 @@ describe("AI intake draft helpers", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
   });
@@ -164,7 +164,7 @@ describe("AI intake draft helpers", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
     expect(transitionWorkItemKind([reference], reference.key, "action")[0]).toMatchObject({
@@ -176,7 +176,7 @@ describe("AI intake draft helpers", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
   });
@@ -188,7 +188,7 @@ describe("AI intake draft helpers", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
     expect(transitionWorkItemKind([reference], reference.key, "project")[0]).toMatchObject({
@@ -198,7 +198,7 @@ describe("AI intake draft helpers", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
   });
@@ -250,7 +250,7 @@ describe("AI intake draft helpers", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
     expect(transitionWorkItemKind([root, reference, item("child", "project", "reference")], "reference", "project")[2]?.parentKey).toBe("reference");
