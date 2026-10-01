@@ -445,6 +445,26 @@ describe("IntakeReviewPage", () => {
     closeEditor(contentEditor);
   });
 
+  it("preserves an absolute reminder row identity while editing its time", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
+    const initialDate = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(initialDate, { target: { value: "10.10.2026" } });
+    fireEvent.change(editor.getByLabelText("Uhrzeit"), { target: { value: "08:00" } });
+    fireEvent.blur(initialDate);
+
+    const date = editor.getByRole("textbox", { name: "Erinnerung" });
+    const time = editor.getByLabelText("Uhrzeit");
+    time.focus();
+    fireEvent.change(time, { target: { value: "09:15" } });
+
+    expect(document.activeElement).toBe(time);
+    expect(editor.getByRole("textbox", { name: "Erinnerung" })).toBe(date);
+    date.focus();
+    fireEvent.change(date, { target: { value: "11.10.2026" } });
+    expect(document.activeElement).toBe(date);
+  });
+
   it("keeps reminder A blocked when reminder B is added or edited", async () => {
     renderPage();
     const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
@@ -462,6 +482,7 @@ describe("IntakeReviewPage", () => {
     const second = editor.getAllByRole("textbox", { name: "Erinnerung" })[1]!;
     fireEvent.change(second, { target: { value: "10.10.2026" } });
     fireEvent.blur(second);
+    expect(editor.getAllByRole("textbox", { name: "Erinnerung" })[0]).toHaveValue("kein Datum");
     expect(applyButton()).toBeDisabled();
   });
 
@@ -493,7 +514,9 @@ describe("IntakeReviewPage", () => {
     fireEvent.change(rows[1]!, { target: { value: "kein Datum" } });
     fireEvent.blur(rows[1]!);
     expect(applyButton()).toBeDisabled();
+    const survivingRow = rows[1]!;
     fireEvent.click(editor.getAllByRole("button", { name: "Erinnerung entfernen" })[0]!);
+    expect(editor.getByRole("textbox", { name: "Erinnerung" })).toBe(survivingRow);
     expect(applyButton()).toBeDisabled();
   });
 
@@ -544,6 +567,7 @@ describe("IntakeReviewPage", () => {
     closeEditor(editor);
     fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
     await waitFor(() => expect(screen.getByText("Neue Analyse")).toBeInTheDocument());
+    expect(screen.queryByDisplayValue("kein Datum")).not.toBeInTheDocument();
     expect(applyButton()).toBeEnabled();
   });
 

@@ -16,16 +16,23 @@ export function IntakeProposalReview({
   issues,
   invalidDateKeys,
   reminderRowIds,
+  createReminderRowId,
   onDateValidityChange,
   onChange,
+  onReminderChange,
 }: {
   draft: IntakeDraft;
   members: Member[];
   issues: IntakeIssue[];
   invalidDateKeys: ReadonlySet<string>;
   reminderRowIds: ReadonlyMap<string, readonly string[]>;
+  createReminderRowId: () => string;
   onDateValidityChange: DateValidityChange;
   onChange: (draft: IntakeDraft) => void;
+  onReminderChange: (
+    item: IntakeDraftWorkItem,
+    reminderRowIds: readonly string[],
+  ) => void;
 }) {
   const strings = useStrings();
   const workItemDepth = workItemDepths(draft.workItems);
@@ -121,6 +128,7 @@ export function IntakeProposalReview({
                 members={members}
                 issues={issues}
                 reminderRowIds={reminderRowIds.get(item.key) ?? []}
+                createReminderRowId={createReminderRowId}
                 onChange={(next) => {
                   const items = draft.workItems.map((value, itemIndex) =>
                     itemIndex === index ? next : value,
@@ -153,6 +161,7 @@ export function IntakeProposalReview({
                     onChange({ ...draft, workItems: items });
                   }
                 }}
+                onReminderChange={onReminderChange}
               />
             );
           })}

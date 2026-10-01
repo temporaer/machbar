@@ -4,6 +4,7 @@ import {
   intakeErrorIssues,
   intakeSelectedDraftIssues,
   type IntakeDraft,
+  type IntakeDraftWorkItem,
   type IntakeRecord,
 } from "@machbar/shared";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -105,23 +106,34 @@ export function IntakeReviewPage() {
   const [applyError, setApplyError] = useState<string | null>(null);
   const [retryHint, setRetryHint] = useState("");
   const [invalidDateKeys, setInvalidDateKeys] = useState<Set<string>>(() => new Set());
-  const reminderRowIdsRef = useRef<WeakMap<object, string>>(new WeakMap());
+  const reminderRowIdsRef = useRef<Map<string, string[]>>(new Map());
   const nextReminderRowIdRef = useRef(0);
   const reminderRowIds = useMemo(() => {
     const rows = new Map<string, string[]>();
+    const activeItemKeys = new Set(
+      (draft?.workItems ?? [])
+        .filter((item) => item.kind === "action")
+        .map((item) => item.key),
+    );
+    for (const key of reminderRowIdsRef.current.keys()) {
+      if (!activeItemKeys.has(key)) reminderRowIdsRef.current.delete(key);
+    }
     for (const item of draft?.workItems ?? []) {
       if (item.kind !== "action") continue;
-      rows.set(item.key, item.reminders.map((reminder) => {
-        let rowId = reminderRowIdsRef.current.get(reminder);
-        if (!rowId) {
-          rowId = `row-${nextReminderRowIdRef.current++}`;
-          reminderRowIdsRef.current.set(reminder, rowId);
-        }
-        return rowId;
-      }));
+      const ids = reminderRowIdsRef.current.get(item.key) ?? [];
+      while (ids.length < item.reminders.length) {
+        ids.push(`row-${nextReminderRowIdRef.current++}`);
+      }
+      if (ids.length > item.reminders.length) ids.length = item.reminders.length;
+      reminderRowIdsRef.current.set(item.key, ids);
+      rows.set(item.key, ids);
     }
     return rows;
   }, [draft]);
+  const createReminderRowId = useCallback(
+    () => `row-${nextReminderRowIdRef.current++}`,
+    [],
+  );
   const onDateValidityChange = useCallback<DateValidityChange>((key, valid) => {
     setInvalidDateKeys((previous) => {
       if (previous.has(key) === !valid) return previous;
@@ -300,6 +312,17 @@ export function IntakeReviewPage() {
     recordRef.current = nextRecord;
     setRecord(nextRecord);
   };
+  const updateReminderDraft = (
+    item: IntakeDraftWorkItem,
+    rowIds: readonly string[],
+  ) => {
+    reminderRowIdsRef.current.set(item.key, [...rowIds]);
+    updateDraft({
+      ...draft!,
+      workItems: draft!.workItems.map((current) =>
+        current.key === item.key ? item : current),
+    });
+  };
   const retry = async () => {
     if (retryInFlightRef.current || applyingRef.current || busy) return;
     retryInFlightRef.current = true;
@@ -333,6 +356,7 @@ export function IntakeReviewPage() {
         id,
         retryHintDirtyRef.current ? retryHint : undefined,
       );
+      reminderRowIdsRef.current.clear();
       recordRef.current = nextRecord;
       revisionRef.current = nextRecord.revision;
       latestDraftRef.current = null;
@@ -492,8 +516,10 @@ export function IntakeReviewPage() {
           issues={issues}
           invalidDateKeys={invalidDateKeys}
           reminderRowIds={reminderRowIds}
+          createReminderRowId={createReminderRowId}
           onDateValidityChange={onDateValidityChange}
           onChange={updateDraft}
+          onReminderChange={updateReminderDraft}
         />
       </fieldset>
       {applyError ? <p role="alert">{applyError}</p> : null}
