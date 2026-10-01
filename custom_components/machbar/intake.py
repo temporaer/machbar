@@ -16,6 +16,7 @@ from .const import MAX_ATTACHMENT_BYTES
 
 _LOGGER = logging.getLogger(__name__)
 _NULL = vol.Any(None, str)
+_MISSING = object()
 
 
 def _field(key: str, schema: Any) -> Any:
@@ -106,10 +107,14 @@ class AdapterError(Exception):
         *,
         path: list[str | int] | None = None,
         expected_type: str | None = None,
+        actual_type: str | None = None,
+        value_preview: str | None = None,
     ) -> None:
         self.code = code
         self.path = path
         self.expected_type = expected_type
+        self.actual_type = actual_type
+        self.value_preview = value_preview
         super().__init__(message or code)
 
     @property
@@ -119,6 +124,8 @@ class AdapterError(Exception):
             for key, value in (
                 ("path", self.path),
                 ("expectedType", self.expected_type),
+                ("actualType", self.actual_type),
+                ("valuePreview", self.value_preview),
             )
             if value is not None
         }
@@ -151,18 +158,68 @@ def _path_text(path: list[str | int]) -> str:
     )
 
 
-def _invalid(path: list[str | int], expected: str, message: str | None = None) -> AdapterError:
+_SAFE_PREVIEW_FIELDS = {
+    "key",
+    "parentKey",
+    "relatedWorkKeys",
+    "relatedCalendarKeys",
+    "dueDate",
+    "scheduledDate",
+    "notBeforeDate",
+    "notBeforeAt",
+    "startDate",
+    "endDate",
+    "startDateTime",
+    "endDateTime",
+    "at",
+}
+
+
+def _actual_type(value: Any) -> str:
+    if value is _MISSING:
+        return "missing"
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return type(value).__name__
+
+
+def _value_preview(path: list[str | int], value: Any) -> str | None:
+    if not any(isinstance(part, str) and part in _SAFE_PREVIEW_FIELDS for part in path):
+        return None
+    if not isinstance(value, str):
+        return None
+    bounded = value[:80].replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    return f'"{bounded}{"..." if len(value) > 80 else ""}"'
+
+
+def _invalid(
+    path: list[str | int],
+    expected: str,
+    message: str | None = None,
+    value: Any = _MISSING,
+) -> AdapterError:
+    actual = _actual_type(value)
+    preview = _value_preview(path, value)
+    detail = message or f"Invalid AI Task response at {_path_text(path)}; expected {expected}."
     return AdapterError(
         "ai_task_invalid_response",
-        message or f"Invalid AI Task response at {_path_text(path)}; expected {expected}.",
+        detail,
         path=path,
         expected_type=expected,
+        actual_type=actual,
+        value_preview=preview,
     )
 
 
 def _required(raw: dict[str, Any], key: str, path: list[str | int], expected: str) -> Any:
     if key not in raw:
-        raise _invalid(path + [key], expected)
+        raise _invalid(path + [key], expected, value=_MISSING)
     return raw[key]
 
 
@@ -171,35 +228,38 @@ def _normalize_string(
     nullable: bool = True,
     *,
     path: list[str | int],
+    absence: bool = False,
 ) -> str | None:
     if value is None and nullable:
         return None
     if not isinstance(value, str):
-        raise _invalid(path, "a string or null" if nullable else "a string")
+        raise _invalid(path, "a string or null" if nullable else "a string", value=value)
     stripped = value.strip()
-    # Models often emit "" for absent nullable fields; Machbar expects null.
-    if not stripped and nullable:
+    # Only contract fields where strings represent absence use textual nulls.
+    if not stripped and nullable and absence:
+        return None
+    if absence and nullable and stripped.lower() in {"null", "none"}:
         return None
     return stripped
 
 
 def _normalize_strings(value: Any, *, path: list[str | int]) -> list[str]:
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
-        raise _invalid(path, "an array of strings")
+        raise _invalid(path, "an array of strings", value=value)
     return [item.strip() for item in value]
 
 
 def _normalize_reminders(value: Any, *, path: list[str | int]) -> list[dict[str, Any]]:
     if not isinstance(value, list):
-        raise _invalid(path, "an array of reminder objects")
+        raise _invalid(path, "an array of reminder objects", value=value)
     normalized: list[dict[str, Any]] = []
     for index, raw in enumerate(value):
         item_path = path + [index]
         if not isinstance(raw, dict):
-            raise _invalid(item_path, "an object")
+            raise _invalid(item_path, "an object", value=raw)
         kind = _required(raw, "kind", item_path, '"absolute" or "deadline_relative"')
         if kind not in ("absolute", "deadline_relative"):
-            raise _invalid(item_path + ["kind"], '"absolute" or "deadline_relative"')
+            raise _invalid(item_path + ["kind"], '"absolute" or "deadline_relative"', value=kind)
         if kind == "absolute":
             at = _normalize_string(
                 _required(raw, "at", item_path, "an RFC 3339 instant"),
@@ -212,11 +272,11 @@ def _normalize_reminders(value: Any, *, path: list[str | int]) -> list[dict[str,
             time = _required(raw, "time", item_path, "an HH:mm string")
             timezone = _required(raw, "timezone", item_path, "an IANA timezone string")
             if isinstance(days_before, bool) or not isinstance(days_before, int) or days_before < 0:
-                raise _invalid(item_path + ["daysBefore"], "a non-negative integer")
+                raise _invalid(item_path + ["daysBefore"], "a non-negative integer", value=days_before)
             if not isinstance(time, str) or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", time):
-                raise _invalid(item_path + ["time"], "an HH:mm string")
+                raise _invalid(item_path + ["time"], "an HH:mm string", value=time)
             if not isinstance(timezone, str) or not timezone.strip():
-                raise _invalid(item_path + ["timezone"], "an IANA timezone string")
+                raise _invalid(item_path + ["timezone"], "an IANA timezone string", value=timezone)
             normalized.append({
                 "kind": kind,
                 "daysBefore": days_before,
@@ -243,14 +303,14 @@ def normalize_plan(data: Any) -> dict[str, Any]:
         for index, raw in enumerate(calendar_values):
             item_path = ["calendarEvents", index]
             if not isinstance(raw, dict):
-                raise _invalid(item_path, "an object")
+                raise _invalid(item_path, "an object", value=raw)
             all_day = _required(raw, "allDay", item_path, "a boolean")
             if not isinstance(all_day, bool):
-                raise _invalid(item_path + ["allDay"], "a boolean")
-            start_date = _normalize_string(_required(raw, "startDate", item_path, "a date or null"), path=item_path + ["startDate"])
-            end_date = _normalize_string(_required(raw, "endDate", item_path, "a date or null"), path=item_path + ["endDate"])
-            start_datetime = _normalize_string(_required(raw, "startDateTime", item_path, "an RFC 3339 instant or null"), path=item_path + ["startDateTime"])
-            end_datetime = _normalize_string(_required(raw, "endDateTime", item_path, "an RFC 3339 instant or null"), path=item_path + ["endDateTime"])
+                raise _invalid(item_path + ["allDay"], "a boolean", value=all_day)
+            start_date = _normalize_string(_required(raw, "startDate", item_path, "a date or null"), path=item_path + ["startDate"], absence=True)
+            end_date = _normalize_string(_required(raw, "endDate", item_path, "a date or null"), path=item_path + ["endDate"], absence=True)
+            start_datetime = _normalize_string(_required(raw, "startDateTime", item_path, "an RFC 3339 instant or null"), path=item_path + ["startDateTime"], absence=True)
+            end_datetime = _normalize_string(_required(raw, "endDateTime", item_path, "an RFC 3339 instant or null"), path=item_path + ["endDateTime"], absence=True)
             if all_day:
                 start_datetime = None
                 end_datetime = None
@@ -275,27 +335,27 @@ def normalize_plan(data: Any) -> dict[str, Any]:
         for index, raw in enumerate(work_values):
             item_path = ["workItems", index]
             if not isinstance(raw, dict):
-                raise _invalid(item_path, "an object")
+                raise _invalid(item_path, "an object", value=raw)
             if "reminderAt" in raw:
                 raise _invalid(item_path + ["reminderAt"], "the reminders array", "Legacy reminderAt is not supported; return reminders instead.")
             kind = _required(raw, "kind", item_path, '"action", "project", or "reference"')
             if kind not in ("action", "project", "reference"):
-                raise _invalid(item_path + ["kind"], '"action", "project", or "reference"')
+                raise _invalid(item_path + ["kind"], '"action", "project", or "reference"', value=kind)
             clarification = _required(raw, "needsClarification", item_path, "a boolean")
             if not isinstance(clarification, bool):
-                raise _invalid(item_path + ["needsClarification"], "a boolean")
+                raise _invalid(item_path + ["needsClarification"], "a boolean", value=clarification)
             work.append(
                 {
                     "key": _normalize_string(_required(raw, "key", item_path, "a string"), False, path=item_path + ["key"]),
                     "kind": kind,
                     "title": _normalize_string(_required(raw, "title", item_path, "a string"), False, path=item_path + ["title"]),
                     "notes": _normalize_string(_required(raw, "notes", item_path, "a string or null"), path=item_path + ["notes"]),
-                    "parentKey": _normalize_string(_required(raw, "parentKey", item_path, "a string or null"), path=item_path + ["parentKey"]),
-                    "ownerName": _normalize_string(_required(raw, "ownerName", item_path, "a string or null"), path=item_path + ["ownerName"]),
-                    "dueDate": _normalize_string(_required(raw, "dueDate", item_path, "a date or null"), path=item_path + ["dueDate"]),
-                    "scheduledDate": _normalize_string(_required(raw, "scheduledDate", item_path, "a date or null"), path=item_path + ["scheduledDate"]),
-                    "notBeforeDate": _normalize_string(_required(raw, "notBeforeDate", item_path, "a date or null"), path=item_path + ["notBeforeDate"]),
-                    "notBeforeAt": _normalize_string(_required(raw, "notBeforeAt", item_path, "an RFC 3339 instant or null"), path=item_path + ["notBeforeAt"]),
+                    "parentKey": _normalize_string(_required(raw, "parentKey", item_path, "a string or null"), path=item_path + ["parentKey"], absence=True),
+                    "ownerName": _normalize_string(_required(raw, "ownerName", item_path, "a string or null"), path=item_path + ["ownerName"], absence=True),
+                    "dueDate": _normalize_string(_required(raw, "dueDate", item_path, "a date or null"), path=item_path + ["dueDate"], absence=True),
+                    "scheduledDate": _normalize_string(_required(raw, "scheduledDate", item_path, "a date or null"), path=item_path + ["scheduledDate"], absence=True),
+                    "notBeforeDate": _normalize_string(_required(raw, "notBeforeDate", item_path, "a date or null"), path=item_path + ["notBeforeDate"], absence=True),
+                    "notBeforeAt": _normalize_string(_required(raw, "notBeforeAt", item_path, "an RFC 3339 instant or null"), path=item_path + ["notBeforeAt"], absence=True),
                     "reminders": _normalize_reminders(_required(raw, "reminders", item_path, "an array of reminder objects"), path=item_path + ["reminders"]),
                     "needsClarification": clarification,
                     "relatedCalendarKeys": _normalize_strings(_required(raw, "relatedCalendarKeys", item_path, "an array of strings"), path=item_path + ["relatedCalendarKeys"]),
@@ -305,7 +365,7 @@ def normalize_plan(data: Any) -> dict[str, Any]:
         for index, raw in enumerate(warning_values):
             item_path = ["warnings", index]
             if not isinstance(raw, dict):
-                raise _invalid(item_path, "an object")
+                raise _invalid(item_path, "an object", value=raw)
             warnings.append({"message": _normalize_string(_required(raw, "message", item_path, "a string"), False, path=item_path + ["message"])})
         result = {
             "summary": _normalize_string(_required(data, "summary", [], "a string"), False, path=["summary"]),

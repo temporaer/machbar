@@ -1,5 +1,8 @@
 """Tests for the AI Task adapter."""
 
+import json
+from pathlib import Path
+
 import pytest
 import voluptuous as vol
 
@@ -113,7 +116,6 @@ def test_normalize_plan_clears_dates_for_timed_events():
 
 
 _NULLABLE_WORK_FIELDS = (
-    "notes",
     "parentKey",
     "ownerName",
     "dueDate",
@@ -122,8 +124,6 @@ _NULLABLE_WORK_FIELDS = (
     "notBeforeAt",
 )
 _NULLABLE_CALENDAR_FIELDS = (
-    "description",
-    "location",
     "startDate",
     "endDate",
     "startDateTime",
@@ -145,6 +145,49 @@ def test_normalize_plan_turns_blank_nullable_strings_into_none(blank):
         assert normalized["calendarEvents"][0][field] is None
     for field in _NULLABLE_WORK_FIELDS:
         assert normalized["workItems"][0][field] is None
+
+
+@pytest.mark.parametrize("placeholder", ["null", "NULL", "None", " NONE "])
+def test_normalize_plan_turns_exact_nullable_placeholders_into_none(placeholder):
+    plan = _valid_plan()
+    for field in _NULLABLE_CALENDAR_FIELDS:
+        plan["calendarEvents"][0][field] = placeholder
+    for field in _NULLABLE_WORK_FIELDS:
+        plan["workItems"][0][field] = placeholder
+
+    normalized = normalize_plan(plan)
+
+    for field in _NULLABLE_CALENDAR_FIELDS:
+        assert normalized["calendarEvents"][0][field] is None
+    for field in _NULLABLE_WORK_FIELDS:
+        assert normalized["workItems"][0][field] is None
+
+
+def test_normalize_plan_preserves_free_text_placeholders():
+    plan = _valid_plan()
+    plan["calendarEvents"][0]["description"] = "null"
+    plan["calendarEvents"][0]["location"] = "None"
+    plan["workItems"][0]["notes"] = " NULL "
+
+    normalized = normalize_plan(plan)
+
+    assert normalized["calendarEvents"][0]["description"] == "null"
+    assert normalized["calendarEvents"][0]["location"] == "None"
+    assert normalized["workItems"][0]["notes"] == "NULL"
+
+
+def test_normalize_plan_reports_bounded_contract_type_details():
+    plan = _valid_plan()
+    plan["workItems"][0]["dueDate"] = 42
+
+    with pytest.raises(AdapterError) as err:
+        normalize_plan(plan)
+
+    assert err.value.details == {
+        "path": ["workItems", 0, "dueDate"],
+        "expectedType": "a string or null",
+        "actualType": "int",
+    }
 
 
 def test_normalize_plan_trims_non_empty_nullable_strings():
@@ -201,7 +244,7 @@ def test_normalize_plan_keeps_blank_required_strings_as_strings():
 
 def test_normalize_plan_normalizes_empty_strings_on_action_and_reference():
     empty_fields = {
-        "notes": "",
+        "notes": " ",
         "parentKey": "",
         "ownerName": "",
         "dueDate": "",
@@ -237,9 +280,21 @@ def test_normalize_plan_normalizes_empty_strings_on_action_and_reference():
     normalized = normalize_plan(plan)
 
     assert [item["kind"] for item in normalized["workItems"]] == ["action", "reference"]
-    nullable_fields = set(empty_fields) - {"reminders"}
+    nullable_fields = set(empty_fields) - {"reminders", "notes"}
     for item in normalized["workItems"]:
         for field in nullable_fields:
             assert item[field] is None
+        assert item["notes"] == ""
         assert item["reminders"] == []
+    INTAKE_STRUCTURE(normalized)
+
+
+def test_normalize_plan_matches_shared_nullable_placeholder_fixture():
+    fixture = Path(__file__).resolve().parents[1] / "packages/shared/fixtures/intake-plan/nullable-placeholders.json"
+    normalized = normalize_plan(json.loads(fixture.read_text()))
+
+    for item in normalized["workItems"]:
+        assert item["notes"] in {"null", "none"}
+        for field in _NULLABLE_WORK_FIELDS:
+            assert item[field] is None
     INTAKE_STRUCTURE(normalized)

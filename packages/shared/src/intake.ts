@@ -48,6 +48,48 @@ export interface IntakePlan {
   warnings: IntakeWarning[];
 }
 
+const INTAKE_NULLABLE_ABSENCE_FIELDS = new Set([
+  "parentKey",
+  "ownerName",
+  "dueDate",
+  "scheduledDate",
+  "notBeforeDate",
+  "notBeforeAt",
+  "startDate",
+  "endDate",
+  "startDateTime",
+  "endDateTime",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Normalize representations that providers commonly use for an absent
+ * nullable contract value. Free text is intentionally excluded.
+ */
+export function normalizeIntakeNullableAbsenceFields(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const normalized = { ...value };
+  for (const collection of ["calendarEvents", "workItems"]) {
+    const entries = normalized[collection];
+    if (!Array.isArray(entries)) continue;
+    normalized[collection] = entries.map((entry) => {
+      if (!isRecord(entry)) return entry;
+      const item = { ...entry };
+      for (const field of INTAKE_NULLABLE_ABSENCE_FIELDS) {
+        const fieldValue = item[field];
+        if (typeof fieldValue !== "string") continue;
+        const stripped = fieldValue.trim();
+        if (stripped === "" || /^(?:null|none)$/i.test(stripped)) item[field] = null;
+      }
+      return item;
+    });
+  }
+  return normalized;
+}
+
 export interface IntakeDraftCalendarEvent extends IntakeCalendarEvent {
   enabled: boolean;
   durationAssumed: boolean;
@@ -72,6 +114,8 @@ export type IntakeIssueCode =
   | "duplicate_key"
   | "invalid_date"
   | "invalid_datetime"
+  | "invalid_reminder_time"
+  | "invalid_reminder_timezone"
   | "calendar_date_conflict"
   | "calendar_datetime_conflict"
   | "calendar_start_required"
@@ -103,6 +147,8 @@ const intakeIssueCodes = new Set<IntakeIssueCode>([
   "duplicate_key",
   "invalid_date",
   "invalid_datetime",
+  "invalid_reminder_time",
+  "invalid_reminder_timezone",
   "calendar_date_conflict",
   "calendar_datetime_conflict",
   "calendar_start_required",
@@ -169,6 +215,19 @@ function validDateTime(value: string): boolean {
   return !Number.isNaN(Date.parse(value));
 }
 
+function validReminderTime(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function validTimezone(value: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function utcDate(value: string): string {
   return new Date(value).toISOString().slice(0, 10);
 }
@@ -187,7 +246,11 @@ function addIssueForDate(
   value: string | null,
 ): void {
   if (value !== null && !validDate(value)) {
-    issues.push(issue(path, "invalid_date", "Date must use a valid YYYY-MM-DD value."));
+    issues.push(issue(
+      path,
+      "invalid_date",
+      `Invalid date ${previewContractValue(value)}; expected YYYY-MM-DD.`,
+    ));
   }
 }
 
@@ -197,8 +260,18 @@ function addIssueForDateTime(
   value: string | null,
 ): void {
   if (value !== null && !validDateTime(value)) {
-    issues.push(issue(path, "invalid_datetime", "Date-time must be RFC 3339 with an offset."));
+    issues.push(issue(
+      path,
+      "invalid_datetime",
+      `Invalid date-time ${previewContractValue(value)}; expected RFC 3339 with seconds and an explicit timezone offset.`,
+    ));
   }
+}
+
+function previewContractValue(value: string): string {
+  const bounded = value.slice(0, 80);
+  const suffix = value.length > bounded.length ? "..." : "";
+  return `"${bounded.replace(/[\r\n\t]/g, " ")}${suffix}"`;
 }
 
 export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
@@ -221,7 +294,11 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
   plan.calendarEvents.forEach((event, index) => {
     const path = ["calendarEvents", index] as (string | number)[];
     if (!INTAKE_KEY_PATTERN.test(event.key)) {
-      issues.push(issue([...path, "key"], "key_invalid", "Invalid plan key."));
+      issues.push(issue(
+        [...path, "key"],
+        "key_invalid",
+        `Invalid plan key ${previewContractValue(event.key)}; expected 1-40 characters starting with a lowercase letter or digit and containing only lowercase letters, digits, "_" or "-".`,
+      ));
     }
     if (allKeys.has(event.key)) {
       issues.push(issue([...path, "key"], "duplicate_key", "Keys must be unique across the plan."));
@@ -270,7 +347,11 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
   plan.workItems.forEach((item, index) => {
     const path = ["workItems", index] as (string | number)[];
     if (!INTAKE_KEY_PATTERN.test(item.key)) {
-      issues.push(issue([...path, "key"], "key_invalid", "Invalid plan key."));
+      issues.push(issue(
+        [...path, "key"],
+        "key_invalid",
+        `Invalid plan key ${previewContractValue(item.key)}; expected 1-40 characters starting with a lowercase letter or digit and containing only lowercase letters, digits, "_" or "-".`,
+      ));
     }
     if (allKeys.has(item.key)) {
       issues.push(issue([...path, "key"], "duplicate_key", "Keys must be unique across the plan."));
@@ -285,12 +366,28 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
       const reminderPath = [...path, "reminders", reminderIndex] as (string | number)[];
       if (reminder.kind === "absolute") {
         addIssueForDateTime(issues, [...reminderPath, "at"], reminder.at);
-      } else if (item.dueDate === null) {
-        issues.push(issue(
-          reminderPath,
-          "deadline_relative_without_due",
-          "Deadline-relative reminders require a usable deadline.",
-        ));
+      } else {
+        if (!validReminderTime(reminder.time)) {
+          issues.push(issue(
+            [...reminderPath, "time"],
+            "invalid_reminder_time",
+            `Invalid reminder time ${previewContractValue(reminder.time)}; expected HH:mm.`,
+          ));
+        }
+        if (!validTimezone(reminder.timezone)) {
+          issues.push(issue(
+            [...reminderPath, "timezone"],
+            "invalid_reminder_timezone",
+            `Invalid reminder timezone ${previewContractValue(reminder.timezone)}; expected an IANA timezone.`,
+          ));
+        }
+        if (item.dueDate === null || !validDate(item.dueDate)) {
+          issues.push(issue(
+            reminderPath,
+            "deadline_relative_without_due",
+            "Deadline-relative reminders require a usable deadline.",
+          ));
+        }
       }
     }
     if ((item.notBeforeAt === null) !== (item.notBeforeDate === null)) {
@@ -665,7 +762,7 @@ export function buildDraftFromPlan(
   const calendarEvents = plan.calendarEvents.map((event) => {
     let durationAssumed = false;
     let endDateTime = event.endDateTime;
-    if (!event.allDay && event.startDateTime && endDateTime === null) {
+    if (!event.allDay && event.startDateTime && validDateTime(event.startDateTime) && endDateTime === null) {
       endDateTime = new Date(Date.parse(event.startDateTime) + 60 * 60_000).toISOString();
       durationAssumed = true;
       if (!warnedMissingEnd) warnings.push({ message: "No end time in source; 60 min assumed" });
@@ -735,6 +832,8 @@ export interface IntakeErrorDetails {
   issues?: IntakeIssue[];
   path?: (string | number)[];
   expectedType?: string;
+  actualType?: string;
+  valuePreview?: string;
 }
 
 export interface IntakeErrorInfo {
@@ -766,10 +865,16 @@ export function intakeErrorIssues(error: IntakeErrorInfo | null): IntakeIssue[] 
     const expected = typeof details.expectedType === "string"
       ? details.expectedType.slice(0, 200)
       : "the expected field type";
+    const actual = typeof details.actualType === "string"
+      ? ` Received ${details.actualType.slice(0, 50)}.`
+      : "";
+    const preview = typeof details.valuePreview === "string"
+      ? ` Value ${details.valuePreview.slice(0, 100)}.`
+      : "";
     return [{
       path: details.path.filter((segment) => typeof segment === "string" || typeof segment === "number"),
       code: "schema_invalid",
-      message: `${error.message.slice(0, 300)} Expected ${expected}.`,
+      message: `${error.message.slice(0, 250)} Expected ${expected}.${actual}${preview}`,
     }];
   }
   return [];

@@ -15,6 +15,7 @@ import {
   intakeErrorIssues,
   intakeDraftIssues,
   isIntakeIssueCode,
+  normalizeIntakeNullableAbsenceFields,
   normalizeIntakePlan,
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
@@ -45,6 +46,63 @@ function errorInfo(
 
 function parseJson<T>(value: string | null): T | null {
   return value === null ? null : JSON.parse(value) as T;
+}
+
+const SAFE_CONTRACT_PREVIEW_FIELDS = new Set([
+  "key",
+  "parentKey",
+  "relatedWorkKeys",
+  "relatedCalendarKeys",
+  "dueDate",
+  "scheduledDate",
+  "notBeforeDate",
+  "notBeforeAt",
+  "startDate",
+  "endDate",
+  "startDateTime",
+  "endDateTime",
+  "at",
+]);
+
+function valueAtPath(value: unknown, path: readonly (string | number)[]): unknown {
+  let current = value;
+  for (const segment of path) {
+    if (current === null || current === undefined) return undefined;
+    if (typeof segment === "number" && Array.isArray(current)) {
+      current = current[segment];
+    } else if (typeof segment === "string" && typeof current === "object" && !Array.isArray(current)) {
+      current = (current as Record<string, unknown>)[segment];
+    } else {
+      return undefined;
+    }
+  }
+  return current;
+}
+
+function valueType(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  if (value === undefined) return "missing";
+  return typeof value;
+}
+
+function safeContractPreview(path: readonly (string | number)[], value: unknown): string | null {
+  if (!path.some((segment) => typeof segment === "string" && SAFE_CONTRACT_PREVIEW_FIELDS.has(segment))) {
+    return null;
+  }
+  if (typeof value !== "string") return null;
+  const bounded = value.slice(0, 80).replace(/[\r\n\t]/g, " ");
+  return `"${bounded}${value.length > 80 ? "..." : ""}"`;
+}
+
+function structuralIssueMessage(
+  path: readonly (string | number)[],
+  raw: unknown,
+  message: string,
+): string {
+  const value = valueAtPath(raw, path);
+  const preview = safeContractPreview(path, value);
+  return `${message.slice(0, 350)} Received ${valueType(value)}${preview ? ` ${preview}` : ""}.`;
 }
 
 /**
@@ -245,8 +303,9 @@ export function getIntake(
   };
 }
 
-export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSelect, plan: IntakePlan): void {
-  const parsed = intakePlanStructureSchema.safeParse(plan);
+export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSelect, plan: unknown): void {
+  const normalizedInput = normalizeIntakeNullableAbsenceFields(plan);
+  const parsed = intakePlanStructureSchema.safeParse(normalizedInput);
   if (!parsed.success) {
     const issues: IntakeIssue[] = parsed.error.issues.map((item) => {
       const params = "params" in item && item.params && typeof item.params === "object"
@@ -255,7 +314,7 @@ export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSel
       return {
         path: item.path,
         code: isIntakeIssueCode(params?.code) ? params.code : "schema_invalid",
-        message: item.message.slice(0, 500),
+        message: structuralIssueMessage(item.path, normalizedInput, item.message),
       };
     });
     const info = errorInfo(
@@ -273,7 +332,7 @@ export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSel
     return;
   }
   const members = db.select({ id: schema.members.id, name: schema.members.name }).from(schema.members).all();
-  const normalized = normalizeIntakePlan(parsed.data);
+  const normalized = normalizeIntakePlan(parsed.data as IntakePlan);
   const draft = buildDraftFromPlan(normalized.plan, members);
   db.update(schema.intakeJobs).set({
     status: "ready",
