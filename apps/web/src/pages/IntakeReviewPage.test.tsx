@@ -1,6 +1,7 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Routes, Route } from "react-router-dom";
+import type { IntakeDraft } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { IntakeReviewPage } from "./IntakeReviewPage";
 import { api } from "../lib/api";
@@ -26,7 +27,7 @@ vi.mock("../components/ClockTimePicker", () => ({
     <input id={id} type="time" value={value} onChange={(event) => onChange(event.target.value)} />,
 }));
 
-const draft = {
+const draft: IntakeDraft = {
   summary: "Schulfest",
   calendarEvents: [{
     key: "event",
@@ -52,7 +53,7 @@ const draft = {
     scheduledDate: null,
     notBeforeDate: null,
     notBeforeAt: null,
-    reminderAt: null,
+    reminders: [],
     needsClarification: false,
     relatedCalendarKeys: ["event"],
     enabled: true,
@@ -67,7 +68,7 @@ const draft = {
     scheduledDate: null,
     notBeforeDate: null,
     notBeforeAt: null,
-    reminderAt: null,
+    reminders: [],
     needsClarification: false,
     relatedCalendarKeys: ["event"],
     enabled: true,
@@ -85,6 +86,7 @@ function record(status: string = "ready", error: { code: string; message: string
     createdAt: "2026-09-27T10:00:00Z",
     expiresAt: "2026-09-28T10:00:00Z",
     text: "Schulfest",
+    retryHint: null,
     attachments: [{ id: "a1", filename: "flyer.jpg", mimeType: "image/jpeg", sizeBytes: 10 }],
     draft: status === "ready" ? draft : null,
     error,
@@ -138,8 +140,8 @@ function editTitleButton(editor: ReturnType<typeof within>) {
 }
 
 async function changeTitle(editor: ReturnType<typeof within>, title: string) {
-  const editButton = editor.queryByRole("button", { name: "Bearbeiten" });
-  if (editButton) fireEvent.click(editButton);
+  const editButtons = editor.queryAllByRole("button", { name: "Bearbeiten" });
+  if (editButtons.length > 0) fireEvent.click(editButtons[0]!);
   fireEvent.change(editor.getByRole("textbox", { name: "Titel" }), {
     target: { value: title },
   });
@@ -310,7 +312,7 @@ describe("IntakeReviewPage", () => {
       dueDate: "2026-10-20",
       scheduledDate: null,
       notBeforeDate: null,
-      reminderAt: null,
+      reminders: [],
     });
   });
 
@@ -355,7 +357,7 @@ describe("IntakeReviewPage", () => {
             scheduledDate: "2026-10-03",
             notBeforeDate: "2026-10-04",
             notBeforeAt: "2026-10-04T00:00:00.000Z",
-            reminderAt: "2026-10-02T08:00:00.000Z",
+            reminders: [{ kind: "absolute", at: "2026-10-02T08:00:00.000Z" }],
             needsClarification: true,
           },
           draft.workItems[1]!,
@@ -375,7 +377,7 @@ describe("IntakeReviewPage", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminderAt: null,
+      reminders: [],
       needsClarification: false,
     });
   });
@@ -441,6 +443,132 @@ describe("IntakeReviewPage", () => {
     expect(contentEditor.queryByLabelText("Fällig")).not.toBeInTheDocument();
     expect(applyButton()).toBeEnabled();
     closeEditor(contentEditor);
+  });
+
+  it("preserves an absolute reminder row identity while editing its time", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
+    const initialDate = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(initialDate, { target: { value: "10.10.2026" } });
+    fireEvent.change(editor.getByLabelText("Uhrzeit"), { target: { value: "08:00" } });
+    fireEvent.blur(initialDate);
+
+    const date = editor.getByRole("textbox", { name: "Erinnerung" });
+    const time = editor.getByLabelText("Uhrzeit");
+    time.focus();
+    fireEvent.change(time, { target: { value: "09:15" } });
+
+    expect(document.activeElement).toBe(time);
+    expect(editor.getByRole("textbox", { name: "Erinnerung" })).toBe(date);
+    date.focus();
+    fireEvent.change(date, { target: { value: "11.10.2026" } });
+    expect(document.activeElement).toBe(date);
+  });
+
+  it("keeps reminder A blocked when reminder B is added or edited", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
+    let first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "10.10.2026" } });
+    fireEvent.change(editor.getByLabelText("Uhrzeit"), { target: { value: "08:00" } });
+    fireEvent.blur(first);
+    first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "kein Datum" } });
+    fireEvent.blur(first);
+    expect(applyButton()).toBeDisabled();
+    fireEvent.click(editor.getByRole("button", { name: "+ Erinnerung" }));
+    expect(editor.getAllByRole("textbox", { name: "Erinnerung" })).toHaveLength(2);
+    expect(applyButton()).toBeDisabled();
+    const second = editor.getAllByRole("textbox", { name: "Erinnerung" })[1]!;
+    fireEvent.change(second, { target: { value: "10.10.2026" } });
+    fireEvent.blur(second);
+    expect(editor.getAllByRole("textbox", { name: "Erinnerung" })[0]).toHaveValue("kein Datum");
+    expect(applyButton()).toBeDisabled();
+  });
+
+  it("removes a reminder validity blocker only with the invalid row", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
+    const first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "10.10.2026" } });
+    fireEvent.change(editor.getByLabelText("Uhrzeit"), { target: { value: "08:00" } });
+    fireEvent.blur(first);
+    fireEvent.click(editor.getByRole("button", { name: "+ Erinnerung" }));
+    const rows = editor.getAllByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(rows[1]!, { target: { value: "kein Datum" } });
+    fireEvent.blur(rows[1]!);
+    expect(applyButton()).toBeDisabled();
+    fireEvent.click(editor.getAllByRole("button", { name: "Erinnerung entfernen" })[1]!);
+    expect(applyButton()).toBeEnabled();
+  });
+
+  it("keeps an invalid reminder blocked when an earlier row is removed", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
+    const first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "10.10.2026" } });
+    fireEvent.change(editor.getByLabelText("Uhrzeit"), { target: { value: "08:00" } });
+    fireEvent.blur(first);
+    fireEvent.click(editor.getByRole("button", { name: "+ Erinnerung" }));
+    const rows = editor.getAllByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(rows[1]!, { target: { value: "kein Datum" } });
+    fireEvent.blur(rows[1]!);
+    expect(applyButton()).toBeDisabled();
+    const survivingRow = rows[1]!;
+    fireEvent.click(editor.getAllByRole("button", { name: "Erinnerung entfernen" })[0]!);
+    expect(editor.getByRole("textbox", { name: "Erinnerung" })).toBe(survivingRow);
+    expect(applyButton()).toBeDisabled();
+  });
+
+  it("preserves reminder validity while a card is disabled and re-enabled", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Erinnerung");
+    let first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "10.10.2026" } });
+    fireEvent.change(editor.getByLabelText("Uhrzeit"), { target: { value: "08:00" } });
+    fireEvent.blur(first);
+    first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "kein Datum" } });
+    fireEvent.blur(first);
+    const checkbox = screen.getByRole("checkbox", {
+      name: "In Vorschlag übernehmen: Rückmeldezettel abgeben",
+    });
+    fireEvent.click(checkbox);
+    expect(applyButton()).toBeEnabled();
+    fireEvent.click(checkbox);
+    expect(applyButton()).toBeDisabled();
+  });
+
+  it("does not retain reminder validity from a replaced proposal", async () => {
+    const conflictedDraft: IntakeDraft = {
+      ...draft,
+      workItems: [{
+        ...draft.workItems[0]!,
+        needsClarification: true,
+        reminders: [{ kind: "absolute", at: "2026-10-01T08:00:00+02:00" }],
+      }, draft.workItems[1]!],
+    };
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: conflictedDraft,
+    } as never);
+    mockedApi.retryIntake.mockResolvedValue({
+      ...record(),
+      draft: { ...draft, summary: "Neue Analyse" },
+    } as never);
+    renderPage();
+    const card = (await screen.findByRole("heading", { name: "Rückmeldezettel abgeben" })).closest("article")!;
+    fireEvent.click(within(card).getByRole("button", { name: /^Erinnerung:/ }));
+    const editor = within(await screen.findByRole("dialog"));
+    const first = editor.getByRole("textbox", { name: "Erinnerung" });
+    fireEvent.change(first, { target: { value: "kein Datum" } });
+    fireEvent.blur(first);
+    expect(applyButton()).toBeDisabled();
+    closeEditor(editor);
+    fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
+    await waitFor(() => expect(screen.getByText("Neue Analyse")).toBeInTheDocument());
+    expect(screen.queryByDisplayValue("kein Datum")).not.toBeInTheDocument();
+    expect(applyButton()).toBeEnabled();
   });
 
   it.each([
@@ -520,7 +648,7 @@ describe("IntakeReviewPage", () => {
     expect(applied.workItems[0]).toMatchObject({
       dueDate: "2026-10-20",
       scheduledDate: "2026-10-11",
-      reminderAt: new Date(2026, 9, 10, 8, 30).toISOString(),
+      reminders: [{ kind: "absolute", at: new Date(2026, 9, 10, 8, 30).toISOString() }],
     });
   });
 
@@ -649,7 +777,7 @@ describe("IntakeReviewPage", () => {
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
   });
 
-  it("does not PATCH an invalid all-day-to-timed draft, then saves exactly once after its end is entered", async () => {
+  it("saves an unresolved timed-event draft, then saves the corrected end exactly once more", async () => {
     mockedApi.getIntake.mockResolvedValue({
       ...record(),
       draft: {
@@ -670,18 +798,18 @@ describe("IntakeReviewPage", () => {
     fireEvent.click(eventEditor.getByRole("checkbox", { name: "Ganztägig" }));
     expect(applyButton()).toBeDisabled();
     await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
-    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
     const endDate = eventEditor.getByLabelText("Ende");
     fireEvent.change(endDate, { target: { value: "08.10.2026" } });
     fireEvent.blur(endDate);
     fireEvent.change(eventEditor.getAllByLabelText("Uhrzeit")[1]!, { target: { value: "20:00" } });
     closeEditor(eventEditor);
     await act(async () => { await vi.advanceTimersByTimeAsync(999); });
-    expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(2);
     await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
-    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(2);
   });
 
   it("does not retry a non-stale rejected snapshot until the draft changes", async () => {
@@ -811,7 +939,327 @@ describe("IntakeReviewPage", () => {
     renderPage();
     expect(await screen.findByText("Analyse fehlgeschlagen")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
-    await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1"));
+    await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1", undefined));
+  });
+
+  it("accepts leased analyzing and replacement ready states while polling after retry", async () => {
+    const conflictedDraft = {
+      ...draft,
+      workItems: [{
+        ...draft.workItems[0]!,
+        needsClarification: true,
+        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+      }, draft.workItems[1]!],
+    };
+    const replacementDraft = {
+      ...draft,
+      summary: "Ersetzte Analyse",
+    };
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record(), revision: 2, draft: conflictedDraft } as never)
+      .mockResolvedValueOnce({ ...record("analyzing"), revision: 3, draft: null } as never)
+      .mockResolvedValueOnce({ ...record(), revision: 4, draft: replacementDraft } as never);
+    mockedApi.retryIntake.mockResolvedValueOnce({ ...record("queued"), revision: 3, draft: null } as never);
+    vi.useFakeTimers();
+    renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("heading", { name: "Elternabend" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mockedApi.retryIntake).toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(screen.getByText("Der Inhalt wird analysiert …")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(screen.getByText("Ersetzte Analyse")).toBeInTheDocument();
+  });
+
+  it("accepts an analysis failure delivered by polling", async () => {
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record("queued"), revision: 1, draft: null } as never)
+      .mockResolvedValueOnce({
+        ...record("analysis_failed", {
+          code: "ai_task_failed",
+          message: "Analyse fehlgeschlagen",
+          retryable: true,
+        }),
+        revision: 2,
+        draft: null,
+      } as never);
+    vi.useFakeTimers();
+    renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(screen.getByText("Analyse fehlgeschlagen")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["applied", "Verarbeitung übernommen"],
+    ["partially_applied", "Teilweise übernommen"],
+  ])("accepts %s delivered by polling", async (status, text) => {
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record("applying"), revision: 5, draft: null } as never)
+      .mockResolvedValueOnce({ ...record(status), revision: 6, draft: null } as never);
+    vi.useFakeTimers();
+    renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Wird übernommen …")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(screen.getByText(text)).toBeInTheDocument();
+  });
+
+  it("accepts a lease-derived analyzing state without a revision increment", async () => {
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record("queued"), revision: 3, draft: null } as never)
+      .mockResolvedValueOnce({ ...record("analyzing"), revision: 3, draft: null } as never);
+    vi.useFakeTimers();
+    renderPage();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(screen.getByText("Der Inhalt wird analysiert …")).toBeInTheDocument();
+  });
+
+  it("ignores a delayed pre-retry response after the queued replacement is accepted", async () => {
+    const conflictedDraft = {
+      ...draft,
+      workItems: [{
+        ...draft.workItems[0]!,
+        needsClarification: true,
+        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+      }, draft.workItems[1]!],
+    };
+    let resolveStale!: (value: ReturnType<typeof record>) => void;
+    const staleResponse = new Promise<ReturnType<typeof record>>((resolve) => {
+      resolveStale = resolve;
+    });
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record(), revision: 2, draft: conflictedDraft } as never)
+      .mockReturnValueOnce(staleResponse as never);
+    mockedApi.retryIntake.mockResolvedValueOnce({ ...record("queued"), revision: 3, draft: null } as never);
+    renderPage();
+    await screen.findByRole("heading", { name: "Elternabend" });
+    vi.useFakeTimers();
+    window.dispatchEvent(new Event("focus"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+    await act(async () => {
+      resolveStale({ ...record(), revision: 2, draft: conflictedDraft });
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+  });
+
+  it("ignores a delayed pre-Apply response after applying starts", async () => {
+    let resolveStale!: (value: ReturnType<typeof record>) => void;
+    const staleResponse = new Promise<ReturnType<typeof record>>((resolve) => {
+      resolveStale = resolve;
+    });
+    mockedApi.getIntake
+      .mockResolvedValueOnce({ ...record(), revision: 2 } as never)
+      .mockReturnValueOnce(staleResponse as never);
+    mockedApi.applyIntake.mockResolvedValueOnce({ ...record("applying"), revision: 3, draft: null } as never);
+    renderPage();
+    await screen.findByRole("heading", { name: "Elternabend" });
+    vi.useFakeTimers();
+    window.dispatchEvent(new Event("focus"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    fireEvent.click(applyButton());
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Wird übernommen …")).toBeInTheDocument();
+    await act(async () => {
+      resolveStale({ ...record(), revision: 2 });
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Wird übernommen …")).toBeInTheDocument();
+  });
+
+  it("saves an immediate edit before reanalysis and replaces the completed proposal", async () => {
+    const conflictedDraft = {
+      ...draft,
+      workItems: [{
+        ...draft.workItems[0]!,
+        needsClarification: true,
+        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+      }, { ...draft.workItems[1]!, parentKey: null }],
+    };
+    const replacementDraft = {
+      ...draft,
+      workItems: [{ ...draft.workItems[0]!, title: "Ersetzter Vorschlag" }, draft.workItems[1]!],
+    };
+    mockedApi.getIntake.mockResolvedValueOnce({
+      ...record(),
+      draft: conflictedDraft,
+    } as never);
+    mockedApi.retryIntake.mockResolvedValueOnce({
+      ...record(),
+      draft: replacementDraft,
+    } as never);
+    renderPage();
+    const editor = await openEditor("Rückmeldezettel abgeben");
+    await changeTitle(editor, "Geänderte Auswahl");
+    closeEditor(editor);
+    fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
+    await waitFor(() => expect(mockedApi.updateIntakeDraft).toHaveBeenCalled());
+    await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1", undefined));
+    expect(mockedApi.updateIntakeDraft.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedApi.retryIntake.mock.invocationCallOrder[0]!,
+    );
+    expect(mockedApi.updateIntakeDraft.mock.calls[0]?.[1].draft.workItems[0]?.title)
+      .toBe("Geänderte Auswahl");
+    expect(await screen.findByRole("heading", { name: "Ersetzter Vorschlag" })).toBeInTheDocument();
+  });
+
+  it("loads and submits a changed ready-proposal retry hint", async () => {
+    const conflictedDraft = {
+      ...draft,
+      workItems: [{
+        ...draft.workItems[0]!,
+        needsClarification: true,
+        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+      }, { ...draft.workItems[1]!, parentKey: null }],
+    };
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      retryHint: "Gespeicherter Hinweis",
+      draft: conflictedDraft,
+    } as never);
+    mockedApi.retryIntake.mockResolvedValue(record("queued") as never);
+    renderPage();
+    const hintLabel = await screen.findByText("Hinweis für den nächsten Versuch");
+    const hint = within(hintLabel.closest("label")!).getByRole("textbox");
+    expect(hint).toHaveValue("Gespeicherter Hinweis");
+    fireEvent.change(hint, { target: { value: "Bitte den Titel übernehmen." } });
+    fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
+    await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1", "Bitte den Titel übernehmen."));
+  });
+
+  it("unblocks Apply when a conflicting proposal is deselected", async () => {
+    const conflictedDraft = {
+      ...draft,
+      workItems: [{
+        ...draft.workItems[0]!,
+        enabled: false,
+        needsClarification: true,
+        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+      }, { ...draft.workItems[1]!, parentKey: null }],
+    };
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: conflictedDraft,
+    } as never);
+    renderPage();
+    await screen.findByRole("heading", { name: "Kalender" });
+    expect(applyButton()).not.toBeDisabled();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0]).toMatchObject({
+      enabled: false,
+      title: "Rückmeldezettel abgeben",
+    });
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[1]?.enabled).toBe(true);
+  });
+
+  it("ignores invalid date input on a disabled card until it is re-enabled and corrected", async () => {
+    renderPage();
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "Fällig: 02.10.2026");
+    const date = editor.getByRole("textbox", { name: "Fällig" });
+    fireEvent.change(date, { target: { value: "kein Datum" } });
+    fireEvent.blur(date);
+    expect(screen.getByText("Datum nicht erkannt")).toBeInTheDocument();
+    const checkbox = screen.getByRole("checkbox", {
+      name: "In Vorschlag übernehmen: Rückmeldezettel abgeben",
+    });
+    fireEvent.click(checkbox);
+    expect(applyButton()).not.toBeDisabled();
+    fireEvent.click(checkbox);
+    expect(applyButton()).toBeDisabled();
+    const correctedDate = editor.getByRole("textbox", { name: "Fällig" });
+    fireEvent.change(correctedDate, { target: { value: "03.10.2026" } });
+    fireEvent.blur(correctedDate);
+    closeEditor(editor);
+    expect(applyButton()).not.toBeDisabled();
+  });
+
+  it("clears a ready-proposal retry hint explicitly", async () => {
+    const conflictedDraft = {
+      ...draft,
+      workItems: [{
+        ...draft.workItems[0]!,
+        needsClarification: true,
+        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+      }, draft.workItems[1]!],
+    };
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      retryHint: "Gespeicherter Hinweis",
+      draft: conflictedDraft,
+    } as never);
+    mockedApi.retryIntake.mockResolvedValue(record("queued") as never);
+    renderPage();
+    const hintLabel = await screen.findByText("Hinweis für den nächsten Versuch");
+    const hint = within(hintLabel.closest("label")!).getByRole("textbox");
+    fireEvent.change(hint, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
+    await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1", ""));
+  });
+
+  it("clears a persisted retry hint when the field is emptied", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record("analysis_failed", {
+        code: "ai_task_failed", message: "Analyse fehlgeschlagen", retryable: true,
+      }),
+      retryHint: "Bitte keine Erinnerung ergänzen.",
+    } as never);
+    mockedApi.retryIntake.mockResolvedValue({
+      ...record("queued"),
+      retryHint: null,
+    } as never);
+    renderPage();
+    const hintLabel = await screen.findByText("Hinweis für den nächsten Versuch");
+    const hint = within(hintLabel.closest("label")!).getByRole("textbox");
+    expect(hint).toHaveValue("Bitte keine Erinnerung ergänzen.");
+    fireEvent.change(hint, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
+    await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1", ""));
+    expect((await mockedApi.retryIntake.mock.results[0]?.value)?.retryHint).toBeNull();
   });
 
   it.each([

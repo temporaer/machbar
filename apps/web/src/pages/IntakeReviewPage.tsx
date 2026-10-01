@@ -1,15 +1,96 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { intakeDraftIssues, type IntakeDraft, type IntakeRecord } from "@machbar/shared";
+import {
+  intakeDraftIssues,
+  intakeErrorIssues,
+  intakeSelectedDraftIssues,
+  type IntakeDraft,
+  type IntakeDraftWorkItem,
+  type IntakeRecord,
+} from "@machbar/shared";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
-import { localizedErrorMessage, isStaleWriteConflict } from "../lib/errorMessage";
+import {
+  localizedApiErrorMessage,
+  localizedErrorMessage,
+  isStaleWriteConflict,
+} from "../lib/errorMessage";
 import { LoadingState } from "../components/AsyncStates";
 import { IntakeProposalReview } from "./IntakeProposalReview";
 import { type DateValidityChange } from "./IntakeReviewFields";
+
+function intakeIssuePath(path: readonly (string | number)[]): string {
+  return path.reduce<string>((result, segment) =>
+    typeof segment === "number"
+      ? `${result}[${segment}]`
+      : result
+        ? `${result}.${segment}`
+        : segment, "");
+}
+
+function intakeFailureExplanation(
+  record: IntakeRecord,
+  strings: ReturnType<typeof useStrings>,
+): string {
+  switch (record.error?.code) {
+    case "intake_plan_invalid":
+      return strings.intakeErrorValidation;
+    case "ai_task_invalid_response":
+      return strings.intakeErrorNormalization;
+    default:
+      return strings.intakeErrorProvider;
+  }
+}
+
+function acceptsIntakeRecord(
+  current: IntakeRecord | null,
+  incoming: IntakeRecord,
+): boolean {
+  if (!current) return true;
+  if (incoming.revision > current.revision) return true;
+  if (incoming.revision < current.revision) return false;
+  if (incoming.status === current.status) return true;
+  // `analyzing` is derived from the leased HA request and does not change
+  // the intake job revision.
+  return current.status === "queued" && incoming.status === "analyzing";
+}
+
+function intakeDateKeys(
+  draft: IntakeDraft | null,
+  enabledOnly: boolean,
+  reminderRowIds: ReadonlyMap<string, readonly string[]>,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const event of draft?.calendarEvents ?? []) {
+    if (enabledOnly && !event.enabled) continue;
+    if (!event.allDay) {
+      keys.add(`calendar:${event.key}:start`);
+      keys.add(`calendar:${event.key}:end`);
+    }
+  }
+  for (const item of draft?.workItems ?? []) {
+    if (enabledOnly && !item.enabled) continue;
+    if (item.kind !== "reference") {
+      keys.add(`work:${item.key}:due`);
+      keys.add(`work:${item.key}:scheduled`);
+    }
+    if (item.kind === "action") {
+      keys.add(`work:${item.key}:availability`);
+      if (item.reminders.length === 0) {
+        keys.add(`work:${item.key}:reminder-date`);
+      } else {
+        item.reminders.forEach((_, index) => {
+          const rowId = reminderRowIds.get(item.key)?.[index] ?? String(index);
+          keys.add(`work:${item.key}:reminder-date-${rowId}`);
+        });
+      }
+    }
+  }
+  return keys;
+}
 
 export function IntakeReviewPage() {
   const { id = "" } = useParams();
@@ -23,7 +104,36 @@ export function IntakeReviewPage() {
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
+  const [retryHint, setRetryHint] = useState("");
   const [invalidDateKeys, setInvalidDateKeys] = useState<Set<string>>(() => new Set());
+  const reminderRowIdsRef = useRef<Map<string, string[]>>(new Map());
+  const nextReminderRowIdRef = useRef(0);
+  const reminderRowIds = useMemo(() => {
+    const rows = new Map<string, string[]>();
+    const activeItemKeys = new Set(
+      (draft?.workItems ?? [])
+        .filter((item) => item.kind === "action")
+        .map((item) => item.key),
+    );
+    for (const key of reminderRowIdsRef.current.keys()) {
+      if (!activeItemKeys.has(key)) reminderRowIdsRef.current.delete(key);
+    }
+    for (const item of draft?.workItems ?? []) {
+      if (item.kind !== "action") continue;
+      const ids = reminderRowIdsRef.current.get(item.key) ?? [];
+      while (ids.length < item.reminders.length) {
+        ids.push(`row-${nextReminderRowIdRef.current++}`);
+      }
+      if (ids.length > item.reminders.length) ids.length = item.reminders.length;
+      reminderRowIdsRef.current.set(item.key, ids);
+      rows.set(item.key, ids);
+    }
+    return rows;
+  }, [draft]);
+  const createReminderRowId = useCallback(
+    () => `row-${nextReminderRowIdRef.current++}`,
+    [],
+  );
   const onDateValidityChange = useCallback<DateValidityChange>((key, valid) => {
     setInvalidDateKeys((previous) => {
       if (previous.has(key) === !valid) return previous;
@@ -33,42 +143,38 @@ export function IntakeReviewPage() {
       return next;
     });
   }, []);
-  const activeDateKeys = useMemo(() => {
-    const keys = new Set<string>();
-    for (const event of draft?.calendarEvents ?? []) {
-      if (!event.allDay) {
-        keys.add(`calendar:${event.key}:start`);
-        keys.add(`calendar:${event.key}:end`);
-      }
-    }
-    for (const item of draft?.workItems ?? []) {
-      if (item.kind !== "reference") keys.add(`work:${item.key}:due`);
-      if (item.kind === "action") {
-        keys.add(`work:${item.key}:scheduled`);
-        keys.add(`work:${item.key}:availability`);
-        keys.add(`work:${item.key}:reminder-date`);
-      }
-    }
-    return keys;
-  }, [draft]);
+  const dateKeys = useMemo(() => intakeDateKeys(draft, false, reminderRowIds), [draft, reminderRowIds]);
+  const activeDateKeys = useMemo(() => intakeDateKeys(draft, true, reminderRowIds), [draft, reminderRowIds]);
   const hasInvalidInputs = [...invalidDateKeys].some((key) => activeDateKeys.has(key));
   useEffect(() => {
     setInvalidDateKeys((previous) => {
-      if ([...previous].every((key) => activeDateKeys.has(key))) return previous;
-      return new Set([...previous].filter((key) => activeDateKeys.has(key)));
+      const next = new Set([...previous].filter((key) => dateKeys.has(key)));
+      if (next.size === previous.size && [...next].every((key) => previous.has(key))) return previous;
+      return next;
     });
-  }, [activeDateKeys]);
+  }, [dateKeys]);
   const recordRef = useRef<IntakeRecord | null>(null);
   const revisionRef = useRef<number | null>(null);
   const latestDraftRef = useRef<IntakeDraft | null>(null);
   const cleanDraftSnapshotRef = useRef<string | null>(null);
   const savePromiseRef = useRef<Promise<boolean> | null>(null);
   const debounceRef = useRef<number | null>(null);
+  const retryInFlightRef = useRef(false);
+  const retryHintDirtyRef = useRef(false);
   const conflictPendingRef = useRef(false);
   const applyingRef = useRef(false);
   const failedSnapshotRef = useRef<string | null>(null);
+  const mutationBaselineRevisionRef = useRef<number | null>(null);
   const issues = useMemo(
     () => (draft ? intakeDraftIssues(draft, {
+      memberIds: members.map((member) => member.id),
+      paperlessAvailable: record?.paperlessAvailable ?? false,
+      hasFiles: (record?.attachments.length ?? 0) > 0,
+    }) : []),
+    [draft, members, record],
+  );
+  const selectedIssues = useMemo(
+    () => (draft ? intakeSelectedDraftIssues(draft, {
       memberIds: members.map((member) => member.id),
       paperlessAvailable: record?.paperlessAvailable ?? false,
       hasFiles: (record?.attachments.length ?? 0) > 0,
@@ -80,9 +186,18 @@ export function IntakeReviewPage() {
 
   useEffect(() => {
     if (state.data) {
+      if (!acceptsIntakeRecord(recordRef.current, state.data)) return;
+      if (
+        mutationBaselineRevisionRef.current !== null &&
+        (retryInFlightRef.current || applyingRef.current) &&
+        state.data.revision <= mutationBaselineRevisionRef.current
+      ) return;
       recordRef.current = state.data;
       revisionRef.current = state.data.revision;
       setRecord(state.data);
+      if ((state.data.status === "analysis_failed" || state.data.status === "ready") && !retryHintDirtyRef.current) {
+        setRetryHint(state.data.retryHint ?? "");
+      }
       if (state.data.draft && (
         latestDraftRef.current === null ||
         conflictPendingRef.current ||
@@ -92,7 +207,7 @@ export function IntakeReviewPage() {
         cleanDraftSnapshotRef.current = JSON.stringify(state.data.draft);
         failedSnapshotRef.current = null;
         conflictPendingRef.current = false;
-        setSaveError(null);
+        if (!retryInFlightRef.current) setSaveError(null);
         setDraft(state.data.draft);
       }
     }
@@ -102,7 +217,7 @@ export function IntakeReviewPage() {
     if (savePromiseRef.current) return savePromiseRef.current;
     const current = latestDraftRef.current;
     const revision = revisionRef.current;
-    if (!current || revision === null || recordRef.current?.status !== "ready" || conflictPendingRef.current || latestIssuesRef.current.length) return false;
+    if (!current || revision === null || recordRef.current?.status !== "ready" || conflictPendingRef.current) return false;
     if (JSON.stringify(current) === cleanDraftSnapshotRef.current) return true;
     if (JSON.stringify(current) === failedSnapshotRef.current) return false;
     const save = (async () => {
@@ -110,7 +225,7 @@ export function IntakeReviewPage() {
         const nextDraft = latestDraftRef.current;
         const snapshot = JSON.stringify(nextDraft);
         if (snapshot === cleanDraftSnapshotRef.current) return true;
-        if (latestIssuesRef.current.length || snapshot === failedSnapshotRef.current) return false;
+        if (snapshot === failedSnapshotRef.current) return false;
         const expectedRevision = revisionRef.current;
         if (expectedRevision === null) return false;
         try {
@@ -146,7 +261,6 @@ export function IntakeReviewPage() {
       if (
         !applyingRef.current &&
         !conflictPendingRef.current &&
-        !latestIssuesRef.current.length &&
         latestDraftRef.current &&
         JSON.stringify(latestDraftRef.current) !== cleanDraftSnapshotRef.current &&
         JSON.stringify(latestDraftRef.current) !== failedSnapshotRef.current
@@ -161,7 +275,7 @@ export function IntakeReviewPage() {
   };
 
   useEffect(() => {
-    if (!draft || record?.status !== "ready" || issues.length || conflictPendingRef.current || JSON.stringify(draft) === cleanDraftSnapshotRef.current || JSON.stringify(draft) === failedSnapshotRef.current) return;
+    if (!draft || record?.status !== "ready" || conflictPendingRef.current || JSON.stringify(draft) === cleanDraftSnapshotRef.current || JSON.stringify(draft) === failedSnapshotRef.current) return;
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
       debounceRef.current = null;
@@ -198,13 +312,79 @@ export function IntakeReviewPage() {
     recordRef.current = nextRecord;
     setRecord(nextRecord);
   };
+  const updateReminderDraft = (
+    item: IntakeDraftWorkItem,
+    rowIds: readonly string[],
+  ) => {
+    reminderRowIdsRef.current.set(item.key, [...rowIds]);
+    updateDraft({
+      ...draft!,
+      workItems: draft!.workItems.map((current) =>
+        current.key === item.key ? item : current),
+    });
+  };
   const retry = async () => {
+    if (retryInFlightRef.current || applyingRef.current || busy) return;
+    retryInFlightRef.current = true;
+    mutationBaselineRevisionRef.current = revisionRef.current;
     setBusy(true);
-    try { setRecord(await api.retryIntake(id)); } finally { setBusy(false); }
+    setSaveError(null);
+    try {
+      if (record.status === "ready") {
+        if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+        if (savePromiseRef.current && !(await savePromiseRef.current)) {
+          if (conflictPendingRef.current) {
+            setSaveError(localizedApiErrorMessage("stale_write_conflict", undefined, strings));
+          }
+          return;
+        }
+        if (JSON.stringify(latestDraftRef.current) !== cleanDraftSnapshotRef.current) {
+          if (!(await saveCurrentDraft())) {
+            if (conflictPendingRef.current) {
+              setSaveError(localizedApiErrorMessage("stale_write_conflict", undefined, strings));
+            }
+            return;
+          }
+        }
+        if (conflictPendingRef.current) {
+          setSaveError(localizedApiErrorMessage("stale_write_conflict", undefined, strings));
+          return;
+        }
+      }
+      const nextRecord = await api.retryIntake(
+        id,
+        retryHintDirtyRef.current ? retryHint : undefined,
+      );
+      reminderRowIdsRef.current.clear();
+      recordRef.current = nextRecord;
+      revisionRef.current = nextRecord.revision;
+      latestDraftRef.current = null;
+      cleanDraftSnapshotRef.current = null;
+      failedSnapshotRef.current = null;
+      conflictPendingRef.current = false;
+      if (nextRecord.status === "ready" && nextRecord.draft) {
+        latestDraftRef.current = nextRecord.draft;
+        cleanDraftSnapshotRef.current = JSON.stringify(nextRecord.draft);
+        setDraft(nextRecord.draft);
+      } else {
+        setDraft(null);
+      }
+      setRecord(nextRecord);
+      setRetryHint(nextRecord.retryHint ?? "");
+      retryHintDirtyRef.current = false;
+    } catch (cause) {
+      setSaveError(localizedErrorMessage(cause, strings));
+    } finally {
+      retryInFlightRef.current = false;
+      mutationBaselineRevisionRef.current = null;
+      setBusy(false);
+    }
   };
   const applyInitial = async () => {
-    if (record.status !== "ready" || !draft || busy || issues.length || hasInvalidInputs || applyingRef.current) return;
+    if (record.status !== "ready" || !draft || busy || selectedIssues.length || hasInvalidInputs || applyingRef.current || retryInFlightRef.current) return;
     applyingRef.current = true;
+    mutationBaselineRevisionRef.current = revisionRef.current;
     setApplyError(null);
     setBusy(true);
     if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
@@ -233,12 +413,14 @@ export function IntakeReviewPage() {
       }
     } finally {
       applyingRef.current = false;
+      mutationBaselineRevisionRef.current = null;
       setBusy(false);
     }
   };
   const retryApply = async () => {
     if (record.status !== "partially_applied" || applyingRef.current) return;
     applyingRef.current = true;
+    mutationBaselineRevisionRef.current = revisionRef.current;
     setApplyError(null);
     setBusy(true);
     try {
@@ -256,6 +438,7 @@ export function IntakeReviewPage() {
       }
     } finally {
       applyingRef.current = false;
+      mutationBaselineRevisionRef.current = null;
       setBusy(false);
     }
   };
@@ -264,7 +447,49 @@ export function IntakeReviewPage() {
     try { await api.deleteIntake(id); navigate("/today"); } finally { setBusy(false); }
   };
   if (record.status === "analysis_failed") {
-    return <section className="card stack" role="alert"><h1>{strings.intakeAnalysisFailed}</h1><p>{record.error?.message ?? strings.intakeAnalysisFailed}</p><button className="btn btn-primary" disabled={busy} onClick={() => void retry()}>{strings.intakeRetry}</button></section>;
+    const validationIssues = record.error ? intakeErrorIssues(record.error) : [];
+    return (
+      <section className="card stack" role="alert">
+        <h1>{strings.intakeAnalysisFailed}</h1>
+        <p>{intakeFailureExplanation(record, strings)}</p>
+        {validationIssues.length ? (
+          <div className="stack">
+            <h2>{strings.intakeValidationProblems}</h2>
+            {validationIssues.map((issue, index) => (
+              <p key={`${intakeIssuePath(issue.path)}-${issue.code}-${index}`}>
+                <code>{intakeIssuePath(issue.path)}</code>: {issue.message}
+              </p>
+            ))}
+          </div>
+        ) : null}
+        <label className="stack">
+          <span>{strings.intakeRetryHintLabel}</span>
+          <textarea
+            rows={3}
+            value={retryHint}
+            placeholder={strings.intakeRetryHintPlaceholder}
+            disabled={busy}
+            onChange={(event) => {
+              retryHintDirtyRef.current = true;
+              setRetryHint(event.target.value);
+            }}
+          />
+          <small>{strings.intakeRetryHintHelp}</small>
+        </label>
+        {record.error ? (
+          <details>
+            <summary>{strings.intakeTechnicalDetails}</summary>
+            <pre>{JSON.stringify({
+              code: record.error.code,
+              details: record.error.details,
+            }, null, 2)}</pre>
+          </details>
+        ) : null}
+        <p>{record.error?.message ?? strings.intakeAnalysisFailed}</p>
+        {saveError ? <p role="alert">{saveError}</p> : null}
+        <button className="btn btn-primary" disabled={busy} onClick={() => void retry()}>{strings.intakeRetry}</button>
+      </section>
+    );
   }
   if (record.status === "queued") return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeQueued}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
   if (record.status === "analyzing") return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeAnalyzing}</p></section>;
@@ -284,21 +509,49 @@ export function IntakeReviewPage() {
   if (!draft) return <LoadingState />;
   return (
     <section className="stack intake-review">
-      <IntakeProposalReview
-        draft={draft}
-        members={members}
-        issues={issues}
-        invalidDateKeys={invalidDateKeys}
-        onDateValidityChange={onDateValidityChange}
-        onChange={updateDraft}
-      />
+      <fieldset disabled={busy} className="intake-review-fields">
+        <IntakeProposalReview
+          draft={draft}
+          members={members}
+          issues={issues}
+          invalidDateKeys={invalidDateKeys}
+          reminderRowIds={reminderRowIds}
+          createReminderRowId={createReminderRowId}
+          onDateValidityChange={onDateValidityChange}
+          onChange={updateDraft}
+          onReminderChange={updateReminderDraft}
+        />
+      </fieldset>
       {applyError ? <p role="alert">{applyError}</p> : null}
       {saveError ? <p role="alert">{saveError}</p> : null}
+      {issues.length > 0 ? (
+        <section className="card stack" role="alert">
+          <p>{strings.intakeProposalNeedsFixing}</p>
+          <p>{strings.intakeProposalReplacementWarning}</p>
+          <label className="stack">
+            <span>{strings.intakeRetryHintLabel}</span>
+            <textarea
+              rows={3}
+              value={retryHint}
+              placeholder={strings.intakeRetryHintPlaceholder}
+              disabled={busy}
+              onChange={(event) => {
+                retryHintDirtyRef.current = true;
+                setRetryHint(event.target.value);
+              }}
+            />
+            <small>{strings.intakeRetryHintHelp}</small>
+          </label>
+          <button type="button" className="btn" disabled={busy} onClick={() => void retry()}>
+            {strings.intakeRetry}
+          </button>
+        </section>
+      ) : null}
       <div className="intake-approval-bar">
         <button
           type="button"
           className="btn btn-primary intake-approval-button"
-          disabled={busy || issues.length > 0 || hasInvalidInputs}
+          disabled={busy || selectedIssues.length > 0 || hasInvalidInputs}
           onClick={() => void applyInitial()}
         >
           {strings.intakeApplyCount(enabledProposalCount)}

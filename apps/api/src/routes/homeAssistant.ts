@@ -13,6 +13,7 @@ import {
   revokeHomeAssistant,
   setHomeAssistantMemberMapping,
   activeHomeAssistantIntegration,
+  HOME_ASSISTANT_PROTOCOL_VERSION,
 } from "../integrations/homeAssistant.js";
 import {
   completeHomeAssistantRequest,
@@ -57,7 +58,7 @@ export function registerHomeAssistantRoutes(
 
   app.post(`${ROOT}/context`, async (request, reply) => {
     const body = parseOrThrow(homeAssistantSnapshotSchema, request.body);
-    if (body.protocolVersion !== 2) {
+    if (body.protocolVersion !== HOME_ASSISTANT_PROTOCOL_VERSION) {
       throw AppError.badRequest("unsupported_protocol_version", "The Home Assistant protocol version is not supported.");
     }
     applyHomeAssistantSnapshot(
@@ -103,7 +104,7 @@ export function registerHomeAssistantRoutes(
     `${ROOT}/requests/next`,
     async (request, reply) => {
       const protocolVersion = Number(request.query.protocolVersion);
-      if (protocolVersion !== 2) {
+      if (protocolVersion !== HOME_ASSISTANT_PROTOCOL_VERSION) {
         throw AppError.badRequest("unsupported_protocol_version", "The Home Assistant protocol version is not supported.");
       }
       const integration = activeHomeAssistantIntegration(db);
@@ -113,7 +114,7 @@ export function registerHomeAssistantRoutes(
       }
       const now = new Date().toISOString();
       db.update(schema.homeAssistantIntegrations)
-        .set({ lastRequestPollAt: now, protocolVersion: 2 })
+        .set({ lastRequestPollAt: now, protocolVersion: HOME_ASSISTANT_PROTOCOL_VERSION })
         .where(eq(schema.homeAssistantIntegrations.id, integration.id))
         .run();
       const seconds = Math.min(25, Math.max(0, Number(request.query.waitSeconds ?? 25) || 0));

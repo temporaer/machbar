@@ -3,6 +3,7 @@ import type { IntakeDraftWorkItem, IntakeIssue, Member } from "@machbar/shared";
 import { useLocale } from "../lib/locale";
 import { formatExactLocalDate } from "../lib/relativeDate";
 import { taskAvailabilityClock } from "../lib/taskAvailability";
+import { formatReminderLabel } from "../lib/reminderLabels";
 import { useStrings } from "../lib/strings";
 import { DetailPropertyPill } from "../components/DetailPropertyPill";
 import { MarkdownNotes } from "../components/MarkdownNotes";
@@ -27,8 +28,11 @@ export function IntakeWorkItemCard({
   members,
   issues,
   hasInvalidInput,
+  reminderRowIds,
+  createReminderRowId,
   onDateValidityChange,
   onChange,
+  onReminderChange,
   onKindChange,
 }: {
   item: IntakeDraftWorkItem;
@@ -38,8 +42,14 @@ export function IntakeWorkItemCard({
   members: Member[];
   issues: IntakeIssue[];
   hasInvalidInput: boolean;
+  reminderRowIds: readonly string[];
+  createReminderRowId: () => string;
   onDateValidityChange: DateValidityChange;
   onChange: (item: IntakeDraftWorkItem) => void;
+  onReminderChange: (
+    item: IntakeDraftWorkItem,
+    reminderRowIds: readonly string[],
+  ) => void;
   onKindChange: (kind: IntakeDraftWorkItem["kind"]) => void;
 }) {
   const strings = useStrings();
@@ -64,14 +74,8 @@ export function IntakeWorkItemCard({
   const notBefore = item.notBeforeDate
     ? formatExactLocalDate(item.notBeforeDate, locale)
     : null;
-  const reminder = item.reminderAt
-    ? new Intl.DateTimeFormat(locale === "en" ? "en-US" : "de-DE", {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(new Date(item.reminderAt))
-    : null;
+  const reminders = item.reminders.map((reminder) =>
+    formatReminderLabel(reminder, item.dueDate, strings, locale));
   const availabilityTime =
     item.notBeforeAt && taskAvailabilityClock(item.notBeforeAt) !== "00:00"
       ? taskAvailabilityClock(item.notBeforeAt)
@@ -120,7 +124,7 @@ export function IntakeWorkItemCard({
               {due}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && scheduled ? (
+          {item.kind !== "reference" && scheduled ? (
             <DetailPropertyPill
               label={strings.scheduled}
               ariaLabel={`${strings.scheduled}: ${scheduled}`}
@@ -138,13 +142,13 @@ export function IntakeWorkItemCard({
               {notBefore}{availabilityTime ? ` · ${availabilityTime}` : ""}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && reminder ? (
+          {item.kind === "action" && reminders.length ? (
             <DetailPropertyPill
               label={strings.reminder}
-              ariaLabel={`${strings.reminder}: ${reminder}`}
+              ariaLabel={`${strings.reminder}: ${reminders.join(", ")}`}
               onClick={() => setEditor("reminder")}
             >
-              {reminder}
+              {reminders.join(", ")}
             </DetailPropertyPill>
           ) : null}
         </div>
@@ -193,7 +197,7 @@ export function IntakeWorkItemCard({
               + {strings.due}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && !item.scheduledDate ? (
+          {item.kind !== "reference" && !item.scheduledDate ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.scheduled}`}
@@ -211,7 +215,7 @@ export function IntakeWorkItemCard({
               + {strings.notBefore}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && !item.reminderAt ? (
+          {item.kind === "action" && !item.reminders.length ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.reminder}`}
@@ -286,8 +290,11 @@ export function IntakeWorkItemCard({
           item={item}
           index={index}
           issues={issues}
+          reminderRowIds={reminderRowIds}
+          createReminderRowId={createReminderRowId}
           onDateValidityChange={onDateValidityChange}
           onChange={onChange}
+          onReminderChange={onReminderChange}
           onClose={closeEditor}
         />
       ) : null}

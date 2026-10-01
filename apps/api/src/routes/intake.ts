@@ -18,7 +18,7 @@ import {
 } from "../intake/jobs.js";
 import { applyIntake } from "../intake/apply.js";
 import { HomeAssistantRequestSignal } from "../integrations/homeAssistantRequests.js";
-import { intakeDraftSchema } from "../schemas.js";
+import { intakeDraftStructureSchema } from "../schemas.js";
 import { z } from "zod";
 
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -108,7 +108,7 @@ export function registerIntakeRoutes(
 
   app.patch<{ Params: { id: string } }>("/api/intake/:id/plan", async (request) => {
     const body = request.body as { expectedRevision: number; draft: unknown };
-    const draft = parseOrThrow(intakeDraftSchema, body?.draft);
+    const draft = parseOrThrow(intakeDraftStructureSchema, body?.draft);
     updateIntakeDraft(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, {
       expectedRevision: body.expectedRevision,
       draft,
@@ -123,14 +123,24 @@ export function registerIntakeRoutes(
   app.post<{ Params: { id: string } }>("/api/intake/:id/apply", async (request) => {
     const body = parseOrThrow(z.object({
       expectedRevision: z.number().int().positive(),
-      draft: intakeDraftSchema.optional(),
+      draft: intakeDraftStructureSchema.optional(),
     }).strict(), request.body);
     await applyIntake(db, env, paperless, signal, request.params.id, body, { actorMemberId: request.activityActor?.id ?? null }, request.authMember?.id ?? request.activityActor?.id ?? null, request.log);
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
   });
 
   app.post<{ Params: { id: string } }>("/api/intake/:id/retry", async (request) => {
-    await retryIntakeAnalysis(db, env, signal, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null);
+    const body = parseOrThrow(z.object({
+      hint: z.string().max(2_000).nullable().optional(),
+    }).strict(), request.body ?? {});
+    await retryIntakeAnalysis(
+      db,
+      env,
+      signal,
+      request.params.id,
+      request.authMember?.id ?? request.activityActor?.id ?? null,
+      body.hint,
+    );
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
   });
 

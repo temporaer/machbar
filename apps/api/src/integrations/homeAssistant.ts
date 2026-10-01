@@ -19,7 +19,7 @@ import { Graph } from "../domain/graph.js";
 import { AppError } from "../errors.js";
 import { enqueueNotification } from "../notifications/outbox.js";
 
-export const HOME_ASSISTANT_PROTOCOL_VERSION = 2 as const;
+export const HOME_ASSISTANT_PROTOCOL_VERSION = 3 as const;
 export const HOME_ASSISTANT_STALE_MS = 30 * 60 * 1_000;
 const PAIRING_TTL_MS = 10 * 60 * 1_000;
 const PAIRING_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -50,7 +50,7 @@ function normalizePairingCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
-function assertProtocolVersion(version: number): asserts version is 2 {
+function assertProtocolVersion(version: number): asserts version is 3 {
   if (version !== HOME_ASSISTANT_PROTOCOL_VERSION) {
     throw AppError.badRequest(
       "unsupported_protocol_version",

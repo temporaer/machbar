@@ -69,7 +69,7 @@ async def test_config_flow_persists_credentials(hass):
         return_value={
             "token": "secret-token",
             "instanceId": "instance-1",
-            "protocolVersion": 2,
+            "protocolVersion": 3,
         }
     )
     with (
@@ -94,6 +94,6 @@ async def test_config_flow_persists_credentials(hass):
         "origin": "https://machbar.example",
         "token": "secret-token",
         "instanceId": "instance-1",
-        "protocolVersion": 2,
+        "protocolVersion": 3,
     }
     pair.assert_awaited_once_with("123456")

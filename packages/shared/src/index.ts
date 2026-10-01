@@ -216,6 +216,7 @@ export type ApiErrorCode =
   | "ai_task_attachments_unsupported"
   | "ai_task_failed"
   | "ai_task_invalid_response"
+  | "intake_plan_invalid"
   | "calendar_not_configured"
   | "calendar_not_writable"
   | "calendar_create_failed"
@@ -726,7 +727,7 @@ export interface HomeAssistantIntegrationStatus {
   stale: boolean;
   contexts: PhysicalContext[];
   people: HomeAssistantPerson[];
-  supportedProtocolVersion: 2;
+  supportedProtocolVersion: 3;
   protocolOutdated: boolean;
   lastRequestPollAt: string | null;
   workerOnline: boolean;
@@ -742,7 +743,7 @@ export interface HomeAssistantPairingCode {
 export interface HomeAssistantPairingResponse {
   token: string;
   instanceId: string;
-  protocolVersion: 2;
+  protocolVersion: 3;
 }
 
 export interface McpAgent {
@@ -762,7 +763,7 @@ export interface McpAgentToken {
 }
 
 export interface HomeAssistantContextSnapshot {
-  protocolVersion: 2;
+  protocolVersion: 3;
   observedAt: string;
   contexts: Array<{
     externalId: string;

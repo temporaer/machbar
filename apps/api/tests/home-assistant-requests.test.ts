@@ -21,7 +21,7 @@ const plan = {
     scheduledDate: null,
     notBeforeDate: null,
     notBeforeAt: null,
-    reminderAt: null,
+    reminders: [],
     needsClarification: false,
     relatedCalendarKeys: [],
   }],
@@ -34,7 +34,7 @@ describe("Home Assistant reverse request bridge", () => {
   beforeEach(() => { ctx = createTestContext(); });
   afterEach(async () => { await closeTestContext(ctx); });
 
-  async function pair(protocolVersion = 2) {
+  async function pair(protocolVersion = 3) {
     const code = (await ctx.app.inject({
       method: "POST",
       url: "/api/integrations/home-assistant/pairing-code",
@@ -55,7 +55,7 @@ describe("Home Assistant reverse request bridge", () => {
       url: "/api/integrations/home-assistant/context",
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        protocolVersion: 2,
+        protocolVersion: 3,
         observedAt: new Date().toISOString(),
         contexts: [],
         people: [],
@@ -86,7 +86,7 @@ describe("Home Assistant reverse request bridge", () => {
     await queueIntake();
     const leased = await ctx.app.inject({
       method: "GET",
-      url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
       headers: { authorization: `Bearer ${token}` },
     });
     expect(leased.statusCode).toBe(200);
@@ -108,7 +108,7 @@ describe("Home Assistant reverse request bridge", () => {
     await queueIntake();
     const first = await ctx.app.inject({
       method: "GET",
-      url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
       headers: { authorization: `Bearer ${token}` },
     });
 
@@ -118,7 +118,7 @@ describe("Home Assistant reverse request bridge", () => {
     }).where(eq(schema.homeAssistantRequests.id, id)).run();
     const second = await ctx.app.inject({
       method: "GET",
-      url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
       headers: { authorization: `Bearer ${token}` },
     });
 
@@ -133,7 +133,7 @@ describe("Home Assistant reverse request bridge", () => {
     const token = await configuredToken();
     const response = await ctx.app.inject({
       method: "GET",
-      url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0.01",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0.01",
       headers: { authorization: `Bearer ${token}` },
     });
     expect(response.statusCode).toBe(204);
@@ -141,7 +141,7 @@ describe("Home Assistant reverse request bridge", () => {
 
   it("rejects missing, wrong, and revoked credentials", async () => {
     const token = await configuredToken();
-    const url = "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0";
+    const url = "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0";
     expect((await ctx.app.inject({ method: "GET", url })).statusCode).toBe(401);
     expect((await ctx.app.inject({ method: "GET", url, headers: { authorization: "Bearer wrong" } })).statusCode).toBe(401);
     expect((await ctx.app.inject({
@@ -152,7 +152,7 @@ describe("Home Assistant reverse request bridge", () => {
     expect((await ctx.app.inject({ method: "GET", url, headers: { authorization: `Bearer ${token}` } })).statusCode).toBe(401);
   });
 
-  it("requires protocol v2 for pairing and request polling", async () => {
+  it("requires protocol v3 for pairing and request polling", async () => {
     expect((await pair(1)).statusCode).toBe(400);
     const token = await configuredToken();
     expect((await ctx.app.inject({
@@ -167,7 +167,7 @@ describe("Home Assistant reverse request bridge", () => {
     await queueIntake();
     const first = await ctx.app.inject({
       method: "GET",
-      url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
       headers: { authorization: `Bearer ${token}` },
     });
     const id = first.json().id as string;
@@ -183,7 +183,7 @@ describe("Home Assistant reverse request bridge", () => {
     expect(completion.statusCode).toBe(409);
     const reLeased = await ctx.app.inject({
       method: "GET",
-      url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
       headers: { authorization: `Bearer ${token}` },
     });
     expect(reLeased.statusCode).toBe(200);
@@ -208,7 +208,7 @@ describe("Home Assistant reverse request bridge", () => {
       .where(eq(schema.intakeAttachments.intakeJobId, jobId)).get()!;
     const leased = await ctx.app.inject({
       method: "GET",
-      url: "/api/integrations/home-assistant/requests/next?protocolVersion=2&waitSeconds=0",
+      url: "/api/integrations/home-assistant/requests/next?protocolVersion=3&waitSeconds=0",
       headers: { authorization: `Bearer ${token}` },
     });
     const download = await ctx.app.inject({

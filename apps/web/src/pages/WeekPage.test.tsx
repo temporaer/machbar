@@ -142,7 +142,7 @@ describe("WeekPage", () => {
       connectedAt: null,
       lastUpdateAt: null,
       stale: false,
-      supportedProtocolVersion: 2,
+      supportedProtocolVersion: 3,
       protocolOutdated: false,
       lastRequestPollAt: null,
       workerOnline: false,

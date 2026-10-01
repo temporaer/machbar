@@ -1,3 +1,5 @@
+import type { TaskReminderInput } from "./index.js";
+
 export const INTAKE_TIMEZONE = "Europe/Berlin" as const;
 export const INTAKE_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 export const INTAKE_MAX_CALENDAR_EVENTS = 20;
@@ -30,7 +32,7 @@ export interface IntakeWorkItem {
   scheduledDate: string | null;
   notBeforeDate: string | null;
   notBeforeAt: string | null;
-  reminderAt: string | null;
+  reminders: TaskReminderInput[];
   needsClarification: boolean;
   relatedCalendarKeys: string[];
 }
@@ -86,18 +88,61 @@ export type IntakeIssueCode =
   | "dangling_related_key"
   | "duplicate_related_key"
   | "scheduling_order"
+  | "deadline_relative_without_due"
   | "captured_reminder"
   | "timed_end_required"
   | "parent_disabled"
   | "owner_not_member"
   | "reference_owner"
   | "paperless_unavailable"
-  | "nothing_selected";
+  | "nothing_selected"
+  | "schema_invalid";
+
+const intakeIssueCodes = new Set<IntakeIssueCode>([
+  "key_invalid",
+  "duplicate_key",
+  "invalid_date",
+  "invalid_datetime",
+  "calendar_date_conflict",
+  "calendar_datetime_conflict",
+  "calendar_start_required",
+  "calendar_end_before_start",
+  "timed_end_before_start",
+  "not_before_pair",
+  "not_before_date_mismatch",
+  "project_field_not_allowed",
+  "reference_field_not_allowed",
+  "invalid_parent",
+  "self_parent",
+  "parent_cycle",
+  "dangling_parent",
+  "dangling_related_key",
+  "duplicate_related_key",
+  "scheduling_order",
+  "deadline_relative_without_due",
+  "captured_reminder",
+  "timed_end_required",
+  "parent_disabled",
+  "owner_not_member",
+  "reference_owner",
+  "paperless_unavailable",
+  "nothing_selected",
+  "schema_invalid",
+]);
+
+export function isIntakeIssueCode(value: unknown): value is IntakeIssueCode {
+  return typeof value === "string" && intakeIssueCodes.has(value as IntakeIssueCode);
+}
 
 export interface IntakeIssue {
   path: (string | number)[];
   code: IntakeIssueCode;
   message: string;
+}
+
+export interface IntakeNormalizationResult {
+  plan: IntakePlan;
+  warnings: IntakeWarning[];
 }
 
 function issue(
@@ -118,7 +163,9 @@ function validDate(value: string): boolean {
 }
 
 function validDateTime(value: string): boolean {
-  if (!/T/.test(value) || !/(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return false;
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+  ) return false;
   return !Number.isNaN(Date.parse(value));
 }
 
@@ -163,6 +210,7 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
   if (plan.calendarEvents.length > INTAKE_MAX_CALENDAR_EVENTS) {
     issues.push(issue(["calendarEvents"], "key_invalid", "Too many calendar events."));
   }
+
   if (plan.workItems.length > INTAKE_MAX_WORK_ITEMS) {
     issues.push(issue(["workItems"], "key_invalid", "Too many work items."));
   }
@@ -233,7 +281,18 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
     addIssueForDate(issues, [...path, "scheduledDate"], item.scheduledDate);
     addIssueForDate(issues, [...path, "notBeforeDate"], item.notBeforeDate);
     addIssueForDateTime(issues, [...path, "notBeforeAt"], item.notBeforeAt);
-    addIssueForDateTime(issues, [...path, "reminderAt"], item.reminderAt);
+    for (const [reminderIndex, reminder] of item.reminders.entries()) {
+      const reminderPath = [...path, "reminders", reminderIndex] as (string | number)[];
+      if (reminder.kind === "absolute") {
+        addIssueForDateTime(issues, [...reminderPath, "at"], reminder.at);
+      } else if (item.dueDate === null) {
+        issues.push(issue(
+          reminderPath,
+          "deadline_relative_without_due",
+          "Deadline-relative reminders require a usable deadline.",
+        ));
+      }
+    }
     if ((item.notBeforeAt === null) !== (item.notBeforeDate === null)) {
       issues.push(issue(path, "not_before_pair", "notBeforeDate and notBeforeAt must be set together."));
     } else if (item.notBeforeAt && item.notBeforeDate && validDateTime(item.notBeforeAt) && validDate(item.notBeforeDate)) {
@@ -244,19 +303,19 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
     if (item.scheduledDate && item.dueDate && item.scheduledDate > item.dueDate) {
       issues.push(issue(path, "scheduling_order", "Scheduled date must not be after the due date."));
     }
-    if (item.needsClarification && item.reminderAt !== null) {
-      issues.push(issue([...path, "reminderAt"], "captured_reminder", "Clarifying items cannot have reminders."));
+    if (item.needsClarification && item.reminders.length > 0) {
+      issues.push(issue([...path, "reminders"], "captured_reminder", "Clarifying items cannot have reminders."));
     }
     if (item.kind === "project") {
-      if (item.scheduledDate !== null || item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminderAt !== null || item.needsClarification) {
-        issues.push(issue(path, "project_field_not_allowed", "Projects may only have a due date."));
+      if (item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminders.length > 0 || item.needsClarification) {
+        issues.push(issue(path, "project_field_not_allowed", "Projects may have a scheduled date and due date, but no availability, reminders, or clarification fields."));
       }
       if (item.parentKey !== null && !plan.workItems.some((parent) => parent.key === item.parentKey && parent.kind === "project")) {
         issues.push(issue([...path, "parentKey"], "invalid_parent", "Projects can only be children of projects."));
       }
     } else if (item.kind === "reference") {
-      if (item.ownerName !== null || item.dueDate !== null || item.scheduledDate !== null || item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminderAt !== null || item.needsClarification) {
-        issues.push(issue(path, "reference_field_not_allowed", "References cannot carry scheduling, owner, or clarification fields."));
+      if (item.ownerName !== null || item.dueDate !== null || item.scheduledDate !== null || item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminders.length > 0 || item.needsClarification) {
+        issues.push(issue(path, "reference_field_not_allowed", "References cannot carry ownership, scheduling, reminders, or clarification fields."));
       }
       if (item.parentKey !== null && !plan.workItems.some((parent) => parent.key === item.parentKey && (parent.kind === "project" || parent.kind === "action"))) {
         issues.push(issue([...path, "parentKey"], "invalid_parent", "References may only be children of projects or actions."));
@@ -295,19 +354,190 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
   return issues;
 }
 
+function berlinMidnight(date: string): string | null {
+  if (!validDate(date)) return null;
+  const [year, month, day] = date.split("-").map(Number);
+  let candidate = Date.UTC(year!, month! - 1, day!, 0, 0, 0);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: INTAKE_TIMEZONE,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(candidate));
+    const values = Object.fromEntries(parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, Number(part.value)])) as Record<string, number>;
+    const local = Date.UTC(
+      values.year ?? 0,
+      (values.month ?? 1) - 1,
+      values.day ?? 1,
+      values.hour ?? 0,
+      values.minute ?? 0,
+      values.second ?? 0,
+    );
+    candidate += Date.UTC(year!, month! - 1, day!, 0, 0, 0) - local;
+  }
+  return new Date(candidate).toISOString();
+}
+
+function berlinDateForInstant(value: string): string | null {
+  if (!validDateTime(value)) return null;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: INTAKE_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(value));
+}
+
+function addNormalizationWarning(
+  warnings: IntakeWarning[],
+  message: string,
+): void {
+  if (!warnings.some((warning) => warning.message === message)) {
+    warnings.push({ message });
+  }
+}
+
+/**
+ * Repairs representation-level relationship and availability inconsistencies
+ * without resolving semantic choices that must remain editable in review.
+ */
+export function normalizeIntakePlan(plan: IntakePlan): IntakeNormalizationResult {
+  const warnings = [...plan.warnings];
+  const calendarKeys = new Set(plan.calendarEvents.map((event) => event.key));
+  const workItems = plan.workItems.map((item) => ({ ...item, reminders: [...item.reminders] }));
+  const workKeys = new Set(workItems.map((item) => item.key));
+  const workByKey = new Map(workItems.map((item) => [item.key, item]));
+
+  const calendarEvents = plan.calendarEvents.map((event) => {
+    const relatedWorkKeys: string[] = [];
+    for (const key of event.relatedWorkKeys) {
+      if (!workKeys.has(key)) {
+        addNormalizationWarning(
+          warnings,
+          `Removed dangling related work link from calendar event '${event.key}'.`,
+        );
+      } else if (!relatedWorkKeys.includes(key)) {
+        relatedWorkKeys.push(key);
+      } else {
+        addNormalizationWarning(
+          warnings,
+          `Removed duplicate related work link from calendar event '${event.key}'.`,
+        );
+      }
+    }
+    return { ...event, relatedWorkKeys };
+  });
+
+  for (const item of workItems) {
+    const relatedCalendarKeys: string[] = [];
+    for (const key of item.relatedCalendarKeys) {
+      if (!calendarKeys.has(key)) {
+        addNormalizationWarning(
+          warnings,
+          `Removed dangling related calendar link from work item '${item.key}'.`,
+        );
+      } else if (!relatedCalendarKeys.includes(key)) {
+        relatedCalendarKeys.push(key);
+      } else {
+        addNormalizationWarning(
+          warnings,
+          `Removed duplicate related calendar link from work item '${item.key}'.`,
+        );
+      }
+    }
+    item.relatedCalendarKeys = relatedCalendarKeys;
+
+    if (item.notBeforeDate === null && item.notBeforeAt !== null) {
+      item.notBeforeDate = berlinDateForInstant(item.notBeforeAt);
+      if (item.notBeforeDate !== null) {
+        addNormalizationWarning(
+          warnings,
+          `Derived availability date for work item '${item.key}' from its instant.`,
+        );
+      }
+    } else if (item.notBeforeDate !== null && item.notBeforeAt === null) {
+      item.notBeforeAt = berlinMidnight(item.notBeforeDate);
+      if (item.notBeforeAt !== null) {
+        addNormalizationWarning(
+          warnings,
+          `Derived local-midnight availability for work item '${item.key}'.`,
+        );
+      }
+    }
+
+    if (item.parentKey !== null) {
+      const parent = workByKey.get(item.parentKey);
+      const allowed = parent !== undefined && (
+        item.kind === "project"
+          ? parent.kind === "project"
+          : parent.kind === "action" || parent.kind === "project"
+      );
+      if (!allowed || item.parentKey === item.key) {
+        addNormalizationWarning(
+          warnings,
+          `Moved work item '${item.key}' to the root because its parent was invalid.`,
+        );
+        item.parentKey = null;
+      }
+    }
+  }
+
+  const order = new Map(workItems.map((item, index) => [item.key, index]));
+  let changedCycle = true;
+  while (changedCycle) {
+    changedCycle = false;
+    for (const start of workItems) {
+      const chain: string[] = [];
+      const positions = new Map<string, number>();
+      let current: IntakeWorkItem | undefined = start;
+      while (current?.parentKey) {
+        const position = positions.get(current.key);
+        if (position !== undefined) {
+          const cycle = chain.slice(position);
+          const broken = cycle
+            .map((key) => workByKey.get(key))
+            .filter((item): item is IntakeWorkItem => item !== undefined)
+            .sort((left, right) => (order.get(right.key) ?? 0) - (order.get(left.key) ?? 0))[0];
+          if (broken) {
+            broken.parentKey = null;
+            addNormalizationWarning(
+              warnings,
+              `Moved work item '${broken.key}' to the root to break a parent cycle.`,
+            );
+            changedCycle = true;
+          }
+          break;
+        }
+        positions.set(current.key, chain.length);
+        chain.push(current.key);
+        current = workByKey.get(current.parentKey);
+      }
+    }
+  }
+
+  return {
+    plan: {
+      ...plan,
+      calendarEvents,
+      workItems,
+      warnings: warnings.slice(0, INTAKE_MAX_WARNINGS),
+    },
+    warnings,
+  };
+}
+
 export function intakeDraftIssues(
   draft: IntakeDraft,
   options: { memberIds: readonly number[]; paperlessAvailable: boolean; hasFiles: boolean },
 ): IntakeIssue[] {
-  const plan: IntakePlan = {
-    summary: draft.summary,
-    calendarEvents: draft.calendarEvents,
-    workItems: draft.workItems.map(({ ownerMemberId, ...item }) => ({
-      ...item,
-      ownerName: ownerMemberId === null ? null : String(ownerMemberId),
-    })),
-    warnings: draft.warnings,
-  };
+  const plan = intakeDraftPlan(draft);
   const issues = intakePlanIssues(plan);
   draft.calendarEvents.forEach((event, index) => {
     if (event.enabled && !event.allDay && event.endDateTime === null) {
@@ -330,6 +560,97 @@ export function intakeDraftIssues(
     issues.push(issue(["retainSourceInPaperless"], "paperless_unavailable", "Source retention requires Paperless, files, and an enabled work item."));
   }
   if (draft.calendarEvents.every((event) => !event.enabled) && draft.workItems.every((item) => !item.enabled)) {
+    issues.push(issue([], "nothing_selected", "At least one item or event must be enabled."));
+  }
+  return issues;
+}
+
+function intakeDraftPlan(draft: IntakeDraft): IntakePlan {
+  return {
+    summary: draft.summary,
+    calendarEvents: draft.calendarEvents,
+    workItems: draft.workItems.map(({ ownerMemberId, ...item }) => ({
+      ...item,
+      ownerName: ownerMemberId === null ? null : String(ownerMemberId),
+    })),
+    warnings: draft.warnings,
+  };
+}
+
+function remapSelectedIssuePath(
+  path: readonly (string | number)[],
+  workIndices: readonly number[],
+  calendarIndices: readonly number[],
+): (string | number)[] {
+  if (path.length < 2 || typeof path[1] !== "number") return [...path];
+  if (path[0] === "workItems") {
+    const originalIndex = workIndices[path[1]];
+    return originalIndex === undefined ? [...path] : [path[0], originalIndex, ...path.slice(2)];
+  }
+  if (path[0] === "calendarEvents") {
+    const originalIndex = calendarIndices[path[1]];
+    return originalIndex === undefined ? [...path] : [path[0], originalIndex, ...path.slice(2)];
+  }
+  return [...path];
+}
+
+/**
+ * Validate only the output selected for Apply. Review diagnostics continue to
+ * cover the complete proposal, including disabled cards.
+ */
+export function intakeSelectedDraftIssues(
+  draft: IntakeDraft,
+  options: { memberIds: readonly number[]; paperlessAvailable: boolean; hasFiles: boolean },
+): IntakeIssue[] {
+  const workIndices = draft.workItems
+    .map((item, index) => item.enabled ? index : -1)
+    .filter((index) => index >= 0);
+  const calendarIndices = draft.calendarEvents
+    .map((event, index) => event.enabled ? index : -1)
+    .filter((index) => index >= 0);
+  const enabledWork = workIndices.map((index) => draft.workItems[index]!);
+  const enabledCalendar = calendarIndices.map((index) => draft.calendarEvents[index]!);
+  const enabledWorkKeys = new Set(enabledWork.map((item) => item.key));
+  const enabledCalendarKeys = new Set(enabledCalendar.map((event) => event.key));
+  const selectedDraft: IntakeDraft = {
+    ...draft,
+    workItems: enabledWork.map((item) => ({
+      ...item,
+      parentKey: item.parentKey !== null && enabledWorkKeys.has(item.parentKey) ? item.parentKey : null,
+      relatedCalendarKeys: item.relatedCalendarKeys.filter((key) => enabledCalendarKeys.has(key)),
+    })),
+    calendarEvents: enabledCalendar.map((event) => ({
+      ...event,
+      relatedWorkKeys: event.relatedWorkKeys.filter((key) => enabledWorkKeys.has(key)),
+    })),
+  };
+  const planIssues = intakePlanIssues(intakeDraftPlan(selectedDraft));
+  const issues = planIssues.map((item) => ({
+    ...item,
+    path: remapSelectedIssuePath(item.path, workIndices, calendarIndices),
+  }));
+
+  enabledCalendar.forEach((event, selectedIndex) => {
+    if (!event.allDay && event.endDateTime === null) {
+      issues.push(issue(["calendarEvents", calendarIndices[selectedIndex]!, "endDateTime"], "timed_end_required", "Enabled timed events require an end."));
+    }
+  });
+  enabledWork.forEach((item, selectedIndex) => {
+    const originalIndex = workIndices[selectedIndex]!;
+    if (item.ownerMemberId !== null && !options.memberIds.includes(item.ownerMemberId)) {
+      issues.push(issue(["workItems", originalIndex, "ownerMemberId"], "owner_not_member", "Owner is not a household member."));
+    }
+    if (item.kind === "reference" && item.ownerMemberId !== null) {
+      issues.push(issue(["workItems", originalIndex, "ownerMemberId"], "reference_owner", "References cannot have an owner."));
+    }
+    if (item.parentKey !== null && !enabledWorkKeys.has(item.parentKey)) {
+      issues.push(issue(["workItems", originalIndex, "parentKey"], "parent_disabled", "An enabled item cannot have a disabled parent."));
+    }
+  });
+  if (draft.retainSourceInPaperless && (!options.paperlessAvailable || !options.hasFiles || enabledWork.length === 0)) {
+    issues.push(issue(["retainSourceInPaperless"], "paperless_unavailable", "Source retention requires Paperless, files, and an enabled work item."));
+  }
+  if (enabledCalendar.length === 0 && enabledWork.length === 0) {
     issues.push(issue([], "nothing_selected", "At least one item or event must be enabled."));
   }
   return issues;
@@ -391,6 +712,7 @@ export type IntakeErrorCode =
   | "ai_task_attachments_unsupported"
   | "ai_task_failed"
   | "ai_task_invalid_response"
+  | "intake_plan_invalid"
   | "calendar_not_configured"
   | "calendar_not_writable"
   | "calendar_create_failed"
@@ -408,10 +730,49 @@ export type IntakeErrorCode =
   | "intake_source_retention_failed"
   | "home_assistant_request_lease_lost"
   | "home_assistant_request_exhausted";
+
+export interface IntakeErrorDetails {
+  issues?: IntakeIssue[];
+  path?: (string | number)[];
+  expectedType?: string;
+}
+
 export interface IntakeErrorInfo {
   code: IntakeErrorCode;
   message: string;
   retryable: boolean;
+  details?: IntakeErrorDetails;
+}
+
+export function intakeErrorIssues(error: IntakeErrorInfo | null): IntakeIssue[] {
+  const details = error?.details;
+  if (!details) return [];
+  if (Array.isArray(details.issues)) {
+    return details.issues
+      .slice(0, 50)
+      .filter((item): item is IntakeIssue => (
+        Boolean(item)
+        && Array.isArray(item.path)
+        && isIntakeIssueCode(item.code)
+        && typeof item.message === "string"
+      ))
+      .map((item) => ({
+        path: item.path.filter((segment) => typeof segment === "string" || typeof segment === "number"),
+        code: item.code,
+        message: item.message.slice(0, 500),
+      }));
+  }
+  if (error.code === "ai_task_invalid_response" && Array.isArray(details.path)) {
+    const expected = typeof details.expectedType === "string"
+      ? details.expectedType.slice(0, 200)
+      : "the expected field type";
+    return [{
+      path: details.path.filter((segment) => typeof segment === "string" || typeof segment === "number"),
+      code: "schema_invalid",
+      message: `${error.message.slice(0, 300)} Expected ${expected}.`,
+    }];
+  }
+  return [];
 }
 
 export interface HomeAssistantCalendarEventRef {
@@ -443,7 +804,15 @@ export type HomeAssistantLeasedRequest =
 export type HomeAssistantRequestCompletion =
   | { leaseToken: string; outcome: "succeeded"; result: IntakePlan }
   | { leaseToken: string; outcome: "succeeded"; result: HomeAssistantCalendarEventRef }
-  | { leaseToken: string; outcome: "failed"; error: { code: HomeAssistantRequestErrorCode; message: string } };
+  | {
+      leaseToken: string;
+      outcome: "failed";
+      error: {
+        code: HomeAssistantRequestErrorCode;
+        message: string;
+        details?: IntakeErrorDetails;
+      };
+    };
 
 export interface IntakeCalendarApplyResult {
   key: string;
@@ -470,6 +839,7 @@ export interface IntakeRecord {
   createdAt: string;
   expiresAt: string;
   text: string | null;
+  retryHint: string | null;
   attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }>;
   draft: IntakeDraft | null;
   error: IntakeErrorInfo | null;

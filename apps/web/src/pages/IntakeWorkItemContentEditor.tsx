@@ -162,7 +162,7 @@ export function IntakeWorkItemContentEditor({
                 onChange({
                   ...item,
                   needsClarification: event.target.checked,
-                  reminderAt: event.target.checked ? null : item.reminderAt,
+                  reminders: event.target.checked ? [] : item.reminders,
                 })
               }
             />{" "}

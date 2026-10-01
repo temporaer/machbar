@@ -416,13 +416,28 @@ export const homeAssistantRequestCompletionSchema = z.discriminatedUnion("outcom
     error: z.object({
       code: z.string().min(1),
       message: z.string().min(1),
+      details: z.object({
+        path: z.array(z.union([z.string(), z.number().int().nonnegative()])).optional(),
+        expectedType: z.string().min(1).optional(),
+        issues: z.array(z.object({
+          path: z.array(z.union([z.string(), z.number().int().nonnegative()])),
+          code: z.string().min(1),
+          message: z.string().min(1),
+        }).strict()).max(50).optional(),
+      }).strict().optional(),
     }).strict(),
   }),
 ]);
 
 const intakeKeySchema = z.string().regex(INTAKE_KEY_PATTERN);
 const intakeDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const intakeDateTimeSchema = z.string().datetime({ offset: true });
+const intakeDateTimeSchema = z
+  .string()
+  .regex(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/,
+    "Date-time must include seconds and an explicit timezone offset.",
+  )
+  .refine((value) => !Number.isNaN(Date.parse(value)), "Date-time must be valid.");
 const intakeCalendarEventSchema = z
   .object({
     key: intakeKeySchema,
@@ -449,19 +464,21 @@ const intakeWorkItemSchema = z
     scheduledDate: intakeDateSchema.nullable(),
     notBeforeDate: intakeDateSchema.nullable(),
     notBeforeAt: intakeDateTimeSchema.nullable(),
-    reminderAt: intakeDateTimeSchema.nullable(),
+    reminders: z.array(taskReminderInputSchema),
     needsClarification: z.boolean(),
     relatedCalendarKeys: z.array(intakeKeySchema),
   })
   .strict();
-export const intakePlanSchema = z
+export const intakePlanStructureSchema = z
   .object({
     summary: z.string().max(1000),
     calendarEvents: z.array(intakeCalendarEventSchema).max(20),
     workItems: z.array(intakeWorkItemSchema).max(50),
     warnings: z.array(z.object({ message: z.string().trim().min(1).max(500) }).strict()).max(20),
   })
-  .strict()
+  .strict();
+
+export const intakePlanSchema = intakePlanStructureSchema
   .superRefine((value, ctx) => {
     for (const item of intakePlanIssues(value as IntakePlan)) {
       ctx.addIssue({
@@ -481,7 +498,7 @@ const intakeDraftWorkItemSchema = intakeWorkItemSchema.omit({ ownerName: true })
   enabled: z.boolean(),
   ownerMemberId: z.number().int().positive().nullable(),
 }).strict();
-export const intakeDraftSchema = z
+export const intakeDraftStructureSchema = z
   .object({
     summary: z.string().max(1000),
     calendarEvents: z.array(intakeDraftCalendarEventSchema).max(20),
@@ -489,7 +506,9 @@ export const intakeDraftSchema = z
     warnings: z.array(z.object({ message: z.string().trim().min(1).max(500) }).strict()).max(20),
     retainSourceInPaperless: z.boolean(),
   })
-  .strict()
+  .strict();
+
+export const intakeDraftSchema = intakeDraftStructureSchema
   .superRefine((value, ctx) => {
     const memberIds = value.workItems
       .map((item) => item.ownerMemberId)

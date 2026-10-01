@@ -63,6 +63,16 @@ const base = {
   intakeQueued: "Die Verarbeitung wartet auf Home Assistant.",
   intakeAnalyzing: "Der Inhalt wird analysiert …",
   intakeAnalysisFailed: "Die Analyse ist fehlgeschlagen.",
+  intakeErrorProvider: "Der KI-Dienst konnte keinen gültigen Vorschlag erzeugen.",
+  intakeErrorNormalization: "Die Home-Assistant-Antwort konnte nicht verarbeitet werden.",
+  intakeErrorValidation: "Der erzeugte Vorschlag verletzt Machbar-Regeln.",
+  intakeValidationProblems: "Validierungsprobleme",
+  intakeTechnicalDetails: "Technische Details",
+  intakeRetryHintLabel: "Hinweis für den nächsten Versuch",
+  intakeRetryHintPlaceholder: "Zum Beispiel: „Das ist ein Termin, keine Aufgabe.“",
+  intakeRetryHintHelp: "Optional. Der Hinweis bleibt für weitere Versuche erhalten, bis du ihn änderst oder löschst.",
+  intakeProposalNeedsFixing: "Der Vorschlag enthält noch Probleme und kann erst nach der Korrektur übernommen werden.",
+  intakeProposalReplacementWarning: "Eine neue Analyse ersetzt diesen bearbeiteten Vorschlag.",
   intakeReady: "Vorschlag prüfen",
   intakeApply: "Übernehmen",
   intakeApplyCount: (count: number) =>
@@ -619,6 +629,8 @@ const extra = {
   reminderRemove: "Erinnerung entfernen",
   reminderRowConfirm: "Bestätigen",
   reminderDaysBeforeFieldLabel: "Tage vorher",
+  reminderTimeFieldLabel: "Uhrzeit",
+  reminderDeadlineRelative: "Fristbezogen",
   moreActions: "Weitere Aktionen",
   /**
    * Next Action badge for the project outline (section 7): distinguishes
@@ -1083,6 +1095,7 @@ const extra = {
     intake_file_too_large: "Die Datei ist zu groß.",
     intake_too_many_files: "Zu viele Dateien.",
     intake_draft_invalid: "Der Vorschlag enthält ungültige Angaben.",
+    intake_plan_invalid: "Der erzeugte Vorschlag verletzt Machbar-Regeln.",
     intake_state_conflict: "Der Vorschlag hat sich geändert. Lade ihn neu.",
     intake_source_retention_failed: "Das Original konnte nicht behalten werden.",
     home_assistant_request_lease_lost: "Die Home-Assistant-Anfrage ist abgelaufen.",

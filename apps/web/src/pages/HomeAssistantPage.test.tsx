@@ -30,11 +30,11 @@ describe("HomeAssistantPage", () => {
     getHomeAssistantStatus.mockResolvedValue({
       connected: true,
       instanceId: "ha-1",
-      protocolVersion: 2,
+      protocolVersion: 3,
       connectedAt: "2026-09-03T10:00:00.000Z",
       lastUpdateAt: "2026-09-03T12:00:00.000Z",
       stale: false,
-      supportedProtocolVersion: 2,
+      supportedProtocolVersion: 3,
       protocolOutdated: false,
       lastRequestPollAt: null,
       workerOnline: false,
@@ -82,8 +82,8 @@ describe("HomeAssistantPage", () => {
 
   it("shows AI and calendar readiness states", async () => {
     getHomeAssistantStatus.mockResolvedValueOnce({
-      connected: true, instanceId: "ha", protocolVersion: 2, connectedAt: null,
-      lastUpdateAt: null, stale: false, supportedProtocolVersion: 2,
+      connected: true, instanceId: "ha", protocolVersion: 3, connectedAt: null,
+      lastUpdateAt: null, stale: false, supportedProtocolVersion: 3,
       protocolOutdated: false, lastRequestPollAt: null, workerOnline: true,
       intake: intake(), intakeReady: true, contexts: [], people: [],
     });
@@ -99,8 +99,8 @@ describe("HomeAssistantPage", () => {
 
     first.unmount();
     getHomeAssistantStatus.mockResolvedValueOnce({
-      connected: true, instanceId: "ha", protocolVersion: 2, connectedAt: null,
-      lastUpdateAt: null, stale: false, supportedProtocolVersion: 2,
+      connected: true, instanceId: "ha", protocolVersion: 3, connectedAt: null,
+      lastUpdateAt: null, stale: false, supportedProtocolVersion: 3,
       protocolOutdated: false, lastRequestPollAt: null, workerOnline: false,
       intake: intake("not_configured", "not_writable"), intakeReady: false,
       contexts: [], people: [],
@@ -116,7 +116,7 @@ describe("HomeAssistantPage", () => {
 
     getHomeAssistantStatus.mockResolvedValueOnce({
       connected: true, instanceId: "ha", protocolVersion: 1, connectedAt: null,
-      lastUpdateAt: null, stale: false, supportedProtocolVersion: 2,
+      lastUpdateAt: null, stale: false, supportedProtocolVersion: 3,
       protocolOutdated: true, lastRequestPollAt: null, workerOnline: false,
       intake: intake(), intakeReady: false, contexts: [], people: [],
     });
