@@ -6,6 +6,7 @@ import { localDateForInstant, localDateTimeToIso } from "../lib/localDateTime";
 import { useStrings } from "../lib/strings";
 import { HumanDateInput } from "../components/HumanDateInput";
 import { ClockTimePicker } from "../components/ClockTimePicker";
+import { formatInvalidIntakeValue } from "../lib/intakeDisplay";
 
 export type DateValidityChange = (key: string, valid: boolean) => void;
 
@@ -67,6 +68,10 @@ export function IntakeLocalDateTimeField({
   const [time, setTime] = useState(() =>
     value ? taskAvailabilityClock(value) ?? "" : "",
   );
+  const invalidValue =
+    value && !localDateForInstant(value)
+      ? formatInvalidIntakeValue(value, strings)
+      : null;
 
   useEffect(() => {
     setDate(value ? localDateForInstant(value) ?? "" : "");
@@ -75,11 +80,23 @@ export function IntakeLocalDateTimeField({
 
   const commit = (nextDate: string, nextTime: string) => {
     if (!nextDate || !nextTime) {
-      if (value) onChange(null);
+      onDateValidityChange(fieldKey, false);
       return;
     }
     const nextValue = localDateTimeToIso(nextDate, nextTime);
-    if (nextValue && nextValue !== value) onChange(nextValue);
+    if (!nextValue) {
+      onDateValidityChange(fieldKey, false);
+      return;
+    }
+    onDateValidityChange(fieldKey, true);
+    if (nextValue !== value) onChange(nextValue);
+  };
+
+  const clear = () => {
+    setDate("");
+    setTime("");
+    onDateValidityChange(fieldKey, true);
+    onChange(null);
   };
 
   return (
@@ -104,6 +121,16 @@ export function IntakeLocalDateTimeField({
           commit(date, next);
         }}
       />
+      {(value || date || time) ? (
+        <button type="button" className="btn btn-sm" onClick={clear}>
+          {strings.clearDateTime}
+        </button>
+      ) : null}
+      {invalidValue ? (
+        <small className="field-error" role="alert">
+          {invalidValue}
+        </small>
+      ) : null}
     </>
   );
 }

@@ -1,6 +1,7 @@
 import type { Locale } from "../i18n/catalog";
 import type { Strings } from "./strings";
 import { localeTag } from "./format";
+import { formatInvalidIntakeValue } from "./intakeDisplay";
 import {
   DEADLINE_RELATIVE_REMINDER_PRESET_DEFAULTS,
   type DeadlineRelativeReminderPreset,
@@ -59,6 +60,7 @@ function matchRelativePreset(daysBefore: number): DeadlineRelativeReminderPreset
 
 function shortDateLabel(iso: string, locale: Locale): string {
   const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
   return new Intl.DateTimeFormat(localeTag(locale), { day: "numeric", month: "short" }).format(date);
 }
 
@@ -68,6 +70,9 @@ function sameCalendarDay(a: Date, b: Date): boolean {
 
 function formatAbsoluteReminderLabel(at: string, strings: Strings, locale: Locale, now: Date): string {
   const target = new Date(at);
+  if (Number.isNaN(target.getTime())) {
+    return formatInvalidIntakeValue(at, strings);
+  }
   const hh = String(target.getHours()).padStart(2, "0");
   const mm = String(target.getMinutes()).padStart(2, "0");
   const time = `${hh}:${mm}`;

@@ -263,6 +263,55 @@ describe("intake lifecycle", () => {
     expect(readdirSync(`${ctx.dataDir}/intake/${id}`)).toHaveLength(1);
   });
 
+  it("keeps malformed nonempty dates reviewable with an actionable issue", async () => {
+    const token = await pairAndSnapshot();
+    const id = await createIntake(token);
+    const request = await lease(token);
+    const malformed = {
+      ...validPlan,
+      workItems: [{ ...validPlan.workItems[0], dueDate: "not-a-date" }],
+    };
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${request.id}/complete`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { leaseToken: request.leaseToken, outcome: "succeeded", result: malformed },
+    });
+    expect(response.statusCode, response.body).toBe(204);
+    const record = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
+    expect(record.json().status).toBe("ready");
+    expect(record.json().draft.workItems[0].dueDate).toBe("not-a-date");
+    expect(record.json().error).toBeNull();
+  });
+
+  it("reports the received type for structurally rejected contract fields", async () => {
+    const token = await pairAndSnapshot();
+    const id = await createIntake(token);
+    const request = await lease(token);
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${request.id}/complete`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        leaseToken: request.leaseToken,
+        outcome: "succeeded",
+        result: {
+          ...validPlan,
+          workItems: [{ ...validPlan.workItems[0], dueDate: 42 }],
+        },
+      },
+    });
+    expect(response.statusCode, response.body).toBe(204);
+    const failed = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!;
+    expect(failed.status).toBe("analysis_failed");
+    expect(JSON.parse(failed.errorJson!).details.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: ["workItems", 0, "dueDate"],
+        message: expect.stringContaining("Received number"),
+      }),
+    ]));
+  });
+
   it("becomes reviewable without mutating work before apply", async () => {
     const token = await pairAndSnapshot();
     const id = await createIntake(token);

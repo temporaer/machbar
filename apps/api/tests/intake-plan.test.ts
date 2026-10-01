@@ -7,11 +7,13 @@ import {
   intakeDraftIssues,
   intakePlanIssues,
   intakeSelectedDraftIssues,
+  normalizeIntakeNullableAbsenceFields,
   normalizeIntakePlan,
   type IntakePlan,
 } from "@machbar/shared";
 import {
   intakePlanSchema,
+  intakePlanStructureSchema,
   intakeDraftSchema,
 } from "../src/schemas.js";
 
@@ -152,6 +154,56 @@ describe("intake plan contracts", () => {
         : undefined);
     expect(codes)
       .toContain("captured_reminder");
+  });
+
+  it("normalizes only nullable absence placeholders before strict validation", () => {
+    const raw = readFixture("nullable-placeholders.json");
+    const normalized = normalizeIntakeNullableAbsenceFields(raw);
+    expect(intakePlanSchema.safeParse(normalized).success).toBe(true);
+    const plan = normalized as IntakePlan;
+    expect(plan.workItems[0]).toMatchObject({
+      notes: "null",
+      parentKey: null,
+      ownerName: null,
+      dueDate: null,
+      scheduledDate: null,
+      notBeforeDate: null,
+      notBeforeAt: null,
+    });
+    expect(plan.workItems[1]).toMatchObject({
+      notes: "none",
+      parentKey: null,
+      ownerName: null,
+      dueDate: null,
+      scheduledDate: null,
+      notBeforeDate: null,
+      notBeforeAt: null,
+    });
+  });
+
+  it("keeps malformed nonempty dates reviewable but blocks strict validation", () => {
+    const plan = readFixture("valid-elternabend.json") as IntakePlan;
+    plan.workItems[0]!.dueDate = "tomorrow";
+    const structure = intakePlanStructureSchema.safeParse(plan);
+    expect(structure.success).toBe(true);
+    expect(intakePlanIssues(plan)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: ["workItems", 0, "dueDate"],
+        code: "invalid_date",
+        message: expect.stringContaining('"tomorrow"'),
+      }),
+    ]));
+    const draft = buildDraftFromPlan(plan, []);
+    expect(intakeSelectedDraftIssues(draft, {
+      memberIds: [],
+      paperlessAvailable: true,
+      hasFiles: false,
+    })).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: ["workItems", 0, "dueDate"],
+        code: "invalid_date",
+      }),
+    ]));
   });
 
   it("validates only selected output while retaining original diagnostic paths", () => {

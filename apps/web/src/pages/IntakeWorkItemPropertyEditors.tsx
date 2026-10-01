@@ -351,6 +351,16 @@ export function IntakeReminderEditor({
                 </>
               )}
               <span>{formatReminderLabel(reminder, item.dueDate, strings, locale)}</span>
+              <IntakeIssueText
+                issues={issues}
+                path={[
+                  "workItems",
+                  index,
+                  "reminders",
+                  reminderIndex,
+                  reminder.kind === "absolute" ? "at" : "time",
+                ]}
+              />
               <button
                 type="button"
                 className="btn btn-sm"

@@ -2,7 +2,6 @@ import { z } from "zod";
 import {
   intakeDraftIssues,
   intakePlanIssues,
-  INTAKE_KEY_PATTERN,
   inheritanceModes,
   pushNotificationPreferenceKinds,
   pushLocales,
@@ -419,6 +418,8 @@ export const homeAssistantRequestCompletionSchema = z.discriminatedUnion("outcom
       details: z.object({
         path: z.array(z.union([z.string(), z.number().int().nonnegative()])).optional(),
         expectedType: z.string().min(1).optional(),
+        actualType: z.string().min(1).optional(),
+        valuePreview: z.string().max(120).optional(),
         issues: z.array(z.object({
           path: z.array(z.union([z.string(), z.number().int().nonnegative()])),
           code: z.string().min(1),
@@ -429,44 +430,51 @@ export const homeAssistantRequestCompletionSchema = z.discriminatedUnion("outcom
   }),
 ]);
 
-const intakeKeySchema = z.string().regex(INTAKE_KEY_PATTERN);
-const intakeDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const intakeDateTimeSchema = z
-  .string()
-  .regex(
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/,
-    "Date-time must include seconds and an explicit timezone offset.",
-  )
-  .refine((value) => !Number.isNaN(Date.parse(value)), "Date-time must be valid.");
+const intakeShapeDateSchema = z.string().nullable();
+const intakeShapeDateTimeSchema = z.string().nullable();
+const intakeShapeReminderSchema = z.discriminatedUnion("kind", [
+  z.object({
+    id: z.number().int().positive().optional(),
+    kind: z.literal("absolute"),
+    at: z.string(),
+  }),
+  z.object({
+    id: z.number().int().positive().optional(),
+    kind: z.literal("deadline_relative"),
+    daysBefore: z.number().int().nonnegative(),
+    time: z.string(),
+    timezone: z.string().min(1),
+  }),
+]);
 const intakeCalendarEventSchema = z
   .object({
-    key: intakeKeySchema,
+    key: z.string(),
     title: z.string().trim().min(1).max(200),
     description: z.string().max(4000).nullable(),
     location: z.string().max(300).nullable(),
     allDay: z.boolean(),
-    startDate: intakeDateSchema.nullable(),
-    endDate: intakeDateSchema.nullable(),
-    startDateTime: intakeDateTimeSchema.nullable(),
-    endDateTime: intakeDateTimeSchema.nullable(),
-    relatedWorkKeys: z.array(intakeKeySchema),
+    startDate: intakeShapeDateSchema,
+    endDate: intakeShapeDateSchema,
+    startDateTime: intakeShapeDateTimeSchema,
+    endDateTime: intakeShapeDateTimeSchema,
+    relatedWorkKeys: z.array(z.string()),
   })
   .strict();
 const intakeWorkItemSchema = z
   .object({
-    key: intakeKeySchema,
+    key: z.string(),
     kind: z.enum(["action", "project", "reference"]),
     title: z.string().trim().min(1).max(200),
     notes: z.string().max(8000).nullable(),
-    parentKey: intakeKeySchema.nullable(),
+    parentKey: z.string().nullable(),
     ownerName: z.string().nullable(),
-    dueDate: intakeDateSchema.nullable(),
-    scheduledDate: intakeDateSchema.nullable(),
-    notBeforeDate: intakeDateSchema.nullable(),
-    notBeforeAt: intakeDateTimeSchema.nullable(),
-    reminders: z.array(taskReminderInputSchema),
+    dueDate: intakeShapeDateSchema,
+    scheduledDate: intakeShapeDateSchema,
+    notBeforeDate: intakeShapeDateSchema,
+    notBeforeAt: intakeShapeDateTimeSchema,
+    reminders: z.array(intakeShapeReminderSchema),
     needsClarification: z.boolean(),
-    relatedCalendarKeys: z.array(intakeKeySchema),
+    relatedCalendarKeys: z.array(z.string()),
   })
   .strict();
 export const intakePlanStructureSchema = z

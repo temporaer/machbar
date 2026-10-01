@@ -214,6 +214,7 @@ const extra = {
   newProject: "Neues Projekt",
   back: "Zurück",
   close: "Schließen",
+  clearDateTime: "Datum und Uhrzeit löschen",
   edit: "Bearbeiten",
   delete: "Löschen",
   no: "Nein",

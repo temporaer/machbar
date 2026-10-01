@@ -4,6 +4,7 @@ import { useLocale } from "../lib/locale";
 import { formatExactLocalDate } from "../lib/relativeDate";
 import { taskAvailabilityClock } from "../lib/taskAvailability";
 import { formatReminderLabel } from "../lib/reminderLabels";
+import { formatInvalidIntakeValue } from "../lib/intakeDisplay";
 import { useStrings } from "../lib/strings";
 import { DetailPropertyPill } from "../components/DetailPropertyPill";
 import { MarkdownNotes } from "../components/MarkdownNotes";
@@ -67,12 +68,17 @@ export function IntakeWorkItemCard({
     (issue) =>
       issue.path[0] === "workItems" && issue.path[1] === index,
   );
-  const due = item.dueDate ? formatExactLocalDate(item.dueDate, locale) : null;
+  const due = item.dueDate
+    ? formatExactLocalDate(item.dueDate, locale) ??
+      formatInvalidIntakeValue(item.dueDate, strings)
+    : null;
   const scheduled = item.scheduledDate
-    ? formatExactLocalDate(item.scheduledDate, locale)
+    ? formatExactLocalDate(item.scheduledDate, locale) ??
+      formatInvalidIntakeValue(item.scheduledDate, strings)
     : null;
   const notBefore = item.notBeforeDate
-    ? formatExactLocalDate(item.notBeforeDate, locale)
+    ? formatExactLocalDate(item.notBeforeDate, locale) ??
+      formatInvalidIntakeValue(item.notBeforeDate, strings)
     : null;
   const reminders = item.reminders.map((reminder) =>
     formatReminderLabel(reminder, item.dueDate, strings, locale));
@@ -115,7 +121,7 @@ export function IntakeWorkItemCard({
               <MemberLabel member={owner} />
             </DetailPropertyPill>
           ) : null}
-          {item.kind !== "reference" && due ? (
+          {item.kind !== "reference" && item.dueDate !== null ? (
             <DetailPropertyPill
               label={strings.due}
               ariaLabel={`${strings.due}: ${due}`}
@@ -124,7 +130,7 @@ export function IntakeWorkItemCard({
               {due}
             </DetailPropertyPill>
           ) : null}
-          {item.kind !== "reference" && scheduled ? (
+          {item.kind !== "reference" && item.scheduledDate !== null ? (
             <DetailPropertyPill
               label={strings.scheduled}
               ariaLabel={`${strings.scheduled}: ${scheduled}`}
@@ -133,7 +139,7 @@ export function IntakeWorkItemCard({
               {scheduled}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && notBefore ? (
+          {item.kind === "action" && item.notBeforeDate !== null ? (
             <DetailPropertyPill
               label={strings.notBefore}
               ariaLabel={`${strings.notBefore}: ${notBefore}`}
@@ -188,7 +194,7 @@ export function IntakeWorkItemCard({
               + {strings.owner}
             </DetailPropertyPill>
           ) : null}
-          {item.kind !== "reference" && !item.dueDate ? (
+          {item.kind !== "reference" && item.dueDate === null ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.due}`}
@@ -197,7 +203,7 @@ export function IntakeWorkItemCard({
               + {strings.due}
             </DetailPropertyPill>
           ) : null}
-          {item.kind !== "reference" && !item.scheduledDate ? (
+          {item.kind !== "reference" && item.scheduledDate === null ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.scheduled}`}
@@ -206,7 +212,7 @@ export function IntakeWorkItemCard({
               + {strings.scheduled}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && !item.notBeforeDate ? (
+          {item.kind === "action" && item.notBeforeDate === null ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.notBefore}`}

@@ -234,6 +234,7 @@ const en = {
   newProject: "New project",
   back: "Back",
   close: "Close",
+  clearDateTime: "Clear date and time",
   edit: "Edit",
   delete: "Delete",
   no: "No",

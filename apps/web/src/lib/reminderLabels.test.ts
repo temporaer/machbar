@@ -92,6 +92,18 @@ describe("reminderLabels", () => {
       expect(label).toMatch(/Sept?\.?/);
     });
 
+    it("does not throw for a malformed absolute reminder timestamp", () => {
+      expect(
+        formatReminderLabel(
+          { kind: "absolute", at: "not-a-date" },
+          null,
+          de,
+          "de",
+          now,
+        ),
+      ).toBe("Datum nicht erkannt: not-a-date");
+    });
+
     it("labels a reminder due in under an hour with live minute granularity, not a frozen hour rounding", () => {
       // Regression: an "In 1 Stunde" preset reminder must count down through
       // minutes as it approaches, instead of staying "In 1 Stunde" for the

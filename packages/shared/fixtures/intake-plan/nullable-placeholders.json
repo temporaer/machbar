@@ -1,0 +1,37 @@
+{
+  "summary": "Placeholder values",
+  "calendarEvents": [],
+  "workItems": [
+    {
+      "key": "action-one",
+      "kind": "action",
+      "title": "Action one",
+      "notes": "null",
+      "parentKey": " ",
+      "ownerName": "null",
+      "dueDate": "",
+      "scheduledDate": "None",
+      "notBeforeDate": "NULL",
+      "notBeforeAt": "\t",
+      "reminders": [],
+      "needsClarification": false,
+      "relatedCalendarKeys": []
+    },
+    {
+      "key": "reference-two",
+      "kind": "reference",
+      "title": "Reference two",
+      "notes": "none",
+      "parentKey": "None",
+      "ownerName": " NONE ",
+      "dueDate": "null",
+      "scheduledDate": "  ",
+      "notBeforeDate": "",
+      "notBeforeAt": "NULL",
+      "reminders": [],
+      "needsClarification": false,
+      "relatedCalendarKeys": []
+    }
+  ],
+  "warnings": []
+}
