@@ -261,6 +261,138 @@ describe("IntakeReviewPage", () => {
     closeEditor(editor);
   });
 
+  it.each(["date-first", "time-first"] as const)(
+    "keeps a malformed reminder mounted while correcting it %s",
+    async (order) => {
+      mockedApi.getIntake.mockResolvedValue({
+        ...record(),
+        draft: {
+          ...draft,
+          workItems: [{
+            ...draft.workItems[0]!,
+            reminders: [{ kind: "absolute", at: "not-a-date" }],
+          }, draft.workItems[1]!],
+        },
+      } as never);
+      renderPage();
+
+      const editor = await openWorkPropertyEditor(
+        "Rückmeldezettel abgeben",
+        "Erinnerung: Datum nicht erkannt: not-a-date",
+      );
+      const date = editor.getByRole("textbox", { name: "Erinnerung" });
+      const time = editor.getByLabelText("Uhrzeit");
+
+      if (order === "date-first") {
+        fireEvent.change(date, { target: { value: "10.10.2026" } });
+        fireEvent.blur(date);
+        expect(date).toHaveValue("10.10.2026");
+      } else {
+        fireEvent.change(time, { target: { value: "08:30" } });
+        expect(time).toHaveValue("08:30");
+      }
+      expect(applyButton()).toBeDisabled();
+
+      if (order === "date-first") {
+        fireEvent.change(time, { target: { value: "08:30" } });
+      } else {
+        fireEvent.change(date, { target: { value: "10.10.2026" } });
+        fireEvent.blur(date);
+      }
+
+      expect(editor.getByRole("textbox", { name: "Erinnerung" })).toBe(date);
+      expect(time).toHaveValue("08:30");
+      expect(applyButton()).toBeEnabled();
+      closeEditor(editor);
+      fireEvent.click(applyButton());
+      await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+      expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0]?.reminders).toHaveLength(1);
+      expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0]?.reminders[0]).toMatchObject({
+        kind: "absolute",
+      });
+    },
+  );
+
+  it.each(["date-first", "time-first"] as const)(
+    "keeps a malformed calendar timestamp mounted while correcting it %s",
+    async (order) => {
+      mockedApi.getIntake.mockResolvedValue({
+        ...record(),
+        draft: {
+          ...draft,
+          calendarEvents: [{
+            ...draft.calendarEvents[0]!,
+            endDateTime: "not-a-date",
+          }],
+        },
+      } as never);
+      renderPage();
+
+      const editor = await openEditor("Elternabend");
+      const date = editor.getByRole("textbox", { name: "Ende" });
+      const times = editor.getAllByLabelText("Uhrzeit");
+      const time = times[1]!;
+
+      if (order === "date-first") {
+        fireEvent.change(date, { target: { value: "08.10.2026" } });
+        fireEvent.blur(date);
+        expect(date).toHaveValue("08.10.2026");
+      } else {
+        fireEvent.change(time, { target: { value: "20:30" } });
+        expect(time).toHaveValue("20:30");
+      }
+      expect(applyButton()).toBeDisabled();
+
+      if (order === "date-first") {
+        fireEvent.change(time, { target: { value: "20:30" } });
+      } else {
+        fireEvent.change(date, { target: { value: "08.10.2026" } });
+        fireEvent.blur(date);
+      }
+
+      expect(editor.getByRole("textbox", { name: "Ende" })).toBe(date);
+      expect(time).toHaveValue("20:30");
+      expect(applyButton()).toBeEnabled();
+      closeEditor(editor);
+      fireEvent.click(applyButton());
+      await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+      expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.calendarEvents[0]?.endDateTime).toBeTruthy();
+      expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.calendarEvents[0]?.endDateTime).not.toBe("not-a-date");
+    },
+  );
+
+  it("clears a malformed reminder explicitly without clearing it on partial input", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: {
+        ...draft,
+        workItems: [{
+          ...draft.workItems[0]!,
+          reminders: [{ kind: "absolute", at: "not-a-date" }],
+        }, draft.workItems[1]!],
+      },
+    } as never);
+    renderPage();
+
+    const editor = await openWorkPropertyEditor(
+      "Rückmeldezettel abgeben",
+      "Erinnerung: Datum nicht erkannt: not-a-date",
+    );
+    fireEvent.change(editor.getByRole("textbox", { name: "Erinnerung" }), {
+      target: { value: "10.10.2026" },
+    });
+    fireEvent.blur(editor.getByRole("textbox", { name: "Erinnerung" }));
+    expect(editor.getByRole("button", { name: "Erinnerung entfernen" })).toBeInTheDocument();
+    expect(applyButton()).toBeDisabled();
+
+    fireEvent.click(editor.getByRole("button", { name: "Datum und Uhrzeit löschen" }));
+    expect(applyButton()).toBeEnabled();
+    closeEditor(editor);
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0]?.reminders).toEqual([]);
+  });
+
   it.each([
     ["Fällig", "dueDate"],
     ["Geplant für", "scheduledDate"],

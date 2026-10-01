@@ -80,11 +80,23 @@ export function IntakeLocalDateTimeField({
 
   const commit = (nextDate: string, nextTime: string) => {
     if (!nextDate || !nextTime) {
-      if (value) onChange(null);
+      onDateValidityChange(fieldKey, false);
       return;
     }
     const nextValue = localDateTimeToIso(nextDate, nextTime);
-    if (nextValue && nextValue !== value) onChange(nextValue);
+    if (!nextValue) {
+      onDateValidityChange(fieldKey, false);
+      return;
+    }
+    onDateValidityChange(fieldKey, true);
+    if (nextValue !== value) onChange(nextValue);
+  };
+
+  const clear = () => {
+    setDate("");
+    setTime("");
+    onDateValidityChange(fieldKey, true);
+    onChange(null);
   };
 
   return (
@@ -109,6 +121,11 @@ export function IntakeLocalDateTimeField({
           commit(date, next);
         }}
       />
+      {(value || date || time) ? (
+        <button type="button" className="btn btn-sm" onClick={clear}>
+          {strings.clearDateTime}
+        </button>
+      ) : null}
       {invalidValue ? (
         <small className="field-error" role="alert">
           {invalidValue}
