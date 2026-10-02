@@ -918,6 +918,18 @@ function omission(
   omissions.push({ path, code, originalValue });
 }
 
+function isAbsentOwnerSuggestion(value: string | null): boolean {
+  if (value === null) return true;
+  const trimmed = value.trim();
+  const normalized = trimmed.toLocaleLowerCase();
+  return (
+    trimmed.length === 0 ||
+    normalized === "null" ||
+    normalized === "none" ||
+    !/[\p{L}\p{N}]/u.test(trimmed)
+  );
+}
+
 function availabilityOmissionCode(
   notBeforeDate: string | null,
   notBeforeAt: string | null,
@@ -1106,11 +1118,12 @@ export function buildDraftFromPlan(
     return { ...event, endDateTime, enabled: true, durationAssumed };
   });
   const workItems = plan.workItems.map((item) => {
-    const owner = item.ownerName?.trim().toLocaleLowerCase();
-    const member = owner
-      ? members.find((candidate) => candidate.name.trim().toLocaleLowerCase() === owner)
+    const proposedOwner = item.ownerName?.trim() ?? "";
+    const normalizedOwner = proposedOwner.toLocaleLowerCase();
+    const member = normalizedOwner
+      ? members.find((candidate) => candidate.name.trim().toLocaleLowerCase() === normalizedOwner)
       : undefined;
-    if (item.ownerName !== null && !member) {
+    if (item.ownerName !== null && !member && !isAbsentOwnerSuggestion(item.ownerName)) {
       warnings.push({ message: `Owner '${item.ownerName}' is not a household member` });
     }
     const { ownerName: _ownerName, ...withoutOwnerName } = item;

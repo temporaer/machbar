@@ -68,6 +68,8 @@ const base = {
   intakeErrorValidation: "Der erzeugte Vorschlag verletzt Machbar-Regeln.",
   intakeValidationProblems: "Validierungsprobleme",
   intakeTechnicalDetails: "Technische Details",
+  intakeOpenDiagnostics: "Diagnosedaten öffnen",
+  intakeOpenDiagnosticsHelp: "Öffnet das Sitzungs-JSON mit gespeicherten Fehlerdetails.",
   intakeRetryHintLabel: "Hinweis für den nächsten Versuch",
   intakeRetryHintPlaceholder: "Zum Beispiel: „Das ist ein Termin, keine Aufgabe.“",
   intakeRetryHintHelp: "Optional. Der Hinweis bleibt für weitere Versuche erhalten, bis du ihn änderst oder löschst.",

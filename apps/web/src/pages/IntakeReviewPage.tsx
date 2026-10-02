@@ -11,7 +11,7 @@ import {
   type IntakeRecord,
 } from "@machbar/shared";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, apiUrl } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
 import { useStrings } from "../lib/strings";
@@ -22,6 +22,7 @@ import {
   isStaleWriteConflict,
 } from "../lib/errorMessage";
 import { LoadingState } from "../components/AsyncStates";
+import { IntakeDiagnosticLink } from "../components/IntakeDiagnosticLink";
 import { IntakeProposalReview } from "./IntakeProposalReview";
 import { type DateValidityChange } from "./IntakeReviewFields";
 
@@ -378,6 +379,7 @@ export function IntakeReviewPage() {
     return <section className="card stack" role="alert"><h1>{strings.intakeExpired}</h1><p>{state.error}</p><Link className="btn" to="/today">{strings.toMachbar}</Link></section>;
   }
   if (!record) return null;
+  const diagnosticHref = apiUrl(`/intake/${encodeURIComponent(id)}`);
 
   const updateDraft = (next: IntakeDraft) => {
     if (applyingRef.current) return;
@@ -581,6 +583,7 @@ export function IntakeReviewPage() {
             }, null, 2)}</pre>
           </details>
         ) : null}
+        <IntakeDiagnosticLink href={diagnosticHref} />
         <p>{record.error?.message ?? strings.intakeAnalysisFailed}</p>
         {saveError ? <p role="alert">{saveError}</p> : null}
         <button className="btn btn-primary" disabled={busy} onClick={() => void retry()}>{strings.intakeRetry}</button>
@@ -591,13 +594,22 @@ export function IntakeReviewPage() {
   if (record.status === "analyzing") return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeAnalyzing}</p></section>;
   if (record.status === "applying") return <section className="card stack"><h1>{strings.intakeApply}</h1><p>{strings.intakeApplying}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
   if (record.status === "applied" || record.status === "partially_applied") {
+    const failedCalendarResults = record.applyResults?.calendar.filter((result) => result.status === "failed") ?? [];
+    const hasPartialError = record.status === "partially_applied" && (
+      Boolean(record.error) || failedCalendarResults.length > 0 || Boolean(applyError)
+    );
     return <section className="card stack"><h1>{record.status === "applied" ? strings.intakeApplied : strings.intakePartiallyApplied}</h1>
-      {record.status === "partially_applied" && record.error ? <p role="alert">{record.error.message}</p> : null}
-      {record.status === "partially_applied" ? record.applyResults?.calendar.filter((result) => result.status === "failed").map((result) => (
-        <p key={result.key} role="alert">{record.draft?.calendarEvents.find((event) => event.key === result.key)?.title ?? result.key}: {result.error?.message ?? strings.error}</p>
-      )) : null}
+      {hasPartialError ? (
+        <div className="stack intake-error-group">
+          {record.error ? <p role="alert">{record.error.message}</p> : null}
+          {failedCalendarResults.map((result) => (
+            <p key={result.key} role="alert">{record.draft?.calendarEvents.find((event) => event.key === result.key)?.title ?? result.key}: {result.error?.message ?? strings.error}</p>
+          ))}
+          {applyError ? <p role="alert">{applyError}</p> : null}
+          <IntakeDiagnosticLink href={diagnosticHref} />
+        </div>
+      ) : null}
       {record.applyResults?.work.map((item) => <Link key={item.key} to={item.role === "story" ? `/projects/${item.workItemId}` : `/tasks/${item.workItemId}`}>{record.draft?.workItems.find((work) => work.key === item.key)?.title ?? item.key}</Link>)}
-      {record.status === "partially_applied" && applyError ? <p role="alert">{applyError}</p> : null}
       {record.status === "partially_applied" ? <button className="btn btn-primary" disabled={busy} onClick={() => void retryApply()}>{strings.intakeRetryApply}</button> : null}
       <Link className="btn" to="/today">{strings.toMachbar}</Link>
     </section>;
@@ -616,10 +628,21 @@ export function IntakeReviewPage() {
           onDateValidityChange={onDateValidityChange}
           onChange={updateDraft}
           onReminderChange={updateReminderDraft}
+          diagnosticHref={diagnosticHref}
         />
       </fieldset>
-      {applyError ? <p role="alert">{applyError}</p> : null}
-      {saveError ? <p role="alert">{saveError}</p> : null}
+      {applyError ? (
+        <div className="stack intake-error-group">
+          <p role="alert">{applyError}</p>
+          <IntakeDiagnosticLink href={diagnosticHref} />
+        </div>
+      ) : null}
+      {saveError ? (
+        <div className="stack intake-error-group">
+          <p role="alert">{saveError}</p>
+          <IntakeDiagnosticLink href={diagnosticHref} />
+        </div>
+      ) : null}
       {issues.length > 0 ? (
         <section className="card stack" role="alert">
           <p>{strings.intakeProposalNeedsFixing}</p>
@@ -641,55 +664,59 @@ export function IntakeReviewPage() {
           <button type="button" className="btn" disabled={busy} onClick={() => void retry()}>
             {strings.intakeRetry}
           </button>
+          <IntakeDiagnosticLink href={diagnosticHref} />
         </section>
       ) : null}
+      {canAcceptIncomplete ? (
+        <div className="intake-approval-summary stack">
+          {omissionSummaries.length > 0 ? (
+            <>
+              <strong>{strings.intakeOmissions}</strong>
+              <ul>
+                {omissionSummaries.map((summary, index) => <li key={`${summary}-${index}`}>{summary}</li>)}
+              </ul>
+            </>
+          ) : null}
+          {normalizedSecondsCount > 0 ? (
+            <small>{strings.intakeTimestampSecondsAdded(normalizedSecondsCount)}</small>
+          ) : null}
+          {inferredTimezones.map((inferredTimezone) => (
+            <small key={inferredTimezone}>
+              {strings.intakeTimestampTimezoneAdded(inferredTimezone)}
+            </small>
+          ))}
+        </div>
+      ) : null}
       <div className="intake-approval-bar">
-        <button
-          type="button"
-          className="btn btn-primary intake-approval-button"
-          disabled={busy || selectedIssues.length > 0 || hasInvalidInputs}
-          onClick={() => void applyInitial(false)}
-        >
-          {strings.intakeApplyCount(enabledProposalCount)}
-        </button>
-        {canAcceptIncomplete ? (
-          <div className="stack">
-            <div>
-              {omissionSummaries.length > 0 ? (
-                <>
-                  <strong>{strings.intakeOmissions}</strong>
-                  <ul>
-                    {omissionSummaries.map((summary, index) => <li key={`${summary}-${index}`}>{summary}</li>)}
-                  </ul>
-                </>
-              ) : null}
-              {normalizedSecondsCount > 0 ? (
-                <small>{strings.intakeTimestampSecondsAdded(normalizedSecondsCount)}</small>
-              ) : null}
-              {inferredTimezones.map((inferredTimezone) => (
-                <small key={inferredTimezone}>
-                  {strings.intakeTimestampTimezoneAdded(inferredTimezone)}
-                </small>
-              ))}
-            </div>
+        <div className="intake-approval-actions">
+          {canAcceptIncomplete ? (
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn-primary intake-approval-button"
               disabled={busy || hasInvalidInputs}
               onClick={() => void applyInitial(true)}
             >
               {strings.intakeAcceptIncomplete}
             </button>
-          </div>
-        ) : null}
-        <button
-          type="button"
-          className="btn intake-discard-button"
-          disabled={busy}
-          onClick={() => void discard()}
-        >
-          {strings.intakeDiscard}
-        </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-primary intake-approval-button"
+              disabled={busy || selectedIssues.length > 0 || hasInvalidInputs}
+              onClick={() => void applyInitial(false)}
+            >
+              {strings.intakeApplyCount(enabledProposalCount)}
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn intake-discard-button"
+            disabled={busy}
+            onClick={() => void discard()}
+          >
+            {strings.intakeDiscard}
+          </button>
+        </div>
       </div>
     </section>
   );

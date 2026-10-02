@@ -90,6 +90,8 @@ const en = {
   intakeErrorValidation: "The generated proposal violates Machbar rules.",
   intakeValidationProblems: "Validation problems",
   intakeTechnicalDetails: "Technical details",
+  intakeOpenDiagnostics: "Open diagnostic data",
+  intakeOpenDiagnosticsHelp: "Opens the session JSON with stored error details.",
   intakeRetryHintLabel: "Hint for the next attempt",
   intakeRetryHintPlaceholder: "For example: “This is an event, not a task.”",
   intakeRetryHintHelp: "Optional. The hint is kept for later attempts until you change or clear it.",

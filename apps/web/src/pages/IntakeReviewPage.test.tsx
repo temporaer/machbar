@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Routes, Route } from "react-router-dom";
 import type { IntakeDraft } from "@machbar/shared";
@@ -9,6 +9,7 @@ import { api } from "../lib/api";
 const mockedApi = vi.mocked(api, true);
 
 vi.mock("../lib/api", () => ({
+  apiUrl: (path: string) => `/api${path}`,
   api: {
     getIntake: vi.fn(),
     updateIntakeDraft: vi.fn(),
@@ -125,6 +126,10 @@ function applyButton() {
   return screen.getByRole("button", { name: /^\d+ (?:Element|Elemente|Vorschläge) übernehmen$/i });
 }
 
+function diagnosticLinks() {
+  return screen.getAllByRole("link", { name: "Diagnosedaten öffnen" });
+}
+
 function authoredSection(editor: ReturnType<typeof within>, label: string) {
   const match = editor
     .getAllByText(label, { exact: true })
@@ -187,6 +192,11 @@ describe("IntakeReviewPage", () => {
     expect(screen.queryByDisplayValue("Schulfest")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "3 Elemente übernehmen" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "3 Elemente übernehmen" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Verwerfen" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Unvollständig übernehmen" })).not.toBeInTheDocument();
+    expect(document.querySelector(".intake-approval-actions")?.children).toHaveLength(2);
+    expect(document.querySelector(".intake-approval-bar")?.children).toHaveLength(1);
   });
 
   it("accepts inferred local timestamps through the explicit incomplete flow", async () => {
@@ -203,6 +213,16 @@ describe("IntakeReviewPage", () => {
     } as never);
     renderPage();
     expect(await screen.findByText(/Zeitzone .* ergänzt\./)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "3 Elemente übernehmen" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Unvollständig übernehmen" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Verwerfen" })).toHaveLength(1);
+    expect(screen.getByText(/Zeitzone .* ergänzt\./).closest(".intake-approval-summary")).not.toBeNull();
+    expect(screen.getByText(/Zeitzone .* ergänzt\./).closest(".intake-approval-summary")?.nextElementSibling)
+      .toHaveClass("intake-approval-bar");
+    expect(document.querySelector(".intake-approval-actions")?.children).toHaveLength(2);
+    expect(document.querySelector(".intake-approval-bar")?.contains(
+      screen.getByText(/Zeitzone .* ergänzt\./).closest(".intake-approval-summary"),
+    )).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Unvollständig übernehmen" }));
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
     expect(mockedApi.applyIntake.mock.calls[0]?.[1]).toMatchObject({
@@ -279,6 +299,8 @@ describe("IntakeReviewPage", () => {
     expect(card).toHaveTextContent("Datum nicht erkannt: not-a-date");
     expect(within(card).getByRole("checkbox", { name: "In Vorschlag übernehmen: Elternabend" })).toBeChecked();
     expect(applyButton()).toBeDisabled();
+    expect(diagnosticLinks().every((link) => link.getAttribute("href") === "/api/intake/i1")).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Verwerfen" })).toHaveLength(1);
 
     fireEvent.click(within(card).getByRole("checkbox", { name: "In Vorschlag übernehmen: Elternabend" }));
     expect(applyButton()).toBeEnabled();
@@ -343,7 +365,11 @@ describe("IntakeReviewPage", () => {
         fireEvent.change(time, { target: { value: "08:30" } });
         expect(time).toHaveValue("08:30");
       }
-      expect(applyButton()).toBeDisabled();
+      if (order === "date-first") {
+        expect(screen.getByRole("button", { name: "Unvollständig übernehmen" })).toBeEnabled();
+      } else {
+        expect(applyButton()).toBeDisabled();
+      }
 
       if (order === "date-first") {
         fireEvent.change(time, { target: { value: "08:30" } });
@@ -435,7 +461,7 @@ describe("IntakeReviewPage", () => {
     });
     fireEvent.blur(editor.getByRole("textbox", { name: "Erinnerung" }));
     expect(editor.getByRole("button", { name: "Erinnerung entfernen" })).toBeInTheDocument();
-    expect(applyButton()).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Unvollständig übernehmen" })).toBeEnabled();
 
     fireEvent.click(editor.getByRole("button", { name: "Datum und Uhrzeit löschen" }));
     expect(applyButton()).toBeEnabled();
@@ -1088,6 +1114,7 @@ describe("IntakeReviewPage", () => {
     await changeTitle(editor, "First edit");
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
     expect(screen.getByRole("alert")).toHaveTextContent("Save unavailable");
+    expect(diagnosticLinks().every((link) => link.getAttribute("href") === "/api/intake/i1")).toBe(true);
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
     await changeTitle(editor, "Second edit");
@@ -1112,6 +1139,7 @@ describe("IntakeReviewPage", () => {
     await screen.findByRole("heading", { name: "Elternabend" });
     fireEvent.click(applyButton());
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(diagnosticLinks().every((link) => link.getAttribute("href") === "/api/intake/i1")).toBe(true);
     expect(screen.getByRole("heading", { name: "Elternabend" })).toBeInTheDocument();
     fireEvent.click(applyButton());
     await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(2));
@@ -1204,6 +1232,10 @@ describe("IntakeReviewPage", () => {
     }) as never);
     renderPage();
     expect(await screen.findByText("Analyse fehlgeschlagen")).toBeInTheDocument();
+    const diagnostics = screen.getByRole("link", { name: "Diagnosedaten öffnen" });
+    expect(diagnostics).toHaveAttribute("href", "/api/intake/i1");
+    expect(diagnostics).toHaveAttribute("target", "_blank");
+    expect(diagnostics).toHaveAttribute("rel", "noopener noreferrer");
     fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
     await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1", undefined));
   });
@@ -1566,6 +1598,7 @@ describe("IntakeReviewPage", () => {
     expect(screen.getByRole("link", { name: "Rückmeldezettel abgeben" })).toHaveAttribute("href", "/tasks/27");
     expect(screen.getByText("Previous Apply was interrupted and can be retried.")).toHaveAttribute("role", "alert");
     expect(screen.getByText("Elternabend: Calendar creation failed")).toHaveAttribute("role", "alert");
+    expect(diagnosticLinks().every((link) => link.getAttribute("href") === "/api/intake/i1")).toBe(true);
     expect(screen.queryByText("pending-event")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(mockedApi.updateIntakeDraft).not.toHaveBeenCalled();
@@ -1581,6 +1614,25 @@ describe("IntakeReviewPage", () => {
     renderPage();
     expect(await screen.findByRole("heading", { name: "Verarbeitung übernommen" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Zu Machbar" })).toHaveAttribute("href", "/today");
+  });
+
+  it("shows diagnostics for warning-only proposals but not warning-free proposals", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: { ...draft, warnings: [{ message: "Owner 'Robin' is not a household member" }] },
+    } as never);
+    renderPage();
+    expect(await screen.findByText("Owner 'Robin' is not a household member")).toBeInTheDocument();
+    expect(diagnosticLinks().every((link) => link.getAttribute("href") === "/api/intake/i1")).toBe(true);
+
+    cleanup();
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: { ...draft, warnings: [] },
+    } as never);
+    renderPage();
+    await screen.findByRole("heading", { name: "Elternabend" });
+    expect(screen.queryByRole("link", { name: "Diagnosedaten öffnen" })).not.toBeInTheDocument();
   });
 
   it("retries a partial result exactly once without requiring a valid draft or PATCH", async () => {
