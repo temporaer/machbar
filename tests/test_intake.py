@@ -80,6 +80,77 @@ def test_normalize_plan_drops_unknown_keys():
     assert plan == {"summary": "hello", "calendarEvents": [], "workItems": [], "warnings": []}
 
 
+@pytest.mark.parametrize("field", ["calendarEvents", "workItems", "warnings"])
+def test_normalize_plan_defaults_omitted_collections(field):
+    normalized = normalize_plan({"summary": "Plan"})
+
+    assert normalized[field] == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("calendarEvents", None),
+        ("calendarEvents", {}),
+        ("calendarEvents", "not-an-array"),
+        ("workItems", None),
+        ("workItems", {}),
+        ("workItems", "not-an-array"),
+        ("warnings", None),
+        ("warnings", {}),
+        ("warnings", "not-an-array"),
+    ],
+)
+def test_normalize_plan_preserves_wrong_type_collections_as_diagnostics(field, value):
+    with pytest.raises(AdapterError) as err:
+        normalize_plan({"summary": "Plan", field: value})
+
+    assert err.value.details["path"] == [field]
+
+
+def test_normalize_plan_handles_flower_watering_compact_input():
+    normalized = normalize_plan(
+        {
+            "summary": "Blumenpflege",
+            "workItems": [{
+                "key": "water-flowers",
+                "kind": "action",
+                "title": "Blumen gießen",
+                "notes": ".",
+                "parentKey": ".",
+                "ownerName": ".",
+                "dueDate": ".",
+                "scheduledDate": "2026-10-03",
+                "notBeforeDate": ".",
+                "notBeforeAt": ".",
+                "reminders": [{
+                    "kind": "absolute",
+                    "at": "2026-10-03T08:00:00+02:00",
+                }],
+            }],
+        }
+    )
+
+    assert normalized["workItems"] == [{
+        "key": "water-flowers",
+        "kind": "action",
+        "title": "Blumen gießen",
+        "notes": ".",
+        "parentKey": None,
+        "ownerName": None,
+        "dueDate": None,
+        "scheduledDate": "2026-10-03",
+        "notBeforeDate": None,
+        "notBeforeAt": None,
+        "reminders": [{
+            "kind": "absolute",
+            "at": "2026-10-03T08:00:00+02:00",
+        }],
+        "needsClarification": False,
+        "relatedCalendarKeys": [],
+    }]
+
+
 def test_normalize_plan_clears_datetimes_for_all_day_events():
     plan = _valid_plan()
     event = plan["calendarEvents"][0]

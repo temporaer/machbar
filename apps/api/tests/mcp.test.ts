@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
 import { createMachbarMcpServer } from "../src/mcp/tools.js";
@@ -19,8 +20,185 @@ describe("MCP integration", () => {
     ctx = createTestContext();
   });
 
+  it("uses the requested timezone for local reminders and availability", async () => {
+    const member = await createMember();
+    const { client, server } = await connectMcp(member.id);
+
+    const reminder = await client.callTool({
+      name: "machbar_manage_reminder",
+      arguments: {
+        taskId: insertTestTask(ctx.handle.db, {
+          title: "New York reminder",
+          ownerMemberId: member.id,
+          ownerInheritanceMode: "explicit",
+        }).id,
+        expectedRevision: 1,
+        operation: "add",
+        at: "2026-10-09T08:00",
+        timezone: "America/New_York",
+      },
+    });
+    expect(reminder.structuredContent).toEqual({
+      result: expect.objectContaining({
+        reminders: [expect.objectContaining({
+          kind: "absolute",
+          at: "2026-10-09T12:00:00.000Z",
+        })],
+      }),
+    });
+
+    const created = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "New York availability",
+        activateIfReady: true,
+        notBeforeDate: "2026-10-09",
+        timezone: "America/New_York",
+      },
+    });
+    expect(created.structuredContent).toEqual({
+      result: expect.objectContaining({
+        notBeforeAt: "2026-10-09T04:00:00.000Z",
+        notBeforeDate: "2026-10-09",
+      }),
+    });
+
+    const invalid = await client.callTool({
+      name: "machbar_manage_reminder",
+      arguments: {
+        taskId: (
+          reminder.structuredContent as { result: { id: number; revision: number } }
+        ).result.id,
+        expectedRevision: (
+          reminder.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        operation: "add",
+        at: "2026-10-09T08:00",
+        timezone: "Not/A_Timezone",
+      },
+    });
+    expect(invalid.isError).toBe(true);
+
+    await client.close();
+    await server.close();
+  });
+
   afterEach(async () => {
     await closeTestContext(ctx);
+  });
+
+  it("keeps work-scope task ownership on the authenticated member", async () => {
+    const authenticated = await createMember();
+    const other = await createMember("Alex");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Work ownership",
+      scope: "work",
+      ownerMemberId: authenticated.id,
+      ownerInheritanceMode: "explicit",
+    });
+    const { client, server } = await connectMcp(authenticated.id, "work");
+
+    const byName = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: task.id,
+        expectedRevision: task.revision,
+        ownerName: other.name,
+      },
+    });
+    expect(byName.structuredContent).toEqual({
+      result: expect.objectContaining({ effectiveOwnerId: authenticated.id }),
+    });
+    expect(
+      ctx.handle.db.select({ ownerMemberId: schema.workItems.ownerMemberId })
+        .from(schema.workItems)
+        .where(eq(schema.workItems.id, task.id))
+        .get()?.ownerMemberId,
+    ).toBe(authenticated.id);
+
+    const byId = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: task.id,
+        expectedRevision: (
+          byName.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        ownerMemberId: other.id,
+      },
+    });
+    expect(byId.structuredContent).toEqual({
+      result: expect.objectContaining({ effectiveOwnerId: authenticated.id }),
+    });
+
+    const omitted = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: task.id,
+        expectedRevision: (
+          byId.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        title: "Still owned by authenticated member",
+      },
+    });
+    expect(omitted.structuredContent).toEqual({
+      result: expect.objectContaining({ effectiveOwnerId: authenticated.id }),
+    });
+
+    await client.close();
+    await server.close();
+  });
+
+  it("matches household owner names before placeholder handling", async () => {
+    const authenticated = await createMember();
+    const noneMember = await createMember("None");
+    const punctuationMember = await createMember("...");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Household ownership",
+    });
+    const { client, server } = await connectMcp(authenticated.id);
+
+    const named = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: task.id,
+        expectedRevision: task.revision,
+        ownerName: "None",
+      },
+    });
+    expect(named.structuredContent).toEqual({
+      result: expect.objectContaining({ effectiveOwnerId: noneMember.id }),
+    });
+
+    const punctuationNamed = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: task.id,
+        expectedRevision: (
+          named.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        ownerName: "...",
+      },
+    });
+    expect(punctuationNamed.structuredContent).toEqual({
+      result: expect.objectContaining({ effectiveOwnerId: punctuationMember.id }),
+    });
+
+    const absent = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: task.id,
+        expectedRevision: (
+          punctuationNamed.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        ownerName: ".",
+      },
+    });
+    expect(absent.structuredContent).toEqual({
+      result: expect.objectContaining({ effectiveOwnerId: null }),
+    });
+
+    await client.close();
+    await server.close();
   });
 
   async function createMember(name = "Mira") {
@@ -30,7 +208,7 @@ describe("MCP integration", () => {
         url: "/api/members",
         payload: { name },
       })
-    ).json() as { id: number };
+    ).json() as { id: number; name: string };
   }
 
   async function connectMcp(memberId: number, scope: "household" | "work" = "household") {
@@ -928,6 +1106,112 @@ describe("MCP integration", () => {
     await client.close();
     await server.close();
   });
+
+  it("adds, edits, and removes relative reminders without changing sibling ids", async () => {
+    const member = await createMember();
+    const { client, server } = await connectMcp(member.id);
+
+    const created = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "Relative reminder task",
+        dueDate: "2026-10-10",
+        reminders: [{
+          kind: "absolute",
+          at: "2026-10-09T08:00:00+02:00",
+        }],
+      },
+    });
+    const createdTask = (
+      created.structuredContent as {
+        result: { id: number; revision: number; reminders: Array<{ id: number }> };
+      }
+    ).result;
+    const siblingId = createdTask.reminders[0]!.id;
+
+    const added = await client.callTool({
+      name: "machbar_manage_reminder",
+      arguments: {
+        taskId: createdTask.id,
+        expectedRevision: createdTask.revision,
+        operation: "add",
+        kind: "deadline_relative",
+        daysBefore: 2,
+        time: "09:30",
+        timezone: "America/New_York",
+      },
+    });
+    const addedTask = (
+      added.structuredContent as {
+        result: {
+          revision: number;
+          reminders: Array<{
+            id: number;
+            kind: string;
+            daysBefore: number | null;
+            time: string | null;
+            timezone: string | null;
+          }>;
+        };
+      }
+    ).result;
+    const relative = addedTask.reminders.find(({ id }) => id !== siblingId)!;
+    expect(relative).toMatchObject({
+      kind: "deadline_relative",
+      daysBefore: 2,
+      time: "09:30",
+      timezone: "America/New_York",
+    });
+
+    const edited = await client.callTool({
+      name: "machbar_manage_reminder",
+      arguments: {
+        taskId: createdTask.id,
+        expectedRevision: addedTask.revision,
+        operation: "update",
+        reminderId: relative.id,
+        kind: "deadline_relative",
+        daysBefore: 1,
+        time: "10:00",
+        timezone: "Europe/Berlin",
+      },
+    });
+    const editedTask = (
+      edited.structuredContent as {
+        result: { revision: number; reminders: Array<Record<string, unknown>> };
+      }
+    ).result;
+    expect(editedTask.reminders).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: siblingId,
+        kind: "absolute",
+      }),
+      expect.objectContaining({
+        id: relative.id,
+        kind: "deadline_relative",
+        daysBefore: 1,
+        time: "10:00",
+        timezone: "Europe/Berlin",
+      }),
+    ]));
+
+    const removed = await client.callTool({
+      name: "machbar_manage_reminder",
+      arguments: {
+        taskId: createdTask.id,
+        expectedRevision: editedTask.revision,
+        operation: "remove",
+        reminderId: relative.id,
+      },
+    });
+    expect(
+      (removed.structuredContent as { result: { reminders: Array<{ id: number }> } }).result.reminders,
+    ).toEqual([{ id: siblingId, kind: "absolute", at: "2026-10-09T06:00:00.000Z" }]);
+
+    await client.close();
+    await server.close();
+  });
+
   it("publishes a single reminder object shape for Home Assistant", async () => {
     const member = await createMember();
     const { client, server } = await connectMcp(member.id);
@@ -962,7 +1246,7 @@ describe("MCP integration", () => {
         kind: { type: "string" },
         daysBefore: { type: "integer" },
         time: { type: "string" },
-        timezone: { type: "string" },
+        timezone: expect.any(Object),
         },
       },
     });

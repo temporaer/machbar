@@ -92,7 +92,9 @@ export function normalizeIntakePlanInput(
   if (!isRecord(value)) return value;
   const warnings: string[] = [];
   const root = stripFields(value, PLAN_FIELDS, "plan", warnings);
-  const calendarEvents = Array.isArray(root.calendarEvents) ? root.calendarEvents.map((entry, index) => {
+  const calendarEvents = root.calendarEvents === undefined
+    ? []
+    : Array.isArray(root.calendarEvents) ? root.calendarEvents.map((entry, index) => {
     if (!isRecord(entry)) return entry;
     const item = stripFields(entry, CALENDAR_FIELDS, `calendarEvents[${index}]`, warnings);
     return {
@@ -106,8 +108,10 @@ export function normalizeIntakePlanInput(
       relatedWorkKeys: [],
       ...item,
     };
-  }) : [];
-  const workItems = Array.isArray(root.workItems) ? root.workItems.map((entry, index) => {
+  }) : root.calendarEvents;
+  const workItems = root.workItems === undefined
+    ? []
+    : Array.isArray(root.workItems) ? root.workItems.map((entry, index) => {
     if (!isRecord(entry)) return entry;
     const item = stripFields(entry, WORK_FIELDS, `workItems[${index}]`, warnings);
     return {
@@ -123,13 +127,15 @@ export function normalizeIntakePlanInput(
       relatedCalendarKeys: [],
       ...item,
     };
-  }) : [];
-  const planWarnings = Array.isArray(root.warnings)
+  }) : root.workItems;
+  const planWarnings = root.warnings === undefined
+    ? []
+    : Array.isArray(root.warnings)
     ? root.warnings.map((entry) => {
         if (!isRecord(entry)) return entry;
         return stripFields(entry, WARNING_FIELDS, "warnings[]", warnings);
       })
-    : [];
+    : root.warnings;
   const normalized = {
     ...root,
     summary: root.summary,
