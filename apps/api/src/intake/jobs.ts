@@ -16,6 +16,7 @@ import {
   intakeDraftIssues,
   isIntakeIssueCode,
   normalizeIntakeNullableAbsenceFields,
+  normalizeIntakePlanInput,
   normalizeIntakePlan,
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
@@ -112,7 +113,8 @@ function structuralIssueMessage(
  */
 export function normalizeStoredIntakeDraft(value: unknown): IntakeDraft | null {
   if (!value || typeof value !== "object") return null;
-  const candidate = value as { workItems?: unknown };
+  const normalizedValue = normalizeIntakeNullableAbsenceFields(value);
+  const candidate = normalizedValue as { workItems?: unknown };
   if (!Array.isArray(candidate.workItems)) return null;
   let changed = false;
   const workItems = candidate.workItems.map((item) => {
@@ -127,7 +129,7 @@ export function normalizeStoredIntakeDraft(value: unknown): IntakeDraft | null {
     const { reminderAt: _legacyReminderAt, ...withoutLegacyReminder } = workItem;
     return { ...withoutLegacyReminder, reminders };
   });
-  if (!changed) return value as IntakeDraft;
+  if (!changed && normalizedValue === value) return value as IntakeDraft;
   return { ...(candidate as object), workItems } as IntakeDraft;
 }
 
@@ -304,7 +306,10 @@ export function getIntake(
 }
 
 export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSelect, plan: unknown): void {
-  const normalizedInput = normalizeIntakeNullableAbsenceFields(plan);
+  const members = db.select({ id: schema.members.id, name: schema.members.name }).from(schema.members).all();
+  const normalizedInput = normalizeIntakePlanInput(plan, {
+    ownerNames: members.map((member) => member.name),
+  });
   const parsed = intakePlanStructureSchema.safeParse(normalizedInput);
   if (!parsed.success) {
     const issues: IntakeIssue[] = parsed.error.issues.map((item) => {
@@ -331,7 +336,6 @@ export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSel
     }).where(eq(schema.intakeJobs.id, job.id)).run();
     return;
   }
-  const members = db.select({ id: schema.members.id, name: schema.members.name }).from(schema.members).all();
   const normalized = normalizeIntakePlan(parsed.data as IntakePlan);
   const draft = buildDraftFromPlan(normalized.plan, members);
   db.update(schema.intakeJobs).set({

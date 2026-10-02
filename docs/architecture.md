@@ -78,8 +78,10 @@ proposal (including the single key namespace, dates, hierarchy, references,
 and legal fields); `buildDraftFromPlan()` resolves owner names to household
 members and assumes a 60-minute end for a timed event when the source omitted
 one; `intakeDraftIssues()` validates the human-editable proposal before save
-and Apply. API Zod schemas provide structural validation around the same
-contract.
+and Apply. Boundary adapters use the focused shared input-normalization helpers
+to repair compact AI representations before strict structural and semantic
+validation; canonical mutations remain strict. API Zod schemas provide
+structural validation around the same contract.
 
 The reverse bridge is deliberately narrow. It has exactly two request kinds:
 `intake_analyze` and `calendar_create`. Requests use long-polling, leases, and

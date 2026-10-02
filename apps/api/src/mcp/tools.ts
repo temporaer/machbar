@@ -8,6 +8,13 @@ import type {
   Task as SharedTask,
   WaitingEntry,
   WorkItemScope,
+  TaskReminderInput,
+} from "@machbar/shared";
+import {
+  INTAKE_TIMEZONE,
+  isAbsentOwnerSuggestion,
+  normalizeIntakeTimestamp,
+  resolveOwnerSuggestion,
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import { buildAgenda } from "../domain/agenda.js";
@@ -45,6 +52,7 @@ import {
   returnProjectToBacklog,
 } from "../domain/storyWorkflow.js";
 import { AppError } from "../errors.js";
+import { isValidIanaTimezone } from "../schemas.js";
 import { listExternalWorkItemRefs } from "../domain/externalWorkItemRefs.js";
 import {
   contextAvailabilityForHousehold,
@@ -69,18 +77,24 @@ const calendarDate = z
 const taskId = z.number().int().positive();
 const projectId = z.number().int().positive();
 const expectedRevision = z.number().int().positive();
-const mcpAbsoluteAtSchema = z
-  .string()
-  .datetime({ offset: true })
-  .transform((value) => new Date(value).toISOString())
-  .describe("Absolute reminder time as a full RFC3339/ISO timestamp.");
-const mcpNotBeforeAtSchema = z
-  .string()
-  .datetime({ offset: true })
-  .transform((value) => new Date(value).toISOString())
-  .describe("Task availability time as a full RFC3339/ISO timestamp.");
-const mcpAbsoluteReminderSchema = z.object({ at: mcpAbsoluteAtSchema });
-const mcpAbsoluteRemindersSchema = z.array(mcpAbsoluteReminderSchema);
+const mcpAbsoluteAtSchema = z.string().min(1).describe(
+  "Absolute reminder time as an RFC3339/ISO timestamp; seconds and an offset may be omitted.",
+);
+const mcpNotBeforeAtSchema = z.string().min(1).describe(
+  "Task availability time as an RFC3339/ISO timestamp; seconds and an offset may be omitted.",
+);
+const mcpTimezoneSchema = z.string().min(1).refine(
+  isValidIanaTimezone,
+  "Timezone must be a valid IANA zone name.",
+);
+const mcpReminderSchema = z.object({
+  kind: z.enum(["absolute", "deadline_relative"]).optional(),
+  at: mcpAbsoluteAtSchema.optional(),
+  daysBefore: z.number().int().nonnegative().optional(),
+  time: z.string().min(1).optional(),
+  timezone: mcpTimezoneSchema.optional(),
+});
+const mcpRemindersSchema = z.array(mcpReminderSchema);
 const mcpSearchLimit = z
   .number()
   .int()
@@ -124,6 +138,121 @@ function result(value: unknown) {
     content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
     structuredContent: { result: value },
   };
+}
+
+function normalizeMcpTimestamp(
+  value: string,
+  field: string,
+  timezone: string = INTAKE_TIMEZONE,
+  code: "task_availability_date_required" | "task_reminder_invalid" = "task_availability_date_required",
+): string {
+  if (!isValidIanaTimezone(timezone)) {
+    throw AppError.badRequest(
+      code,
+      `The ${field} timezone is invalid.`,
+      { field, timezone },
+    );
+  }
+  const normalized = normalizeIntakeTimestamp(value, timezone);
+  if (normalized.status === "ambiguous" || normalized.status === "nonexistent") {
+    throw AppError.badRequest(
+      code,
+      `The ${field} timestamp is ambiguous or nonexistent in ${timezone}.`,
+      { field, value, timezone, status: normalized.status },
+    );
+  }
+  if (normalized.status === "invalid") {
+    throw AppError.badRequest(
+      code,
+      `The ${field} timestamp is invalid.`,
+      { field, value },
+    );
+  }
+  return new Date(normalized.value).toISOString();
+}
+
+function normalizeMcpAvailability(
+  notBeforeAt: string | null | undefined,
+  notBeforeDate: string | null | undefined,
+  timezone: string = INTAKE_TIMEZONE,
+): { notBeforeAt?: string | null; notBeforeDate?: string | null } {
+  if (notBeforeAt === undefined && notBeforeDate === undefined) return {};
+  if (notBeforeAt === null || notBeforeDate === null) {
+    return { notBeforeAt: null, notBeforeDate: null };
+  }
+  if (notBeforeAt !== undefined) {
+    const normalizedAt = normalizeMcpTimestamp(notBeforeAt, "notBeforeAt", timezone);
+    const localDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(normalizedAt));
+    return {
+      notBeforeAt: normalizedAt,
+      notBeforeDate: notBeforeDate ?? localDate,
+    };
+  }
+  if (notBeforeDate !== undefined) {
+    if (!isIsoCalendarDate(notBeforeDate)) {
+      throw AppError.badRequest("task_availability_date_required", "notBeforeDate must use YYYY-MM-DD.");
+    }
+    const midnight = normalizeMcpTimestamp(`${notBeforeDate}T00:00`, "notBeforeDate", timezone);
+    return { notBeforeAt: midnight, notBeforeDate };
+  }
+  return {};
+}
+
+function normalizeMcpReminder(input: {
+  kind?: "absolute" | "deadline_relative";
+  at?: string;
+  daysBefore?: number;
+  time?: string;
+  timezone?: string;
+}): TaskReminderInput {
+  if (input.kind === "deadline_relative") {
+    if (input.daysBefore === undefined || !input.time || !input.timezone) {
+      throw AppError.badRequest(
+        "task_reminder_invalid",
+        "A deadline-relative reminder requires daysBefore, time, and timezone.",
+      );
+    }
+    return {
+      kind: "deadline_relative",
+      daysBefore: input.daysBefore,
+      time: input.time,
+      timezone: input.timezone,
+    };
+  }
+  if (!input.at) {
+    throw AppError.badRequest(
+      "task_reminder_invalid",
+      "An absolute reminder requires an at timestamp.",
+    );
+  }
+  return {
+    kind: "absolute",
+    at: normalizeMcpTimestamp(input.at, "reminder", input.timezone, "task_reminder_invalid"),
+  };
+}
+
+function resolveMcpOwner(
+  db: Db,
+  ownerMemberId: number | null | undefined,
+  ownerName: string | null | undefined,
+): number | null | undefined {
+  if (ownerMemberId !== undefined) {
+    if (ownerMemberId !== null) getMemberOrThrow(db, ownerMemberId);
+    return ownerMemberId;
+  }
+  if (ownerName === undefined) return undefined;
+  const members = listMembers(db);
+  const member = resolveOwnerSuggestion(ownerName, members);
+  if (!member) {
+    if (isAbsentOwnerSuggestion(ownerName)) return null;
+    throw AppError.badRequest("member_not_found", `No household member matches '${ownerName}'.`);
+  }
+  return member.id;
 }
 
 function compactTask(task: McpTaskSource) {
@@ -480,6 +609,7 @@ export function createMachbarMcpServer({
         notes: z.string().optional(),
         parentProjectId: projectId.nullable().optional(),
         ownerMemberId: z.number().int().positive().nullable().optional(),
+        ownerName: z.string().nullable().optional(),
         dueDate: calendarDate.nullable(),
         scheduledDate: calendarDate.nullable(),
         contextIds: z.array(z.number().int().positive()).optional(),
@@ -496,8 +626,11 @@ export function createMachbarMcpServer({
       ) {
         getMemberOrThrow(db, input.ownerMemberId);
       }
-      const ownerMemberId =
-        agentScope === "work" ? memberId : (input.ownerMemberId ?? null);
+      const resolvedOwner =
+        agentScope === "work"
+          ? memberId
+          : resolveMcpOwner(db, input.ownerMemberId, input.ownerName);
+      const ownerMemberId = resolvedOwner ?? null;
       const created = createProject(
         db,
         {
@@ -526,6 +659,7 @@ export function createMachbarMcpServer({
         expectedRevision,
         title: z.string().min(1).optional(),
         ownerMemberId: z.number().int().positive().nullable().optional(),
+        ownerName: z.string().nullable().optional(),
         dueDate: calendarDate.nullable(),
         scheduledDate: calendarDate.nullable(),
         contextIds: z.array(z.number().int().positive()).optional(),
@@ -540,15 +674,18 @@ export function createMachbarMcpServer({
       ) {
         getMemberOrThrow(db, input.ownerMemberId);
       }
+      const { ownerName, ...metadata } = input;
       const ownerMemberId =
         agentScope === "work" && input.ownerMemberId !== undefined
           ? memberId
-          : input.ownerMemberId;
+          : agentScope === "work"
+            ? undefined
+            : resolveMcpOwner(db, input.ownerMemberId, ownerName);
       updateProject(
         db,
         projectId,
         {
-          ...input,
+          ...metadata,
           ...(ownerMemberId !== undefined ? { ownerMemberId } : {}),
           expectedRevision,
         },
@@ -624,7 +761,7 @@ export function createMachbarMcpServer({
     "machbar_create_task",
     {
       description:
-        "Create a task. Set activateIfReady=true only for a concrete, single-step action that can be performed without further clarification, decision, decomposition, or triage. Leave it false or omitted for vague captures, ideas, multi-step outcomes, clarification, or Inbox review; do not estimate duration or use a two-minute rule. Do not invent metadata to justify activation. Examples: \"Buy milk\" and \"Add batteries to the shopping list\" can be activated; \"Call the dentist tomorrow\" can be activated with its explicitly requested date; \"Figure out the summer holiday\", \"Need to sort out the heating thing\", and \"Remember that we should think about replacing the router\" should remain Inbox. If uncertain, prefer Inbox. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. notBeforeAt is an absolute RFC3339/ISO timestamp and requires notBeforeDate, its local YYYY-MM-DD calendar date. MCP reminders are absolute timestamps.",
+        "Create a task. Set activateIfReady=true only for a concrete, single-step action that can be performed without further clarification, decision, decomposition, or triage. Leave it false or omitted for vague captures, ideas, multi-step outcomes, clarification, or Inbox review; do not estimate duration or use a two-minute rule. Do not invent metadata to justify activation. Examples: \"Buy milk\" and \"Add batteries to the shopping list\" can be activated; \"Call the dentist tomorrow\" can be activated with its explicitly requested date; \"Figure out the summer holiday\", \"Need to sort out the heating thing\", and \"Remember that we should think about replacing the router\" should remain Inbox. If uncertain, prefer Inbox. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. Availability accepts a local or offset timestamp, a local date, or both; supply timezone when a local value is used. Reminders may be absolute or deadline-relative.",
       inputSchema: {
         title: z.string().min(1),
         notes: z.string().optional(),
@@ -637,11 +774,13 @@ export function createMachbarMcpServer({
             "Use true only for a concrete, single-step action requiring no clarification, decision, decomposition, or triage. Keep false or omit for vague captures, ideas, multi-step outcomes, or uncertain items. Do not invent metadata or estimate duration; if uncertain, prefer Inbox.",
           ),
         ownerMemberId: z.number().int().positive().nullable().optional(),
+        ownerName: z.string().nullable().optional(),
         dueDate: calendarDate.nullable(),
         scheduledDate: calendarDate.nullable(),
         notBeforeAt: mcpNotBeforeAtSchema.nullable().optional(),
         notBeforeDate: calendarDate.nullable().optional(),
-        reminders: mcpAbsoluteRemindersSchema.optional(),
+        timezone: mcpTimezoneSchema.optional(),
+        reminders: mcpRemindersSchema.optional(),
         priority: z.number().int().nullable().optional(),
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
         tagIds: z.array(z.number().int().positive()).optional(),
@@ -652,6 +791,10 @@ export function createMachbarMcpServer({
       const {
         reminders: mcpReminders,
         activateIfReady,
+        ownerName,
+        notBeforeAt,
+        notBeforeDate,
+        timezone,
         ...taskInput
       } = input;
       if (input.parentTaskId !== undefined && input.parentTaskId !== null) {
@@ -667,8 +810,12 @@ export function createMachbarMcpServer({
       ) {
         getMemberOrThrow(db, input.ownerMemberId);
       }
-      const ownerMemberId =
-        agentScope === "work" ? memberId : (input.ownerMemberId ?? null);
+      const resolvedOwner =
+        agentScope === "work"
+          ? memberId
+          : resolveMcpOwner(db, input.ownerMemberId, ownerName);
+      const availability = normalizeMcpAvailability(notBeforeAt, notBeforeDate, timezone);
+      const ownerMemberId = resolvedOwner ?? null;
       const initialStatus =
         activateIfReady === true ? "actionable" : "captured";
       const created = createTask(
@@ -678,12 +825,10 @@ export function createMachbarMcpServer({
           status: initialStatus,
           ...(mcpReminders !== undefined
             ? {
-                reminders: mcpReminders.map((reminder) => ({
-                  kind: "absolute" as const,
-                  at: reminder.at,
-                })),
+                reminders: mcpReminders.map(normalizeMcpReminder),
               }
             : {}),
+          ...availability,
           ownerMemberId,
           ownerInheritanceMode: ownerMemberId === null ? "none" : "explicit",
           ...(input.contextIds !== undefined
@@ -813,16 +958,18 @@ export function createMachbarMcpServer({
     "machbar_update_task",
     {
       description:
-        "Update task metadata, including its title, with the latest revision. In household scope, omit ownerMemberId to keep ownership, pass null for shared, or pass a stable member ID; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. notBeforeAt is an absolute RFC3339/ISO timestamp and must be set or cleared together with its local YYYY-MM-DD notBeforeDate.",
+        "Update task metadata, including its title, with the latest revision. In household scope, omit ownership to keep it, pass null for shared, or pass a stable member ID or matching name; work scope always uses the authenticated member when ownership is supplied. Dates are YYYY-MM-DD only. Availability accepts a local or offset timestamp, a local date, or both; supply timezone when a local value is used. Set or clear paired availability fields together.",
       inputSchema: {
         taskId,
         expectedRevision,
         title: z.string().min(1).optional(),
         ownerMemberId: z.number().int().positive().nullable().optional(),
+        ownerName: z.string().nullable().optional(),
         dueDate: calendarDate.nullable(),
         scheduledDate: calendarDate.nullable(),
         notBeforeAt: mcpNotBeforeAtSchema.nullable().optional(),
         notBeforeDate: calendarDate.nullable().optional(),
+        timezone: mcpTimezoneSchema.optional(),
         priority: z.number().int().nullable().optional(),
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
         tagIds: z.array(z.number().int().positive()).optional(),
@@ -839,15 +986,20 @@ export function createMachbarMcpServer({
       ) {
         getMemberOrThrow(db, input.ownerMemberId);
       }
+      const { ownerName, notBeforeAt, notBeforeDate, timezone, ...metadata } = input;
       const ownerMemberId =
-        agentScope === "work" && input.ownerMemberId !== undefined
-          ? memberId
-          : input.ownerMemberId;
+        agentScope === "work"
+          ? input.ownerMemberId !== undefined || ownerName !== undefined
+            ? memberId
+            : undefined
+          : resolveMcpOwner(db, input.ownerMemberId, ownerName);
+      const availability = normalizeMcpAvailability(notBeforeAt, notBeforeDate, timezone);
       updateTask(
         db,
         taskId,
         {
-          ...input,
+          ...metadata,
+          ...availability,
           ...(ownerMemberId !== undefined
             ? {
                 ownerMemberId,
@@ -870,22 +1022,47 @@ export function createMachbarMcpServer({
     "machbar_manage_reminder",
     {
       description:
-        "Add, update, or remove one absolute task reminder through the canonical task mutation. Use the latest expectedRevision. at is a full RFC3339/ISO timestamp. Reminder IDs are stable; provide reminderId for update/remove. MCP does not create, update, or remove deadline-relative reminders. Captured action tasks may carry reminders; references cannot.",
+        "Add, update, or remove one task reminder through the canonical task mutation. Use the latest expectedRevision. Absolute timestamps may omit seconds or an offset; supply timezone for local values (Europe/Berlin is the fallback). Reminder IDs are stable; provide reminderId for update/remove. New reminders do not need an ID. Captured action tasks may carry reminders; references cannot.",
       inputSchema: {
         taskId,
         expectedRevision,
         operation: z.enum(["add", "update", "remove"]),
         reminderId: z.number().int().positive().optional(),
+        kind: z.enum(["absolute", "deadline_relative"]).optional(),
         at: mcpAbsoluteAtSchema.optional(),
+        daysBefore: z.number().int().nonnegative().optional(),
+        time: z.string().optional(),
+        timezone: mcpTimezoneSchema.optional(),
       },
     },
-    async ({ taskId, expectedRevision, operation, reminderId, at }) => {
+    async ({ taskId, expectedRevision, operation, reminderId, kind, at, daysBefore, time, timezone }) => {
       const task = scopedTaskOrThrow(taskId);
-      if (operation === "add") {
+      let reminder: TaskReminderInput | undefined;
+      if (kind === "deadline_relative") {
+        if (daysBefore === undefined || !time || !timezone) {
+          throw AppError.badRequest(
+            "task_reminder_invalid",
+            "A deadline-relative reminder requires daysBefore, time, and timezone.",
+          );
+        }
+        reminder = { kind, daysBefore, time, timezone };
+      } else if (kind === "absolute" || at !== undefined) {
         if (!at) {
           throw AppError.badRequest(
             "task_reminder_invalid",
-            "Adding a reminder requires an at timestamp.",
+            "An absolute reminder requires an at timestamp.",
+          );
+        }
+        reminder = {
+          kind: "absolute",
+          at: normalizeMcpTimestamp(at, "reminder", timezone, "task_reminder_invalid"),
+        };
+      }
+      if (operation === "add") {
+        if (!reminder) {
+          throw AppError.badRequest(
+            "task_reminder_invalid",
+            "Adding a reminder requires a complete reminder definition.",
           );
         }
         updateTask(
@@ -894,17 +1071,17 @@ export function createMachbarMcpServer({
           {
             reminders: [
               ...task.reminders,
-              { kind: "absolute", at },
+              reminder,
             ],
             expectedRevision,
           },
           mutationContext,
         );
       } else if (operation === "update") {
-        if (reminderId === undefined || !at) {
+        if (reminderId === undefined || !reminder) {
           throw AppError.badRequest(
             "task_reminder_invalid",
-            "Updating a reminder requires reminderId and an at timestamp.",
+            "Updating a reminder requires reminderId and a complete reminder definition.",
           );
         }
         const index = task.reminders.findIndex(({ id }) => id === reminderId);
@@ -915,18 +1092,10 @@ export function createMachbarMcpServer({
             { taskId, reminderId },
           );
         }
-        if (task.reminders[index]!.kind !== "absolute") {
-          throw AppError.badRequest(
-            "task_reminder_invalid",
-            "MCP can only update absolute reminders.",
-            { taskId, reminderId },
-          );
-        }
         const reminders = [...task.reminders];
         reminders[index] = {
           id: reminderId,
-          kind: "absolute",
-          at,
+          ...reminder,
         };
         updateTask(db, taskId, { reminders, expectedRevision }, mutationContext);
       } else {
@@ -941,16 +1110,6 @@ export function createMachbarMcpServer({
           throw AppError.badRequest(
             "task_reminder_invalid",
             "A reminder id does not belong to this task.",
-            { taskId, reminderId },
-          );
-        }
-        if (
-          task.reminders.find(({ id }) => id === reminderId)!.kind !==
-          "absolute"
-        ) {
-          throw AppError.badRequest(
-            "task_reminder_invalid",
-            "MCP can only remove absolute reminders.",
             { taskId, reminderId },
           );
         }

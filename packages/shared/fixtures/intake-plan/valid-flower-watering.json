@@ -1,0 +1,27 @@
+{
+  "summary": "Blumenpflege",
+  "calendarEvents": [],
+  "workItems": [
+    {
+      "key": "water-flowers",
+      "kind": "action",
+      "title": "Blumen gießen",
+      "notes": ".",
+      "parentKey": null,
+      "ownerName": null,
+      "dueDate": null,
+      "scheduledDate": "2026-10-03",
+      "notBeforeDate": null,
+      "notBeforeAt": null,
+      "reminders": [
+        {
+          "kind": "absolute",
+          "at": "2026-10-03T08:00:00+02:00"
+        }
+      ],
+      "needsClarification": false,
+      "relatedCalendarKeys": []
+    }
+  ],
+  "warnings": []
+}

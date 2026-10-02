@@ -8,11 +8,13 @@ import {
   intakePlanIssues,
   intakeSelectedDraftIssues,
   normalizeIntakeNullableAbsenceFields,
+  normalizeIntakePlanInput,
   normalizeIntakePlan,
   normalizeIntakeTimestamp,
   prepareIncompleteIntakeDraft,
   type IntakePlan,
 } from "@machbar/shared";
+import { normalizeStoredIntakeDraft } from "../src/intake/jobs.js";
 import {
   intakePlanSchema,
   intakePlanStructureSchema,
@@ -204,6 +206,7 @@ describe("intake plan contracts", () => {
       notBeforeDate: null,
       notBeforeAt: null,
     });
+
     expect(plan.workItems[1]).toMatchObject({
       notes: "none",
       parentKey: null,
@@ -213,6 +216,129 @@ describe("intake plan contracts", () => {
       notBeforeDate: null,
       notBeforeAt: null,
     });
+  });
+
+  it("repairs compact AI plans without changing free text", () => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Flowers",
+      extra: "ignored",
+      calendarEvents: [],
+      warnings: [],
+      workItems: [{
+        key: "water-flowers",
+        kind: "action",
+        title: "Blumen gießen",
+        notes: ".",
+        dueDate: ".",
+        parentKey: ".",
+        reminders: [{ kind: "absolute", at: "2026-10-09T08:00:00+02:00" }],
+        unrelated: true,
+      }],
+    }) as IntakePlan & { extra?: unknown };
+    expect(normalized.extra).toBeUndefined();
+    expect(normalized.workItems[0]).toMatchObject({
+      notes: ".",
+      dueDate: null,
+      parentKey: null,
+      reminders: [{ kind: "absolute", at: "2026-10-09T08:00:00+02:00" }],
+      relatedCalendarKeys: [],
+      needsClarification: false,
+    });
+    expect(normalized.warnings).toEqual(expect.arrayContaining([
+      { message: expect.stringContaining("unsupported intake field") },
+    ]));
+  });
+
+  it.each([
+      ["calendarEvents", null],
+      ["calendarEvents", { unexpected: true }],
+      ["calendarEvents", "not-an-array"],
+      ["workItems", null],
+      ["workItems", { unexpected: true }],
+      ["workItems", "not-an-array"],
+      ["warnings", null],
+      ["warnings", { unexpected: true }],
+      ["warnings", "not-an-array"],
+  ] as const)("preserves an explicitly supplied wrong-type %s collection", (field, value) => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Wrong collection",
+      [field]: value,
+    }) as Record<string, unknown>;
+    expect(normalized[field]).toEqual(value);
+    expect(intakePlanStructureSchema.safeParse(normalized).success).toBe(false);
+  });
+
+  it.each(["calendarEvents", "workItems", "warnings"] as const)(
+    "defaults an omitted %s collection without weakening structure validation",
+    (field) => {
+      const normalized = normalizeIntakePlanInput({ summary: "Omitted collection" }) as Record<
+        string,
+        unknown
+      >;
+      expect(normalized[field]).toEqual([]);
+      expect(intakePlanStructureSchema.safeParse(normalized).success).toBe(true);
+    },
+  );
+
+  it("normalizes the flower-watering proposal without bogus parent diagnostics", () => {
+    const source = readFixture("valid-flower-watering.json") as IntakePlan;
+    const compact = normalizeIntakePlanInput({
+      summary: source.summary,
+      workItems: [{
+        key: "water-flowers",
+        kind: "action",
+        title: source.workItems[0]!.title,
+        notes: ".",
+        parentKey: ".",
+        dueDate: ".",
+        scheduledDate: source.workItems[0]!.scheduledDate,
+        notBeforeDate: ".",
+        notBeforeAt: ".",
+        ownerName: ".",
+        reminders: source.workItems[0]!.reminders,
+      }],
+    }) as IntakePlan;
+    const normalized = normalizeIntakePlan(compact).plan;
+    const draft = buildDraftFromPlan(normalized, []);
+    expect(draft.workItems[0]).toMatchObject({
+      notes: ".",
+      parentKey: null,
+      dueDate: null,
+      scheduledDate: "2026-10-03",
+      notBeforeDate: null,
+      notBeforeAt: null,
+      reminders: source.workItems[0]!.reminders,
+    });
+    expect(draft.warnings).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining("parent") })]),
+    );
+  });
+
+  it("normalizes stored legacy drafts without rewriting free text", () => {
+    const normalized = normalizeStoredIntakeDraft({
+      workItems: [{
+        key: "water-flowers",
+        notes: ".",
+        ownerName: ".",
+        dueDate: ".",
+        parentKey: ".",
+        reminderAt: "2026-10-03T08:00:00+02:00",
+      }],
+    });
+    expect(normalized?.workItems[0]).toMatchObject({
+      notes: ".",
+      ownerName: null,
+      dueDate: null,
+      parentKey: null,
+      reminders: [{ kind: "absolute", at: "2026-10-03T08:00:00+02:00" }],
+    });
+  });
+
+  it("preserves a real member whose name looks like a placeholder", () => {
+    const normalized = normalizeIntakeNullableAbsenceFields({
+      workItems: [{ ownerName: "None", notes: "." }],
+    }, { ownerNames: ["None"] }) as { workItems: Array<{ ownerName: string | null; notes: string }> };
+    expect(normalized.workItems[0]).toEqual({ ownerName: "None", notes: "." });
   });
 
   it("keeps malformed nonempty dates reviewable but blocks strict validation", () => {
