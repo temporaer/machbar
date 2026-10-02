@@ -1,0 +1,247 @@
+{
+  "haCoreVersion": "2026.9.3",
+  "probatioVersion": "0.11.4",
+  "conversionTest": true,
+  "liveProviderTest": false,
+  "strictOutputEnforcementVerified": false,
+  "notes": "Test fixture generated from INTAKE_STRUCTURE via a test-only Voluptuous-to-Probatio schema bridge, Probatio to_openapi(), and a test-only reproduction of HA Core 2026.9.3 _adjust_schema. This validates schema conversion only, not an AI Task provider request or provider strict-output enforcement.",
+  "convertedSchema": {
+    "type": "object",
+    "properties": {
+      "summary": {
+        "type": "string",
+        "description": "Machbar intake field summary"
+      },
+      "calendarEvents": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "Machbar intake field key"
+            },
+            "title": {
+              "type": "string",
+              "description": "Machbar intake field title"
+            },
+            "description": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field description",
+              "default": null
+            },
+            "location": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field location",
+              "default": null
+            },
+            "allDay": {
+              "type": "boolean",
+              "description": "Machbar intake field allDay"
+            },
+            "startDate": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field startDate",
+              "default": null
+            },
+            "endDate": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field endDate",
+              "default": null
+            },
+            "startDateTime": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field startDateTime",
+              "default": null
+            },
+            "endDateTime": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field endDateTime",
+              "default": null
+            },
+            "relatedWorkKeys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Machbar intake field relatedWorkKeys"
+            }
+          },
+          "required": [
+            "key",
+            "title",
+            "allDay",
+            "relatedWorkKeys",
+            "description",
+            "location",
+            "startDate",
+            "endDate",
+            "startDateTime",
+            "endDateTime"
+          ],
+          "additionalProperties": false,
+          "strict": true
+        },
+        "description": "Machbar intake field calendarEvents"
+      },
+      "workItems": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": {
+              "type": "string",
+              "description": "Machbar intake field key"
+            },
+            "kind": {
+              "type": "string",
+              "enum": ["action", "project", "reference"],
+              "description": "Machbar intake field kind"
+            },
+            "title": {
+              "type": "string",
+              "description": "Machbar intake field title"
+            },
+            "notes": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field notes",
+              "default": null
+            },
+            "parentKey": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field parentKey",
+              "default": null
+            },
+            "ownerName": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field ownerName",
+              "default": null
+            },
+            "dueDate": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field dueDate",
+              "default": null
+            },
+            "scheduledDate": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field scheduledDate",
+              "default": null
+            },
+            "notBeforeDate": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field notBeforeDate",
+              "default": null
+            },
+            "notBeforeAt": {
+              "type": ["string", "null"],
+              "nullable": true,
+              "description": "Machbar intake field notBeforeAt",
+              "default": null
+            },
+            "reminders": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": ["absolute", "deadline_relative"],
+                    "description": "Machbar intake field kind"
+                  },
+                  "at": {
+                    "type": ["string", "null"],
+                    "nullable": true,
+                    "description": "Machbar intake field at",
+                    "default": null
+                  },
+                  "daysBefore": {
+                    "type": ["integer", "null"],
+                    "nullable": true,
+                    "description": "Machbar intake field daysBefore",
+                    "default": null
+                  },
+                  "time": {
+                    "type": ["string", "null"],
+                    "nullable": true,
+                    "description": "Machbar intake field time",
+                    "default": null
+                  },
+                  "timezone": {
+                    "type": ["string", "null"],
+                    "nullable": true,
+                    "description": "Machbar intake field timezone",
+                    "default": null
+                  }
+                },
+                "required": ["kind", "at", "daysBefore", "time", "timezone"],
+                "additionalProperties": false,
+                "strict": true
+              },
+              "description": "Machbar intake field reminders"
+            },
+            "needsClarification": {
+              "type": "boolean",
+              "description": "Machbar intake field needsClarification"
+            },
+            "relatedCalendarKeys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Machbar intake field relatedCalendarKeys"
+            }
+          },
+          "required": [
+            "key",
+            "kind",
+            "title",
+            "reminders",
+            "needsClarification",
+            "relatedCalendarKeys",
+            "notes",
+            "parentKey",
+            "ownerName",
+            "dueDate",
+            "scheduledDate",
+            "notBeforeDate",
+            "notBeforeAt"
+          ],
+          "additionalProperties": false,
+          "strict": true
+        },
+        "description": "Machbar intake field workItems"
+      },
+      "warnings": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "Machbar intake field message"
+            }
+          },
+          "required": ["message"],
+          "additionalProperties": false,
+          "strict": true
+        },
+        "description": "Machbar intake field warnings"
+      }
+    },
+    "required": ["summary", "calendarEvents", "workItems", "warnings"],
+    "additionalProperties": false,
+    "strict": true
+  }
+}

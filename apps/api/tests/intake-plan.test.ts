@@ -415,6 +415,58 @@ describe("intake plan contracts", () => {
     });
   });
 
+  it.each([
+    ["notBeforeDate", false],
+    ["notBeforeAt", false],
+    ["reminders", false],
+    ["needsClarification", false],
+  ] as const)("discards false project task-only field %s without warning", (field, value) => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Project default",
+      workItems: [{
+        key: "garden",
+        kind: "project",
+        title: "Garden",
+        [field]: value,
+      }],
+    }) as IntakePlan;
+
+    expect(normalized.workItems[0]).toMatchObject({
+      notBeforeDate: null,
+      notBeforeAt: null,
+      reminders: [],
+      needsClarification: false,
+    });
+    expect(normalized.warnings).toEqual([]);
+    expect(intakePlanStructureSchema.safeParse(normalized).success).toBe(true);
+  });
+
+  it("discards mixed meaningful and default project fields with one warning", () => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Mixed project fields",
+      workItems: [{
+        key: "garden",
+        kind: "project",
+        title: "Garden",
+        notBeforeDate: "2026-10-10",
+        notBeforeAt: false,
+        reminders: [],
+        needsClarification: false,
+      }],
+    }) as IntakePlan;
+
+    expect(normalized.workItems[0]).toMatchObject({
+      notBeforeDate: null,
+      notBeforeAt: null,
+      reminders: [],
+      needsClarification: false,
+    });
+    expect(normalized.warnings).toEqual([
+      { message: "Ignored task-only fields on project 'garden'." },
+    ]);
+    expect(intakePlanStructureSchema.safeParse(normalized).success).toBe(true);
+  });
+
   it("keeps valid reminders on actions needing clarification", () => {
     const normalized = normalizeIntakePlanInput({
       summary: "Clarification",

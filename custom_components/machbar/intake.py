@@ -330,6 +330,7 @@ def _compact_plan(value: Any) -> Any:
                 project_warnings.append({
                     "message": f"Ignored task-only fields on project '{label}'.",
                 })
+            if raw.get("kind") == "project":
                 for field in _PROJECT_TASK_FIELDS:
                     item.pop(field, None)
             compacted_item = {
