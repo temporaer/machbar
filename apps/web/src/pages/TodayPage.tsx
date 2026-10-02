@@ -20,6 +20,7 @@ import { IconActionGlyph } from "../components/IconActionButton";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { useVisibleRefreshInterval } from "../lib/refresh";
+import type { AttentionTone } from "../lib/attentionTone";
 
 export function TodayPage() {
   const strings = useStrings();
@@ -102,6 +103,21 @@ export function TodayPage() {
       ? [{ label: strings.revisit, text: strings.revisitHint }]
       : []),
   ];
+  const toneBySection: Record<
+    "planned" | "overdue" | "dueToday" | "dueSoon",
+    AttentionTone
+  > = {
+    planned: "planned",
+    overdue: "overdue",
+    dueToday: "due-today",
+    dueSoon: "due-soon",
+  };
+  const hasForegroundAttention =
+    sections.some(
+      (section) =>
+        visibleSectionTasks[section.key].length > 0 ||
+        projectsByBucket[section.key].length > 0,
+    ) || revisitTasks.length > 0;
 
   return (
     <InteractionScopeProvider>
@@ -180,6 +196,7 @@ export function TodayPage() {
                             preserveRootOrder
                             showSwipeHint={false}
                             compactDescendants
+                            attentionTone={toneBySection[s.key]}
                           />
                         ) : null}
                         {projectsByBucket[s.key].length > 0 ? (
@@ -198,6 +215,7 @@ export function TodayPage() {
                                 owner={resolveProjectOwner(
                                   entry.project.ownerMemberId,
                                 )}
+                                attentionTone={toneBySection[s.key]}
                               />
                             ))}
                           </div>
@@ -214,20 +232,24 @@ export function TodayPage() {
                         showRevisitDate
                         showSwipeHint={false}
                         compactDescendants
+                        attentionTone="revisit"
                       />
                     </div>
                   ) : null}
                   {additionalTasks.length > 0 ? (
-                    <div className="section">
-                      <div className="section-title">{strings.unscheduled}</div>
+                    <details className="section" open={!hasForegroundAttention}>
+                      <summary className="section-title disclosure-summary">
+                        {strings.unscheduled} ({additionalTasks.length})
+                      </summary>
                       <TaskOutline
                         tasks={additionalTasks}
                         emptyMessage={strings.noItems}
                         preserveRootOrder
                         showSwipeHint={false}
                         compactDescendants
+                        attentionTone="available"
                       />
-                    </div>
+                    </details>
                   ) : null}
                   {completedTodayTasks.length > 0 ? (
                     <details className="section" key="completedToday">

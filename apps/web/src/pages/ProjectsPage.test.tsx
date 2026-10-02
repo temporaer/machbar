@@ -638,9 +638,9 @@ describe("ProjectsPage – workflow sections", () => {
     expect(
       [...container.querySelectorAll<HTMLElement>("[data-project-section]")]
         .map((section) => section.dataset.projectSection),
-    ).toEqual(["active", "waiting", "backlog", "terminal"]);
+    ).toEqual(["active", "quiet", "backlog", "terminal"]);
     expect(screen.getByRole("region", { name: "Aktiv & festgefahren" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Wartet (2)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Wartet / zurückgestellt (3)" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Später / noch nicht aktiv" })).toBeInTheDocument();
     expect(rowFor(container, "Machbar").closest("[data-project-section]")).toHaveAttribute(
       "data-project-section",
@@ -652,13 +652,13 @@ describe("ProjectsPage – workflow sections", () => {
     );
     expect(
       rowFor(container, "Späterer nächster Schritt").closest("[data-project-section]"),
-    ).toHaveAttribute("data-project-section", "active");
+    ).toHaveAttribute("data-project-section", "quiet");
     expect(
-      rowFor(container, "Späterer nächster Schritt").closest('[data-project-section="waiting"]'),
+      rowFor(container, "Späterer nächster Schritt").closest('[data-project-section="active"]'),
     ).toBeNull();
     expect(rowFor(container, "Wartet gesund A").closest("[data-project-section]")).toHaveAttribute(
       "data-project-section",
-      "waiting",
+    "quiet",
     );
     expect(
       within(rowFor(container, "Wartet gesund A")).getByText(
@@ -667,7 +667,7 @@ describe("ProjectsPage – workflow sections", () => {
     ).toBeInTheDocument();
   });
 
-  it("groups by tag separately inside active, waiting, and terminal sections", async () => {
+  it("groups by tag separately inside active, quiet, backlog, and terminal sections", async () => {
     const phone = makeTag({ id: 91, name: "Telefon", kind: "area" });
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
@@ -710,7 +710,7 @@ describe("ProjectsPage – workflow sections", () => {
       .getByRole("button", { name: "Bereich" }));
 
     expect(screen.getAllByRole("heading", { name: "Telefon" })).toHaveLength(4);
-    for (const sectionName of ["active", "waiting", "backlog", "terminal"]) {
+    for (const sectionName of ["active", "quiet", "backlog", "terminal"]) {
       const section = container.querySelector<HTMLElement>(
         `[data-project-section="${sectionName}"]`,
       );
@@ -719,7 +719,7 @@ describe("ProjectsPage – workflow sections", () => {
     }
   });
 
-  it("filters before partitioning and updates the waiting count from search results", async () => {
+  it("filters before partitioning and updates the quiet count from search results", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 1,
@@ -761,11 +761,13 @@ describe("ProjectsPage – workflow sections", () => {
     ]);
 
     const { container } = renderWithProviders(<ProjectsPage />);
-    await screen.findByRole("heading", { name: "Wartet (2)" });
+    await screen.findByRole("heading", { name: "Wartet / zurückgestellt (2)" });
+    expect(container.querySelector('[data-project-section="quiet"]')).not.toHaveAttribute("open");
 
     fireEvent.change(screen.getByLabelText("Suchen"), { target: { value: "Freigabe" } });
 
-    expect(await screen.findByRole("heading", { name: "Wartet (1)" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Wartet / zurückgestellt (1)" })).toBeInTheDocument();
+    expect(container.querySelector('[data-project-section="quiet"]')).toHaveAttribute("open");
     expect(screen.getByText("Wartet auf Freigabe")).toBeInTheDocument();
     expect(screen.queryByText("Wartet auf Angebot")).not.toBeInTheDocument();
     expect(container.querySelector('[data-project-section="active"]')).toBeNull();
@@ -774,7 +776,7 @@ describe("ProjectsPage – workflow sections", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Aktives Dach")).toBeInTheDocument();
-      expect(container.querySelector('[data-project-section="waiting"]')).toBeNull();
+      expect(container.querySelector('[data-project-section="quiet"]')).toBeNull();
     });
   });
 });
@@ -910,7 +912,7 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     expect(rowFor(container, "Aktive Geschichte").closest("details")).not.toBeNull();
   });
 
-  it("moves a retained reopened story from terminal into the waiting section immediately", async () => {
+  it("moves a retained reopened story from terminal into the quiet section immediately", async () => {
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 1,
@@ -958,10 +960,10 @@ describe("ProjectsPage – completed/archived stories fold into one counted sect
     expect(mockedApi.reopenProject).toHaveBeenCalledWith(1, {
       expectedRevision: 1,
     });
-    expect(screen.getByRole("heading", { name: "Wartet (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Wartet / zurückgestellt (1)" })).toBeInTheDocument();
     expect(screen.queryByText("Abgeschlossen & archiviert (1)")).not.toBeInTheDocument();
     expect(
       rowFor(container, "Wieder zu prüfende Geschichte").closest("[data-project-section]"),
-    ).toHaveAttribute("data-project-section", "waiting");
+    ).toHaveAttribute("data-project-section", "quiet");
   });
 });

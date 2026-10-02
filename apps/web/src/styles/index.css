@@ -1032,6 +1032,32 @@ details[open] > .disclosure-summary::after {
   transition: box-shadow 140ms ease, translate 140ms ease;
 }
 
+.project-agenda-row--planned {
+  --project-agenda-border: color-mix(in srgb, var(--color-info) 35%, var(--color-border));
+  --project-agenda-surface: color-mix(in srgb, var(--color-info) 9%, var(--color-surface));
+}
+
+.project-agenda-row--overdue {
+  --project-agenda-border: color-mix(in srgb, var(--color-danger) 38%, var(--color-border));
+  --project-agenda-surface: color-mix(in srgb, var(--color-danger) 9%, var(--color-surface));
+}
+
+.project-agenda-row--due-today,
+.project-agenda-row--revisit {
+  --project-agenda-border: color-mix(in srgb, var(--color-warning) 38%, var(--color-border));
+  --project-agenda-surface: color-mix(in srgb, var(--color-warning) 9%, var(--color-surface));
+}
+
+.project-agenda-row--due-soon {
+  --project-agenda-border: color-mix(in srgb, var(--color-clarification) 35%, var(--color-border));
+  --project-agenda-surface: color-mix(in srgb, var(--color-clarification) 9%, var(--color-surface));
+}
+
+.project-agenda-row--available {
+  --project-agenda-border: color-mix(in srgb, var(--color-success) 30%, var(--color-border));
+  --project-agenda-surface: color-mix(in srgb, var(--color-success) 7%, var(--color-surface));
+}
+
 @media (hover: hover) and (pointer: fine) {
   .project-agenda-row:hover {
     translate: 0 -1px;
@@ -2602,6 +2628,37 @@ details[open] > .disclosure-summary::after {
   --task-row-accent: var(--color-danger);
   --task-row-border: color-mix(in srgb, var(--color-danger) 14%, var(--color-border));
   --task-row-surface: color-mix(in srgb, var(--color-danger) 7%, var(--color-surface));
+}
+
+/* Today adds a light urgency cue without changing task status semantics. */
+.task-row-attention-planned {
+  --task-row-accent: var(--color-info);
+  --task-row-surface: color-mix(in srgb, var(--color-info) 7%, var(--color-surface));
+}
+
+.task-row-attention-overdue {
+  --task-row-accent: var(--color-danger);
+  --task-row-surface: color-mix(in srgb, var(--color-danger) 8%, var(--color-surface));
+}
+
+.task-row-attention-due-today {
+  --task-row-accent: var(--color-warning);
+  --task-row-surface: color-mix(in srgb, var(--color-warning) 8%, var(--color-surface));
+}
+
+.task-row-attention-due-soon {
+  --task-row-accent: var(--color-clarification);
+  --task-row-surface: color-mix(in srgb, var(--color-clarification) 7%, var(--color-surface));
+}
+
+.task-row-attention-revisit {
+  --task-row-accent: var(--color-warning);
+  --task-row-surface: color-mix(in srgb, var(--color-warning) 7%, var(--color-surface));
+}
+
+.task-row-attention-available {
+  --task-row-accent: var(--color-success);
+  --task-row-surface: color-mix(in srgb, var(--color-success) 6%, var(--color-surface));
 }
 
 @media (hover: hover) and (pointer: fine) {

@@ -74,6 +74,27 @@ describe("ProjectAgendaRow", () => {
     expect(screen.queryByText(/^Fällig:/)).not.toBeInTheDocument();
   });
 
+  it("applies the caller's Today attention tone", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ProjectAgendaRow
+          entry={{
+            project: makeProject({ id: 43, title: "Geplantes Projekt", scheduledDate: "2026-08-25" }),
+            qualification: "scheduled",
+            attentionBucket: "planned",
+            nextAction: null,
+            nextActionContextAvailability: null,
+            additionalNextActions: [],
+            stuck: null,
+          }}
+          attentionTone="planned"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.querySelector(".project-agenda-row--planned")).toBeInTheDocument();
+  });
+
   it("shows a compact owner cue only when a caller supplies one", () => {
     const owner = makeMember({ id: 7, name: "Mira" });
     const entry = {
