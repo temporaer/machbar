@@ -409,7 +409,9 @@ describe("MCP integration", () => {
       string,
       { type?: string }
     >;
-    expect(properties.activateIfReady).toMatchObject({ type: "boolean" });
+    expect(properties.activateIfReady).toMatchObject({
+      type: ["boolean", "null"],
+    });
     expect(createTool!.inputSchema.required ?? []).not.toContain(
       "activateIfReady",
     );
@@ -509,6 +511,394 @@ describe("MCP integration", () => {
       ),
     ).toBeUndefined();
     expect(afterRejectedItems.filter((item) => item.id === recurringParent.id)).toHaveLength(1);
+
+    await client.close();
+    await server.close();
+  });
+
+  it("normalizes tolerant mutation inputs at the MCP validation boundary", async () => {
+    const member = await createMember();
+    const owner = await createMember("Alex");
+    const context = ctx.handle.db
+      .insert(schema.physicalContexts)
+      .values({
+        source: "home_assistant",
+        externalId: "zone.home",
+        name: "Home",
+        active: true,
+      })
+      .returning()
+      .get();
+    const tag = ctx.handle.db
+      .insert(schema.tags)
+      .values({ name: "errand" })
+      .returning()
+      .get();
+    const { client, server } = await connectMcp(member.id);
+
+    const nullReminders = await client.callTool({
+      name: "machbar_create_task",
+      arguments: { title: "Null reminders", reminders: null },
+    });
+    expect(nullReminders.isError).not.toBe(true);
+    expect(
+      (await client.callTool({
+        name: "machbar_get_task",
+        arguments: {
+          taskId: (nullReminders.structuredContent as { result: { id: number } }).result.id,
+        },
+      })).structuredContent,
+    ).toEqual({ result: expect.objectContaining({ reminders: [] }) });
+
+    const emptyReminders = await client.callTool({
+      name: "machbar_create_task",
+      arguments: { title: "Empty reminders", reminders: [] },
+    });
+    expect(emptyReminders.isError).not.toBe(true);
+    expect(emptyReminders.structuredContent).toEqual({
+      result: expect.objectContaining({ reminders: [] }),
+    });
+
+    const nullBoolean = await client.callTool({
+      name: "machbar_create_task",
+      arguments: { title: "Null boolean", activateIfReady: null },
+    });
+    const explicitFalse = await client.callTool({
+      name: "machbar_create_task",
+      arguments: { title: "False boolean", activateIfReady: false },
+    });
+    const explicitTrue = await client.callTool({
+      name: "machbar_create_task",
+      arguments: { title: "True boolean", activateIfReady: true },
+    });
+    expect((nullBoolean.structuredContent as { result: { status: string } }).result.status)
+      .toBe("captured");
+    expect((explicitFalse.structuredContent as { result: { status: string } }).result.status)
+      .toBe("captured");
+    expect((explicitTrue.structuredContent as { result: { status: string } }).result.status)
+      .toBe("actionable");
+
+    const original = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "Preserve metadata",
+        ownerMemberId: owner.id,
+        dueDate: "2026-10-12",
+        scheduledDate: "2026-10-15",
+        notBeforeDate: "2026-10-14",
+        notBeforeAt: "2026-10-14T08:00:00+02:00",
+        tagIds: [tag.id],
+        contextIds: [context.id],
+      },
+    });
+    const originalTask = (
+      original.structuredContent as { result: { id: number; revision: number } }
+    ).result;
+
+    const nullCollections = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: originalTask.id,
+        expectedRevision: originalTask.revision,
+        tagIds: null,
+        contextIds: null,
+      },
+    });
+    const preserved = (
+      nullCollections.structuredContent as {
+        result: { id: number; revision: number; effectiveOwnerId: number | null };
+      }
+    ).result;
+    expect(preserved.effectiveOwnerId).toBe(owner.id);
+    const preservedDetail = await client.callTool({
+      name: "machbar_get_task",
+      arguments: { taskId: originalTask.id },
+    });
+    expect(preservedDetail.structuredContent).toEqual({
+      result: expect.objectContaining({
+        dueDate: "2026-10-12",
+        scheduledDate: "2026-10-15",
+        notBeforeDate: "2026-10-14",
+        explicitTags: [expect.objectContaining({ id: tag.id })],
+        explicitContexts: [expect.objectContaining({ id: context.id })],
+      }),
+    });
+
+    const cleared = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: originalTask.id,
+        expectedRevision: preserved.revision,
+        tagIds: [],
+        contextIds: [],
+      },
+    });
+    const clearedDetail = await client.callTool({
+      name: "machbar_get_task",
+      arguments: { taskId: (cleared.structuredContent as { result: { id: number } }).result.id },
+    });
+    expect(clearedDetail.structuredContent).toEqual({
+      result: expect.objectContaining({
+        explicitTags: [],
+        explicitContexts: [],
+      }),
+    });
+
+    const omittedPreserve = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: originalTask.id,
+        expectedRevision: (cleared.structuredContent as { result: { revision: number } }).result.revision,
+        title: "Still preserves dates",
+      },
+    });
+    expect(omittedPreserve.structuredContent).toEqual({
+      result: expect.objectContaining({
+        dueDate: "2026-10-12",
+        scheduledDate: "2026-10-15",
+        notBeforeDate: "2026-10-14",
+        effectiveOwnerId: owner.id,
+      }),
+    });
+
+    const clearedNullableMetadata = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: originalTask.id,
+        expectedRevision: (
+          omittedPreserve.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        dueDate: ".",
+        scheduledDate: "none",
+        notBeforeAt: ".",
+        notBeforeDate: ".",
+        ownerName: ".",
+      },
+    });
+    expect(clearedNullableMetadata.structuredContent).toEqual({
+      result: expect.objectContaining({
+        dueDate: null,
+        scheduledDate: null,
+        notBeforeAt: null,
+        notBeforeDate: null,
+        effectiveOwnerId: null,
+      }),
+    });
+
+    const falseNextAction = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: originalTask.id,
+        expectedRevision: (
+          clearedNullableMetadata.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        additionalNextAction: false,
+      },
+    });
+    expect(falseNextAction.structuredContent).toEqual({
+      result: expect.objectContaining({ revision: expect.any(Number) }),
+    });
+    const trueNextAction = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: originalTask.id,
+        expectedRevision: (
+          falseNextAction.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        additionalNextAction: true,
+      },
+    });
+    expect(trueNextAction.structuredContent).toEqual({
+      result: expect.objectContaining({ revision: expect.any(Number) }),
+    });
+    const trueNextActionDetail = await client.callTool({
+      name: "machbar_get_task",
+      arguments: { taskId: originalTask.id },
+    });
+    expect(trueNextActionDetail.structuredContent).toEqual({
+      result: expect.objectContaining({ additionalNextAction: true }),
+    });
+    const nullNextAction = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: originalTask.id,
+        expectedRevision: (
+          trueNextAction.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        additionalNextAction: null,
+      },
+    });
+    const nullNextActionDetail = await client.callTool({
+      name: "machbar_get_task",
+      arguments: { taskId: originalTask.id },
+    });
+    expect(nullNextActionDetail.structuredContent).toEqual({
+      result: expect.objectContaining({ additionalNextAction: true }),
+    });
+
+    const wrongBoolean = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: originalTask.id,
+        expectedRevision: (
+          nullNextAction.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        additionalNextAction: "false",
+      },
+    });
+    expect(wrongBoolean.isError).toBe(true);
+
+    const unknownOwner = await client.callTool({
+      name: "machbar_create_task",
+      arguments: { title: "Unknown owner", ownerName: "Nobody" },
+    });
+    expect(unknownOwner.isError).toBe(true);
+
+    const invalidReminder = await client.callTool({
+      name: "machbar_manage_reminder",
+      arguments: {
+        taskId: originalTask.id,
+        expectedRevision: (
+          nullNextAction.structuredContent as { result: { revision: number } }
+        ).result.revision,
+        operation: "add",
+        at: ".",
+      },
+    });
+    expect(invalidReminder.isError).toBe(true);
+
+    const invalidType = await client.callTool({
+      name: "machbar_create_task",
+      arguments: { title: "Wrong type", activateIfReady: 0 },
+    });
+    expect(invalidType.isError).toBe(true);
+
+    await client.close();
+    await server.close();
+  });
+
+  it("normalizes timezone-aware local availability and retains DST diagnostics", async () => {
+    const member = await createMember();
+    const { client, server } = await connectMcp(member.id);
+
+    const dateOnly = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "Tokyo availability",
+        notBeforeDate: "2026-10-14",
+        timezone: "Asia/Tokyo",
+      },
+    });
+    expect(dateOnly.structuredContent).toEqual({
+      result: expect.objectContaining({
+        notBeforeAt: "2026-10-13T15:00:00.000Z",
+        notBeforeDate: "2026-10-14",
+      }),
+    });
+
+    const ambiguous = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "Ambiguous availability",
+        notBeforeAt: "2026-10-25T02:30",
+        timezone: "Europe/Berlin",
+      },
+    });
+    expect(ambiguous.isError).toBe(true);
+    const nonexistent = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "Nonexistent availability",
+        notBeforeAt: "2026-03-29T02:30",
+        timezone: "Europe/Berlin",
+      },
+    });
+    expect(nonexistent.isError).toBe(true);
+
+    await client.close();
+    await server.close();
+  });
+
+  it("preserves project metadata on omitted and null collection updates", async () => {
+    const member = await createMember();
+    const owner = await createMember("Alex");
+    const context = ctx.handle.db
+      .insert(schema.physicalContexts)
+      .values({
+        source: "home_assistant",
+        externalId: "zone.office",
+        name: "Office",
+        active: true,
+      })
+      .returning()
+      .get();
+    const { client, server } = await connectMcp(member.id);
+
+    const created = await client.callTool({
+      name: "machbar_create_project",
+      arguments: {
+        title: "Project metadata",
+        ownerMemberId: owner.id,
+        dueDate: "2026-10-20",
+        scheduledDate: "2026-10-21",
+        contextIds: [context.id],
+      },
+    });
+    const project = (
+      created.structuredContent as { result: { id: number; revision: number } }
+    ).result;
+
+    const preserved = await client.callTool({
+      name: "machbar_update_project",
+      arguments: {
+        projectId: project.id,
+        expectedRevision: project.revision,
+        contextIds: null,
+      },
+    });
+    const preservedResult = (
+      preserved.structuredContent as { result: { revision: number; ownerMemberId: number | null } }
+    ).result;
+    expect(preservedResult.ownerMemberId).toBe(owner.id);
+    expect(preserved.structuredContent).toEqual({
+      result: expect.objectContaining({
+        dueDate: "2026-10-20",
+        scheduledDate: "2026-10-21",
+        ownerMemberId: owner.id,
+      }),
+    });
+
+    const cleared = await client.callTool({
+      name: "machbar_update_project",
+      arguments: {
+        projectId: project.id,
+        expectedRevision: preservedResult.revision,
+        contextIds: [],
+        dueDate: ".",
+        scheduledDate: "none",
+        ownerName: ".",
+      },
+    });
+    expect(cleared.structuredContent).toEqual({
+      result: expect.objectContaining({
+        dueDate: null,
+        scheduledDate: null,
+        ownerMemberId: null,
+      }),
+    });
+
+    const unsupportedTaskFields = await client.callTool({
+      name: "machbar_create_project",
+      arguments: {
+        title: "Narrow project schema",
+        reminders: [{ at: "2026-10-20T08:00:00Z" }],
+        notBeforeDate: "2026-10-20",
+      },
+    });
+    expect(unsupportedTaskFields.isError).not.toBe(true);
+    expect(unsupportedTaskFields.structuredContent).toEqual({
+      result: expect.objectContaining({ title: "Narrow project schema" }),
+    });
 
     await client.close();
     await server.close();
@@ -1235,21 +1625,11 @@ describe("MCP integration", () => {
       createReminderSchema,
       manageReminderSchema,
     });
-    expect(schemas).not.toContain("anyOf");
     expect(schemas).not.toContain("oneOf");
-    expect(createReminderSchema).toMatchObject({
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          at: { type: "string" },
-        kind: { type: "string" },
-        daysBefore: { type: "integer" },
-        time: { type: "string" },
-        timezone: expect.any(Object),
-        },
-      },
-    });
+    expect(JSON.stringify(createReminderSchema)).toContain('"null"');
+    expect(JSON.stringify(createReminderSchema)).toContain('"type":"array"');
+    expect(JSON.stringify(createReminderSchema)).toContain('"type":"object"');
+    expect(JSON.stringify(createReminderSchema)).toContain('"at":{"type":"string"');
     expect(manageReminderSchema).toMatchObject({ type: "string" });
 
     await client.close();

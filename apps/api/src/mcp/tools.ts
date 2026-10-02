@@ -14,6 +14,7 @@ import {
   INTAKE_TIMEZONE,
   isAbsentOwnerSuggestion,
   normalizeIntakeTimestamp,
+  normalizeNullableContractValue,
   resolveOwnerSuggestion,
 } from "@machbar/shared";
 import type { Db } from "../db/client.js";
@@ -87,6 +88,12 @@ const mcpTimezoneSchema = z.string().min(1).refine(
   isValidIanaTimezone,
   "Timezone must be a valid IANA zone name.",
 );
+const mcpNullableCalendarDate = z.string().nullable().optional().describe(
+  "Calendar date in YYYY-MM-DD format only, or null to clear it.",
+);
+const mcpNullableNumberArray = (description: string) =>
+  z.array(z.number().int().positive()).nullable().optional().describe(description);
+const mcpNullableBoolean = z.boolean().nullable().optional();
 const mcpReminderSchema = z.object({
   kind: z.enum(["absolute", "deadline_relative"]).optional(),
   at: mcpAbsoluteAtSchema.optional(),
@@ -176,6 +183,8 @@ function normalizeMcpAvailability(
   notBeforeDate: string | null | undefined,
   timezone: string = INTAKE_TIMEZONE,
 ): { notBeforeAt?: string | null; notBeforeDate?: string | null } {
+  notBeforeAt = normalizeNullableContractValue(notBeforeAt) as string | null | undefined;
+  notBeforeDate = normalizeNullableContractValue(notBeforeDate) as string | null | undefined;
   if (notBeforeAt === undefined && notBeforeDate === undefined) return {};
   if (notBeforeAt === null || notBeforeDate === null) {
     return { notBeforeAt: null, notBeforeDate: null };
@@ -201,6 +210,22 @@ function normalizeMcpAvailability(
     return { notBeforeAt: midnight, notBeforeDate };
   }
   return {};
+}
+
+function normalizeMcpCalendarDate(
+  value: string | null | undefined,
+  field: string,
+): string | null | undefined {
+  const normalized = normalizeNullableContractValue(value);
+  if (normalized === undefined || normalized === null) return normalized;
+  if (typeof normalized !== "string" || !isIsoCalendarDate(normalized)) {
+    throw AppError.badRequest(
+      "task_availability_date_required",
+      `${field} must use YYYY-MM-DD.`,
+      { field, value },
+    );
+  }
+  return normalized;
 }
 
 function normalizeMcpReminder(input: {
@@ -603,19 +628,21 @@ export function createMachbarMcpServer({
     "machbar_create_project",
     {
       description:
-        "Create a project. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only.",
+        "Create a project. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. Unsupported task-only fields are ignored.",
       inputSchema: {
         title: z.string().min(1),
         notes: z.string().optional(),
         parentProjectId: projectId.nullable().optional(),
         ownerMemberId: z.number().int().positive().nullable().optional(),
         ownerName: z.string().nullable().optional(),
-        dueDate: calendarDate.nullable(),
-        scheduledDate: calendarDate.nullable(),
-        contextIds: z.array(z.number().int().positive()).optional(),
+        dueDate: mcpNullableCalendarDate,
+        scheduledDate: mcpNullableCalendarDate,
+        contextIds: mcpNullableNumberArray("Physical context IDs, or [] to set an empty collection."),
       },
     },
     async (input) => {
+      const dueDate = normalizeMcpCalendarDate(input.dueDate, "dueDate");
+      const scheduledDate = normalizeMcpCalendarDate(input.scheduledDate, "scheduledDate");
       if (input.parentProjectId !== undefined && input.parentProjectId !== null) {
         scopedProjectOrThrow(input.parentProjectId);
       }
@@ -638,9 +665,9 @@ export function createMachbarMcpServer({
           notes: input.notes,
           parentId: input.parentProjectId,
           ownerMemberId,
-          dueDate: input.dueDate,
-          scheduledDate: input.scheduledDate,
-          contextIds: input.contextIds,
+          dueDate,
+          scheduledDate,
+          contextIds: input.contextIds ?? undefined,
           scope: agentScope,
         },
         mutationContext,
@@ -660,12 +687,14 @@ export function createMachbarMcpServer({
         title: z.string().min(1).optional(),
         ownerMemberId: z.number().int().positive().nullable().optional(),
         ownerName: z.string().nullable().optional(),
-        dueDate: calendarDate.nullable(),
-        scheduledDate: calendarDate.nullable(),
-        contextIds: z.array(z.number().int().positive()).optional(),
+        dueDate: mcpNullableCalendarDate,
+        scheduledDate: mcpNullableCalendarDate,
+        contextIds: mcpNullableNumberArray("Physical context IDs, or [] to clear the collection."),
       },
     },
     async ({ projectId, expectedRevision, ...input }) => {
+      const dueDate = normalizeMcpCalendarDate(input.dueDate, "dueDate");
+      const scheduledDate = normalizeMcpCalendarDate(input.scheduledDate, "scheduledDate");
       scopedProjectOrThrow(projectId);
       if (
         agentScope === "household" &&
@@ -674,7 +703,7 @@ export function createMachbarMcpServer({
       ) {
         getMemberOrThrow(db, input.ownerMemberId);
       }
-      const { ownerName, ...metadata } = input;
+      const { ownerName, contextIds, ...metadata } = input;
       const ownerMemberId =
         agentScope === "work" && input.ownerMemberId !== undefined
           ? memberId
@@ -686,6 +715,11 @@ export function createMachbarMcpServer({
         projectId,
         {
           ...metadata,
+          dueDate,
+          scheduledDate,
+          ...(contextIds !== null && contextIds !== undefined
+            ? { contextIds }
+            : {}),
           ...(ownerMemberId !== undefined ? { ownerMemberId } : {}),
           expectedRevision,
         },
@@ -767,24 +801,25 @@ export function createMachbarMcpServer({
         notes: z.string().optional(),
         projectId: z.number().int().positive().nullable().optional(),
         parentTaskId: z.number().int().positive().nullable().optional(),
-        activateIfReady: z
-          .boolean()
+        activateIfReady: mcpNullableBoolean
           .optional()
           .describe(
             "Use true only for a concrete, single-step action requiring no clarification, decision, decomposition, or triage. Keep false or omit for vague captures, ideas, multi-step outcomes, or uncertain items. Do not invent metadata or estimate duration; if uncertain, prefer Inbox.",
           ),
         ownerMemberId: z.number().int().positive().nullable().optional(),
         ownerName: z.string().nullable().optional(),
-        dueDate: calendarDate.nullable(),
-        scheduledDate: calendarDate.nullable(),
+        dueDate: mcpNullableCalendarDate,
+        scheduledDate: mcpNullableCalendarDate,
         notBeforeAt: mcpNotBeforeAtSchema.nullable().optional(),
-        notBeforeDate: calendarDate.nullable().optional(),
+        notBeforeDate: z.string().nullable().optional().describe(
+          "Availability date in YYYY-MM-DD format only, or null to clear paired availability.",
+        ),
         timezone: mcpTimezoneSchema.optional(),
-        reminders: mcpRemindersSchema.optional(),
+        reminders: mcpRemindersSchema.nullable().optional(),
         priority: z.number().int().nullable().optional(),
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
-        tagIds: z.array(z.number().int().positive()).optional(),
-        contextIds: z.array(z.number().int().positive()).optional(),
+        tagIds: mcpNullableNumberArray("Tag IDs, or [] to create without tags."),
+        contextIds: mcpNullableNumberArray("Physical context IDs, or [] to create without contexts."),
       },
     },
     async (input) => {
@@ -795,8 +830,14 @@ export function createMachbarMcpServer({
         notBeforeAt,
         notBeforeDate,
         timezone,
+        dueDate,
+        scheduledDate,
+        tagIds,
+        contextIds,
         ...taskInput
       } = input;
+      const normalizedDueDate = normalizeMcpCalendarDate(dueDate, "dueDate");
+      const normalizedScheduledDate = normalizeMcpCalendarDate(scheduledDate, "scheduledDate");
       if (input.parentTaskId !== undefined && input.parentTaskId !== null) {
         scopedTaskOrThrow(input.parentTaskId);
       }
@@ -822,8 +863,12 @@ export function createMachbarMcpServer({
         db,
         {
           ...taskInput,
+          dueDate: normalizedDueDate,
+          scheduledDate: normalizedScheduledDate,
+          ...(tagIds !== null && tagIds !== undefined ? { tagIds } : {}),
+          ...(contextIds !== null && contextIds !== undefined ? { contextIds } : {}),
           status: initialStatus,
-          ...(mcpReminders !== undefined
+          ...(mcpReminders !== undefined && mcpReminders !== null
             ? {
                 reminders: mcpReminders.map(normalizeMcpReminder),
               }
@@ -831,7 +876,7 @@ export function createMachbarMcpServer({
           ...availability,
           ownerMemberId,
           ownerInheritanceMode: ownerMemberId === null ? "none" : "explicit",
-          ...(input.contextIds !== undefined
+          ...(contextIds !== null && contextIds !== undefined
             ? { contextInheritanceMode: "explicit" as const }
             : {}),
           scope: agentScope,
@@ -842,7 +887,7 @@ export function createMachbarMcpServer({
       return result(
         compactTaskMutation(
           scopedTaskOrThrow(created.id),
-          mcpReminders !== undefined,
+          mcpReminders !== undefined && mcpReminders !== null,
         ),
       );
     },
@@ -965,16 +1010,18 @@ export function createMachbarMcpServer({
         title: z.string().min(1).optional(),
         ownerMemberId: z.number().int().positive().nullable().optional(),
         ownerName: z.string().nullable().optional(),
-        dueDate: calendarDate.nullable(),
-        scheduledDate: calendarDate.nullable(),
+        dueDate: mcpNullableCalendarDate,
+        scheduledDate: mcpNullableCalendarDate,
         notBeforeAt: mcpNotBeforeAtSchema.nullable().optional(),
-        notBeforeDate: calendarDate.nullable().optional(),
+        notBeforeDate: z.string().nullable().optional().describe(
+          "Availability date in YYYY-MM-DD format only, or null to clear paired availability.",
+        ),
         timezone: mcpTimezoneSchema.optional(),
         priority: z.number().int().nullable().optional(),
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
-        tagIds: z.array(z.number().int().positive()).optional(),
-        contextIds: z.array(z.number().int().positive()).optional(),
-        additionalNextAction: z.boolean().optional(),
+        tagIds: mcpNullableNumberArray("Tag IDs, or [] to clear the collection."),
+        contextIds: mcpNullableNumberArray("Physical context IDs, or [] to clear the collection."),
+        additionalNextAction: mcpNullableBoolean,
       },
     },
     async ({ taskId, ...input }) => {
@@ -986,7 +1033,20 @@ export function createMachbarMcpServer({
       ) {
         getMemberOrThrow(db, input.ownerMemberId);
       }
-      const { ownerName, notBeforeAt, notBeforeDate, timezone, ...metadata } = input;
+      const {
+        ownerName,
+        notBeforeAt,
+        notBeforeDate,
+        timezone,
+        dueDate,
+        scheduledDate,
+        tagIds,
+        contextIds,
+        additionalNextAction,
+        ...metadata
+      } = input;
+      const normalizedDueDate = normalizeMcpCalendarDate(dueDate, "dueDate");
+      const normalizedScheduledDate = normalizeMcpCalendarDate(scheduledDate, "scheduledDate");
       const ownerMemberId =
         agentScope === "work"
           ? input.ownerMemberId !== undefined || ownerName !== undefined
@@ -999,6 +1059,13 @@ export function createMachbarMcpServer({
         taskId,
         {
           ...metadata,
+          dueDate: normalizedDueDate,
+          scheduledDate: normalizedScheduledDate,
+          ...(tagIds !== null && tagIds !== undefined ? { tagIds } : {}),
+          ...(contextIds !== null && contextIds !== undefined ? { contextIds } : {}),
+          ...(additionalNextAction !== null && additionalNextAction !== undefined
+            ? { additionalNextAction }
+            : {}),
           ...availability,
           ...(ownerMemberId !== undefined
             ? {
@@ -1007,7 +1074,7 @@ export function createMachbarMcpServer({
                   ownerMemberId === null ? "none" : "explicit",
               }
             : {}),
-          ...(input.contextIds !== undefined
+          ...(contextIds !== null && contextIds !== undefined
             ? { contextInheritanceMode: "explicit" as const }
             : {}),
         },
