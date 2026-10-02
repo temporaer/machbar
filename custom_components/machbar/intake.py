@@ -23,19 +23,23 @@ def _field(key: str, schema: Any) -> Any:
     return vol.Required(key, description=f"Machbar intake field {key}")
 
 
+def _optional_field(key: str, default: Any, schema: Any) -> Any:
+    return vol.Optional(key, default=default, description=f"Machbar intake field {key}")
+
+
 def _calendar_schema() -> vol.Schema:
     return vol.Schema(
         {
             _field("key", str): str,
             _field("title", str): str,
-            _field("description", _NULL): _NULL,
-            _field("location", _NULL): _NULL,
-            _field("allDay", bool): bool,
-            _field("startDate", _NULL): _NULL,
-            _field("endDate", _NULL): _NULL,
-            _field("startDateTime", _NULL): _NULL,
-            _field("endDateTime", _NULL): _NULL,
-            _field("relatedWorkKeys", [str]): [str],
+            _optional_field("description", None, _NULL): _NULL,
+            _optional_field("location", None, _NULL): _NULL,
+            _optional_field("allDay", False, bool): bool,
+            _optional_field("startDate", None, _NULL): _NULL,
+            _optional_field("endDate", None, _NULL): _NULL,
+            _optional_field("startDateTime", None, _NULL): _NULL,
+            _optional_field("endDateTime", None, _NULL): _NULL,
+            _optional_field("relatedWorkKeys", [], [str]): [str],
         },
         extra=vol.PREVENT_EXTRA,
     )
@@ -49,16 +53,16 @@ def _work_schema() -> vol.Schema:
                 ["action", "project", "reference"]
             ),
             _field("title", str): str,
-            _field("notes", _NULL): _NULL,
-            _field("parentKey", _NULL): _NULL,
-            _field("ownerName", _NULL): _NULL,
-            _field("dueDate", _NULL): _NULL,
-            _field("scheduledDate", _NULL): _NULL,
-            _field("notBeforeDate", _NULL): _NULL,
-            _field("notBeforeAt", _NULL): _NULL,
-            _field("reminders", [_reminder_schema()]): [_reminder_schema()],
-            _field("needsClarification", bool): bool,
-            _field("relatedCalendarKeys", [str]): [str],
+            _optional_field("notes", None, _NULL): _NULL,
+            _optional_field("parentKey", None, _NULL): _NULL,
+            _optional_field("ownerName", None, _NULL): _NULL,
+            _optional_field("dueDate", None, _NULL): _NULL,
+            _optional_field("scheduledDate", None, _NULL): _NULL,
+            _optional_field("notBeforeDate", None, _NULL): _NULL,
+            _optional_field("notBeforeAt", None, _NULL): _NULL,
+            _optional_field("reminders", [], [_reminder_schema()]): [_reminder_schema()],
+            _optional_field("needsClarification", False, bool): bool,
+            _optional_field("relatedCalendarKeys", [], [str]): [str],
         },
         extra=vol.PREVENT_EXTRA,
     )
@@ -70,10 +74,10 @@ def _reminder_schema() -> vol.Schema:
             _field("kind", vol.In(["absolute", "deadline_relative"])): vol.In(
                 ["absolute", "deadline_relative"]
             ),
-            _field("at", _NULL): _NULL,
-            _field("daysBefore", vol.Any(None, int)): vol.Any(None, int),
-            _field("time", _NULL): _NULL,
-            _field("timezone", _NULL): _NULL,
+            _optional_field("at", None, _NULL): _NULL,
+            _optional_field("daysBefore", None, vol.Any(None, int)): vol.Any(None, int),
+            _optional_field("time", None, _NULL): _NULL,
+            _optional_field("timezone", None, _NULL): _NULL,
         },
         extra=vol.PREVENT_EXTRA,
     )
@@ -89,9 +93,9 @@ def _warning_schema() -> vol.Schema:
 INTAKE_STRUCTURE = vol.Schema(
     {
         _field("summary", str): str,
-        _field("calendarEvents", [_calendar_schema()]): [_calendar_schema()],
-        _field("workItems", [_work_schema()]): [_work_schema()],
-        _field("warnings", [_warning_schema()]): [_warning_schema()],
+        _optional_field("calendarEvents", [], [_calendar_schema()]): [_calendar_schema()],
+        _optional_field("workItems", [], [_work_schema()]): [_work_schema()],
+        _optional_field("warnings", [], [_warning_schema()]): [_warning_schema()],
     },
     extra=vol.PREVENT_EXTRA,
 )
@@ -236,11 +240,85 @@ def _normalize_string(
         raise _invalid(path, "a string or null" if nullable else "a string", value=value)
     stripped = value.strip()
     # Only contract fields where strings represent absence use textual nulls.
-    if not stripped and nullable and absence:
-        return None
-    if absence and nullable and stripped.lower() in {"null", "none"}:
+    if (
+        absence
+        and nullable
+        and (
+            not stripped
+            or stripped.lower() in {"null", "none"}
+            or not re.search(r"[^\W_]", stripped, re.UNICODE)
+        )
+    ):
         return None
     return stripped
+
+
+def _compact_plan(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    calendar_fields = {
+        "key", "title", "description", "location", "allDay", "startDate",
+        "endDate", "startDateTime", "endDateTime", "relatedWorkKeys",
+    }
+    work_fields = {
+        "key", "kind", "title", "notes", "parentKey", "ownerName", "dueDate",
+        "scheduledDate", "notBeforeDate", "notBeforeAt", "reminders",
+        "needsClarification", "relatedCalendarKeys",
+    }
+    warning_fields = {"message"}
+
+    def strip(raw: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
+        return {key: item for key, item in raw.items() if key in allowed}
+
+    calendars = value.get("calendarEvents", [])
+    if isinstance(calendars, list):
+        calendars = [
+            {
+                "description": None,
+                "location": None,
+                "allDay": False,
+                "startDate": None,
+                "endDate": None,
+                "startDateTime": None,
+                "endDateTime": None,
+                "relatedWorkKeys": [],
+                **strip(item, calendar_fields),
+            }
+            if isinstance(item, dict) else item
+            for item in calendars
+        ]
+    work = value.get("workItems", [])
+    if isinstance(work, list):
+        work = [
+            {
+                "notes": None,
+                "parentKey": None,
+                "ownerName": None,
+                "dueDate": None,
+                "scheduledDate": None,
+                "notBeforeDate": None,
+                "notBeforeAt": None,
+                "reminders": [],
+                "needsClarification": False,
+                "relatedCalendarKeys": [],
+                **strip(item, work_fields),
+            }
+            if isinstance(item, dict) else item
+            for item in work
+        ]
+    warnings = value.get("warnings", [])
+    if isinstance(warnings, list):
+        warnings = [
+            strip(item, warning_fields) if isinstance(item, dict) else item
+            for item in warnings
+        ]
+    compacted: dict[str, Any] = {}
+    if "summary" in value:
+        compacted["summary"] = value["summary"]
+    compacted["calendarEvents"] = calendars
+    compacted["workItems"] = work
+    compacted["warnings"] = warnings
+    return compacted
 
 
 def _normalize_strings(value: Any, *, path: list[str | int]) -> list[str]:
@@ -287,6 +365,7 @@ def _normalize_reminders(value: Any, *, path: list[str | int]) -> list[dict[str,
 
 
 def normalize_plan(data: Any) -> dict[str, Any]:
+    data = _compact_plan(data)
     if not isinstance(data, dict):
         raise _invalid([], "an object")
     try:
@@ -351,7 +430,7 @@ def normalize_plan(data: Any) -> dict[str, Any]:
                     "title": _normalize_string(_required(raw, "title", item_path, "a string"), False, path=item_path + ["title"]),
                     "notes": _normalize_string(_required(raw, "notes", item_path, "a string or null"), path=item_path + ["notes"]),
                     "parentKey": _normalize_string(_required(raw, "parentKey", item_path, "a string or null"), path=item_path + ["parentKey"], absence=True),
-                    "ownerName": _normalize_string(_required(raw, "ownerName", item_path, "a string or null"), path=item_path + ["ownerName"], absence=True),
+                    "ownerName": _normalize_string(_required(raw, "ownerName", item_path, "a string or null"), path=item_path + ["ownerName"]),
                     "dueDate": _normalize_string(_required(raw, "dueDate", item_path, "a date or null"), path=item_path + ["dueDate"], absence=True),
                     "scheduledDate": _normalize_string(_required(raw, "scheduledDate", item_path, "a date or null"), path=item_path + ["scheduledDate"], absence=True),
                     "notBeforeDate": _normalize_string(_required(raw, "notBeforeDate", item_path, "a date or null"), path=item_path + ["notBeforeDate"], absence=True),

@@ -824,6 +824,7 @@ export interface Agenda {
 export type WeekWorkItemRole = "task" | "story";
 
 export * from "./intake.js";
+export * from "./inputNormalization.js";
 
 export type WeekWorkItemPlacement =
   | "scheduled"

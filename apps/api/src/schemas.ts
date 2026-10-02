@@ -450,43 +450,54 @@ const intakeCalendarEventSchema = z
   .object({
     key: z.string(),
     title: z.string().trim().min(1).max(200),
-    description: z.string().max(4000).nullable(),
-    location: z.string().max(300).nullable(),
-    allDay: z.boolean(),
-    startDate: intakeShapeDateSchema,
-    endDate: intakeShapeDateSchema,
-    startDateTime: intakeShapeDateTimeSchema,
-    endDateTime: intakeShapeDateTimeSchema,
-    relatedWorkKeys: z.array(z.string()),
+    description: z.string().max(4000).nullable().optional(),
+    location: z.string().max(300).nullable().optional(),
+    allDay: z.boolean().optional(),
+    startDate: intakeShapeDateSchema.optional(),
+    endDate: intakeShapeDateSchema.optional(),
+    startDateTime: intakeShapeDateTimeSchema.optional(),
+    endDateTime: intakeShapeDateTimeSchema.optional(),
+    relatedWorkKeys: z.array(z.string()).optional(),
   })
-  .strict();
+  .strip();
 const intakeWorkItemSchema = z
   .object({
     key: z.string(),
     kind: z.enum(["action", "project", "reference"]),
     title: z.string().trim().min(1).max(200),
-    notes: z.string().max(8000).nullable(),
-    parentKey: z.string().nullable(),
-    ownerName: z.string().nullable(),
-    dueDate: intakeShapeDateSchema,
-    scheduledDate: intakeShapeDateSchema,
-    notBeforeDate: intakeShapeDateSchema,
-    notBeforeAt: intakeShapeDateTimeSchema,
-    reminders: z.array(intakeShapeReminderSchema),
-    needsClarification: z.boolean(),
-    relatedCalendarKeys: z.array(z.string()),
+    notes: z.string().max(8000).nullable().optional(),
+    parentKey: z.string().nullable().optional(),
+    ownerName: z.string().nullable().optional(),
+    dueDate: intakeShapeDateSchema.optional(),
+    scheduledDate: intakeShapeDateSchema.optional(),
+    notBeforeDate: intakeShapeDateSchema.optional(),
+    notBeforeAt: intakeShapeDateTimeSchema.optional(),
+    reminders: z.array(intakeShapeReminderSchema).optional(),
+    needsClarification: z.boolean().optional(),
+    relatedCalendarKeys: z.array(z.string()).optional(),
   })
-  .strict();
+  .strip();
 export const intakePlanStructureSchema = z
   .object({
     summary: z.string().max(1000),
     calendarEvents: z.array(intakeCalendarEventSchema).max(20),
     workItems: z.array(intakeWorkItemSchema).max(50),
-    warnings: z.array(z.object({ message: z.string().trim().min(1).max(500) }).strict()).max(20),
+    warnings: z.array(z.object({ message: z.string().trim().min(1).max(500) }).strip()).max(20),
   })
-  .strict();
+  .strip();
 
-export const intakePlanSchema = intakePlanStructureSchema
+const intakeCalendarEventCanonicalSchema = intakeCalendarEventSchema.required().strict();
+const intakeWorkItemCanonicalSchema = intakeWorkItemSchema.required().strict();
+const intakeWarningSchema = z.object({ message: z.string().trim().min(1).max(500) }).strict();
+
+export const intakePlanSchema = z
+  .object({
+    summary: z.string().max(1000),
+    calendarEvents: z.array(intakeCalendarEventCanonicalSchema).max(20),
+    workItems: z.array(intakeWorkItemCanonicalSchema).max(50),
+    warnings: z.array(intakeWarningSchema).max(20),
+  })
+  .strict()
   .superRefine((value, ctx) => {
     for (const item of intakePlanIssues(value as IntakePlan)) {
       ctx.addIssue({
@@ -498,11 +509,11 @@ export const intakePlanSchema = intakePlanStructureSchema
     }
   });
 
-const intakeDraftCalendarEventSchema = intakeCalendarEventSchema.extend({
+const intakeDraftCalendarEventSchema = intakeCalendarEventCanonicalSchema.extend({
   enabled: z.boolean(),
   durationAssumed: z.boolean(),
 }).strict();
-const intakeDraftWorkItemSchema = intakeWorkItemSchema.omit({ ownerName: true }).extend({
+const intakeDraftWorkItemSchema = intakeWorkItemCanonicalSchema.omit({ ownerName: true }).extend({
   enabled: z.boolean(),
   ownerMemberId: z.number().int().positive().nullable(),
 }).strict();
@@ -511,7 +522,7 @@ export const intakeDraftStructureSchema = z
     summary: z.string().max(1000),
     calendarEvents: z.array(intakeDraftCalendarEventSchema).max(20),
     workItems: z.array(intakeDraftWorkItemSchema).max(50),
-    warnings: z.array(z.object({ message: z.string().trim().min(1).max(500) }).strict()).max(20),
+    warnings: z.array(intakeWarningSchema).max(20),
     retainSourceInPaperless: z.boolean(),
   })
   .strict();

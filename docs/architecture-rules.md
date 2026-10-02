@@ -162,7 +162,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 
 | Need | Canonical primitive or path |
 |------|-----------------------------|
-| AI intake plan contract and invariants | `packages/shared/src/intake.ts` (`IntakePlan`/`IntakeDraft`, `intakePlanIssues`, `intakeDraftIssues`, `buildDraftFromPlan`) plus Zod structural schemas in `apps/api/src/schemas.ts` |
+| AI intake plan contract and invariants | `packages/shared/src/intake.ts` (`IntakePlan`/`IntakeDraft`, `intakePlanIssues`, `intakeDraftIssues`, `buildDraftFromPlan`) plus boundary normalization in `packages/shared/src/inputNormalization.ts` and Zod structural schemas in `apps/api/src/schemas.ts` |
 | AI intake execution (jobs, prompt, apply) | `apps/api/src/intake/` (`jobs.ts`, `prompt.ts`, `apply.ts`, `storage.ts`, `cleanup.ts`), `apps/api/src/routes/intake.ts`, `apps/web/src/pages/IntakeReviewPage.tsx`, and `apps/web/src/lib/useStartIntake.ts`; Apply uses the domain create primitives |
 | Home Assistant reverse request bridge | `apps/api/src/integrations/homeAssistantRequests.ts` and `custom_components/machbar/worker.py`; exactly `intake_analyze` and `calendar_create`, not an RPC mechanism |
 | Home Assistant AI Task and calendar adapters | `custom_components/machbar/intake.py` and `custom_components/machbar/calendar_bridge.py` |

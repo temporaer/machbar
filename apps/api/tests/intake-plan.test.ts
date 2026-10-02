@@ -8,6 +8,7 @@ import {
   intakePlanIssues,
   intakeSelectedDraftIssues,
   normalizeIntakeNullableAbsenceFields,
+  normalizeIntakePlanInput,
   normalizeIntakePlan,
   normalizeIntakeTimestamp,
   prepareIncompleteIntakeDraft,
@@ -204,6 +205,7 @@ describe("intake plan contracts", () => {
       notBeforeDate: null,
       notBeforeAt: null,
     });
+
     expect(plan.workItems[1]).toMatchObject({
       notes: "none",
       parentKey: null,
@@ -213,6 +215,44 @@ describe("intake plan contracts", () => {
       notBeforeDate: null,
       notBeforeAt: null,
     });
+  });
+
+  it("repairs compact AI plans without changing free text", () => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Flowers",
+      extra: "ignored",
+      calendarEvents: [],
+      warnings: [],
+      workItems: [{
+        key: "water-flowers",
+        kind: "action",
+        title: "Blumen gießen",
+        notes: ".",
+        dueDate: ".",
+        parentKey: ".",
+        reminders: [{ kind: "absolute", at: "2026-10-09T08:00:00+02:00" }],
+        unrelated: true,
+      }],
+    }) as IntakePlan & { extra?: unknown };
+    expect(normalized.extra).toBeUndefined();
+    expect(normalized.workItems[0]).toMatchObject({
+      notes: ".",
+      dueDate: null,
+      parentKey: null,
+      reminders: [{ kind: "absolute", at: "2026-10-09T08:00:00+02:00" }],
+      relatedCalendarKeys: [],
+      needsClarification: false,
+    });
+    expect(normalized.warnings).toEqual(expect.arrayContaining([
+      { message: expect.stringContaining("unsupported intake field") },
+    ]));
+  });
+
+  it("preserves a real member whose name looks like a placeholder", () => {
+    const normalized = normalizeIntakeNullableAbsenceFields({
+      workItems: [{ ownerName: "None", notes: "." }],
+    }, { ownerNames: ["None"] }) as { workItems: Array<{ ownerName: string | null; notes: string }> };
+    expect(normalized.workItems[0]).toEqual({ ownerName: "None", notes: "." });
   });
 
   it("keeps malformed nonempty dates reviewable but blocks strict validation", () => {

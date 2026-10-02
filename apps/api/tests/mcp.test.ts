@@ -928,7 +928,7 @@ describe("MCP integration", () => {
     await client.close();
     await server.close();
   });
-  it("publishes single-shape absolute reminder schemas for Home Assistant", async () => {
+  it("publishes a single reminder object shape for Home Assistant", async () => {
     const member = await createMember();
     const { client, server } = await connectMcp(member.id);
     const listed = await client.listTools();
@@ -959,8 +959,11 @@ describe("MCP integration", () => {
         type: "object",
         properties: {
           at: { type: "string" },
+        kind: { type: "string" },
+        daysBefore: { type: "integer" },
+        time: { type: "string" },
+        timezone: { type: "string" },
         },
-        required: ["at"],
       },
     });
     expect(manageReminderSchema).toMatchObject({ type: "string" });

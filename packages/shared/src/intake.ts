@@ -1,4 +1,9 @@
 import type { TaskReminderInput } from "./index.js";
+import {
+  isAbsentOwnerSuggestion,
+  normalizeIntakeNullableAbsenceFields,
+  resolveOwnerSuggestion,
+} from "./inputNormalization.js";
 
 import { Temporal } from "@js-temporal/polyfill";
 
@@ -145,47 +150,7 @@ export interface IntakePlan {
   warnings: IntakeWarning[];
 }
 
-const INTAKE_NULLABLE_ABSENCE_FIELDS = new Set([
-  "parentKey",
-  "ownerName",
-  "dueDate",
-  "scheduledDate",
-  "notBeforeDate",
-  "notBeforeAt",
-  "startDate",
-  "endDate",
-  "startDateTime",
-  "endDateTime",
-]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-/**
- * Normalize representations that providers commonly use for an absent
- * nullable contract value. Free text is intentionally excluded.
- */
-export function normalizeIntakeNullableAbsenceFields(value: unknown): unknown {
-  if (!isRecord(value)) return value;
-  const normalized = { ...value };
-  for (const collection of ["calendarEvents", "workItems"]) {
-    const entries = normalized[collection];
-    if (!Array.isArray(entries)) continue;
-    normalized[collection] = entries.map((entry) => {
-      if (!isRecord(entry)) return entry;
-      const item = { ...entry };
-      for (const field of INTAKE_NULLABLE_ABSENCE_FIELDS) {
-        const fieldValue = item[field];
-        if (typeof fieldValue !== "string") continue;
-        const stripped = fieldValue.trim();
-        if (stripped === "" || /^(?:null|none)$/i.test(stripped)) item[field] = null;
-      }
-      return item;
-    });
-  }
-  return normalized;
-}
+export { isAbsentOwnerSuggestion, normalizeIntakeNullableAbsenceFields, resolveOwnerSuggestion };
 
 export interface IntakeDraftCalendarEvent extends IntakeCalendarEvent {
   enabled: boolean;
@@ -918,18 +883,6 @@ function omission(
   omissions.push({ path, code, originalValue });
 }
 
-function isAbsentOwnerSuggestion(value: string | null): boolean {
-  if (value === null) return true;
-  const trimmed = value.trim();
-  const normalized = trimmed.toLocaleLowerCase();
-  return (
-    trimmed.length === 0 ||
-    normalized === "null" ||
-    normalized === "none" ||
-    !/[\p{L}\p{N}]/u.test(trimmed)
-  );
-}
-
 function availabilityOmissionCode(
   notBeforeDate: string | null,
   notBeforeAt: string | null,
@@ -1118,11 +1071,7 @@ export function buildDraftFromPlan(
     return { ...event, endDateTime, enabled: true, durationAssumed };
   });
   const workItems = plan.workItems.map((item) => {
-    const proposedOwner = item.ownerName?.trim() ?? "";
-    const normalizedOwner = proposedOwner.toLocaleLowerCase();
-    const member = normalizedOwner
-      ? members.find((candidate) => candidate.name.trim().toLocaleLowerCase() === normalizedOwner)
-      : undefined;
+    const member = resolveOwnerSuggestion(item.ownerName, members);
     if (item.ownerName !== null && !member && !isAbsentOwnerSuggestion(item.ownerName)) {
       warnings.push({ message: `Owner '${item.ownerName}' is not a household member` });
     }
