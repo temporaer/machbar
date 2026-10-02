@@ -80,24 +80,31 @@ export function countScopeHiddenMatches(
 /**
  * Classifies a project for the list without changing its persisted workflow
  * status. Active waiting is the narrow active state with neither a next
- * action nor a stuck reason; any active stuck reason takes precedence.
+ * action nor a stuck reason; a next action scheduled for a future calendar
+ * date is also quiet because it is not useful foreground work yet. Any
+ * active stuck reason takes precedence.
  *
  * `completion_review` is deliberately not "stuck": an active project with
  * zero remaining open tasks is healthy and ready for a completion decision,
  * not blocked. It gets its own `active-review` classification so the UI can
  * present it distinctly from a genuine `active-stuck` blocker.
  */
-export function classifyProjectListItem(project: ProjectWithActions): ProjectListClassification {
-  if (
-    project.status === "active" &&
-    project.nextAction == null &&
-    project.stuckReason == null
-  ) {
-    return project.deferredNextAction ? "active-deferred" : "active-waiting";
-  }
+export function classifyProjectListItem(
+  project: ProjectWithActions,
+  now = new Date(),
+): ProjectListClassification {
   if (project.status === "active") {
     if (project.stuckReason === "completion_review") return "active-review";
     if (project.stuckReason != null) return "active-stuck";
+    if (
+      project.nextAction?.scheduledDate &&
+      isFutureCalendarDate(project.nextAction.scheduledDate, now)
+    ) {
+      return "active-deferred";
+    }
+    if (project.nextAction == null) {
+      return project.deferredNextAction ? "active-deferred" : "active-waiting";
+    }
     return "active-actionable";
   }
   return project.status;
@@ -118,14 +125,7 @@ function projectListSortOrder(
   project: ProjectWithActions,
   now: Date,
 ): number {
-  const classification = classifyProjectListItem(project);
-  if (
-    classification === "active-actionable" &&
-    project.nextAction?.scheduledDate &&
-    isFutureCalendarDate(project.nextAction.scheduledDate, now)
-  ) {
-    return 3;
-  }
+  const classification = classifyProjectListItem(project, now);
   return projectListClassificationOrder[classification];
 }
 

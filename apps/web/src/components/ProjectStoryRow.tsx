@@ -135,11 +135,11 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const statusLabel = retainedEntry?.action
     ? projectTransitionLabel(retainedEntry.action, strings)
     : strings.projectStatusLabels[story.status];
-  const classification = classifyProjectListItem(story);
+  const now = new Date();
+  const classification = classifyProjectListItem(story, now);
   const accent = statusAccentByClassification[classification];
   const isActiveWaiting = classification === "active-waiting";
   const waitingOn = story.waitingOn ?? [];
-  const now = new Date();
   const waitingDuration = story.waitingUntil
     ? formatCompactWaitDuration(story.waitingUntil, now, locale)
     : null;

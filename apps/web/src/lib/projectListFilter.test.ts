@@ -149,7 +149,7 @@ describe("filterAndSortProjects", () => {
     expect(result.map((p) => p.id)).toEqual([3, 2, 1]);
   });
 
-  it("sorts future-scheduled next actions to the bottom of the active section", () => {
+  it("classifies future-scheduled next actions as quiet", () => {
     const now = new Date(2026, 7, 31, 23, 30);
     const actionable = makeProject({
       id: 1,
@@ -189,7 +189,7 @@ describe("filterAndSortProjects", () => {
     );
 
     expect(result.map((project) => project.id)).toEqual([1, 2, 3, 4]);
-    expect(classifyProjectListItem(deferred)).toBe("active-actionable");
+    expect(classifyProjectListItem(deferred, now)).toBe("active-deferred");
   });
 
   it("breaks ties within a bucket by position, then locale title, then id", () => {

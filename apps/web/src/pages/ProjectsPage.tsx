@@ -133,11 +133,13 @@ function ProjectsPageContent() {
     ...retainedOnly,
   ];
 
+  const now = new Date();
   const filteredProjects = filterAndSortProjects(allProjects, {
     query,
     scope,
     currentMemberId,
     locale,
+    now,
   });
   const hiddenMatchCount =
     scope === "mine"
@@ -147,7 +149,7 @@ function ProjectsPageContent() {
   // stuck work stays in the foreground; healthy waiting and deferred work
   // share one quiet folded section, and terminal work remains folded below.
   const classifications = new Map(
-    filteredProjects.map((project) => [project.id, classifyProjectListItem(project)]),
+    filteredProjects.map((project) => [project.id, classifyProjectListItem(project, now)]),
   );
   const activeProjects = filteredProjects.filter((project) => {
     const classification = classifications.get(project.id);

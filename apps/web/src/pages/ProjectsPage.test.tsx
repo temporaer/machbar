@@ -630,6 +630,19 @@ describe("ProjectsPage – workflow sections", () => {
         }),
         stuckReason: null,
       }),
+      makeProject({
+        id: 8,
+        title: "Erst nächste Woche",
+        status: "active",
+        ownerMemberId: 1,
+        position: 4,
+        nextAction: makeTask({
+          id: 80,
+          title: "Nächste Woche beginnen",
+          scheduledDate: "2099-01-02",
+        }),
+        stuckReason: null,
+      }),
     ]);
 
     const { container } = renderWithProviders(<ProjectsPage />);
@@ -640,7 +653,7 @@ describe("ProjectsPage – workflow sections", () => {
         .map((section) => section.dataset.projectSection),
     ).toEqual(["active", "quiet", "backlog", "terminal"]);
     expect(screen.getByRole("region", { name: "Aktiv & festgefahren" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Wartet / zurückgestellt (3)" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Wartet / zurückgestellt (4)" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Später / noch nicht aktiv" })).toBeInTheDocument();
     expect(rowFor(container, "Machbar").closest("[data-project-section]")).toHaveAttribute(
       "data-project-section",
@@ -656,6 +669,10 @@ describe("ProjectsPage – workflow sections", () => {
     expect(
       rowFor(container, "Späterer nächster Schritt").closest('[data-project-section="active"]'),
     ).toBeNull();
+    expect(rowFor(container, "Erst nächste Woche").closest("[data-project-section]")).toHaveAttribute(
+      "data-project-section",
+      "quiet",
+    );
     expect(rowFor(container, "Wartet gesund A").closest("[data-project-section]")).toHaveAttribute(
       "data-project-section",
     "quiet",
