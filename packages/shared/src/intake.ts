@@ -1,5 +1,7 @@
 import type { TaskReminderInput } from "./index.js";
 
+import { Temporal } from "@js-temporal/polyfill";
+
 export const INTAKE_TIMEZONE = "Europe/Berlin" as const;
 export const INTAKE_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 export const INTAKE_MAX_CALENDAR_EVENTS = 20;
@@ -28,15 +30,14 @@ interface TimestampParts {
   hour: number;
   minute: number;
   second: number;
-  milliseconds: number;
+  fraction: string;
 }
 
 const timestampPattern =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?(Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/;
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(\.\d+)?(Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/;
 
 function timestampParts(value: string): {
   parts: TimestampParts;
-  fraction: string;
   zone: string | null;
 } | null {
   const match = timestampPattern.exec(value);
@@ -48,7 +49,7 @@ function timestampParts(value: string): {
     hour: Number(match[4]),
     minute: Number(match[5]),
     second: Number(match[6] ?? "0"),
-    milliseconds: match[7] ? Number(`0${match[7]}`) * 1_000 : 0,
+    fraction: match[7] ?? "",
   };
   if (
     !validDate(`${match[1]}-${match[2]}-${match[3]}`) ||
@@ -56,83 +57,13 @@ function timestampParts(value: string): {
     parts.minute > 59 ||
     parts.second > 59
   ) return null;
-  return { parts, fraction: match[7] ?? "", zone: match[8] ?? null };
-}
-
-function utcMillis(parts: TimestampParts): number {
-  const value = new Date(0);
-  value.setUTCFullYear(parts.year, parts.month - 1, parts.day);
-  value.setUTCHours(parts.hour, parts.minute, parts.second, parts.milliseconds);
-  return value.getTime();
-}
-
-const timezonePartsFormatterCache = new Map<string, Intl.DateTimeFormat>();
-
-function timezonePartsFormatter(timezone: string): Intl.DateTimeFormat {
-  let formatter = timezonePartsFormatterCache.get(timezone);
-  if (!formatter) {
-    formatter = new Intl.DateTimeFormat("en-CA", {
-      calendar: "gregory",
-      numberingSystem: "latn",
-      timeZone: timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    });
-    timezonePartsFormatterCache.set(timezone, formatter);
-  }
-  return formatter;
-}
-
-function zonedParts(instant: number, timezone: string): TimestampParts {
-  const values = new Map(
-    timezonePartsFormatter(timezone)
-      .formatToParts(new Date(instant))
-      .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, Number(part.value)]),
-  );
-  return {
-    year: values.get("year")!,
-    month: values.get("month")!,
-    day: values.get("day")!,
-    hour: values.get("hour")!,
-    minute: values.get("minute")!,
-    second: values.get("second")!,
-    milliseconds: new Date(instant).getUTCMilliseconds(),
-  };
-}
-
-function sameTimestampParts(left: TimestampParts, right: TimestampParts): boolean {
-  return (
-    left.year === right.year &&
-    left.month === right.month &&
-    left.day === right.day &&
-    left.hour === right.hour &&
-    left.minute === right.minute &&
-    left.second === right.second &&
-    left.milliseconds === right.milliseconds
-  );
-}
-
-function timezoneOffsetMinutes(instant: number, timezone: string): number {
-  const local = zonedParts(instant, timezone);
-  return (utcMillis(local) - instant) / 60_000;
-}
-
-function formatOffset(minutes: number): string {
-  const sign = minutes < 0 ? "-" : "+";
-  const absolute = Math.abs(minutes);
-  return `${sign}${String(Math.floor(absolute / 60)).padStart(2, "0")}:${String(absolute % 60).padStart(2, "0")}`;
+  return { parts, zone: match[8] ?? null };
 }
 
 /**
  * Normalize the timestamp shapes commonly emitted by imperfect providers.
- * Local wall-clock values are resolved with Intl's timezone database so the
- * date's offset is used and DST gaps/overlaps remain explicit diagnostics.
+ * Local wall-clock values use Temporal's timezone database and reject DST
+ * gaps/overlaps instead of silently choosing an instant.
  */
 export function normalizeIntakeTimestamp(
   value: string,
@@ -140,8 +71,8 @@ export function normalizeIntakeTimestamp(
 ): IntakeTimestampNormalization {
   const parsed = timestampParts(value);
   if (!parsed) return { value, status: "invalid", timezoneInferred: false };
-  const { parts, fraction, zone } = parsed;
-  const seconds = `:${String(parts.second).padStart(2, "0")}${fraction}`;
+  const { parts, zone } = parsed;
+  const seconds = `:${String(parts.second).padStart(2, "0")}${parts.fraction}`;
   const localPrefix = `${value.slice(0, 16)}${seconds}`;
   if (zone !== null) {
     const normalized = `${localPrefix}${zone}`;
@@ -150,23 +81,41 @@ export function normalizeIntakeTimestamp(
       : { value, status: "invalid", timezoneInferred: false };
   }
   if (!validTimezone(timezone)) return { value, status: "invalid", timezoneInferred: false };
-  const local = { ...parts, milliseconds: parts.milliseconds };
-  const wallMillis = utcMillis(local);
-  const offsets = new Set<number>();
-  for (let delta = -172_800_000; delta <= 172_800_000; delta += 3_600_000) {
-    offsets.add(timezoneOffsetMinutes(wallMillis + delta, timezone));
-  }
-  const candidates = [...offsets]
-    .map((offset) => ({ offset, instant: wallMillis - offset * 60_000 }))
-    .filter(({ instant }) => sameTimestampParts(zonedParts(instant, timezone), local));
-  if (candidates.length === 0) return { value, status: "nonexistent", timezoneInferred: true };
-  if (candidates.length > 1) return { value, status: "ambiguous", timezoneInferred: true };
-  const candidate = candidates[0]!;
-  return {
-    value: `${localPrefix}${formatOffset(candidate.offset)}`,
-    status: "normalized",
-    timezoneInferred: true,
+  const fractionDigits = parts.fraction.slice(1);
+  const localFields = {
+    timeZone: timezone,
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: parts.hour,
+    minute: parts.minute,
+    second: parts.second,
+    millisecond: Number(fractionDigits.padEnd(3, "0").slice(0, 3) || "0"),
+    microsecond: Number(fractionDigits.padEnd(6, "0").slice(3, 6) || "0"),
+    nanosecond: Number(fractionDigits.padEnd(9, "0").slice(6, 9) || "0"),
   };
+  try {
+    const candidate = Temporal.ZonedDateTime.from(localFields, {
+      disambiguation: "reject",
+    });
+    return {
+      value: `${localPrefix}${candidate.offset}`,
+      status: "normalized",
+      timezoneInferred: true,
+    };
+  } catch {
+    const localDateTime = Temporal.PlainDateTime.from(localFields);
+    const earlier = Temporal.ZonedDateTime.from(localFields, { disambiguation: "earlier" });
+    const later = Temporal.ZonedDateTime.from(localFields, { disambiguation: "later" });
+    const isAmbiguous =
+      earlier.toPlainDateTime().equals(localDateTime) &&
+      later.toPlainDateTime().equals(localDateTime);
+    return {
+      value,
+      status: isAmbiguous ? "ambiguous" : "nonexistent",
+      timezoneInferred: true,
+    };
+  }
 }
 
 export interface IntakeWorkItem {
@@ -379,7 +328,10 @@ export interface IntakeTimestampNormalization {
 
 export interface IntakeTimestampInference {
   path: (string | number)[];
-  timezone: string;
+  originalValue: string;
+  value: string;
+  secondsAdded: boolean;
+  timezone: string | null;
 }
 
 function issue(
@@ -987,12 +939,12 @@ export function prepareIncompleteIntakeDraft(
 ): {
   draft: IntakeDraft;
   omissions: IntakeOmission[];
-  inferredTimestamps: IntakeTimestampInference[];
+  normalizedTimestamps: IntakeTimestampInference[];
   blockingIssues: IntakeIssue[];
 } {
   const prepared = cloneIntakeDraft(draft);
   const omissions: IntakeOmission[] = [];
-  const inferredTimestamps: IntakeTimestampInference[] = [];
+  const normalizedTimestamps: IntakeTimestampInference[] = [];
   const timezone = options.timezone ?? INTAKE_TIMEZONE;
 
   const recordTimestamp = (
@@ -1000,8 +952,14 @@ export function prepareIncompleteIntakeDraft(
     path: (string | number)[],
   ): IntakeTimestampNormalization => {
     const result = normalizeIntakeTimestamp(value, timezone);
-    if (result.timezoneInferred && result.status === "normalized") {
-      inferredTimestamps.push({ path, timezone });
+    if (result.status === "normalized") {
+      normalizedTimestamps.push({
+        path,
+        originalValue: value,
+        value: result.value,
+        secondsAdded: !/T\d{2}:\d{2}:\d{2}/.test(value),
+        timezone: result.timezoneInferred ? timezone : null,
+      });
     }
     return result;
   };
@@ -1126,7 +1084,7 @@ export function prepareIncompleteIntakeDraft(
   return {
     draft: prepared,
     omissions,
-    inferredTimestamps,
+    normalizedTimestamps,
     blockingIssues: intakeSelectedDraftIssues(prepared, options),
   };
 }

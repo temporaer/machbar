@@ -326,6 +326,21 @@ describe("intake plan contracts", () => {
       status: "normalized",
       timezoneInferred: false,
     });
+    expect(normalizeIntakeTimestamp("2026-01-15T10:30.1234", "Europe/Berlin")).toEqual({
+      value: "2026-01-15T10:30:00.1234+01:00",
+      status: "normalized",
+      timezoneInferred: true,
+    });
+    expect(normalizeIntakeTimestamp("2026-01-15T10:30.0001", "Europe/Berlin")).toEqual({
+      value: "2026-01-15T10:30:00.0001+01:00",
+      status: "normalized",
+      timezoneInferred: true,
+    });
+    expect(normalizeIntakeTimestamp("2026-01-15T10:30.123456789", "Europe/Berlin")).toEqual({
+      value: "2026-01-15T10:30:00.123456789+01:00",
+      status: "normalized",
+      timezoneInferred: true,
+    });
     expect(normalizeIntakeTimestamp("2026-02-30T10:30", "Europe/Berlin").status).toBe("invalid");
     expect(normalizeIntakeTimestamp("2026-03-29T02:30", "Europe/Berlin").status).toBe("nonexistent");
     expect(normalizeIntakeTimestamp("2026-10-25T02:30", "Europe/Berlin").status).toBe("ambiguous");
@@ -359,7 +374,41 @@ describe("intake plan contracts", () => {
       { kind: "absolute", at: "2026-07-15T08:00:00+02:00" },
     ]);
     expect(browserPreparation.omissions).toEqual([]);
-    expect(browserPreparation.inferredTimestamps).toHaveLength(4);
+    expect(browserPreparation.normalizedTimestamps).toHaveLength(4);
+    expect(browserPreparation.normalizedTimestamps.every((item) => item.timezone === "Europe/Berlin")).toBe(true);
     expect(browserPreparation.blockingIssues).toEqual([]);
+  });
+
+  it("records successful seconds-only normalization without timezone inference", () => {
+    const plan = readFixture("valid-elternabend.json") as IntakePlan;
+    const draft = buildDraftFromPlan(plan, []);
+    draft.calendarEvents[0] = {
+      ...draft.calendarEvents[0]!,
+      startDateTime: "2026-01-15T10:30+01:00",
+      endDateTime: "2026-01-15T11:30Z",
+    };
+    const prepared = prepareIncompleteIntakeDraft(draft, {
+      memberIds: [],
+      paperlessAvailable: true,
+      hasFiles: false,
+    });
+    expect(prepared.normalizedTimestamps).toEqual([
+      expect.objectContaining({
+        path: ["calendarEvents", 0, "startDateTime"],
+        originalValue: "2026-01-15T10:30+01:00",
+        value: "2026-01-15T10:30:00+01:00",
+        secondsAdded: true,
+        timezone: null,
+      }),
+      expect.objectContaining({
+        path: ["calendarEvents", 0, "endDateTime"],
+        originalValue: "2026-01-15T11:30Z",
+        value: "2026-01-15T11:30:00Z",
+        secondsAdded: true,
+        timezone: null,
+      }),
+    ]);
+    expect(prepared.omissions).toEqual([]);
+    expect(prepared.blockingIssues).toEqual([]);
   });
 });

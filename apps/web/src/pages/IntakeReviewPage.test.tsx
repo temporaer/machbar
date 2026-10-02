@@ -215,6 +215,32 @@ describe("IntakeReviewPage", () => {
     });
   });
 
+  it.each([
+    ["2026-01-15T10:30+01:00", "2026-01-15T11:30:00+01:00"],
+    ["2026-01-15T10:30Z", "2026-01-15T11:30:00Z"],
+  ])("accepts timestamps with missing seconds and an existing offset (%s)", async (startDateTime, endDateTime) => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: {
+        ...draft,
+        calendarEvents: [{
+          ...draft.calendarEvents[0]!,
+          startDateTime,
+          endDateTime,
+        }],
+      },
+    } as never);
+    renderPage();
+
+    expect(await screen.findByText(/Fehlende Sekunden werden bei .* ergänzt\./)).toBeInTheDocument();
+    expect(screen.queryByText("Nicht übernommene Angaben")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Unvollständig übernehmen" }));
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1]).toMatchObject({
+      acceptIncomplete: true,
+    });
+  });
+
   it("renders an empty summary without an editable summary field", async () => {
     mockedApi.getIntake.mockResolvedValue({ ...record(), draft: { ...draft, summary: "" } } as never);
     renderPage();

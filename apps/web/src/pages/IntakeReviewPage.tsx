@@ -237,7 +237,7 @@ export function IntakeReviewPage() {
     !hasInvalidInputs &&
     selectedIssues.length > 0 &&
     incompletePreview &&
-    (incompletePreview.omissions.length > 0 || incompletePreview.inferredTimestamps.length > 0) &&
+    (incompletePreview.omissions.length > 0 || incompletePreview.normalizedTimestamps.length > 0) &&
     incompletePreview.blockingIssues.length === 0,
   );
   const omissionSummaries = useMemo(
@@ -248,8 +248,16 @@ export function IntakeReviewPage() {
   );
   const inferredTimezones = useMemo(
     () => incompletePreview
-      ? [...new Set(incompletePreview.inferredTimestamps.map((item) => item.timezone))]
+      ? [...new Set(
+        incompletePreview.normalizedTimestamps
+          .map((item) => item.timezone)
+          .filter((item): item is string => item !== null),
+      )]
       : [],
+    [incompletePreview],
+  );
+  const normalizedSecondsCount = useMemo(
+    () => incompletePreview?.normalizedTimestamps.filter((item) => item.secondsAdded).length ?? 0,
     [incompletePreview],
   );
   const latestIssuesRef = useRef(issues);
@@ -475,7 +483,7 @@ export function IntakeReviewPage() {
         const latestPreview = prepareIncompleteIntakeDraft(latestDraft, validationOptions);
         if (
           latestPreview.omissions.length === 0 &&
-          latestPreview.inferredTimestamps.length === 0
+          latestPreview.normalizedTimestamps.length === 0
         ) return;
         if (latestPreview.blockingIssues.length > 0) return;
       } else if (intakeSelectedDraftIssues(latestDraft, validationOptions).length > 0) {
@@ -647,10 +655,17 @@ export function IntakeReviewPage() {
         {canAcceptIncomplete ? (
           <div className="stack">
             <div>
-              <strong>{strings.intakeOmissions}</strong>
-              <ul>
-                {omissionSummaries.map((summary, index) => <li key={`${summary}-${index}`}>{summary}</li>)}
-              </ul>
+              {omissionSummaries.length > 0 ? (
+                <>
+                  <strong>{strings.intakeOmissions}</strong>
+                  <ul>
+                    {omissionSummaries.map((summary, index) => <li key={`${summary}-${index}`}>{summary}</li>)}
+                  </ul>
+                </>
+              ) : null}
+              {normalizedSecondsCount > 0 ? (
+                <small>{strings.intakeTimestampSecondsAdded(normalizedSecondsCount)}</small>
+              ) : null}
               {inferredTimezones.map((inferredTimezone) => (
                 <small key={inferredTimezone}>
                   {strings.intakeTimestampTimezoneAdded(inferredTimezone)}

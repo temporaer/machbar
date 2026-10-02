@@ -97,6 +97,8 @@ const base = {
   intakeOmissionInvalidOwner: (item: string) =>
     `${item}: Ungültige Zuständigkeit wird nicht übernommen.`,
   intakeOmissions: "Nicht übernommene Angaben",
+  intakeTimestampSecondsAdded: (count: number) =>
+    `Fehlende Sekunden werden bei ${count === 1 ? "einem Zeitstempel" : `${count} Zeitstempeln`} ergänzt.`,
   intakeTimestampTimezoneAdded: (timezone: string) =>
     `Zeitzone ${timezone} ergänzt.`,
   intakeInclude: "In Vorschlag übernehmen",

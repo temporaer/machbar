@@ -119,6 +119,8 @@ const en = {
   intakeOmissionInvalidOwner: (item: string) =>
     `${item}: Invalid owner will not be applied.`,
   intakeOmissions: "Omitted values",
+  intakeTimestampSecondsAdded: (count: number) =>
+    `${count} timestamp${count === 1 ? "" : "s"} will have missing seconds added.`,
   intakeTimestampTimezoneAdded: (timezone: string) =>
     `Timezone ${timezone} added.`,
   intakeInclude: "Include in proposal",
