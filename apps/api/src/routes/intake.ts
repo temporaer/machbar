@@ -20,9 +20,11 @@ import { applyIntake } from "../intake/apply.js";
 import { HomeAssistantRequestSignal } from "../integrations/homeAssistantRequests.js";
 import { intakeDraftStructureSchema, isValidIanaTimezone } from "../schemas.js";
 import { z } from "zod";
+import { normalizeIntakeDraftInput } from "@machbar/shared";
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif", "application/pdf", "text/plain"]);
+const intakeDraftInputSchema = z.preprocess(normalizeIntakeDraftInput, intakeDraftStructureSchema);
 
 function actor(request: { activityActor?: { id: number } | null; authMember?: { id: number } | null }) {
   return request.activityActor?.id ?? null;
@@ -108,7 +110,7 @@ export function registerIntakeRoutes(
 
   app.patch<{ Params: { id: string } }>("/api/intake/:id/plan", async (request) => {
     const body = request.body as { expectedRevision: number; draft: unknown };
-    const draft = parseOrThrow(intakeDraftStructureSchema, body?.draft);
+    const draft = parseOrThrow(intakeDraftInputSchema, body?.draft);
     updateIntakeDraft(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, {
       expectedRevision: body.expectedRevision,
       draft,
@@ -123,7 +125,7 @@ export function registerIntakeRoutes(
   app.post<{ Params: { id: string } }>("/api/intake/:id/apply", async (request) => {
     const body = parseOrThrow(z.object({
       expectedRevision: z.number().int().positive(),
-      draft: intakeDraftStructureSchema.optional(),
+      draft: intakeDraftInputSchema.optional(),
       acceptIncomplete: z.boolean().optional(),
       timezone: z.string().min(1).max(255).refine(isValidIanaTimezone, "Timezone must be a valid IANA zone name.").optional(),
     }).strict(), request.body);

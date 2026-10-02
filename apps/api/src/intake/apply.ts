@@ -105,7 +105,11 @@ export async function applyIntake(
   }
   const acceptedDraft = normalizeStoredIntakeDraft(parse<unknown>(stored.acceptedDraftJson));
   const initialAcceptance = acceptedDraft === null;
-  const submittedDraft = acceptedDraft ?? input.draft;
+  const submittedDraft = acceptedDraft ?? (
+    input.draft === undefined
+      ? undefined
+      : normalizeStoredIntakeDraft(input.draft) ?? input.draft
+  );
   let draftToValidate = submittedDraft;
   if (draftToValidate === undefined) throw AppError.badRequest("intake_draft_invalid", "A draft is required for the initial apply.");
   const memberIds = db.select({ id: schema.members.id }).from(schema.members).all().map((member) => member.id);

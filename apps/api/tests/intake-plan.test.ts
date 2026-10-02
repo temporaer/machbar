@@ -8,6 +8,7 @@ import {
   intakePlanIssues,
   intakeSelectedDraftIssues,
   normalizeIntakeNullableAbsenceFields,
+  normalizeIntakeDraftInput,
   normalizeIntakePlanInput,
   normalizeIntakePlan,
   normalizeIntakeTimestamp,
@@ -172,6 +173,7 @@ describe("intake plan contracts", () => {
     expect(normalized.plan.workItems[0]?.parentKey).toBe("child");
     expect(normalized.warnings.some((warning) => warning.message.includes("dangling"))).toBe(true);
     expect(normalized.warnings.some((warning) => warning.message.includes("cycle"))).toBe(true);
+    expect(normalized.warnings.some((warning) => warning.message.includes("local-midnight"))).toBe(false);
     expect(normalizeIntakePlan(normalized.plan).plan).toEqual(normalized.plan);
 
     const semantic = intakePlanIssues(normalized.plan);
@@ -182,6 +184,18 @@ describe("intake plan contracts", () => {
       paperlessAvailable: true,
       hasFiles: false,
     }).map((item) => item.code)).not.toContain("captured_reminder");
+  });
+
+  it("derives local-midnight availability without a routine warning", () => {
+    const plan = readFixture("valid-elternabend.json") as IntakePlan;
+    plan.workItems[0]!.notBeforeDate = "2026-10-02";
+    plan.workItems[0]!.notBeforeAt = null;
+    plan.warnings = [];
+
+    const normalized = normalizeIntakePlan(plan);
+
+    expect(normalized.plan.workItems[0]?.notBeforeAt).not.toBeNull();
+    expect(normalized.warnings).toEqual([]);
   });
 
   it("preserves semantic refinement codes in Zod issues", () => {
@@ -249,14 +263,181 @@ describe("intake plan contracts", () => {
     ]));
   });
 
+  it("normalizes missing and null booleans, collections, and relationships", () => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Defaults",
+      calendarEvents: [{
+        key: "event",
+        title: "Event",
+        allDay: null,
+        relatedWorkKeys: null,
+      }, {
+        key: "event-defaults",
+        title: "Event defaults",
+      }],
+      workItems: [{
+        key: "action",
+        kind: "action",
+        title: "Action",
+        needsClarification: null,
+        reminders: null,
+        relatedCalendarKeys: null,
+      }, {
+        key: "explicit",
+        kind: "action",
+        title: "Explicit",
+        needsClarification: true,
+        reminders: [],
+        relatedCalendarKeys: [],
+      }, {
+        key: "missing-defaults",
+        kind: "action",
+        title: "Missing defaults",
+      }],
+      warnings: null,
+    }) as IntakePlan;
+
+    expect(normalized.calendarEvents[0]).toMatchObject({
+      allDay: false,
+      relatedWorkKeys: [],
+    });
+    expect(normalized.calendarEvents[1]).toMatchObject({
+      allDay: false,
+      relatedWorkKeys: [],
+    });
+    expect(normalized.workItems[0]).toMatchObject({
+      needsClarification: false,
+      reminders: [],
+      relatedCalendarKeys: [],
+    });
+    expect(normalized.workItems[1]).toMatchObject({
+      needsClarification: true,
+      reminders: [],
+      relatedCalendarKeys: [],
+    });
+    expect(normalized.workItems[2]).toMatchObject({
+      needsClarification: false,
+      reminders: [],
+      relatedCalendarKeys: [],
+    });
+    expect(normalized.warnings).toEqual([]);
+    expect(normalizeIntakePlanInput({
+      summary: "Null root",
+      calendarEvents: null,
+      workItems: null,
+      warnings: null,
+    })).toMatchObject({ calendarEvents: [], workItems: [], warnings: [] });
+    expect(intakePlanStructureSchema.safeParse(normalized).success).toBe(true);
+  });
+
   it.each([
-      ["calendarEvents", null],
+    [["calendarEvents", 0, "allDay"], 0],
+    [["calendarEvents", 0, "relatedWorkKeys"], "[]"],
+    [["workItems", 0, "needsClarification"], "false"],
+    [["workItems", 0, "reminders"], {}],
+    [["workItems", 0, "relatedCalendarKeys"], 0],
+  ] as const)("preserves wrong non-null values for validation at %j", (path, value) => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Wrong value",
+      calendarEvents: [{ key: "event", title: "Event" }],
+      workItems: [{ key: "action", kind: "action", title: "Action" }],
+      [path[0]!]: path[0] === "calendarEvents"
+        ? [{ key: "event", title: "Event", [path[2]!]: value }]
+        : [{ key: "action", kind: "action", title: "Action", [path[2]!]: value }],
+    });
+    const result = intakePlanStructureSchema.safeParse(normalized);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path }),
+      ]));
+    }
+  });
+
+  it("discards project-only task fields before validation with one warning", () => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Project metadata",
+      workItems: [{
+        key: "garden",
+        kind: "project",
+        title: "Garden",
+        dueDate: "2026-10-10",
+        scheduledDate: "2026-10-05",
+        notBeforeDate: 42,
+        notBeforeAt: {},
+        reminders: { malformed: true },
+        needsClarification: true,
+      }],
+    }) as IntakePlan;
+
+    expect(intakePlanStructureSchema.safeParse(normalized).success).toBe(true);
+    expect(normalized.workItems[0]).toMatchObject({
+      kind: "project",
+      dueDate: "2026-10-10",
+      scheduledDate: "2026-10-05",
+      notBeforeDate: null,
+      notBeforeAt: null,
+      reminders: [],
+      needsClarification: false,
+    });
+    expect(normalized.warnings).toEqual([
+      { message: "Ignored task-only fields on project 'garden'." },
+    ]);
+  });
+
+  it("does not warn for default project task fields or discard supported fields", () => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Project defaults",
+      workItems: [{
+        key: "garden",
+        kind: "project",
+        title: "Garden",
+        notes: "Notes",
+        ownerName: "Alex",
+        parentKey: "parent",
+        dueDate: "2026-10-10",
+        scheduledDate: "2026-10-05",
+        notBeforeDate: null,
+        notBeforeAt: null,
+        reminders: [],
+        needsClarification: false,
+      }],
+    }) as IntakePlan;
+
+    expect(normalized.warnings).toEqual([]);
+    expect(normalized.workItems[0]).toMatchObject({
+      notes: "Notes",
+      ownerName: "Alex",
+      parentKey: "parent",
+      dueDate: "2026-10-10",
+      scheduledDate: "2026-10-05",
+    });
+  });
+
+  it("keeps valid reminders on actions needing clarification", () => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Clarification",
+      workItems: [{
+        key: "action",
+        kind: "action",
+        title: "Clarify",
+        needsClarification: true,
+        reminders: [{ kind: "absolute", at: "2026-10-01T08:00:00+02:00" }],
+      }],
+    }) as IntakePlan;
+
+    expect(normalized.workItems[0]).toMatchObject({
+      needsClarification: true,
+      reminders: [{ kind: "absolute", at: "2026-10-01T08:00:00+02:00" }],
+    });
+  });
+
+  it.each([
       ["calendarEvents", { unexpected: true }],
       ["calendarEvents", "not-an-array"],
-      ["workItems", null],
       ["workItems", { unexpected: true }],
       ["workItems", "not-an-array"],
-      ["warnings", null],
       ["warnings", { unexpected: true }],
       ["warnings", "not-an-array"],
   ] as const)("preserves an explicitly supplied wrong-type %s collection", (field, value) => {
@@ -316,14 +497,26 @@ describe("intake plan contracts", () => {
 
   it("normalizes stored legacy drafts without rewriting free text", () => {
     const normalized = normalizeStoredIntakeDraft({
+      calendarEvents: null,
       workItems: [{
         key: "water-flowers",
         notes: ".",
         ownerName: ".",
         dueDate: ".",
         parentKey: ".",
+        enabled: false,
+        ownerMemberId: 17,
+        needsClarification: null,
+        relatedCalendarKeys: null,
         reminderAt: "2026-10-03T08:00:00+02:00",
+      }, {
+        key: "empty-reminders",
+        reminders: null,
+        enabled: true,
+        ownerMemberId: null,
       }],
+      warnings: null,
+      retainSourceInPaperless: true,
     });
     expect(normalized?.workItems[0]).toMatchObject({
       notes: ".",
@@ -331,6 +524,28 @@ describe("intake plan contracts", () => {
       dueDate: null,
       parentKey: null,
       reminders: [{ kind: "absolute", at: "2026-10-03T08:00:00+02:00" }],
+      needsClarification: false,
+      relatedCalendarKeys: [],
+      enabled: false,
+      ownerMemberId: 17,
+    });
+    expect(normalized?.workItems[1]).toMatchObject({
+      reminders: [],
+      needsClarification: false,
+      relatedCalendarKeys: [],
+      enabled: true,
+      ownerMemberId: null,
+    });
+    expect(normalized).toMatchObject({
+      calendarEvents: [],
+      warnings: [],
+      retainSourceInPaperless: true,
+    });
+    expect(normalizeIntakeDraftInput({
+      workItems: [{ key: "project", kind: "project", notBeforeDate: "2026-10-01", enabled: false }],
+    })).toMatchObject({
+      workItems: [{ notBeforeDate: null, enabled: false }],
+      warnings: [{ message: "Ignored task-only fields on project 'project'." }],
     });
   });
 

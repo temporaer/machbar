@@ -1,0 +1,16 @@
+{
+  "haCoreVersion": "2026.9.3",
+  "inspectedSource": "homeassistant/components/openai_conversation/entity.py::_adjust_schema",
+  "integrationTest": false,
+  "providerNote": "Fixture of the inspected schema conversion, not an integration test. HA Core 2026.9.3 makes optional object properties required and nullable, adds strict inside object schemas, and does not set text.format.strict. Current HA development uses a separate schema.py converter and text.format.strict=true. Provider enforcement depends on the installed HA and provider versions.",
+  "properties": [
+    { "path": ["calendarEvents"], "type": "array", "required": true, "nullable": false },
+    { "path": ["workItems"], "type": "array", "required": true, "nullable": false },
+    { "path": ["warnings"], "type": "array", "required": true, "nullable": false },
+    { "path": ["calendarEvents", "allDay"], "type": "boolean", "required": true, "nullable": false },
+    { "path": ["calendarEvents", "relatedWorkKeys"], "type": "array", "required": true, "nullable": false },
+    { "path": ["workItems", "needsClarification"], "type": "boolean", "required": true, "nullable": false },
+    { "path": ["workItems", "reminders"], "type": "array", "required": true, "nullable": false },
+    { "path": ["workItems", "relatedCalendarKeys"], "type": "array", "required": true, "nullable": false }
+  ]
+}
