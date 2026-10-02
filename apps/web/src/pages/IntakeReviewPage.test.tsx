@@ -122,7 +122,7 @@ async function openWorkPropertyEditor(title: string, propertyName: string) {
 }
 
 function applyButton() {
-  return screen.getByRole("button", { name: /übernehmen$/i });
+  return screen.getByRole("button", { name: /^\d+ (?:Element|Elemente|Vorschläge) übernehmen$/i });
 }
 
 function authoredSection(editor: ReturnType<typeof within>, label: string) {
@@ -187,6 +187,58 @@ describe("IntakeReviewPage", () => {
     expect(screen.queryByDisplayValue("Schulfest")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "3 Elemente übernehmen" })).toBeInTheDocument();
+  });
+
+  it("accepts inferred local timestamps through the explicit incomplete flow", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: {
+        ...draft,
+        calendarEvents: [{
+          ...draft.calendarEvents[0]!,
+          startDateTime: "2026-10-08T19:00",
+          endDateTime: "2026-10-08T20:00",
+        }],
+      },
+    } as never);
+    renderPage();
+    expect(await screen.findByText(/Zeitzone .* ergänzt\./)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Unvollständig übernehmen" }));
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1]).toMatchObject({
+      acceptIncomplete: true,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Berlin",
+    });
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1].draft?.calendarEvents[0]).toMatchObject({
+      startDateTime: "2026-10-08T19:00",
+      endDateTime: "2026-10-08T20:00",
+    });
+  });
+
+  it.each([
+    ["2026-01-15T10:30+01:00", "2026-01-15T11:30:00+01:00"],
+    ["2026-01-15T10:30Z", "2026-01-15T11:30:00Z"],
+  ])("accepts timestamps with missing seconds and an existing offset (%s)", async (startDateTime, endDateTime) => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      draft: {
+        ...draft,
+        calendarEvents: [{
+          ...draft.calendarEvents[0]!,
+          startDateTime,
+          endDateTime,
+        }],
+      },
+    } as never);
+    renderPage();
+
+    expect(await screen.findByText(/Fehlende Sekunden werden bei .* ergänzt\./)).toBeInTheDocument();
+    expect(screen.queryByText("Nicht übernommene Angaben")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Unvollständig übernehmen" }));
+    await waitFor(() => expect(mockedApi.applyIntake).toHaveBeenCalledTimes(1));
+    expect(mockedApi.applyIntake.mock.calls[0]?.[1]).toMatchObject({
+      acceptIncomplete: true,
+    });
   });
 
   it("renders an empty summary without an editable summary field", async () => {
@@ -759,7 +811,7 @@ describe("IntakeReviewPage", () => {
       workItems: [{
         ...draft.workItems[0]!,
         needsClarification: true,
-        reminders: [{ kind: "absolute", at: "2026-10-01T08:00:00+02:00" }],
+        reminders: [{ kind: "absolute", at: "not-a-date" }],
       }, draft.workItems[1]!],
     };
     mockedApi.getIntake.mockResolvedValue({
@@ -1162,7 +1214,7 @@ describe("IntakeReviewPage", () => {
       workItems: [{
         ...draft.workItems[0]!,
         needsClarification: true,
-        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+        reminders: [{ kind: "absolute" as const, at: "not-a-date" }],
       }, draft.workItems[1]!],
     };
     const replacementDraft = {
@@ -1265,7 +1317,7 @@ describe("IntakeReviewPage", () => {
       workItems: [{
         ...draft.workItems[0]!,
         needsClarification: true,
-        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+        reminders: [{ kind: "absolute" as const, at: "not-a-date" }],
       }, draft.workItems[1]!],
     };
     let resolveStale!: (value: ReturnType<typeof record>) => void;
@@ -1331,7 +1383,7 @@ describe("IntakeReviewPage", () => {
       workItems: [{
         ...draft.workItems[0]!,
         needsClarification: true,
-        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+        reminders: [{ kind: "absolute" as const, at: "not-a-date" }],
       }, { ...draft.workItems[1]!, parentKey: null }],
     };
     const replacementDraft = {
@@ -1367,7 +1419,7 @@ describe("IntakeReviewPage", () => {
       workItems: [{
         ...draft.workItems[0]!,
         needsClarification: true,
-        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+        reminders: [{ kind: "absolute" as const, at: "not-a-date" }],
       }, { ...draft.workItems[1]!, parentKey: null }],
     };
     mockedApi.getIntake.mockResolvedValue({
@@ -1392,7 +1444,7 @@ describe("IntakeReviewPage", () => {
         ...draft.workItems[0]!,
         enabled: false,
         needsClarification: true,
-        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+        reminders: [{ kind: "absolute" as const, at: "not-a-date" }],
       }, { ...draft.workItems[1]!, parentKey: null }],
     };
     mockedApi.getIntake.mockResolvedValue({
@@ -1438,7 +1490,7 @@ describe("IntakeReviewPage", () => {
       workItems: [{
         ...draft.workItems[0]!,
         needsClarification: true,
-        reminders: [{ kind: "absolute" as const, at: "2026-10-01T08:00:00+02:00" }],
+        reminders: [{ kind: "absolute" as const, at: "not-a-date" }],
       }, draft.workItems[1]!],
     };
     mockedApi.getIntake.mockResolvedValue({

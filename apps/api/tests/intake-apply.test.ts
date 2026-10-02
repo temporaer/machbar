@@ -127,7 +127,7 @@ describe("intake apply", () => {
     expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${action.id}` })).json().kind).toBe("action");
   });
 
-  it("rejects unresolved semantic conflicts at Apply without creating work", async () => {
+  it("rejects unresolved semantic errors at Apply without creating work", async () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
     const invalid = draft([{
@@ -140,7 +140,7 @@ describe("intake apply", () => {
       scheduledDate: null,
       notBeforeDate: null,
       notBeforeAt: null,
-      reminders: [{ kind: "absolute", at: "2026-10-01T08:00:00.000Z" }],
+      reminders: [{ kind: "absolute", at: "not-a-date" }],
       needsClarification: true,
       relatedCalendarKeys: [],
       enabled: true,
@@ -153,6 +153,65 @@ describe("intake apply", () => {
       code: "intake_draft_invalid",
     });
     expect(ctx.handle.db.select().from(schema.workItems).all()).toHaveLength(0);
+  });
+
+  it("accepts incomplete optional metadata and persists the prepared draft", async () => {
+    const setup = await prepare();
+    const signal = new HomeAssistantRequestSignal();
+    const original = draft([{
+      key: "clarify",
+      kind: "action",
+      title: "Clarify",
+      notes: null,
+      parentKey: null,
+      dueDate: "not-a-date",
+      scheduledDate: "also-not-a-date",
+      notBeforeDate: "2026-10-08",
+      notBeforeAt: "2026-10-08T09:00",
+      reminders: [
+        { kind: "absolute", at: "not-a-date" },
+        { kind: "absolute", at: "2026-10-01T08:00:00.000Z" },
+        { kind: "absolute", at: "2026-10-01T09:00" },
+        { kind: "deadline_relative", daysBefore: 1, time: "08:00", timezone: "Europe/Berlin" },
+      ],
+      needsClarification: true,
+      relatedCalendarKeys: [],
+      enabled: true,
+      ownerMemberId: 999,
+    }]);
+    updateIntakeDraft(ctx.handle.db, setup.id, setup.member.id, {
+      expectedRevision: setup.revision,
+      draft: original,
+    }, { paperlessAvailable: false, hasFiles: false });
+    const edited = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+
+    await applyIntake(ctx.handle.db, env(ctx.dataDir), undefined, signal, setup.id, {
+      expectedRevision: edited.revision,
+      draft: original,
+      acceptIncomplete: true,
+      timezone: "America/New_York",
+    }, { actorMemberId: setup.member.id }, setup.member.id);
+
+    const job = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, setup.id)).get()!;
+    const accepted = JSON.parse(job.acceptedDraftJson!) as IntakeDraft;
+    const storedDraft = JSON.parse(job.draftJson!) as IntakeDraft;
+    expect(accepted.workItems[0]).toMatchObject({
+      dueDate: null,
+      scheduledDate: null,
+      notBeforeDate: "2026-10-08",
+      notBeforeAt: "2026-10-08T09:00:00-04:00",
+      ownerMemberId: null,
+      needsClarification: true,
+    });
+    expect(accepted.workItems[0]?.reminders).toEqual([
+      { kind: "absolute", at: "2026-10-01T08:00:00.000Z" },
+      { kind: "absolute", at: "2026-10-01T09:00:00-04:00" },
+    ]);
+    expect(storedDraft.workItems[0]?.dueDate).toBe("not-a-date");
+    expect(job.planJson).not.toBe(job.acceptedDraftJson);
+    const task = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Clarify")).get()!;
+    expect(ctx.handle.db.select().from(schema.taskReminders).where(eq(schema.taskReminders.taskId, task.id)).all()).toHaveLength(2);
+    expect(task.status).toBe("captured");
   });
 
   it("applies only valid selected proposals when an invalid item is disabled", async () => {

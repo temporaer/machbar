@@ -9,6 +9,8 @@ import {
   intakeSelectedDraftIssues,
   normalizeIntakeNullableAbsenceFields,
   normalizeIntakePlan,
+  normalizeIntakeTimestamp,
+  prepareIncompleteIntakeDraft,
   type IntakePlan,
 } from "@machbar/shared";
 import {
@@ -133,13 +135,13 @@ describe("intake plan contracts", () => {
     expect(normalizeIntakePlan(normalized.plan).plan).toEqual(normalized.plan);
 
     const semantic = intakePlanIssues(normalized.plan);
-    expect(semantic.map((item) => item.code)).toContain("captured_reminder");
+    expect(semantic.map((item) => item.code)).not.toContain("captured_reminder");
     expect(semantic.map((item) => item.code)).toContain("scheduling_order");
     expect(intakeDraftIssues(buildDraftFromPlan(normalized.plan, []), {
       memberIds: [],
       paperlessAvailable: true,
       hasFiles: false,
-    }).map((item) => item.code)).toContain("captured_reminder");
+    }).map((item) => item.code)).not.toContain("captured_reminder");
   });
 
   it("preserves semantic refinement codes in Zod issues", () => {
@@ -147,13 +149,7 @@ describe("intake plan contracts", () => {
     plan.workItems[0]!.needsClarification = true;
     plan.workItems[0]!.reminders = [{ kind: "absolute", at: "2026-10-01T08:00:00+02:00" }];
     const result = intakePlanSchema.safeParse(plan);
-    expect(result.success).toBe(false);
-    const codes = result.success ? [] : result.error.issues
-      .map((item) => ("params" in item && item.params && typeof item.params === "object")
-        ? (item.params as { code?: unknown }).code
-        : undefined);
-    expect(codes)
-      .toContain("captured_reminder");
+    expect(result.success).toBe(true);
   });
 
   it("normalizes only nullable absence placeholders before strict validation", () => {
@@ -218,7 +214,7 @@ describe("intake plan contracts", () => {
       paperlessAvailable: true,
       hasFiles: false,
     }).map((item) => item.code);
-    expect(reviewCodes).toContain("captured_reminder");
+    expect(reviewCodes).not.toContain("captured_reminder");
     expect(intakeSelectedDraftIssues(draft, {
       memberIds: [],
       paperlessAvailable: true,
@@ -243,5 +239,176 @@ describe("intake plan contracts", () => {
         path: ["workItems", draft.workItems.indexOf(child!), "parentKey"],
       }),
     ]));
+  });
+
+  it("prepares incomplete action drafts without mutating input", () => {
+    const plan = readFixture("valid-elternabend.json") as IntakePlan;
+    const draft = buildDraftFromPlan(plan, []);
+    draft.workItems[0] = {
+      ...draft.workItems[0]!,
+      dueDate: "not-a-date",
+      scheduledDate: "also-not-a-date",
+      notBeforeDate: "2026-10-08",
+      notBeforeAt: null,
+      ownerMemberId: 99,
+      reminders: [
+        { kind: "absolute", at: "not-a-date" },
+        { kind: "absolute", at: "2026-10-01T08:00:00+02:00" },
+        { kind: "deadline_relative", daysBefore: 1, time: "08:00", timezone: "Europe/Berlin" },
+      ],
+      needsClarification: true,
+    };
+
+    const prepared = prepareIncompleteIntakeDraft(draft, {
+      memberIds: [],
+      paperlessAvailable: true,
+      hasFiles: false,
+    });
+
+    expect(draft.workItems[0]?.dueDate).toBe("not-a-date");
+    expect(prepared.draft.workItems[0]).toMatchObject({
+      dueDate: null,
+      scheduledDate: null,
+      notBeforeDate: null,
+      notBeforeAt: null,
+      ownerMemberId: null,
+      needsClarification: true,
+    });
+    expect(prepared.draft.workItems[0]?.reminders).toEqual([
+      { kind: "absolute", at: "2026-10-01T08:00:00+02:00" },
+    ]);
+    expect(prepared.omissions.map((item) => item.code)).toEqual(expect.arrayContaining([
+      "invalid_date",
+      "not_before_pair",
+      "owner_not_member",
+      "invalid_datetime",
+      "deadline_relative_without_due",
+    ]));
+    expect(prepared.blockingIssues).toEqual([]);
+  });
+
+  it("keeps invalid selected calendar events blocked", () => {
+    const plan = readFixture("valid-elternabend.json") as IntakePlan;
+    const draft = buildDraftFromPlan(plan, []);
+    draft.calendarEvents[0]!.endDateTime = "not-a-date";
+    const prepared = prepareIncompleteIntakeDraft(draft, {
+      memberIds: [],
+      paperlessAvailable: true,
+      hasFiles: false,
+    });
+    expect(prepared.omissions).toEqual([]);
+    expect(prepared.blockingIssues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: ["calendarEvents", 0, "endDateTime"],
+        code: "invalid_datetime",
+      }),
+    ]));
+  });
+
+  it("normalizes date-specific local timestamps without guessing DST transitions", () => {
+    expect(normalizeIntakeTimestamp("2026-01-15T10:30", "Europe/Berlin")).toEqual({
+      value: "2026-01-15T10:30:00+01:00",
+      status: "normalized",
+      timezoneInferred: true,
+    });
+    expect(normalizeIntakeTimestamp("2026-07-15T10:30", "Europe/Berlin")).toEqual({
+      value: "2026-07-15T10:30:00+02:00",
+      status: "normalized",
+      timezoneInferred: true,
+    });
+    expect(normalizeIntakeTimestamp("2026-01-15T10:30+01:00", "America/Los_Angeles")).toEqual({
+      value: "2026-01-15T10:30:00+01:00",
+      status: "normalized",
+      timezoneInferred: false,
+    });
+    expect(normalizeIntakeTimestamp("2026-01-15T10:30Z", "America/Los_Angeles")).toEqual({
+      value: "2026-01-15T10:30:00Z",
+      status: "normalized",
+      timezoneInferred: false,
+    });
+    expect(normalizeIntakeTimestamp("2026-01-15T10:30.1234", "Europe/Berlin")).toEqual({
+      value: "2026-01-15T10:30:00.1234+01:00",
+      status: "normalized",
+      timezoneInferred: true,
+    });
+    expect(normalizeIntakeTimestamp("2026-01-15T10:30.0001", "Europe/Berlin")).toEqual({
+      value: "2026-01-15T10:30:00.0001+01:00",
+      status: "normalized",
+      timezoneInferred: true,
+    });
+    expect(normalizeIntakeTimestamp("2026-01-15T10:30.123456789", "Europe/Berlin")).toEqual({
+      value: "2026-01-15T10:30:00.123456789+01:00",
+      status: "normalized",
+      timezoneInferred: true,
+    });
+    expect(normalizeIntakeTimestamp("2026-02-30T10:30", "Europe/Berlin").status).toBe("invalid");
+    expect(normalizeIntakeTimestamp("2026-03-29T02:30", "Europe/Berlin").status).toBe("nonexistent");
+    expect(normalizeIntakeTimestamp("2026-10-25T02:30", "Europe/Berlin").status).toBe("ambiguous");
+  });
+
+  it("prepares the same inferred timestamps for browser and server timezone contexts", () => {
+    const plan = readFixture("valid-elternabend.json") as IntakePlan;
+    const draft = buildDraftFromPlan(plan, []);
+    draft.calendarEvents[0] = {
+      ...draft.calendarEvents[0]!,
+      startDateTime: "2026-07-15T10:30",
+      endDateTime: "2026-07-15T11:30",
+    };
+    draft.workItems[0] = {
+      ...draft.workItems[0]!,
+      notBeforeDate: "2026-07-15",
+      notBeforeAt: "2026-07-15T09:00",
+      reminders: [{ kind: "absolute", at: "2026-07-15T08:00" }],
+    };
+    const options = {
+      memberIds: [],
+      paperlessAvailable: true,
+      hasFiles: false,
+      timezone: "Europe/Berlin",
+    };
+    const browserPreparation = prepareIncompleteIntakeDraft(draft, options);
+    const serverPreparation = prepareIncompleteIntakeDraft(draft, options);
+    expect(serverPreparation).toEqual(browserPreparation);
+    expect(browserPreparation.draft.calendarEvents[0]?.startDateTime).toBe("2026-07-15T10:30:00+02:00");
+    expect(browserPreparation.draft.workItems[0]?.reminders).toEqual([
+      { kind: "absolute", at: "2026-07-15T08:00:00+02:00" },
+    ]);
+    expect(browserPreparation.omissions).toEqual([]);
+    expect(browserPreparation.normalizedTimestamps).toHaveLength(4);
+    expect(browserPreparation.normalizedTimestamps.every((item) => item.timezone === "Europe/Berlin")).toBe(true);
+    expect(browserPreparation.blockingIssues).toEqual([]);
+  });
+
+  it("records successful seconds-only normalization without timezone inference", () => {
+    const plan = readFixture("valid-elternabend.json") as IntakePlan;
+    const draft = buildDraftFromPlan(plan, []);
+    draft.calendarEvents[0] = {
+      ...draft.calendarEvents[0]!,
+      startDateTime: "2026-01-15T10:30+01:00",
+      endDateTime: "2026-01-15T11:30Z",
+    };
+    const prepared = prepareIncompleteIntakeDraft(draft, {
+      memberIds: [],
+      paperlessAvailable: true,
+      hasFiles: false,
+    });
+    expect(prepared.normalizedTimestamps).toEqual([
+      expect.objectContaining({
+        path: ["calendarEvents", 0, "startDateTime"],
+        originalValue: "2026-01-15T10:30+01:00",
+        value: "2026-01-15T10:30:00+01:00",
+        secondsAdded: true,
+        timezone: null,
+      }),
+      expect.objectContaining({
+        path: ["calendarEvents", 0, "endDateTime"],
+        originalValue: "2026-01-15T11:30Z",
+        value: "2026-01-15T11:30:00Z",
+        secondsAdded: true,
+        timezone: null,
+      }),
+    ]);
+    expect(prepared.omissions).toEqual([]);
+    expect(prepared.blockingIssues).toEqual([]);
   });
 });

@@ -3,8 +3,11 @@ import {
   intakeDraftIssues,
   intakeErrorIssues,
   intakeSelectedDraftIssues,
+  INTAKE_TIMEZONE,
+  prepareIncompleteIntakeDraft,
   type IntakeDraft,
   type IntakeDraftWorkItem,
+  type IntakeOmission,
   type IntakeRecord,
 } from "@machbar/shared";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -42,6 +45,39 @@ function intakeFailureExplanation(
       return strings.intakeErrorNormalization;
     default:
       return strings.intakeErrorProvider;
+  }
+}
+
+function omissionSummary(
+  omission: IntakeOmission,
+  draft: IntakeDraft,
+  strings: ReturnType<typeof useStrings>,
+): string {
+  const itemIndex = omission.path[0] === "workItems" && typeof omission.path[1] === "number"
+    ? omission.path[1]
+    : null;
+  const item = itemIndex === null ? null : draft.workItems[itemIndex];
+  const title = item?.title.trim() || strings.intakeMachbar;
+  switch (omission.code) {
+    case "invalid_date":
+      return strings.intakeOmissionInvalidDate(title);
+    case "invalid_datetime":
+      return strings.intakeOmissionInvalidDateTime(title);
+    case "ambiguous_datetime":
+      return strings.intakeOmissionAmbiguousDateTime(title);
+    case "nonexistent_datetime":
+      return strings.intakeOmissionNonexistentDateTime(title);
+    case "invalid_reminder_time":
+      return strings.intakeOmissionInvalidReminderTime(title);
+    case "invalid_reminder_timezone":
+      return strings.intakeOmissionInvalidReminderTimezone(title);
+    case "deadline_relative_without_due":
+      return strings.intakeOmissionRelativeReminderNoDeadline(title);
+    case "not_before_pair":
+    case "not_before_date_mismatch":
+      return strings.intakeOmissionInvalidAvailability(title);
+    case "owner_not_member":
+      return strings.intakeOmissionInvalidOwner(title);
   }
 }
 
@@ -96,8 +132,12 @@ export function IntakeReviewPage() {
   const { id = "" } = useParams();
   const strings = useStrings();
   const navigate = useNavigate();
-  const { members } = useIdentity();
+  const { members, membersLoading } = useIdentity();
   const { version } = useRefresh();
+  const timezone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || INTAKE_TIMEZONE,
+    [],
+  );
   const state = useAsync(() => api.getIntake(id), [id]);
   const [record, setRecord] = useState(state.data);
   const [draft, setDraft] = useState<IntakeDraft | null>(null);
@@ -180,6 +220,45 @@ export function IntakeReviewPage() {
       hasFiles: (record?.attachments.length ?? 0) > 0,
     }) : []),
     [draft, members, record],
+  );
+  const validationOptions = useMemo(() => ({
+    memberIds: members.map((member) => member.id),
+    paperlessAvailable: record?.paperlessAvailable ?? false,
+    hasFiles: (record?.attachments.length ?? 0) > 0,
+    timezone,
+  }), [members, record, timezone]);
+  const incompletePreview = useMemo(
+    () => (draft ? prepareIncompleteIntakeDraft(draft, validationOptions) : null),
+    [draft, validationOptions],
+  );
+  const canAcceptIncomplete = Boolean(
+    draft &&
+    !membersLoading &&
+    !hasInvalidInputs &&
+    selectedIssues.length > 0 &&
+    incompletePreview &&
+    (incompletePreview.omissions.length > 0 || incompletePreview.normalizedTimestamps.length > 0) &&
+    incompletePreview.blockingIssues.length === 0,
+  );
+  const omissionSummaries = useMemo(
+    () => incompletePreview && draft
+      ? incompletePreview.omissions.map((item) => omissionSummary(item, draft, strings))
+      : [],
+    [draft, incompletePreview, strings],
+  );
+  const inferredTimezones = useMemo(
+    () => incompletePreview
+      ? [...new Set(
+        incompletePreview.normalizedTimestamps
+          .map((item) => item.timezone)
+          .filter((item): item is string => item !== null),
+      )]
+      : [],
+    [incompletePreview],
+  );
+  const normalizedSecondsCount = useMemo(
+    () => incompletePreview?.normalizedTimestamps.filter((item) => item.secondsAdded).length ?? 0,
+    [incompletePreview],
   );
   const latestIssuesRef = useRef(issues);
   latestIssuesRef.current = issues;
@@ -381,8 +460,10 @@ export function IntakeReviewPage() {
       setBusy(false);
     }
   };
-  const applyInitial = async () => {
-    if (record.status !== "ready" || !draft || busy || selectedIssues.length || hasInvalidInputs || applyingRef.current || retryInFlightRef.current) return;
+  const applyInitial = async (acceptIncomplete = false) => {
+    if (record.status !== "ready" || !draft || busy || hasInvalidInputs || applyingRef.current || retryInFlightRef.current) return;
+    if (!acceptIncomplete && selectedIssues.length > 0) return;
+    if (acceptIncomplete && !canAcceptIncomplete) return;
     applyingRef.current = true;
     mutationBaselineRevisionRef.current = revisionRef.current;
     setApplyError(null);
@@ -398,7 +479,22 @@ export function IntakeReviewPage() {
       const latestDraft = latestDraftRef.current;
       const expectedRevision = revisionRef.current;
       if (!latestDraft || expectedRevision === null) return;
-      const nextRecord = await api.applyIntake(id, { expectedRevision, draft: latestDraft });
+      if (acceptIncomplete) {
+        const latestPreview = prepareIncompleteIntakeDraft(latestDraft, validationOptions);
+        if (
+          latestPreview.omissions.length === 0 &&
+          latestPreview.normalizedTimestamps.length === 0
+        ) return;
+        if (latestPreview.blockingIssues.length > 0) return;
+      } else if (intakeSelectedDraftIssues(latestDraft, validationOptions).length > 0) {
+        return;
+      }
+      const nextRecord = await api.applyIntake(id, {
+        expectedRevision,
+        draft: latestDraft,
+        timezone,
+        ...(acceptIncomplete ? { acceptIncomplete: true } : {}),
+      });
       recordRef.current = nextRecord;
       revisionRef.current = nextRecord.revision;
       setRecord(nextRecord);
@@ -552,10 +648,40 @@ export function IntakeReviewPage() {
           type="button"
           className="btn btn-primary intake-approval-button"
           disabled={busy || selectedIssues.length > 0 || hasInvalidInputs}
-          onClick={() => void applyInitial()}
+          onClick={() => void applyInitial(false)}
         >
           {strings.intakeApplyCount(enabledProposalCount)}
         </button>
+        {canAcceptIncomplete ? (
+          <div className="stack">
+            <div>
+              {omissionSummaries.length > 0 ? (
+                <>
+                  <strong>{strings.intakeOmissions}</strong>
+                  <ul>
+                    {omissionSummaries.map((summary, index) => <li key={`${summary}-${index}`}>{summary}</li>)}
+                  </ul>
+                </>
+              ) : null}
+              {normalizedSecondsCount > 0 ? (
+                <small>{strings.intakeTimestampSecondsAdded(normalizedSecondsCount)}</small>
+              ) : null}
+              {inferredTimezones.map((inferredTimezone) => (
+                <small key={inferredTimezone}>
+                  {strings.intakeTimestampTimezoneAdded(inferredTimezone)}
+                </small>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy || hasInvalidInputs}
+              onClick={() => void applyInitial(true)}
+            >
+              {strings.intakeAcceptIncomplete}
+            </button>
+          </div>
+        ) : null}
         <button
           type="button"
           className="btn intake-discard-button"

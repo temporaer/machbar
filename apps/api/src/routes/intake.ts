@@ -18,7 +18,7 @@ import {
 } from "../intake/jobs.js";
 import { applyIntake } from "../intake/apply.js";
 import { HomeAssistantRequestSignal } from "../integrations/homeAssistantRequests.js";
-import { intakeDraftStructureSchema } from "../schemas.js";
+import { intakeDraftStructureSchema, isValidIanaTimezone } from "../schemas.js";
 import { z } from "zod";
 
 const MAX_BYTES = 25 * 1024 * 1024;
@@ -124,6 +124,8 @@ export function registerIntakeRoutes(
     const body = parseOrThrow(z.object({
       expectedRevision: z.number().int().positive(),
       draft: intakeDraftStructureSchema.optional(),
+      acceptIncomplete: z.boolean().optional(),
+      timezone: z.string().min(1).max(255).refine(isValidIanaTimezone, "Timezone must be a valid IANA zone name.").optional(),
     }).strict(), request.body);
     await applyIntake(db, env, paperless, signal, request.params.id, body, { actorMemberId: request.activityActor?.id ?? null }, request.authMember?.id ?? request.activityActor?.id ?? null, request.log);
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));

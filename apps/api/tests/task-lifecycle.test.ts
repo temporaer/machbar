@@ -41,6 +41,45 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(getRes.statusCode).toBe(404);
   });
 
+  it("keeps reminders on captured actions through edits and recapture", async () => {
+    const reminder = { kind: "absolute", at: "2026-10-01T08:00:00.000Z" } as const;
+    const created = await createTask({
+      title: "Noch klären",
+      status: "captured",
+      needsClarification: true,
+      reminders: [reminder],
+    });
+    expect(created.status).toBe("captured");
+    expect(created.reminders).toEqual([expect.objectContaining(reminder)]);
+
+    const edited = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${created.id}`,
+      payload: {
+        expectedRevision: created.revision,
+        reminders: [reminder, { kind: "absolute", at: "2026-10-02T08:00:00.000Z" }],
+      },
+    });
+    expect(edited.statusCode).toBe(200);
+    expect(edited.json().status).toBe("captured");
+    expect(edited.json().reminders).toHaveLength(2);
+
+    const actionable = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${created.id}`,
+      payload: { expectedRevision: edited.json().revision, status: "actionable" },
+    });
+    expect(actionable.statusCode).toBe(200);
+    const recaptured = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${created.id}`,
+      payload: { expectedRevision: actionable.json().revision, status: "captured" },
+    });
+    expect(recaptured.statusCode).toBe(200);
+    expect(recaptured.json().status).toBe("captured");
+    expect(recaptured.json().reminders).toHaveLength(2);
+  });
+
   it("defaults project and child tasks to clarified actionable tasks", async () => {
     const projectRes = await ctx.app.inject({
       method: "POST",

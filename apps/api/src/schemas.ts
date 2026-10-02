@@ -26,7 +26,7 @@ const queryBoolean = z
   .union([z.boolean(), z.enum(["true", "false"])])
   .transform((value) => value === true || value === "true");
 
-function isValidIanaTimezone(value: string): boolean {
+export function isValidIanaTimezone(value: string): boolean {
   try {
     // Throws a RangeError for an unrecognized IANA zone name.
     Intl.DateTimeFormat(undefined, { timeZone: value });

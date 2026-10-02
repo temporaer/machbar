@@ -870,7 +870,7 @@ export function createMachbarMcpServer({
     "machbar_manage_reminder",
     {
       description:
-        "Add, update, or remove one absolute task reminder through the canonical task mutation. Use the latest expectedRevision. at is a full RFC3339/ISO timestamp. Reminder IDs are stable; provide reminderId for update/remove. MCP does not create, update, or remove deadline-relative reminders. Captured inbox tasks cannot carry reminders.",
+        "Add, update, or remove one absolute task reminder through the canonical task mutation. Use the latest expectedRevision. at is a full RFC3339/ISO timestamp. Reminder IDs are stable; provide reminderId for update/remove. MCP does not create, update, or remove deadline-relative reminders. Captured action tasks may carry reminders; references cannot.",
       inputSchema: {
         taskId,
         expectedRevision,

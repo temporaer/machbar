@@ -379,16 +379,15 @@ function assertCapturedTaskShape(
   status: TaskStatus,
   input: {
     repeatAfterDays: number | null;
-    hasReminders: boolean;
   },
 ): void {
   if (
     status === "captured" &&
-    (input.repeatAfterDays !== null || input.hasReminders)
+    input.repeatAfterDays !== null
   ) {
     throw AppError.conflict(
       "task_promotion_invalid",
-      "A captured inbox item cannot recur or have a reminder.",
+      "A captured inbox item cannot recur.",
       { reason: "captured_shape_invalid" },
     );
   }
@@ -488,7 +487,6 @@ function insertTask(
   if (kind === "action") {
     assertCapturedTaskShape(status, {
       repeatAfterDays,
-      hasReminders: (input.reminders ?? []).length > 0,
     });
   }
   if (recurrence.enabled && status === "done") {
@@ -919,10 +917,6 @@ export function updateTask(
     if ((nextStatus ?? currentTask.status) === "captured") {
       assertCapturedTaskShape("captured", {
         repeatAfterDays: nextRepeatAfterDays,
-        hasReminders:
-          input.reminders !== undefined
-            ? input.reminders.length > 0
-            : currentTask.reminders.length > 0,
       });
       const hasDependency = tx
         .select({ id: schema.taskDependencies.id })
@@ -937,7 +931,7 @@ export function updateTask(
       if (currentExternalWait || hasDependency) {
         throw AppError.conflict(
         "task_promotion_invalid",
-        "A captured inbox item cannot have waits, dependencies, or reminders.",
+          "A captured inbox item cannot have waits or dependencies.",
         { taskId: id, reason: "captured_task_only_relations" },
         );
       }

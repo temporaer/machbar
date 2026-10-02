@@ -911,7 +911,7 @@ describe("TaskDetailSheet", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not offer the + Erinnerung affordance for captured inbox items", async () => {
+  it("offers the + Erinnerung affordance for captured action items", async () => {
     const task = makeTask({
       id: 47,
       title: "Erfassung",
@@ -925,7 +925,10 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Erfassung");
 
-    expect(screen.queryByRole("button", { name: "+ Erinnerung" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "+ Erinnerung" }));
+    expect(
+      await screen.findByRole("heading", { name: /Erinnerungen/ }),
+    ).toBeInTheDocument();
   });
 
   it("shows a compact reminder summary with overflow count and dispatches the reminders command", async () => {

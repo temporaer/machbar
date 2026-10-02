@@ -1,5 +1,7 @@
 import type { TaskReminderInput } from "./index.js";
 
+import { Temporal } from "@js-temporal/polyfill";
+
 export const INTAKE_TIMEZONE = "Europe/Berlin" as const;
 export const INTAKE_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 export const INTAKE_MAX_CALENDAR_EVENTS = 20;
@@ -19,6 +21,101 @@ export interface IntakeCalendarEvent {
   startDateTime: string | null;
   endDateTime: string | null;
   relatedWorkKeys: string[];
+}
+
+interface TimestampParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  fraction: string;
+}
+
+const timestampPattern =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(\.\d+)?(Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/;
+
+function timestampParts(value: string): {
+  parts: TimestampParts;
+  zone: string | null;
+} | null {
+  const match = timestampPattern.exec(value);
+  if (!match) return null;
+  const parts: TimestampParts = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+    second: Number(match[6] ?? "0"),
+    fraction: match[7] ?? "",
+  };
+  if (
+    !validDate(`${match[1]}-${match[2]}-${match[3]}`) ||
+    parts.hour > 23 ||
+    parts.minute > 59 ||
+    parts.second > 59
+  ) return null;
+  return { parts, zone: match[8] ?? null };
+}
+
+/**
+ * Normalize the timestamp shapes commonly emitted by imperfect providers.
+ * Local wall-clock values use Temporal's timezone database and reject DST
+ * gaps/overlaps instead of silently choosing an instant.
+ */
+export function normalizeIntakeTimestamp(
+  value: string,
+  timezone: string = INTAKE_TIMEZONE,
+): IntakeTimestampNormalization {
+  const parsed = timestampParts(value);
+  if (!parsed) return { value, status: "invalid", timezoneInferred: false };
+  const { parts, zone } = parsed;
+  const seconds = `:${String(parts.second).padStart(2, "0")}${parts.fraction}`;
+  const localPrefix = `${value.slice(0, 16)}${seconds}`;
+  if (zone !== null) {
+    const normalized = `${localPrefix}${zone}`;
+    return !Number.isNaN(Date.parse(normalized))
+      ? { value: normalized, status: normalized === value ? "unchanged" : "normalized", timezoneInferred: false }
+      : { value, status: "invalid", timezoneInferred: false };
+  }
+  if (!validTimezone(timezone)) return { value, status: "invalid", timezoneInferred: false };
+  const fractionDigits = parts.fraction.slice(1);
+  const localFields = {
+    timeZone: timezone,
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: parts.hour,
+    minute: parts.minute,
+    second: parts.second,
+    millisecond: Number(fractionDigits.padEnd(3, "0").slice(0, 3) || "0"),
+    microsecond: Number(fractionDigits.padEnd(6, "0").slice(3, 6) || "0"),
+    nanosecond: Number(fractionDigits.padEnd(9, "0").slice(6, 9) || "0"),
+  };
+  try {
+    const candidate = Temporal.ZonedDateTime.from(localFields, {
+      disambiguation: "reject",
+    });
+    return {
+      value: `${localPrefix}${candidate.offset}`,
+      status: "normalized",
+      timezoneInferred: true,
+    };
+  } catch {
+    const localDateTime = Temporal.PlainDateTime.from(localFields);
+    const earlier = Temporal.ZonedDateTime.from(localFields, { disambiguation: "earlier" });
+    const later = Temporal.ZonedDateTime.from(localFields, { disambiguation: "later" });
+    const isAmbiguous =
+      earlier.toPlainDateTime().equals(localDateTime) &&
+      later.toPlainDateTime().equals(localDateTime);
+    return {
+      value,
+      status: isAmbiguous ? "ambiguous" : "nonexistent",
+      timezoneInferred: true,
+    };
+  }
 }
 
 export interface IntakeWorkItem {
@@ -186,9 +283,55 @@ export interface IntakeIssue {
   message: string;
 }
 
+export type IntakeOmissionCode =
+  | "invalid_date"
+  | "invalid_datetime"
+  | "ambiguous_datetime"
+  | "nonexistent_datetime"
+  | "invalid_reminder_time"
+  | "invalid_reminder_timezone"
+  | "deadline_relative_without_due"
+  | "not_before_pair"
+  | "not_before_date_mismatch"
+  | "owner_not_member";
+
+export interface IntakeOmission {
+  path: (string | number)[];
+  code: IntakeOmissionCode;
+  originalValue: unknown;
+}
+
+export interface IntakeDraftValidationOptions {
+  memberIds: readonly number[];
+  paperlessAvailable: boolean;
+  hasFiles: boolean;
+  timezone?: string;
+}
+
 export interface IntakeNormalizationResult {
   plan: IntakePlan;
   warnings: IntakeWarning[];
+}
+
+export type IntakeTimestampNormalizationStatus =
+  | "unchanged"
+  | "normalized"
+  | "invalid"
+  | "ambiguous"
+  | "nonexistent";
+
+export interface IntakeTimestampNormalization {
+  value: string;
+  status: IntakeTimestampNormalizationStatus;
+  timezoneInferred: boolean;
+}
+
+export interface IntakeTimestampInference {
+  path: (string | number)[];
+  originalValue: string;
+  value: string;
+  secondsAdded: boolean;
+  timezone: string | null;
 }
 
 function issue(
@@ -399,9 +542,6 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
     }
     if (item.scheduledDate && item.dueDate && item.scheduledDate > item.dueDate) {
       issues.push(issue(path, "scheduling_order", "Scheduled date must not be after the due date."));
-    }
-    if (item.needsClarification && item.reminders.length > 0) {
-      issues.push(issue([...path, "reminders"], "captured_reminder", "Clarifying items cannot have reminders."));
     }
     if (item.kind === "project") {
       if (item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminders.length > 0 || item.needsClarification) {
@@ -632,7 +772,7 @@ export function normalizeIntakePlan(plan: IntakePlan): IntakeNormalizationResult
 
 export function intakeDraftIssues(
   draft: IntakeDraft,
-  options: { memberIds: readonly number[]; paperlessAvailable: boolean; hasFiles: boolean },
+  options: IntakeDraftValidationOptions,
 ): IntakeIssue[] {
   const plan = intakeDraftPlan(draft);
   const issues = intakePlanIssues(plan);
@@ -697,7 +837,7 @@ function remapSelectedIssuePath(
  */
 export function intakeSelectedDraftIssues(
   draft: IntakeDraft,
-  options: { memberIds: readonly number[]; paperlessAvailable: boolean; hasFiles: boolean },
+  options: IntakeDraftValidationOptions,
 ): IntakeIssue[] {
   const workIndices = draft.workItems
     .map((item, index) => item.enabled ? index : -1)
@@ -751,6 +891,202 @@ export function intakeSelectedDraftIssues(
     issues.push(issue([], "nothing_selected", "At least one item or event must be enabled."));
   }
   return issues;
+}
+
+function cloneIntakeDraft(draft: IntakeDraft): IntakeDraft {
+  return {
+    ...draft,
+    calendarEvents: draft.calendarEvents.map((event) => ({
+      ...event,
+      relatedWorkKeys: [...event.relatedWorkKeys],
+    })),
+    workItems: draft.workItems.map((item) => ({
+      ...item,
+      reminders: item.reminders.map((reminder) => ({ ...reminder })),
+      relatedCalendarKeys: [...item.relatedCalendarKeys],
+    })),
+    warnings: draft.warnings.map((warning) => ({ ...warning })),
+  };
+}
+
+function omission(
+  omissions: IntakeOmission[],
+  path: (string | number)[],
+  code: IntakeOmissionCode,
+  originalValue: unknown,
+): void {
+  omissions.push({ path, code, originalValue });
+}
+
+function availabilityOmissionCode(
+  notBeforeDate: string | null,
+  notBeforeAt: string | null,
+): "invalid_date" | "invalid_datetime" | "not_before_pair" | "not_before_date_mismatch" {
+  if ((notBeforeDate === null) !== (notBeforeAt === null)) return "not_before_pair";
+  if (notBeforeDate !== null && !validDate(notBeforeDate)) return "invalid_date";
+  if (notBeforeAt !== null && !validDateTime(notBeforeAt)) return "invalid_datetime";
+  return "not_before_date_mismatch";
+}
+
+/**
+ * Prepare an enabled draft for the explicit incomplete-acceptance flow.
+ * Only optional metadata with an unambiguous safe omission is removed;
+ * structural, calendar, and kind-specific issues remain blockers.
+ */
+export function prepareIncompleteIntakeDraft(
+  draft: IntakeDraft,
+  options: IntakeDraftValidationOptions,
+): {
+  draft: IntakeDraft;
+  omissions: IntakeOmission[];
+  normalizedTimestamps: IntakeTimestampInference[];
+  blockingIssues: IntakeIssue[];
+} {
+  const prepared = cloneIntakeDraft(draft);
+  const omissions: IntakeOmission[] = [];
+  const normalizedTimestamps: IntakeTimestampInference[] = [];
+  const timezone = options.timezone ?? INTAKE_TIMEZONE;
+
+  const recordTimestamp = (
+    value: string,
+    path: (string | number)[],
+  ): IntakeTimestampNormalization => {
+    const result = normalizeIntakeTimestamp(value, timezone);
+    if (result.status === "normalized") {
+      normalizedTimestamps.push({
+        path,
+        originalValue: value,
+        value: result.value,
+        secondsAdded: !/T\d{2}:\d{2}:\d{2}/.test(value),
+        timezone: result.timezoneInferred ? timezone : null,
+      });
+    }
+    return result;
+  };
+
+  const timestampOmissionCode = (
+    status: IntakeTimestampNormalizationStatus,
+  ): "invalid_datetime" | "ambiguous_datetime" | "nonexistent_datetime" => {
+    if (status === "ambiguous") return "ambiguous_datetime";
+    if (status === "nonexistent") return "nonexistent_datetime";
+    return "invalid_datetime";
+  };
+
+  prepared.calendarEvents.forEach((event, index) => {
+    if (!event.enabled) return;
+    for (const field of ["startDateTime", "endDateTime"] as const) {
+      const value = event[field];
+      if (value === null) continue;
+      const path = ["calendarEvents", index, field] as (string | number)[];
+      const result = recordTimestamp(value, path);
+      if (result.status === "normalized") {
+        event[field] = result.value;
+      }
+    }
+  });
+
+  prepared.workItems.forEach((item, index) => {
+    if (!item.enabled) return;
+
+    for (const field of ["dueDate", "scheduledDate"] as const) {
+      const value = item[field];
+      if (value !== null && !validDate(value)) {
+        omission(omissions, ["workItems", index, field], "invalid_date", value);
+        item[field] = null;
+      }
+    }
+
+    let availabilityRequiresDiagnostic = false;
+    if (item.kind === "action" && item.notBeforeAt !== null) {
+      const path = ["workItems", index, "notBeforeAt"] as (string | number)[];
+      const result = recordTimestamp(item.notBeforeAt, path);
+      if (result.status === "normalized") {
+        item.notBeforeAt = result.value;
+      } else if (result.status === "ambiguous" || result.status === "nonexistent") {
+        availabilityRequiresDiagnostic = true;
+        omission(omissions, path, timestampOmissionCode(result.status), item.notBeforeAt);
+      } else if (result.status === "invalid") {
+        omission(omissions, path, "invalid_datetime", item.notBeforeAt);
+        item.notBeforeDate = null;
+        item.notBeforeAt = null;
+      }
+    }
+
+    if (item.kind === "action" && !availabilityRequiresDiagnostic) {
+      const { notBeforeDate, notBeforeAt } = item;
+      const availabilityValid =
+        notBeforeDate === null && notBeforeAt === null
+          ? true
+          : notBeforeDate !== null &&
+            notBeforeAt !== null &&
+            validDate(notBeforeDate) &&
+            validDateTime(notBeforeAt) &&
+            dateDistance(notBeforeDate, utcDate(notBeforeAt)) <= 1;
+      if (!availabilityValid) {
+        omission(
+          omissions,
+          ["workItems", index, "notBeforeDate"],
+          availabilityOmissionCode(notBeforeDate, notBeforeAt),
+          { notBeforeDate, notBeforeAt },
+        );
+        item.notBeforeDate = null;
+        item.notBeforeAt = null;
+      }
+    }
+
+    if (item.ownerMemberId !== null && !options.memberIds.includes(item.ownerMemberId)) {
+      omission(
+        omissions,
+        ["workItems", index, "ownerMemberId"],
+        "owner_not_member",
+        item.ownerMemberId,
+      );
+      item.ownerMemberId = null;
+    }
+
+    if (item.kind !== "action") return;
+    const dueDateUsable = item.dueDate !== null && validDate(item.dueDate);
+    item.reminders = item.reminders.filter((reminder, reminderIndex) => {
+      const reminderPath = ["workItems", index, "reminders", reminderIndex] as (string | number)[];
+      if (reminder.kind === "absolute") {
+        const path = [...reminderPath, "at"];
+        const result = recordTimestamp(reminder.at, path);
+        if (result.status === "normalized") {
+          reminder.at = result.value;
+          return true;
+        }
+        if (result.status === "ambiguous" || result.status === "nonexistent") {
+          omission(omissions, path, timestampOmissionCode(result.status), reminder.at);
+          return true;
+        }
+        if (result.status === "invalid") {
+          omission(omissions, path, "invalid_datetime", reminder.at);
+          return false;
+        }
+        return true;
+      }
+      if (!validReminderTime(reminder.time)) {
+        omission(omissions, [...reminderPath, "time"], "invalid_reminder_time", reminder.time);
+        return false;
+      }
+      if (!validTimezone(reminder.timezone)) {
+        omission(omissions, [...reminderPath, "timezone"], "invalid_reminder_timezone", reminder.timezone);
+        return false;
+      }
+      if (!dueDateUsable) {
+        omission(omissions, reminderPath, "deadline_relative_without_due", { ...reminder });
+        return false;
+      }
+      return true;
+    });
+  });
+
+  return {
+    draft: prepared,
+    omissions,
+    normalizedTimestamps,
+    blockingIssues: intakeSelectedDraftIssues(prepared, options),
+  };
 }
 
 export function buildDraftFromPlan(
