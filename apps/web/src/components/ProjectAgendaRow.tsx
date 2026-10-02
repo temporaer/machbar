@@ -9,6 +9,7 @@ import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { MemberAvatar } from "./MemberAvatar";
 import { IconActionGlyph } from "./IconActionButton";
+import type { AttentionTone } from "../lib/attentionTone";
 
 /**
  * Compact single-line Today attention row for a project, replacing the
@@ -23,9 +24,11 @@ import { IconActionGlyph } from "./IconActionButton";
 export function ProjectAgendaRow({
   entry,
   owner = null,
+  attentionTone,
 }: {
   entry: ProjectAgendaEntry;
   owner?: Member | null;
+  attentionTone?: AttentionTone;
 }) {
   const strings = useStrings();
   const { locale } = useLocale();
@@ -44,7 +47,7 @@ export function ProjectAgendaRow({
     relative && exact ? `${label}: ${relative} (${exact})` : null;
 
   return (
-    <div className="project-agenda-row">
+    <div className={`project-agenda-row${attentionTone ? ` project-agenda-row--${attentionTone}` : ""}`}>
       <span className="project-agenda-row-icon" aria-hidden="true">
         <IconActionGlyph kind="project" />
       </span>

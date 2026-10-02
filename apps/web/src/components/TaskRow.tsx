@@ -33,6 +33,7 @@ import { parseReferenceContent } from "../lib/referenceContent";
 import { TaskRowAttachmentPreview } from "./TaskRowAttachmentPreview";
 import { WorkItemActionRail } from "./WorkItemActionRail";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
+import type { AttentionTone } from "../lib/attentionTone";
 
 const LONG_PRESS_MS = 480;
 
@@ -61,6 +62,8 @@ export interface TaskRowProps {
    * sets this.
    */
   compactDescendants?: boolean;
+  /** Optional compiled-view emphasis; status styling remains the fallback. */
+  attentionTone?: AttentionTone;
 }
 
 /** Short, status-like label for the primary-swipe reveal background. */
@@ -102,6 +105,7 @@ export function TaskRow({
   depth,
   showRevisitDate = false,
   compactDescendants = false,
+  attentionTone,
 }: TaskRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
@@ -308,7 +312,7 @@ export function TaskRow({
   return (
     <>
     <li
-      className={`task-row task-row-surface-${task.status}`}
+      className={`task-row task-row-surface-${task.status}${attentionTone ? ` task-row-attention-${attentionTone}` : ""}`}
       style={{ listStyle: "none" }}
       data-workitem-id={taskProp.id}
       data-workitem-role="task"
@@ -665,6 +669,7 @@ export function TaskRow({
               parentTask={task}
               depth={depth + 1}
               compactDescendants={compactDescendants}
+              {...(attentionTone ? { attentionTone } : {})}
             />
           ))}
           {hiddenTerminalChildren.length > 0 && showHiddenTerminal
@@ -675,6 +680,7 @@ export function TaskRow({
                   parentTask={task}
                   depth={depth + 1}
                   compactDescendants={compactDescendants}
+                  {...(attentionTone ? { attentionTone } : {})}
                 />
               ))
             : null}

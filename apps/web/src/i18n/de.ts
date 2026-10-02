@@ -865,6 +865,7 @@ const extra = {
   noMatchingProjects: "Keine Projekte für Suche/Filter.",
   activeProjectsSection: "Aktiv & festgefahren",
   waitingProjectsSection: (count: number) => `Wartet (${count})`,
+  quietProjectsSection: (count: number) => `Wartet / zurückgestellt (${count})`,
   backlogProjectsSection: "Später / noch nicht aktiv",
   finishedProjectsSection: (count: number) => `Abgeschlossen & archiviert (${count})`,
 

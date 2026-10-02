@@ -192,6 +192,20 @@
   opacity: 0.55;
 }
 
+.story-row-quiet {
+  box-shadow: none;
+  background: color-mix(in srgb, var(--color-surface-alt) 55%, var(--color-surface));
+}
+
+.story-row-quiet .story-row-content {
+  background: transparent;
+  padding-block: 10px;
+}
+
+.story-row-quiet .story-row-next-action {
+  color: var(--color-text-muted);
+}
+
 /*
  * Unlike `.task-row-checkbox` (hidden on coarse pointers, because tapping a
  * task row opens a detail sheet that carries its own Erledigen button), the

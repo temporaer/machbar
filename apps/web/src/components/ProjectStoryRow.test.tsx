@@ -82,7 +82,7 @@ function Harness({
   tasks = [],
 }: {
   story: ProjectWithActions;
-  variant?: "compact" | "card";
+  variant?: "compact" | "card" | "quiet";
   tasks?: Task[];
 }) {
   // Mirrors `App.tsx`: the row only dispatches semantic `story.*` commands,
@@ -1399,6 +1399,27 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
     expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
     expect(screen.queryByText(/^Erledigt, wenn/)).not.toBeInTheDocument();
     expect(screen.getByText("Kein nächster Schritt")).toBeInTheDocument();
+  });
+
+  it("renders the quiet variant without the task progress bar", async () => {
+    const story = makeProject({
+      id: 56,
+      title: "Ruhige Geschichte",
+      status: "active",
+      nextAction: null,
+      stuckReason: null,
+      waitingOn: ["Rückmeldung"],
+      openCount: 2,
+      doneCount: 1,
+    });
+    const { container } = renderWithProviders(
+      <Harness story={story} variant="quiet" />,
+    );
+    await screen.findByText("Ruhige Geschichte");
+
+    expect(container.querySelector(".story-row-quiet")).toBeInTheDocument();
+    expect(container.querySelector(".project-card-progress")).not.toBeInTheDocument();
+    expect(screen.getByText("Wartet auf: Rückmeldung")).toBeInTheDocument();
   });
 
   it("shows a completed result without a numerical criteria fraction", async () => {

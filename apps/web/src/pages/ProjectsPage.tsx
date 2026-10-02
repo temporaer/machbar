@@ -143,10 +143,9 @@ function ProjectsPageContent() {
     scope === "mine"
       ? countScopeHiddenMatches(allProjects, query, currentMemberId)
       : 0;
-  // Keep workflow meaning ahead of tag grouping: actionable and stuck work
-  // stays first, active waiting gets its own visible section, and terminal
-  // work remains folded at the bottom. The backlog bucket can only contain a
-  // retained row that just left this page.
+  // Keep workflow meaning ahead of tag grouping: actionable, review, and
+  // stuck work stays in the foreground; healthy waiting and deferred work
+  // share one quiet folded section, and terminal work remains folded below.
   const classifications = new Map(
     filteredProjects.map((project) => [project.id, classifyProjectListItem(project)]),
   );
@@ -155,13 +154,13 @@ function ProjectsPageContent() {
     return (
       classification === "active-actionable" ||
       classification === "active-review" ||
-      classification === "active-stuck" ||
-      classification === "active-deferred"
+      classification === "active-stuck"
     );
   });
-  const waitingProjects = filteredProjects.filter(
-    (project) => classifications.get(project.id) === "active-waiting",
-  );
+  const quietProjects = filteredProjects.filter((project) => {
+    const classification = classifications.get(project.id);
+    return classification === "active-waiting" || classification === "active-deferred";
+  });
   const backlogProjects = filteredProjects.filter(
     (project) => classifications.get(project.id) === "backlog",
   );
@@ -189,14 +188,22 @@ function ProjectsPageContent() {
         >
           <ul className="list story-row-list">
             {group.items.map((project) => (
-              <ProjectStoryRow key={project.id} story={project} variant="card" />
+              <ProjectStoryRow
+                key={project.id}
+                story={project}
+                variant={sectionKey === "quiet" ? "quiet" : "card"}
+              />
             ))}
           </ul>
         </CollapsibleGroup>
       ) : (
         <ul className="list story-row-list" key={`${sectionKey}-all`}>
           {group.items.map((project) => (
-            <ProjectStoryRow key={project.id} story={project} variant="card" />
+            <ProjectStoryRow
+              key={project.id}
+              story={project}
+              variant={sectionKey === "quiet" ? "quiet" : "card"}
+            />
           ))}
         </ul>
       ),
@@ -205,6 +212,10 @@ function ProjectsPageContent() {
   // it automatically instead of hiding a real match behind a fold; with no
   // search (or no terminal matches) the section stays folded by default.
   const revealTerminalProjects = query.trim() !== "" && terminalProjects.length > 0;
+  const revealQuietProjects =
+    (query.trim() !== "" && quietProjects.length > 0) ||
+    (pendingHighlightId !== null &&
+      quietProjects.some((project) => project.id === pendingHighlightId));
   const revealBacklogProjects =
     pendingHighlightId !== null &&
     backlogProjects.some((project) => project.id === pendingHighlightId);
@@ -301,17 +312,20 @@ function ProjectsPageContent() {
                 {renderGroups("active", activeProjects, 2)}
               </section>
             ) : null}
-            {waitingProjects.length > 0 ? (
-              <section
+            {quietProjects.length > 0 ? (
+              <details
                 className="section"
-                data-project-section="waiting"
-                aria-labelledby="waiting-projects-heading"
+                data-project-section="quiet"
+                aria-labelledby="quiet-projects-heading"
+                open={revealQuietProjects}
               >
-                <h2 className="section-title" id="waiting-projects-heading">
-                  {strings.waitingProjectsSection(waitingProjects.length)}
-                </h2>
-                {renderGroups("waiting", waitingProjects, 3)}
-              </section>
+                <summary className="section-title disclosure-summary">
+                  <span id="quiet-projects-heading" role="heading" aria-level={2}>
+                    {strings.quietProjectsSection(quietProjects.length)}
+                  </span>
+                </summary>
+                {renderGroups("quiet", quietProjects, 3)}
+              </details>
             ) : null}
             {backlogProjects.length > 0 ? (
               <details

@@ -870,6 +870,7 @@ const en = {
   noMatchingProjects: "No projects match your search and filters.",
   activeProjectsSection: "Active & stuck",
   waitingProjectsSection: (count: number) => `Waiting (${count})`,
+  quietProjectsSection: (count: number) => `Waiting / deferred (${count})`,
   backlogProjectsSection: "Later / not active yet",
   finishedProjectsSection: (count: number) =>
     `Completed & archived (${count})`,

@@ -9,6 +9,7 @@ import { NextActionBadgeProvider, type NextActionBadgeInfo } from "../lib/nextAc
 import { TaskRow } from "./TaskRow";
 import { ChildPolicyPrompt } from "./ChildPolicyPrompt";
 import { EmptyState } from "./AsyncStates";
+import type { AttentionTone } from "../lib/attentionTone";
 
 export interface TaskOutlineProps {
   tasks: Task[];
@@ -43,6 +44,8 @@ export interface TaskOutlineProps {
    * keeps the default `false` full outline.
    */
   compactDescendants?: boolean;
+  /** Optional Today-only emphasis shared by every row in this compiled list. */
+  attentionTone?: AttentionTone;
 }
 
 export function TaskOutline({
@@ -54,6 +57,7 @@ export function TaskOutline({
   preserveRootOrder = false,
   nextActionInfo,
   compactDescendants = false,
+  attentionTone,
 }: TaskOutlineProps) {
   const strings = useStrings();
   const taskActions = useTaskActions();
@@ -110,6 +114,7 @@ export function TaskOutline({
               depth={0}
               showRevisitDate={showRevisitDate}
               compactDescendants={compactDescendants}
+              {...(attentionTone ? { attentionTone } : {})}
             />
           ))}
         </ul>
@@ -125,6 +130,7 @@ export function TaskOutline({
               depth={0}
               showRevisitDate={showRevisitDate}
               compactDescendants={compactDescendants}
+              {...(attentionTone ? { attentionTone } : {})}
             />
           ))}
         </ul>

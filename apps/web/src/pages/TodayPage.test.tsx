@@ -351,19 +351,44 @@ describe("TodayPage", () => {
     expect(screen.getByText("Barbara anrufen")).toBeVisible();
   });
 
-  it("zeigt machbare Aufgaben ohne Termin sofort sichtbar in einem normalen Nebenabschnitt", async () => {
+  it("zeigt machbare Aufgaben ohne Termin als standardmäßig geöffneten Nebenabschnitt, wenn es die einzige Arbeitsgruppe ist", async () => {
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
       unscheduled: [makeTask({ id: 4, title: "Keller aufräumen", scheduledDate: null })],
     });
     renderWithProviders(<TodayPage />);
 
-    const heading = await screen.findByText("Weitere machbare Aufgaben");
+    const heading = await screen.findByText("Weitere machbare Aufgaben (1)");
     expect(screen.queryByText(/Nach rechts wischen:/)).not.toBeInTheDocument();
-    // No longer a collapsed <details>/<summary> — it's a normal, always
-    // visible section like every other one on this page.
-    expect(heading.closest("details")).toBeNull();
+    expect(heading.closest("details")).toHaveAttribute("open");
     expect(screen.getByText("Keller aufräumen")).toBeVisible();
+  });
+
+  it("folds available work when a foreground attention bucket exists and applies tones", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      dueToday: [makeTask({ id: 5, title: "Heute erledigen" })],
+      unscheduled: [makeTask({ id: 6, title: "Ohne Termin" })],
+      projects: [
+        {
+          project: makeProject({ id: 88, title: "Heute-Projekt", dueDate: "2026-08-25" }),
+          qualification: "due",
+          attentionBucket: "dueToday",
+          nextAction: null,
+          nextActionContextAvailability: null,
+          additionalNextActions: [],
+          stuck: null,
+        },
+      ],
+    });
+    const { container } = renderWithProviders(<TodayPage />);
+
+    await screen.findByText("Heute erledigen");
+    const additional = screen.getByText("Weitere machbare Aufgaben (1)").closest("details");
+    expect(additional).not.toHaveAttribute("open");
+    expect(container.querySelector(".task-row-attention-due-today")).toBeInTheDocument();
+    expect(container.querySelector(".task-row-attention-available")).toBeInTheDocument();
+    expect(container.querySelector(".project-agenda-row--due-today")).toBeInTheDocument();
   });
 
   it("zeigt keinen eigenen Projekte-Abschnitt mehr in der Heute-Ansicht", async () => {

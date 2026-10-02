@@ -63,8 +63,10 @@ export interface ProjectStoryRowProps {
    * `compact` — the inventory/Review meta line (criteria, driver, dates, tasks).
    * `card` — the Projekte tab: same meta plus next action and the task /
    * acceptance-criteria progress bars.
+   * `quiet` — folded waiting/deferred inventory: subdued card treatment and
+   * no task-progress bar.
    */
-  variant?: "compact" | "card";
+  variant?: "compact" | "card" | "quiet";
 }
 
 
@@ -244,7 +246,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
 
   return (
     <li
-      className={`story-row story-row-accent-${accent}`}
+      className={`story-row story-row-accent-${accent}${variant === "quiet" ? " story-row-quiet" : ""}`}
       style={{ listStyle: "none" }}
       data-workitem-id={story.id}
       data-workitem-role="story"
@@ -330,7 +332,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
               <TaskCardTags tags={[]} contexts={story.contexts} />
             </div>
           ) : null}
-          {variant === "card" ? (
+          {variant === "card" || variant === "quiet" ? (
             <>
               {criterionSummary ? (
                 <p className="story-row-criterion">{criterionSummary}</p>
@@ -371,7 +373,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
                   )}
                 </p>
               ) : null}
-              {totalTasks > 0 ? (
+              {variant === "card" && totalTasks > 0 ? (
                 <div
                   className="project-card-progress"
                   style={{
