@@ -143,6 +143,7 @@ export function registerIntakeRoutes(
       signal,
       request.params.id,
       request.authMember?.id ?? request.activityActor?.id ?? null,
+      Boolean(paperless),
       body.hint,
     );
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));

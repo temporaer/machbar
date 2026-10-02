@@ -66,6 +66,145 @@ const WORK_FIELDS = new Set([
 ]);
 const WARNING_FIELDS = new Set(["message"]);
 const PROJECT_TASK_FIELDS = ["notBeforeDate", "notBeforeAt", "reminders", "needsClarification"] as const;
+const INTAKE_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+
+function normalizeIntakeKeys(
+  calendarEvents: unknown,
+  workItems: unknown,
+): { calendarEvents: unknown; workItems: unknown } {
+  const calendars = Array.isArray(calendarEvents) ? calendarEvents : null;
+  const work = Array.isArray(workItems) ? workItems : null;
+  const validKeys = new Set<string>();
+  const allKeys: string[] = [];
+  const calendarOriginalKeys = new Set<string>();
+  const workOriginalKeys = new Set<string>();
+  const unresolvedReferenceKeys = new Set<string>();
+
+  for (const [entries, keySet] of [[calendars, calendarOriginalKeys], [work, workOriginalKeys]] as const) {
+    for (const entry of entries ?? []) {
+      if (!isRecord(entry) || typeof entry.key !== "string" || entry.key.length === 0) continue;
+      allKeys.push(entry.key);
+      keySet.add(entry.key);
+      if (INTAKE_KEY_PATTERN.test(entry.key)) validKeys.add(entry.key);
+    }
+  }
+  for (const entry of work ?? []) {
+    if (!isRecord(entry)) continue;
+    const parentKey = entry.parentKey;
+    if (typeof parentKey === "string" && !workOriginalKeys.has(parentKey) && INTAKE_KEY_PATTERN.test(parentKey)) {
+      unresolvedReferenceKeys.add(parentKey);
+    }
+    if (Array.isArray(entry.relatedCalendarKeys)) {
+      for (const key of entry.relatedCalendarKeys) {
+        if (typeof key === "string" && !calendarOriginalKeys.has(key) && INTAKE_KEY_PATTERN.test(key)) {
+          unresolvedReferenceKeys.add(key);
+        }
+      }
+    }
+  }
+  for (const entry of calendars ?? []) {
+    if (!isRecord(entry) || !Array.isArray(entry.relatedWorkKeys)) continue;
+    for (const key of entry.relatedWorkKeys) {
+      if (typeof key === "string" && !workOriginalKeys.has(key) && INTAKE_KEY_PATTERN.test(key)) {
+        unresolvedReferenceKeys.add(key);
+      }
+    }
+  }
+
+  const usedKeys = new Set([...validKeys, ...unresolvedReferenceKeys]);
+  const normalizedByOriginal = new Map<string, string>();
+  for (const original of allKeys) {
+    if (INTAKE_KEY_PATTERN.test(original) || normalizedByOriginal.has(original)) continue;
+    const slug = original.toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^[-_]+/, "") || "key";
+    let suffixNumber = 1;
+    while (true) {
+      const suffix = suffixNumber === 1 ? "" : `-${suffixNumber}`;
+      const prefix = slug.slice(0, 40 - suffix.length).replace(/[-_]+$/, "") || "k";
+      const candidate = `${prefix}${suffix}`;
+      if (!usedKeys.has(candidate)) {
+        normalizedByOriginal.set(original, candidate);
+        usedKeys.add(candidate);
+        break;
+      }
+      suffixNumber += 1;
+    }
+  }
+
+  const calendarKeyMap = new Map<string, string>();
+  const workKeyMap = new Map<string, string>();
+  for (const entry of calendars ?? []) {
+    if (isRecord(entry) && typeof entry.key === "string") {
+      const normalized = normalizedByOriginal.get(entry.key);
+      if (normalized) calendarKeyMap.set(entry.key, normalized);
+    }
+  }
+  for (const entry of work ?? []) {
+    if (isRecord(entry) && typeof entry.key === "string") {
+      const normalized = normalizedByOriginal.get(entry.key);
+      if (normalized) workKeyMap.set(entry.key, normalized);
+    }
+  }
+
+  const rewriteReferences = (
+    value: unknown,
+    field: string,
+    keyMap: ReadonlyMap<string, string>,
+    originalKeys: ReadonlySet<string>,
+  ): unknown => {
+    if (!isRecord(value)) return value;
+    const rewritten = { ...value };
+    if (field === "parentKey") {
+      const key = rewritten[field];
+      if (typeof key === "string" && originalKeys.has(key)) {
+        rewritten[field] = keyMap.get(key) ?? key;
+      }
+    } else if (Array.isArray(rewritten[field])) {
+      rewritten[field] = (rewritten[field] as unknown[]).map((key) =>
+        typeof key === "string" && originalKeys.has(key) ? keyMap.get(key) ?? key : key
+      );
+    }
+    return rewritten;
+  };
+
+  const rewriteItems = (
+    entries: unknown[],
+    keyMap: ReadonlyMap<string, string>,
+    referenceFields: ReadonlyArray<{
+      field: string;
+      keyMap: ReadonlyMap<string, string>;
+      originalKeys: ReadonlySet<string>;
+    }>,
+  ): unknown[] => entries.map((entry) => {
+    if (!isRecord(entry)) return entry;
+    const rewritten = { ...entry };
+    if (typeof rewritten.key === "string") {
+      rewritten.key = keyMap.get(rewritten.key) ?? rewritten.key;
+    }
+    for (const { field, keyMap: referenceKeyMap, originalKeys } of referenceFields) {
+      const reference = rewriteReferences(rewritten, field, referenceKeyMap, originalKeys);
+      if (isRecord(reference)) Object.assign(rewritten, reference);
+    }
+    return rewritten;
+  });
+
+  return {
+    calendarEvents: calendars === null
+      ? calendarEvents
+      : rewriteItems(calendars, calendarKeyMap, [{
+        field: "relatedWorkKeys",
+        keyMap: workKeyMap,
+        originalKeys: workOriginalKeys,
+      }]),
+    workItems: work === null
+      ? workItems
+      : rewriteItems(work, workKeyMap, [
+        { field: "parentKey", keyMap: workKeyMap, originalKeys: workOriginalKeys },
+        { field: "relatedCalendarKeys", keyMap: calendarKeyMap, originalKeys: calendarOriginalKeys },
+      ]),
+  };
+}
 
 function stripFields(
   value: Record<string, unknown>,
@@ -181,11 +320,12 @@ export function normalizeIntakePlanInput(
         return stripFields(entry, WARNING_FIELDS, "warnings[]", warnings);
       })
     : root.warnings;
+  const repairedKeys = normalizeIntakeKeys(calendarEvents, workItems);
   const normalized = {
     ...root,
     summary: root.summary,
-    calendarEvents,
-    workItems,
+    calendarEvents: repairedKeys.calendarEvents,
+    workItems: repairedKeys.workItems,
     warnings: planWarnings,
   };
   if (warnings.length > 0 && Array.isArray(planWarnings)) {

@@ -22,6 +22,7 @@ import {
   isStaleWriteConflict,
 } from "../lib/errorMessage";
 import { LoadingState } from "../components/AsyncStates";
+import { BottomSheet } from "../components/BottomSheet";
 import { IntakeDiagnosticLink } from "../components/IntakeDiagnosticLink";
 import { IntakeProposalReview } from "./IntakeProposalReview";
 import { type DateValidityChange } from "./IntakeReviewFields";
@@ -146,6 +147,8 @@ export function IntakeReviewPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [retryHint, setRetryHint] = useState("");
+  const [changeRequestOpen, setChangeRequestOpen] = useState(false);
+  const [changeRequest, setChangeRequest] = useState("");
   const [invalidDateKeys, setInvalidDateKeys] = useState<Set<string>>(() => new Set());
   const reminderRowIdsRef = useRef<Map<string, string[]>>(new Map());
   const nextReminderRowIdRef = useRef(0);
@@ -404,8 +407,8 @@ export function IntakeReviewPage() {
         current.key === item.key ? item : current),
     });
   };
-  const retry = async () => {
-    if (retryInFlightRef.current || applyingRef.current || busy) return;
+  const retry = async (requestedChanges?: string): Promise<boolean> => {
+    if (retryInFlightRef.current || applyingRef.current || busy) return false;
     retryInFlightRef.current = true;
     mutationBaselineRevisionRef.current = revisionRef.current;
     setBusy(true);
@@ -418,44 +421,44 @@ export function IntakeReviewPage() {
           if (conflictPendingRef.current) {
             setSaveError(localizedApiErrorMessage("stale_write_conflict", undefined, strings));
           }
-          return;
+          return false;
         }
         if (JSON.stringify(latestDraftRef.current) !== cleanDraftSnapshotRef.current) {
           if (!(await saveCurrentDraft())) {
             if (conflictPendingRef.current) {
               setSaveError(localizedApiErrorMessage("stale_write_conflict", undefined, strings));
             }
-            return;
+            return false;
           }
         }
         if (conflictPendingRef.current) {
           setSaveError(localizedApiErrorMessage("stale_write_conflict", undefined, strings));
-          return;
+          return false;
         }
       }
       const nextRecord = await api.retryIntake(
         id,
-        retryHintDirtyRef.current ? retryHint : undefined,
+        requestedChanges ?? (retryHintDirtyRef.current ? retryHint : undefined),
       );
-      reminderRowIdsRef.current.clear();
       recordRef.current = nextRecord;
       revisionRef.current = nextRecord.revision;
-      latestDraftRef.current = null;
-      cleanDraftSnapshotRef.current = null;
-      failedSnapshotRef.current = null;
       conflictPendingRef.current = false;
       if (nextRecord.status === "ready" && nextRecord.draft) {
+        reminderRowIdsRef.current.clear();
         latestDraftRef.current = nextRecord.draft;
         cleanDraftSnapshotRef.current = JSON.stringify(nextRecord.draft);
+        failedSnapshotRef.current = null;
         setDraft(nextRecord.draft);
       } else {
-        setDraft(null);
+        setDraft(nextRecord.draft ?? latestDraftRef.current);
       }
       setRecord(nextRecord);
       setRetryHint(nextRecord.retryHint ?? "");
       retryHintDirtyRef.current = false;
+      return true;
     } catch (cause) {
       setSaveError(localizedErrorMessage(cause, strings));
+      return false;
     } finally {
       retryInFlightRef.current = false;
       mutationBaselineRevisionRef.current = null;
@@ -544,7 +547,7 @@ export function IntakeReviewPage() {
     setBusy(true);
     try { await api.deleteIntake(id); navigate("/today"); } finally { setBusy(false); }
   };
-  if (record.status === "analysis_failed") {
+  if (record.status === "analysis_failed" && !draft) {
     const validationIssues = record.error ? intakeErrorIssues(record.error) : [];
     return (
       <section className="card stack" role="alert">
@@ -590,8 +593,8 @@ export function IntakeReviewPage() {
       </section>
     );
   }
-  if (record.status === "queued") return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeQueued}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
-  if (record.status === "analyzing") return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeAnalyzing}</p></section>;
+  if (record.status === "queued" && !draft) return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeQueued}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
+  if (record.status === "analyzing" && !draft) return <section className="card stack"><h1>{strings.intakeProcess}</h1><p>{strings.intakeAnalyzing}</p></section>;
   if (record.status === "applying") return <section className="card stack"><h1>{strings.intakeApply}</h1><p>{strings.intakeApplying}</p>{!record.homeAssistant.workerOnline ? <p role="status">{strings.intakeOfflineHint}</p> : null}</section>;
   if (record.status === "applied" || record.status === "partially_applied") {
     const failedCalendarResults = record.applyResults?.calendar.filter((result) => result.status === "failed") ?? [];
@@ -617,7 +620,47 @@ export function IntakeReviewPage() {
   if (!draft) return <LoadingState />;
   return (
     <section className="stack intake-review">
-      <fieldset disabled={busy} className="intake-review-fields">
+      {record.status === "queued" || record.status === "analyzing" ? (
+        <section className="card stack" role="status">
+          <h2>{strings.intakeProcess}</h2>
+          <p>{record.status === "queued" ? strings.intakeQueued : strings.intakeAnalyzing}</p>
+          {record.status === "queued" && !record.homeAssistant.workerOnline
+            ? <p>{strings.intakeOfflineHint}</p>
+            : null}
+        </section>
+      ) : null}
+      {record.status === "analysis_failed" ? (
+        <section className="card stack" role="alert">
+          <h2>{strings.intakeAnalysisFailed}</h2>
+          <p>{intakeFailureExplanation(record, strings)}</p>
+          {record.error ? (
+            (record.error.details?.issues ?? []).map((issue, index) => (
+              <p key={`${intakeIssuePath(issue.path)}-${issue.code}-${index}`}>
+                <code>{intakeIssuePath(issue.path)}</code>: {issue.message}
+              </p>
+            ))
+          ) : null}
+          <label className="stack">
+            <span>{strings.intakeRetryHintLabel}</span>
+            <textarea
+              rows={3}
+              value={retryHint}
+              placeholder={strings.intakeRetryHintPlaceholder}
+              disabled={busy}
+              onChange={(event) => {
+                retryHintDirtyRef.current = true;
+                setRetryHint(event.target.value);
+              }}
+            />
+            <small>{strings.intakeRetryHintHelp}</small>
+          </label>
+          <IntakeDiagnosticLink href={diagnosticHref} />
+          <button className="btn btn-primary" disabled={busy} onClick={() => void retry()}>
+            {strings.intakeRetry}
+          </button>
+        </section>
+      ) : null}
+      <fieldset disabled={busy || record.status !== "ready"} className="intake-review-fields">
         <IntakeProposalReview
           draft={draft}
           members={members}
@@ -693,7 +736,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || hasInvalidInputs}
+              disabled={busy || record.status !== "ready" || hasInvalidInputs}
               onClick={() => void applyInitial(true)}
             >
               {strings.intakeAcceptIncomplete}
@@ -702,7 +745,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || selectedIssues.length > 0 || hasInvalidInputs}
+              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs}
               onClick={() => void applyInitial(false)}
             >
               {strings.intakeApplyCount(enabledProposalCount)}
@@ -711,13 +754,65 @@ export function IntakeReviewPage() {
           <button
             type="button"
             className="btn intake-discard-button"
-            disabled={busy}
+            disabled={busy || record.status !== "ready"}
             onClick={() => void discard()}
           >
             {strings.intakeDiscard}
           </button>
+          {record.status === "ready" ? (
+            <button
+              type="button"
+              className="btn"
+              disabled={busy}
+              onClick={() => {
+                setChangeRequest(retryHintDirtyRef.current ? retryHint : record.retryHint ?? "");
+                setChangeRequestOpen(true);
+              }}
+            >
+              {strings.intakeRequestChanges}
+            </button>
+          ) : null}
         </div>
       </div>
+      {changeRequestOpen && record.status === "ready" ? (
+        <BottomSheet
+          title={strings.intakeRequestChanges}
+          onClose={() => setChangeRequestOpen(false)}
+        >
+          <form
+            className="stack"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void retry(changeRequest).then((succeeded) => {
+                if (succeeded) setChangeRequestOpen(false);
+              });
+            }}
+          >
+            <label className="stack">
+              <span>{strings.intakeRequestedChangesLabel}</span>
+              <textarea
+                rows={4}
+                value={changeRequest}
+                disabled={busy}
+                onChange={(event) => setChangeRequest(event.target.value)}
+              />
+            </label>
+            <div className="intake-approval-actions">
+              <button
+                type="button"
+                className="btn"
+                disabled={busy}
+                onClick={() => setChangeRequestOpen(false)}
+              >
+                {strings.cancel}
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                {strings.intakeReprocess}
+              </button>
+            </div>
+          </form>
+        </BottomSheet>
+      ) : null}
     </section>
   );
 }

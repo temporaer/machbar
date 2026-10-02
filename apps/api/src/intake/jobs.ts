@@ -451,6 +451,7 @@ export async function retryIntakeAnalysis(
   signal: HomeAssistantRequestSignal,
   id: string,
   viewerMemberId: number | null,
+  paperlessAvailable: boolean,
   userInstruction?: string | null,
 ): Promise<void> {
   const job = jobOrThrow(db, id);
@@ -465,17 +466,34 @@ export async function retryIntakeAnalysis(
   const currentDraft = normalizeStoredIntakeDraft(parseJson<unknown>(job.draftJson));
   const membersForValidation = db.select({ id: schema.members.id }).from(schema.members).all().map((member) => member.id);
   const attachments = db.select().from(schema.intakeAttachments).where(eq(schema.intakeAttachments.intakeJobId, id)).all();
-  const validationIssues = job.status === "ready" && currentDraft
+  const currentDraftIssues = currentDraft
     ? intakeDraftIssues(currentDraft, {
         memberIds: membersForValidation,
-        paperlessAvailable: false,
+        paperlessAvailable,
         hasFiles: attachments.length > 0,
       })
-    : retryValidationIssues(previousError);
+    : [];
+  const previousIssues = retryValidationIssues(previousError);
+  const validationIssues = [...currentDraftIssues, ...previousIssues.filter(
+    (previousIssue) => !currentDraftIssues.some((currentIssue) =>
+      currentIssue.code === previousIssue.code
+      && currentIssue.path.join(".") === previousIssue.path.join(".")
+      && currentIssue.message === previousIssue.message
+    ),
+  )];
   const retryHint = userInstruction === undefined
     ? job.retryHint
     : userInstruction?.trim() || null;
-  const members = db.select({ name: schema.members.name }).from(schema.members).all();
+  const members = db.select({ id: schema.members.id, name: schema.members.name }).from(schema.members).all();
+  const currentProposal = currentDraft ? {
+    summary: currentDraft.summary,
+    calendarEvents: currentDraft.calendarEvents,
+    workItems: currentDraft.workItems.map(({ ownerMemberId, ...item }) => ({
+      ...item,
+      ownerName: members.find((member) => member.id === ownerMemberId)?.name ?? null,
+    })),
+    warnings: currentDraft.warnings,
+  } : null;
   db.transaction((tx) => {
     tx.update(schema.intakeJobs).set({
       status: "queued",
@@ -492,10 +510,11 @@ export async function retryIntakeAnalysis(
         instructions: buildIntakeInstructions({
           today: new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date()),
           timezone: "Europe/Berlin",
-          memberNames: members.map((m) => m.name),
+          memberNames: members.map((member) => member.name),
           hasText: job.text !== null,
           attachmentCount: attachments.filter((attachment) => attachment.mimeType !== "text/plain").length,
           validationIssues,
+          currentProposal,
           userInstruction: retryHint,
         }),
         text: job.text,

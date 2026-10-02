@@ -263,6 +263,168 @@ describe("intake plan contracts", () => {
     ]));
   });
 
+  it("repairs long AI keys with deterministic collision handling", () => {
+    const sharedPrefix = "a".repeat(40);
+    const normalized = normalizeIntakePlanInput({
+      summary: "Key repair",
+      calendarEvents: [
+        { key: `${sharedPrefix}-first`, title: "First" },
+        { key: `${sharedPrefix}-second`, title: "Second" },
+        { key: "abcdef!", title: "Collides after repair" },
+        { key: "abcdef", title: "Already canonical" },
+        { key: "calendar-kur-haushaltshilfe-2026-10-05-26", title: "Reported event" },
+        { key: "CALENDAR-KÜR!!!", title: "Unsupported characters" },
+      ],
+      workItems: [],
+    }) as IntakePlan;
+    const keys = normalized.calendarEvents.map((event) => event.key);
+
+    expect(keys[0]).toBe(sharedPrefix);
+    expect(keys[1]).toBe(`${"a".repeat(38)}-2`);
+    expect(keys[2]).toBe("abcdef-2");
+    expect(keys[3]).toBe("abcdef");
+    expect(keys[4]).toBe("calendar-kur-haushaltshilfe-2026-10-05-26".slice(0, 40));
+    expect(keys[5]).toBe("calendar-k-r");
+    expect(keys.every((key) => /^[a-z0-9][a-z0-9_-]{0,39}$/.test(key))).toBe(true);
+    expect(normalized.warnings).toEqual([]);
+  });
+
+  it("rewrites parents and calendar relationships when their keys are repaired", () => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Relationships",
+      calendarEvents: [{
+        key: "Calendar Event!!!",
+        title: "Event",
+        relatedWorkKeys: ["Child Task!!!"],
+      }],
+      workItems: [{
+        key: "Parent Project!!!",
+        kind: "project",
+        title: "Project",
+      }, {
+        key: "Child Task!!!",
+        kind: "action",
+        title: "Action",
+        parentKey: "Parent Project!!!",
+        relatedCalendarKeys: ["Calendar Event!!!"],
+      }],
+    }) as IntakePlan;
+
+    expect(normalized.calendarEvents[0]).toMatchObject({
+      key: "calendar-event",
+      relatedWorkKeys: ["child-task"],
+    });
+    expect(normalized.workItems.map((item) => item.key)).toEqual(["parent-project", "child-task"]);
+    expect(normalized.workItems[1]).toMatchObject({
+      parentKey: "parent-project",
+      relatedCalendarKeys: ["calendar-event"],
+    });
+  });
+
+  it("keeps duplicate original keys and missing or invalid keys as errors", () => {
+    const duplicate = normalizeIntakePlanInput({
+      summary: "Duplicate",
+      calendarEvents: [],
+      workItems: [
+        { key: "Duplicate Key!!!", kind: "action", title: "First" },
+        { key: "Duplicate Key!!!", kind: "action", title: "Second" },
+      ],
+    }) as IntakePlan;
+    expect(duplicate.workItems.map((item) => item.key)).toEqual([
+      "duplicate-key",
+      "duplicate-key",
+    ]);
+    expect(intakePlanIssues(duplicate).map((item) => item.code)).toContain("duplicate_key");
+    expect(intakePlanSchema.safeParse(duplicate).success).toBe(false);
+
+    for (const key of [undefined, 42]) {
+      const workItem = key === undefined
+        ? { kind: "action", title: "Missing key" }
+        : { key, kind: "action", title: "Invalid key" };
+      const normalized = normalizeIntakePlanInput({
+        summary: "Invalid key",
+        calendarEvents: [],
+        workItems: [workItem],
+      }) as { workItems: Array<Record<string, unknown>> };
+      if (key === undefined) expect(normalized.workItems[0]).not.toHaveProperty("key");
+      else expect(normalized.workItems[0]?.key).toBe(key);
+      expect(intakePlanStructureSchema.safeParse(normalized).success).toBe(false);
+    }
+    const empty = normalizeIntakePlanInput({
+      summary: "Empty key",
+      calendarEvents: [],
+      workItems: [{ key: "", kind: "action", title: "Empty key" }],
+    }) as IntakePlan;
+    expect(empty.workItems[0]?.key).toBe("");
+    expect(intakePlanIssues(empty).map((item) => item.code)).toContain("key_invalid");
+    expect(intakePlanSchema.safeParse(empty).success).toBe(false);
+  });
+
+  it("preserves unresolved relationships and their diagnostics after key repair", () => {
+    const source = readFixture("valid-elternabend.json") as IntakePlan;
+    source.calendarEvents[0]!.key = "Long Calendar Event!!!";
+    source.calendarEvents[0]!.relatedWorkKeys = ["Long Work Item!!!", "missing-work"];
+    source.workItems[0]!.key = "Long Work Item!!!";
+    source.workItems[0]!.parentKey = "missing-parent";
+    source.workItems[0]!.relatedCalendarKeys = ["Long Calendar Event!!!", "missing-calendar"];
+
+    const normalized = normalizeIntakePlanInput(source) as IntakePlan;
+    expect(normalized.workItems[0]?.parentKey).toBe("missing-parent");
+    expect(normalized.calendarEvents[0]?.relatedWorkKeys).toEqual(["long-work-item", "missing-work"]);
+    expect(normalized.workItems[0]?.relatedCalendarKeys).toEqual(["long-calendar-event", "missing-calendar"]);
+    expect(intakePlanIssues(normalized).map((item) => item.code)).toEqual(expect.arrayContaining([
+      "dangling_parent",
+      "dangling_related_key",
+    ]));
+  });
+
+  it("does not let repaired keys capture unresolved references", () => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Unresolved references",
+      calendarEvents: [{
+        key: "Calendar",
+        title: "Event",
+        relatedWorkKeys: ["work"],
+      }, {
+        key: "work",
+        title: "Existing event key",
+        relatedWorkKeys: [],
+      }],
+      workItems: [{
+        key: "Parent",
+        kind: "project",
+        title: "Parent",
+        parentKey: "parent",
+        relatedCalendarKeys: ["calendar"],
+      }, {
+        key: "work!",
+        kind: "action",
+        title: "Work",
+        parentKey: null,
+        relatedCalendarKeys: [],
+      }],
+    }) as IntakePlan;
+
+    expect(normalized.workItems.map((item) => item.key)).toEqual(["parent-2", "work-2"]);
+    expect(normalized.calendarEvents[0]?.key).toBe("calendar-2");
+    expect(normalized.workItems[0]).toMatchObject({
+      parentKey: "parent",
+      relatedCalendarKeys: ["calendar"],
+    });
+    expect(normalized.calendarEvents[0]?.relatedWorkKeys).toEqual(["work"]);
+    expect(intakePlanIssues(normalized).map((issue) => issue.code)).toEqual(expect.arrayContaining([
+      "dangling_parent",
+      "dangling_related_key",
+    ]));
+  });
+
+  it("preserves valid keys and is idempotent", () => {
+    const plan = readFixture("valid-elternabend.json") as IntakePlan;
+    const normalized = normalizeIntakePlanInput(plan) as IntakePlan;
+    expect(normalized).toEqual(plan);
+    expect(normalizeIntakePlanInput(normalized)).toEqual(normalized);
+  });
+
   it("normalizes missing and null booleans, collections, and relationships", () => {
     const normalized = normalizeIntakePlanInput({
       summary: "Defaults",
