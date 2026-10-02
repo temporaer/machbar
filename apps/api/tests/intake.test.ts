@@ -284,6 +284,57 @@ describe("intake lifecycle", () => {
     expect(record.json().error).toBeNull();
   });
 
+  it("repairs long keys on AI completion and keeps plan relationships intact", async () => {
+    const token = await pairAndSnapshot();
+    const id = await createIntake(token);
+    const request = await lease(token);
+    const source = {
+      summary: "Long keys",
+      calendarEvents: [{
+        key: "calendar-kur-haushaltshilfe-2026-10-05-26",
+        title: "Termin",
+        allDay: true,
+        startDate: "2026-10-05",
+        endDate: "2026-10-05",
+        relatedWorkKeys: ["Child Task with a very long generated identity"],
+      }],
+      workItems: [{
+        key: "Project with a very long generated identity",
+        kind: "project",
+        title: "Project",
+      }, {
+        key: "Child Task with a very long generated identity",
+        kind: "action",
+        title: "Task",
+        parentKey: "Project with a very long generated identity",
+        relatedCalendarKeys: ["calendar-kur-haushaltshilfe-2026-10-05-26"],
+      }],
+      warnings: [],
+    };
+    const completion = await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${request.id}/complete`,
+      headers: { authorization: "Bearer " + token },
+      payload: { leaseToken: request.leaseToken, outcome: "succeeded", result: source },
+    });
+
+    expect(completion.statusCode, completion.body).toBe(204);
+    const record = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
+    expect(record.json().status).toBe("ready");
+    const storedJob = ctx.handle.db.select().from(schema.intakeJobs)
+      .where(eq(schema.intakeJobs.id, id)).get()!;
+    const { calendarEvents, workItems } = JSON.parse(storedJob.planJson!) as typeof source;
+    const calendarKey = calendarEvents[0]!.key;
+    const projectKey = workItems[0]!.key;
+    const taskKey = workItems[1]!.key;
+    expect([calendarKey, projectKey, taskKey].every((key) =>
+      /^[a-z0-9][a-z0-9_-]{0,39}$/.test(key),
+    )).toBe(true);
+    expect(calendarEvents[0]!.relatedWorkKeys).toEqual([taskKey]);
+    expect(workItems[1]!.parentKey).toBe(projectKey);
+    expect(workItems[1]!.relatedCalendarKeys).toEqual([calendarKey]);
+  });
+
   it("reports the received type for structurally rejected contract fields", async () => {
     const token = await pairAndSnapshot();
     const id = await createIntake(token);
@@ -422,6 +473,94 @@ describe("intake lifecycle", () => {
     const instructions = JSON.parse(retryRequest.payloadJson).instructions as string;
     expect(instructions).toContain("invalid_datetime");
     expect(instructions).toContain("Bitte Konflikte korrigieren.");
+  });
+
+  it("reprocesses a valid proposal with context and retains it until replacement succeeds", async () => {
+    const token = await pairAndSnapshot();
+    const id = await createIntake(token, true);
+    const firstRequest = await lease(token);
+    const originalPlan = {
+      ...validPlan,
+      summary: "Current proposal",
+      workItems: [
+        { ...validPlan.workItems[0]!, key: "first", title: "First task" },
+        { ...validPlan.workItems[0]!, key: "second", title: "Second task" },
+      ],
+    };
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${firstRequest.id}/complete`,
+      headers: { authorization: "Bearer " + token },
+      payload: { leaseToken: firstRequest.leaseToken, outcome: "succeeded", result: originalPlan },
+    });
+    const initialRecord = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
+    expect(initialRecord.json().status).toBe("ready");
+
+    const retry = await ctx.app.inject({
+      method: "POST",
+      url: `/api/intake/${id}/retry`,
+      payload: { hint: "Combine the first two tasks." },
+    });
+    expect(retry.statusCode, retry.body).toBe(200);
+    expect(retry.json().status).toBe("queued");
+    expect(retry.json().draft).toEqual(initialRecord.json().draft);
+    const retryRequest = ctx.handle.db.select().from(schema.homeAssistantRequests)
+      .where(eq(schema.homeAssistantRequests.intakeJobId, id)).orderBy(schema.homeAssistantRequests.createdAt).all()[1]!;
+    const retryPayload = JSON.parse(retryRequest.payloadJson);
+    expect(retryPayload.text).toContain("Bitte prüfen");
+    expect(retryPayload.attachments).toHaveLength(1);
+    expect(retryPayload.instructions).toContain("Combine the first two tasks.");
+    expect(retryPayload.instructions).toContain("=== CURRENT PROPOSAL CONTEXT (ordered; not a patch) ===");
+    expect(retryPayload.instructions.indexOf('"title": "First task"'))
+      .toBeLessThan(retryPayload.instructions.indexOf('"title": "Second task"'));
+    expect(retryPayload.instructions).not.toContain("=== VALIDATION FEEDBACK ===");
+
+    const failedRequest = await lease(token);
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${failedRequest.id}/complete`,
+      headers: { authorization: "Bearer " + token },
+      payload: {
+        leaseToken: failedRequest.leaseToken,
+        outcome: "failed",
+        error: { code: "ai_task_failed", message: "Temporary analysis failure." },
+      },
+    });
+    const failedRecord = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
+    expect(failedRecord.json().status).toBe("analysis_failed");
+    expect(failedRecord.json().draft).toEqual(initialRecord.json().draft);
+
+    const secondRetry = await ctx.app.inject({
+      method: "POST",
+      url: `/api/intake/${id}/retry`,
+      payload: { hint: "Keep the event unchanged." },
+    });
+    expect(secondRetry.statusCode).toBe(200);
+    expect(secondRetry.json().draft).toEqual(initialRecord.json().draft);
+    const replacementRequest = await lease(token);
+    const replacementPlan = {
+      ...originalPlan,
+      summary: "Replacement proposal",
+      workItems: [{
+        ...originalPlan.workItems[0]!,
+        title: "Combined task",
+      }],
+    };
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${replacementRequest.id}/complete`,
+      headers: { authorization: "Bearer " + token },
+      payload: {
+        leaseToken: replacementRequest.leaseToken,
+        outcome: "succeeded",
+        result: replacementPlan,
+      },
+    });
+    const replacedRecord = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
+    expect(replacedRecord.json().status).toBe("ready");
+    expect(replacedRecord.json().draft.summary).toBe("Replacement proposal");
+    expect(replacedRecord.json().draft.workItems.map((item: { title: string }) => item.title))
+      .toEqual(["Combined task"]);
   });
 
   it("includes HA normalization details in retry feedback", async () => {

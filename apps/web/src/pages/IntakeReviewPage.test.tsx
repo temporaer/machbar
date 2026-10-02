@@ -195,7 +195,7 @@ describe("IntakeReviewPage", () => {
     expect(screen.getAllByRole("button", { name: "3 Elemente übernehmen" })).toHaveLength(1);
     expect(screen.getAllByRole("button", { name: "Verwerfen" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Unvollständig übernehmen" })).not.toBeInTheDocument();
-    expect(document.querySelector(".intake-approval-actions")?.children).toHaveLength(2);
+    expect(document.querySelector(".intake-approval-actions")?.children).toHaveLength(3);
     expect(document.querySelector(".intake-approval-bar")?.children).toHaveLength(1);
   });
 
@@ -219,7 +219,7 @@ describe("IntakeReviewPage", () => {
     expect(screen.getByText(/Zeitzone .* ergänzt\./).closest(".intake-approval-summary")).not.toBeNull();
     expect(screen.getByText(/Zeitzone .* ergänzt\./).closest(".intake-approval-summary")?.nextElementSibling)
       .toHaveClass("intake-approval-bar");
-    expect(document.querySelector(".intake-approval-actions")?.children).toHaveLength(2);
+    expect(document.querySelector(".intake-approval-actions")?.children).toHaveLength(3);
     expect(document.querySelector(".intake-approval-bar")?.contains(
       screen.getByText(/Zeitzone .* ergänzt\./).closest(".intake-approval-summary"),
     )).toBe(false);
@@ -1238,6 +1238,32 @@ describe("IntakeReviewPage", () => {
     expect(diagnostics).toHaveAttribute("rel", "noopener noreferrer");
     fireEvent.click(screen.getByRole("button", { name: "Erneut analysieren" }));
     await waitFor(() => expect(mockedApi.retryIntake).toHaveBeenCalledWith("i1", undefined));
+  });
+
+  it("requests changes for a valid draft without obscuring acceptance", async () => {
+    mockedApi.retryIntake.mockResolvedValue({
+      ...record("queued"),
+      draft,
+    } as never);
+    renderPage();
+    await screen.findByRole("heading", { name: "Elternabend" });
+
+    const accept = applyButton();
+    expect(accept).toHaveClass("btn-primary");
+    fireEvent.click(screen.getByRole("button", { name: "Änderungen anfordern" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.getByRole("textbox", { name: "Was soll geändert werden?" })).toHaveValue("");
+    fireEvent.change(dialog.getByRole("textbox", { name: "Was soll geändert werden?" }), {
+      target: { value: "Combine the first two tasks." },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: "Erneut verarbeiten" }));
+
+    await waitFor(() => expect(mockedApi.retryIntake)
+      .toHaveBeenCalledWith("i1", "Combine the first two tasks."));
+    expect(await screen.findByText("Die Verarbeitung wartet auf Home Assistant.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Elternabend" })).toBeInTheDocument();
+    expect(applyButton()).toBeDisabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("accepts leased analyzing and replacement ready states while polling after retry", async () => {
