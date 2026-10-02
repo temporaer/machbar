@@ -76,6 +76,44 @@ describe("intake plan contracts", () => {
     expect(intakeDraftSchema.safeParse(draft).success).toBe(true);
   });
 
+  it("treats punctuation-only and null-like owner suggestions as absent", () => {
+    const source = readFixture("valid-elternabend.json") as IntakePlan;
+    const ownerNames: Array<string | null> = [".", "...", "-", "—", "  ", "none", "null", null, "Robin", "Alex", "None"];
+    const plan: IntakePlan = {
+      ...source,
+      workItems: ownerNames.map((ownerName, index) => ({
+        ...source.workItems[0]!,
+        key: `owner-${index}`,
+        title: `Owner ${index}`,
+        parentKey: null,
+        ownerName,
+        relatedCalendarKeys: ["event"],
+      })),
+    };
+    const draft = buildDraftFromPlan(plan, [
+      { id: 7, name: "Alex" },
+      { id: 8, name: "..." },
+      { id: 9, name: "None" },
+    ]);
+
+    expect(draft.workItems.map((item) => item.ownerMemberId)).toEqual([
+      null,
+      8,
+      null,
+      null,
+      null,
+      9,
+      null,
+      null,
+      null,
+      7,
+      9,
+    ]);
+    expect(draft.warnings.filter((warning) => warning.message.startsWith("Owner "))).toEqual([
+      { message: "Owner 'Robin' is not a household member" },
+    ]);
+  });
+
   it("normalizes recoverable relationships and availability idempotently", () => {
     const plan: IntakePlan = {
       summary: "Recovery",

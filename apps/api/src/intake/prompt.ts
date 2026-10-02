@@ -15,7 +15,7 @@ const rules = [
   "12. If an event has a start time but no end time, set endDateTime to JSON null and add a warning. Do not assume a duration.",
   "13. All-day events use allDay=true, startDate, and endDate. Dates are inclusive: an event ending on 2026-10-08 includes that date. Timed events use startDateTime and endDateTime. The unused date or date-time pair must be JSON null. Timed end must be after start.",
   "14. Calendar dates use valid YYYY-MM-DD values. Timed values, notBeforeAt, and absolute reminder at values use valid RFC 3339 with seconds and an explicit timezone offset. Do not use a date-time where a date is required.",
-  "15. Household members: {members}. Set ownerName only if the source explicitly names one of them (exact name); otherwise JSON null.",
+  "15. Household members: {members}. Set ownerName only if the source explicitly names one of them (exact name); otherwise use JSON null. Never use punctuation or words such as \"none\" or \"null\" as an owner placeholder.",
   "16. Every key must match /^[a-z0-9][a-z0-9_-]{0,39}$/: lowercase ASCII, 1-40 characters, and the first character must be a lowercase letter or digit. Keys must be unique across the entire plan, including calendar events and work items.",
   "17. parentKey and related-key entries must reference existing items. relatedWorkKeys and relatedCalendarKeys must contain no duplicate values. Projects may only be children of projects. Actions and references may be children of projects or actions. Never self-parent and never create a parent cycle.",
   "18. A scheduledDate must not be after dueDate. Use JSON null for absent nullable fields and [] for absent collections.",

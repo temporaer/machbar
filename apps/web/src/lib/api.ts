@@ -59,8 +59,9 @@ import { getClientId } from "./clientId";
  * path to reach the backend under any Ingress prefix.
  */
 const API_ROOT = "/api";
+export const apiUrl = (path: string): string => `${API_ROOT}${path}`;
 export const changeStreamUrl = () =>
-  `${API_ROOT}/changes?clientId=${encodeURIComponent(getClientId())}`;
+  apiUrl(`/changes?clientId=${encodeURIComponent(getClientId())}`);
 
 function selectedActorHeader(method = "GET"): Record<string, string> {
   if (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD") {
@@ -112,7 +113,7 @@ export async function request<T>(
   init?: RequestInit,
   responseType: ApiResponseType = "json",
 ): Promise<T> {
-  const url = `${API_ROOT}${path}`;
+  const url = apiUrl(path);
   const isFormData =
     typeof FormData !== "undefined" && init?.body instanceof FormData;
   const res = await fetch(url, {

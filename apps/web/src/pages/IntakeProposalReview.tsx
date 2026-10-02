@@ -9,6 +9,7 @@ import { useStrings } from "../lib/strings";
 import { IntakeCalendarCard } from "./IntakeCalendarCard";
 import { IntakeIssueText, type DateValidityChange } from "./IntakeReviewFields";
 import { IntakeWorkItemCard } from "./IntakeWorkItemCard";
+import { IntakeDiagnosticLink } from "../components/IntakeDiagnosticLink";
 
 export function IntakeProposalReview({
   draft,
@@ -20,6 +21,7 @@ export function IntakeProposalReview({
   onDateValidityChange,
   onChange,
   onReminderChange,
+  diagnosticHref,
 }: {
   draft: IntakeDraft;
   members: Member[];
@@ -33,6 +35,7 @@ export function IntakeProposalReview({
     item: IntakeDraftWorkItem,
     reminderRowIds: readonly string[],
   ) => void;
+  diagnosticHref: string;
 }) {
   const strings = useStrings();
   const workItemDepth = workItemDepths(draft.workItems);
@@ -71,6 +74,7 @@ export function IntakeProposalReview({
               <li key={index}>{warning.message}</li>
             ))}
           </ul>
+          <IntakeDiagnosticLink href={diagnosticHref} />
         </section>
       ) : null}
       {draft.calendarEvents.length > 0 ? (
