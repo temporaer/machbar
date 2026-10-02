@@ -76,16 +76,42 @@ function normalizeIntakeKeys(
   const work = Array.isArray(workItems) ? workItems : null;
   const validKeys = new Set<string>();
   const allKeys: string[] = [];
+  const calendarOriginalKeys = new Set<string>();
+  const workOriginalKeys = new Set<string>();
+  const unresolvedReferenceKeys = new Set<string>();
 
-  for (const entries of [calendars, work]) {
+  for (const [entries, keySet] of [[calendars, calendarOriginalKeys], [work, workOriginalKeys]] as const) {
     for (const entry of entries ?? []) {
       if (!isRecord(entry) || typeof entry.key !== "string" || entry.key.length === 0) continue;
       allKeys.push(entry.key);
+      keySet.add(entry.key);
       if (INTAKE_KEY_PATTERN.test(entry.key)) validKeys.add(entry.key);
     }
   }
+  for (const entry of work ?? []) {
+    if (!isRecord(entry)) continue;
+    const parentKey = entry.parentKey;
+    if (typeof parentKey === "string" && !workOriginalKeys.has(parentKey) && INTAKE_KEY_PATTERN.test(parentKey)) {
+      unresolvedReferenceKeys.add(parentKey);
+    }
+    if (Array.isArray(entry.relatedCalendarKeys)) {
+      for (const key of entry.relatedCalendarKeys) {
+        if (typeof key === "string" && !calendarOriginalKeys.has(key) && INTAKE_KEY_PATTERN.test(key)) {
+          unresolvedReferenceKeys.add(key);
+        }
+      }
+    }
+  }
+  for (const entry of calendars ?? []) {
+    if (!isRecord(entry) || !Array.isArray(entry.relatedWorkKeys)) continue;
+    for (const key of entry.relatedWorkKeys) {
+      if (typeof key === "string" && !workOriginalKeys.has(key) && INTAKE_KEY_PATTERN.test(key)) {
+        unresolvedReferenceKeys.add(key);
+      }
+    }
+  }
 
-  const usedKeys = new Set(validKeys);
+  const usedKeys = new Set([...validKeys, ...unresolvedReferenceKeys]);
   const normalizedByOriginal = new Map<string, string>();
   for (const original of allKeys) {
     if (INTAKE_KEY_PATTERN.test(original) || normalizedByOriginal.has(original)) continue;
@@ -125,17 +151,18 @@ function normalizeIntakeKeys(
     value: unknown,
     field: string,
     keyMap: ReadonlyMap<string, string>,
+    originalKeys: ReadonlySet<string>,
   ): unknown => {
     if (!isRecord(value)) return value;
     const rewritten = { ...value };
     if (field === "parentKey") {
       const key = rewritten[field];
-      if (typeof key === "string") {
+      if (typeof key === "string" && originalKeys.has(key)) {
         rewritten[field] = keyMap.get(key) ?? key;
       }
     } else if (Array.isArray(rewritten[field])) {
       rewritten[field] = (rewritten[field] as unknown[]).map((key) =>
-        typeof key === "string" ? keyMap.get(key) ?? key : key
+        typeof key === "string" && originalKeys.has(key) ? keyMap.get(key) ?? key : key
       );
     }
     return rewritten;
@@ -144,15 +171,19 @@ function normalizeIntakeKeys(
   const rewriteItems = (
     entries: unknown[],
     keyMap: ReadonlyMap<string, string>,
-    referenceFields: ReadonlyArray<{ field: string; keyMap: ReadonlyMap<string, string> }>,
+    referenceFields: ReadonlyArray<{
+      field: string;
+      keyMap: ReadonlyMap<string, string>;
+      originalKeys: ReadonlySet<string>;
+    }>,
   ): unknown[] => entries.map((entry) => {
     if (!isRecord(entry)) return entry;
     const rewritten = { ...entry };
     if (typeof rewritten.key === "string") {
       rewritten.key = keyMap.get(rewritten.key) ?? rewritten.key;
     }
-    for (const { field, keyMap: referenceKeyMap } of referenceFields) {
-      const reference = rewriteReferences(rewritten, field, referenceKeyMap);
+    for (const { field, keyMap: referenceKeyMap, originalKeys } of referenceFields) {
+      const reference = rewriteReferences(rewritten, field, referenceKeyMap, originalKeys);
       if (isRecord(reference)) Object.assign(rewritten, reference);
     }
     return rewritten;
@@ -161,12 +192,16 @@ function normalizeIntakeKeys(
   return {
     calendarEvents: calendars === null
       ? calendarEvents
-      : rewriteItems(calendars, calendarKeyMap, [{ field: "relatedWorkKeys", keyMap: workKeyMap }]),
+      : rewriteItems(calendars, calendarKeyMap, [{
+        field: "relatedWorkKeys",
+        keyMap: workKeyMap,
+        originalKeys: workOriginalKeys,
+      }]),
     workItems: work === null
       ? workItems
       : rewriteItems(work, workKeyMap, [
-        { field: "parentKey", keyMap: workKeyMap },
-        { field: "relatedCalendarKeys", keyMap: calendarKeyMap },
+        { field: "parentKey", keyMap: workKeyMap, originalKeys: workOriginalKeys },
+        { field: "relatedCalendarKeys", keyMap: calendarKeyMap, originalKeys: calendarOriginalKeys },
       ]),
   };
 }

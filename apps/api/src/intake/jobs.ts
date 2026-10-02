@@ -451,6 +451,7 @@ export async function retryIntakeAnalysis(
   signal: HomeAssistantRequestSignal,
   id: string,
   viewerMemberId: number | null,
+  paperlessAvailable: boolean,
   userInstruction?: string | null,
 ): Promise<void> {
   const job = jobOrThrow(db, id);
@@ -468,7 +469,7 @@ export async function retryIntakeAnalysis(
   const currentDraftIssues = currentDraft
     ? intakeDraftIssues(currentDraft, {
         memberIds: membersForValidation,
-        paperlessAvailable: false,
+        paperlessAvailable,
         hasFiles: attachments.length > 0,
       })
     : [];

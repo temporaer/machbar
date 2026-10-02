@@ -378,6 +378,46 @@ describe("intake plan contracts", () => {
     ]));
   });
 
+  it("does not let repaired keys capture unresolved references", () => {
+    const normalized = normalizeIntakePlanInput({
+      summary: "Unresolved references",
+      calendarEvents: [{
+        key: "Calendar",
+        title: "Event",
+        relatedWorkKeys: ["work"],
+      }, {
+        key: "work",
+        title: "Existing event key",
+        relatedWorkKeys: [],
+      }],
+      workItems: [{
+        key: "Parent",
+        kind: "project",
+        title: "Parent",
+        parentKey: "parent",
+        relatedCalendarKeys: ["calendar"],
+      }, {
+        key: "work!",
+        kind: "action",
+        title: "Work",
+        parentKey: null,
+        relatedCalendarKeys: [],
+      }],
+    }) as IntakePlan;
+
+    expect(normalized.workItems.map((item) => item.key)).toEqual(["parent-2", "work-2"]);
+    expect(normalized.calendarEvents[0]?.key).toBe("calendar-2");
+    expect(normalized.workItems[0]).toMatchObject({
+      parentKey: "parent",
+      relatedCalendarKeys: ["calendar"],
+    });
+    expect(normalized.calendarEvents[0]?.relatedWorkKeys).toEqual(["work"]);
+    expect(intakePlanIssues(normalized).map((issue) => issue.code)).toEqual(expect.arrayContaining([
+      "dangling_parent",
+      "dangling_related_key",
+    ]));
+  });
+
   it("preserves valid keys and is idempotent", () => {
     const plan = readFixture("valid-elternabend.json") as IntakePlan;
     const normalized = normalizeIntakePlanInput(plan) as IntakePlan;

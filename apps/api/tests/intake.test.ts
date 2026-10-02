@@ -563,6 +563,73 @@ describe("intake lifecycle", () => {
       .toEqual(["Combined task"]);
   });
 
+  it("does not report Paperless unavailable when retrying a retained valid draft", async () => {
+    await closeTestContext(ctx);
+    ctx = createTestContext({
+      paperless: { baseUrl: "https://paperless.example", apiToken: "token" },
+    });
+    const token = await pairAndSnapshot();
+    const id = await createIntake(token, true);
+    const request = await lease(token);
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${request.id}/complete`,
+      headers: { authorization: "Bearer " + token },
+      payload: { leaseToken: request.leaseToken, outcome: "succeeded", result: validPlan },
+    });
+    const ready = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
+    const draft = ready.json().draft;
+    draft.retainSourceInPaperless = true;
+    const updated = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/intake/${id}/plan`,
+      payload: { expectedRevision: ready.json().revision, draft },
+    });
+    expect(updated.statusCode, updated.body).toBe(200);
+
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/intake/${id}/retry`,
+      payload: { hint: "Move that reminder to Friday." },
+    });
+    const retryRequest = ctx.handle.db.select().from(schema.homeAssistantRequests)
+      .where(eq(schema.homeAssistantRequests.intakeJobId, id)).orderBy(schema.homeAssistantRequests.createdAt).all()[1]!;
+    const instructions = JSON.parse(retryRequest.payloadJson).instructions as string;
+    expect(instructions).toContain("Move that reminder to Friday.");
+    expect(instructions).toContain("=== CURRENT PROPOSAL CONTEXT (ordered; not a patch) ===");
+    expect(instructions).not.toContain("paperless_unavailable");
+  });
+
+  it("reports Paperless unavailable for retained drafts when it is not configured", async () => {
+    const token = await pairAndSnapshot();
+    const id = await createIntake(token, true);
+    const request = await lease(token);
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${request.id}/complete`,
+      headers: { authorization: "Bearer " + token },
+      payload: { leaseToken: request.leaseToken, outcome: "succeeded", result: validPlan },
+    });
+    const ready = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
+    const draft = ready.json().draft;
+    draft.retainSourceInPaperless = true;
+    const updated = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/intake/${id}/plan`,
+      payload: { expectedRevision: ready.json().revision, draft },
+    });
+    expect(updated.statusCode, updated.body).toBe(200);
+
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/intake/${id}/retry`,
+      payload: { hint: "Keep the task unchanged." },
+    });
+    const retryRequest = ctx.handle.db.select().from(schema.homeAssistantRequests)
+      .where(eq(schema.homeAssistantRequests.intakeJobId, id)).orderBy(schema.homeAssistantRequests.createdAt).all()[1]!;
+    expect(JSON.parse(retryRequest.payloadJson).instructions).toContain("paperless_unavailable");
+  });
+
   it("includes HA normalization details in retry feedback", async () => {
     const token = await pairAndSnapshot();
     const id = await createIntake(token);
