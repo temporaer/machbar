@@ -481,7 +481,7 @@ export const api = {
     }),
   applyIntake: (
     id: string,
-    body: { expectedRevision: number; draft?: IntakeDraft },
+    body: { expectedRevision: number; draft?: IntakeDraft; acceptIncomplete?: boolean; timezone?: string },
   ) =>
     request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/apply`, {
       method: "POST",

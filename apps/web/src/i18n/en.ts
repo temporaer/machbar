@@ -99,6 +99,28 @@ const en = {
   intakeApply: "Apply",
   intakeApplyCount: (count: number) =>
     `Apply ${count} ${count === 1 ? "item" : "items"}`,
+  intakeAcceptIncomplete: "Accept incomplete",
+  intakeOmissionInvalidDate: (item: string) =>
+    `${item}: Invalid date will not be applied.`,
+  intakeOmissionInvalidDateTime: (item: string) =>
+    `${item}: Invalid date-time will not be applied.`,
+  intakeOmissionAmbiguousDateTime: (item: string) =>
+    `${item}: Ambiguous date-time will not be applied.`,
+  intakeOmissionNonexistentDateTime: (item: string) =>
+    `${item}: Date-time does not exist in this timezone and will not be applied.`,
+  intakeOmissionInvalidReminderTime: (item: string) =>
+    `${item}: Invalid reminder time will not be applied.`,
+  intakeOmissionInvalidReminderTimezone: (item: string) =>
+    `${item}: Invalid reminder timezone will not be applied.`,
+  intakeOmissionRelativeReminderNoDeadline: (item: string) =>
+    `${item}: Reminder without a valid deadline will not be applied.`,
+  intakeOmissionInvalidAvailability: (item: string) =>
+    `${item}: Invalid availability will not be applied.`,
+  intakeOmissionInvalidOwner: (item: string) =>
+    `${item}: Invalid owner will not be applied.`,
+  intakeOmissions: "Omitted values",
+  intakeTimestampTimezoneAdded: (timezone: string) =>
+    `Timezone ${timezone} added.`,
   intakeInclude: "Include in proposal",
   intakeProposalTitle: "Title",
   intakeType: "Type",

@@ -439,6 +439,43 @@ describe("reminders and Push delivery", () => {
     expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-01T09:00:00Z"))).toBe(0);
   });
 
+  it("delivers an explicit reminder for a captured action", async () => {
+    const hannes = addMember(ctx, "Hannes");
+    const task = createTask(ctx.handle.db, {
+      title: "Noch klären",
+      status: "captured",
+      ownerMemberId: hannes.id,
+      ownerInheritanceMode: "explicit",
+      reminders: [{ kind: "absolute", at: "2026-09-01T08:00:00.000Z" }],
+    });
+    ctx.handle.db.insert(schema.pushSubscriptions).values({
+      endpoint: "https://push.example/captured",
+      memberId: hannes.id,
+      p256dh: "key",
+      auth: "auth",
+      locale: "de",
+    }).run();
+    const send = vi.fn<PushTransport["send"]>().mockResolvedValue(undefined);
+
+    expect(enqueueDueReminders(ctx.handle.db, new Date("2026-09-01T09:00:00Z"))).toBe(1);
+    await dispatchNotificationEvents(ctx.handle.db, { send }, { error: vi.fn() });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(send.mock.calls[0]![1])).toEqual(
+      expect.objectContaining({
+        kind: "task_reminder",
+        entity: { type: "task", id: task.id },
+      }),
+    );
+    expect(
+      ctx.handle.db
+        .select()
+        .from(schema.notificationEvents)
+        .where(isNull(schema.notificationEvents.processedAt))
+        .all(),
+    ).toEqual([]);
+  });
+
   it("does not fire an absolute reminder when the task is done or cancelled", () => {
     const hannes = addMember(ctx, "Hannes");
     const task = createTask(ctx.handle.db, {

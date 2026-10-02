@@ -914,8 +914,16 @@ describe("MCP integration", () => {
         reminders: [{ at: "2026-09-21T08:00:00Z" }],
       },
     });
-    expect(captured.isError).toBe(true);
-    expect(JSON.stringify(captured.content)).toContain("captured");
+    expect(captured.isError).not.toBe(true);
+    expect(
+      (captured.structuredContent as {
+        result: { status: string; reminders: Array<{ kind: string; at: string }>;
+        };
+      }).result,
+    ).toMatchObject({
+      status: "captured",
+      reminders: [{ kind: "absolute", at: "2026-09-21T08:00:00.000Z" }],
+    });
 
     await client.close();
     await server.close();

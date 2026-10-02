@@ -340,7 +340,7 @@ describe("intake lifecycle", () => {
       workItems: [{
         ...validPlan.workItems[0],
         needsClarification: true,
-        reminders: [{ kind: "absolute", at: "2026-10-01T08:00:00+02:00" }],
+        reminders: [{ kind: "absolute", at: "not-a-date" }],
       }],
     };
     await ctx.app.inject({
@@ -362,7 +362,7 @@ describe("intake lifecycle", () => {
     const retryRequest = ctx.handle.db.select().from(schema.homeAssistantRequests)
       .where(eq(schema.homeAssistantRequests.intakeJobId, id)).orderBy(schema.homeAssistantRequests.createdAt).all()[1]!;
     const instructions = JSON.parse(retryRequest.payloadJson).instructions as string;
-    expect(instructions).toContain("captured_reminder");
+    expect(instructions).toContain("invalid_datetime");
     expect(instructions).toContain("Bitte Konflikte korrigieren.");
   });
 

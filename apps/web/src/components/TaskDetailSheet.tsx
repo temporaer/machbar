@@ -768,7 +768,7 @@ export function TaskDetailSheet() {
                   {reminderSummary.overflowCount > 0 ? ` +${reminderSummary.overflowCount}` : ""}
                 </span>
               </DetailPropertyPill>
-            ) : !taskIsCapturedInboxItem ? (
+            ) : !isReference ? (
               <DetailPropertyPill variant="unset" onClick={() => runCommand("task.reminders")}>
                 {strings.addReminder}
               </DetailPropertyPill>

@@ -77,6 +77,28 @@ const base = {
   intakeApply: "Übernehmen",
   intakeApplyCount: (count: number) =>
     `${count} ${count === 1 ? "Element" : "Elemente"} übernehmen`,
+  intakeAcceptIncomplete: "Unvollständig übernehmen",
+  intakeOmissionInvalidDate: (item: string) =>
+    `${item}: Ungültiges Datum wird nicht übernommen.`,
+  intakeOmissionInvalidDateTime: (item: string) =>
+    `${item}: Ungültiger Zeitpunkt wird nicht übernommen.`,
+  intakeOmissionAmbiguousDateTime: (item: string) =>
+    `${item}: Mehrdeutiger Zeitpunkt wird nicht übernommen.`,
+  intakeOmissionNonexistentDateTime: (item: string) =>
+    `${item}: Zeitpunkt liegt nicht in dieser Zeitzone und wird nicht übernommen.`,
+  intakeOmissionInvalidReminderTime: (item: string) =>
+    `${item}: Ungültige Erinnerungszeit wird nicht übernommen.`,
+  intakeOmissionInvalidReminderTimezone: (item: string) =>
+    `${item}: Ungültige Erinnerungszeitzone wird nicht übernommen.`,
+  intakeOmissionRelativeReminderNoDeadline: (item: string) =>
+    `${item}: Erinnerung ohne gültige Frist wird nicht übernommen.`,
+  intakeOmissionInvalidAvailability: (item: string) =>
+    `${item}: Ungültige Verfügbarkeit wird nicht übernommen.`,
+  intakeOmissionInvalidOwner: (item: string) =>
+    `${item}: Ungültige Zuständigkeit wird nicht übernommen.`,
+  intakeOmissions: "Nicht übernommene Angaben",
+  intakeTimestampTimezoneAdded: (timezone: string) =>
+    `Zeitzone ${timezone} ergänzt.`,
   intakeInclude: "In Vorschlag übernehmen",
   intakeProposalTitle: "Titel",
   intakeType: "Art",

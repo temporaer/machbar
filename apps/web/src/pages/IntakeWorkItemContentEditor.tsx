@@ -162,7 +162,6 @@ export function IntakeWorkItemContentEditor({
                 onChange({
                   ...item,
                   needsClarification: event.target.checked,
-                  reminders: event.target.checked ? [] : item.reminders,
                 })
               }
             />{" "}

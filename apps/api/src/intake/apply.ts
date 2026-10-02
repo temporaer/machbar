@@ -1,8 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { and, eq } from "drizzle-orm";
-import type { PaperlessDocumentSummary, IntakeDraft, IntakeApplyResults, IntakeErrorInfo } from "@machbar/shared";
-import { intakeSelectedDraftIssues, paperlessMarkdownReference } from "@machbar/shared";
+import {
+  INTAKE_TIMEZONE,
+  type PaperlessDocumentSummary,
+  type IntakeDraft,
+  type IntakeApplyResults,
+  type IntakeErrorInfo,
+} from "@machbar/shared";
+import {
+  intakeSelectedDraftIssues,
+  paperlessMarkdownReference,
+  prepareIncompleteIntakeDraft,
+} from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import type { FastifyBaseLogger } from "fastify";
 import * as schema from "../db/schema.js";
@@ -69,7 +79,7 @@ export async function applyIntake(
   paperless: PaperlessClient | undefined,
   signal: HomeAssistantRequestSignal,
   id: string,
-  input: { expectedRevision: number; draft?: IntakeDraft },
+  input: { expectedRevision: number; draft?: IntakeDraft; acceptIncomplete?: boolean; timezone?: string },
   context: MutationContext,
   viewerMemberId: number | null,
   logger?: Pick<FastifyBaseLogger, "error">,
@@ -94,16 +104,29 @@ export async function applyIntake(
     throw AppError.conflict("intake_state_conflict", "This partially applied intake has no accepted draft and cannot be safely retried.");
   }
   const acceptedDraft = normalizeStoredIntakeDraft(parse<unknown>(stored.acceptedDraftJson));
-  const draftToValidate = acceptedDraft ?? input.draft;
+  const initialAcceptance = acceptedDraft === null;
+  const submittedDraft = acceptedDraft ?? input.draft;
+  let draftToValidate = submittedDraft;
   if (draftToValidate === undefined) throw AppError.badRequest("intake_draft_invalid", "A draft is required for the initial apply.");
   const memberIds = db.select({ id: schema.members.id }).from(schema.members).all().map((member) => member.id);
   const attachments = db.select().from(schema.intakeAttachments)
     .where(eq(schema.intakeAttachments.intakeJobId, id)).all();
-  const issues = intakeSelectedDraftIssues(draftToValidate, {
+  const validationOptions = {
     memberIds,
     paperlessAvailable: Boolean(paperless),
     hasFiles: attachments.length > 0,
-  });
+    timezone: input.timezone ?? INTAKE_TIMEZONE,
+  };
+  let incompletePreparation:
+    | ReturnType<typeof prepareIncompleteIntakeDraft>
+    | undefined;
+  if (initialAcceptance && input.acceptIncomplete) {
+    incompletePreparation = prepareIncompleteIntakeDraft(draftToValidate, validationOptions);
+    draftToValidate = incompletePreparation.draft;
+  }
+  const issues = incompletePreparation
+    ? incompletePreparation.blockingIssues
+    : intakeSelectedDraftIssues(draftToValidate, validationOptions);
   if (issues.length > 0) throw AppError.badRequest("intake_draft_invalid", "The intake draft is invalid.", { issues });
 
   const enabledEvents = draftToValidate.calendarEvents.filter((event) => event.enabled);
@@ -128,7 +151,8 @@ export async function applyIntake(
     if (current.status === "partially_applied" && current.acceptedDraftJson === null) {
       throw AppError.conflict("intake_state_conflict", "This partially applied intake has no accepted draft and cannot be safely retried.");
     }
-    const claimDraft = normalizeStoredIntakeDraft(parse<unknown>(current.acceptedDraftJson)) ?? input.draft;
+    const claimDraft = normalizeStoredIntakeDraft(parse<unknown>(current.acceptedDraftJson))
+      ?? draftToValidate;
     if (claimDraft === undefined) throw AppError.badRequest("intake_draft_invalid", "A draft is required for the initial apply.");
     const claimToken = randomUUID();
     const claimNow = nowIso();

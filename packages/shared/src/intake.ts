@@ -21,6 +21,154 @@ export interface IntakeCalendarEvent {
   relatedWorkKeys: string[];
 }
 
+interface TimestampParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  milliseconds: number;
+}
+
+const timestampPattern =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?(Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)?$/;
+
+function timestampParts(value: string): {
+  parts: TimestampParts;
+  fraction: string;
+  zone: string | null;
+} | null {
+  const match = timestampPattern.exec(value);
+  if (!match) return null;
+  const parts: TimestampParts = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+    second: Number(match[6] ?? "0"),
+    milliseconds: match[7] ? Number(`0${match[7]}`) * 1_000 : 0,
+  };
+  if (
+    !validDate(`${match[1]}-${match[2]}-${match[3]}`) ||
+    parts.hour > 23 ||
+    parts.minute > 59 ||
+    parts.second > 59
+  ) return null;
+  return { parts, fraction: match[7] ?? "", zone: match[8] ?? null };
+}
+
+function utcMillis(parts: TimestampParts): number {
+  const value = new Date(0);
+  value.setUTCFullYear(parts.year, parts.month - 1, parts.day);
+  value.setUTCHours(parts.hour, parts.minute, parts.second, parts.milliseconds);
+  return value.getTime();
+}
+
+const timezonePartsFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function timezonePartsFormatter(timezone: string): Intl.DateTimeFormat {
+  let formatter = timezonePartsFormatterCache.get(timezone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-CA", {
+      calendar: "gregory",
+      numberingSystem: "latn",
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+    timezonePartsFormatterCache.set(timezone, formatter);
+  }
+  return formatter;
+}
+
+function zonedParts(instant: number, timezone: string): TimestampParts {
+  const values = new Map(
+    timezonePartsFormatter(timezone)
+      .formatToParts(new Date(instant))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, Number(part.value)]),
+  );
+  return {
+    year: values.get("year")!,
+    month: values.get("month")!,
+    day: values.get("day")!,
+    hour: values.get("hour")!,
+    minute: values.get("minute")!,
+    second: values.get("second")!,
+    milliseconds: new Date(instant).getUTCMilliseconds(),
+  };
+}
+
+function sameTimestampParts(left: TimestampParts, right: TimestampParts): boolean {
+  return (
+    left.year === right.year &&
+    left.month === right.month &&
+    left.day === right.day &&
+    left.hour === right.hour &&
+    left.minute === right.minute &&
+    left.second === right.second &&
+    left.milliseconds === right.milliseconds
+  );
+}
+
+function timezoneOffsetMinutes(instant: number, timezone: string): number {
+  const local = zonedParts(instant, timezone);
+  return (utcMillis(local) - instant) / 60_000;
+}
+
+function formatOffset(minutes: number): string {
+  const sign = minutes < 0 ? "-" : "+";
+  const absolute = Math.abs(minutes);
+  return `${sign}${String(Math.floor(absolute / 60)).padStart(2, "0")}:${String(absolute % 60).padStart(2, "0")}`;
+}
+
+/**
+ * Normalize the timestamp shapes commonly emitted by imperfect providers.
+ * Local wall-clock values are resolved with Intl's timezone database so the
+ * date's offset is used and DST gaps/overlaps remain explicit diagnostics.
+ */
+export function normalizeIntakeTimestamp(
+  value: string,
+  timezone: string = INTAKE_TIMEZONE,
+): IntakeTimestampNormalization {
+  const parsed = timestampParts(value);
+  if (!parsed) return { value, status: "invalid", timezoneInferred: false };
+  const { parts, fraction, zone } = parsed;
+  const seconds = `:${String(parts.second).padStart(2, "0")}${fraction}`;
+  const localPrefix = `${value.slice(0, 16)}${seconds}`;
+  if (zone !== null) {
+    const normalized = `${localPrefix}${zone}`;
+    return !Number.isNaN(Date.parse(normalized))
+      ? { value: normalized, status: normalized === value ? "unchanged" : "normalized", timezoneInferred: false }
+      : { value, status: "invalid", timezoneInferred: false };
+  }
+  if (!validTimezone(timezone)) return { value, status: "invalid", timezoneInferred: false };
+  const local = { ...parts, milliseconds: parts.milliseconds };
+  const wallMillis = utcMillis(local);
+  const offsets = new Set<number>();
+  for (let delta = -172_800_000; delta <= 172_800_000; delta += 3_600_000) {
+    offsets.add(timezoneOffsetMinutes(wallMillis + delta, timezone));
+  }
+  const candidates = [...offsets]
+    .map((offset) => ({ offset, instant: wallMillis - offset * 60_000 }))
+    .filter(({ instant }) => sameTimestampParts(zonedParts(instant, timezone), local));
+  if (candidates.length === 0) return { value, status: "nonexistent", timezoneInferred: true };
+  if (candidates.length > 1) return { value, status: "ambiguous", timezoneInferred: true };
+  const candidate = candidates[0]!;
+  return {
+    value: `${localPrefix}${formatOffset(candidate.offset)}`,
+    status: "normalized",
+    timezoneInferred: true,
+  };
+}
+
 export interface IntakeWorkItem {
   key: string;
   kind: IntakeWorkItemKind;
@@ -186,9 +334,52 @@ export interface IntakeIssue {
   message: string;
 }
 
+export type IntakeOmissionCode =
+  | "invalid_date"
+  | "invalid_datetime"
+  | "ambiguous_datetime"
+  | "nonexistent_datetime"
+  | "invalid_reminder_time"
+  | "invalid_reminder_timezone"
+  | "deadline_relative_without_due"
+  | "not_before_pair"
+  | "not_before_date_mismatch"
+  | "owner_not_member";
+
+export interface IntakeOmission {
+  path: (string | number)[];
+  code: IntakeOmissionCode;
+  originalValue: unknown;
+}
+
+export interface IntakeDraftValidationOptions {
+  memberIds: readonly number[];
+  paperlessAvailable: boolean;
+  hasFiles: boolean;
+  timezone?: string;
+}
+
 export interface IntakeNormalizationResult {
   plan: IntakePlan;
   warnings: IntakeWarning[];
+}
+
+export type IntakeTimestampNormalizationStatus =
+  | "unchanged"
+  | "normalized"
+  | "invalid"
+  | "ambiguous"
+  | "nonexistent";
+
+export interface IntakeTimestampNormalization {
+  value: string;
+  status: IntakeTimestampNormalizationStatus;
+  timezoneInferred: boolean;
+}
+
+export interface IntakeTimestampInference {
+  path: (string | number)[];
+  timezone: string;
 }
 
 function issue(
@@ -399,9 +590,6 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
     }
     if (item.scheduledDate && item.dueDate && item.scheduledDate > item.dueDate) {
       issues.push(issue(path, "scheduling_order", "Scheduled date must not be after the due date."));
-    }
-    if (item.needsClarification && item.reminders.length > 0) {
-      issues.push(issue([...path, "reminders"], "captured_reminder", "Clarifying items cannot have reminders."));
     }
     if (item.kind === "project") {
       if (item.notBeforeDate !== null || item.notBeforeAt !== null || item.reminders.length > 0 || item.needsClarification) {
@@ -632,7 +820,7 @@ export function normalizeIntakePlan(plan: IntakePlan): IntakeNormalizationResult
 
 export function intakeDraftIssues(
   draft: IntakeDraft,
-  options: { memberIds: readonly number[]; paperlessAvailable: boolean; hasFiles: boolean },
+  options: IntakeDraftValidationOptions,
 ): IntakeIssue[] {
   const plan = intakeDraftPlan(draft);
   const issues = intakePlanIssues(plan);
@@ -697,7 +885,7 @@ function remapSelectedIssuePath(
  */
 export function intakeSelectedDraftIssues(
   draft: IntakeDraft,
-  options: { memberIds: readonly number[]; paperlessAvailable: boolean; hasFiles: boolean },
+  options: IntakeDraftValidationOptions,
 ): IntakeIssue[] {
   const workIndices = draft.workItems
     .map((item, index) => item.enabled ? index : -1)
@@ -751,6 +939,196 @@ export function intakeSelectedDraftIssues(
     issues.push(issue([], "nothing_selected", "At least one item or event must be enabled."));
   }
   return issues;
+}
+
+function cloneIntakeDraft(draft: IntakeDraft): IntakeDraft {
+  return {
+    ...draft,
+    calendarEvents: draft.calendarEvents.map((event) => ({
+      ...event,
+      relatedWorkKeys: [...event.relatedWorkKeys],
+    })),
+    workItems: draft.workItems.map((item) => ({
+      ...item,
+      reminders: item.reminders.map((reminder) => ({ ...reminder })),
+      relatedCalendarKeys: [...item.relatedCalendarKeys],
+    })),
+    warnings: draft.warnings.map((warning) => ({ ...warning })),
+  };
+}
+
+function omission(
+  omissions: IntakeOmission[],
+  path: (string | number)[],
+  code: IntakeOmissionCode,
+  originalValue: unknown,
+): void {
+  omissions.push({ path, code, originalValue });
+}
+
+function availabilityOmissionCode(
+  notBeforeDate: string | null,
+  notBeforeAt: string | null,
+): "invalid_date" | "invalid_datetime" | "not_before_pair" | "not_before_date_mismatch" {
+  if ((notBeforeDate === null) !== (notBeforeAt === null)) return "not_before_pair";
+  if (notBeforeDate !== null && !validDate(notBeforeDate)) return "invalid_date";
+  if (notBeforeAt !== null && !validDateTime(notBeforeAt)) return "invalid_datetime";
+  return "not_before_date_mismatch";
+}
+
+/**
+ * Prepare an enabled draft for the explicit incomplete-acceptance flow.
+ * Only optional metadata with an unambiguous safe omission is removed;
+ * structural, calendar, and kind-specific issues remain blockers.
+ */
+export function prepareIncompleteIntakeDraft(
+  draft: IntakeDraft,
+  options: IntakeDraftValidationOptions,
+): {
+  draft: IntakeDraft;
+  omissions: IntakeOmission[];
+  inferredTimestamps: IntakeTimestampInference[];
+  blockingIssues: IntakeIssue[];
+} {
+  const prepared = cloneIntakeDraft(draft);
+  const omissions: IntakeOmission[] = [];
+  const inferredTimestamps: IntakeTimestampInference[] = [];
+  const timezone = options.timezone ?? INTAKE_TIMEZONE;
+
+  const recordTimestamp = (
+    value: string,
+    path: (string | number)[],
+  ): IntakeTimestampNormalization => {
+    const result = normalizeIntakeTimestamp(value, timezone);
+    if (result.timezoneInferred && result.status === "normalized") {
+      inferredTimestamps.push({ path, timezone });
+    }
+    return result;
+  };
+
+  const timestampOmissionCode = (
+    status: IntakeTimestampNormalizationStatus,
+  ): "invalid_datetime" | "ambiguous_datetime" | "nonexistent_datetime" => {
+    if (status === "ambiguous") return "ambiguous_datetime";
+    if (status === "nonexistent") return "nonexistent_datetime";
+    return "invalid_datetime";
+  };
+
+  prepared.calendarEvents.forEach((event, index) => {
+    if (!event.enabled) return;
+    for (const field of ["startDateTime", "endDateTime"] as const) {
+      const value = event[field];
+      if (value === null) continue;
+      const path = ["calendarEvents", index, field] as (string | number)[];
+      const result = recordTimestamp(value, path);
+      if (result.status === "normalized") {
+        event[field] = result.value;
+      }
+    }
+  });
+
+  prepared.workItems.forEach((item, index) => {
+    if (!item.enabled) return;
+
+    for (const field of ["dueDate", "scheduledDate"] as const) {
+      const value = item[field];
+      if (value !== null && !validDate(value)) {
+        omission(omissions, ["workItems", index, field], "invalid_date", value);
+        item[field] = null;
+      }
+    }
+
+    let availabilityRequiresDiagnostic = false;
+    if (item.kind === "action" && item.notBeforeAt !== null) {
+      const path = ["workItems", index, "notBeforeAt"] as (string | number)[];
+      const result = recordTimestamp(item.notBeforeAt, path);
+      if (result.status === "normalized") {
+        item.notBeforeAt = result.value;
+      } else if (result.status === "ambiguous" || result.status === "nonexistent") {
+        availabilityRequiresDiagnostic = true;
+        omission(omissions, path, timestampOmissionCode(result.status), item.notBeforeAt);
+      } else if (result.status === "invalid") {
+        omission(omissions, path, "invalid_datetime", item.notBeforeAt);
+        item.notBeforeDate = null;
+        item.notBeforeAt = null;
+      }
+    }
+
+    if (item.kind === "action" && !availabilityRequiresDiagnostic) {
+      const { notBeforeDate, notBeforeAt } = item;
+      const availabilityValid =
+        notBeforeDate === null && notBeforeAt === null
+          ? true
+          : notBeforeDate !== null &&
+            notBeforeAt !== null &&
+            validDate(notBeforeDate) &&
+            validDateTime(notBeforeAt) &&
+            dateDistance(notBeforeDate, utcDate(notBeforeAt)) <= 1;
+      if (!availabilityValid) {
+        omission(
+          omissions,
+          ["workItems", index, "notBeforeDate"],
+          availabilityOmissionCode(notBeforeDate, notBeforeAt),
+          { notBeforeDate, notBeforeAt },
+        );
+        item.notBeforeDate = null;
+        item.notBeforeAt = null;
+      }
+    }
+
+    if (item.ownerMemberId !== null && !options.memberIds.includes(item.ownerMemberId)) {
+      omission(
+        omissions,
+        ["workItems", index, "ownerMemberId"],
+        "owner_not_member",
+        item.ownerMemberId,
+      );
+      item.ownerMemberId = null;
+    }
+
+    if (item.kind !== "action") return;
+    const dueDateUsable = item.dueDate !== null && validDate(item.dueDate);
+    item.reminders = item.reminders.filter((reminder, reminderIndex) => {
+      const reminderPath = ["workItems", index, "reminders", reminderIndex] as (string | number)[];
+      if (reminder.kind === "absolute") {
+        const path = [...reminderPath, "at"];
+        const result = recordTimestamp(reminder.at, path);
+        if (result.status === "normalized") {
+          reminder.at = result.value;
+          return true;
+        }
+        if (result.status === "ambiguous" || result.status === "nonexistent") {
+          omission(omissions, path, timestampOmissionCode(result.status), reminder.at);
+          return true;
+        }
+        if (result.status === "invalid") {
+          omission(omissions, path, "invalid_datetime", reminder.at);
+          return false;
+        }
+        return true;
+      }
+      if (!validReminderTime(reminder.time)) {
+        omission(omissions, [...reminderPath, "time"], "invalid_reminder_time", reminder.time);
+        return false;
+      }
+      if (!validTimezone(reminder.timezone)) {
+        omission(omissions, [...reminderPath, "timezone"], "invalid_reminder_timezone", reminder.timezone);
+        return false;
+      }
+      if (!dueDateUsable) {
+        omission(omissions, reminderPath, "deadline_relative_without_due", { ...reminder });
+        return false;
+      }
+      return true;
+    });
+  });
+
+  return {
+    draft: prepared,
+    omissions,
+    inferredTimestamps,
+    blockingIssues: intakeSelectedDraftIssues(prepared, options),
+  };
 }
 
 export function buildDraftFromPlan(

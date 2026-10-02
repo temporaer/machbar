@@ -383,7 +383,7 @@ decision. Project dates never become task dates.
   `captured` task as a story (or the reverse), reusing the same numeric id
   (see §9) so activity history, tags, contexts, and notifications survive
   untouched. Captured roots cannot acquire task-only dependencies, waits,
-  recurrence, reminders, or new child tasks before classification; reverse
+  recurrence or new child tasks before classification; reverse
   conversion is rejected whenever the story has children or acceptance
   criteria.
 - External waits use revision-aware `PUT /api/tasks/:id/external-wait` and
