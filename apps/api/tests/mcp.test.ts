@@ -819,6 +819,125 @@ describe("MCP integration", () => {
     await server.close();
   });
 
+  it("normalizes empty availability placeholders before MCP callbacks", async () => {
+    const member = await createMember();
+    const { client, server } = await connectMcp(member.id);
+    const placeholders = ["", "  ", ".", "none", "null"];
+
+    for (const [index, placeholder] of placeholders.entries()) {
+      const created = await client.callTool({
+        name: "machbar_create_task",
+        arguments: {
+          title: `No availability ${index}`,
+          notBeforeAt: placeholder,
+        },
+      });
+      expect(created.structuredContent).toEqual({
+        result: expect.objectContaining({
+          notBeforeAt: null,
+          notBeforeDate: null,
+        }),
+      });
+    }
+
+    const existing = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "Clear availability",
+        notBeforeAt: "2026-10-14T08:00:00Z",
+        notBeforeDate: "2026-10-14",
+      },
+    });
+    const existingTask = (
+      existing.structuredContent as { result: { id: number; revision: number } }
+    ).result;
+    const cleared = await client.callTool({
+      name: "machbar_update_task",
+      arguments: {
+        taskId: existingTask.id,
+        expectedRevision: existingTask.revision,
+        notBeforeAt: "",
+      },
+    });
+    expect(cleared.structuredContent).toEqual({
+      result: expect.objectContaining({
+        notBeforeAt: null,
+        notBeforeDate: null,
+      }),
+    });
+
+    const invalid = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "Invalid availability",
+        notBeforeAt: "not-a-timestamp",
+      },
+    });
+    expect(invalid.isError).toBe(true);
+
+    const emptyReminderAtCreate = await client.callTool({
+      name: "machbar_create_task",
+      arguments: {
+        title: "Empty reminder timestamp",
+        reminders: [{ at: "" }],
+      },
+    });
+    expect(emptyReminderAtCreate.isError).toBe(true);
+
+    const reminderTask = await client.callTool({
+      name: "machbar_create_task",
+      arguments: { title: "Reminder target" },
+    });
+    const reminderTarget = (
+      reminderTask.structuredContent as { result: { id: number; revision: number } }
+    ).result;
+    const emptyReminderAtManage = await client.callTool({
+      name: "machbar_manage_reminder",
+      arguments: {
+        taskId: reminderTarget.id,
+        expectedRevision: reminderTarget.revision,
+        operation: "add",
+        at: "",
+      },
+    });
+    expect(emptyReminderAtManage.isError).toBe(true);
+
+    const listed = await client.listTools();
+    const createProperties = listed.tools.find(
+      ({ name }) => name === "machbar_create_task",
+    )!.inputSchema.properties as Record<string, { type?: unknown; description?: string }>;
+    const updateProperties = listed.tools.find(
+      ({ name }) => name === "machbar_update_task",
+    )!.inputSchema.properties as Record<string, { type?: unknown; description?: string }>;
+    expect(createProperties.notBeforeAt).toMatchObject({
+      type: ["string", "null"],
+    });
+    expect(updateProperties.notBeforeAt).toMatchObject({
+      type: ["string", "null"],
+    });
+    expect(createProperties.notBeforeAt?.description).toMatch(
+      /local or offset timestamps.*null.*absence placeholder.*paired availability/i,
+    );
+    expect(createProperties.reminders?.description).toMatch(
+      /null means omitted.*\[\].*empty collection/i,
+    );
+    expect(createProperties.tagIds?.description).toMatch(
+      /null means omitted.*\[\].*empty collection/i,
+    );
+    expect(updateProperties.contextIds?.description).toMatch(
+      /null means omitted.*preserves existing values.*\[\].*clears/i,
+    );
+    expect(createProperties.activateIfReady?.description).toMatch(
+      /null means omitted.*false.*true/i,
+    );
+    expect(updateProperties.additionalNextAction?.description).toMatch(
+      /null means omitted.*false.*true/i,
+    );
+
+    await client.close();
+    await server.close();
+  });
+
   it("preserves project metadata on omitted and null collection updates", async () => {
     const member = await createMember();
     const owner = await createMember("Alex");

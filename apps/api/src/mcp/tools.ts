@@ -84,6 +84,9 @@ const mcpAbsoluteAtSchema = z.string().min(1).describe(
 const mcpNotBeforeAtSchema = z.string().min(1).describe(
   "Task availability time as an RFC3339/ISO timestamp; seconds and an offset may be omitted.",
 );
+const mcpNullableNotBeforeAtSchema = z.string().nullable().optional().describe(
+  "Task availability accepts local or offset timestamps; null or an absence placeholder clears paired availability.",
+);
 const mcpTimezoneSchema = z.string().min(1).refine(
   isValidIanaTimezone,
   "Timezone must be a valid IANA zone name.",
@@ -802,24 +805,25 @@ export function createMachbarMcpServer({
         projectId: z.number().int().positive().nullable().optional(),
         parentTaskId: z.number().int().positive().nullable().optional(),
         activateIfReady: mcpNullableBoolean
-          .optional()
           .describe(
-            "Use true only for a concrete, single-step action requiring no clarification, decision, decomposition, or triage. Keep false or omit for vague captures, ideas, multi-step outcomes, or uncertain items. Do not invent metadata or estimate duration; if uncertain, prefer Inbox.",
+            "Use true only for a concrete, single-step action requiring no clarification, decision, decomposition, or triage. Keep false or omit for vague captures, ideas, multi-step outcomes, or uncertain items. Do not invent metadata or estimate duration; if uncertain, prefer Inbox. Null means omitted; explicit false and true retain their meaning.",
           ),
         ownerMemberId: z.number().int().positive().nullable().optional(),
         ownerName: z.string().nullable().optional(),
         dueDate: mcpNullableCalendarDate,
         scheduledDate: mcpNullableCalendarDate,
-        notBeforeAt: mcpNotBeforeAtSchema.nullable().optional(),
+        notBeforeAt: mcpNullableNotBeforeAtSchema,
         notBeforeDate: z.string().nullable().optional().describe(
           "Availability date in YYYY-MM-DD format only, or null to clear paired availability.",
         ),
         timezone: mcpTimezoneSchema.optional(),
-        reminders: mcpRemindersSchema.nullable().optional(),
+        reminders: mcpRemindersSchema.nullable().optional().describe(
+          "Reminder collection. Null means omitted; [] explicitly creates an empty collection.",
+        ),
         priority: z.number().int().nullable().optional(),
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
-        tagIds: mcpNullableNumberArray("Tag IDs, or [] to create without tags."),
-        contextIds: mcpNullableNumberArray("Physical context IDs, or [] to create without contexts."),
+        tagIds: mcpNullableNumberArray("Tag IDs. Null means omitted; [] explicitly creates an empty collection."),
+        contextIds: mcpNullableNumberArray("Physical context IDs. Null means omitted; [] explicitly creates an empty collection."),
       },
     },
     async (input) => {
@@ -1012,16 +1016,18 @@ export function createMachbarMcpServer({
         ownerName: z.string().nullable().optional(),
         dueDate: mcpNullableCalendarDate,
         scheduledDate: mcpNullableCalendarDate,
-        notBeforeAt: mcpNotBeforeAtSchema.nullable().optional(),
+        notBeforeAt: mcpNullableNotBeforeAtSchema,
         notBeforeDate: z.string().nullable().optional().describe(
           "Availability date in YYYY-MM-DD format only, or null to clear paired availability.",
         ),
         timezone: mcpTimezoneSchema.optional(),
         priority: z.number().int().nullable().optional(),
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
-        tagIds: mcpNullableNumberArray("Tag IDs, or [] to clear the collection."),
-        contextIds: mcpNullableNumberArray("Physical context IDs, or [] to clear the collection."),
-        additionalNextAction: mcpNullableBoolean,
+        tagIds: mcpNullableNumberArray("Tag IDs. Null means omitted and preserves existing values; [] explicitly clears the collection."),
+        contextIds: mcpNullableNumberArray("Physical context IDs. Null means omitted and preserves existing values; [] explicitly clears the collection."),
+        additionalNextAction: mcpNullableBoolean.describe(
+          "Null means omitted and preserves the existing value; explicit false and true retain their meaning.",
+        ),
       },
     },
     async ({ taskId, ...input }) => {
