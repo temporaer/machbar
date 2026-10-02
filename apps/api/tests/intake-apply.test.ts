@@ -158,7 +158,8 @@ describe("intake apply", () => {
   it("accepts incomplete optional metadata and persists the prepared draft", async () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
-    const original = draft([{
+    const original = {
+      ...draft([{
       key: "clarify",
       kind: "action",
       title: "Clarify",
@@ -178,7 +179,24 @@ describe("intake apply", () => {
       relatedCalendarKeys: [],
       enabled: true,
       ownerMemberId: 999,
-    }]);
+      }, {
+        key: "project-with-task-fields",
+        kind: "project",
+        title: "Project",
+        notes: null,
+        parentKey: null,
+        dueDate: null,
+        scheduledDate: null,
+        notBeforeDate: "not-a-date",
+        notBeforeAt: null,
+        reminders: [{ kind: "absolute", at: "not-a-date" }],
+        needsClarification: true,
+        relatedCalendarKeys: [],
+        enabled: false,
+        ownerMemberId: setup.member.id,
+      }]),
+      retainSourceInPaperless: false,
+    };
     updateIntakeDraft(ctx.handle.db, setup.id, setup.member.id, {
       expectedRevision: setup.revision,
       draft: original,
@@ -196,6 +214,7 @@ describe("intake apply", () => {
     const accepted = JSON.parse(job.acceptedDraftJson!) as IntakeDraft;
     const storedDraft = JSON.parse(job.draftJson!) as IntakeDraft;
     expect(accepted.workItems[0]).toMatchObject({
+      enabled: true,
       dueDate: null,
       scheduledDate: null,
       notBeforeDate: "2026-10-08",
@@ -207,6 +226,18 @@ describe("intake apply", () => {
       { kind: "absolute", at: "2026-10-01T08:00:00.000Z" },
       { kind: "absolute", at: "2026-10-01T09:00:00-04:00" },
     ]);
+    expect(accepted.workItems[1]).toMatchObject({
+      enabled: false,
+      ownerMemberId: setup.member.id,
+      notBeforeDate: null,
+      notBeforeAt: null,
+      reminders: [],
+      needsClarification: false,
+    });
+    expect(accepted.warnings).toEqual([
+      { message: "Ignored task-only fields on project 'project-with-task-fields'." },
+    ]);
+    expect(accepted.retainSourceInPaperless).toBe(false);
     expect(storedDraft.workItems[0]?.dueDate).toBe("not-a-date");
     expect(job.planJson).not.toBe(job.acceptedDraftJson);
     const task = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.title, "Clarify")).get()!;

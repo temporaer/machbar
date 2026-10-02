@@ -666,12 +666,6 @@ export function normalizeIntakePlan(plan: IntakePlan): IntakeNormalizationResult
       }
     } else if (item.notBeforeDate !== null && item.notBeforeAt === null) {
       item.notBeforeAt = berlinMidnight(item.notBeforeDate);
-      if (item.notBeforeAt !== null) {
-        addNormalizationWarning(
-          warnings,
-          `Derived local-midnight availability for work item '${item.key}'.`,
-        );
-      }
     }
 
     if (item.parentKey !== null) {

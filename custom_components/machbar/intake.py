@@ -17,6 +17,7 @@ from .const import MAX_ATTACHMENT_BYTES
 _LOGGER = logging.getLogger(__name__)
 _NULL = vol.Any(None, str)
 _MISSING = object()
+_PROJECT_TASK_FIELDS = ("notBeforeDate", "notBeforeAt", "reminders", "needsClarification")
 
 
 def _field(key: str, schema: Any) -> Any:
@@ -34,12 +35,12 @@ def _calendar_schema() -> vol.Schema:
             _field("title", str): str,
             _optional_field("description", None, _NULL): _NULL,
             _optional_field("location", None, _NULL): _NULL,
-            _optional_field("allDay", False, bool): bool,
+            _field("allDay", bool): bool,
             _optional_field("startDate", None, _NULL): _NULL,
             _optional_field("endDate", None, _NULL): _NULL,
             _optional_field("startDateTime", None, _NULL): _NULL,
             _optional_field("endDateTime", None, _NULL): _NULL,
-            _optional_field("relatedWorkKeys", [], [str]): [str],
+            _field("relatedWorkKeys", [str]): [str],
         },
         extra=vol.PREVENT_EXTRA,
     )
@@ -60,9 +61,9 @@ def _work_schema() -> vol.Schema:
             _optional_field("scheduledDate", None, _NULL): _NULL,
             _optional_field("notBeforeDate", None, _NULL): _NULL,
             _optional_field("notBeforeAt", None, _NULL): _NULL,
-            _optional_field("reminders", [], [_reminder_schema()]): [_reminder_schema()],
-            _optional_field("needsClarification", False, bool): bool,
-            _optional_field("relatedCalendarKeys", [], [str]): [str],
+            _field("reminders", [_reminder_schema()]): [_reminder_schema()],
+            _field("needsClarification", bool): bool,
+            _field("relatedCalendarKeys", [str]): [str],
         },
         extra=vol.PREVENT_EXTRA,
     )
@@ -93,9 +94,9 @@ def _warning_schema() -> vol.Schema:
 INTAKE_STRUCTURE = vol.Schema(
     {
         _field("summary", str): str,
-        _optional_field("calendarEvents", [], [_calendar_schema()]): [_calendar_schema()],
-        _optional_field("workItems", [], [_work_schema()]): [_work_schema()],
-        _optional_field("warnings", [], [_warning_schema()]): [_warning_schema()],
+        _field("calendarEvents", [_calendar_schema()]): [_calendar_schema()],
+        _field("workItems", [_work_schema()]): [_work_schema()],
+        _field("warnings", [_warning_schema()]): [_warning_schema()],
     },
     extra=vol.PREVENT_EXTRA,
 )
@@ -240,17 +241,27 @@ def _normalize_string(
         raise _invalid(path, "a string or null" if nullable else "a string", value=value)
     stripped = value.strip()
     # Only contract fields where strings represent absence use textual nulls.
-    if (
-        absence
-        and nullable
-        and (
-            not stripped
-            or stripped.lower() in {"null", "none"}
-            or not re.search(r"[^\W_]", stripped, re.UNICODE)
-        )
-    ):
+    if absence and nullable and _is_absent_string(stripped):
         return None
     return stripped
+
+
+def _is_absent_string(value: str) -> bool:
+    return (
+        not value
+        or value.lower() in {"null", "none"}
+        or not re.search(r"[^\W_]", value, re.UNICODE)
+    )
+
+
+def _meaningful_project_field(field: str, value: Any) -> bool:
+    if value is None or (isinstance(value, bool) and not value):
+        return False
+    if field == "reminders" and isinstance(value, list) and not value:
+        return False
+    if field in {"notBeforeDate", "notBeforeAt"} and isinstance(value, str):
+        return not _is_absent_string(value.strip())
+    return True
 
 
 def _compact_plan(value: Any) -> Any:
@@ -270,10 +281,17 @@ def _compact_plan(value: Any) -> Any:
     def strip(raw: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
         return {key: item for key, item in raw.items() if key in allowed}
 
+    project_warnings: list[dict[str, str]] = []
     calendars = value.get("calendarEvents", [])
+    if calendars is None:
+        calendars = []
     if isinstance(calendars, list):
-        calendars = [
-            {
+        normalized_calendars = []
+        for raw in calendars:
+            if not isinstance(raw, dict):
+                normalized_calendars.append(raw)
+                continue
+            item = {
                 "description": None,
                 "location": None,
                 "allDay": False,
@@ -282,15 +300,40 @@ def _compact_plan(value: Any) -> Any:
                 "startDateTime": None,
                 "endDateTime": None,
                 "relatedWorkKeys": [],
-                **strip(item, calendar_fields),
+                **strip(raw, calendar_fields),
             }
-            if isinstance(item, dict) else item
-            for item in calendars
-        ]
+            for field, default in (("allDay", False), ("relatedWorkKeys", [])):
+                if item[field] is None:
+                    item[field] = default
+            normalized_calendars.append(item)
+        calendars = normalized_calendars
     work = value.get("workItems", [])
+    if work is None:
+        work = []
     if isinstance(work, list):
-        work = [
-            {
+        normalized_work = []
+        for index, raw in enumerate(work):
+            if not isinstance(raw, dict):
+                normalized_work.append(raw)
+                continue
+            item = strip(raw, work_fields)
+            meaningful_project_fields = (
+                raw.get("kind") == "project"
+                and any(
+                    field in item and _meaningful_project_field(field, item[field])
+                    for field in _PROJECT_TASK_FIELDS
+                )
+            )
+            if meaningful_project_fields:
+                project_key = item.get("key")
+                label = project_key if isinstance(project_key, str) and project_key else str(index)
+                project_warnings.append({
+                    "message": f"Ignored task-only fields on project '{label}'.",
+                })
+            if raw.get("kind") == "project":
+                for field in _PROJECT_TASK_FIELDS:
+                    item.pop(field, None)
+            compacted_item = {
                 "notes": None,
                 "parentKey": None,
                 "ownerName": None,
@@ -301,17 +344,26 @@ def _compact_plan(value: Any) -> Any:
                 "reminders": [],
                 "needsClarification": False,
                 "relatedCalendarKeys": [],
-                **strip(item, work_fields),
+                **item,
             }
-            if isinstance(item, dict) else item
-            for item in work
-        ]
+            for field, default in (
+                ("reminders", []),
+                ("needsClarification", False),
+                ("relatedCalendarKeys", []),
+            ):
+                if compacted_item[field] is None:
+                    compacted_item[field] = default
+            normalized_work.append(compacted_item)
+        work = normalized_work
     warnings = value.get("warnings", [])
+    if warnings is None:
+        warnings = []
     if isinstance(warnings, list):
         warnings = [
             strip(item, warning_fields) if isinstance(item, dict) else item
             for item in warnings
         ]
+        warnings.extend(project_warnings)
     compacted: dict[str, Any] = {}
     if "summary" in value:
         compacted["summary"] = value["summary"]

@@ -15,6 +15,7 @@ import {
   intakeErrorIssues,
   intakeDraftIssues,
   isIntakeIssueCode,
+  normalizeIntakeDraftInput,
   normalizeIntakeNullableAbsenceFields,
   normalizeIntakePlanInput,
   normalizeIntakePlan,
@@ -116,12 +117,10 @@ export function normalizeStoredIntakeDraft(value: unknown): IntakeDraft | null {
   const normalizedValue = normalizeIntakeNullableAbsenceFields(value);
   const candidate = normalizedValue as { workItems?: unknown };
   if (!Array.isArray(candidate.workItems)) return null;
-  let changed = false;
   const workItems = candidate.workItems.map((item) => {
     if (!item || typeof item !== "object") return item;
     const workItem = item as Record<string, unknown>;
     if ("reminders" in workItem) return workItem;
-    changed = true;
     const reminderAt = workItem.reminderAt;
     const reminders = typeof reminderAt === "string"
       ? [{ kind: "absolute" as const, at: reminderAt }]
@@ -129,8 +128,10 @@ export function normalizeStoredIntakeDraft(value: unknown): IntakeDraft | null {
     const { reminderAt: _legacyReminderAt, ...withoutLegacyReminder } = workItem;
     return { ...withoutLegacyReminder, reminders };
   });
-  if (!changed && normalizedValue === value) return value as IntakeDraft;
-  return { ...(candidate as object), workItems } as IntakeDraft;
+  return normalizeIntakeDraftInput({
+    ...(candidate as object),
+    workItems,
+  }) as IntakeDraft;
 }
 
 function retryValidationIssues(error: IntakeErrorInfo | null): IntakeIssue[] {
@@ -414,6 +415,7 @@ export function onCalendarCreated(
 }
 
 export function updateIntakeDraft(db: Db, id: string, viewerMemberId: number | null, input: { expectedRevision: number; draft: IntakeDraft }, options = { paperlessAvailable: false, hasFiles: false }): void {
+  const normalizedDraft = normalizeStoredIntakeDraft(input.draft) ?? input.draft;
   const current = db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
   if (!current) throw AppError.notFound("intake_not_found", "The intake was not found.");
   if (current.expiresAt <= nowIso()) throw new AppError(410, "intake_expired", "The intake has expired.");
@@ -433,7 +435,7 @@ export function updateIntakeDraft(db: Db, id: string, viewerMemberId: number | n
     if (job.revision !== input.expectedRevision) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.", { expectedRevision: input.expectedRevision, actualRevision: job.revision });
     const updated = tx.update(schema.intakeJobs)
       .set({
-        draftJson: JSON.stringify(input.draft),
+        draftJson: JSON.stringify(normalizedDraft),
         revision: input.expectedRevision + 1,
         updatedAt: nowIso(),
       })

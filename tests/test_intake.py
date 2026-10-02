@@ -2,11 +2,99 @@
 
 import json
 from pathlib import Path
+from importlib.metadata import version
 
 import pytest
 import voluptuous as vol
+from probatio import Any as ProbatioAny
+from probatio import In as ProbatioIn
+from probatio import Optional as ProbatioOptional
+from probatio import Required as ProbatioRequired
+from probatio import Schema as ProbatioSchema
+from probatio import to_openapi
 
 from custom_components.machbar.intake import INTAKE_STRUCTURE, AdapterError, normalize_plan
+
+
+def _probatio_schema_from_voluptuous(schema):
+    if isinstance(schema, vol.Schema):
+        return ProbatioSchema(
+            _probatio_schema_from_voluptuous(schema.schema),
+            required=schema.required,
+            extra=schema.extra,
+        )
+    if isinstance(schema, dict):
+        converted = {}
+        for marker, validator in schema.items():
+            if isinstance(marker, vol.Marker):
+                marker_type = (
+                    ProbatioRequired if isinstance(marker, vol.Required) else ProbatioOptional
+                )
+                marker = marker_type(
+                    marker.schema,
+                    default=getattr(marker, "default", ...),
+                    description=getattr(marker, "description", None),
+                )
+            converted[marker] = _probatio_schema_from_voluptuous(validator)
+        return converted
+    if isinstance(schema, list):
+        return [_probatio_schema_from_voluptuous(item) for item in schema]
+    if isinstance(schema, vol.Any):
+        return ProbatioAny(
+            *(_probatio_schema_from_voluptuous(item) for item in schema.validators)
+        )
+    if isinstance(schema, vol.In):
+        return ProbatioIn(schema.container)
+    return schema
+
+
+def _ha_2026_9_3_adjust_schema(schema):
+    """Test-only reproduction of HA Core 2026.9.3's OpenAI schema adjustment."""
+    if schema["type"] == "object":
+        schema.setdefault("strict", True)
+        schema.setdefault("additionalProperties", False)
+        if "properties" not in schema:
+            return
+        schema.setdefault("required", [])
+        for name, property_schema in schema["properties"].items():
+            _ha_2026_9_3_adjust_schema(property_schema)
+            if name not in schema["required"]:
+                property_schema["type"] = [property_schema["type"], "null"]
+                schema["required"].append(name)
+    elif schema["type"] == "array" and "items" in schema:
+        _ha_2026_9_3_adjust_schema(schema["items"])
+
+
+def test_generation_schema_matches_ha_2026_9_3_openai_conversion_fixture():
+    fixture_path = Path(__file__).parent / "fixtures/ha-2026.9.3-openai-intake-converted-schema.json"
+    fixture = json.loads(fixture_path.read_text())
+    assert fixture["haCoreVersion"] == "2026.9.3"
+    assert fixture["probatioVersion"] == "0.11.4"
+    assert version("probatio") == fixture["probatioVersion"]
+    converted = to_openapi(_probatio_schema_from_voluptuous(INTAKE_STRUCTURE))
+    _ha_2026_9_3_adjust_schema(converted)
+    assert converted == fixture["convertedSchema"]
+
+    calendar = converted["properties"]["calendarEvents"]["items"]
+    work = converted["properties"]["workItems"]["items"]
+    for schema, fields in (
+        (converted, ("calendarEvents", "workItems", "warnings")),
+        (calendar, ("allDay", "relatedWorkKeys")),
+        (work, ("needsClarification", "reminders", "relatedCalendarKeys")),
+    ):
+        for name in fields:
+            assert name in schema["required"]
+            field_type = schema["properties"][name]["type"]
+            assert "null" not in field_type if isinstance(field_type, list) else field_type != "null"
+    assert calendar["properties"]["allDay"]["type"] == "boolean"
+    assert work["properties"]["needsClarification"]["type"] == "boolean"
+    for nullable_scalar in (
+        calendar["properties"]["description"],
+        work["properties"]["notes"],
+        work["properties"]["ownerName"],
+        work["properties"]["dueDate"],
+    ):
+        assert "null" in nullable_scalar["type"]
 
 
 def _valid_plan():
@@ -90,13 +178,10 @@ def test_normalize_plan_defaults_omitted_collections(field):
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("calendarEvents", None),
         ("calendarEvents", {}),
         ("calendarEvents", "not-an-array"),
-        ("workItems", None),
         ("workItems", {}),
         ("workItems", "not-an-array"),
-        ("warnings", None),
         ("warnings", {}),
         ("warnings", "not-an-array"),
     ],
@@ -106,6 +191,94 @@ def test_normalize_plan_preserves_wrong_type_collections_as_diagnostics(field, v
         normalize_plan({"summary": "Plan", field: value})
 
     assert err.value.details["path"] == [field]
+
+
+def test_normalize_plan_defaults_null_collections_and_item_fields():
+    normalized = normalize_plan({
+        "summary": "Plan",
+        "calendarEvents": [{
+            "key": "event",
+            "title": "Event",
+            "allDay": None,
+            "relatedWorkKeys": None,
+        }, {
+            "key": "event-defaults",
+            "title": "Event defaults",
+        }],
+        "workItems": [{
+            "key": "action",
+            "kind": "action",
+            "title": "Action",
+            "needsClarification": None,
+            "reminders": None,
+            "relatedCalendarKeys": None,
+        }],
+        "warnings": None,
+    })
+
+    assert normalized["warnings"] == []
+    assert normalized["calendarEvents"][0]["allDay"] is False
+    assert normalized["calendarEvents"][0]["relatedWorkKeys"] == []
+    assert normalized["calendarEvents"][1]["allDay"] is False
+    assert normalized["calendarEvents"][1]["relatedWorkKeys"] == []
+    assert normalized["workItems"][0]["needsClarification"] is False
+    assert normalized["workItems"][0]["reminders"] == []
+    assert normalized["workItems"][0]["relatedCalendarKeys"] == []
+    assert normalize_plan({
+        "summary": "Plan",
+        "calendarEvents": None,
+        "workItems": None,
+        "warnings": None,
+    }) == {"summary": "Plan", "calendarEvents": [], "workItems": [], "warnings": []}
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("calendarEvents", 0, "allDay"), 0),
+        (("calendarEvents", 0, "relatedWorkKeys"), "[]"),
+        (("workItems", 0, "needsClarification"), "false"),
+        (("workItems", 0, "reminders"), {}),
+        (("workItems", 0, "relatedCalendarKeys"), 0),
+    ],
+)
+def test_normalize_plan_rejects_wrong_non_null_required_field_types(path, value):
+    plan = _valid_plan()
+    target = plan
+    for part in path[:-1]:
+        target = target[part]
+    target[path[-1]] = value
+
+    with pytest.raises(AdapterError) as err:
+        normalize_plan(plan)
+
+    assert err.value.details["path"] == list(path)
+
+
+@pytest.mark.parametrize("value", ["missing", None, False, True])
+def test_normalize_plan_defaults_or_preserves_clarification(value):
+    plan = _valid_plan()
+    if value == "missing":
+        del plan["workItems"][0]["needsClarification"]
+    else:
+        plan["workItems"][0]["needsClarification"] = value
+
+    normalized = normalize_plan(plan)
+
+    assert normalized["workItems"][0]["needsClarification"] is (
+        value is True
+    )
+
+
+@pytest.mark.parametrize("value", ["missing", None, []])
+def test_normalize_plan_defaults_or_preserves_empty_reminders(value):
+    plan = _valid_plan()
+    if value == "missing":
+        del plan["workItems"][0]["reminders"]
+    else:
+        plan["workItems"][0]["reminders"] = value
+
+    assert normalize_plan(plan)["workItems"][0]["reminders"] == []
 
 
 def test_normalize_plan_handles_flower_watering_compact_input():
@@ -166,6 +339,143 @@ def test_normalize_plan_clears_datetimes_for_all_day_events():
     assert normalized_event["startDateTime"] is None
     assert normalized_event["endDateTime"] is None
     INTAKE_STRUCTURE(normalized)
+
+
+def test_normalize_plan_discards_project_task_fields_with_one_warning():
+    normalized = normalize_plan({
+        "summary": "Plan",
+        "workItems": [{
+            "key": "garden",
+            "kind": "project",
+            "title": "Garden",
+            "dueDate": "2026-10-10",
+            "scheduledDate": "2026-10-05",
+            "notBeforeDate": 42,
+            "reminders": {"malformed": True},
+            "needsClarification": True,
+        }],
+    })
+
+    project = normalized["workItems"][0]
+    assert project["dueDate"] == "2026-10-10"
+    assert project["scheduledDate"] == "2026-10-05"
+    assert project["notBeforeDate"] is None
+    assert project["reminders"] == []
+    assert project["needsClarification"] is False
+    assert normalized["warnings"] == [
+        {"message": "Ignored task-only fields on project 'garden'."},
+    ]
+
+
+def test_normalize_plan_ignores_default_project_task_fields_without_warning():
+    normalized = normalize_plan({
+        "summary": "Plan",
+        "workItems": [{
+            "key": "garden",
+            "kind": "project",
+            "title": "Garden",
+            "notBeforeDate": None,
+            "notBeforeAt": None,
+            "reminders": [],
+            "needsClarification": False,
+        }],
+    })
+
+    assert normalized["warnings"] == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("notBeforeDate", False),
+        ("notBeforeAt", False),
+        ("reminders", False),
+        ("needsClarification", False),
+    ],
+)
+def test_normalize_plan_discards_false_project_task_fields_without_warning(field, value):
+    normalized = normalize_plan({
+        "summary": "Plan",
+        "workItems": [{
+            "key": "garden",
+            "kind": "project",
+            "title": "Garden",
+            field: value,
+        }],
+    })
+
+    assert normalized["workItems"][0] == {
+        "key": "garden",
+        "kind": "project",
+        "title": "Garden",
+        "notes": None,
+        "parentKey": None,
+        "ownerName": None,
+        "dueDate": None,
+        "scheduledDate": None,
+        "notBeforeDate": None,
+        "notBeforeAt": None,
+        "reminders": [],
+        "needsClarification": False,
+        "relatedCalendarKeys": [],
+    }
+    assert normalized["warnings"] == []
+
+
+def test_normalize_plan_discards_mixed_project_task_fields_with_one_warning():
+    normalized = normalize_plan({
+        "summary": "Plan",
+        "workItems": [{
+            "key": "garden",
+            "kind": "project",
+            "title": "Garden",
+            "notBeforeDate": "2026-10-10",
+            "notBeforeAt": False,
+            "reminders": [],
+            "needsClarification": False,
+        }],
+    })
+
+    item = normalized["workItems"][0]
+    assert item["notBeforeDate"] is None
+    assert item["notBeforeAt"] is None
+    assert item["reminders"] == []
+    assert item["needsClarification"] is False
+    assert normalized["warnings"] == [
+        {"message": "Ignored task-only fields on project 'garden'."},
+    ]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("notBeforeDate", False),
+        ("notBeforeAt", False),
+        ("reminders", False),
+    ],
+)
+def test_normalize_plan_still_rejects_false_task_only_values_on_actions(field, value):
+    plan = _valid_plan()
+    plan["workItems"][0][field] = value
+
+    with pytest.raises(AdapterError) as err:
+        normalize_plan(plan)
+
+    assert err.value.details["path"] == ["workItems", 0, field]
+
+
+def test_normalize_plan_preserves_reminders_on_clarifying_actions():
+    plan = _valid_plan()
+    plan["workItems"][0]["needsClarification"] = True
+    plan["workItems"][0]["reminders"] = [{
+        "kind": "absolute",
+        "at": "2026-09-30T08:00:00+02:00",
+    }]
+
+    normalized = normalize_plan(plan)
+
+    assert normalized["workItems"][0]["needsClarification"] is True
+    assert normalized["workItems"][0]["reminders"] == plan["workItems"][0]["reminders"]
 
 
 def test_normalize_plan_clears_dates_for_timed_events():

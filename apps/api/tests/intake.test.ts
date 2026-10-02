@@ -331,6 +331,64 @@ describe("intake lifecycle", () => {
       .where(eq(schema.homeAssistantRequests.kind, "calendar_create")).all()).toHaveLength(0);
   });
 
+  it("normalizes draft payloads before structural validation and preserves review state", async () => {
+    const token = await pairAndSnapshot();
+    const id = await createIntake(token);
+    const request = await lease(token);
+    await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${request.id}/complete`,
+      headers: { authorization: "Bearer " + token },
+      payload: { leaseToken: request.leaseToken, outcome: "succeeded", result: validPlan },
+    });
+    const record = await ctx.app.inject({ method: "GET", url: `/api/intake/${id}` });
+    const response = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/intake/${id}/plan`,
+      payload: {
+        expectedRevision: record.json().revision,
+        draft: {
+          summary: "Draft",
+          calendarEvents: null,
+          workItems: [{
+            key: "project",
+            kind: "project",
+            title: "Project",
+            notes: null,
+            parentKey: null,
+            dueDate: "2026-10-10",
+            scheduledDate: null,
+            notBeforeDate: 42,
+            notBeforeAt: {},
+            reminders: { malformed: true },
+            needsClarification: true,
+            relatedCalendarKeys: null,
+            enabled: false,
+            ownerMemberId: 7,
+          }],
+          warnings: null,
+          retainSourceInPaperless: false,
+        },
+      },
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json().draft).toMatchObject({
+      calendarEvents: [],
+      warnings: [{ message: "Ignored task-only fields on project 'project'." }],
+      workItems: [{
+        dueDate: "2026-10-10",
+        notBeforeDate: null,
+        notBeforeAt: null,
+        reminders: [],
+        needsClarification: false,
+        relatedCalendarKeys: [],
+        enabled: false,
+        ownerMemberId: 7,
+      }],
+    });
+  });
+
   it("keeps semantic conflicts reviewable and sends them when reanalyzing", async () => {
     const token = await pairAndSnapshot();
     const id = await createIntake(token);
