@@ -83,8 +83,9 @@ to repair compact AI representations before strict structural and semantic
 validation; canonical mutations remain strict. API Zod schemas provide
 structural validation around the same contract.
 
-The reverse bridge is deliberately narrow. It has exactly two request kinds:
-`intake_analyze` and `calendar_create`. Requests use long-polling, leases, and
+The reverse bridge is deliberately narrow. It has exactly three request kinds:
+`intake_analyze`, `cleanup_round_analyze` (the Klärungsrunde, see §8), and
+`calendar_create`. Requests use long-polling, leases, and
 bounded retries; the bridge is not arbitrary Home Assistant RPC. The AI phase
 never mutates Machbar or the calendar. Only the human Apply command creates
 Machbar work, using `createProject()`, `createTask()`, and
@@ -699,6 +700,48 @@ inside those canonical hooks. Focused repair reuses project/task detail,
 `AcceptanceCriteriaEditor`. The owner/effort matrix and sizing list remain
 available as optional secondary planning tools rather than a separate
 Refinement workflow.
+
+### Klärungsrunde — `/more/cleanup-round`
+
+The Klärungsrunde is an on-demand, advisory semantic coaching pass. It does not
+replace Review's mechanical diagnosis: Review knows owners, dates, waits,
+blockers, next actions, stuck reasons, and review age; the Klärungsrunde asks a
+Home Assistant AI Task whether a few sampled items are *semantically* useful
+work items ("would a tired human know what to do next?").
+
+- **Sampling** (`apps/api/src/cleanupRound/sampler.ts`) selects, not
+  diagnoses: up to five open tasks (captured/actionable/someday action tasks in
+  no or an open project) and active/backlog projects visible to the viewer,
+  excluding items reviewed in the last seven days and items already in an open
+  round. Weighted randomness favours staleness, notes, children, and vague
+  titles, caps two items per project/parent cluster, and mixes tasks with
+  projects when possible.
+- **Contract** (`packages/shared/src/cleanupRound.ts`): each sampled item is
+  sent as a `CleanupItemContext` with mechanical facts as context only. The AI
+  returns one `CleanupTriageResult` per item from closed proposal, resolution
+  surface, inferred work type, and flow vocabularies. Work type and
+  uphill/downhill are reasoning lenses and are never persisted on tasks or
+  projects.
+- **Validation** (`validate.ts`) normalizes strings and enums, trims excessive
+  text, rejects unknown targets, type mismatches, duplicates, and malformed
+  entries as warnings, and keeps raw and validated responses separately. All
+  valid → `ready`; some → `partial`; none → `failed`. Retry is available for
+  `failed`/`partial` and feeds validation issues back into the prompt.
+- **Persistence**: `cleanup_rounds` and `cleanup_round_items` are temporary
+  operational state (24-hour expiry, purged with intake jobs); a
+  `home_assistant_requests` row belongs to either an intake job or a round.
+- **Resolution**: AI results never mutate work items. The only direct mutation
+  is “Hinten anstellen”, which reuses the canonical Review acknowledgement
+  (`reviewedAt`). Every other surface dispatches an existing
+  `useWorkItemCommands()` workflow (title/notes detail, `task.split` with a
+  prefilled child title, `task.plan`, `task.structure`,
+  `task.convertToProject`, `story.editOutcome`, `story.planWork`,
+  `story.structure`, `story.defer`, or `workItem.open`) through the pure
+  mapping in `apps/web/src/lib/cleanupRound.ts`.
+
+The More entry appears only when the Home Assistant AI Task is ready. Older
+Home Assistant components answer the new request kind with
+`unsupported_request`, so the round fails visibly instead of hanging.
 
 ### Alles — `/more/all`
 

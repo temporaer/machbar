@@ -210,6 +210,16 @@ revisit date rather than generic inactivity.
 Optional owner/effort planning tools remain available inside Review without
 becoming another required workflow.
 
+The optional **Klärungsrunde** (More, when the Home Assistant AI Task is
+configured) complements Review with semantic coaching. Machbar samples a few
+liegengebliebene tasks and projects, and the AI asks one focused question per
+item: is the title an actual action, is a decision hidden inside it, what does
+done mean, what is the first slice, does an incident need aftermath, or is this
+really information? Suggestions are never applied automatically. Each card
+offers **Hinten anstellen** (acknowledge like Review), **Öffnen**, ignoring
+the suggestion, or one button into the existing editor that answers the
+question.
+
 ### 6. Inventory
 
 **Alles** is exhaustive access to every non-deleted ordinary project and task.

@@ -5,6 +5,7 @@ import type {
   ApiErrorCode,
   ApiErrorResponse,
   AuthStatus,
+  CleanupRoundRecord,
   ContributionSummary,
   DebugMetrics,
   HomeAssistantIntegrationStatus,
@@ -495,6 +496,19 @@ export const api = {
     }),
   deleteIntake: (id: string) =>
     request<void>(`/intake/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  createCleanupRound: () =>
+    request<{ id: string }>("/cleanup-rounds", { method: "POST", body: "{}" }),
+  getCleanupRound: (id: string) =>
+    request<CleanupRoundRecord>(`/cleanup-rounds/${encodeURIComponent(id)}`),
+  retryCleanupRound: (id: string) =>
+    request<CleanupRoundRecord>(`/cleanup-rounds/${encodeURIComponent(id)}/retry`, { method: "POST" }),
+  dismissCleanupRound: (id: string) =>
+    request<CleanupRoundRecord>(`/cleanup-rounds/${encodeURIComponent(id)}/dismiss`, { method: "POST" }),
+  resolveCleanupRoundItem: (id: string, itemId: string, resolution: "dismiss" | "mark-reviewed") =>
+    request<CleanupRoundRecord>(
+      `/cleanup-rounds/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/${resolution}`,
+      { method: "POST" },
+    ),
   preparePaperlessImageForCrop: (file: File, signal?: AbortSignal) => {
     const body = new FormData();
     body.append("document", file, file.name);

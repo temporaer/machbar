@@ -74,6 +74,7 @@ export function TaskWorkflowHost() {
           parentId={task.id}
           parentTitle={task.title}
           existingChildren={task.children}
+          initialTitles={workflow.current.initialTitles}
           onClose={close}
         />
       );

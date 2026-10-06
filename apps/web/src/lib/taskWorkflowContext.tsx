@@ -36,14 +36,19 @@ export type TaskWorkflowKind =
   | "contexts"
   | "convertToProject";
 
-export interface TaskWorkflowState {
+export interface TaskWorkflowOptions {
+  /** Prefilled new-child titles for `split` (e.g. a Klärungsrunde suggestion). */
+  initialTitles?: string[] | undefined;
+}
+
+export interface TaskWorkflowState extends TaskWorkflowOptions {
   kind: TaskWorkflowKind;
   taskId: number;
 }
 
 interface TaskWorkflowContextValue {
   current: TaskWorkflowState | null;
-  open: (kind: TaskWorkflowKind, taskId: number) => void;
+  open: (kind: TaskWorkflowKind, taskId: number, options?: TaskWorkflowOptions) => void;
   close: () => void;
 }
 
@@ -54,7 +59,7 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
   const value = useMemo<TaskWorkflowContextValue>(
     () => ({
       current,
-      open: (kind, taskId) => setCurrent({ kind, taskId }),
+      open: (kind, taskId, options) => setCurrent({ kind, taskId, ...options }),
       close: () => setCurrent(null),
     }),
     [current],

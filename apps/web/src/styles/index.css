@@ -3777,6 +3777,20 @@ details[open] > .disclosure-summary::after {
   padding-bottom: 156px;
 }
 
+.cleanup-round-card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cleanup-round-card .badge {
+  align-self: flex-start;
+}
+
+.cleanup-round-actions {
+  flex-wrap: wrap;
+}
+
 .intake-review-header h1,
 .intake-review-header p,
 .intake-proposal-section h2 {

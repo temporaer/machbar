@@ -4,7 +4,8 @@ Machbar ships a Home Assistant custom integration. Machbar remains a standalone
 service; the integration sends zone and `person.*` state to it and never
 exposes the Machbar UI through Home Assistant. It also provides the narrow,
 bidirectional bridge used by **Verarbeiten**: Machbar leases
-`intake_analyze` and `calendar_create` requests, and the Home Assistant worker
+`intake_analyze`, `cleanup_round_analyze`, and `calendar_create` requests,
+and the Home Assistant worker
 executes them using the entities configured locally in Home Assistant.
 
 ## Install with HACS
@@ -53,7 +54,13 @@ Home Assistant and the selected provider remain authoritative for AI execution
 and calendar objects. Machbar stores no AI-provider credentials, OpenAI key,
 Google credentials, or Home Assistant access token.
 
-The worker long-polls Machbar, executes only the two fixed request kinds, and
+The same AI Task entity also powers the **Klärungsrunde** (More →
+Klärungsrunde): Machbar sends a few sampled work items with coaching
+instructions, and the worker returns structured, advisory results through the
+`CLEANUP_ROUND_STRUCTURE` schema. Update the custom component together with
+Machbar; an older component reports the new request kind as unsupported.
+
+The worker long-polls Machbar, executes only the three fixed request kinds, and
 posts the result with its lease token. Machbar can retry expired leases and
 bounded transient failures; this is not an arbitrary Home Assistant RPC
 channel. Home Assistant must be online while an intake is analyzed or while a

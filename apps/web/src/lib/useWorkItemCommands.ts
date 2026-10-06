@@ -238,7 +238,9 @@ export function useWorkItemCommands() {
           taskWorkflow.open("waitingLifecycle", command.taskId);
           return;
         case "task.split":
-          taskWorkflow.open("split", command.taskId);
+          taskWorkflow.open("split", command.taskId, {
+            initialTitles: command.initialTitles,
+          });
           return;
         case "task.assignOwner":
           taskWorkflow.open("assignOwner", command.taskId);
