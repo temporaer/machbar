@@ -240,6 +240,26 @@ describe("cleanup rounds", () => {
     expect(JSON.parse(stored.rawResponseJson!).summary).toBe("Eine Sache");
   });
 
+  it("withdraws analysis when a round is dismissed so late results cannot revive it", async () => {
+    const token = await pair();
+    const keller = await task("Keller");
+    const id = await createRound();
+    const leased = await lease(token);
+    const dismissed = await ctx.app.inject({ method: "POST", url: `/api/cleanup-rounds/${id}/dismiss`, payload: {} });
+    expect(dismissed.json().status).toBe("dismissed");
+
+    const late = await ctx.app.inject({
+      method: "POST",
+      url: `/api/integrations/home-assistant/requests/${leased.id}/complete`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { leaseToken: leased.leaseToken, outcome: "succeeded", result: { summary: "x", results: [triage("task", keller)], warnings: [] } },
+    });
+    expect(late.statusCode).toBe(409);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/cleanup-rounds/${id}` })).json().status).toBe("dismissed");
+    // The dismissed round no longer reserves its items.
+    await createRound();
+  });
+
   it("marks partial responses, rejects unknown IDs, and retries with feedback", async () => {
     const token = await pair();
     const a = await task("Keller");

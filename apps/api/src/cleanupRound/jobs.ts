@@ -238,8 +238,14 @@ export function getCleanupRound(db: Db, id: string, viewerMemberId: number | nul
   };
 }
 
+function awaitingAnalysis(round: RoundRow): boolean {
+  return round.status === "queued" || round.status === "analyzing";
+}
+
 /** Applies a validated AI Task response. Never mutates work items. */
 export function onCleanupRoundAnalyzed(db: Db, round: RoundRow, raw: unknown): void {
+  // A dismissed/settled round must not be revived by a late result.
+  if (!awaitingAnalysis(round)) return;
   const items = roundItems(db, round.id).filter((item) => item.status === "pending");
   if (items.length === 0) {
     // Every card was handled while the analysis was running.
@@ -293,6 +299,7 @@ export function onCleanupRoundRequestFailed(
   round: RoundRow,
   error: { code: string; message: string; details?: CleanupRoundErrorInfo["details"] },
 ): void {
+  if (!awaitingAnalysis(round)) return;
   const now = nowIso();
   db.update(schema.cleanupRounds).set({
     status: "failed",
@@ -354,11 +361,24 @@ export function retryCleanupRound(
 export function dismissCleanupRound(db: Db, id: string, viewerMemberId: number | null): void {
   const round = roundOrThrow(db, id, viewerMemberId);
   if (round.status === "dismissed" || round.status === "completed") return;
-  db.update(schema.cleanupRounds).set({
-    status: "dismissed",
-    revision: round.revision + 1,
-    updatedAt: nowIso(),
-  }).where(eq(schema.cleanupRounds.id, id)).run();
+  const now = nowIso();
+  db.transaction((tx) => {
+    tx.update(schema.cleanupRounds).set({
+      status: "dismissed",
+      revision: round.revision + 1,
+      updatedAt: now,
+    }).where(eq(schema.cleanupRounds.id, id)).run();
+    // Withdraw outstanding analysis so it is neither leased nor completed later.
+    tx.update(schema.homeAssistantRequests).set({
+      status: "failed",
+      error: JSON.stringify({ code: "cleanup_round_dismissed", message: "The cleanup round was dismissed.", retryable: false }),
+      completedAt: now,
+      leaseExpiresAt: null,
+    }).where(and(
+      eq(schema.homeAssistantRequests.cleanupRoundId, id),
+      inArray(schema.homeAssistantRequests.status, ["queued", "leased"]),
+    )).run();
+  });
 }
 
 /**
