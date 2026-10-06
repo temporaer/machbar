@@ -137,7 +137,8 @@ export function registerHomeAssistantRoutes(
       const row = db.select().from(schema.homeAssistantRequests)
         .where(eq(schema.homeAssistantRequests.id, request.params.id)).get();
       if (!row) throw AppError.notFound("home_assistant_request_not_found", "The Home Assistant request was not found.");
-      const result = row.kind === "intake_analyze"
+      // AI Task results are validated by their owner (intake or Klärungsrunde).
+      const result = row.kind === "intake_analyze" || row.kind === "cleanup_round_analyze"
         ? body.result
         : parseOrThrow(homeAssistantCalendarEventRefSchema, body.result);
       completeHomeAssistantRequest(db, request.homeAssistantIntegrationId!, request.params.id, { ...body, result } as never);

@@ -8,6 +8,7 @@ import random
 from typing import Any
 
 from .calendar_bridge import async_create_event
+from .cleanup_round import async_analyze_cleanup_round
 from .client import (
     ApplicationError,
     CannotConnect,
@@ -84,6 +85,10 @@ class RequestWorker:
             if kind == "intake_analyze":
                 result = await async_analyze(
                     self.hass, self.client, self.entry.options.get("ai_task_entity_id"), payload
+                )
+            elif kind == "cleanup_round_analyze":
+                result = await async_analyze_cleanup_round(
+                    self.hass, self.entry.options.get("ai_task_entity_id"), payload
                 )
             elif kind == "calendar_create":
                 result = await async_create_event(

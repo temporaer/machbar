@@ -9,9 +9,14 @@ import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { onCalendarCreated, onIntakeAnalyzed, onIntakeRequestFailed } from "../intake/jobs.js";
+import { onCleanupRoundAnalyzed, onCleanupRoundRequestFailed } from "../cleanupRound/jobs.js";
 
 export const MAX_ATTEMPTS = 3;
-const LEASE_MS = { intake_analyze: 180_000, calendar_create: 60_000 } as const;
+const LEASE_MS = {
+  intake_analyze: 180_000,
+  calendar_create: 60_000,
+  cleanup_round_analyze: 180_000,
+} as const;
 
 export class HomeAssistantRequestSignal {
   private listeners = new Set<() => void>();
@@ -37,14 +42,15 @@ export class HomeAssistantRequestSignal {
   }
 }
 
-type RequestKind = "intake_analyze" | "calendar_create";
+/** Each request is owned by exactly one intake job or Klärungsrunde. */
+type RequestOwner =
+  | { intakeJobId: string; kind: "intake_analyze" | "calendar_create" }
+  | { cleanupRoundId: string; kind: "cleanup_round_analyze" };
 
 export function enqueueHomeAssistantRequest(
   tx: Db,
-  input: {
+  input: RequestOwner & {
     integrationId: number;
-    intakeJobId: string;
-    kind: RequestKind;
     payload: unknown;
   },
   signal?: HomeAssistantRequestSignal,
@@ -53,7 +59,8 @@ export function enqueueHomeAssistantRequest(
   tx.insert(schema.homeAssistantRequests).values({
     id,
     integrationId: input.integrationId,
-    intakeJobId: input.intakeJobId,
+    intakeJobId: "intakeJobId" in input ? input.intakeJobId : null,
+    cleanupRoundId: "cleanupRoundId" in input ? input.cleanupRoundId : null,
     kind: input.kind,
     payloadJson: JSON.stringify(input.payload),
     status: "queued",
@@ -92,8 +99,7 @@ export function leaseNextHomeAssistantRequest(
           error: JSON.stringify(error),
           completedAt: nowIso,
         }).where(eq(schema.homeAssistantRequests.id, row.id)).run();
-        const job = tx.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, row.intakeJobId)).get();
-        if (job) onIntakeRequestFailed(tx as unknown as Db, job, row, error);
+        failOwner(tx as unknown as Db, row, error);
         continue;
       }
       const leaseToken = randomUUID();
@@ -114,6 +120,34 @@ export function leaseNextHomeAssistantRequest(
     }
     return null;
   });
+}
+
+type RequestRow = typeof schema.homeAssistantRequests.$inferSelect;
+
+function cleanupRoundFor(db: Db, row: RequestRow) {
+  return row.cleanupRoundId === null
+    ? undefined
+    : db.select().from(schema.cleanupRounds).where(eq(schema.cleanupRounds.id, row.cleanupRoundId)).get();
+}
+
+function intakeJobFor(db: Db, row: RequestRow) {
+  return row.intakeJobId === null
+    ? undefined
+    : db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, row.intakeJobId)).get();
+}
+
+function failOwner(
+  db: Db,
+  row: RequestRow,
+  error: { code: string; message: string; details?: Record<string, unknown> },
+): void {
+  if (row.kind === "cleanup_round_analyze") {
+    const round = cleanupRoundFor(db, row);
+    if (round) onCleanupRoundRequestFailed(db, round, error as never);
+    return;
+  }
+  const job = intakeJobFor(db, row);
+  if (job) onIntakeRequestFailed(db, job, row, error as never);
 }
 
 export function completeHomeAssistantRequest(
@@ -137,8 +171,10 @@ export function completeHomeAssistantRequest(
     ) {
       throw AppError.conflict("home_assistant_request_lease_lost", "The Home Assistant request lease is no longer valid.");
     }
-    const job = tx.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, row.intakeJobId)).get();
-    if (!job) throw AppError.notFound("home_assistant_request_not_found", "The intake request no longer exists.");
+    const txDb = tx as unknown as Db;
+    const round = row.kind === "cleanup_round_analyze" ? cleanupRoundFor(txDb, row) : undefined;
+    const job = row.kind === "cleanup_round_analyze" ? undefined : intakeJobFor(txDb, row);
+    if (!round && !job) throw AppError.notFound("home_assistant_request_not_found", "The request owner no longer exists.");
     if (completion.outcome === "failed") {
       tx.update(schema.homeAssistantRequests).set({
         status: "failed",
@@ -146,7 +182,7 @@ export function completeHomeAssistantRequest(
         completedAt: now,
         resultJson: null,
       }).where(eq(schema.homeAssistantRequests.id, id)).run();
-      onIntakeRequestFailed(tx as unknown as Db, job, row, completion.error);
+      failOwner(txDb, row, completion.error as never);
       return;
     }
     tx.update(schema.homeAssistantRequests).set({
@@ -156,10 +192,12 @@ export function completeHomeAssistantRequest(
       error: null,
       leaseExpiresAt: null,
     }).where(eq(schema.homeAssistantRequests.id, id)).run();
-    if (row.kind === "intake_analyze") {
-      onIntakeAnalyzed(tx as unknown as Db, job, completion.result as IntakePlan);
+    if (round) {
+      onCleanupRoundAnalyzed(txDb, round, completion.result);
+    } else if (row.kind === "intake_analyze") {
+      onIntakeAnalyzed(txDb, job!, completion.result as IntakePlan);
     } else {
-      onCalendarCreated(tx as unknown as Db, job, row, completion.result as never);
+      onCalendarCreated(txDb, job!, row, completion.result as never);
     }
   });
 }

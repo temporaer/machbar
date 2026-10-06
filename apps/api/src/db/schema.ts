@@ -192,10 +192,14 @@ export const homeAssistantRequests = sqliteTable(
     integrationId: integer("integration_id")
       .notNull()
       .references(() => homeAssistantIntegrations.id, { onDelete: "cascade" }),
+    /** Exactly one of `intakeJobId` and `cleanupRoundId` owns a request. */
     intakeJobId: text("intake_job_id")
-      .notNull()
       .references(() => intakeJobs.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["intake_analyze", "calendar_create"] }).notNull(),
+    cleanupRoundId: text("cleanup_round_id")
+      .references(() => cleanupRounds.id, { onDelete: "cascade" }),
+    kind: text("kind", {
+      enum: ["intake_analyze", "calendar_create", "cleanup_round_analyze"],
+    }).notNull(),
     payloadJson: text("payload_json").notNull(),
     status: text("status", {
       enum: ["queued", "leased", "succeeded", "failed"],
@@ -216,6 +220,7 @@ export const homeAssistantRequests = sqliteTable(
       t.leaseExpiresAt,
     ),
     index("home_assistant_requests_intake_job_idx").on(t.intakeJobId),
+    index("home_assistant_requests_cleanup_round_idx").on(t.cleanupRoundId),
   ],
 );
 
@@ -262,6 +267,62 @@ export const intakeAttachments = sqliteTable(
     sha256: text("sha256").notNull(),
     createdAt: text("created_at").notNull(),
   },
+);
+
+/**
+ * 24-hour scratch state for one human-triggered Klärungsrunde (AI coaching
+ * over a small sample of existing work items). Results are advisory and
+ * never mutate work items by themselves.
+ */
+export const cleanupRounds = sqliteTable(
+  "cleanup_rounds",
+  {
+    id: text("id").primaryKey(),
+    createdByMemberId: integer("created_by_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    actorMemberId: integer("actor_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    scope: text("scope", { enum: ["household", "work"] }).notNull().default("household"),
+    status: text("status", {
+      enum: ["queued", "analyzing", "ready", "partial", "failed", "dismissed", "completed"],
+    }).notNull(),
+    revision: integer("revision").notNull().default(1),
+    contextJson: text("context_json").notNull(),
+    rawResponseJson: text("raw_response_json"),
+    resultJson: text("result_json"),
+    errorJson: text("error_json"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    expiresAt: text("expires_at").notNull(),
+  },
+  (t) => [index("cleanup_rounds_expires_idx").on(t.expiresAt)],
+);
+
+export const cleanupRoundItems = sqliteTable(
+  "cleanup_round_items",
+  {
+    id: text("id").primaryKey(),
+    cleanupRoundId: text("cleanup_round_id")
+      .notNull()
+      .references(() => cleanupRounds.id, { onDelete: "cascade" }),
+    targetType: text("target_type", { enum: ["task", "project"] }).notNull(),
+    targetId: integer("target_id").notNull(),
+    targetRevision: integer("target_revision").notNull(),
+    contextJson: text("context_json").notNull(),
+    resultJson: text("result_json"),
+    status: text("status", {
+      enum: ["pending", "ready", "failed", "dismissed", "reviewed"],
+    }).notNull(),
+    position: integer("position").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [
+    index("cleanup_round_items_round_idx").on(t.cleanupRoundId),
+    index("cleanup_round_items_target_idx").on(t.targetType, t.targetId),
+  ],
 );
 
 export const mcpAgents = sqliteTable(
