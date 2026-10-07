@@ -60,15 +60,15 @@ describe("cleanup round surfaces", () => {
       cleanupSurfaceAction(task, { resolutionSurface: surface, suggestedShape: null, suggestedTitle: null }, answer);
     expect(at("create_decision_task", " Entscheiden: Modell ")).toEqual({
       kind: "confirm",
-      label: "decision",
+      label: "createChildTask",
       flow: { kind: "createTask", purpose: "decision", title: "Entscheiden: Modell" },
     });
     expect(at("create_first_slice", "Werkzeugecke sortieren")).toMatchObject({
-      label: "firstSlice",
+      label: "createChildTask",
       flow: { kind: "createTask", purpose: "firstSlice", title: "Werkzeugecke sortieren" },
     });
     expect(at("create_followup", "Nachhalten: Versicherung")).toMatchObject({
-      label: "followup",
+      label: "createChildTask",
       flow: { kind: "createTask", purpose: "followup", title: "Nachhalten: Versicherung" },
     });
     expect(at("rename_item", "Backup-Status prüfen")).toEqual({
@@ -121,10 +121,10 @@ describe("cleanup round surfaces", () => {
       kind: "confirm", label: "doneWhenCriterion", flow: { kind: "addCriterion", text: "Tür ist montiert" },
     });
     expect(at("create_first_slice", "Angebote vergleichen")).toMatchObject({
-      label: "firstSlice", flow: { kind: "createTask", purpose: "firstSlice", title: "Angebote vergleichen" },
+      label: "createProjectTask", flow: { kind: "createTask", purpose: "firstSlice", title: "Angebote vergleichen" },
     });
     expect(at("create_followup", "Nachhalten: Rechnung")).toMatchObject({
-      label: "followup", flow: { kind: "createTask", title: "Nachhalten: Rechnung" },
+      label: "createProjectTask", flow: { kind: "createTask", title: "Nachhalten: Rechnung" },
     });
     expect(at("rename_item", "Neue Haustür montieren")).toMatchObject({
       label: "rename", flow: { kind: "rename", title: "Neue Haustür montieren" },

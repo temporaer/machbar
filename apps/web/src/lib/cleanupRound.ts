@@ -44,9 +44,8 @@ export type CleanupActionLabel =
   | "rename"
   | "doneWhenNotes"
   | "doneWhenCriterion"
-  | "decision"
-  | "firstSlice"
-  | "followup"
+  | "createProjectTask"
+  | "createChildTask"
   | "planTask"
   | "deferProject"
   | "admin"
@@ -126,6 +125,7 @@ export function cleanupSurfaceAction(
     command: value,
     label,
   });
+  const createLabel: CleanupActionLabel = item.targetType === "project" ? "createProjectTask" : "createChildTask";
   switch (surface) {
     case "rename_item":
       return confirm({ kind: "rename", title: text }, "rename");
@@ -134,11 +134,11 @@ export function cleanupSurfaceAction(
         ? confirm({ kind: "addCriterion", text }, "doneWhenCriterion")
         : confirm({ kind: "appendNotes", text }, "doneWhenNotes");
     case "create_decision_task":
-      return confirm({ kind: "createTask", purpose: "decision", title: text }, "decision");
+      return confirm({ kind: "createTask", purpose: "decision", title: text }, createLabel);
     case "create_first_slice":
-      return confirm({ kind: "createTask", purpose: "firstSlice", title: text }, "firstSlice");
+      return confirm({ kind: "createTask", purpose: "firstSlice", title: text }, createLabel);
     case "create_followup":
-      return confirm({ kind: "createTask", purpose: "followup", title: text }, "followup");
+      return confirm({ kind: "createTask", purpose: "followup", title: text }, createLabel);
     case "clarify_admin_target":
       return confirm(
         { kind: "clarifyAdmin", title: result.suggestedTitle?.trim() || item.title, notes: text },

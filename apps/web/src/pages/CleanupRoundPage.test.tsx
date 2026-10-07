@@ -269,7 +269,7 @@ describe("CleanupRoundPage", () => {
       surface: "create_decision_task",
       suggestedTitle: null,
       suggestedDefault: "Welche Ecke zuerst?",
-      button: "Entscheidungsaufgabe anlegen …",
+      button: "Teilaufgabe anlegen …",
       heading: "Entscheidungsaufgabe anlegen?",
       shown: ["Unter", "Keller"],
       field: "Neue Teilaufgabe",
@@ -288,7 +288,7 @@ describe("CleanupRoundPage", () => {
       surface: "create_first_slice",
       suggestedTitle: null,
       suggestedDefault: "Werkzeugecke sortieren",
-      button: "Ersten Schritt anlegen …",
+      button: "Teilaufgabe anlegen …",
       heading: "Ersten Schritt anlegen?",
       shown: ["Unter", "Keller"],
       field: "Neue Teilaufgabe",
@@ -307,7 +307,7 @@ describe("CleanupRoundPage", () => {
       surface: "create_first_slice",
       suggestedTitle: null,
       suggestedDefault: "Angebote vergleichen",
-      button: "Ersten Schritt anlegen …",
+      button: "Aufgabe anlegen …",
       heading: "Ersten Schritt anlegen?",
       shown: ["Projekt", "Keller"],
       field: "Neue Aufgabe",
@@ -326,7 +326,7 @@ describe("CleanupRoundPage", () => {
       surface: "create_followup",
       suggestedTitle: null,
       suggestedDefault: "Versicherung wegen Rohrbruch",
-      button: "Follow-up anlegen …",
+      button: "Aufgabe anlegen …",
       heading: "Follow-up anlegen?",
       shown: ["Projekt", "Keller"],
       field: "Neue Aufgabe",
@@ -479,7 +479,7 @@ describe("CleanupRoundPage", () => {
     renderAt("/more/cleanup-round/r1");
 
     const card = await screen.findByRole("article", { name: "Keller" });
-    await userEvent.click(within(card).getByRole("button", { name: "Ersten Schritt anlegen …" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Teilaufgabe anlegen …" }));
     const sheet = await screen.findByRole("dialog", { name: "Ersten Schritt anlegen?" });
     await waitFor(() => expect(within(sheet).getByLabelText("Neue Teilaufgabe")).toHaveValue("Werkzeugecke sortieren"));
     await userEvent.click(within(sheet).getByRole("button", { name: "Abbrechen" }));
@@ -497,7 +497,7 @@ describe("CleanupRoundPage", () => {
     renderAt("/more/cleanup-round/r1");
 
     const card = await screen.findByRole("article", { name: "Keller" });
-    await userEvent.click(within(card).getByRole("button", { name: "Ersten Schritt anlegen …" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Teilaufgabe anlegen …" }));
     const sheet = await screen.findByRole("dialog", { name: "Ersten Schritt anlegen?" });
     await userEvent.click(await within(sheet).findByRole("button", { name: "Teilaufgabe anlegen" }));
 
