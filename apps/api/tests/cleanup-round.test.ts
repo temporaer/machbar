@@ -477,6 +477,7 @@ describe("cleanup rounds", () => {
 
   it("adds sparse planning context for open, waiting, done, next-action, and criteria evidence", async () => {
     const backup = await project("Backup Konzept");
+    await project("Restore-Dokumentation", { parentId: backup });
     const open = await task("Restore-Test durchführen", { projectId: backup, notes: "Mit einer echten Sicherung testen." });
     const waiting = await task("Antwort Versicherung abwarten", { projectId: backup });
     ctx.handle.db.insert(schema.taskExternalWaits).values({
@@ -492,6 +493,10 @@ describe("cleanup rounds", () => {
     const context = projectContext(graph, backup)!;
     expect(context.planningContext?.currentNextAction).toMatchObject({ id: open, title: "Restore-Test durchführen" });
     expect(context.planningContext?.openChildren).toContainEqual(expect.objectContaining({ title: "Restore-Test durchführen" }));
+    expect(context.planningContext?.openChildren).toContainEqual(expect.objectContaining({
+      title: "Restore-Dokumentation",
+      targetType: "project",
+    }));
     expect(context.planningContext?.waitingChildren).toContainEqual(expect.objectContaining({
       title: "Antwort Versicherung abwarten",
       externalWait: expect.objectContaining({ label: "Versicherung" }),

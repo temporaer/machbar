@@ -123,6 +123,8 @@ Before choosing \`create_followup\`, inspect \`waitingChildren\` and \`doneChild
 
 Use \`doneChildren\` as evidence of what has already been handled. Do not ask the user to do something already represented there.
 
+When a planning child has \`targetType: "project"\`, treat it as a child project rather than a task. Task children omit this discriminator to keep the context sparse.
+
 The context is intentionally sparse. Missing fields usually mean “not relevant or not filled”, not necessarily “false”.
 
 If \`planningContext\` is absent, reason only from the item title, notes, hierarchy titles, and mechanical facts.`;

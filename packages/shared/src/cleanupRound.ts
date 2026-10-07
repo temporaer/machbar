@@ -137,6 +137,8 @@ export interface CleanupItemContext {
 export interface CleanupPlanningChildContext {
   id: number;
   title: string;
+  /** Present for child projects; omitted for task children to keep context sparse. */
+  targetType?: CleanupTargetType;
   status?: string;
   kind?: "action" | "reference";
   blocked?: true;

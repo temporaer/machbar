@@ -48,7 +48,7 @@ const fixtures: Array<{
       planningContext: {
         currentNextAction: { id: 51, title: "Angebote einholen" },
         openChildren: [{ id: 51, title: "Angebote einholen" }],
-        doneChildren: [{ id: 52, title: "Alte Tür entsorgt", status: "completed" }],
+        doneChildren: [{ id: 52, title: "Alte Tür entsorgt", status: "done" }],
         existingAcceptanceCriteria: ["Tür ist montiert, dicht und bezahlt"],
       },
     },
@@ -75,6 +75,7 @@ describe("cleanup round prompt", () => {
     expect(instructions).toContain("Use planningContext before suggesting changes");
     expect(instructions).toContain("Do not suggest a first slice that already exists");
     expect(instructions).toContain("Use `doneChildren` as evidence of what has already been handled");
+    expect(instructions).toContain('targetType: "project"');
     expect(instructions).toContain("Missing fields usually mean “not relevant or not filled”");
     for (const kind of cleanupProposalKinds) expect(instructions).toContain(kind);
     for (const surface of cleanupResolutionSurfaces) expect(instructions).toContain(surface);

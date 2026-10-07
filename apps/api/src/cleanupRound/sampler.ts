@@ -129,7 +129,11 @@ function taskPlanningChild(task: TaskRecord): CleanupPlanningChildContext {
 }
 
 function projectPlanningChild(project: ProjectRecord): CleanupPlanningChildContext {
-  const result: CleanupPlanningChildContext = { id: project.id, title: project.title };
+  const result: CleanupPlanningChildContext = {
+    id: project.id,
+    title: project.title,
+    targetType: "project",
+  };
   if (project.status !== "active") result.status = project.status;
   const label = project.waitingOn?.map((value) => value.trim()).filter(Boolean).join(", ");
   if (label || project.waitingUntil) {
