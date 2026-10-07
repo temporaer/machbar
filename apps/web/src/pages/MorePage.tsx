@@ -54,6 +54,17 @@ export function MorePage() {
               <span aria-hidden="true">›</span>
             </span>
           </Link>
+          {homeAssistant?.intakeReady ? (
+            <Link to="/more/cleanup-round" className="list-link more-list-link">
+              <span>
+                <strong>{strings.cleanupRound}</strong>
+                <small className="list-link-description">
+                  {strings.cleanupRoundDescription}
+                </small>
+              </span>
+              <span aria-hidden="true">›</span>
+            </Link>
+          ) : null}
           <Link to="/more/week" className="list-link more-list-link">
             <span>
               <strong>{strings.weekPlanning}</strong>

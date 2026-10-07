@@ -1,5 +1,12 @@
 import { z } from "zod";
 import {
+  CLEANUP_TEXT_LIMITS,
+  cleanupConfidences,
+  cleanupInferredFlows,
+  cleanupInferredWorkTypes,
+  cleanupProposalKinds,
+  cleanupResolutionSurfaces,
+  cleanupSuggestedShapes,
   intakeDraftIssues,
   intakePlanIssues,
   inheritanceModes,
@@ -171,6 +178,57 @@ export const returnProjectToBacklogSchema = z.object({
 });
 
 export const acknowledgeReviewSchema = projectLifecycleSchema;
+
+export const createCleanupRoundSchema = z.object({
+  scope: z.enum(workItemScopes).optional(),
+}).strict();
+
+const cleanupActionText = z.string().trim().min(1);
+const cleanupActionTitle = z.string().trim().min(1);
+
+/** Narrow, explicit Klärungsrunde micro-flow payloads (no generic AI apply). */
+export const cleanupRenameActionSchema = z.object({
+  title: cleanupActionTitle,
+  expectedRevision: z.number().int().positive().optional(),
+}).strict();
+
+export const cleanupCreateTaskActionSchema = z.object({
+  title: cleanupActionTitle,
+  purpose: z.enum(["decision", "firstSlice", "followup"]),
+}).strict();
+
+export const cleanupAddDoneWhenActionSchema = z.object({
+  text: cleanupActionText,
+}).strict();
+
+export const cleanupClarifyAdminActionSchema = z.object({
+  title: z.string().trim().optional(),
+  notes: z.string().trim().optional(),
+  expectedRevision: z.number().int().positive().optional(),
+}).strict();
+
+const nullableCleanupText = (max: number) => z.string().min(1).max(max).nullable();
+
+/**
+ * Structural contract for one AI triage entry. Boundary normalization
+ * (trimming, truncation, textual nulls) happens before this schema in
+ * `apps/api/src/cleanupRound/validate.ts`; target membership is checked
+ * there against the sampled items.
+ */
+export const cleanupTriageResultSchema = z.object({
+  targetType: z.enum(["task", "project"]),
+  targetId: z.number().int().positive(),
+  proposal: z.enum(cleanupProposalKinds),
+  resolutionSurface: z.enum(cleanupResolutionSurfaces),
+  inferredWorkType: z.enum(cleanupInferredWorkTypes),
+  inferredFlow: z.enum(cleanupInferredFlows),
+  confidence: z.enum(cleanupConfidences),
+  reason: z.string().min(1).max(CLEANUP_TEXT_LIMITS.reason),
+  question: z.string().min(1).max(CLEANUP_TEXT_LIMITS.question),
+  suggestedDefault: nullableCleanupText(CLEANUP_TEXT_LIMITS.suggestedDefault),
+  suggestedTitle: nullableCleanupText(CLEANUP_TEXT_LIMITS.suggestedTitle),
+  suggestedShape: z.enum(cleanupSuggestedShapes).nullable(),
+}).strict();
 
 export const addCriterionSchema = z.object({
   text: z.string().min(1, "Acceptance criterion text must not be empty."),

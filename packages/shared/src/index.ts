@@ -234,7 +234,15 @@ export type ApiErrorCode =
   | "intake_source_retention_failed"
   | "home_assistant_request_lease_lost"
   | "home_assistant_request_exhausted"
-  | "home_assistant_request_not_found";
+  | "home_assistant_request_not_found"
+  | "cleanup_round_not_found"
+  | "cleanup_round_expired"
+  | "cleanup_round_state_conflict"
+  | "cleanup_round_item_not_found"
+  | "cleanup_round_no_candidates"
+  | "cleanup_round_target_mismatch"
+  | "cleanup_round_action_no_change"
+  | "cleanup_round_action_surface_mismatch";
 
 export interface ApiErrorPayload {
   code: ApiErrorCode;
@@ -824,6 +832,7 @@ export interface Agenda {
 export type WeekWorkItemRole = "task" | "story";
 
 export * from "./intake.js";
+export * from "./cleanupRound.js";
 export * from "./inputNormalization.js";
 
 export type WeekWorkItemPlacement =

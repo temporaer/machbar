@@ -210,6 +210,37 @@ revisit date rather than generic inactivity.
 Optional owner/effort planning tools remain available inside Review without
 becoming another required workflow.
 
+The optional **Klärungsrunde** (More, when the Home Assistant AI Task is
+configured) is a planning-clarity pass over semantic work-item quality. Machbar
+Review/Stuck Detection handles mechanical workflow hygiene such as owner, dates,
+waiting/blocking state, stale age, status, and graph next-action gaps. The AI
+must not echo those facts as findings; it asks one focused question about the
+thinking artifact instead: is the title an actual action, is a decision hidden
+inside it, what does done mean, what is the first uncertainty-reducing slice,
+does an incident need aftermath, or is this really information? If the only
+problem is mechanical, the AI should leave the item alone. Suggestions are
+never applied automatically. The AI receives only compact `planningContext`
+when useful: relevant open/waiting/done children, the current next action, and
+existing acceptance criteria. Empty/default fields are omitted so this context
+helps prevent duplicate suggestions without dumping the graph. Each card
+offers **Hinten anstellen** (acknowledge like Review), **Öffnen**,
+**Einschätzung ausblenden** (hides the card, leaves the item unchanged), or one
+button that answers the question. For text answers (new title, done-when,
+decision/first step/follow-up, admin step) the card shows the suggestion as
+an editable answer; the button opens a small confirmation that shows exactly
+what will change (old and new title, the task to create and where, the
+criterion, or the notes entry). Only its confirm button (for example
+**Umbenennen** or **Teilaufgabe anlegen**) changes the item. The change and
+hiding the card happen together: either the item is improved and the card
+disappears, or nothing changes and the sheet keeps the draft and shows the
+error. The sheet says so; the item is not marked reviewed, which stays the
+separate **Hinten anstellen** action. Buttons say
+what they really do: where Machbar has no direct conversion (for example to
+information) the button reads **Öffnen und als Information prüfen**. Items Machbar could not
+assess stay visible as cards; **Erneut versuchen** (on the card, or once in the
+banner when several failed) only re-asks for those items and keeps the
+existing cards.
+
 ### 6. Inventory
 
 **Alles** is exhaustive access to every non-deleted ordinary project and task.

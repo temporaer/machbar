@@ -1,4 +1,5 @@
 import type { TaskReminderInput } from "./index.js";
+import type { CleanupRoundAiResponse, CleanupRoundAnalyzePayload } from "./cleanupRound.js";
 import {
   isAbsentOwnerSuggestion,
   normalizeIntakeNullableAbsenceFields,
@@ -1196,11 +1197,13 @@ export type HomeAssistantRequestErrorCode =
 
 export type HomeAssistantLeasedRequest =
   | { id: string; leaseToken: string; leaseExpiresAt: string; kind: "intake_analyze"; payload: { intakeId: string; taskName: string; instructions: string; text: string | null; attachments: Array<{ id: string; filename: string; mimeType: string; sizeBytes: number }> } }
-  | { id: string; leaseToken: string; leaseExpiresAt: string; kind: "calendar_create"; payload: { intakeId: string; correlationId: string; title: string; description: string | null; location: string | null; allDay: boolean; startDate: string | null; endDate: string | null; startDateTime: string | null; endDateTime: string | null } };
+  | { id: string; leaseToken: string; leaseExpiresAt: string; kind: "calendar_create"; payload: { intakeId: string; correlationId: string; title: string; description: string | null; location: string | null; allDay: boolean; startDate: string | null; endDate: string | null; startDateTime: string | null; endDateTime: string | null } }
+  | { id: string; leaseToken: string; leaseExpiresAt: string; kind: "cleanup_round_analyze"; payload: CleanupRoundAnalyzePayload };
 
 export type HomeAssistantRequestCompletion =
   | { leaseToken: string; outcome: "succeeded"; result: IntakePlan }
   | { leaseToken: string; outcome: "succeeded"; result: HomeAssistantCalendarEventRef }
+  | { leaseToken: string; outcome: "succeeded"; result: CleanupRoundAiResponse }
   | {
       leaseToken: string;
       outcome: "failed";

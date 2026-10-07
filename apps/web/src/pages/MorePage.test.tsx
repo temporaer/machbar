@@ -3,6 +3,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { MorePage } from "./MorePage";
+import { api } from "../lib/api";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -95,6 +96,21 @@ describe("MorePage", () => {
     const link = await screen.findByRole("link", { name: /Tags verwalten/ });
     expect(link).toHaveAttribute("href", "/more/tags");
     expect(container.querySelector(".tag-manager")).toBeNull();
+  });
+
+  it("offers the Klärungsrunde only when the Home Assistant AI Task is ready", async () => {
+    const { unmount } = renderWithProviders(<MorePage />);
+    await screen.findByRole("link", { name: /Aktivitäten/ });
+    expect(screen.queryByRole("link", { name: /Klärungsrunde/ })).not.toBeInTheDocument();
+    unmount();
+
+    const status = await api.getHomeAssistantStatus();
+    vi.mocked(api.getHomeAssistantStatus).mockResolvedValueOnce({ ...status, intakeReady: true });
+    renderWithProviders(<MorePage />);
+    expect(await screen.findByRole("link", { name: /Klärungsrunde/ })).toHaveAttribute(
+      "href",
+      "/more/cleanup-round",
+    );
   });
 
   it("links to the global activity feed", async () => {

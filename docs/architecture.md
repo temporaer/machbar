@@ -83,8 +83,9 @@ to repair compact AI representations before strict structural and semantic
 validation; canonical mutations remain strict. API Zod schemas provide
 structural validation around the same contract.
 
-The reverse bridge is deliberately narrow. It has exactly two request kinds:
-`intake_analyze` and `calendar_create`. Requests use long-polling, leases, and
+The reverse bridge is deliberately narrow. It has exactly three request kinds:
+`intake_analyze`, `cleanup_round_analyze` (the Klärungsrunde, see §8), and
+`calendar_create`. Requests use long-polling, leases, and
 bounded retries; the bridge is not arbitrary Home Assistant RPC. The AI phase
 never mutates Machbar or the calendar. Only the human Apply command creates
 Machbar work, using `createProject()`, `createTask()`, and
@@ -699,6 +700,106 @@ inside those canonical hooks. Focused repair reuses project/task detail,
 `AcceptanceCriteriaEditor`. The owner/effort matrix and sizing list remain
 available as optional secondary planning tools rather than a separate
 Refinement workflow.
+
+### Klärungsrunde — `/more/cleanup-round`
+
+The Klärungsrunde is an on-demand, advisory planning-clarity pass over semantic
+work-item quality. It does not replace Review/Stuck Detection's mechanical
+workflow hygiene: Review knows owners, dates, waits, blockers, next actions,
+stuck reasons, status, and review age; the Klärungsrunde asks a Home Assistant
+AI Task whether a few sampled items preserve enough intent, outcome, and
+decision structure for a tired human to resume them without reconstructing the
+plan from memory.
+
+- **Sampling** (`apps/api/src/cleanupRound/sampler.ts`) selects, not
+  diagnoses: up to five open tasks (captured/actionable/someday action tasks in
+  no or an open project) and active/backlog projects visible to the viewer,
+  excluding items reviewed in the last seven days and items already in an open
+  round. Weighted randomness favours staleness, notes, children, and vague
+  titles, caps two items per project/parent cluster, and mixes tasks with
+  projects when possible.
+- **Contract** (`packages/shared/src/cleanupRound.ts`): each sampled item is
+  sent as a `CleanupItemContext` with mechanical facts as context only. The AI
+  must not report missing owner/due/scheduled/revisit dates, stale age,
+  blocked state, or graph next-action gaps as findings; those belong to
+  Review/Stuck Detection. It instead looks for unclear intent, hidden
+  decisions, vague outcomes, wrong shape, weak uncertainty-reducing slices,
+  incident follow-up, and admin target ambiguity. A sparse `planningContext`
+  adds only relevant open/waiting/done children, the current next action, and
+  non-empty project acceptance criteria, bounded for the Home Assistant AI
+  Task; empty/default/null fields and the context itself are omitted when
+  there is no useful evidence. This lets the AI avoid duplicating existing
+  plans or completed work without receiving the whole graph. The AI returns
+  one `CleanupTriageResult` per item from closed proposal, resolution surface,
+  inferred work type, and flow vocabularies. Work type and uphill/downhill are
+  reasoning lenses and are never persisted on tasks or projects.
+- **Validation** (`validate.ts`) normalizes strings and enums, trims excessive
+  text, rejects unknown targets, type mismatches, duplicates, and malformed
+  entries as warnings, and keeps raw and validated responses separately. All
+  valid → `ready`; some → `partial`; none → `failed`. Retry re-analyzes only
+  `failed` items, keeps accepted (`ready`) cards and the round summary, and
+  feeds validation issues back into the prompt; a round that still holds
+  accepted cards stays `partial` even when the retry fails. Failed items stay
+  reserved from new rounds while their round is open. The Home Assistant
+  structure only enforces the response envelope; this validator is the strict
+  boundary: the Home Assistant result fields are optional and nullable, so an
+  incomplete entry reaches this validator and becomes one `schema_invalid`
+  warning (the round turns `partial`) instead of failing the whole response.
+- **Persistence**: `cleanup_rounds` and `cleanup_round_items` are temporary
+  operational state (24-hour expiry, purged with intake jobs); a
+  `home_assistant_requests` row belongs to either an intake job or a round.
+- **Resolution**: AI results never mutate work items by themselves; every
+  change needs an explicit user confirmation. “Hinten anstellen” reuses the
+  canonical Review acknowledgement (`reviewedAt`) and is the only action that
+  sets it. “Einschätzung ausblenden” only dismisses the card. The pure mapping
+  in `apps/web/src/lib/cleanupRound.ts` turns each surface into one of:
+  - a **micro-flow** (`CleanupMicroFlow`) for text-shaped surfaces. The card
+    shows the AI suggestion as an editable answer; the button opens
+    `CleanupRoundActionSheet`, which loads the current item and shows the
+    target plus the exact title/text before anything is written. Confirming
+    sends one request to a narrow action endpoint,
+    `POST /api/cleanup-rounds/:id/items/:itemId/actions/<action>`
+    (`apps/api/src/cleanupRound/actions.ts`). In one transaction it checks
+    that the round is open and the card is open and `ready`; that the action
+    fits the card's stored `resolutionSurface` (`rename` ← `rename_item`;
+    `create-task` ← `create_decision_task`/`create_first_slice`/
+    `create_followup`; `add-done-when` ← `edit_done_when`; `clarify-admin` ←
+    `clarify_admin_target`; otherwise `cleanup_round_action_surface_mismatch`,
+    and a missing or unreadable stored result is rejected); and that the
+    target still exists with the card's type. It then calls the canonical domain
+    function and dismisses the card (never `reviewedAt`). Either the item
+    improves and the card disappears, or nothing changes; the page renders the
+    returned round:
+    - `rename` (rename_item): `updateTask` / `updateProject` with the loaded
+      `expectedRevision`, so stale writes are rejected;
+    - `create-task` (decision, first slice, follow-up): `createChildTask`
+      under a task, or `createTask` with `projectId` in a project, with the
+      normal owner/context/tag inheritance;
+    - `add-done-when`: `addCriterion` for a project; for a task, the
+      `appendTaskNotes` notes append of the `Erledigt, wenn: …` block;
+    - `clarify-admin`: a rename to `suggestedTitle` and/or a notes append with
+      the recipient/document details, both previewed and editable; at least
+      one must change, and `expectedRevision` is checked before either write.
+  - an existing `useWorkItemCommands()` workflow where Machbar has no specific
+    change to offer: `task.convertToProject` (choose_shape → project; its sheet
+    is already the confirmation), `task.plan`/`story.defer` (rhythm/revisit,
+    no date prefilled), `task.structure`/`story.structure` (“Öffnen und
+    strukturieren”), and “Öffnen und als Information prüfen” for reference
+    suggestions. There is no canonical action → reference conversion
+    (`makeTaskAction` only promotes references), so Machbar does not add a
+    parallel one.
+  - no extra button, when the surface only reaches the plain item view that
+    the card's own “Öffnen” already covers.
+
+  There is no generic “apply AI result” endpoint: each action endpoint accepts
+  only its own strict payload and reuses the canonical domain function inside
+  the card-resolution transaction. Failed items
+  stay visible as cards with open and hide; a single failed item carries its
+  own retry, while several failed items share one banner retry.
+
+The More entry appears only when the Home Assistant AI Task is ready. Older
+Home Assistant components answer the new request kind with
+`unsupported_request`, so the round fails visibly instead of hanging.
 
 ### Alles — `/more/all`
 
