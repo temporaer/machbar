@@ -748,14 +748,14 @@ export function TaskDetailSheet() {
             )}
             {notBeforeValue ? (
               <DetailPropertyPill
-                label={strings.railAvailableFrom}
+                label={strings.planning}
                 onClick={() => runCommand("task.availability")}
               >
                 <span>{notBeforeValue}</span>
               </DetailPropertyPill>
             ) : (
               <DetailPropertyPill variant="unset" onClick={() => runCommand("task.availability")}>
-                {strings.railAvailableFrom}
+                {strings.planning}
               </DetailPropertyPill>
             )}
             {task.reminders.length > 0 && reminderSummary ? (

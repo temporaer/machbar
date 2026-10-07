@@ -1137,6 +1137,8 @@ describe("TaskDetailSheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(56, {
+        notBeforeAt: null,
+        notBeforeDate: null,
         scheduledDate: null,
         dueDate: null,
         expectedRevision: 1,
@@ -1152,10 +1154,10 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Noch nicht verfügbar");
 
-    await userEvent.click(screen.getByRole("button", { name: "Ab …" }));
+    await userEvent.click(screen.getByRole("button", { name: "Planung" }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Ab: Noch nicht verfügbar" }),
+      await screen.findByRole("dialog", { name: "Planung: Noch nicht verfügbar" }),
     ).toBeInTheDocument();
   });
 
@@ -1171,10 +1173,10 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Abends verfügbar");
 
-    await userEvent.click(screen.getByRole("button", { name: /Ab ….*18:00/ }));
+    await userEvent.click(screen.getByRole("button", { name: /Planung.*18:00/ }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Ab: Abends verfügbar" }),
+      await screen.findByRole("dialog", { name: "Planung: Abends verfügbar" }),
     ).toBeInTheDocument();
   });
 
@@ -1197,13 +1199,15 @@ describe("TaskDetailSheet", () => {
       }),
     );
 
-    const dueDate = await screen.findByLabelText("Fällig");
+    const dueDate = await screen.findByLabelText("Fällig bis");
     fireEvent.change(dueDate, { target: { value: "13. September 2026" } });
     fireEvent.blur(dueDate);
     await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(59, {
+        notBeforeAt: null,
+        notBeforeDate: null,
         scheduledDate: "2026-09-10",
         dueDate: "2026-09-13",
         expectedRevision: 1,

@@ -818,7 +818,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" }), makeMember({ id: 2, name: "Noah" })]);
   });
 
-  it("reveals the fixed active-project rail commands without backlog revisit", async () => {
+  it("reveals the fixed active-project rail commands without a generic detail action", async () => {
     const story = makeProject({ id: 40, title: "Aktive Geschichte", status: "active", ownerMemberId: 1 });
     const { container } = renderWithProviders(<Harness story={story} />);
     await screen.findByText("Aktive Geschichte");
@@ -826,12 +826,13 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     swipe(container, -100);
     const chips = screen.getByRole("group", { name: "Weitere Aktionen" });
     expect(within(chips).queryByRole("button", { name: "Wiedervorlage" })).not.toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Nächster Schritt" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Planung" })).toBeInTheDocument();
     const mainGrid = chips.querySelector(".rail-main-grid");
-    expect(mainGrid?.querySelectorAll("button")).toHaveLength(2);
+    expect(mainGrid?.querySelectorAll("button")).toHaveLength(3);
     expect(mainGrid).toHaveStyle({
-      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+      gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     });
     expect(chips.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
   });
@@ -922,6 +923,33 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("uses the revisit workflow for Planung on an active waiting project", async () => {
+    const story = makeProject({
+      id: 47,
+      title: "Wartendes Projekt",
+      status: "active",
+      ownerMemberId: 1,
+      nextAction: null,
+      stuckReason: null,
+      waitingOn: ["Rückmeldung vom Bauamt"],
+    });
+    renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Wartendes Projekt");
+
+    const chips = openChips();
+    expect(within(chips).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Planung",
+      "Struktur",
+      "Nächster Schritt",
+    ]);
+
+    await userEvent.click(within(chips).getByRole("button", { name: "Planung" }));
+
+    const deferSheet = await screen.findByRole("dialog");
+    expect(within(deferSheet).getByText("Bis wann zurückstellen?")).toBeInTheDocument();
+    expect(within(deferSheet).queryByLabelText("Fällig")).not.toBeInTheDocument();
+  });
+
   it("edits acceptance criteria and dates in targeted popups without leaving the list", async () => {
     const story = makeProject({
       id: 46,
@@ -955,7 +983,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     chips = openChips();
     await userEvent.click(
-      within(chips).getByRole("button", { name: "Wiedervorlage" }),
+      within(chips).getByRole("button", { name: "Planung" }),
     );
     // `story.defer` opens the canonical revisit-only workflow.
     const deferSheet = await screen.findByRole("dialog");
@@ -985,7 +1013,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
       }),
     );
     await userEvent.click(
-      within(openChips()).getByRole("button", { name: "Wiedervorlage" }),
+      within(openChips()).getByRole("button", { name: "Planung" }),
     );
     const noRevisitSheet = await screen.findByRole("dialog");
     await userEvent.click(
@@ -1043,14 +1071,14 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 47");
   });
 
-  it("navigates directly to the project detail page through the rail's 'Mehr' action", async () => {
+  it("does not add a generic project detail action to the rail", async () => {
     const story = makeProject({ id: 48, title: "Direkt zur Detailseite", status: "active", ownerMemberId: 1 });
     renderWithProjectRoute(<Harness story={story} />);
     await screen.findByText("Direkt zur Detailseite");
 
     const chips = openChips();
-    await userEvent.click(within(chips).getByRole("button", { name: "Mehr" }));
-    expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 48");
+    expect(within(chips).queryByRole("button", { name: "Mehr" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
   });
 });
 
@@ -1575,12 +1603,12 @@ describe("ProjectStoryRow – fixed action rail", () => {
     await screen.findByText("Kompakte Chips");
 
     const chips = openChips();
-    for (const name of ["Struktur", "Mehr"]) {
+    for (const name of ["Nächster Schritt", "Struktur", "Planung"]) {
       const button = within(chips).getByRole("button", { name });
       expect(button).toHaveClass("btn", "btn-sm");
       expect(button.textContent).toBe(name);
     }
-    expect(chips.querySelector(".rail-main-grid")?.querySelectorAll("button")).toHaveLength(2);
+    expect(chips.querySelector(".rail-main-grid")?.querySelectorAll("button")).toHaveLength(3);
     expect(chips.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
   });
 });

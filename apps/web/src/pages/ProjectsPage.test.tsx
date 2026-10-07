@@ -242,9 +242,13 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
       expect(badge).not.toHaveAttribute("role");
       expect(badge).not.toHaveAttribute("tabindex");
       fireEvent.click(within(row).getByRole("button", { name: "Weitere Aktionen" }));
-      const chips = within(row).getByRole("group", { name: "Weitere Aktionen" });
-      expect(within(chips).getAllByRole("button").length).toBeGreaterThan(0);
-      expect(within(chips).queryAllByRole("combobox")).toHaveLength(0);
+      if (label) {
+        const chips = within(row).getByRole("group", { name: "Weitere Aktionen" });
+        expect(within(chips).getAllByRole("button").length).toBeGreaterThan(0);
+        expect(within(chips).queryAllByRole("combobox")).toHaveLength(0);
+      } else {
+        expect(within(row).queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
+      }
     }
   });
 
@@ -271,18 +275,13 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     );
   });
 
-  it("reveals fixed project rail actions on a left swipe and keeps status transitions in the lifecycle rail", async () => {
+  it("keeps lifecycle-only terminal projects out of the contextual left rail", async () => {
     const { container } = renderWithProviders(<ProjectsPage />);
     await screen.findByText("Archivierte Geschichte");
 
     const row = rowFor(container, "Archivierte Geschichte");
     swipeRow(row, -100);
-    const chips = within(row).getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(chips).queryByRole("button", { name: "Später" })).not.toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
-    expect(within(chips).queryByRole("button", { name: "Zurückstellen …" })).not.toBeInTheDocument();
-    expect(within(chips).queryByRole("button", { name: "Archivieren" })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
 
     swipeRow(row, 100);
     const lifecycle = within(row).getByRole("group", { name: "Status" });

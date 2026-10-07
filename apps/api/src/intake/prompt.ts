@@ -4,6 +4,9 @@ import { householdAiContextSection } from "../aiContext.js";
 const rules = [
   "Today is {today} ({weekday}) in timezone {timezone}. Resolve relative dates using this date and timezone.",
   "Extract the user's intended tasks, projects, references, and calendar events. Preserve explicit dates, times, relationships, and reminder intent.",
+  "Use planning fields carefully: notBeforeAt/notBeforeDate means “Wieder ansehen ab” and gates attention before that point; scheduledDate means “Geplant für” and records intended work; dueDate means “Fällig bis” and is a real deadline. Do not fill these fields mechanically or confuse review-from with planned-for.",
+  "For waiting tasks, distinguish “Wartet auf” (the external person, institution, event, decision, or information) from “Update” (new information to incorporate). Moving into or out of waiting is a lifecycle decision, not a planning action.",
+  "For projects, use planning for timing and revisit; prefer a next step, structure, or goal for progress. Do not activate a backlog project because it has a planning or revisit date.",
   "Assign owners only when the source supports that assignment and the person is a household member who can perform the work; mentioning someone who cannot perform it is not an ownership assignment.",
   "Flag genuine unresolved intent rather than inventing a decision.",
   "Household members: {members}.",

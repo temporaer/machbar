@@ -20,9 +20,8 @@ vi.mock("../lib/api", () => ({
 const mockedApi = vi.mocked(api, true);
 
 /**
- * Coverage for the fixed row rail's `Ab …` sheet: every preset writes the
- * persistent task `notBeforeAt` availability gate and never touches
- * `scheduledDate`, which remains owned by `TaskPlanSheet`.
+ * Compatibility coverage for the old availability import: it now renders
+ * the unified planning sheet and commits all temporal fields together.
  */
 describe("TaskAvailabilitySheet", () => {
   beforeEach(() => {
@@ -36,25 +35,28 @@ describe("TaskAvailabilitySheet", () => {
     vi.useRealTimers();
   });
 
-  it("writes a same-day 'In einer Weile' availability gate without touching scheduledDate", async () => {
+  it("writes a same-day 'In einer Weile' availability gate from the unified sheet", async () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 40 }));
     const task = makeTask({ id: 40, title: "Wäsche aufhängen", scheduledDate: "2026-09-14" });
     const onClose = vi.fn();
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "In einer Weile" }));
+    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(40, {
         notBeforeAt: expect.any(String),
         notBeforeDate: expect.any(String),
+        scheduledDate: "2026-09-14",
+        dueDate: null,
         expectedRevision: 1,
       }),
     );
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("writes a same-day 'Heute Abend' availability gate without touching scheduledDate", async () => {
+  it("writes a same-day 'Heute Abend' availability gate", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 8, 19, 18, 0));
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 41 }));
@@ -65,10 +67,15 @@ describe("TaskAvailabilitySheet", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Heute Abend" }));
     });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    });
 
     expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
       notBeforeAt: expect.any(String),
       notBeforeDate: expect.any(String),
+      scheduledDate: null,
+      dueDate: null,
       expectedRevision: 1,
     });
     expect(onClose).toHaveBeenCalled();
@@ -90,18 +97,21 @@ describe("TaskAvailabilitySheet", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("sets a future date (Morgen) as availability, not a scheduledDate commit", async () => {
+  it("sets a future date (Morgen) as availability", async () => {
     mockedApi.updateTask.mockResolvedValue(makeTask({ id: 42 }));
     const task = makeTask({ id: 42, title: "Steuer einreichen" });
     const onClose = vi.fn();
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Morgen" })[0]!);
+    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
         notBeforeAt: expect.any(String),
         notBeforeDate: expect.any(String),
+        scheduledDate: null,
+        dueDate: null,
         expectedRevision: 1,
       }),
     );
@@ -115,11 +125,14 @@ describe("TaskAvailabilitySheet", () => {
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "Ab-Datum entfernen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(44, {
         notBeforeAt: null,
         notBeforeDate: null,
+        scheduledDate: null,
+        dueDate: null,
         expectedRevision: 1,
       }),
     );
@@ -130,14 +143,14 @@ describe("TaskAvailabilitySheet", () => {
     const task = makeTask({ id: 45, title: "Termin abstimmen" });
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={vi.fn()} />);
 
-    await userEvent.type(screen.getByLabelText("Anderes Datum"), "morgen");
+    await userEvent.type(screen.getByLabelText("Wieder ansehen ab"), "morgen");
     await userEvent.tab();
     await userEvent.clear(screen.getByLabelText("Uhrzeit"));
 
     expect(screen.getByRole("button", { name: "Fertig" })).toBeDisabled();
   });
 
-  it("escapes into the full task.plan workflow via 'Einplanen / Deadline …'", async () => {
+  it("uses the same unified planning workflow for task.availability", async () => {
     const task = makeTask({ id: 43, title: "Handwerker beauftragen" });
     mockedApi.getTask.mockResolvedValue(task);
 
@@ -155,10 +168,8 @@ describe("TaskAvailabilitySheet", () => {
     renderWithProviders(<Harness />);
 
     await userEvent.click(screen.getByRole("button", { name: "open availability" }));
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Einplanen / Deadline …" }),
-    );
-
-    expect(await screen.findByLabelText("Wann nimmst du dir das vor?")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Wieder ansehen ab")).toBeInTheDocument();
+    expect(screen.getByLabelText("Geplant für")).toBeInTheDocument();
+    expect(screen.getByLabelText("Fällig bis")).toBeInTheDocument();
   });
 });

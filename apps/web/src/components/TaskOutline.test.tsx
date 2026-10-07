@@ -96,7 +96,7 @@ describe("TaskOutline", () => {
 
     expect(
       await screen.findByText(
-        "Nach rechts wischen: „Erledigen / Wieder öffnen“. Nach links wischen öffnet weitere Aktionen wie Zuweisen, Planen und Notizen. Am Desktop geht das auch über ⋯.",
+        "Nach rechts wischen: „Erledigen / Wieder öffnen“. Nach links wischen öffnet kontextbezogene Aktionen ohne Statuswechsel. Am Desktop geht das auch über ⋯.",
       ),
     ).toBeInTheDocument();
 

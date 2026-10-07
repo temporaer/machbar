@@ -387,7 +387,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     );
   });
 
-  it("reveals the fixed Ab/Einplanen/Mehr rail (not an action) on the opposite swipe direction", async () => {
+  it("reveals contextual planning/structure/note actions on the opposite swipe direction", async () => {
     const task = makeTask({ id: 7, title: "Projektplan", status: "actionable" });
     const { container } = renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Projektplan");
@@ -395,9 +395,9 @@ describe("TaskRow – primary swipe direction mapping", () => {
     swipe(container, -100);
 
     const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(rail).getByRole("button", { name: "Ab …" })).toBeInTheDocument();
-    expect(within(rail).getByRole("button", { name: "Einplanen" })).toBeInTheDocument();
-    expect(within(rail).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Planung" })).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Notiz" })).toBeInTheDocument();
     expect(mockedApi.completeTask).not.toHaveBeenCalled();
     expect(mockedApi.cancelTask).not.toHaveBeenCalled();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
@@ -410,10 +410,10 @@ describe("TaskRow – primary swipe direction mapping", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
-    expect(screen.getByRole("button", { name: "Ab …" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Planung" })).toBeInTheDocument();
   });
 
-  it("renders exactly the fixed Ab/Einplanen/Mehr rail, never configurable per row", async () => {
+  it("renders exactly the fixed planning/structure/note rail, never configurable per row", async () => {
     const task = makeTask({ id: 10, title: "Kompakte Aktionen", status: "actionable", projectId: 2 });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
     await screen.findByText("Kompakte Aktionen");
@@ -421,7 +421,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
 
     const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
-    for (const name of ["Ab …", "Einplanen", "Mehr"]) {
+    for (const name of ["Planung", "Struktur", "Notiz"]) {
       const button = within(rail).getByRole("button", { name });
       expect(button).toHaveClass("btn", "btn-sm");
       expect(button.textContent).toBe(name);
@@ -432,12 +432,62 @@ describe("TaskRow – primary swipe direction mapping", () => {
     expect(mainGrid).toHaveStyle({
       gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     });
-    // There is no separate overflow grid anymore — `Mehr` opens the task
-    // detail directly instead of another menu.
+    // There is no separate overflow grid and no generic detail action.
     expect(screen.queryByRole("group", { name: "Mehr …" })).not.toBeInTheDocument();
   });
 
-  it("opens the task detail directly from the 'Mehr' rail button", async () => {
+  it("uses waiting-for, update, and planning actions for tasks with an external wait", async () => {
+    const task = makeTask({
+      id: 103,
+      title: "Auf Antwort warten",
+      status: "actionable",
+      externalWait: { waitingFor: "Amt", revisitDate: null },
+    });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Auf Antwort warten");
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+
+    const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
+    expect(
+      within(rail).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["Wartet auf", "Update", "Planung"]);
+    expect(within(rail).queryByRole("button", { name: "Erledigt" })).not.toBeInTheDocument();
+    expect(within(rail).queryByRole("button", { name: "Irgendwann" })).not.toBeInTheDocument();
+  });
+
+  it("uses Planung/Art/Struktur for captured tasks without lifecycle labels", async () => {
+    const task = makeTask({ id: 101, title: "Unklarer Eingang", status: "captured" });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Unklarer Eingang");
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+
+    const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
+    for (const name of ["Planung", "Art", "Struktur"]) {
+      expect(within(rail).getByRole("button", { name })).toBeInTheDocument();
+    }
+    expect(within(rail).queryByRole("button", { name: "Erledigt" })).not.toBeInTheDocument();
+    expect(within(rail).queryByRole("button", { name: "Machbar" })).not.toBeInTheDocument();
+  });
+
+  it("uses Art/Struktur/Notiz for reference items", async () => {
+    const task = makeTask({
+      id: 102,
+      title: "Öffnungszeiten",
+      kind: "reference",
+      status: "captured",
+    });
+    renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
+    await screen.findByText("Öffnungszeiten");
+    await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
+
+    const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
+    expect(within(rail).getByRole("button", { name: "Art" })).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
+    expect(within(rail).getByRole("button", { name: "Notiz" })).toBeInTheDocument();
+    expect(within(rail).queryByRole("button", { name: "Erledigt" })).not.toBeInTheDocument();
+  });
+
+  it("keeps task details on the row tap rather than adding a generic rail button", async () => {
     const task = makeTask({ id: 11, title: "Angebot einholen", status: "actionable" });
     renderWithProviders(
       <div>
@@ -448,12 +498,12 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await screen.findByText("Angebot einholen");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Mehr" }));
-
-    expect(screen.getByTestId("open-task")).toHaveTextContent("11");
+    const rail = screen.getByRole("group", { name: "Weitere Aktionen" });
+    expect(within(rail).queryByRole("button", { name: "Mehr" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("open-task")).toHaveTextContent("none");
   });
 
-  it("opens the focused Ab workflow (TaskAvailabilitySheet) from the 'Ab …' rail button", async () => {
+  it("opens the unified planning workflow from the 'Planung' rail button", async () => {
     const task = makeTask({ id: 9, title: "Kurz aufschieben", status: "actionable" });
     mockedApi.getTask.mockResolvedValue(task);
     renderWithProviders(
@@ -465,15 +515,15 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await screen.findByText("Kurz aufschieben");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Ab …" }));
+    await userEvent.click(screen.getByRole("button", { name: "Planung" }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Ab: Kurz aufschieben" }),
+      await screen.findByRole("dialog", { name: "Planung: Kurz aufschieben" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "In einer Weile" })).toBeInTheDocument();
   });
 
-  it("opens the focused planning workflow (TaskPlanSheet) from the 'Einplanen' rail button", async () => {
+  it("keeps the unified planning workflow available from the same rail command", async () => {
     const task = makeTask({ id: 19, title: "Struktur ändern", status: "actionable", projectId: 2 });
     mockedApi.getTask.mockResolvedValue(task);
     renderWithProviders(
@@ -485,10 +535,10 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await screen.findByText("Struktur ändern");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Einplanen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Planung" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Planen: Struktur ändern" });
-    expect(within(dialog).getByLabelText("Wann nimmst du dir das vor?")).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog", { name: "Planung: Struktur ändern" });
+    expect(within(dialog).getByLabelText("Geplant für")).toBeInTheDocument();
   });
 
   it("adds a successor from the '+' affordance inside an organizable outline and returns focus to the task", async () => {
@@ -664,7 +714,7 @@ describe("TaskRow – calm shared card presentation", () => {
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
 
     await screen.findByText("Erst abends erledigen");
-    expect(screen.getByText(/Ab: .*18:00/)).toBeInTheDocument();
+    expect(screen.getByText(/Wieder ansehen ab: .*18:00/)).toBeInTheDocument();
   });
 
   it("keeps a long wrapping title complete while tags occupy the upper-right", async () => {
@@ -789,20 +839,17 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     );
   });
 
-  it("plans via the focused TaskPlanSheet workflow reached from the Später sheet's escape hatch", async () => {
+  it("plans via the unified planning sheet", async () => {
     const task = makeTask({ id: 31, title: "Termin vereinbaren", status: "actionable" });
     renderOutlineWithDetail(task);
     await screen.findByText("Termin vereinbaren");
 
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Ab …" }));
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Einplanen / Deadline …" }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: "Planung" }));
 
-    await screen.findByLabelText("Wann nimmst du dir das vor?");
+    await screen.findByLabelText("Geplant für");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Morgen" })[1]!);
 
     // Choosing a shortcut is a local draft, not an immediate commit — the
     // sheet stays open and nothing is saved until "Fertig".
@@ -813,6 +860,8 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
+        notBeforeAt: null,
+        notBeforeDate: null,
         scheduledDate: resolveScheduleShortcut("tomorrow"),
         dueDate: null,
         expectedRevision: 1,

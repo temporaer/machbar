@@ -6,8 +6,7 @@ import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useIdentity } from "../lib/identity";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
-import { TaskPlanSheet } from "./TaskPlanSheet";
-import { TaskAvailabilitySheet } from "./TaskAvailabilitySheet";
+import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { TaskStructureSheet } from "./TaskStructureSheet";
 import { TaskRemindersSheet } from "./TaskRemindersSheet";
 import { TaskWaitSheet } from "./TaskWaitSheet";
@@ -18,6 +17,7 @@ import { TaskPrioritySheet } from "./TaskPrioritySheet";
 import { TaskTagsSheet } from "./TaskTagsSheet";
 import { TaskContextsSheet } from "./TaskContextsSheet";
 import { TaskConvertToProjectSheet } from "./TaskConvertToProjectSheet";
+import { TaskShapeSheet } from "./TaskShapeSheet";
 import { useStrings } from "../lib/strings";
 
 /**
@@ -55,9 +55,11 @@ export function TaskWorkflowHost() {
 
   switch (workflow.current.kind) {
     case "plan":
-      return <TaskPlanSheet task={task} onClose={close} />;
+      return <TaskPlanningSheet task={task} onClose={close} focus="scheduled" />;
     case "availability":
-      return <TaskAvailabilitySheet task={task} onClose={close} />;
+      return <TaskPlanningSheet task={task} onClose={close} focus="availability" />;
+    case "shape":
+      return <TaskShapeSheet task={task} onClose={close} />;
     case "structure":
       return <TaskStructureSheet task={task} onClose={close} />;
     case "reminders":

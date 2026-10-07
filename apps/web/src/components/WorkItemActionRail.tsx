@@ -12,13 +12,12 @@ interface WorkItemActionRailProps {
  * Fixed row rail shared by tasks and projects — replaces the
  * former user-configurable favorites/overflow rail
  * (`railConfig.ts`/`railConfigContext.tsx`/`WorkItemCommandRail.tsx`):
- * receives the fixed actions for the current item in display order. Tasks use
- * **Ab … · Einplanen · Mehr**; projects keep their own revisit/structure
- * labels. `Mehr` opens the item's
- * detail directly — it is not another overflow menu. Status/lifecycle
- * transitions (and, for tasks, waiting/follow-up) live in the separate
- * status rail, not here — see `TaskRow.tsx`'s/`ProjectStoryRow.tsx`'s
- * `*-row-lifecycle` group.
+ * receives the fixed actions for the current item in display order. Task rails
+ * use planning, shape, waiting, note, and structure actions according to the
+ * task's status/kind; projects use contextual planning, structure, goal, and
+ * next-step actions.
+ * Status/lifecycle transitions live in the separate status rail, not here —
+ * see `TaskRow.tsx`'s/`ProjectStoryRow.tsx`'s `*-row-lifecycle` group.
  */
 export function WorkItemActionRail({
   kind,

@@ -132,9 +132,10 @@ projects still appear in Week because they are intentional planning signals;
 unscheduled backlog-project tasks stay out of **Ohne Planung** until the project
 is active.
 
-Each task has distinct temporal semantics: `notBeforeAt` ("Ab …") gates when it
-may enter the executable pool, `scheduledDate` ("Geplant für …") records when
-the household intends to work on it, `dueDate` records the real deadline or
+Each task has distinct temporal semantics: `notBeforeAt`/`notBeforeDate`
+("Wieder ansehen ab") gates when it may enter the executable pool,
+`scheduledDate` ("Geplant für …") records when the household intends to work
+on it, `dueDate` records the real deadline or
 constraint, and `externalWait.revisitDate` records the follow-up date for a
 direct external wait. Week task placement uses the attention dates
 `scheduledDate`/`dueDate`/`externalWait.revisitDate`; `notBeforeAt` is only an
