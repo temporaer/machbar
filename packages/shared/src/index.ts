@@ -81,6 +81,11 @@ export type InheritanceMode = (typeof inheritanceModes)[number];
 /** household = shared with the household; work = owner-only, never
  * contributes to household points. Uniform down an item's whole subtree. */
 export type WorkItemScope = (typeof workItemScopes)[number];
+export interface HouseholdAiContext {
+  householdDescription: string | null;
+  longTermDirection: string | null;
+  suggestionGuidance: string | null;
+}
 export type TaskSize = (typeof taskSizes)[number];
 /** "action" = actionable work, the default for a task node. "reference" =
  * non-actionable outline material (headings, links, documents, notes) that

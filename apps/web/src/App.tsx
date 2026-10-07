@@ -31,6 +31,7 @@ import { CleanupRoundPage } from "./pages/CleanupRoundPage";
 import { DebugPage } from "./pages/DebugPage";
 import { HomeAssistantPage } from "./pages/HomeAssistantPage";
 import { McpPage } from "./pages/McpPage";
+import { AiContextPage } from "./pages/AiContextPage";
 import { IntakeReviewPage } from "./pages/IntakeReviewPage";
 import { LocaleProvider } from "./lib/locale";
 import { ThemeProvider } from "./lib/theme";
@@ -84,6 +85,7 @@ function Shell() {
             <Route path="/more/activity" element={<ActivityPage />} />
             <Route path="/more/cleanup-round" element={<CleanupRoundPage />} />
             <Route path="/more/cleanup-round/:id" element={<CleanupRoundPage />} />
+            <Route path="/more/ai-context" element={<AiContextPage />} />
             <Route
               path="/more/integrations/home-assistant"
               element={<HomeAssistantPage />}

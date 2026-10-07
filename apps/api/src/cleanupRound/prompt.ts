@@ -1,4 +1,5 @@
-import type { CleanupItemContext, CleanupValidationIssue } from "@machbar/shared";
+import type { CleanupItemContext, CleanupValidationIssue, HouseholdAiContext } from "@machbar/shared";
+import { householdAiContextSection } from "../aiContext.js";
 import {
   cleanupConfidences,
   cleanupInferredFlows,
@@ -237,6 +238,7 @@ function formatValidationFeedback(issues: readonly CleanupValidationIssue[]): st
 export function buildCleanupRoundInstructions(input: {
   items: readonly CleanupItemContext[];
   validationIssues?: readonly CleanupValidationIssue[];
+  aiContext?: HouseholdAiContext | null;
 }): string {
   const sections = [
     ROLE,
@@ -251,6 +253,8 @@ export function buildCleanupRoundInstructions(input: {
     HOUSEHOLD_FEW_SHOT_EXAMPLES,
     contractSection(),
   ];
+  const aiContextSection = householdAiContextSection(input.aiContext);
+  if (aiContextSection) sections.push(aiContextSection);
   if (input.validationIssues && input.validationIssues.length > 0) {
     sections.push(
       `A previous answer was partly rejected by Machbar's validation. Fix these problems:\n${formatValidationFeedback(input.validationIssues)}`,

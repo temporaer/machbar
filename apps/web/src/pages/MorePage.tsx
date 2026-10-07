@@ -199,6 +199,13 @@ export function MorePage() {
           </div>
 
           <div className="more-link-group">
+            <Link to="/more/ai-context" className="list-link more-list-link">
+              <span>
+                <strong>{strings.aiContextTitle}</strong>
+                <small className="list-link-description">{strings.aiContextHint}</small>
+              </span>
+              <span aria-hidden="true">›</span>
+            </Link>
             <Link to="/more/tags" className="list-link more-list-link">
               <span>
                 <strong>{strings.manageTags}</strong>

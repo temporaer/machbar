@@ -118,6 +118,39 @@ describe("cleanup round prompt", () => {
     expect(instructions.indexOf("=== SAMPLED ITEMS")).toBeGreaterThan(instructions.indexOf("Output contract"));
   });
 
+  it("adds non-empty household context before sampled item JSON without weakening fixed rules", () => {
+    const withContext = buildCleanupRoundInstructions({
+      items,
+      aiContext: {
+        householdDescription: "Lea und Jonas sind Zwillinge.",
+        longTermDirection: "",
+        suggestionGuidance: "Bevorzuge kleine nächste Schritte.",
+      },
+    });
+    expect(withContext).toContain("## Household context from the user");
+    expect(withContext).toContain("### Household description");
+    expect(withContext).toContain("Lea und Jonas sind Zwillinge.");
+    expect(withContext).toContain("### AI suggestion preferences");
+    expect(withContext).toContain("Bevorzuge kleine nächste Schritte.");
+    expect(withContext).not.toContain("### Long-term direction");
+    expect(withContext).toContain("required JSON schemas");
+    expect(withContext).toContain("app validation");
+    expect(withContext.indexOf("## Household context from the user"))
+      .toBeLessThan(withContext.indexOf("=== SAMPLED ITEMS"));
+  });
+
+  it("omits the household context section when every field is blank", () => {
+    const withoutContext = buildCleanupRoundInstructions({
+      items,
+      aiContext: {
+        householdDescription: " ",
+        longTermDirection: null,
+        suggestionGuidance: "",
+      },
+    });
+    expect(withoutContext).not.toContain("## Household context from the user");
+  });
+
   it("feeds validation issues back on retry", () => {
     const retry = buildCleanupRoundInstructions({
       items,

@@ -34,6 +34,7 @@ import { nowIso } from "../domain/workItemShared.js";
 import { buildIntakeInstructions } from "./prompt.js";
 import { deleteJobFiles, writeAttachment } from "./storage.js";
 import { addExternalWorkItemRef } from "../domain/externalWorkItemRefs.js";
+import { getHouseholdAiContext } from "../aiContext.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -258,6 +259,7 @@ export async function createIntakeJob(
             memberNames: members.map((member) => member.name),
             hasText: input.text !== null,
             attachmentCount: binaryAttachments.length,
+            aiContext: getHouseholdAiContext(db),
           }),
           text: input.text,
           attachments: attachmentRows.filter((attachment) => attachment.mimeType !== "text/plain")

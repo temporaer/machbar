@@ -37,6 +37,35 @@ describe("intake AI instructions", () => {
     expect(instructions).toContain("Please use the date from the letter.");
   });
 
+  it("adds only non-empty household context before proposal data", () => {
+    const instructions = buildIntakeInstructions({
+      today: "2026-09-28",
+      memberNames: [],
+      hasText: true,
+      attachmentCount: 0,
+      aiContext: {
+        householdDescription: "SKiBB und Kita sind wiederkehrende Kontexte.",
+        longTermDirection: "Familienlogistik soll leichter werden.",
+        suggestionGuidance: "",
+      },
+    });
+    expect(instructions).toContain("## Household context from the user");
+    expect(instructions).toContain("### Household description");
+    expect(instructions).toContain("### Long-term direction");
+    expect(instructions).not.toContain("### AI suggestion preferences");
+    expect(instructions).toContain("required JSON schemas");
+  });
+
+  it("does not add a household context section when no context is supplied", () => {
+    const instructions = buildIntakeInstructions({
+      today: "2026-09-28",
+      memberNames: [],
+      hasText: true,
+      attachmentCount: 0,
+    });
+    expect(instructions).not.toContain("## Household context from the user");
+  });
+
   it("includes the ordered current proposal and treats requested changes as edits", () => {
     const instructions = buildIntakeInstructions({
       today: "2026-09-28",
