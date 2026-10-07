@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useRefresh } from "../lib/refresh";
@@ -27,6 +27,7 @@ import { useLocale } from "../lib/locale";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { InteractionScopeProvider } from "../lib/interactionScope";
 import { nextAgendaScope, readTodayScope, writeTodayScope } from "../lib/todayScope";
+import { useHomeAssistantStatus } from "../lib/useHomeAssistantStatus";
 
 /**
  * The Projekte tab: current and terminal projects are user stories, and every
@@ -47,6 +48,7 @@ export function ProjectsPage() {
 
 function ProjectsPageContent() {
   const strings = useStrings();
+  const { data: homeAssistant } = useHomeAssistantStatus();
   const { locale } = useLocale();
   const location = useLocation();
   const navigate = useNavigate();
@@ -227,30 +229,42 @@ function ProjectsPageContent() {
       <PageHeader
         title={strings.projects}
         actions={
-          <button
-            type="button"
-            className="page-header-button projects-scope-toggle"
-            aria-label={
-              scope === "mine"
-                ? strings.projectHouseholdScope
-                : scope === "all"
-                  ? strings.projectWorkScope
-                  : strings.projectMineScope
-            }
-            aria-pressed={scope !== "mine"}
-            title={
-              scope === "mine"
-                ? strings.projectHouseholdScope
-                : scope === "all"
-                  ? strings.projectWorkScope
-                  : strings.projectMineScope
-            }
-            onClick={() => selectScope(nextAgendaScope(scope))}
-          >
-            <IconActionGlyph
-              kind={scope === "mine" ? "owner" : scope === "all" ? "household" : "work"}
-            />
-          </button>
+          <>
+            {homeAssistant?.intakeReady ? (
+              <Link
+                to="/more/cleanup-round"
+                className="page-header-button cleanup-round-shortcut"
+                aria-label={strings.cleanupRoundShortcutLabel}
+                title={strings.cleanupRoundShortcutTitle}
+              >
+                <span aria-hidden="true">✨</span>
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              className="page-header-button projects-scope-toggle"
+              aria-label={
+                scope === "mine"
+                  ? strings.projectHouseholdScope
+                  : scope === "all"
+                    ? strings.projectWorkScope
+                    : strings.projectMineScope
+              }
+              aria-pressed={scope !== "mine"}
+              title={
+                scope === "mine"
+                  ? strings.projectHouseholdScope
+                  : scope === "all"
+                    ? strings.projectWorkScope
+                    : strings.projectMineScope
+              }
+              onClick={() => selectScope(nextAgendaScope(scope))}
+            >
+              <IconActionGlyph
+                kind={scope === "mine" ? "owner" : scope === "all" ? "household" : "work"}
+              />
+            </button>
+          </>
         }
         hints={[{ text: strings.projectsHint }]}
       />

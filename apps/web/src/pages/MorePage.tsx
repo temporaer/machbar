@@ -15,6 +15,7 @@ import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useDeveloperMode } from "../lib/developerMode";
 import { HomeAssistantPersonLocation } from "../components/HomeAssistantPersonLocation";
+import { useHomeAssistantStatus } from "../lib/useHomeAssistantStatus";
 
 export function MorePage() {
   const strings = useStrings();
@@ -26,10 +27,7 @@ export function MorePage() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const { data: counts } = useAsync(() => api.getMoreCounts(), []);
-  const { data: homeAssistant } = useAsync(
-    () => api.getHomeAssistantStatus(),
-    [],
-  );
+  const { data: homeAssistant } = useHomeAssistantStatus();
 
   return (
     <div className="more-page">

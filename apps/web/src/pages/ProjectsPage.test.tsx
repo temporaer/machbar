@@ -12,6 +12,7 @@ import "../components/ProjectStoryRow.css";
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
+    getHomeAssistantStatus: vi.fn(),
     getProjects: vi.fn(),
     getTags: vi.fn().mockResolvedValue([]),
     createProject: vi.fn(),
@@ -75,6 +76,22 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     // filtering, so it selects Mira up front to keep every fixture visible.
     window.localStorage.setItem("machbar:identity-member-id", "1");
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+    mockedApi.getHomeAssistantStatus.mockResolvedValue({
+      connected: false,
+      instanceId: null,
+      protocolVersion: null,
+      connectedAt: null,
+      lastUpdateAt: null,
+      stale: false,
+      supportedProtocolVersion: 3,
+      protocolOutdated: false,
+      lastRequestPollAt: null,
+      workerOnline: false,
+      intake: null,
+      intakeReady: false,
+      contexts: [],
+      people: [],
+    });
     mockedApi.getProjects.mockResolvedValue([
       makeProject({
         id: 70,
@@ -126,6 +143,39 @@ describe("ProjectsPage – Scrum workflow on every row", () => {
     await userEvent.click(backlogHeading);
     expect(screen.getByText("Backlog-Geschichte")).toBeVisible();
     expect(badges).toEqual(["Aktiv", "Später / noch nicht aktiv", "Abgeschlossen", "Archiviert"]);
+  });
+
+  it("offers the Klärungsrunde shortcut only when the Home Assistant AI Task is ready", async () => {
+    mockedApi.getHomeAssistantStatus.mockResolvedValueOnce({
+      connected: true,
+      instanceId: "ha-1",
+      protocolVersion: 3,
+      connectedAt: null,
+      lastUpdateAt: null,
+      stale: false,
+      supportedProtocolVersion: 3,
+      protocolOutdated: false,
+      lastRequestPollAt: null,
+      workerOnline: true,
+      intake: null,
+      intakeReady: true,
+      contexts: [],
+      people: [],
+    });
+    renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Aktive Geschichte");
+    const shortcut = screen.getByRole("link", { name: "Klärungsrunde starten" });
+    expect(shortcut).toHaveAttribute("href", "/more/cleanup-round");
+    expect(shortcut).toHaveClass("cleanup-round-shortcut");
+    expect(screen.queryByRole("button", { name: "Runde starten" })).not.toBeInTheDocument();
+  });
+
+  it("hides the Klärungsrunde shortcut when the Home Assistant AI Task is unavailable", async () => {
+    renderWithProviders(<ProjectsPage />);
+    await screen.findByText("Aktive Geschichte");
+    expect(
+      screen.queryByRole("link", { name: "Klärungsrunde starten" }),
+    ).not.toBeInTheDocument();
   });
 
   it("auto-expands and highlights a just-created backlog project handed off via router state", async () => {

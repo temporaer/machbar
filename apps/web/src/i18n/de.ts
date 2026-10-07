@@ -25,6 +25,8 @@ const base = {
   weekPlanning: "Wochenplanung",
   weekPlanningDescription: "Arbeit auf die nächsten sieben Tage verteilen",
   cleanupRound: "Klärungsrunde",
+  cleanupRoundShortcutLabel: "Klärungsrunde starten",
+  cleanupRoundShortcutTitle: "Planung mit KI prüfen",
   cleanupRoundDescription:
     "Machbar schaut sich ein paar liegengebliebene Dinge an und fragt, welche Denkentscheidung helfen würde.",
   cleanupRoundStart: "Runde starten",
