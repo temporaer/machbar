@@ -1274,6 +1274,10 @@ conversion still runs the normal story activation guards. Reverse conversion
 (story → task) remains conservative: it rejects whenever the story has any
 children or acceptance criteria, rather than silently discarding data. Routes:
 `POST /api/tasks/:id/convert-to-story`, `POST /api/projects/:id/convert-to-task`.
+The web workflow is opened by `story.convertToTask`; it preflights those
+project-only structures and routes blocked cases to the existing structure or
+goal editor instead of discarding data. A clean project can edit its title and
+notes before calling the canonical conversion endpoint.
 
 **Semantic commands.** `apps/web/src/lib/commands.ts` defines a pure,
 React-free `WorkItemCommand` union (`task.*`, `story.*`, `outline.*`,

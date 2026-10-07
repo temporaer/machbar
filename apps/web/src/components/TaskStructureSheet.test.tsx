@@ -4,8 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { useLocation } from "react-router-dom";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
-import { makeMember, makeProject, makeTask } from "../test/fixtures";
+import { makeCriterion, makeMember, makeProject, makeTask } from "../test/fixtures";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
+import { useProjectWorkflow } from "../lib/projectWorkflowContext";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { ProjectWorkflowHost } from "./ProjectWorkflowHost";
@@ -34,6 +35,7 @@ vi.mock("../lib/api", () => ({
     getProject: vi.fn(),
     activateProject: vi.fn(),
     updateProject: vi.fn(),
+    convertStoryToTask: vi.fn(),
   },
 }));
 
@@ -48,6 +50,15 @@ function OpenStructureHarness({ taskId, openDetails = false }: { taskId: number;
       workflow.open("structure", taskId);
     }}>
       open structure
+    </button>
+  );
+}
+
+function OpenProjectStructureHarness({ projectId }: { projectId: number }) {
+  const workflow = useProjectWorkflow();
+  return (
+    <button type="button" onClick={() => workflow.open("structure", projectId)}>
+      open project structure
     </button>
   );
 }
@@ -73,6 +84,15 @@ function renderStructure(taskId: number) {
   );
 }
 
+function renderProjectStructure(projectId: number) {
+  return renderWithProviders(
+    <div>
+      <OpenProjectStructureHarness projectId={projectId} />
+      <ProjectWorkflowHost />
+    </div>,
+  );
+}
+
 describe("TaskStructureSheet routing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -84,6 +104,113 @@ describe("TaskStructureSheet routing", () => {
       title: "Ziel-Projekt",
       tasks: [],
     } as never);
+  });
+
+  it("exposes Project → Task conversion from the project structure sheet", async () => {
+    const project = makeProject({ id: 80, title: "Keller planen" });
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
+    renderProjectStructure(project.id);
+
+    await userEvent.click(screen.getByRole("button", { name: "open project structure" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Zur Aufgabe machen" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" }),
+    ).toBeInTheDocument();
+  });
+
+  it("converts a clean project with its edited title and notes", async () => {
+    const project = makeProject({ id: 81, title: "Keller planen", notes: "Alte Notiz" });
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
+    mockedApi.convertStoryToTask.mockResolvedValue(makeTask({ id: project.id }));
+    renderProjectStructure(project.id);
+
+    await userEvent.click(screen.getByRole("button", { name: "open project structure" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Zur Aufgabe machen" }));
+    const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
+    await userEvent.clear(within(sheet).getByLabelText("Titel"));
+    await userEvent.type(within(sheet).getByLabelText("Titel"), "Keller als Aufgabe");
+    await userEvent.clear(within(sheet).getByLabelText("Notizen"));
+    await userEvent.type(within(sheet).getByLabelText("Notizen"), "Neue Notiz");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Zur Aufgabe machen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.convertStoryToTask).toHaveBeenCalledWith(project.id, {
+        title: "Keller als Aufgabe",
+        notes: "Neue Notiz",
+        expectedRevision: project.revision,
+      }),
+    );
+  });
+
+  it("blocks conversion with child tasks and offers the structure recovery path", async () => {
+    const project = makeProject({ id: 82 });
+    mockedApi.getProject.mockResolvedValue({
+      ...project,
+      tasks: [makeTask({ id: 83, projectId: project.id })],
+    });
+    renderProjectStructure(project.id);
+
+    await userEvent.click(screen.getByRole("button", { name: "open project structure" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Zur Aufgabe machen" }));
+
+    const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
+    expect(within(sheet).getByText("Dieses Projekt hat noch Unteraufgaben.")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Struktur öffnen" })).toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Zur Aufgabe machen" })).not.toBeInTheDocument();
+  });
+
+  it("blocks conversion with acceptance criteria and offers the goal recovery path", async () => {
+    const project = makeProject({ id: 84, acceptanceCriteria: [makeCriterion()] });
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
+    renderProjectStructure(project.id);
+
+    await userEvent.click(screen.getByRole("button", { name: "open project structure" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Zur Aufgabe machen" }));
+
+    const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
+    expect(within(sheet).getByText("Dieses Projekt hat noch Zielkriterien.")).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Ziel bearbeiten" })).toBeInTheDocument();
+    expect(within(sheet).queryByRole("button", { name: "Zur Aufgabe machen" })).not.toBeInTheDocument();
+  });
+
+  it("shows both recovery paths when both project-only structures remain", async () => {
+    const project = makeProject({ id: 85, acceptanceCriteria: [makeCriterion()] });
+    mockedApi.getProject.mockResolvedValue({
+      ...project,
+      tasks: [makeTask({ id: 86, projectId: project.id })],
+    });
+    renderProjectStructure(project.id);
+
+    await userEvent.click(screen.getByRole("button", { name: "open project structure" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Zur Aufgabe machen" }));
+
+    const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
+    expect(within(sheet).getByRole("button", { name: "Struktur öffnen" })).toBeInTheDocument();
+    expect(within(sheet).getByRole("button", { name: "Ziel bearbeiten" })).toBeInTheDocument();
+  });
+
+  it("keeps the conversion sheet open when the backend rejects a stale structure", async () => {
+    const project = makeProject({ id: 87 });
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
+    mockedApi.convertStoryToTask.mockRejectedValue(
+      Object.assign(new Error("invalid"), {
+        name: "ApiError",
+        code: "role_conversion_invalid",
+        details: { reason: "has_children" },
+      }),
+    );
+    renderProjectStructure(project.id);
+
+    await userEvent.click(screen.getByRole("button", { name: "open project structure" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Zur Aufgabe machen" }));
+    const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
+    await userEvent.click(within(sheet).getByRole("button", { name: "Zur Aufgabe machen" }));
+
+    expect(await within(sheet).findByRole("alert")).toHaveTextContent(
+      "Dieses Projekt hat noch Unteraufgaben.",
+    );
+    expect(sheet).toBeInTheDocument();
   });
 
   it("dispatches task.split and opens TaskSplitSheet, not a sheet of its own", async () => {

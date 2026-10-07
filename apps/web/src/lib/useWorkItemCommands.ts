@@ -60,6 +60,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "story.assignDriver":
     case "story.planWork":
     case "story.editOutcome":
+    case "story.convertToTask":
     case "story.deadline":
     case "story.tags":
     case "story.contexts":
@@ -111,6 +112,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "story.assignDriver":
     case "story.planWork":
     case "story.editOutcome":
+    case "story.convertToTask":
     case "story.deadline":
     case "story.tags":
     case "story.contexts":
@@ -397,6 +399,9 @@ export function useWorkItemCommands() {
           return;
         case "story.editOutcome":
           projectWorkflow.open("editOutcome", command.story.id);
+          return;
+        case "story.convertToTask":
+          projectWorkflow.open("convertToTask", command.story.id);
           return;
         case "story.deadline":
           projectWorkflow.open("deadline", command.story.id);

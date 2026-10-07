@@ -211,7 +211,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Single-task capture and short syntax parsing/resolution | `apps/web/src/components/CaptureForm.tsx` and `apps/web/src/lib/captureSyntax.ts` (the shared editor creates tasks only; syntax is applied only there) |
 | Task/story storage and hierarchy | `apps/api/src/db/schema.ts` (`workItems`) plus `apps/api/src/repo/treeRepo.ts` recursive CTEs |
 | Task/story read projection (shared lifecycle vocabulary) | `apps/api/src/domain/workItem.ts` and `apps/api/src/domain/graph.ts` |
-| Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`) |
+| Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`), `apps/web/src/components/TaskConvertToProjectSheet.tsx`, and `apps/web/src/components/ProjectConvertToTaskSheet.tsx` |
 | Semantic user-intent commands (mouse/touch/keyboard dispatch a common vocabulary) | `apps/web/src/lib/commands.ts` and `apps/web/src/lib/useWorkItemCommands.ts` |
 | Fixed row action rail (task-kind/status-specific planning/shape/structure/note/waiting actions and project next-step/goal/structure/planning actions; lifecycle remains right-swipe only) | `apps/web/src/components/WorkItemActionRail.tsx`, wired from `apps/web/src/components/TaskRow.tsx` and `apps/web/src/components/ProjectStoryRow.tsx` |
 | Unified task planning (`notBeforeAt` + local `notBeforeDate` + `scheduledDate` + `dueDate`) workflow | `apps/web/src/components/TaskPlanningSheet.tsx`, opened by both the `availability` and `plan` task workflows and committed through `apps/web/src/lib/useTaskActions.tsx` |
@@ -219,7 +219,8 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Project revisit/defer workflow | `apps/web/src/components/ProjectDeferSheet.tsx`, opened by `story.defer` for backlog and active-waiting project planning |
 | Project deadline (`dueDate`) workflow | `apps/web/src/components/ProjectDeadlineSheet.tsx`, opened by `story.deadline` |
 | Task `Struktur` workflow (split/move/convert-to-project) | `apps/web/src/components/TaskStructureSheet.tsx`, opened as the `structure` task workflow |
-| Project `Struktur` workflow (plan next task/edit outcome) | `apps/web/src/components/ProjectStructureSheet.tsx`, opened as the `structure` project workflow |
+| Project `Struktur` workflow (plan next task/edit outcome/convert to task) | `apps/web/src/components/ProjectStructureSheet.tsx`, opened as the `structure` project workflow |
+| Guided Project → Task conversion | `apps/web/src/components/ProjectConvertToTaskSheet.tsx`, opened by `story.convertToTask`; preflights child tasks and acceptance criteria and routes blockers to existing structure/goal surfaces |
 | Consolidated task move (project and/or parent in one step) | `apps/web/src/components/MoveTaskSheet.tsx` via `task.changeProject` |
 | View-mode scope selector (Mine / Household / Work), cycle order, and persistence | `apps/web/src/lib/todayScope.ts` (`nextAgendaScope`, `readTodayScope`/`writeTodayScope`) reused by `TodayPage`, `WeekPage`, `ProjectsPage`, `WaitingPage`, `InboxPage` |
 | Task/project `scope` ("household" \| "work") read/derivation and owner-only visibility | `apps/api/src/domain/graph.ts` (`Graph.load`'s viewer-restriction parameter; see below) |
