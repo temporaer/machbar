@@ -216,9 +216,14 @@ liegengebliebene tasks and projects, and the AI asks one focused question per
 item: is the title an actual action, is a decision hidden inside it, what does
 done mean, what is the first slice, does an incident need aftermath, or is this
 really information? Suggestions are never applied automatically. Each card
-offers **Hinten anstellen** (acknowledge like Review), **Öffnen**, ignoring
-the suggestion, or one button into the existing editor that answers the
-question.
+offers **Hinten anstellen** (acknowledge like Review), **Öffnen**,
+**Einschätzung ausblenden** (hides the card, leaves the item unchanged), or one
+button into the existing editor that answers the question. For text answers
+(new title, done-when, decision/first step/follow-up, recipient or document)
+the card shows the suggestion as an editable answer and prefills the editor
+with it; nothing is saved until you save there. Items Machbar could not assess
+stay visible with **Erneut versuchen**; retrying only re-asks for those items
+and keeps the existing cards.
 
 ### 6. Inventory
 

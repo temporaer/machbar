@@ -35,7 +35,7 @@ type WeekTaskPlanningItem = Extract<WeekPlanningItem, { role: "task" }>;
  * names the contextual QuickAdd entry point.
  */
 export type WorkItemCommand =
-  | { type: "task.open"; taskId: number; focusField?: TaskDetailFocusField }
+  | { type: "task.open"; taskId: number; focusField?: TaskDetailFocusField; draft?: string }
   | { type: "task.plan"; taskId: number }
   | { type: "task.availability"; taskId: number }
   | { type: "task.structure"; taskId: number }
@@ -58,7 +58,13 @@ export type WorkItemCommand =
   | { type: "workItem.schedule"; item: WeekTaskPlanningItem; date: string | null }
   | { type: "workItem.setDeadline"; item: WeekPlanningItem; date: string | null }
   | { type: "workItem.setRevisitDate"; item: WeekPlanningItem; date: string | null }
-  | { type: "workItem.open"; workItem: { id: number; role: "story" | "task" } }
+  | {
+      type: "workItem.open";
+      workItem: { id: number; role: "story" | "task" };
+      /** Opens the authored title/notes editor, optionally seeded with an unsaved draft. */
+      focusField?: "title" | "notes";
+      draft?: string;
+    }
   | { type: "story.activate"; story: ProjectWithActions; ownerMemberId?: number | null }
   | { type: "story.deferProject"; story: ProjectWithActions }
   | { type: "story.complete"; story: ProjectWithActions }
@@ -67,8 +73,8 @@ export type WorkItemCommand =
   | { type: "story.defer"; story: ProjectWithActions }
   | { type: "story.structure"; story: ProjectWithActions }
   | { type: "story.assignDriver"; story: ProjectWithActions }
-  | { type: "story.planWork"; story: ProjectWithActions }
-  | { type: "story.editOutcome"; story: ProjectWithActions }
+  | { type: "story.planWork"; story: ProjectWithActions; initialTitle?: string }
+  | { type: "story.editOutcome"; story: ProjectWithActions; initialCriterion?: string }
   | { type: "story.deadline"; story: ProjectWithActions }
   | { type: "story.tags"; story: ProjectWithActions }
   | { type: "story.contexts"; story: ProjectWithActions }

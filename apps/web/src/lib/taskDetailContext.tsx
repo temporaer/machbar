@@ -19,7 +19,12 @@ interface TaskDetailContextValue {
   /** True while stepping through a "Klären" queue (Inbox clarify-all flow). */
   queueActive: boolean;
   focusField: TaskDetailFocusField | null;
-  open: (taskId: number, focusField?: TaskDetailFocusField) => void;
+  /**
+   * Unsaved text seeded into the focused title/notes editor (title: replaces
+   * the draft; notes: appended). Saving still requires the editor's Save.
+   */
+  focusDraft: string | null;
+  open: (taskId: number, focusField?: TaskDetailFocusField, draft?: string) => void;
   /** Opens the first id and remembers the rest so `advanceQueue` can step through them. */
   openQueue: (taskIds: number[], focusField?: TaskDetailFocusField) => void;
   advanceQueue: () => void;
@@ -35,12 +40,14 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<number[]>([]);
   const [queueActive, setQueueActive] = useState(false);
   const [focusField, setFocusField] = useState<TaskDetailFocusField | null>(null);
+  const [focusDraft, setFocusDraft] = useState<string | null>(null);
 
-  const open = (taskId: number, field?: TaskDetailFocusField) => {
+  const open = (taskId: number, field?: TaskDetailFocusField, draft?: string) => {
     setQueueActive(false);
     setQueue([]);
     setOpenTaskId(taskId);
     setFocusField(field ?? null);
+    setFocusDraft(field && draft ? draft : null);
   };
 
   const openQueue = (taskIds: number[], field?: TaskDetailFocusField) => {
@@ -50,10 +57,12 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
     setQueue(rest);
     setOpenTaskId(first ?? null);
     setFocusField(field ?? null);
+    setFocusDraft(null);
   };
 
   const advanceQueue = () => {
     setFocusField(null);
+    setFocusDraft(null);
     setQueue((current) => {
       const [next, ...rest] = current;
       if (next === undefined) {
@@ -71,13 +80,17 @@ export function TaskDetailProvider({ children }: { children: ReactNode }) {
     setQueue([]);
     setQueueActive(false);
     setFocusField(null);
+    setFocusDraft(null);
   };
 
-  const clearFocusField = () => setFocusField(null);
+  const clearFocusField = () => {
+    setFocusField(null);
+    setFocusDraft(null);
+  };
 
   const value = useMemo<TaskDetailContextValue>(
-    () => ({ openTaskId, queueActive, focusField, open, openQueue, advanceQueue, close, clearFocusField }),
-    [openTaskId, queueActive, focusField],
+    () => ({ openTaskId, queueActive, focusField, focusDraft, open, openQueue, advanceQueue, close, clearFocusField }),
+    [openTaskId, queueActive, focusField, focusDraft],
   );
   return <TaskDetailContext.Provider value={value}>{children}</TaskDetailContext.Provider>;
 }

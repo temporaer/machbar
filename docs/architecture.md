@@ -725,19 +725,34 @@ work items ("would a tired human know what to do next?").
 - **Validation** (`validate.ts`) normalizes strings and enums, trims excessive
   text, rejects unknown targets, type mismatches, duplicates, and malformed
   entries as warnings, and keeps raw and validated responses separately. All
-  valid → `ready`; some → `partial`; none → `failed`. Retry is available for
-  `failed`/`partial` and feeds validation issues back into the prompt.
+  valid → `ready`; some → `partial`; none → `failed`. Retry re-analyzes only
+  `failed` items, keeps accepted (`ready`) cards and the round summary, and
+  feeds validation issues back into the prompt; a round that still holds
+  accepted cards stays `partial` even when the retry fails. Failed items stay
+  reserved from new rounds while their round is open. The Home Assistant
+  structure only enforces the response envelope; this validator is the strict
+  boundary.
 - **Persistence**: `cleanup_rounds` and `cleanup_round_items` are temporary
   operational state (24-hour expiry, purged with intake jobs); a
   `home_assistant_requests` row belongs to either an intake job or a round.
 - **Resolution**: AI results never mutate work items. The only direct mutation
   is “Hinten anstellen”, which reuses the canonical Review acknowledgement
-  (`reviewedAt`). Every other surface dispatches an existing
-  `useWorkItemCommands()` workflow (title/notes detail, `task.split` with a
-  prefilled child title, `task.plan`, `task.structure`,
+  (`reviewedAt`). “Einschätzung ausblenden” only dismisses the card. Every
+  other surface dispatches an existing `useWorkItemCommands()` workflow
+  (title/notes detail, `task.split`, `task.plan`, `task.structure`,
   `task.convertToProject`, `story.editOutcome`, `story.planWork`,
   `story.structure`, `story.defer`, or `workItem.open`) through the pure
-  mapping in `apps/web/src/lib/cleanupRound.ts`.
+  mapping in `apps/web/src/lib/cleanupRound.ts`. Text-shaped surfaces (rename,
+  done-when, decision/first-slice/follow-up child, admin target) show the AI
+  suggestion as an editable answer on the card and carry it into the
+  destination as an unsaved draft: `task.open`/`workItem.open` `draft` (title
+  replaced, notes appended; projects via `?focus=title|notes&draft=`),
+  `task.split` `initialTitles`, `story.planWork` `initialTitle`
+  (`?focus=next-action&draft=` prefills QuickAdd), and `story.editOutcome`
+  `initialCriterion`. The destination's own Save/Add still commits. Surfaces
+  that only reach the plain item view get no action button of their own, and
+  labels never promise a change the destination does not perform. Failed items
+  stay visible as cards with retry, open, and hide.
 
 The More entry appears only when the Home Assistant AI Task is ready. Older
 Home Assistant components answer the new request kind with

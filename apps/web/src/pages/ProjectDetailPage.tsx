@@ -69,6 +69,8 @@ export function ProjectDetailPage() {
   const projectId = Number(params.id);
   const [searchParams, setSearchParams] = useSearchParams();
   const focus = searchParams.get("focus");
+  // Unsaved text a deep link (e.g. Klärungsrunde) seeds into the focused editor.
+  const focusDraft = searchParams.get("draft");
   const { members } = useIdentity();
   const [titleDraft, setTitleDraft] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
@@ -236,8 +238,22 @@ export function ProjectDetailPage() {
   const clearRouteFocus = useCallback(() => {
     const next = new URLSearchParams(searchParams);
     next.delete("focus");
+    next.delete("draft");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
+
+  // `?focus=title|notes` opens the authored-text editor; saving stays explicit.
+  useEffect(() => {
+    if ((focus !== "title" && focus !== "notes") || !project || project.id !== projectId) return;
+    if (focus === "title") {
+      if (focusDraft) setTitleDraft(focusDraft);
+      setTitleEditing(true);
+    } else {
+      if (focusDraft) setNotesDraft(appendTextBlock(project.notes, focusDraft));
+      setNotesEditing(true);
+    }
+    clearRouteFocus();
+  }, [focus, focusDraft, project, projectId, clearRouteFocus]);
 
   const planningFocusActive = focus === "planning";
 
@@ -802,6 +818,7 @@ export function ProjectDetailPage() {
         ) : null}
         <QuickAdd
           autoOpen={focus === "next-action"}
+          autoOpenTitle={focus === "next-action" ? focusDraft ?? undefined : undefined}
           onAutoOpenClose={(captured) => {
             clearRouteFocus();
             if (captured) {

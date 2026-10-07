@@ -57,11 +57,13 @@ export type ProjectLifecycleContinuation = {
 export interface ProjectWorkflowState {
   kind: ProjectWorkflowKind;
   projectId: number;
+  /** Unsaved text seeded into the sheet's new-entry field (`editOutcome`). */
+  draft?: string | undefined;
 }
 
 interface ProjectWorkflowContextValue {
   current: ProjectWorkflowState | null;
-  open: (kind: ProjectWorkflowKind, projectId: number) => void;
+  open: (kind: ProjectWorkflowKind, projectId: number, draft?: string) => void;
   close: () => void;
   closeCurrent: () => void;
   continuation: ProjectLifecycleContinuation | null;
@@ -78,7 +80,7 @@ export function ProjectWorkflowProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ProjectWorkflowContextValue>(
     () => ({
       current,
-      open: (kind, projectId) => setCurrent({ kind, projectId }),
+      open: (kind, projectId, draft) => setCurrent({ kind, projectId, ...(draft ? { draft } : {}) }),
       closeCurrent: () => setCurrent(null),
       close: () => {
         setCurrent(null);

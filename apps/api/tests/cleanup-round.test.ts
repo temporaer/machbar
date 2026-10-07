@@ -329,12 +329,54 @@ describe("cleanup rounds", () => {
     expect(retried.json().status).toBe("queued");
     const second = await lease(token);
     expect(second.payload.instructions).toContain("unknown_target");
+    // Only the failed item is re-analyzed; the accepted card is kept.
+    expect(second.payload.items.map((item: { targetId: number }) => item.targetId)).toEqual([b]);
     await complete(token, second, {
       outcome: "succeeded",
-      result: { summary: "y", results: [triage("task", a), triage("task", b, { proposal: "define_check_or_rhythm", resolutionSurface: "define_rhythm_or_revisit" })], warnings: [] },
+      result: { summary: "y", results: [triage("task", b, { proposal: "define_check_or_rhythm", resolutionSurface: "define_rhythm_or_revisit" })], warnings: [] },
     });
     round = (await ctx.app.inject({ method: "GET", url: `/api/cleanup-rounds/${id}` })).json();
     expect(round.status).toBe("ready");
+    expect(round.summary).toBe("x");
+    expect(round.items.find((item: { targetId: number }) => item.targetId === a).result.proposal)
+      .toBe("rename_for_actionability");
+    expect(round.items.find((item: { targetId: number }) => item.targetId === b).result.proposal)
+      .toBe("define_check_or_rhythm");
+  });
+
+  it("keeps accepted cards when retrying the missing items fails again", async () => {
+    const token = await pair();
+    const a = await task("Keller");
+    const b = await task("Backup");
+    const id = await createRound();
+    await complete(token, await lease(token), {
+      outcome: "succeeded",
+      result: { summary: "x", results: [triage("task", a)], warnings: [] },
+    });
+    await ctx.app.inject({ method: "POST", url: `/api/cleanup-rounds/${id}/retry`, payload: {} });
+    await complete(token, await lease(token), {
+      outcome: "failed",
+      error: { code: "ai_task_failed", message: "Timeout" },
+    });
+    let round = (await ctx.app.inject({ method: "GET", url: `/api/cleanup-rounds/${id}` })).json();
+    expect(round.status).toBe("partial");
+    expect(round.items.find((item: { targetId: number }) => item.targetId === a).status).toBe("ready");
+    expect(round.items.find((item: { targetId: number }) => item.targetId === b).status).toBe("failed");
+
+    await ctx.app.inject({ method: "POST", url: `/api/cleanup-rounds/${id}/retry`, payload: {} });
+    await complete(token, await lease(token), {
+      outcome: "succeeded",
+      result: { summary: "y", results: [triage("task", 4242)], warnings: [] },
+    });
+    round = (await ctx.app.inject({ method: "GET", url: `/api/cleanup-rounds/${id}` })).json();
+    expect(round.status).toBe("partial");
+    expect(round.summary).toBe("x");
+
+    const itemB = round.items.find((item: { targetId: number }) => item.targetId === b);
+    await ctx.app.inject({ method: "POST", url: `/api/cleanup-rounds/${id}/items/${itemB.id}/dismiss`, payload: {} });
+    const noFailed = await ctx.app.inject({ method: "POST", url: `/api/cleanup-rounds/${id}/retry`, payload: {} });
+    expect(noFailed.statusCode).toBe(409);
+    expect(noFailed.json().error.code).toBe("cleanup_round_state_conflict");
   });
 
   it("fails when no result is usable or the adapter fails", async () => {

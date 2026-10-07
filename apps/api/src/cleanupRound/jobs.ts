@@ -242,11 +242,35 @@ function awaitingAnalysis(round: RoundRow): boolean {
   return round.status === "queued" || round.status === "analyzing";
 }
 
+/**
+ * Keeps the round summary from the analysis that produced still-accepted
+ * cards; a retry only adds its warnings.
+ */
+function mergedResultJson(
+  previousJson: string | null,
+  next: { summary: string; warnings: Array<{ message: string }> } | null,
+  preserved: boolean,
+): string | null {
+  if (!next) return previousJson;
+  const previous = preserved
+    ? parseJson<{ summary: string; warnings: Array<{ message: string }> }>(previousJson)
+    : null;
+  if (!previous) return JSON.stringify(next);
+  return JSON.stringify({
+    ...next,
+    summary: previous.summary || next.summary,
+    warnings: [...previous.warnings, ...next.warnings],
+  });
+}
+
 /** Applies a validated AI Task response. Never mutates work items. */
 export function onCleanupRoundAnalyzed(db: Db, round: RoundRow, raw: unknown): void {
   // A dismissed/settled round must not be revived by a late result.
   if (!awaitingAnalysis(round)) return;
-  const items = roundItems(db, round.id).filter((item) => item.status === "pending");
+  const allItems = roundItems(db, round.id);
+  const items = allItems.filter((item) => item.status === "pending");
+  // A retry only re-analyzes failed items; accepted cards stay as they were.
+  const preserved = allItems.some((item) => item.status === "ready");
   if (items.length === 0) {
     // Every card was handled while the analysis was running.
     db.update(schema.cleanupRounds).set({
@@ -262,7 +286,7 @@ export function onCleanupRoundAnalyzed(db: Db, round: RoundRow, raw: unknown): v
   const results = outcome.response?.results ?? [];
   const status: CleanupRoundStatus = outcome.issues.length === 0 && results.length > 0
     ? "ready"
-    : results.length > 0 ? "partial" : "failed";
+    : results.length > 0 || preserved ? "partial" : "failed";
   const error = status === "ready"
     ? null
     : errorInfo(
@@ -275,9 +299,7 @@ export function onCleanupRoundAnalyzed(db: Db, round: RoundRow, raw: unknown): v
   db.update(schema.cleanupRounds).set({
     status,
     rawResponseJson: JSON.stringify(raw ?? null),
-    resultJson: outcome.response
-      ? JSON.stringify(outcome.response)
-      : null,
+    resultJson: mergedResultJson(round.resultJson, outcome.response, preserved),
     errorJson: error ? JSON.stringify(error) : null,
     revision: round.revision + 1,
     updatedAt: now,
@@ -301,8 +323,10 @@ export function onCleanupRoundRequestFailed(
 ): void {
   if (!awaitingAnalysis(round)) return;
   const now = nowIso();
+  const preserved = roundItems(db, round.id).some((item) => item.status === "ready");
   db.update(schema.cleanupRounds).set({
-    status: "failed",
+    // Accepted cards from an earlier analysis stay usable.
+    status: preserved ? "partial" : "failed",
     errorJson: JSON.stringify(errorInfo(error.code || "ai_task_failed", error.message, error.details)),
     revision: round.revision + 1,
     updatedAt: now,
@@ -325,9 +349,10 @@ export function retryCleanupRound(
     throw AppError.conflict("cleanup_round_state_conflict", "Only failed or partial rounds can be retried.");
   }
   const integration = readyIntegration(db);
-  const openItems = roundItems(db, id).filter((item) => item.status === "ready" || item.status === "failed");
-  if (openItems.length === 0) {
-    throw AppError.conflict("cleanup_round_state_conflict", "No open items remain in this round.");
+  // Only failed items are re-analyzed; accepted (`ready`) cards are kept.
+  const failedItems = roundItems(db, id).filter((item) => item.status === "failed");
+  if (failedItems.length === 0) {
+    throw AppError.conflict("cleanup_round_state_conflict", "No failed items remain in this round.");
   }
   const previousIssues = parseJson<CleanupRoundErrorInfo>(round.errorJson)?.details?.issues ?? [];
   db.transaction((tx) => {
@@ -345,13 +370,13 @@ export function retryCleanupRound(
       throw AppError.conflict("stale_write_conflict", "The Klärungsrunde has changed since it was read.");
     }
     tx.update(schema.cleanupRoundItems).set({ status: "pending", resultJson: null, updatedAt: now })
-      .where(inArray(schema.cleanupRoundItems.id, openItems.map((item) => item.id)))
+      .where(inArray(schema.cleanupRoundItems.id, failedItems.map((item) => item.id)))
       .run();
     enqueueAnalysis(
       tx as unknown as Db,
       integration.id,
       id,
-      openItems.map((item) => JSON.parse(item.contextJson) as CleanupItemContext),
+      failedItems.map((item) => JSON.parse(item.contextJson) as CleanupItemContext),
       previousIssues,
       signal,
     );

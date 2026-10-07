@@ -7,9 +7,12 @@ import { useStrings } from "../lib/strings";
 import { useAsync } from "../lib/useAsync";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import {
-  cleanupChildTitle,
+  cleanupAnswerSurface,
+  cleanupDefaultAnswer,
   cleanupRoundPending,
   cleanupSurfaceAction,
+  cleanupSurfaceIsPlainOpen,
+  type CleanupSurfaceAction,
 } from "../lib/cleanupRound";
 import { ErrorState, LoadingState } from "../components/AsyncStates";
 
@@ -17,7 +20,8 @@ import { ErrorState, LoadingState } from "../components/AsyncStates";
  * Klärungsrunde: an advisory, Home Assistant-backed coaching pass over a few
  * sampled work items. The page never mutates items from AI output; besides
  * "Hinten anstellen" (review acknowledgement) every action opens an existing
- * workflow through `useWorkItemCommands()`.
+ * workflow through `useWorkItemCommands()`, seeded at most with the answer
+ * edited on the card; the destination's own Save still commits it.
  */
 export function CleanupRoundPage() {
   const { id } = useParams<{ id: string }>();
@@ -126,52 +130,38 @@ function CleanupRoundReview({ id }: { id: string }) {
     );
   }
 
-  const retry = (
-    <button
-      type="button"
-      className="btn btn-primary"
-      disabled={busy}
-      onClick={() => void run(() => api.retryCleanupRound(id))}
-    >
-      {strings.cleanupRoundRetry}
-    </button>
-  );
-  if (round.status === "failed") {
-    return (
-      <div className="stack cleanup-round-page">
-        {header}
-        <section className="card stack" role="alert">
-          <p>{strings.cleanupRoundFailed}</p>
-          {error ? <p className="text-muted">{error}</p> : null}
-          <div className="row">
-            {retry}
-            <button type="button" className="btn" disabled={busy} onClick={close}>
-              {strings.cleanupRoundClose}
-            </button>
-          </div>
-        </section>
-      </div>
-    );
-  }
-
-  const openItems = round.items.filter((item) => item.status === "ready");
+  const retry = () => void run(() => api.retryCleanupRound(id));
+  // Failed items stay visible: they are still open in this round.
+  const openItems = round.items.filter((item) => item.status === "ready" || item.status === "failed");
+  const hasFailed = openItems.some((item) => item.status === "failed");
   return (
     <div className="stack cleanup-round-page">
       {header}
       {round.summary ? <p className="text-muted">{round.summary}</p> : null}
-      {round.status === "partial" ? (
-        <section className="card stack" role="status">
-          <p>{strings.cleanupRoundPartial}</p>
-          <div className="row">{retry}</div>
+      {round.status === "failed" || (round.status === "partial" && hasFailed) ? (
+        <section className="card stack" role={round.status === "failed" ? "alert" : "status"}>
+          <p>{round.status === "failed" ? strings.cleanupRoundFailed : strings.cleanupRoundPartial}</p>
+          {hasFailed ? (
+            <div className="row">
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={retry}>
+                {round.status === "failed" ? strings.cleanupRoundRetry : strings.cleanupRoundRetryMissing}
+              </button>
+            </div>
+          ) : null}
         </section>
       ) : null}
       {error ? <p className="text-muted" role="alert">{error}</p> : null}
-      {openItems.length === 0 ? <p className="text-muted">{strings.cleanupRoundDone}</p> : null}
+      {openItems.length === 0 ? (
+        <p className="text-muted">{strings.cleanupRoundDone}</p>
+      ) : (
+        <p className="text-muted cleanup-round-hint">{strings.cleanupRoundResolutionHint}</p>
+      )}
       {openItems.map((item) => (
         <CleanupRoundCard
           key={item.id}
           item={item}
           busy={busy}
+          onRetry={retry}
           onResolve={(resolution) =>
             void run(() => api.resolveCleanupRoundItem(id, item.id, resolution))
           }
@@ -189,20 +179,24 @@ function CleanupRoundReview({ id }: { id: string }) {
 function CleanupRoundCard({
   item,
   busy,
+  onRetry,
   onResolve,
 }: {
   item: CleanupRoundItemRecord;
   busy: boolean;
+  onRetry: () => void;
   onResolve: (resolution: "dismiss" | "mark-reviewed") => void;
 }) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
   const [error, setError] = useState<string | null>(null);
-  const result = item.result;
+  const result = item.status === "ready" ? item.result : null;
   const prefixes = {
     decision: strings.cleanupRoundDecisionPrefix,
     followup: strings.cleanupRoundFollowupPrefix,
+    doneWhen: strings.cleanupRoundDoneWhenPrefix,
   };
+  const [answer, setAnswer] = useState(() => (result ? cleanupDefaultAnswer(item, result, prefixes) : ""));
   const role = item.targetType === "project" ? "story" : "task";
   const statusLabel =
     item.targetType === "project"
@@ -214,15 +208,15 @@ function CleanupRoundCard({
     item.parentTitle,
     statusLabel ?? item.itemStatus,
   ].filter(Boolean).join(" · ");
-  const suggestion = result
-    ? cleanupChildTitle(result, prefixes) ?? result.suggestedTitle ?? result.suggestedDefault
-    : null;
   const surface = result?.resolutionSurface;
-  const showSurface = surface && surface !== "mark_reviewed" && surface !== "open_item";
+  const answerSurface = surface ? cleanupAnswerSurface(surface) : false;
+  const action: CleanupSurfaceAction | null = surface ? cleanupSurfaceAction(item, surface, answer) : null;
+  const showSurface = action !== null && action.kind !== "markReviewed" && !cleanupSurfaceIsPlainOpen(action);
+  const suggestion = result && !answerSurface ? result.suggestedTitle ?? result.suggestedDefault : null;
+  const answerId = `cleanup-answer-${item.id}`;
 
   const resolveSurface = async () => {
-    if (!result) return;
-    const action = cleanupSurfaceAction(item, result, prefixes);
+    if (!action) return;
     setError(null);
     try {
       if (action.kind === "markReviewed") {
@@ -231,7 +225,13 @@ function CleanupRoundCard({
         dispatch(action.command);
       } else {
         const story = await api.getProject(action.projectId);
-        dispatch({ type: action.command, story });
+        if (action.command === "story.editOutcome") {
+          dispatch({ type: action.command, story, ...(action.draft ? { initialCriterion: action.draft } : {}) });
+        } else if (action.command === "story.planWork") {
+          dispatch({ type: action.command, story, ...(action.draft ? { initialTitle: action.draft } : {}) });
+        } else {
+          dispatch({ type: action.command, story });
+        }
       }
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
@@ -253,19 +253,30 @@ function CleanupRoundCard({
           <p>
             <strong>{strings.cleanupRoundQuestion}:</strong> {result.question}
           </p>
-          {suggestion ? (
+          {answerSurface ? (
+            <div className="field">
+              <label htmlFor={answerId}>{strings.cleanupRoundAnswer}</label>
+              <textarea
+                id={answerId}
+                rows={2}
+                value={answer}
+                onChange={(event) => setAnswer(event.target.value)}
+              />
+              <small className="text-muted">{strings.cleanupRoundAnswerHint}</small>
+            </div>
+          ) : suggestion ? (
             <p className="text-muted">
               {strings.cleanupRoundSuggestion}: {suggestion}
             </p>
           ) : null}
         </>
       ) : (
-        <p className="text-muted">{strings.cleanupRoundNoResult}</p>
+        <p className="text-muted">{strings.cleanupRoundItemFailed}</p>
       )}
       <div className="row cleanup-round-actions">
-        {item.exists ? (
+        {item.exists && result ? (
           <>
-            {showSurface ? (
+            {showSurface && surface ? (
               <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void resolveSurface()}>
                 {strings.cleanupSurfaceLabels[surface]}
               </button>
@@ -273,15 +284,22 @@ function CleanupRoundCard({
             <button type="button" className="btn" disabled={busy} onClick={() => onResolve("mark-reviewed")}>
               {strings.cleanupRoundMarkReviewed}
             </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={busy}
-              onClick={() => dispatch({ type: "workItem.open", workItem: { id: item.targetId, role } })}
-            >
-              {strings.cleanupRoundOpen}
-            </button>
           </>
+        ) : null}
+        {item.exists && !result ? (
+          <button type="button" className="btn btn-primary" disabled={busy} onClick={onRetry}>
+            {strings.cleanupRoundRetry}
+          </button>
+        ) : null}
+        {item.exists ? (
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => dispatch({ type: "workItem.open", workItem: { id: item.targetId, role } })}
+          >
+            {strings.cleanupRoundOpen}
+          </button>
         ) : null}
         <button type="button" className="btn" disabled={busy} onClick={() => onResolve("dismiss")}>
           {strings.cleanupRoundDismissItem}

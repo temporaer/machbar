@@ -76,6 +76,14 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
   }
 }
 
+/** Deep link into `ProjectDetailPage`'s `?focus=` handling, with an optional unsaved draft. */
+function projectFocusPath(projectId: number, focus?: string, draft?: string): string {
+  if (!focus) return `/projects/${projectId}`;
+  const params = new URLSearchParams({ focus });
+  if (draft) params.set("draft", draft);
+  return `/projects/${projectId}?${params.toString()}`;
+}
+
 function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null {
   switch (command.type) {
     case "task.open":
@@ -213,13 +221,13 @@ export function useWorkItemCommands() {
       if (workItemId !== null) scope?.setActive(workItemId, commandWorkItemRole(command));
       switch (command.type) {
         case "task.open":
-          taskDetail.open(command.taskId, command.focusField);
+          taskDetail.open(command.taskId, command.focusField, command.draft);
           return;
         case "workItem.open":
           if (command.workItem.role === "task") {
-            taskDetail.open(command.workItem.id);
+            taskDetail.open(command.workItem.id, command.focusField, command.draft);
           } else {
-            navigate(`/projects/${command.workItem.id}`);
+            navigate(projectFocusPath(command.workItem.id, command.focusField, command.draft));
           }
           return;
         case "task.plan":
@@ -386,7 +394,7 @@ export function useWorkItemCommands() {
           projectWorkflow.open("assignDriver", command.story.id);
           return;
         case "story.editOutcome":
-          projectWorkflow.open("editOutcome", command.story.id);
+          projectWorkflow.open("editOutcome", command.story.id, command.initialCriterion);
           return;
         case "story.deadline":
           projectWorkflow.open("deadline", command.story.id);
@@ -398,7 +406,7 @@ export function useWorkItemCommands() {
           projectWorkflow.open("contexts", command.story.id);
           return;
         case "story.planWork":
-          navigate(`/projects/${command.story.id}?focus=next-action`);
+          navigate(projectFocusPath(command.story.id, "next-action", command.initialTitle));
           return;
         case "story.lifecycle":
           scope?.setOpenLifecycle(command.story.id);

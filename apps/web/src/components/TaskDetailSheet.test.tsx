@@ -60,16 +60,18 @@ const mockedApi = vi.mocked(api, true);
 function OpenerHarness({
   taskId,
   focusField,
+  draft,
   children,
 }: {
   taskId: number;
   focusField?: TaskDetailFocusField | undefined;
+  draft?: string | undefined;
   children: ReactNode;
 }) {
   const { open } = useTaskDetail();
   return (
     <div>
-      <button type="button" onClick={() => open(taskId, focusField)}>
+      <button type="button" onClick={() => open(taskId, focusField, draft)}>
         open
       </button>
       {children}
@@ -89,9 +91,9 @@ function QueueOpenerHarness({ taskIds, children }: { taskIds: number[]; children
   );
 }
 
-function renderSheet(taskId: number, focusField?: TaskDetailFocusField) {
+function renderSheet(taskId: number, focusField?: TaskDetailFocusField, draft?: string) {
   return renderWithProviders(
-    <OpenerHarness taskId={taskId} focusField={focusField}>
+    <OpenerHarness taskId={taskId} focusField={focusField} draft={draft}>
       <TaskDetailSheet />
       <TaskWorkflowHost />
     </OpenerHarness>,
@@ -562,6 +564,34 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "open" }));
 
     await waitFor(() => expect(screen.getByLabelText("Titel")).toHaveFocus());
+  });
+
+  it("seeds an unsaved title draft that still needs an explicit save", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 42, title: "Keller", dependencies: [], children: [] }),
+    );
+    renderSheet(42, "title", "Werkzeugkiste im Keller sortieren");
+
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Titel")).toHaveValue("Werkzeugkiste im Keller sortieren"));
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("appends a notes draft to the existing notes without saving", async () => {
+    mockedApi.getTask.mockResolvedValue(
+      makeTask({ id: 42, title: "Kur-Nachweis", notes: "Formular liegt im Ordner", dependencies: [], children: [] }),
+    );
+    renderSheet(42, "notes", "Empfänger: Krankenkasse");
+
+    await userEvent.click(screen.getByRole("button", { name: "open" }));
+
+    await waitFor(() =>
+      expect(screen.getByDisplayValue(/Empfänger: Krankenkasse/)).toHaveValue(
+        "Formular liegt im Ordner\n\nEmpfänger: Krankenkasse",
+      ),
+    );
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
   it("focuses dependency search after unresolved dependency removal controls", async () => {

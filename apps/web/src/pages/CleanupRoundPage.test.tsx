@@ -6,6 +6,7 @@ import type { CleanupRoundItemRecord, CleanupRoundRecord } from "@machbar/shared
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
+import { useTaskDetail } from "../lib/taskDetailContext";
 import { CleanupRoundPage } from "./CleanupRoundPage";
 
 vi.mock("../lib/api", () => ({
@@ -80,6 +81,15 @@ function WorkflowProbe() {
   ) : null;
 }
 
+function DetailProbe() {
+  const detail = useTaskDetail();
+  return detail.openTaskId !== null ? (
+    <output data-testid="detail">
+      {`${detail.openTaskId}:${detail.focusField ?? ""}:${detail.focusDraft ?? ""}`}
+    </output>
+  ) : null;
+}
+
 function renderAt(path: string) {
   return renderWithProviders(
     <>
@@ -89,6 +99,7 @@ function renderAt(path: string) {
         <Route path="/more" element={<p>Mehr-Seite</p>} />
       </Routes>
       <WorkflowProbe />
+      <DetailProbe />
     </>,
     { initialEntries: [path] },
   );
@@ -119,12 +130,102 @@ describe("CleanupRoundPage", () => {
     expect(within(card).getByText("Ersten Schnitt finden")).toBeInTheDocument();
     expect(within(card).getByText("Der Keller ist zu breit für eine Aufgabe.")).toBeInTheDocument();
     expect(within(card).getByText(/Welche Ecke stört am meisten\?/)).toBeInTheDocument();
-    expect(within(card).getByText(/Werkzeugecke sortieren/)).toBeInTheDocument();
     expect(within(card).getByText(/Aufgabe · Haus · Machbar/)).toBeInTheDocument();
 
-    await userEvent.click(within(card).getByRole("button", { name: "Ersten Schnitt anlegen" }));
-    expect(screen.getByTestId("workflow")).toHaveTextContent("split:7:Werkzeugecke sortieren");
+    // The suggestion is an editable answer that is carried into the workflow.
+    const answer = within(card).getByLabelText("Deine Antwort");
+    expect(answer).toHaveValue("Werkzeugecke sortieren");
+    await userEvent.clear(answer);
+    await userEvent.type(answer, "Schraubenregal sortieren");
+    await userEvent.click(within(card).getByRole("button", { name: "Ersten Schnitt anlegen …" }));
+    expect(screen.getByTestId("workflow")).toHaveTextContent("split:7:Schraubenregal sortieren");
     expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
+  });
+
+  it("opens the title editor seeded with the suggested title", async () => {
+    mocked.getCleanupRound.mockResolvedValue(round({
+      items: [item({
+        result: {
+          ...item().result!,
+          proposal: "rename_for_actionability",
+          resolutionSurface: "rename_item",
+          suggestedDefault: null,
+          suggestedTitle: "Werkzeugkiste im Keller sortieren",
+        },
+      })],
+    }));
+    renderAt("/more/cleanup-round/r1");
+
+    const card = await screen.findByRole("article", { name: "Keller" });
+    expect(within(card).getByLabelText("Deine Antwort")).toHaveValue("Werkzeugkiste im Keller sortieren");
+    await userEvent.click(within(card).getByRole("button", { name: "Umbenennen …" }));
+    expect(screen.getByTestId("detail")).toHaveTextContent("7:title:Werkzeugkiste im Keller sortieren");
+    expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
+  });
+
+  it("labels reference conversion as a check, not as an applied change", async () => {
+    mocked.getCleanupRound.mockResolvedValue(round({
+      items: [item({
+        result: {
+          ...item().result!,
+          proposal: "convert_to_reference",
+          resolutionSurface: "convert_to_reference",
+          suggestedDefault: null,
+        },
+      })],
+    }));
+    renderAt("/more/cleanup-round/r1");
+
+    const card = await screen.findByRole("article", { name: "Keller" });
+    expect(within(card).queryByRole("button", { name: /Als Information ablegen/ })).not.toBeInTheDocument();
+    await userEvent.click(within(card).getByRole("button", { name: "Öffnen und als Information prüfen" }));
+    expect(screen.getByTestId("detail")).toHaveTextContent("7:notes:");
+  });
+
+  it("explains the difference between review acknowledgement and hiding a card", async () => {
+    mocked.getCleanupRound.mockResolvedValue(round());
+    mocked.resolveCleanupRoundItem.mockResolvedValue(round({ status: "completed", items: [item({ status: "dismissed" })] }));
+    renderAt("/more/cleanup-round/r1");
+
+    expect(await screen.findByText(/ändert den Eintrag nicht/)).toBeInTheDocument();
+    const card = screen.getByRole("article", { name: "Keller" });
+    await userEvent.click(within(card).getByRole("button", { name: "Einschätzung ausblenden" }));
+    expect(mocked.resolveCleanupRoundItem).toHaveBeenCalledWith("r1", "item-1", "dismiss");
+  });
+
+  it("shows failed items of a partial round as cards and retries only the missing ones", async () => {
+    mocked.getCleanupRound.mockResolvedValue(round({
+      status: "partial",
+      items: [
+        item(),
+        item({ id: "item-2", targetId: 8, title: "Backup", status: "failed", result: null }),
+      ],
+    }));
+    mocked.retryCleanupRound.mockResolvedValue(round({ status: "queued" }));
+    renderAt("/more/cleanup-round/r1");
+
+    const failed = await screen.findByRole("article", { name: "Backup" });
+    expect(within(failed).getByText("Machbar konnte für diesen Eintrag keine sichere Einschätzung erstellen.")).toBeInTheDocument();
+    expect(within(failed).getByRole("button", { name: "Öffnen" })).toBeInTheDocument();
+    expect(within(failed).getByRole("button", { name: "Einschätzung ausblenden" })).toBeInTheDocument();
+    expect(within(failed).queryByRole("button", { name: "Hinten anstellen" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Alles durchgesehen.")).not.toBeInTheDocument();
+    expect(screen.getByRole("article", { name: "Keller" })).toBeInTheDocument();
+
+    await userEvent.click(within(failed).getByRole("button", { name: "Erneut versuchen" }));
+    expect(mocked.retryCleanupRound).toHaveBeenCalledWith("r1");
+  });
+
+  it("offers retrying only the missing items from the partial banner", async () => {
+    mocked.getCleanupRound.mockResolvedValue(round({
+      status: "partial",
+      items: [item(), item({ id: "item-2", targetId: 8, title: "Backup", status: "failed", result: null })],
+    }));
+    mocked.retryCleanupRound.mockResolvedValue(round({ status: "queued" }));
+    renderAt("/more/cleanup-round/r1");
+
+    await userEvent.click(await screen.findByRole("button", { name: "Fehlende erneut versuchen" }));
+    expect(mocked.retryCleanupRound).toHaveBeenCalledWith("r1");
   });
 
   it("marks an item reviewed only through the explicit action", async () => {
@@ -148,7 +249,8 @@ describe("CleanupRoundPage", () => {
     renderAt("/more/cleanup-round/r1");
 
     expect(await screen.findByText("Machbar konnte keine sichere Klärungsrunde erstellen.")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Erneut versuchen" }));
+    expect(screen.getByRole("article", { name: "Keller" })).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole("button", { name: "Erneut versuchen" })[0]!);
     expect(mocked.retryCleanupRound).toHaveBeenCalledWith("r1");
     expect(await screen.findByText("Machbar prüft ein paar Dinge …")).toBeInTheDocument();
 
