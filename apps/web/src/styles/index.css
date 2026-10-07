@@ -3787,6 +3787,19 @@ details[open] > .disclosure-summary::after {
   align-self: flex-start;
 }
 
+.cleanup-round-card-muted {
+  opacity: 0.72;
+  background: var(--color-surface-alt);
+}
+
+.cleanup-round-card-muted .badge {
+  opacity: 0.8;
+}
+
+.cleanup-round-card-muted p {
+  color: var(--color-text-muted);
+}
+
 .cleanup-round-actions {
   flex-wrap: wrap;
 }
