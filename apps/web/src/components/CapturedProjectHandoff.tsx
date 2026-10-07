@@ -9,8 +9,8 @@ import { useStrings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { sortByPosition } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
-import { MemberSelectionSheet } from "./MemberSelectionSheet";
 import { useProjectActions } from "../lib/useProjectActions";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { hasProjectProgressPath } from "../lib/projectCommitments";
 
 /**
@@ -37,16 +37,16 @@ export function CapturedProjectHandoff({
 }) {
   const strings = useStrings();
   const navigate = useNavigate();
-  const { currentMemberId, members } = useIdentity();
+  const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
   const [currentProject, setCurrentProject] = useState(project);
-  const [selectingDriver, setSelectingDriver] = useState(false);
   const [steps, setSteps] = useState<Task[] | null>(null);
   const [stepDraft, setStepDraft] = useState("");
   const [addingStep, setAddingStep] = useState(false);
   const [stepError, setStepError] = useState<string | null>(null);
   const stepInputRef = useRef<HTMLInputElement | null>(null);
   const projectActions = useProjectActions([currentProject]);
+  const dispatch = useWorkItemCommands();
   const displayedProject =
     projectActions.retained.get(currentProject.id)?.story ?? currentProject;
   const canStart =
@@ -147,15 +147,7 @@ export function CapturedProjectHandoff({
               type="button"
               className="btn btn-primary btn-block"
               disabled={addingStep || projectActions.isPending(displayedProject.id)}
-              onClick={() => {
-                if (displayedProject.ownerMemberId === null) {
-                  setSelectingDriver(true);
-                  return;
-                }
-                void projectActions.activate(displayedProject).then((confirmed) => {
-                  if (confirmed) setCurrentProject(confirmed);
-                });
-              }}
+              onClick={() => dispatch({ type: "story.activate", story: displayedProject })}
             >
               {strings.reviewStart}
             </button>
@@ -189,22 +181,6 @@ export function CapturedProjectHandoff({
         </button>
         </div>
       </BottomSheet>
-      {selectingDriver ? (
-        <MemberSelectionSheet
-          title={strings.assignDriver}
-          label={strings.driver}
-          idPrefix={`handoff-driver-${displayedProject.id}`}
-          members={members}
-          value={displayedProject.ownerMemberId}
-          unassignedLabel={null}
-          onClose={() => setSelectingDriver(false)}
-          onSelect={async (ownerMemberId) => {
-            const confirmed = await projectActions.activate(displayedProject, ownerMemberId);
-            if (confirmed) setCurrentProject(confirmed);
-            setSelectingDriver(false);
-          }}
-        />
-      ) : null}
     </>
   );
 }

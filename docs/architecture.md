@@ -611,6 +611,13 @@ task-to-story conversion is subject to the same invariant; role conversion
 preserves the task identity, compatible metadata, and descendants rather than
 manufacturing readiness.
 
+The conversion sheet creates a backlog project first. Its Activate choice and
+the captured-project handoff's Start button dispatch `story.activate`, so
+`ProjectWorkflowHost` collects a missing driver with the existing member picker.
+Selection assigns the driver and activates atomically when a progress path is
+ready; otherwise the lifecycle continuation guides the user to plan the next
+action without bypassing activation readiness.
+
 Legacy rows migrated from before the invariant may still be `active` without a
 responsible person; the clarification service flags them urgently.
 

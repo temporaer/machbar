@@ -1,10 +1,12 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
-import { makeProject, makeTask } from "../test/fixtures";
+import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
+import { ProjectWorkflowHost } from "./ProjectWorkflowHost";
+import { de as strings } from "../i18n/de";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -115,5 +117,80 @@ describe("CapturedProjectHandoff", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Starten" })).not.toBeInTheDocument(),
     );
+  });
+
+  it.each(["executable", "future waiting"])(
+    "assigns a driver and activates atomically for %s progress",
+    async (progress) => {
+      const project = makeProject({
+        id: 42,
+        status: "backlog",
+        ownerMemberId: null,
+        activationReadiness: {
+          ready: false,
+          hasDriver: false,
+          hasViableProgressPath: progress === "executable",
+          hasHealthyFutureWaiting: progress === "future waiting",
+        },
+      });
+      mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);
+      mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
+      mockedApi.activateProject.mockResolvedValue({
+        ...project,
+        status: "active",
+        ownerMemberId: 1,
+        revision: 2,
+        availableActions: ["return_to_backlog", "complete", "archive"],
+      });
+      renderWithProviders(
+        <>
+          <CapturedProjectHandoff project={project} onDone={vi.fn()} />
+          <ProjectWorkflowHost />
+        </>,
+      );
+
+      await userEvent.click(screen.getByRole("button", { name: "Starten" }));
+      const picker = await screen.findByRole("dialog", { name: strings.assignDriver });
+      expect(within(picker).getByText(strings.assignDriverToActivateHint)).toBeInTheDocument();
+      expect(within(picker).queryByRole("button", { name: strings.noDriver })).not.toBeInTheDocument();
+      expect(mockedApi.activateProject).not.toHaveBeenCalled();
+
+      await userEvent.click(within(picker).getByRole("button", { name: /Mira/ }));
+
+      await waitFor(() =>
+        expect(mockedApi.activateProject).toHaveBeenCalledWith(42, {
+          expectedRevision: 1,
+          ownerMemberId: 1,
+        }),
+      );
+      await waitFor(() => expect(picker).not.toBeInTheDocument());
+      expect(screen.queryByRole("button", { name: "Starten" })).not.toBeInTheDocument();
+    },
+  );
+
+  it("leaves the handoff available when driver selection is cancelled", async () => {
+    const project = makeProject({
+      id: 42,
+      status: "backlog",
+      ownerMemberId: null,
+      nextAction: makeTask({ projectId: 42, executable: true }),
+    });
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [] });
+    renderWithProviders(
+      <>
+        <CapturedProjectHandoff project={project} onDone={vi.fn()} />
+        <ProjectWorkflowHost />
+      </>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Starten" }));
+    const picker = await screen.findByRole("dialog", { name: strings.assignDriver });
+    await userEvent.click(within(picker).getByRole("button", { name: "Abbrechen" }));
+
+    expect(picker).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Starten" })).toBeEnabled();
+    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Starten" }));
+    expect(await screen.findByRole("dialog", { name: strings.assignDriver })).toBeInTheDocument();
   });
 });

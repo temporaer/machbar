@@ -234,7 +234,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Optional structured hints extracted from existing task titles | `apps/web/src/lib/captionHints.ts`, rendered by `apps/web/src/components/CaptionHintSuggestions.tsx` inside existing focused workflows |
 | Explicit task reminders (multiple absolute/deadline-relative reminders per task) | `apps/api/src/db/schema.ts` (`taskReminders`), `apps/api/src/domain/taskCrud.ts`, `apps/api/src/notifications/outbox.ts`, and `apps/web/src/components/TaskRemindersSheet.tsx` reached via the `task.reminders` command |
 | Focused project workflows (one sheet per `story.*` command) | `apps/web/src/components/ProjectWorkflowHost.tsx` and `apps/web/src/lib/projectWorkflowContext.tsx` |
-| Project lifecycle prerequisites (missing driver, unmet criteria, no progress path) | `lifecyclePrerequisite()` in `apps/web/src/lib/projectWorkflow.ts`, resolved by `useWorkItemCommands()` |
+| Project lifecycle prerequisites (missing driver, unmet criteria, no progress path), including task conversion and capture handoff activation | `lifecyclePrerequisite()` in `apps/web/src/lib/projectWorkflow.ts`, resolved by `useWorkItemCommands()` and rendered by `ProjectWorkflowHost` |
 | Legal project transition to `story.*` command | `storyWorkflowCommand()` in `apps/web/src/lib/commands.ts` |
 | Authored project title/notes editing | `apps/web/src/pages/ProjectDetailPage.tsx` |
 | Compiled-view (Today) compact descendant presentation and terminal-descendant hiding | `apps/web/src/components/TaskOutline.tsx` (`compactDescendants` prop) and `apps/web/src/components/TaskRow.tsx` |

@@ -14,6 +14,7 @@ import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
 import { CompleteWithOpenTasksSheet } from "./CompleteWithOpenTasksSheet";
 import { useStrings } from "../lib/strings";
 import { canClearDriver } from "../lib/projectWorkflow";
+import { hasProjectProgressPath } from "../lib/projectCommitments";
 import type { ProjectWithActions } from "../lib/api";
 
 /**
@@ -135,7 +136,7 @@ export function ProjectWorkflowHost() {
           onCancel={close}
           onSelect={async (ownerMemberId) => {
             if (workflow.continuation?.projectId === story.id) {
-              if (story.activationReadiness.hasViableProgressPath) {
+              if (hasProjectProgressPath(story)) {
                 const result = await projectActions.runAction(story, action, ownerMemberId);
                 if (result) {
                   workflow.closeCurrent();
