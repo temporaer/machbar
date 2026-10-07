@@ -6,8 +6,9 @@ import { BottomSheet } from "./BottomSheet";
 /**
  * Focused `story.structure` workflow — the fixed row rail's `Struktur`
  * button for projects. Exactly `story.planWork` (navigates to the
- * project's next-action focus) and `story.editOutcome` (opens
- * `StoryCriteriaSheet`); each tile only dispatches the semantic command,
+ * project's next-action focus), `story.editOutcome` (opens
+ * `StoryCriteriaSheet`), and `story.convertToTask` (opens the guided
+ * role-conversion workflow); each tile only dispatches the semantic command,
  * so `useWorkItemCommands()` stays the one place deciding what it opens.
  * `story.editOutcome` is additionally reachable from the contextual icon
  * button next to the outcome section in `ProjectDetailPage.tsx` — this
@@ -42,6 +43,13 @@ export function ProjectStructureSheet({
           onClick={() => dispatch({ type: "story.editOutcome", story })}
         >
           {strings.structureEditOutcome}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => dispatch({ type: "story.convertToTask", story })}
+        >
+          {strings.convertProjectToTask}
         </button>
         <button type="button" className="btn btn-ghost" onClick={onClose}>
           {strings.cancel}

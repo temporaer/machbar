@@ -611,6 +611,13 @@ task-to-story conversion is subject to the same invariant; role conversion
 preserves the task identity, compatible metadata, and descendants rather than
 manufacturing readiness.
 
+The conversion sheet creates a backlog project first. Its Activate choice and
+the captured-project handoff's Start button dispatch `story.activate`, so
+`ProjectWorkflowHost` collects a missing driver with the existing member picker.
+Selection assigns the driver and activates atomically when a progress path is
+ready; otherwise the lifecycle continuation guides the user to plan the next
+action without bypassing activation readiness.
+
 Legacy rows migrated from before the invariant may still be `active` without a
 responsible person; the clarification service flags them urgently.
 
@@ -1267,6 +1274,10 @@ conversion still runs the normal story activation guards. Reverse conversion
 (story → task) remains conservative: it rejects whenever the story has any
 children or acceptance criteria, rather than silently discarding data. Routes:
 `POST /api/tasks/:id/convert-to-story`, `POST /api/projects/:id/convert-to-task`.
+The web workflow is opened by `story.convertToTask`; it preflights those
+project-only structures and routes blocked cases to the existing structure or
+goal editor instead of discarding data. A clean project can edit its title and
+notes before calling the canonical conversion endpoint.
 
 **Semantic commands.** `apps/web/src/lib/commands.ts` defines a pure,
 React-free `WorkItemCommand` union (`task.*`, `story.*`, `outline.*`,

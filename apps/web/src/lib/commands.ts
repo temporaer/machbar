@@ -15,6 +15,9 @@ type WeekTaskPlanningItem = Extract<WeekPlanningItem, { role: "task" }>;
  * (below), which routes them into the single shared `useTaskActions()` /
  * `useProjectActions()` controllers — see that file for the canonical
  * mutation/optimistic-retention behaviour behind each command.
+ * Role conversion is a semantic intent: `task.convertToProject` and
+ * `story.convertToTask` both route through focused guided workflows rather
+ * than calling conversion APIs from presentation surfaces.
  *
  * `outline.*` commands describe structural intent (reorder/indent/
  * outdent/fold). `outline.moveUp/moveDown/indent/outdent` are dispatched
@@ -70,6 +73,7 @@ export type WorkItemCommand =
   | { type: "story.assignDriver"; story: ProjectWithActions }
   | { type: "story.planWork"; story: ProjectWithActions }
   | { type: "story.editOutcome"; story: ProjectWithActions }
+  | { type: "story.convertToTask"; story: ProjectWithActions }
   | { type: "story.deadline"; story: ProjectWithActions }
   | { type: "story.tags"; story: ProjectWithActions }
   | { type: "story.contexts"; story: ProjectWithActions }

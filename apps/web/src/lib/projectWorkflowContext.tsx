@@ -33,13 +33,17 @@ import type { ProjectWithActions } from "./api";
  *
  * `structure` backs the fixed row rail's `Struktur` button: it opens
  * `ProjectStructureSheet`, which only ever dispatches `story.planWork`/
- * `story.editOutcome` rather than rendering a sheet of its own.
+ * `story.editOutcome`/`story.convertToTask` rather than rendering a sheet of
+ * its own. `convertToTask` is the focused Project → Task role-conversion
+ * workflow; it preflights project-only structure before calling the canonical
+ * API endpoint.
  */
 export type ProjectWorkflowKind =
   | "defer"
   | "structure"
   | "assignDriver"
   | "editOutcome"
+  | "convertToTask"
   | "deadline"
   | "tags"
   | "contexts"

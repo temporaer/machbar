@@ -60,6 +60,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "story.assignDriver":
     case "story.planWork":
     case "story.editOutcome":
+    case "story.convertToTask":
     case "story.deadline":
     case "story.tags":
     case "story.contexts":
@@ -111,6 +112,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "story.assignDriver":
     case "story.planWork":
     case "story.editOutcome":
+    case "story.convertToTask":
     case "story.deadline":
     case "story.tags":
     case "story.contexts":
@@ -177,6 +179,13 @@ export function useWorkItemCommands() {
           projectWorkflow.open("completeWithOpenTasks", story.id);
           return true;
         case "progressPath":
+          if (
+            taskWorkflow.current?.kind === "convertToProject" &&
+            taskWorkflow.current.taskId === story.id
+          ) {
+            taskWorkflow.close();
+            if (taskDetail.openTaskId === story.id) taskDetail.close();
+          }
           navigate(`/projects/${story.id}?focus=next-action`);
           return true;
         case "driver":
@@ -189,7 +198,7 @@ export function useWorkItemCommands() {
           return false;
       }
     },
-    [navigate, projectWorkflow],
+    [navigate, projectWorkflow, taskWorkflow, taskDetail],
   );
 
   const continueStoryLifecycle = useCallback(
@@ -390,6 +399,9 @@ export function useWorkItemCommands() {
           return;
         case "story.editOutcome":
           projectWorkflow.open("editOutcome", command.story.id);
+          return;
+        case "story.convertToTask":
+          projectWorkflow.open("convertToTask", command.story.id);
           return;
         case "story.deadline":
           projectWorkflow.open("deadline", command.story.id);

@@ -536,6 +536,16 @@ const en = {
     "Remove waits, dependencies, recurrence, or reminders first.",
   convertToProjectNotStandalone:
     "Only standalone tasks without a parent task or project can become a project.",
+  convertProjectToTask: "Make task",
+  convertProjectToTaskTitle: "Convert project to task",
+  convertProjectToTaskReady:
+    "This project has no child tasks and no goal criteria. It can be converted to a task without losing structure.",
+  convertProjectToTaskBlocked:
+    "This project cannot yet be converted into a single task.",
+  convertProjectToTaskHasChildren: "This project still has child tasks.",
+  convertProjectToTaskHasCriteria: "This project still has goal criteria.",
+  convertProjectToTaskOpenStructure: "Open structure",
+  convertProjectToTaskEditGoal: "Edit goal",
   needsClarification: "Needs clarification",
   clarifyEmpty: "The inbox is empty. Nice work!",
   waitingEmpty: "Nothing is waiting right now.",
@@ -1392,7 +1402,7 @@ const en = {
     scope_edit_root_only:
       "Only a top-level task or project can have its scope changed.",
     role_conversion_invalid:
-      "Remove conflicting task-only details before converting this task to a project.",
+      "This role conversion is no longer possible. Review the structure and try again.",
     task_title_required: "Enter a task title.",
     external_task_title_required:
       "A title is required when creating an externally managed task.",

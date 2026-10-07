@@ -3,6 +3,7 @@ import type { Task } from "@machbar/shared";
 import { api } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { useRefresh } from "../lib/refresh";
+import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { BottomSheet } from "./BottomSheet";
 import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
@@ -11,6 +12,7 @@ import { CapturedProjectHandoff } from "./CapturedProjectHandoff";
 export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClose: () => void }) {
   const strings = useStrings();
   const { bump } = useRefresh();
+  const dispatch = useWorkItemCommands();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<Awaited<ReturnType<typeof api.convertTaskToStory>> | null>(null);
@@ -35,11 +37,12 @@ export function TaskConvertToProjectSheet({ task, onClose }: { task: Task; onClo
     setError(null);
     try {
       const converted = await api.convertTaskToStory(task.id, {
-        status,
+        status: "backlog",
         expectedRevision: task.revision,
       });
       bump();
       setProject(converted);
+      if (status === "active") dispatch({ type: "story.activate", story: converted });
     } catch (cause) {
       if (isStaleWriteConflict(cause)) bump();
       setError(localizedErrorMessage(cause, strings));

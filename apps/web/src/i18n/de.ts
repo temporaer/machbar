@@ -524,6 +524,16 @@ const extra = {
     "Entferne zuerst Warten, Abhängigkeiten, Wiederholung oder Erinnerung.",
   convertToProjectNotStandalone:
     "Nur eigenständige Aufgaben ohne Elternaufgabe und Projekt können zu einem Projekt werden.",
+  convertProjectToTask: "Zur Aufgabe machen",
+  convertProjectToTaskTitle: "Projekt zur Aufgabe machen",
+  convertProjectToTaskReady:
+    "Dieses Projekt hat keine Unteraufgaben und keine Zielkriterien. Es kann ohne Strukturverlust in eine Aufgabe umgewandelt werden.",
+  convertProjectToTaskBlocked:
+    "Dieses Projekt kann noch nicht in eine einzelne Aufgabe umgewandelt werden.",
+  convertProjectToTaskHasChildren: "Dieses Projekt hat noch Unteraufgaben.",
+  convertProjectToTaskHasCriteria: "Dieses Projekt hat noch Zielkriterien.",
+  convertProjectToTaskOpenStructure: "Struktur öffnen",
+  convertProjectToTaskEditGoal: "Ziel bearbeiten",
   needsClarification: "Zu klären",
   clarifyEmpty: "Der Eingang ist leer. Gute Arbeit!",
   waitingEmpty: "Nichts wartet gerade.",
@@ -1397,7 +1407,7 @@ const extra = {
     scope_edit_root_only:
       "Nur bei einer Aufgabe/einem Projekt auf oberster Ebene kann der Bereich geändert werden.",
     role_conversion_invalid:
-      "Diese Aufgabe kann erst in ein Projekt umgewandelt werden, wenn widersprechende Aufgaben-Eigenschaften entfernt wurden.",
+      "Diese Rollen-Umwandlung ist nicht mehr möglich. Prüfe die Struktur und versuche es erneut.",
     task_title_required: "Bitte gib einen Aufgabentitel ein.",
     external_task_title_required:
       "Beim Erstellen einer extern verwalteten Aufgabe ist ein Titel erforderlich.",

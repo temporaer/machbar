@@ -9,11 +9,13 @@ import { ProjectStructureSheet } from "./ProjectStructureSheet";
 import { ProjectTagsSheet } from "./ProjectTagsSheet";
 import { ProjectDeadlineSheet } from "./ProjectDeadlineSheet";
 import { ProjectContextsSheet } from "./ProjectContextsSheet";
+import { ProjectConvertToTaskSheet } from "./ProjectConvertToTaskSheet";
 import { StoryCriteriaSheet } from "./StoryCriteriaSheet";
 import { CompleteWithCriteriaSheet } from "./CompleteWithCriteriaSheet";
 import { CompleteWithOpenTasksSheet } from "./CompleteWithOpenTasksSheet";
 import { useStrings } from "../lib/strings";
 import { canClearDriver } from "../lib/projectWorkflow";
+import { hasProjectProgressPath } from "../lib/projectCommitments";
 import type { ProjectWithActions } from "../lib/api";
 
 /**
@@ -74,6 +76,8 @@ export function ProjectWorkflowHost() {
       );
     case "editOutcome":
       return <StoryCriteriaSheet story={story} onClose={close} />;
+    case "convertToTask":
+      return <ProjectConvertToTaskSheet story={story} onClose={close} />;
     case "completeWithCriteria":
       return (
         <CompleteWithCriteriaSheet
@@ -135,7 +139,7 @@ export function ProjectWorkflowHost() {
           onCancel={close}
           onSelect={async (ownerMemberId) => {
             if (workflow.continuation?.projectId === story.id) {
-              if (story.activationReadiness.hasViableProgressPath) {
+              if (hasProjectProgressPath(story)) {
                 const result = await projectActions.runAction(story, action, ownerMemberId);
                 if (result) {
                   workflow.closeCurrent();

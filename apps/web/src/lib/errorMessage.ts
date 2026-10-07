@@ -72,6 +72,16 @@ export function localizedApiErrorMessage(
   details: Record<string, unknown> | undefined,
   strings: Strings,
 ): string {
+  if (code === "role_conversion_invalid") {
+    const reason = stringDetail(details, "reason");
+    if (reason === "has_children") {
+      return strings.convertProjectToTaskHasChildren;
+    }
+    if (reason === "has_acceptance_criteria") {
+      return strings.convertProjectToTaskHasCriteria;
+    }
+  }
+
   const name = stringDetail(details, "name");
   if (name) {
     if (code === "member_name_conflict") {
