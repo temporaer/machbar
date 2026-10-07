@@ -16,7 +16,7 @@ from custom_components.machbar.cleanup_round import (
 from custom_components.machbar.const import DOMAIN
 from custom_components.machbar.intake import AdapterError
 from custom_components.machbar.worker import RequestWorker
-from tests.test_intake import _probatio_schema_from_voluptuous
+from tests.test_intake import _ha_2026_9_3_adjust_schema, _probatio_schema_from_voluptuous
 
 
 def _valid_result(**overrides):
@@ -37,20 +37,47 @@ def _valid_result(**overrides):
     }
 
 
-def test_structure_accepts_valid_response_and_rejects_unknown_enums():
+def test_structure_only_enforces_the_envelope():
     response = {"summary": "Runde", "results": [_valid_result()], "warnings": []}
     assert CLEANUP_ROUND_STRUCTURE(response)["results"][0]["targetId"] == 7
+    # Unknown vocabulary values pass through; Machbar's API validates them.
+    loose = CLEANUP_ROUND_STRUCTURE({
+        **response,
+        "results": [
+            _valid_result(
+                proposal="plan_everything",
+                resolutionSurface="auto_apply",
+                inferredWorkType="chore",
+                inferredFlow="sideways",
+                confidence="certain",
+                targetType="story",
+                suggestedShape="checklist",
+            )
+        ],
+    })
+    assert loose["results"][0]["proposal"] == "plan_everything"
+    assert loose["results"][0]["suggestedShape"] == "checklist"
+    # Extra result keys are tolerated and dropped.
+    extra = CLEANUP_ROUND_STRUCTURE({**response, "results": [{**_valid_result(), "plan": ["a"]}]})
+    assert "plan" not in extra["results"][0]
     with pytest.raises(vol.Invalid):
-        CLEANUP_ROUND_STRUCTURE({**response, "results": [_valid_result(proposal="plan_everything")]})
+        CLEANUP_ROUND_STRUCTURE({"summary": "Runde", "warnings": []})
     with pytest.raises(vol.Invalid):
-        CLEANUP_ROUND_STRUCTURE({**response, "results": [_valid_result(resolutionSurface="auto_apply")]})
+        CLEANUP_ROUND_STRUCTURE({**response, "results": {}})
 
 
-def test_structure_converts_to_openapi_with_closed_enums():
+def test_structure_converts_to_a_strict_provider_safe_schema():
     converted = to_openapi(_probatio_schema_from_voluptuous(CLEANUP_ROUND_STRUCTURE))
+    _ha_2026_9_3_adjust_schema(converted)
     result = converted["properties"]["results"]["items"]
-    assert "leave_alone" in result["properties"]["proposal"]["enum"]
-    assert "open_item" in result["properties"]["resolutionSurface"]["enum"]
+    # No closed enums at the HA boundary, but the vocabulary guides the model.
+    for field in ("targetType", "proposal", "resolutionSurface", "inferredWorkType", "inferredFlow", "confidence"):
+        assert "enum" not in result["properties"][field]
+    assert "leave_alone" in result["properties"]["proposal"]["description"]
+    assert "open_item" in result["properties"]["resolutionSurface"]["description"]
+    # Strict structured-output providers require closed objects.
+    assert result["additionalProperties"] is False
+    assert converted["additionalProperties"] is False
     assert set(result["required"]) >= {"targetType", "targetId", "proposal", "resolutionSurface"}
 
 

@@ -23,7 +23,7 @@ export interface CleanupSampleOptions {
   limit?: number;
 }
 
-interface Candidate {
+export interface CleanupCandidate {
   targetType: CleanupTargetType;
   targetId: number;
   cluster: string;
@@ -182,6 +182,45 @@ export function projectContext(graph: Graph, projectId: number): CleanupItemCont
 }
 
 /**
+ * Picks the highest-scoring candidates under the per-cluster cap and, when
+ * both shapes are available, swaps in one of the missing shape. A swap
+ * replaces the lowest-ranked pick whose removal keeps the replacement's
+ * cluster within `MAX_PER_CLUSTER`.
+ */
+export function selectCleanupBatch<T extends Pick<CleanupCandidate, "targetType" | "cluster" | "score">>(
+  candidates: readonly T[],
+  limit: number,
+): T[] {
+  const ranked = [...candidates].sort((a, b) => b.score - a.score);
+  const picked: T[] = [];
+  const perCluster = new Map<string, number>();
+  for (const candidate of ranked) {
+    if (picked.length >= limit) break;
+    const count = perCluster.get(candidate.cluster) ?? 0;
+    if (count >= MAX_PER_CLUSTER) continue;
+    perCluster.set(candidate.cluster, count + 1);
+    picked.push(candidate);
+  }
+  for (const type of ["project", "task"] as const) {
+    if (picked.length < 2 || picked.some((candidate) => candidate.targetType === type)) continue;
+    swap: for (const replacement of ranked) {
+      if (replacement.targetType !== type) continue;
+      for (let index = picked.length - 1; index >= 0; index -= 1) {
+        const victim = picked[index]!;
+        const count = (perCluster.get(replacement.cluster) ?? 0)
+          - (victim.cluster === replacement.cluster ? 1 : 0);
+        if (count >= MAX_PER_CLUSTER) continue;
+        perCluster.set(victim.cluster, (perCluster.get(victim.cluster) ?? 1) - 1);
+        perCluster.set(replacement.cluster, (perCluster.get(replacement.cluster) ?? 0) + 1);
+        picked[index] = replacement;
+        break swap;
+      }
+    }
+  }
+  return picked;
+}
+
+/**
  * Chooses a small mixed batch of open work items worth a semantic look.
  * This is selection, not diagnosis: staleness, notes, children and vague
  * titles only nudge weighted randomness, and a per-cluster cap keeps one
@@ -194,7 +233,7 @@ export function sampleCleanupCandidates(
   const now = options.now ?? new Date();
   const random = options.random ?? Math.random;
   const limit = options.limit ?? CLEANUP_ROUND_SAMPLE_LIMIT;
-  const candidates: Candidate[] = [];
+  const candidates: CleanupCandidate[] = [];
 
   for (const task of graph.allActions()) {
     if (task.scope !== options.scope) continue;
@@ -223,22 +262,7 @@ export function sampleCleanupCandidates(
     });
   }
 
-  candidates.sort((a, b) => b.score - a.score);
-  const picked: Candidate[] = [];
-  const perCluster = new Map<string, number>();
-  for (const candidate of candidates) {
-    if (picked.length >= limit) break;
-    const count = perCluster.get(candidate.cluster) ?? 0;
-    if (count >= MAX_PER_CLUSTER) continue;
-    perCluster.set(candidate.cluster, count + 1);
-    picked.push(candidate);
-  }
-  // Keep the batch mixed when both shapes are available.
-  for (const type of ["project", "task"] as const) {
-    if (picked.length < 2 || picked.some((candidate) => candidate.targetType === type)) continue;
-    const replacement = candidates.find((candidate) => candidate.targetType === type);
-    if (replacement) picked[picked.length - 1] = replacement;
-  }
+  const picked = selectCleanupBatch(candidates, limit);
 
   return picked
     .map((candidate) => candidate.targetType === "task"

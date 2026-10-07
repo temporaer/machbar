@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { cleanupProposalKinds, cleanupResolutionSurfaces } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
 import { Graph } from "../src/domain/graph.js";
-import { sampleCleanupCandidates } from "../src/cleanupRound/sampler.js";
+import { sampleCleanupCandidates, selectCleanupBatch } from "../src/cleanupRound/sampler.js";
 import { validateCleanupRoundResponse } from "../src/cleanupRound/validate.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -65,6 +65,22 @@ describe("cleanup response validation", () => {
     ]));
     expect(outcome.missingTargets).toEqual([{ targetType: "task", targetId: 1 }]);
     expect(outcome.response!.warnings.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["inferredWorkType", "chore"],
+    ["inferredFlow", "sideways"],
+    ["confidence", "certain"],
+    ["suggestedShape", "checklist"],
+    ["targetType", "story"],
+  ])("rejects an unknown %s value now that Home Assistant passes vocabularies through", (field, value) => {
+    const outcome = validateCleanupRoundResponse({
+      summary: "x",
+      results: [triage("task", 1, { [field]: value }), triage("project", 2)],
+      warnings: [],
+    }, sampled);
+    expect(outcome.response?.results.map((result) => result.targetId)).toEqual([2]);
+    expect(outcome.issues.some((issue) => issue.code === "schema_invalid")).toBe(true);
   });
 
   it("normalizes spelling and truncates excessive text", () => {
@@ -220,6 +236,38 @@ describe("cleanup rounds", () => {
     expect(response.json().error.code).toBe("cleanup_round_no_candidates");
   });
 
+  it.each(["dismissing the round", "resolving every card"])(
+    "keeps failed items of a partial round reserved until %s",
+    async (release) => {
+      const token = await pair();
+      const keller = await task("Keller");
+      const backup = await task("Backup");
+      const id = await createRound();
+      await complete(token, await lease(token), {
+        outcome: "succeeded",
+        result: { summary: "x", results: [triage("task", keller)], warnings: [] },
+      });
+      const first = (await ctx.app.inject({ method: "GET", url: `/api/cleanup-rounds/${id}` })).json();
+      expect(first.status).toBe("partial");
+      const failed = first.items.find((item: { targetId: number }) => item.targetId === backup);
+      expect(failed.status).toBe("failed");
+
+      const blocked = await ctx.app.inject({ method: "POST", url: "/api/cleanup-rounds", payload: {} });
+      expect(blocked.json().error.code).toBe("cleanup_round_no_candidates");
+
+      if (release === "dismissing the round") {
+        await ctx.app.inject({ method: "POST", url: `/api/cleanup-rounds/${id}/dismiss`, payload: {} });
+      } else {
+        for (const item of first.items as Array<{ id: string }>) {
+          await ctx.app.inject({ method: "POST", url: `/api/cleanup-rounds/${id}/items/${item.id}/dismiss`, payload: {} });
+        }
+        expect((await ctx.app.inject({ method: "GET", url: `/api/cleanup-rounds/${id}` })).json().status).toBe("completed");
+      }
+      const next = (await ctx.app.inject({ method: "GET", url: `/api/cleanup-rounds/${await createRound()}` })).json();
+      expect(next.items.map((item: { targetId: number }) => item.targetId)).toContain(backup);
+    },
+  );
+
   it("stores valid results as ready without mutating work items", async () => {
     const token = await pair();
     const keller = await task("Keller");
@@ -361,6 +409,38 @@ describe("cleanup rounds", () => {
     expect(inBig.length).toBeLessThanOrEqual(2);
     expect(sample.some((item) => item.targetType === "project")).toBe(true);
     expect(sample.some((item) => item.targetType === "task")).toBe(true);
+  });
+
+  it("keeps the cluster cap when swapping in the missing shape", () => {
+    const candidate = (targetType: "task" | "project", cluster: string, score: number) =>
+      ({ targetType, cluster, score });
+    // Two tasks already fill project:1; the only project candidate is project 1
+    // itself, so replacing the last (unrelated) task would put three items in
+    // that cluster.
+    const batch = selectCleanupBatch([
+      candidate("task", "project:1", 10),
+      candidate("task", "project:1", 9),
+      candidate("task", "task:3", 8),
+      candidate("task", "task:4", 7),
+      candidate("project", "project:1", 1),
+    ], 4);
+    const perCluster = new Map<string, number>();
+    for (const picked of batch) perCluster.set(picked.cluster, (perCluster.get(picked.cluster) ?? 0) + 1);
+    expect(Math.max(...perCluster.values())).toBeLessThanOrEqual(2);
+    expect(batch).toHaveLength(4);
+    // The swap evicts a same-cluster task instead, keeping the batch mixed.
+    expect(batch.some((picked) => picked.targetType === "project")).toBe(true);
+    expect(batch.filter((picked) => picked.cluster === "project:1")).toHaveLength(2);
+  });
+
+  it("evicts a same-cluster pick when that is the only swap within the cap", () => {
+    const batch = selectCleanupBatch([
+      { targetType: "task" as const, cluster: "project:1", score: 10 },
+      { targetType: "task" as const, cluster: "project:1", score: 9 },
+      { targetType: "project" as const, cluster: "project:1", score: 1 },
+    ], 2);
+    expect(batch.map((picked) => picked.targetType)).toEqual(["task", "project"]);
+    expect(batch.filter((picked) => picked.cluster === "project:1")).toHaveLength(2);
   });
 
   it("exposes a closed vocabulary", () => {

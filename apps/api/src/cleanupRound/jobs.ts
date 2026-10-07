@@ -89,7 +89,7 @@ function activeTargetKeys(db: Db, now: string): Set<string> {
     .where(and(
       inArray(schema.cleanupRounds.status, ACTIVE_ROUND_STATUSES),
       gt(schema.cleanupRounds.expiresAt, now),
-      inArray(schema.cleanupRoundItems.status, ["pending", "ready"]),
+      inArray(schema.cleanupRoundItems.status, OPEN_ITEM_STATUSES),
     ))
     .all();
   return new Set(rows.map((row) => `${row.targetType}:${row.targetId}`));

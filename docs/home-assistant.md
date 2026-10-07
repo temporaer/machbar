@@ -57,7 +57,9 @@ Google credentials, or Home Assistant access token.
 The same AI Task entity also powers the **Klärungsrunde** (More →
 Klärungsrunde): Machbar sends a few sampled work items with coaching
 instructions, and the worker returns structured, advisory results through the
-`CLEANUP_ROUND_STRUCTURE` schema. Update the custom component together with
+`CLEANUP_ROUND_STRUCTURE` schema. That schema enforces only the response
+envelope (vocabularies are described, not closed enums, and unknown result keys
+are dropped); Machbar validates every entry and keeps the valid ones. Update the custom component together with
 Machbar; an older component reports the new request kind as unsupported.
 
 The worker long-polls Machbar, executes only the three fixed request kinds, and

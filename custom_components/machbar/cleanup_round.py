@@ -60,31 +60,41 @@ _RESULT_FIELDS = (
 )
 
 
-def _field(key: str) -> Any:
-    return vol.Required(key, description=f"Machbar Klärungsrunde field {key}")
+def _field(key: str, allowed: list[str] | None = None) -> Any:
+    return vol.Required(key, description=_description(key, allowed))
 
 
-def _optional_field(key: str) -> Any:
-    return vol.Optional(key, default=None, description=f"Machbar Klärungsrunde field {key}")
+def _optional_field(key: str, allowed: list[str] | None = None) -> Any:
+    return vol.Optional(key, default=None, description=_description(key, allowed))
+
+
+def _description(key: str, allowed: list[str] | None) -> str:
+    description = f"Machbar Klärungsrunde field {key}"
+    return f"{description}; one of: {', '.join(allowed)}" if allowed else description
 
 
 def _result_schema() -> vol.Schema:
+    # Envelope only: vocabularies are guidance in the descriptions, not closed
+    # enums. Machbar's API is the authoritative validator and accepts valid
+    # entries while reporting malformed ones. REMOVE_EXTRA tolerates and drops
+    # unknown keys while the provider schema keeps additionalProperties false,
+    # which strict structured-output providers require.
     return vol.Schema(
         {
-            _field("targetType"): vol.In(["task", "project"]),
+            _field("targetType", ["task", "project"]): str,
             _field("targetId"): int,
-            _field("proposal"): vol.In(PROPOSAL_KINDS),
-            _field("resolutionSurface"): vol.In(RESOLUTION_SURFACES),
-            _field("inferredWorkType"): vol.In(WORK_TYPES),
-            _field("inferredFlow"): vol.In(FLOWS),
-            _field("confidence"): vol.In(CONFIDENCES),
+            _field("proposal", PROPOSAL_KINDS): str,
+            _field("resolutionSurface", RESOLUTION_SURFACES): str,
+            _field("inferredWorkType", WORK_TYPES): str,
+            _field("inferredFlow", FLOWS): str,
+            _field("confidence", CONFIDENCES): str,
             _field("reason"): str,
             _field("question"): str,
             _optional_field("suggestedDefault"): _NULL,
             _optional_field("suggestedTitle"): _NULL,
-            _optional_field("suggestedShape"): vol.Any(None, vol.In(SHAPES)),
+            _optional_field("suggestedShape", SHAPES): _NULL,
         },
-        extra=vol.PREVENT_EXTRA,
+        extra=vol.REMOVE_EXTRA,
     )
 
 
@@ -92,7 +102,7 @@ CLEANUP_ROUND_STRUCTURE = vol.Schema(
     {
         _field("summary"): str,
         _field("results"): [_result_schema()],
-        _field("warnings"): [vol.Schema({_field("message"): str}, extra=vol.PREVENT_EXTRA)],
+        _field("warnings"): [vol.Schema({_field("message"): str}, extra=vol.REMOVE_EXTRA)],
     },
     extra=vol.PREVENT_EXTRA,
 )
