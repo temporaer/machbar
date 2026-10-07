@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -17,12 +17,16 @@ export function AiContextPage() {
   const navigate = useNavigate();
   const { data, loading, error } = useAsync(() => api.getHouseholdAiContext(), []);
   const [draft, setDraft] = useState<HouseholdAiContext>(emptyContext);
+  const draftInitialized = useRef(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (data) setDraft(data);
+    if (data && !draftInitialized.current) {
+      draftInitialized.current = true;
+      setDraft(data);
+    }
   }, [data]);
 
   const setField = (field: keyof HouseholdAiContext, value: string) => {
