@@ -233,6 +233,17 @@ export interface CleanupRoundRecord {
   homeAssistant: { workerOnline: boolean };
 }
 
+/**
+ * Confirmed Klärungsrunde micro-flows. Each maps to one narrow endpoint
+ * (`POST /api/cleanup-rounds/:id/items/:itemId/actions/<action>`) that
+ * applies the canonical mutation and dismisses the card in one transaction.
+ */
+export type CleanupRoundActionRequest =
+  | { action: "rename"; title: string; expectedRevision?: number }
+  | { action: "create-task"; title: string; purpose: "decision" | "firstSlice" | "followup" }
+  | { action: "add-done-when"; text: string }
+  | { action: "clarify-admin"; title?: string; notes?: string; expectedRevision?: number };
+
 export interface CleanupRoundAnalyzePayload {
   cleanupRoundId: string;
   taskName: "Machbar Klärungsrunde";

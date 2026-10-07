@@ -19,6 +19,7 @@ vi.mock("../lib/api", () => ({
     retryCleanupRound: vi.fn(),
     dismissCleanupRound: vi.fn(),
     resolveCleanupRoundItem: vi.fn(),
+    applyCleanupRoundAction: vi.fn(),
     getProject: vi.fn(),
     getTask: vi.fn(),
     updateTask: vi.fn(),
@@ -236,7 +237,8 @@ describe("CleanupRoundPage", () => {
       field: "Neu",
       confirm: "Umbenennen",
       expectMutation: () =>
-        expect(mocked.updateTask).toHaveBeenCalledWith(7, {
+        expect(mocked.applyCleanupRoundAction).toHaveBeenCalledWith("r1", "item-1", {
+          action: "rename",
           title: "Werkzeugkiste im Keller sortieren – geprüft",
           expectedRevision: 3,
         }),
@@ -254,7 +256,8 @@ describe("CleanupRoundPage", () => {
       field: "Neu",
       confirm: "Umbenennen",
       expectMutation: () =>
-        expect(mocked.updateProject).toHaveBeenCalledWith(7, {
+        expect(mocked.applyCleanupRoundAction).toHaveBeenCalledWith("r1", "item-1", {
+          action: "rename",
           title: "Neue Haustür auswählen – geprüft",
           expectedRevision: 4,
         }),
@@ -272,10 +275,10 @@ describe("CleanupRoundPage", () => {
       field: "Neue Teilaufgabe",
       confirm: "Teilaufgabe anlegen",
       expectMutation: () =>
-        expect(mocked.createChildTask).toHaveBeenCalledWith(7, {
+        expect(mocked.applyCleanupRoundAction).toHaveBeenCalledWith("r1", "item-1", {
+          action: "create-task",
           title: "Entscheiden: Welche Ecke zuerst? – geprüft",
-          createdByMemberId: null,
-          status: "actionable",
+          purpose: "decision",
         }),
     },
     {
@@ -291,10 +294,10 @@ describe("CleanupRoundPage", () => {
       field: "Neue Teilaufgabe",
       confirm: "Teilaufgabe anlegen",
       expectMutation: () =>
-        expect(mocked.createChildTask).toHaveBeenCalledWith(7, {
+        expect(mocked.applyCleanupRoundAction).toHaveBeenCalledWith("r1", "item-1", {
+          action: "create-task",
           title: "Werkzeugecke sortieren – geprüft",
-          createdByMemberId: null,
-          status: "actionable",
+          purpose: "firstSlice",
         }),
     },
     {
@@ -310,12 +313,10 @@ describe("CleanupRoundPage", () => {
       field: "Neue Aufgabe",
       confirm: "Aufgabe anlegen",
       expectMutation: () =>
-        expect(mocked.createTask).toHaveBeenCalledWith({
+        expect(mocked.applyCleanupRoundAction).toHaveBeenCalledWith("r1", "item-1", {
+          action: "create-task",
           title: "Angebote vergleichen – geprüft",
-          createdByMemberId: null,
-          status: "actionable",
-          projectId: 7,
-          parentTaskId: null,
+          purpose: "firstSlice",
         }),
     },
     {
@@ -331,10 +332,11 @@ describe("CleanupRoundPage", () => {
       field: "Neue Aufgabe",
       confirm: "Aufgabe anlegen",
       expectMutation: () =>
-        expect(mocked.createTask).toHaveBeenCalledWith(expect.objectContaining({
+        expect(mocked.applyCleanupRoundAction).toHaveBeenCalledWith("r1", "item-1", {
+          action: "create-task",
           title: "Nachhalten: Versicherung wegen Rohrbruch – geprüft",
-          projectId: 7,
-        })),
+          purpose: "followup",
+        }),
     },
     {
       name: "adds a project done-when criterion",
@@ -349,7 +351,10 @@ describe("CleanupRoundPage", () => {
       field: "Neues Kriterium",
       confirm: "Kriterium hinzufügen",
       expectMutation: () =>
-        expect(mocked.addCriterion).toHaveBeenCalledWith(7, "Tür ist montiert und dicht – geprüft"),
+        expect(mocked.applyCleanupRoundAction).toHaveBeenCalledWith("r1", "item-1", {
+          action: "add-done-when",
+          text: "Tür ist montiert und dicht – geprüft",
+        }),
     },
     {
       name: "appends a labeled done-when block to task notes",
@@ -364,20 +369,17 @@ describe("CleanupRoundPage", () => {
       field: "Eintrag",
       confirm: "In Notizen ergänzen",
       expectMutation: () =>
-        expect(mocked.appendTaskNotes).toHaveBeenCalledWith(7, "Erledigt, wenn: Letztes Backup erfolgreich – geprüft"),
+        expect(mocked.applyCleanupRoundAction).toHaveBeenCalledWith("r1", "item-1", {
+          action: "add-done-when",
+          text: "Erledigt, wenn: Letztes Backup erfolgreich – geprüft",
+        }),
     },
   ] as const;
 
   it.each(flows)("$name after an explicit confirmation", async (flow) => {
     mocked.getTask.mockResolvedValue(makeTask({ id: 7, title: "Keller", revision: 3 }));
     mocked.getProject.mockResolvedValue({ ...makeProject({ id: 7, title: "Keller", revision: 4 }), tasks: [] });
-    mocked.updateTask.mockResolvedValue(makeTask({ id: 7, revision: 4 }));
-    mocked.updateProject.mockResolvedValue(makeProject({ id: 7, revision: 5 }));
-    mocked.createTask.mockResolvedValue(makeTask({ id: 20 }));
-    mocked.createChildTask.mockResolvedValue(makeTask({ id: 21 }));
-    mocked.addCriterion.mockResolvedValue({} as never);
-    mocked.appendTaskNotes.mockResolvedValue(makeTask({ id: 7 }));
-    mocked.resolveCleanupRoundItem.mockResolvedValue(round({ status: "completed", items: [item({ status: "dismissed" })] }));
+    mocked.applyCleanupRoundAction.mockResolvedValue(round({ status: "completed", items: [item({ status: "dismissed" })] }));
     mocked.getCleanupRound.mockResolvedValue(round({
       items: [item({
         targetType: flow.targetType,
@@ -407,19 +409,31 @@ describe("CleanupRoundPage", () => {
     await userEvent.click(within(sheet).getByRole("button", { name: flow.confirm }));
 
     await waitFor(() => flow.expectMutation());
-    // Only the card is hidden; nothing sets reviewedAt.
-    await waitFor(() => expect(mocked.resolveCleanupRoundItem).toHaveBeenCalledWith("r1", "item-1", "dismiss"));
-    expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalledWith("r1", "item-1", "mark-reviewed");
-    expect(mocked.acknowledgeTaskReview).not.toHaveBeenCalled();
-    expect(mocked.acknowledgeProjectReview).not.toHaveBeenCalled();
+    // One request changes the item and hides the card; the page renders the
+    // returned round. No second dismiss request, no generic mutation, no review.
+    expect(mocked.applyCleanupRoundAction).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("Alles durchgesehen.")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: "Keller" })).not.toBeInTheDocument();
+    for (const separate of [
+      mocked.resolveCleanupRoundItem,
+      mocked.updateTask,
+      mocked.updateProject,
+      mocked.createTask,
+      mocked.createChildTask,
+      mocked.addCriterion,
+      mocked.appendTaskNotes,
+      mocked.appendProjectNotes,
+      mocked.acknowledgeTaskReview,
+      mocked.acknowledgeProjectReview,
+    ]) {
+      expect(separate).not.toHaveBeenCalled();
+    }
   });
 
   it("makes an admin step concrete: new wording plus optional note, both previewed", async () => {
     mocked.getTask.mockResolvedValue(makeTask({ id: 7, title: "Kur-Nachweis", revision: 2 }));
-    mocked.updateTask.mockResolvedValue(makeTask({ id: 7, revision: 3 }));
-    mocked.appendTaskNotes.mockResolvedValue(makeTask({ id: 7 }));
-    mocked.resolveCleanupRoundItem.mockResolvedValue(round({ status: "completed", items: [item({ status: "dismissed" })] }));
+    mocked.applyCleanupRoundAction.mockResolvedValue(round({ status: "completed", items: [item({ status: "dismissed" })] }));
     mocked.getCleanupRound.mockResolvedValue(round({
       items: [item({
         title: "Kur-Nachweis",
@@ -445,13 +459,17 @@ describe("CleanupRoundPage", () => {
     await userEvent.click(within(sheet).getByRole("button", { name: "Aktualisieren" }));
 
     await waitFor(() =>
-      expect(mocked.appendTaskNotes).toHaveBeenCalledWith(7, "Empfänger: Minijob-Zentrale"),
+      expect(mocked.applyCleanupRoundAction).toHaveBeenCalledWith("r1", "item-1", {
+        action: "clarify-admin",
+        title: "Kur-Nachweis an Minijob-Zentrale einreichen",
+        notes: "Empfänger: Minijob-Zentrale",
+        expectedRevision: 2,
+      }),
     );
-    expect(mocked.updateTask).toHaveBeenCalledWith(7, {
-      title: "Kur-Nachweis an Minijob-Zentrale einreichen",
-      expectedRevision: 2,
-    });
-    await waitFor(() => expect(mocked.resolveCleanupRoundItem).toHaveBeenCalledWith("r1", "item-1", "dismiss"));
+    expect(await screen.findByText("Alles durchgesehen.")).toBeInTheDocument();
+    expect(mocked.updateTask).not.toHaveBeenCalled();
+    expect(mocked.appendTaskNotes).not.toHaveBeenCalled();
+    expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
   });
 
   it("changes nothing when the confirmation is cancelled", async () => {
@@ -466,14 +484,14 @@ describe("CleanupRoundPage", () => {
     await userEvent.click(within(sheet).getByRole("button", { name: "Abbrechen" }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(mocked.createChildTask).not.toHaveBeenCalled();
+    expect(mocked.applyCleanupRoundAction).not.toHaveBeenCalled();
     expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
     expect(screen.getByRole("article", { name: "Keller" })).toBeInTheDocument();
   });
 
-  it("keeps the card when the change fails", async () => {
+  it("keeps the sheet and the card when the action endpoint fails", async () => {
     mocked.getTask.mockResolvedValue(makeTask({ id: 7, title: "Keller", revision: 3 }));
-    mocked.createChildTask.mockRejectedValue(new Error("kaputt"));
+    mocked.applyCleanupRoundAction.mockRejectedValue(new Error("kaputt"));
     mocked.getCleanupRound.mockResolvedValue(round());
     renderAt("/more/cleanup-round/r1");
 
@@ -483,7 +501,12 @@ describe("CleanupRoundPage", () => {
     await userEvent.click(await within(sheet).findByRole("button", { name: "Teilaufgabe anlegen" }));
 
     expect(await within(sheet).findByRole("alert")).toBeInTheDocument();
+    expect(mocked.applyCleanupRoundAction).toHaveBeenCalledTimes(1);
     expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Ersten Schritt anlegen?" })).toBeInTheDocument();
+    expect(within(sheet).getByLabelText("Neue Teilaufgabe")).toHaveValue("Werkzeugecke sortieren");
+    expect(within(sheet).getByRole("button", { name: "Teilaufgabe anlegen" })).toBeEnabled();
+    expect(screen.getByRole("article", { name: "Keller" })).toBeInTheDocument();
   });
 
   it("names the only real shape change and keeps other shapes as checks", async () => {

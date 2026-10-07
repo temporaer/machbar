@@ -1,44 +1,43 @@
 import { useId, useState } from "react";
-import type { CleanupTargetType } from "@machbar/shared";
+import type { CleanupRoundActionRequest, CleanupRoundRecord, CleanupTargetType } from "@machbar/shared";
 import { api, type ProjectDetail, type TaskDetail } from "../lib/api";
 import type { CleanupMicroFlow } from "../lib/cleanupRound";
 import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
-import { useIdentity } from "../lib/identity";
 import { useRefresh } from "../lib/refresh";
 import { useStrings } from "../lib/strings";
 import { useAsync } from "../lib/useAsync";
-import { useProjectActions } from "../lib/useProjectActions";
-import { useTaskActions } from "../lib/useTaskActions";
 import { ErrorState, LoadingState } from "./AsyncStates";
 import { BottomSheet } from "./BottomSheet";
 
 /**
  * Focused Klärungsrunde confirmation: shows the target and the exact title or
- * text that will be written, lets the user adjust it, and commits one explicit
- * change through the canonical paths (task/project update actions for titles,
- * the notes-append endpoints, child/project task creation, and criterion add).
- * It never touches `reviewedAt`; after success the caller hides the card.
+ * text that will be written and lets the user adjust it. Confirming calls one
+ * narrow cleanup-round action endpoint, which applies the canonical mutation
+ * and dismisses the card in a single transaction — either the item improves
+ * and the card disappears, or nothing changes and the error stays here.
+ * It never touches `reviewedAt`.
  */
 export function CleanupRoundActionSheet({
+  roundId,
+  itemId,
   targetType,
   targetId,
   flow,
   onClose,
   onApplied,
 }: {
+  roundId: string;
+  itemId: string;
   targetType: CleanupTargetType;
   targetId: number;
   flow: CleanupMicroFlow;
   onClose: () => void;
-  /** Runs after the mutation succeeded (hides the Klärungsrunde card). */
-  onApplied: () => Promise<void> | void;
+  /** Receives the round as returned by the action endpoint. */
+  onApplied: (round: CleanupRoundRecord) => void;
 }) {
   const strings = useStrings();
   const labels = strings.cleanupFlow;
-  const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
-  const taskActions = useTaskActions();
-  const projectActions = useProjectActions();
   const isProject = targetType === "project";
   // Load the current item so the sheet shows its real title and title writes
   // carry its current revision (stale writes are rejected, not overwritten).
@@ -76,53 +75,37 @@ export function CleanupRoundActionSheet({
           ? titleChanged || trimmedText !== ""
           : trimmedText !== "");
 
-  const rename = async () => {
-    const loaded = target.data;
-    if (!loaded) return;
-    if (loaded.kind === "project") {
-      await projectActions.update(loaded.item, { title: trimmedTitle }, { title: trimmedTitle }, true);
-    } else {
-      await taskActions.update(loaded.item, { title: trimmedTitle }, { title: trimmedTitle }, true);
+  const request = (revision: number): CleanupRoundActionRequest => {
+    switch (flow.kind) {
+      case "rename":
+        return { action: "rename", title: trimmedTitle, expectedRevision: revision };
+      case "createTask":
+        return { action: "create-task", title: trimmedTitle, purpose: flow.purpose };
+      case "addCriterion":
+      case "appendNotes":
+        return { action: "add-done-when", text: trimmedText };
+      case "clarifyAdmin":
+        return {
+          action: "clarify-admin",
+          ...(titleChanged ? { title: trimmedTitle } : {}),
+          ...(trimmedText ? { notes: trimmedText } : {}),
+          expectedRevision: revision,
+        };
     }
   };
-  const appendNotes = (content: string) =>
-    isProject ? api.appendProjectNotes(targetId, content) : api.appendTaskNotes(targetId, content);
 
   const apply = async () => {
-    if (!ready || busy) return;
+    if (!ready || busy || !current) return;
     setBusy(true);
     setError(null);
     try {
-      switch (flow.kind) {
-        case "rename":
-          await rename();
-          break;
-        case "createTask": {
-          const input = { title: trimmedTitle, createdByMemberId: currentMemberId, status: "actionable" as const };
-          // Owner/context/tags inherit from the parent task or project as usual.
-          await (isProject
-            ? api.createTask({ ...input, projectId: targetId, parentTaskId: null })
-            : api.createChildTask(targetId, input));
-          break;
-        }
-        case "addCriterion":
-          await api.addCriterion(targetId, trimmedText);
-          break;
-        case "appendNotes":
-          await appendNotes(trimmedText);
-          break;
-        case "clarifyAdmin":
-          if (titleChanged) await rename();
-          if (trimmedText) await appendNotes(trimmedText);
-          break;
-      }
+      const round = await api.applyCleanupRoundAction(roundId, itemId, request(current.revision));
       bump();
-      await onApplied();
       onClose();
+      onApplied(round);
     } catch (cause) {
       if (isStaleWriteConflict(cause)) target.reload();
       setError(localizedErrorMessage(cause, strings));
-    } finally {
       setBusy(false);
     }
   };

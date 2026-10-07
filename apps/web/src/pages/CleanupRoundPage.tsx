@@ -22,7 +22,8 @@ import { CleanupRoundActionSheet } from "../components/CleanupRoundActionSheet";
  * sampled work items. The page never mutates items from AI output by itself:
  * "Hinten anstellen" is the review acknowledgement, text-shaped answers open
  * a focused `CleanupRoundActionSheet` that shows the exact change before the
- * user confirms it, and the remaining surfaces open an existing workflow
+ * user confirms it (one cleanup-round action endpoint applies the change and
+ * hides the card atomically), and the remaining surfaces open an existing workflow
  * through `useWorkItemCommands()`.
  */
 export function CleanupRoundPage() {
@@ -166,10 +167,15 @@ function CleanupRoundReview({ id }: { id: string }) {
       {openItems.map((item) => (
         <CleanupRoundCard
           key={item.id}
+          roundId={id}
           item={item}
           busy={busy}
           {...(cardRetry ? { onRetry: retry } : {})}
           onResolve={(resolution) => resolveItem(item.id, resolution)}
+          onApplied={(next) => {
+            setError(null);
+            setRecord(next);
+          }}
         />
       ))}
       <div className="row">
@@ -182,16 +188,21 @@ function CleanupRoundReview({ id }: { id: string }) {
 }
 
 function CleanupRoundCard({
+  roundId,
   item,
   busy,
   onRetry,
   onResolve,
+  onApplied,
 }: {
+  roundId: string;
   item: CleanupRoundItemRecord;
   busy: boolean;
   /** Present only when this card owns the round's retry control. */
   onRetry?: (() => void) | undefined;
   onResolve: (resolution: "dismiss" | "mark-reviewed") => Promise<void>;
+  /** Receives the round returned by a confirmed micro-flow action. */
+  onApplied: (round: CleanupRoundRecord) => void;
 }) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
@@ -310,12 +321,14 @@ function CleanupRoundCard({
       {error ? <p className="text-muted" role="alert">{error}</p> : null}
       {flow ? (
         <CleanupRoundActionSheet
+          roundId={roundId}
+          itemId={item.id}
           targetType={item.targetType}
           targetId={item.targetId}
           flow={flow}
           onClose={() => setFlow(null)}
-          // The item itself is improved; only the card is hidden, not reviewed.
-          onApplied={() => onResolve("dismiss")}
+          // The endpoint improved the item and hid the card in one transaction.
+          onApplied={onApplied}
         />
       ) : null}
     </article>

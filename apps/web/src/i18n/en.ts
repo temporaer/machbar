@@ -1381,6 +1381,8 @@ const en = {
     cleanup_round_state_conflict: "This review round has changed in the meantime.",
     cleanup_round_item_not_found: "This entry does not belong to this review round.",
     cleanup_round_no_candidates: "There is nothing Machbar needs to look at right now.",
+    cleanup_round_target_mismatch: "This item no longer matches its target. Please reload.",
+    cleanup_round_action_no_change: "This confirmation would not change anything.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `A person named “${name}” already exists.`,

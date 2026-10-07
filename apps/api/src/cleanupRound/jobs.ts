@@ -406,6 +406,49 @@ export function dismissCleanupRound(db: Db, id: string, viewerMemberId: number |
   });
 }
 
+/** Loads an open card of an open round inside the caller's transaction. */
+export function openCleanupRoundItemOrThrow(
+  db: Db,
+  roundId: string,
+  itemId: string,
+  viewerMemberId: number | null,
+): { round: RoundRow; item: ItemRow } {
+  const round = roundOrThrow(db, roundId, viewerMemberId);
+  if (round.status === "dismissed" || round.status === "completed") {
+    throw AppError.conflict("cleanup_round_state_conflict", "This Klärungsrunde is already closed.");
+  }
+  const item = db.select().from(schema.cleanupRoundItems).where(and(
+    eq(schema.cleanupRoundItems.id, itemId),
+    eq(schema.cleanupRoundItems.cleanupRoundId, roundId),
+  )).get();
+  if (!item) throw AppError.notFound("cleanup_round_item_not_found", "The Klärungsrunde item was not found.");
+  if (!OPEN_ITEM_STATUSES.includes(item.status)) {
+    throw AppError.conflict("cleanup_round_state_conflict", "This item has already been handled.");
+  }
+  return { round, item };
+}
+
+/** Transitions one open card and settles the round, inside the caller's transaction. */
+export function settleCleanupRoundItem(
+  db: Db,
+  round: RoundRow,
+  item: ItemRow,
+  resolution: "dismissed" | "reviewed",
+): void {
+  const now = nowIso();
+  db.update(schema.cleanupRoundItems).set({ status: resolution, updatedAt: now })
+    .where(eq(schema.cleanupRoundItems.id, item.id)).run();
+  const remaining = roundItems(db, round.id).filter(
+    (candidate) => candidate.id !== item.id && OPEN_ITEM_STATUSES.includes(candidate.status),
+  );
+  const settled = round.status === "ready" || round.status === "partial" || round.status === "failed";
+  db.update(schema.cleanupRounds).set({
+    status: remaining.length === 0 && settled ? "completed" : round.status,
+    revision: round.revision + 1,
+    updatedAt: now,
+  }).where(eq(schema.cleanupRounds.id, round.id)).run();
+}
+
 /**
  * Resolves one card. `reviewed` additionally acknowledges the target
  * through the canonical Review acknowledgement (`reviewedAt = now`), in the
@@ -423,34 +466,12 @@ export function resolveCleanupRoundItem(
 ): void {
   db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    const round = roundOrThrow(txDb, input.roundId, input.viewerMemberId);
-    if (round.status === "dismissed" || round.status === "completed") {
-      throw AppError.conflict("cleanup_round_state_conflict", "This Klärungsrunde is already closed.");
-    }
-    const item = tx.select().from(schema.cleanupRoundItems).where(and(
-      eq(schema.cleanupRoundItems.id, input.itemId),
-      eq(schema.cleanupRoundItems.cleanupRoundId, input.roundId),
-    )).get();
-    if (!item) throw AppError.notFound("cleanup_round_item_not_found", "The Klärungsrunde item was not found.");
-    if (!OPEN_ITEM_STATUSES.includes(item.status)) {
-      throw AppError.conflict("cleanup_round_state_conflict", "This item has already been handled.");
-    }
+    const { round, item } = openCleanupRoundItemOrThrow(txDb, input.roundId, input.itemId, input.viewerMemberId);
     if (input.resolution === "reviewed") {
       const context = { actorMemberId: input.actorMemberId };
       if (item.targetType === "task") acknowledgeTaskReview(txDb, item.targetId, undefined, context);
       else acknowledgeProjectReview(txDb, item.targetId, undefined, context);
     }
-    const now = nowIso();
-    tx.update(schema.cleanupRoundItems).set({ status: input.resolution, updatedAt: now })
-      .where(eq(schema.cleanupRoundItems.id, item.id)).run();
-    const remaining = roundItems(txDb, input.roundId).filter(
-      (candidate) => candidate.id !== item.id && OPEN_ITEM_STATUSES.includes(candidate.status),
-    );
-    const settled = round.status === "ready" || round.status === "partial" || round.status === "failed";
-    tx.update(schema.cleanupRounds).set({
-      status: remaining.length === 0 && settled ? "completed" : round.status,
-      revision: round.revision + 1,
-      updatedAt: now,
-    }).where(eq(schema.cleanupRounds.id, round.id)).run();
+    settleCleanupRoundItem(txDb, round, item, input.resolution);
   });
 }

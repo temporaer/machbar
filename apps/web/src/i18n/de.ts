@@ -1387,6 +1387,8 @@ const extra = {
     cleanup_round_state_conflict: "Die Klärungsrunde hat sich inzwischen geändert.",
     cleanup_round_item_not_found: "Dieser Eintrag gehört nicht zu dieser Klärungsrunde.",
     cleanup_round_no_candidates: "Gerade gibt es nichts, was Machbar sich ansehen müsste.",
+    cleanup_round_target_mismatch: "Dieser Eintrag passt nicht mehr zu seinem Ziel. Bitte die Seite neu laden.",
+    cleanup_round_action_no_change: "Diese Bestätigung würde nichts ändern.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `Eine Person mit dem Namen „${name}“ ist bereits vorhanden.`,

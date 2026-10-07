@@ -1,7 +1,14 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { Db } from "../db/client.js";
 import { parseOrThrow } from "../validation.js";
-import { createCleanupRoundSchema } from "../schemas.js";
+import {
+  cleanupAddDoneWhenActionSchema,
+  cleanupClarifyAdminActionSchema,
+  cleanupCreateTaskActionSchema,
+  cleanupRenameActionSchema,
+  createCleanupRoundSchema,
+} from "../schemas.js";
+import { applyCleanupRoundAction, type CleanupRoundAction } from "../cleanupRound/actions.js";
 import { HomeAssistantRequestSignal } from "../integrations/homeAssistantRequests.js";
 import {
   createCleanupRound,
@@ -63,6 +70,29 @@ export function registerCleanupRoundRoutes(
           viewerMemberId: viewer(request),
           actorMemberId: actor(request),
           resolution,
+        });
+        return getCleanupRound(db, request.params.id, viewer(request));
+      },
+    );
+  }
+
+  // Confirmed micro-flows: canonical mutation + card dismissal in one transaction.
+  const actions: Array<[string, (body: unknown) => CleanupRoundAction]> = [
+    ["rename", (body) => ({ kind: "rename", ...parseOrThrow(cleanupRenameActionSchema, body) })],
+    ["create-task", (body) => ({ kind: "createTask", ...parseOrThrow(cleanupCreateTaskActionSchema, body) })],
+    ["add-done-when", (body) => ({ kind: "addDoneWhen", ...parseOrThrow(cleanupAddDoneWhenActionSchema, body) })],
+    ["clarify-admin", (body) => ({ kind: "clarifyAdmin", ...parseOrThrow(cleanupClarifyAdminActionSchema, body) })],
+  ];
+  for (const [segment, parse] of actions) {
+    app.post<{ Params: { id: string; itemId: string } }>(
+      `${ROOT}/:id/items/:itemId/actions/${segment}`,
+      async (request) => {
+        applyCleanupRoundAction(db, {
+          roundId: request.params.id,
+          itemId: request.params.itemId,
+          viewerMemberId: viewer(request),
+          actorMemberId: actor(request),
+          action: parse(request.body ?? {}),
         });
         return getCleanupRound(db, request.params.id, viewer(request));
       },

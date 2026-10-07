@@ -183,6 +183,30 @@ export const createCleanupRoundSchema = z.object({
   scope: z.enum(workItemScopes).optional(),
 }).strict();
 
+const cleanupActionText = z.string().trim().min(1);
+const cleanupActionTitle = z.string().trim().min(1);
+
+/** Narrow, explicit Klärungsrunde micro-flow payloads (no generic AI apply). */
+export const cleanupRenameActionSchema = z.object({
+  title: cleanupActionTitle,
+  expectedRevision: z.number().int().positive().optional(),
+}).strict();
+
+export const cleanupCreateTaskActionSchema = z.object({
+  title: cleanupActionTitle,
+  purpose: z.enum(["decision", "firstSlice", "followup"]),
+}).strict();
+
+export const cleanupAddDoneWhenActionSchema = z.object({
+  text: cleanupActionText,
+}).strict();
+
+export const cleanupClarifyAdminActionSchema = z.object({
+  title: z.string().trim().optional(),
+  notes: z.string().trim().optional(),
+  expectedRevision: z.number().int().positive().optional(),
+}).strict();
+
 const nullableCleanupText = (max: number) => z.string().min(1).max(max).nullable();
 
 /**

@@ -223,8 +223,10 @@ decision/first step/follow-up, admin step) the card shows the suggestion as
 an editable answer; the button opens a small confirmation that shows exactly
 what will change (old and new title, the task to create and where, the
 criterion, or the notes entry). Only its confirm button (for example
-**Umbenennen** or **Teilaufgabe anlegen**) changes the item; the card then
-disappears, and the item is not marked reviewed. Buttons say
+**Umbenennen** or **Teilaufgabe anlegen**) changes the item. The change and
+hiding the card happen together: either the item is improved and the card
+disappears, or nothing changes and the sheet shows the error. The item is not
+marked reviewed. Buttons say
 what they really do: where Machbar has no direct conversion (for example to
 information) the button reads **Öffnen und als Information prüfen**. Items Machbar could not
 assess stay visible as cards; **Erneut versuchen** (on the card, or once in the

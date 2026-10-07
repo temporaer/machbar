@@ -746,19 +746,24 @@ work items ("would a tired human know what to do next?").
     shows the AI suggestion as an editable answer; the button opens
     `CleanupRoundActionSheet`, which loads the current item and shows the
     target plus the exact title/text before anything is written. Confirming
-    commits exactly one explicit change through the canonical paths, then
-    hides the card (`dismiss`, never `reviewedAt`):
-    - `rename` (rename_item): `useTaskActions().update` /
-      `useProjectActions().update` with the loaded revision, so stale writes
-      are rejected;
-    - `createTask` (decision, first slice, follow-up): `createChildTask` under
-      a task, or `createTask` with `projectId` in a project, with the normal
-      owner/context/tag inheritance;
-    - `addCriterion` (project done-when): `api.addCriterion`;
-    - `appendNotes` (task done-when, as an `Erledigt, wenn: …` block): the
-      server-side notes append;
-    - `clarifyAdmin`: a rename to `suggestedTitle` and/or a notes append with
-      the recipient/document details, both previewed and editable.
+    sends one request to a narrow action endpoint,
+    `POST /api/cleanup-rounds/:id/items/:itemId/actions/<action>`
+    (`apps/api/src/cleanupRound/actions.ts`). In one transaction it checks
+    that the round is open, the card is open and `ready`, and the target
+    still exists with the card's type. It then calls the canonical domain
+    function and dismisses the card (never `reviewedAt`). Either the item
+    improves and the card disappears, or nothing changes; the page renders the
+    returned round:
+    - `rename` (rename_item): `updateTask` / `updateProject` with the loaded
+      `expectedRevision`, so stale writes are rejected;
+    - `create-task` (decision, first slice, follow-up): `createChildTask`
+      under a task, or `createTask` with `projectId` in a project, with the
+      normal owner/context/tag inheritance;
+    - `add-done-when`: `addCriterion` for a project; for a task, the
+      `appendTaskNotes` notes append of the `Erledigt, wenn: …` block;
+    - `clarify-admin`: a rename to `suggestedTitle` and/or a notes append with
+      the recipient/document details, both previewed and editable; at least
+      one must change, and `expectedRevision` is checked before either write.
   - an existing `useWorkItemCommands()` workflow where Machbar has no specific
     change to offer: `task.convertToProject` (choose_shape → project; its sheet
     is already the confirmation), `task.plan`/`story.defer` (rhythm/revisit,
@@ -770,8 +775,9 @@ work items ("would a tired human know what to do next?").
   - no extra button, when the surface only reaches the plain item view that
     the card's own “Öffnen” already covers.
 
-  There is no generic “apply AI result” endpoint: each micro-flow reuses an
-  existing endpoint, and card resolution follows the mutation. Failed items
+  There is no generic “apply AI result” endpoint: each action endpoint accepts
+  only its own strict payload and reuses the canonical domain function inside
+  the card-resolution transaction. Failed items
   stay visible as cards with open and hide; a single failed item carries its
   own retry, while several failed items share one banner retry.
 

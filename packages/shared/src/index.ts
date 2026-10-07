@@ -239,7 +239,9 @@ export type ApiErrorCode =
   | "cleanup_round_expired"
   | "cleanup_round_state_conflict"
   | "cleanup_round_item_not_found"
-  | "cleanup_round_no_candidates";
+  | "cleanup_round_no_candidates"
+  | "cleanup_round_target_mismatch"
+  | "cleanup_round_action_no_change";
 
 export interface ApiErrorPayload {
   code: ApiErrorCode;
