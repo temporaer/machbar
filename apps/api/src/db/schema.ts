@@ -103,6 +103,16 @@ export const members = sqliteTable("members", {
   color: text("color").notNull(),
 });
 
+export const householdAiContext = sqliteTable("household_ai_context", {
+  id: integer("id").primaryKey(),
+  householdDescription: text("household_description"),
+  longTermDirection: text("long_term_direction"),
+  suggestionGuidance: text("suggestion_guidance"),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+});
+
 export const memberOidcIdentities = sqliteTable(
   "member_oidc_identities",
   {

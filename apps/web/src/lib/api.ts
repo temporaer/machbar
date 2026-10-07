@@ -1,6 +1,7 @@
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import type {
   ActivityPage,
+  HouseholdAiContext,
   Agenda,
   ApiErrorCode,
   ApiErrorResponse,
@@ -634,6 +635,13 @@ export const api = {
   getReviewItems: () => request<ReviewItem[]>("/review"),
   getMoreCounts: () =>
     request<MoreCounts>("/views/more-counts"),
+  getHouseholdAiContext: () =>
+    request<HouseholdAiContext>("/settings/ai-context"),
+  updateHouseholdAiContext: (input: HouseholdAiContext) =>
+    request<HouseholdAiContext>("/settings/ai-context", {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
 
   getActivity: (filters?: ActivityFilters) =>
     request<ActivityPage>(

@@ -83,6 +83,21 @@ to repair compact AI representations before strict structural and semantic
 validation; canonical mutations remain strict. API Zod schemas provide
 structural validation around the same contract.
 
+### Shared household AI context
+
+The optional household AI context is durable background information, not an
+editable system prompt. `household_ai_context` stores one shared household
+resource with a household description, long-term direction, and optional
+suggestion guidance. `GET/PUT /api/settings/ai-context` trims and length-limits
+plain text, converts blank fields to `null`, and keeps Machbar's schemas,
+validation, safety rules, and deterministic workflow rules authoritative.
+
+`apps/api/src/aiContext.ts` renders the context section once for both Intake
+and Klärungsrunde prompts. Empty fields produce no heading; populated fields
+are inserted as background context before source/item data. The web editor is
+available from **Mehr → KI-Kontext** and uses explicit Save/Clear editing
+without exposing the feature as a prompt editor.
+
 The reverse bridge is deliberately narrow. It has exactly three request kinds:
 `intake_analyze`, `cleanup_round_analyze` (the Klärungsrunde, see §8), and
 `calendar_create`. Requests use long-polling, leases, and

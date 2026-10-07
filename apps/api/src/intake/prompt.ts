@@ -1,4 +1,5 @@
-import type { IntakeIssue, IntakePlan } from "@machbar/shared";
+import type { HouseholdAiContext, IntakeIssue, IntakePlan } from "@machbar/shared";
+import { householdAiContextSection } from "../aiContext.js";
 
 const rules = [
   "Today is {today} ({weekday}) in timezone {timezone}. Resolve relative dates using this date and timezone.",
@@ -31,6 +32,7 @@ export function buildIntakeInstructions(input: {
   validationIssues?: readonly IntakeIssue[];
   currentProposal?: IntakePlan | null;
   userInstruction?: string | null;
+  aiContext?: HouseholdAiContext | null;
 }): string {
   const date = new Date(`${input.today}T12:00:00Z`);
   const weekday = new Intl.DateTimeFormat("en-US", {
@@ -49,6 +51,8 @@ export function buildIntakeInstructions(input: {
         .replace("{members}", input.memberNames.join(", ") || "(none)"),
     ),
   ];
+  const aiContextSection = householdAiContextSection(input.aiContext);
+  if (aiContextSection) sections.push(aiContextSection);
   if (input.currentProposal) {
     sections.push(
       "=== CURRENT PROPOSAL CONTEXT (ordered; not a patch) ===",

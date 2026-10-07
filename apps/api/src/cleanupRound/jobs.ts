@@ -25,6 +25,7 @@ import {
 import { buildCleanupRoundInstructions } from "./prompt.js";
 import { sampleCleanupCandidates } from "./sampler.js";
 import { validateCleanupRoundResponse } from "./validate.js";
+import { getHouseholdAiContext } from "../aiContext.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TASK_NAME = "Machbar Klärungsrunde" as const;
@@ -110,7 +111,11 @@ function enqueueAnalysis(
     payload: {
       cleanupRoundId: roundId,
       taskName: TASK_NAME,
-      instructions: buildCleanupRoundInstructions({ items, validationIssues }),
+      instructions: buildCleanupRoundInstructions({
+        items,
+        validationIssues,
+        aiContext: getHouseholdAiContext(db),
+      }),
       items,
     },
   }, signal);
