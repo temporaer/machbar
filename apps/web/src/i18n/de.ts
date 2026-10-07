@@ -53,7 +53,7 @@ const base = {
   cleanupRoundFollowupPrefix: "Nachhalten",
   cleanupRoundDoneWhenPrefix: "Erledigt, wenn",
   cleanupProposalLabels: {
-    leave_alone: "Passt erstmal",
+    leave_alone: "Passt so",
     rename_for_actionability: "Unklar formuliert",
     clarify_goal: "Ziel klären",
     clarify_next_decision: "Entscheidung klären",

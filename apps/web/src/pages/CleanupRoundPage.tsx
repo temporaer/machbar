@@ -138,6 +138,8 @@ function CleanupRoundReview({ id }: { id: string }) {
   const retry = () => void run(() => api.retryCleanupRound(id));
   // Failed items stay visible: they are still open in this round.
   const openItems = round.items.filter((item) => item.status === "ready" || item.status === "failed");
+  const orderedOpenItems = [...openItems].sort((left, right) =>
+    cleanupCardSortRank(left) - cleanupCardSortRank(right));
   const failedItems = openItems.filter((item) => item.status === "failed");
   const hasFailed = failedItems.length > 0;
   // One retry control at a time: a lone failed card owns it, otherwise the banner.
@@ -159,12 +161,12 @@ function CleanupRoundReview({ id }: { id: string }) {
         </section>
       ) : null}
       {error ? <p className="text-muted" role="alert">{error}</p> : null}
-      {openItems.length === 0 ? (
+      {orderedOpenItems.length === 0 ? (
         <p className="text-muted">{strings.cleanupRoundDone}</p>
       ) : (
         <p className="text-muted cleanup-round-hint">{strings.cleanupRoundResolutionHint}</p>
       )}
-      {openItems.map((item) => (
+      {orderedOpenItems.map((item) => (
         <CleanupRoundCard
           key={item.id}
           roundId={id}
@@ -185,6 +187,16 @@ function CleanupRoundReview({ id }: { id: string }) {
       </div>
     </div>
   );
+}
+
+function cleanupCardSortRank(item: CleanupRoundItemRecord): number {
+  if (item.status === "failed") return 1;
+  if (item.result?.proposal === "leave_alone" || item.result?.resolutionSurface === "mark_reviewed") return 2;
+  return 0;
+}
+
+function isNoActionCleanupItem(item: CleanupRoundItemRecord): boolean {
+  return item.result?.proposal === "leave_alone" || item.result?.resolutionSurface === "mark_reviewed";
 }
 
 function CleanupRoundCard({
@@ -209,6 +221,7 @@ function CleanupRoundCard({
   const [error, setError] = useState<string | null>(null);
   const [flow, setFlow] = useState<CleanupMicroFlow | null>(null);
   const result = item.status === "ready" ? item.result : null;
+  const noAction = isNoActionCleanupItem(item);
   const prefixes = {
     decision: strings.cleanupRoundDecisionPrefix,
     followup: strings.cleanupRoundFollowupPrefix,
@@ -252,7 +265,7 @@ function CleanupRoundCard({
   };
 
   return (
-    <article className="card stack cleanup-round-card" aria-label={item.title}>
+    <article className={`card stack cleanup-round-card${noAction ? " cleanup-round-card-muted" : ""}`} aria-label={item.title}>
       <div className="cleanup-round-card-heading">
         <strong>{item.title}</strong>
         <small className="text-muted">{context}</small>

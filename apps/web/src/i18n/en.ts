@@ -77,7 +77,7 @@ const en = {
   cleanupRoundFollowupPrefix: "Follow up",
   cleanupRoundDoneWhenPrefix: "Done when",
   cleanupProposalLabels: {
-    leave_alone: "Fine for now",
+    leave_alone: "Looks good",
     rename_for_actionability: "Unclear wording",
     clarify_goal: "Clarify the goal",
     clarify_next_decision: "Clarify the decision",

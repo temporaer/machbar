@@ -223,6 +223,9 @@ never applied automatically. The AI receives only compact `planningContext`
 when useful: relevant open/waiting/done children, the current next action, and
 existing acceptance criteria. Empty/default fields are omitted so this context
 helps prevent duplicate suggestions without dumping the graph. Each card
+that returns `leave_alone` is shown as a quiet **Passt so** confirmation after
+cards that need thought or action; it remains available for **Hinten anstellen**
+or **Öffnen**.
 offers **Hinten anstellen** (acknowledge like Review), **Öffnen**,
 **Einschätzung ausblenden** (hides the card, leaves the item unchanged), or one
 button that answers the question. For text answers (new title, done-when,

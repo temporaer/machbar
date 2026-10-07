@@ -146,6 +146,45 @@ describe("CleanupRoundPage", () => {
     expect(within(card).getByLabelText("Deine Antwort")).toHaveValue("Werkzeugecke sortieren");
   });
 
+  it("puts no-action cards last, mutes them, and keeps Hinten anstellen primary", async () => {
+    mocked.getCleanupRound.mockResolvedValue(round({
+      items: [
+        item({
+          id: "item-2",
+          targetId: 8,
+          title: "Kinderfahrräder verticken",
+          result: {
+            ...item().result!,
+            proposal: "leave_alone",
+            resolutionSurface: "mark_reviewed",
+            reason: "Das Ziel ist klar und die vorhandenen Aufgaben decken die nächsten Schritte ab.",
+            question: "Keine Planungsfrage nötig.",
+            suggestedDefault: null,
+          },
+        }),
+        item(),
+      ],
+    }));
+    mocked.resolveCleanupRoundItem.mockResolvedValue(round({ status: "completed", items: [] }));
+    renderAt("/more/cleanup-round/r1");
+
+    const cards = await screen.findAllByRole("article");
+    expect(cards.map((card) => card.getAttribute("aria-label"))).toEqual([
+      "Keller",
+      "Kinderfahrräder verticken",
+    ]);
+    expect(cards[0]).not.toHaveClass("cleanup-round-card-muted");
+    expect(cards[1]).toHaveClass("cleanup-round-card-muted");
+    expect(within(cards[1]!).getByText("Passt so")).toBeInTheDocument();
+    expect(within(cards[1]!).getByRole("button", { name: "Hinten anstellen" })).toBeInTheDocument();
+    expect(within(cards[1]!).getByRole("button", { name: "Öffnen" })).toBeInTheDocument();
+    expect(within(cards[1]!).queryByRole("dialog")).not.toBeInTheDocument();
+
+    await userEvent.click(within(cards[1]!).getByRole("button", { name: "Hinten anstellen" }));
+    expect(mocked.resolveCleanupRoundItem).toHaveBeenCalledWith("r1", "item-2", "mark-reviewed");
+    expect(mocked.applyCleanupRoundAction).not.toHaveBeenCalled();
+  });
+
   it("labels reference conversion as a check, not as an applied change", async () => {
     mocked.getCleanupRound.mockResolvedValue(round({
       items: [item({
