@@ -1342,8 +1342,10 @@ the existing guarded backlog handoff, while task-to-reference conversion is
 not offered because no canonical mutation exists. Task details remain
 available from the row tap or kebab fallback, not as a generic rail action.
 Project rails use `Planung`, `Struktur`, `Ziel`, and `Nächster Schritt`
-according to the project classification; backlog-project `Planung` remains the
-revisit workflow and active-project `Planung` edits the project's deadline.
+according to the project classification. Backlog and active-waiting project
+`Planung` use the existing revisit/defer workflow; active non-waiting project
+`Planung` edits the project's deadline until a broader project planning sheet
+exists.
 `Struktur` opens `ProjectStructureSheet` for project rows and remains
 available from task detail for task split/move/convert workflows.
 The separate status/lifecycle rail (swipe right, `*-row-lifecycle`) is

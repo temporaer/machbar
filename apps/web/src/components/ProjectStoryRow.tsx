@@ -260,7 +260,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           ]
         : classification === "active-waiting"
           ? [
-              { label: strings.planning, command: "story.deadline" as const },
+              { label: strings.planning, command: "story.defer" as const },
               { label: strings.railStructure, command: "story.structure" as const },
               { label: strings.railNextStep, command: "story.planWork" as const },
             ]

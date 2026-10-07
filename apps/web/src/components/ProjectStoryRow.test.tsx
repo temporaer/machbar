@@ -923,6 +923,33 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("uses the revisit workflow for Planung on an active waiting project", async () => {
+    const story = makeProject({
+      id: 47,
+      title: "Wartendes Projekt",
+      status: "active",
+      ownerMemberId: 1,
+      nextAction: null,
+      stuckReason: null,
+      waitingOn: ["Rückmeldung vom Bauamt"],
+    });
+    renderWithProviders(<Harness story={story} />);
+    await screen.findByText("Wartendes Projekt");
+
+    const chips = openChips();
+    expect(within(chips).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Planung",
+      "Struktur",
+      "Nächster Schritt",
+    ]);
+
+    await userEvent.click(within(chips).getByRole("button", { name: "Planung" }));
+
+    const deferSheet = await screen.findByRole("dialog");
+    expect(within(deferSheet).getByText("Bis wann zurückstellen?")).toBeInTheDocument();
+    expect(within(deferSheet).queryByLabelText("Fällig")).not.toBeInTheDocument();
+  });
+
   it("edits acceptance criteria and dates in targeted popups without leaving the list", async () => {
     const story = makeProject({
       id: 46,

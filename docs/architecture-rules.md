@@ -216,7 +216,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Fixed row action rail (task-kind/status-specific planning/shape/structure/note/waiting actions and project next-step/goal/structure/planning actions; lifecycle remains right-swipe only) | `apps/web/src/components/WorkItemActionRail.tsx`, wired from `apps/web/src/components/TaskRow.tsx` and `apps/web/src/components/ProjectStoryRow.tsx` |
 | Unified task planning (`notBeforeAt` + local `notBeforeDate` + `scheduledDate` + `dueDate`) workflow | `apps/web/src/components/TaskPlanningSheet.tsx`, opened by both the `availability` and `plan` task workflows and committed through `apps/web/src/lib/useTaskActions.tsx` |
 | Task shape/classification workflow | `apps/web/src/components/TaskShapeSheet.tsx`, opened as the `shape` task workflow; project conversion delegates to the existing guarded `convertToProject` workflow |
-| Backlog-project Wiedervorlage (`scheduledDate`) workflow | `apps/web/src/components/ProjectDeferSheet.tsx`, opened by `story.defer` |
+| Project revisit/defer workflow | `apps/web/src/components/ProjectDeferSheet.tsx`, opened by `story.defer` for backlog and active-waiting project planning |
 | Project deadline (`dueDate`) workflow | `apps/web/src/components/ProjectDeadlineSheet.tsx`, opened by `story.deadline` |
 | Task `Struktur` workflow (split/move/convert-to-project) | `apps/web/src/components/TaskStructureSheet.tsx`, opened as the `structure` task workflow |
 | Project `Struktur` workflow (plan next task/edit outcome) | `apps/web/src/components/ProjectStructureSheet.tsx`, opened as the `structure` project workflow |
