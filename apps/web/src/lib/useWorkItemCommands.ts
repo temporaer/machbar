@@ -76,14 +76,6 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
   }
 }
 
-/** Deep link into `ProjectDetailPage`'s `?focus=` handling, with an optional unsaved draft. */
-function projectFocusPath(projectId: number, focus?: string, draft?: string): string {
-  if (!focus) return `/projects/${projectId}`;
-  const params = new URLSearchParams({ focus });
-  if (draft) params.set("draft", draft);
-  return `/projects/${projectId}?${params.toString()}`;
-}
-
 function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null {
   switch (command.type) {
     case "task.open":
@@ -221,13 +213,13 @@ export function useWorkItemCommands() {
       if (workItemId !== null) scope?.setActive(workItemId, commandWorkItemRole(command));
       switch (command.type) {
         case "task.open":
-          taskDetail.open(command.taskId, command.focusField, command.draft);
+          taskDetail.open(command.taskId, command.focusField);
           return;
         case "workItem.open":
           if (command.workItem.role === "task") {
-            taskDetail.open(command.workItem.id, command.focusField, command.draft);
+            taskDetail.open(command.workItem.id);
           } else {
-            navigate(projectFocusPath(command.workItem.id, command.focusField, command.draft));
+            navigate(`/projects/${command.workItem.id}`);
           }
           return;
         case "task.plan":
@@ -246,9 +238,7 @@ export function useWorkItemCommands() {
           taskWorkflow.open("waitingLifecycle", command.taskId);
           return;
         case "task.split":
-          taskWorkflow.open("split", command.taskId, {
-            initialTitles: command.initialTitles,
-          });
+          taskWorkflow.open("split", command.taskId);
           return;
         case "task.assignOwner":
           taskWorkflow.open("assignOwner", command.taskId);
@@ -394,7 +384,7 @@ export function useWorkItemCommands() {
           projectWorkflow.open("assignDriver", command.story.id);
           return;
         case "story.editOutcome":
-          projectWorkflow.open("editOutcome", command.story.id, command.initialCriterion);
+          projectWorkflow.open("editOutcome", command.story.id);
           return;
         case "story.deadline":
           projectWorkflow.open("deadline", command.story.id);
@@ -406,7 +396,7 @@ export function useWorkItemCommands() {
           projectWorkflow.open("contexts", command.story.id);
           return;
         case "story.planWork":
-          navigate(projectFocusPath(command.story.id, "next-action", command.initialTitle));
+          navigate(`/projects/${command.story.id}?focus=next-action`);
           return;
         case "story.lifecycle":
           scope?.setOpenLifecycle(command.story.id);

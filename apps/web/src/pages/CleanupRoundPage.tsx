@@ -11,16 +11,19 @@ import {
   cleanupDefaultAnswer,
   cleanupRoundPending,
   cleanupSurfaceAction,
+  type CleanupMicroFlow,
   type CleanupSurfaceAction,
 } from "../lib/cleanupRound";
 import { ErrorState, LoadingState } from "../components/AsyncStates";
+import { CleanupRoundActionSheet } from "../components/CleanupRoundActionSheet";
 
 /**
  * Klärungsrunde: an advisory, Home Assistant-backed coaching pass over a few
- * sampled work items. The page never mutates items from AI output; besides
- * "Hinten anstellen" (review acknowledgement) every action opens an existing
- * workflow through `useWorkItemCommands()`, seeded at most with the answer
- * edited on the card; the destination's own Save still commits it.
+ * sampled work items. The page never mutates items from AI output by itself:
+ * "Hinten anstellen" is the review acknowledgement, text-shaped answers open
+ * a focused `CleanupRoundActionSheet` that shows the exact change before the
+ * user confirms it, and the remaining surfaces open an existing workflow
+ * through `useWorkItemCommands()`.
  */
 export function CleanupRoundPage() {
   const { id } = useParams<{ id: string }>();
@@ -92,6 +95,8 @@ function CleanupRoundReview({ id }: { id: string }) {
       setBusy(false);
     }
   };
+  const resolveItem = (itemId: string, resolution: "dismiss" | "mark-reviewed") =>
+    run(() => api.resolveCleanupRoundItem(id, itemId, resolution));
   const close = () =>
     void run(async () => {
       if (round && !["dismissed", "completed"].includes(round.status)) {
@@ -164,9 +169,7 @@ function CleanupRoundReview({ id }: { id: string }) {
           item={item}
           busy={busy}
           {...(cardRetry ? { onRetry: retry } : {})}
-          onResolve={(resolution) =>
-            void run(() => api.resolveCleanupRoundItem(id, item.id, resolution))
-          }
+          onResolve={(resolution) => resolveItem(item.id, resolution)}
         />
       ))}
       <div className="row">
@@ -188,11 +191,12 @@ function CleanupRoundCard({
   busy: boolean;
   /** Present only when this card owns the round's retry control. */
   onRetry?: (() => void) | undefined;
-  onResolve: (resolution: "dismiss" | "mark-reviewed") => void;
+  onResolve: (resolution: "dismiss" | "mark-reviewed") => Promise<void>;
 }) {
   const strings = useStrings();
   const dispatch = useWorkItemCommands();
   const [error, setError] = useState<string | null>(null);
+  const [flow, setFlow] = useState<CleanupMicroFlow | null>(null);
   const result = item.status === "ready" ? item.result : null;
   const prefixes = {
     decision: strings.cleanupRoundDecisionPrefix,
@@ -223,18 +227,13 @@ function CleanupRoundCard({
     setError(null);
     try {
       if (action.kind === "markReviewed") {
-        onResolve("mark-reviewed");
+        await onResolve("mark-reviewed");
+      } else if (action.kind === "confirm") {
+        setFlow(action.flow);
       } else if (action.kind === "command") {
         dispatch(action.command);
       } else {
-        const story = await api.getProject(action.projectId);
-        if (action.command === "story.editOutcome") {
-          dispatch({ type: action.command, story, ...(action.draft ? { initialCriterion: action.draft } : {}) });
-        } else if (action.command === "story.planWork") {
-          dispatch({ type: action.command, story, ...(action.draft ? { initialTitle: action.draft } : {}) });
-        } else {
-          dispatch({ type: action.command, story });
-        }
+        dispatch({ type: action.command, story: await api.getProject(action.projectId) });
       }
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
@@ -284,7 +283,7 @@ function CleanupRoundCard({
                 {strings.cleanupActionLabels[actionLabel]}
               </button>
             ) : null}
-            <button type="button" className="btn" disabled={busy} onClick={() => onResolve("mark-reviewed")}>
+            <button type="button" className="btn" disabled={busy} onClick={() => void onResolve("mark-reviewed")}>
               {strings.cleanupRoundMarkReviewed}
             </button>
           </>
@@ -304,11 +303,21 @@ function CleanupRoundCard({
             {strings.cleanupRoundOpen}
           </button>
         ) : null}
-        <button type="button" className="btn" disabled={busy} onClick={() => onResolve("dismiss")}>
+        <button type="button" className="btn" disabled={busy} onClick={() => void onResolve("dismiss")}>
           {strings.cleanupRoundDismissItem}
         </button>
       </div>
       {error ? <p className="text-muted" role="alert">{error}</p> : null}
+      {flow ? (
+        <CleanupRoundActionSheet
+          targetType={item.targetType}
+          targetId={item.targetId}
+          flow={flow}
+          onClose={() => setFlow(null)}
+          // The item itself is improved; only the card is hidden, not reviewed.
+          onApplied={() => onResolve("dismiss")}
+        />
+      ) : null}
     </article>
   );
 }

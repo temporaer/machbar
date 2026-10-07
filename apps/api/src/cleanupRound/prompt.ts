@@ -35,7 +35,7 @@ const SURFACE_GUIDE = `resolutionSurface is the UI destination for the human ans
 - edit_done_when: project done-when criteria; put a draft criterion in suggestedDefault.
 - create_decision_task: suggestedDefault names the decision. create_first_slice: suggestedDefault is the first concrete child step.
 - create_followup: suggestedDefault names what to follow up. define_rhythm_or_revisit: check/revisit cadence.
-- clarify_admin_target: recipient/document/next submission step. choose_shape: suggestedShape is task, project, or reference.
+- clarify_admin_target: suggestedTitle is the concrete submission/contact step (or null); suggestedDefault holds recipient/document details. choose_shape: suggestedShape is task, project, or reference.
 - split_clarify_execute: separate thinking from doing. convert_to_reference: item is information, not work. open_item: anything else needing the detail view.`;
 
 function contractSection(): string {

@@ -966,24 +966,6 @@ describe("ProjectDetailPage task explanations", () => {
     );
   });
 
-  it("seeds the next-action capture with a draft title from the deep link", async () => {
-    renderProjectRoute("/projects/42?focus=next-action&draft=Angebote%20vergleichen");
-
-    const input = await screen.findByPlaceholderText(strings.quickAddPlaceholder);
-    expect(input).toHaveValue("Angebote vergleichen");
-  });
-
-  it("opens the title editor with a draft and clears the focus query", async () => {
-    renderProjectRoute("/projects/42?focus=title&draft=Neue%20Haust%C3%BCr%20montieren");
-
-    expect(await screen.findByDisplayValue("Neue Haustür montieren")).toBeInTheDocument();
-    expect(mockedApi.updateProject).not.toHaveBeenCalled();
-    await waitFor(() =>
-      expect(screen.getByLabelText("project-route")).not.toHaveTextContent("focus="),
-    );
-    expect(screen.getByLabelText("project-route")).not.toHaveTextContent("draft=");
-  });
-
   it("opens the one focused planning workflow on the initial planning target", async () => {
     renderProjectRoute("/projects/42?focus=planning");
 

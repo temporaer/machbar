@@ -27,22 +27,17 @@ export function TaskSplitSheet({
   parentId,
   parentTitle,
   existingChildren = [],
-  initialTitles = [],
   onClose,
 }: {
   parentId: number;
   parentTitle?: string;
   existingChildren?: Task[];
-  initialTitles?: string[] | undefined;
   onClose: () => void;
 }) {
   const strings = useStrings();
   const { currentMemberId } = useIdentity();
   const { bump } = useRefresh();
-  const [rows, setRows] = useState<string[]>(() => [
-    ...initialTitles.filter((title) => title.trim() !== ""),
-    "",
-  ]);
+  const [rows, setRows] = useState<string[]>([""]);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);

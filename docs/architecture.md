@@ -737,30 +737,43 @@ work items ("would a tired human know what to do next?").
 - **Persistence**: `cleanup_rounds` and `cleanup_round_items` are temporary
   operational state (24-hour expiry, purged with intake jobs); a
   `home_assistant_requests` row belongs to either an intake job or a round.
-- **Resolution**: AI results never mutate work items. The only direct mutation
-  is “Hinten anstellen”, which reuses the canonical Review acknowledgement
-  (`reviewedAt`). “Einschätzung ausblenden” only dismisses the card. Every
-  other surface dispatches an existing `useWorkItemCommands()` workflow
-  (title/notes detail, `task.split`, `task.plan`, `task.structure`,
-  `task.convertToProject`, `story.editOutcome`, `story.planWork`,
-  `story.structure`, `story.defer`, or `workItem.open`) through the pure
-  mapping in `apps/web/src/lib/cleanupRound.ts`. Text-shaped surfaces (rename,
-  done-when, decision/first-slice/follow-up child, admin target) show the AI
-  suggestion as an editable answer on the card and carry it into the
-  destination as an unsaved draft: `task.open`/`workItem.open` `draft` (title
-  replaced, notes appended; projects via `?focus=title|notes&draft=`),
-  `task.split` `initialTitles`, `story.planWork` `initialTitle`
-  (`?focus=next-action&draft=` prefills QuickAdd), and `story.editOutcome`
-  `initialCriterion`. The destination's own Save/Add still commits. Surfaces
-  that only reach the plain item view get no action button of their own, and
-  labels (`CleanupActionLabel`, chosen per surface and target type) never
-  promise a change the destination does not perform: `choose_shape` on a task
-  is “Zum Projekt machen” (the only shape conversion), `reference` suggestions
-  and `convert_to_reference` are “Öffnen und als Information prüfen”,
-  `split_clarify_execute` is “Öffnen und strukturieren”, and rhythm/revisit
-  opens the planning or project Wiedervorlage without prefilling a date.
-  Failed items stay visible as cards with open and hide; a single failed item
-  carries its own retry, while several failed items share one banner retry.
+- **Resolution**: AI results never mutate work items by themselves; every
+  change needs an explicit user confirmation. “Hinten anstellen” reuses the
+  canonical Review acknowledgement (`reviewedAt`) and is the only action that
+  sets it. “Einschätzung ausblenden” only dismisses the card. The pure mapping
+  in `apps/web/src/lib/cleanupRound.ts` turns each surface into one of:
+  - a **micro-flow** (`CleanupMicroFlow`) for text-shaped surfaces. The card
+    shows the AI suggestion as an editable answer; the button opens
+    `CleanupRoundActionSheet`, which loads the current item and shows the
+    target plus the exact title/text before anything is written. Confirming
+    commits exactly one explicit change through the canonical paths, then
+    hides the card (`dismiss`, never `reviewedAt`):
+    - `rename` (rename_item): `useTaskActions().update` /
+      `useProjectActions().update` with the loaded revision, so stale writes
+      are rejected;
+    - `createTask` (decision, first slice, follow-up): `createChildTask` under
+      a task, or `createTask` with `projectId` in a project, with the normal
+      owner/context/tag inheritance;
+    - `addCriterion` (project done-when): `api.addCriterion`;
+    - `appendNotes` (task done-when, as an `Erledigt, wenn: …` block): the
+      server-side notes append;
+    - `clarifyAdmin`: a rename to `suggestedTitle` and/or a notes append with
+      the recipient/document details, both previewed and editable.
+  - an existing `useWorkItemCommands()` workflow where Machbar has no specific
+    change to offer: `task.convertToProject` (choose_shape → project; its sheet
+    is already the confirmation), `task.plan`/`story.defer` (rhythm/revisit,
+    no date prefilled), `task.structure`/`story.structure` (“Öffnen und
+    strukturieren”), and “Öffnen und als Information prüfen” for reference
+    suggestions. There is no canonical action → reference conversion
+    (`makeTaskAction` only promotes references), so Machbar does not add a
+    parallel one.
+  - no extra button, when the surface only reaches the plain item view that
+    the card's own “Öffnen” already covers.
+
+  There is no generic “apply AI result” endpoint: each micro-flow reuses an
+  existing endpoint, and card resolution follows the mutation. Failed items
+  stay visible as cards with open and hide; a single failed item carries its
+  own retry, while several failed items share one banner retry.
 
 The More entry appears only when the Home Assistant AI Task is ready. Older
 Home Assistant components answer the new request kind with

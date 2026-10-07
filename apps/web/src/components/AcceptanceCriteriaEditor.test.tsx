@@ -32,19 +32,6 @@ describe("AcceptanceCriteriaEditor", () => {
     mockedApi.getMembers.mockResolvedValue([]);
   });
 
-  it("seeds the new-criterion field without adding it", () => {
-    renderWithProviders(
-      <AcceptanceCriteriaEditor
-        projectId={4}
-        criteria={[criterion]}
-        onError={vi.fn()}
-        initialNewCriterion="Tür ist montiert und dicht"
-      />,
-    );
-    expect(screen.getByDisplayValue("Tür ist montiert und dicht")).toBeInTheDocument();
-    expect(mockedApi.addCriterion).not.toHaveBeenCalled();
-  });
-
   it("edits text only through explicit Edit and Save, never on blur", async () => {
     mockedApi.updateCriterion.mockResolvedValue(project);
     renderWithProviders(

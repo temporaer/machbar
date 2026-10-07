@@ -23,13 +23,10 @@ import { IntakeComposer } from "./IntakeComposer";
  */
 export function QuickAdd({
   autoOpen = false,
-  autoOpenTitle,
   onAutoOpenClose,
   defaultScope,
 }: {
   autoOpen?: boolean;
-  /** Unsaved title for the auto-opened capture form; capturing stays explicit. */
-  autoOpenTitle?: string | undefined;
   onAutoOpenClose?: (captured?: boolean) => void;
   /** Set on capture only when the mounting page's active view is the Work
    * scope; omitted (server default `"household"` applies) otherwise. */
@@ -199,7 +196,6 @@ export function QuickAdd({
             />
           ) : (
             <CaptureForm
-              {...(autoOpen && autoOpenTitle ? { initialTitle: autoOpenTitle } : {})}
               projectId={projectId}
               parentTaskId={null}
               pendingFiles={pendingFile ? [pendingFile] : []}

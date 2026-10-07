@@ -1,14 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Route, Routes, useLocation } from "react-router-dom";
+import { Route, Routes } from "react-router-dom";
 import type { CleanupRoundItemRecord, CleanupRoundRecord } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useTaskDetail } from "../lib/taskDetailContext";
-import { useProjectWorkflow } from "../lib/projectWorkflowContext";
-import { makeProject } from "../test/fixtures";
+import { makeProject, makeTask } from "../test/fixtures";
 import { CleanupRoundPage } from "./CleanupRoundPage";
 
 vi.mock("../lib/api", () => ({
@@ -21,6 +20,16 @@ vi.mock("../lib/api", () => ({
     dismissCleanupRound: vi.fn(),
     resolveCleanupRoundItem: vi.fn(),
     getProject: vi.fn(),
+    getTask: vi.fn(),
+    updateTask: vi.fn(),
+    updateProject: vi.fn(),
+    appendTaskNotes: vi.fn(),
+    appendProjectNotes: vi.fn(),
+    createTask: vi.fn(),
+    createChildTask: vi.fn(),
+    addCriterion: vi.fn(),
+    acknowledgeTaskReview: vi.fn(),
+    acknowledgeProjectReview: vi.fn(),
   },
 }));
 
@@ -78,7 +87,7 @@ function WorkflowProbe() {
   const workflow = useTaskWorkflow();
   return workflow.current ? (
     <output data-testid="workflow">
-      {`${workflow.current.kind}:${workflow.current.taskId}:${(workflow.current.initialTitles ?? []).join("|")}`}
+      {`${workflow.current.kind}:${workflow.current.taskId}`}
     </output>
   ) : null;
 }
@@ -87,24 +96,9 @@ function DetailProbe() {
   const detail = useTaskDetail();
   return detail.openTaskId !== null ? (
     <output data-testid="detail">
-      {`${detail.openTaskId}:${detail.focusField ?? ""}:${detail.focusDraft ?? ""}`}
+      {`${detail.openTaskId}:${detail.focusField ?? ""}`}
     </output>
   ) : null;
-}
-
-function ProjectProbe() {
-  const workflow = useProjectWorkflow();
-  const location = useLocation();
-  return (
-    <>
-      <output data-testid="location">{`${location.pathname}${location.search}`}</output>
-      {workflow.current ? (
-        <output data-testid="project-workflow">
-          {`${workflow.current.kind}:${workflow.current.projectId}:${workflow.current.draft ?? ""}`}
-        </output>
-      ) : null}
-    </>
-  );
 }
 
 function renderAt(path: string) {
@@ -117,7 +111,6 @@ function renderAt(path: string) {
       </Routes>
       <WorkflowProbe />
       <DetailProbe />
-      <ProjectProbe />
     </>,
     { initialEntries: [path] },
   );
@@ -140,7 +133,7 @@ describe("CleanupRoundPage", () => {
     expect(mocked.getCleanupRound).toHaveBeenCalledWith("r1");
   });
 
-  it("shows coaching cards and routes surfaces into existing workflows", async () => {
+  it("shows coaching cards with an editable answer", async () => {
     mocked.getCleanupRound.mockResolvedValue(round());
     renderAt("/more/cleanup-round/r1");
 
@@ -149,36 +142,7 @@ describe("CleanupRoundPage", () => {
     expect(within(card).getByText("Der Keller ist zu breit für eine Aufgabe.")).toBeInTheDocument();
     expect(within(card).getByText(/Welche Ecke stört am meisten\?/)).toBeInTheDocument();
     expect(within(card).getByText(/Aufgabe · Haus · Machbar/)).toBeInTheDocument();
-
-    // The suggestion is an editable answer that is carried into the workflow.
-    const answer = within(card).getByLabelText("Deine Antwort");
-    expect(answer).toHaveValue("Werkzeugecke sortieren");
-    await userEvent.clear(answer);
-    await userEvent.type(answer, "Schraubenregal sortieren");
-    await userEvent.click(within(card).getByRole("button", { name: "Ersten Schritt anlegen …" }));
-    expect(screen.getByTestId("workflow")).toHaveTextContent("split:7:Schraubenregal sortieren");
-    expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
-  });
-
-  it("opens the title editor seeded with the suggested title", async () => {
-    mocked.getCleanupRound.mockResolvedValue(round({
-      items: [item({
-        result: {
-          ...item().result!,
-          proposal: "rename_for_actionability",
-          resolutionSurface: "rename_item",
-          suggestedDefault: null,
-          suggestedTitle: "Werkzeugkiste im Keller sortieren",
-        },
-      })],
-    }));
-    renderAt("/more/cleanup-round/r1");
-
-    const card = await screen.findByRole("article", { name: "Keller" });
-    expect(within(card).getByLabelText("Deine Antwort")).toHaveValue("Werkzeugkiste im Keller sortieren");
-    await userEvent.click(within(card).getByRole("button", { name: "Umbenennen …" }));
-    expect(screen.getByTestId("detail")).toHaveTextContent("7:title:Werkzeugkiste im Keller sortieren");
-    expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
+    expect(within(card).getByLabelText("Deine Antwort")).toHaveValue("Werkzeugecke sortieren");
   });
 
   it("labels reference conversion as a check, not as an applied change", async () => {
@@ -197,7 +161,7 @@ describe("CleanupRoundPage", () => {
     const card = await screen.findByRole("article", { name: "Keller" });
     expect(within(card).queryByRole("button", { name: /Als Information ablegen/ })).not.toBeInTheDocument();
     await userEvent.click(within(card).getByRole("button", { name: "Öffnen und als Information prüfen" }));
-    expect(screen.getByTestId("detail")).toHaveTextContent("7:notes:");
+    expect(screen.getByTestId("detail")).toHaveTextContent("7:notes");
     expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
   });
 
@@ -258,38 +222,267 @@ describe("CleanupRoundPage", () => {
     expect(mocked.retryCleanupRound).toHaveBeenCalledWith("r1");
   });
 
-  it.each([
-    ["task notes as done-when", "task", "edit_done_when", "Erledigt-wenn in Notizen übernehmen …", "Erledigt, wenn: Tür ist dicht", "detail", "7:notes:Erledigt, wenn: Tür ist dicht – geprüft"],
-    ["task notes for an admin target", "task", "clarify_admin_target", "Antwort in Notizen übernehmen …", "An die Krankenkasse", "detail", "7:notes:An die Krankenkasse – geprüft"],
-    ["project criterion", "project", "edit_done_when", "Als Erledigt-wenn-Kriterium übernehmen …", "Tür ist dicht", "project-workflow", "editOutcome:7:Tür ist dicht – geprüft"],
-    ["project next action as first step", "project", "create_first_slice", "Ersten Schritt anlegen …", "Angebote vergleichen", "location", "/projects/7?focus=next-action&draft=Angebote+vergleichen+%E2%80%93+gepr%C3%BCft"],
-    ["project next action as follow-up", "project", "create_followup", "Follow-up anlegen …", "Nachhalten: Rechnung", "location", "/projects/7?focus=next-action&draft=Nachhalten%3A+Rechnung+%E2%80%93+gepr%C3%BCft"],
-    ["project title", "project", "rename_item", "Umbenennen …", "Neue Haustür montieren", "location", "/projects/7?focus=title&draft=Neue+Haust%C3%BCr+montieren+%E2%80%93+gepr%C3%BCft"],
-  ] as const)("carries the edited answer into the %s", async (_name, targetType, surface, label, start, probe, expected) => {
-    mocked.getProject.mockResolvedValue({ ...makeProject({ id: 7, title: "Keller" }), tasks: [] });
+  const flows = [
+    {
+      name: "renames a task",
+      value: "Werkzeugkiste im Keller sortieren – geprüft",
+      targetType: "task",
+      surface: "rename_item",
+      suggestedTitle: "Werkzeugkiste im Keller sortieren",
+      suggestedDefault: null,
+      button: "Umbenennen …",
+      heading: "Aufgabe umbenennen?",
+      shown: ["Alt", "Keller"],
+      field: "Neu",
+      confirm: "Umbenennen",
+      expectMutation: () =>
+        expect(mocked.updateTask).toHaveBeenCalledWith(7, {
+          title: "Werkzeugkiste im Keller sortieren – geprüft",
+          expectedRevision: 3,
+        }),
+    },
+    {
+      name: "renames a project",
+      value: "Neue Haustür auswählen – geprüft",
+      targetType: "project",
+      surface: "rename_item",
+      suggestedTitle: "Neue Haustür auswählen",
+      suggestedDefault: null,
+      button: "Umbenennen …",
+      heading: "Projekt umbenennen?",
+      shown: ["Alt", "Keller"],
+      field: "Neu",
+      confirm: "Umbenennen",
+      expectMutation: () =>
+        expect(mocked.updateProject).toHaveBeenCalledWith(7, {
+          title: "Neue Haustür auswählen – geprüft",
+          expectedRevision: 4,
+        }),
+    },
+    {
+      name: "creates a decision subtask",
+      value: "Entscheiden: Welche Ecke zuerst? – geprüft",
+      targetType: "task",
+      surface: "create_decision_task",
+      suggestedTitle: null,
+      suggestedDefault: "Welche Ecke zuerst?",
+      button: "Entscheidungsaufgabe anlegen …",
+      heading: "Entscheidungsaufgabe anlegen?",
+      shown: ["Unter", "Keller"],
+      field: "Neue Teilaufgabe",
+      confirm: "Teilaufgabe anlegen",
+      expectMutation: () =>
+        expect(mocked.createChildTask).toHaveBeenCalledWith(7, {
+          title: "Entscheiden: Welche Ecke zuerst? – geprüft",
+          createdByMemberId: null,
+          status: "actionable",
+        }),
+    },
+    {
+      name: "creates a first-step subtask",
+      value: "Werkzeugecke sortieren – geprüft",
+      targetType: "task",
+      surface: "create_first_slice",
+      suggestedTitle: null,
+      suggestedDefault: "Werkzeugecke sortieren",
+      button: "Ersten Schritt anlegen …",
+      heading: "Ersten Schritt anlegen?",
+      shown: ["Unter", "Keller"],
+      field: "Neue Teilaufgabe",
+      confirm: "Teilaufgabe anlegen",
+      expectMutation: () =>
+        expect(mocked.createChildTask).toHaveBeenCalledWith(7, {
+          title: "Werkzeugecke sortieren – geprüft",
+          createdByMemberId: null,
+          status: "actionable",
+        }),
+    },
+    {
+      name: "creates a first project task",
+      value: "Angebote vergleichen – geprüft",
+      targetType: "project",
+      surface: "create_first_slice",
+      suggestedTitle: null,
+      suggestedDefault: "Angebote vergleichen",
+      button: "Ersten Schritt anlegen …",
+      heading: "Ersten Schritt anlegen?",
+      shown: ["Projekt", "Keller"],
+      field: "Neue Aufgabe",
+      confirm: "Aufgabe anlegen",
+      expectMutation: () =>
+        expect(mocked.createTask).toHaveBeenCalledWith({
+          title: "Angebote vergleichen – geprüft",
+          createdByMemberId: null,
+          status: "actionable",
+          projectId: 7,
+          parentTaskId: null,
+        }),
+    },
+    {
+      name: "creates a project follow-up",
+      value: "Nachhalten: Versicherung wegen Rohrbruch – geprüft",
+      targetType: "project",
+      surface: "create_followup",
+      suggestedTitle: null,
+      suggestedDefault: "Versicherung wegen Rohrbruch",
+      button: "Follow-up anlegen …",
+      heading: "Follow-up anlegen?",
+      shown: ["Projekt", "Keller"],
+      field: "Neue Aufgabe",
+      confirm: "Aufgabe anlegen",
+      expectMutation: () =>
+        expect(mocked.createTask).toHaveBeenCalledWith(expect.objectContaining({
+          title: "Nachhalten: Versicherung wegen Rohrbruch – geprüft",
+          projectId: 7,
+        })),
+    },
+    {
+      name: "adds a project done-when criterion",
+      value: "Tür ist montiert und dicht – geprüft",
+      targetType: "project",
+      surface: "edit_done_when",
+      suggestedTitle: null,
+      suggestedDefault: "Tür ist montiert und dicht",
+      button: "Erledigt-wenn ergänzen …",
+      heading: "Erledigt-wenn ergänzen?",
+      shown: ["Projekt", "Keller"],
+      field: "Neues Kriterium",
+      confirm: "Kriterium hinzufügen",
+      expectMutation: () =>
+        expect(mocked.addCriterion).toHaveBeenCalledWith(7, "Tür ist montiert und dicht – geprüft"),
+    },
+    {
+      name: "appends a labeled done-when block to task notes",
+      value: "Erledigt, wenn: Letztes Backup erfolgreich – geprüft",
+      targetType: "task",
+      surface: "edit_done_when",
+      suggestedTitle: null,
+      suggestedDefault: "Letztes Backup erfolgreich",
+      button: "Erledigt-wenn in Notizen ergänzen …",
+      heading: "Erledigt-wenn in Notizen ergänzen?",
+      shown: ["Aufgabe", "Keller"],
+      field: "Eintrag",
+      confirm: "In Notizen ergänzen",
+      expectMutation: () =>
+        expect(mocked.appendTaskNotes).toHaveBeenCalledWith(7, "Erledigt, wenn: Letztes Backup erfolgreich – geprüft"),
+    },
+  ] as const;
+
+  it.each(flows)("$name after an explicit confirmation", async (flow) => {
+    mocked.getTask.mockResolvedValue(makeTask({ id: 7, title: "Keller", revision: 3 }));
+    mocked.getProject.mockResolvedValue({ ...makeProject({ id: 7, title: "Keller", revision: 4 }), tasks: [] });
+    mocked.updateTask.mockResolvedValue(makeTask({ id: 7, revision: 4 }));
+    mocked.updateProject.mockResolvedValue(makeProject({ id: 7, revision: 5 }));
+    mocked.createTask.mockResolvedValue(makeTask({ id: 20 }));
+    mocked.createChildTask.mockResolvedValue(makeTask({ id: 21 }));
+    mocked.addCriterion.mockResolvedValue({} as never);
+    mocked.appendTaskNotes.mockResolvedValue(makeTask({ id: 7 }));
+    mocked.resolveCleanupRoundItem.mockResolvedValue(round({ status: "completed", items: [item({ status: "dismissed" })] }));
     mocked.getCleanupRound.mockResolvedValue(round({
       items: [item({
-        targetType,
-        itemStatus: targetType === "project" ? "active" : "actionable",
+        targetType: flow.targetType,
+        itemStatus: flow.targetType === "project" ? "active" : "actionable",
         result: {
           ...item().result!,
-          targetType,
-          resolutionSurface: surface,
-          suggestedDefault: start.replace(/^(Erledigt, wenn|Nachhalten): /, ""),
-          suggestedTitle: surface === "rename_item" ? start : null,
+          targetType: flow.targetType,
+          resolutionSurface: flow.surface,
+          suggestedDefault: flow.suggestedDefault,
+          suggestedTitle: flow.suggestedTitle,
         },
       })],
     }));
     renderAt("/more/cleanup-round/r1");
 
     const card = await screen.findByRole("article", { name: "Keller" });
-    const answer = within(card).getByLabelText("Deine Antwort");
-    expect(answer).toHaveValue(start);
-    await userEvent.type(answer, " – geprüft");
-    await userEvent.click(within(card).getByRole("button", { name: label }));
+    await userEvent.type(within(card).getByLabelText("Deine Antwort"), " – geprüft");
+    await userEvent.click(within(card).getByRole("button", { name: flow.button }));
 
-    await waitFor(() => expect(screen.getByTestId(probe)).toHaveTextContent(expected));
-    // Nothing is saved from the card; the destination's own Save commits.
+    // The sheet shows the target and exactly what will be written.
+    const sheet = await screen.findByRole("dialog", { name: flow.heading });
+    await waitFor(() => expect(within(sheet).getByText(flow.shown[1])).toBeInTheDocument());
+    expect(within(sheet).getByText(flow.shown[0])).toBeInTheDocument();
+    expect(within(sheet).getByLabelText(flow.field)).toHaveValue(flow.value);
+    expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
+
+    await userEvent.click(within(sheet).getByRole("button", { name: flow.confirm }));
+
+    await waitFor(() => flow.expectMutation());
+    // Only the card is hidden; nothing sets reviewedAt.
+    await waitFor(() => expect(mocked.resolveCleanupRoundItem).toHaveBeenCalledWith("r1", "item-1", "dismiss"));
+    expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalledWith("r1", "item-1", "mark-reviewed");
+    expect(mocked.acknowledgeTaskReview).not.toHaveBeenCalled();
+    expect(mocked.acknowledgeProjectReview).not.toHaveBeenCalled();
+    expect(await screen.findByText("Alles durchgesehen.")).toBeInTheDocument();
+  });
+
+  it("makes an admin step concrete: new wording plus optional note, both previewed", async () => {
+    mocked.getTask.mockResolvedValue(makeTask({ id: 7, title: "Kur-Nachweis", revision: 2 }));
+    mocked.updateTask.mockResolvedValue(makeTask({ id: 7, revision: 3 }));
+    mocked.appendTaskNotes.mockResolvedValue(makeTask({ id: 7 }));
+    mocked.resolveCleanupRoundItem.mockResolvedValue(round({ status: "completed", items: [item({ status: "dismissed" })] }));
+    mocked.getCleanupRound.mockResolvedValue(round({
+      items: [item({
+        title: "Kur-Nachweis",
+        result: {
+          ...item().result!,
+          proposal: "clarify_recipient_or_document",
+          resolutionSurface: "clarify_admin_target",
+          suggestedTitle: "Kur-Nachweis an Minijob-Zentrale einreichen",
+          suggestedDefault: "Empfänger: Minijob-Zentrale",
+        },
+      })],
+    }));
+    renderAt("/more/cleanup-round/r1");
+
+    const card = await screen.findByRole("article", { name: "Kur-Nachweis" });
+    expect(within(card).getByLabelText("Deine Antwort")).toHaveValue("Empfänger: Minijob-Zentrale");
+    await userEvent.click(within(card).getByRole("button", { name: "Verwaltungsschritt konkretisieren …" }));
+
+    const sheet = await screen.findByRole("dialog", { name: "Verwaltungsschritt konkretisieren?" });
+    await waitFor(() => expect(within(sheet).getByText("Kur-Nachweis")).toBeInTheDocument());
+    expect(within(sheet).getByLabelText("Neue Formulierung")).toHaveValue("Kur-Nachweis an Minijob-Zentrale einreichen");
+    expect(within(sheet).getByLabelText("Notiz ergänzen (optional)")).toHaveValue("Empfänger: Minijob-Zentrale");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Aktualisieren" }));
+
+    await waitFor(() =>
+      expect(mocked.appendTaskNotes).toHaveBeenCalledWith(7, "Empfänger: Minijob-Zentrale"),
+    );
+    expect(mocked.updateTask).toHaveBeenCalledWith(7, {
+      title: "Kur-Nachweis an Minijob-Zentrale einreichen",
+      expectedRevision: 2,
+    });
+    await waitFor(() => expect(mocked.resolveCleanupRoundItem).toHaveBeenCalledWith("r1", "item-1", "dismiss"));
+  });
+
+  it("changes nothing when the confirmation is cancelled", async () => {
+    mocked.getTask.mockResolvedValue(makeTask({ id: 7, title: "Keller", revision: 3 }));
+    mocked.getCleanupRound.mockResolvedValue(round());
+    renderAt("/more/cleanup-round/r1");
+
+    const card = await screen.findByRole("article", { name: "Keller" });
+    await userEvent.click(within(card).getByRole("button", { name: "Ersten Schritt anlegen …" }));
+    const sheet = await screen.findByRole("dialog", { name: "Ersten Schritt anlegen?" });
+    await waitFor(() => expect(within(sheet).getByLabelText("Neue Teilaufgabe")).toHaveValue("Werkzeugecke sortieren"));
+    await userEvent.click(within(sheet).getByRole("button", { name: "Abbrechen" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mocked.createChildTask).not.toHaveBeenCalled();
+    expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
+    expect(screen.getByRole("article", { name: "Keller" })).toBeInTheDocument();
+  });
+
+  it("keeps the card when the change fails", async () => {
+    mocked.getTask.mockResolvedValue(makeTask({ id: 7, title: "Keller", revision: 3 }));
+    mocked.createChildTask.mockRejectedValue(new Error("kaputt"));
+    mocked.getCleanupRound.mockResolvedValue(round());
+    renderAt("/more/cleanup-round/r1");
+
+    const card = await screen.findByRole("article", { name: "Keller" });
+    await userEvent.click(within(card).getByRole("button", { name: "Ersten Schritt anlegen …" }));
+    const sheet = await screen.findByRole("dialog", { name: "Ersten Schritt anlegen?" });
+    await userEvent.click(await within(sheet).findByRole("button", { name: "Teilaufgabe anlegen" }));
+
+    expect(await within(sheet).findByRole("alert")).toBeInTheDocument();
     expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
   });
 
@@ -309,7 +502,7 @@ describe("CleanupRoundPage", () => {
 
     const project = await screen.findByRole("article", { name: "Keller" });
     await userEvent.click(within(project).getByRole("button", { name: "Zum Projekt machen …" }));
-    expect(screen.getByTestId("workflow")).toHaveTextContent("convertToProject:7:");
+    expect(screen.getByTestId("workflow")).toHaveTextContent("convertToProject:7");
 
     const reference = screen.getByRole("article", { name: "Öffnungszeiten" });
     expect(within(reference).queryByRole("button", { name: /Projekt|Form ändern/ })).not.toBeInTheDocument();

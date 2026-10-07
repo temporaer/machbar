@@ -105,7 +105,7 @@ export function TaskDetailSheet() {
   const strings = useStrings();
   const { locale } = useLocale();
   const navigate = useNavigate();
-  const { openTaskId, queueActive, focusField, focusDraft, clearFocusField, open, advanceQueue, close } = useTaskDetail();
+  const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close } = useTaskDetail();
   const { bump } = useRefresh();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
@@ -276,10 +276,6 @@ export function TaskDetailSheet() {
         : focusField === "notes"
           ? notesRef.current
           : dependencyInputRef.current;
-    if (focusDraft !== null && focusField === "title") setTitleDraft(focusDraft);
-    if (focusDraft !== null && focusField === "notes") {
-      setNotesDraft((current) => appendTextBlock(current, focusDraft));
-    }
     if (scrollTarget) {
       if (typeof scrollTarget.scrollIntoView === "function") {
         scrollTarget.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -290,7 +286,6 @@ export function TaskDetailSheet() {
   }, [
     task,
     focusField,
-    focusDraft,
     clearFocusField,
     notesEditing,
     titleEditing,

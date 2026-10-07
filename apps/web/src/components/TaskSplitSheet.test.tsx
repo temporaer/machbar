@@ -72,23 +72,6 @@ describe("TaskSplitSheet", () => {
     expect((rows()[0] as HTMLInputElement).value).toBe("");
   });
 
-  it("starts with prefilled suggestions that are only created on submit", async () => {
-    mockedApi.createChildTask.mockResolvedValue({} as never);
-    renderWithProviders(
-      <TaskSplitSheet parentId={7} initialTitles={["Entscheiden: Modell"]} onClose={vi.fn()} />,
-    );
-
-    const rows = screen.getAllByPlaceholderText("Schritt …") as HTMLInputElement[];
-    expect(rows.map((row) => row.value)).toEqual(["Entscheiden: Modell", ""]);
-    expect(mockedApi.createChildTask).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole("button", { name: /1 Teilaufgabe/ }));
-    await waitFor(() => expect(mockedApi.createChildTask).toHaveBeenCalledWith(7, {
-      title: "Entscheiden: Modell",
-      createdByMemberId: null,
-      status: "actionable",
-    }));
-  });
-
   it("removes a filled row without affecting the others", async () => {
     mockedApi.createChildTask.mockResolvedValue({} as never);
     renderWithProviders(<TaskSplitSheet parentId={7} onClose={vi.fn()} />);

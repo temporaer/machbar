@@ -218,12 +218,15 @@ done mean, what is the first slice, does an incident need aftermath, or is this
 really information? Suggestions are never applied automatically. Each card
 offers **Hinten anstellen** (acknowledge like Review), **Öffnen**,
 **Einschätzung ausblenden** (hides the card, leaves the item unchanged), or one
-button into the existing editor that answers the question. For text answers
-(new title, done-when, decision/first step/follow-up, recipient or document)
-the card shows the suggestion as an editable answer and prefills the editor
-with it; nothing is saved until you save there. Buttons say what they really
-do: where Machbar has no direct conversion (for example to information) the
-button reads **Öffnen und als Information prüfen**. Items Machbar could not
+button that answers the question. For text answers (new title, done-when,
+decision/first step/follow-up, admin step) the card shows the suggestion as
+an editable answer; the button opens a small confirmation that shows exactly
+what will change (old and new title, the task to create and where, the
+criterion, or the notes entry). Only its confirm button (for example
+**Umbenennen** or **Teilaufgabe anlegen**) changes the item; the card then
+disappears, and the item is not marked reviewed. Buttons say
+what they really do: where Machbar has no direct conversion (for example to
+information) the button reads **Öffnen und als Information prüfen**. Items Machbar could not
 assess stay visible as cards; **Erneut versuchen** (on the card, or once in the
 banner when several failed) only re-asks for those items and keeps the
 existing cards.

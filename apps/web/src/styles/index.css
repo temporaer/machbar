@@ -3791,6 +3791,22 @@ details[open] > .disclosure-summary::after {
   flex-wrap: wrap;
 }
 
+.cleanup-flow-target {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.cleanup-flow-target dt {
+  color: var(--color-text-muted);
+}
+
+.cleanup-flow-target dd {
+  margin: 0;
+  font-weight: 600;
+}
+
 .intake-review-header h1,
 .intake-review-header p,
 .intake-proposal-section h2 {

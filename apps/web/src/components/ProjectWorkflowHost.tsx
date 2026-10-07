@@ -73,7 +73,7 @@ export function ProjectWorkflowHost() {
         />
       );
     case "editOutcome":
-      return <StoryCriteriaSheet story={story} initialCriterion={workflow.current.draft} onClose={close} />;
+      return <StoryCriteriaSheet story={story} onClose={close} />;
     case "completeWithCriteria":
       return (
         <CompleteWithCriteriaSheet

@@ -25,19 +25,16 @@ export function AcceptanceCriteriaEditor({
   criteria: criteriaProp,
   onError,
   autoFocusNewCriterion = false,
-  initialNewCriterion = "",
 }: {
   projectId: number;
   criteria: AcceptanceCriterion[];
   /** Reports a failed mutation to the surrounding sheet (`null` clears it). */
   onError: (message: string | null) => void;
   autoFocusNewCriterion?: boolean;
-  /** Seeds the unsaved new-criterion field; adding it stays an explicit action. */
-  initialNewCriterion?: string | undefined;
 }) {
   const strings = useStrings();
   const { bump } = useRefresh();
-  const [newCriterionText, setNewCriterionText] = useState(initialNewCriterion);
+  const [newCriterionText, setNewCriterionText] = useState("");
   const [drafts, setDrafts] = useState<Record<number, string>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
   const [pending, setPending] = useState(false);
