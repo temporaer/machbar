@@ -198,6 +198,7 @@ describe("CleanupRoundPage", () => {
     expect(within(card).queryByRole("button", { name: /Als Information ablegen/ })).not.toBeInTheDocument();
     await userEvent.click(within(card).getByRole("button", { name: "Öffnen und als Information prüfen" }));
     expect(screen.getByTestId("detail")).toHaveTextContent("7:notes:");
+    expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
   });
 
   it("explains the difference between review acknowledgement and hiding a card", async () => {
