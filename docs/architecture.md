@@ -703,11 +703,13 @@ Refinement workflow.
 
 ### Klärungsrunde — `/more/cleanup-round`
 
-The Klärungsrunde is an on-demand, advisory semantic coaching pass. It does not
-replace Review's mechanical diagnosis: Review knows owners, dates, waits,
-blockers, next actions, stuck reasons, and review age; the Klärungsrunde asks a
-Home Assistant AI Task whether a few sampled items are *semantically* useful
-work items ("would a tired human know what to do next?").
+The Klärungsrunde is an on-demand, advisory planning-clarity pass over semantic
+work-item quality. It does not replace Review/Stuck Detection's mechanical
+workflow hygiene: Review knows owners, dates, waits, blockers, next actions,
+stuck reasons, status, and review age; the Klärungsrunde asks a Home Assistant
+AI Task whether a few sampled items preserve enough intent, outcome, and
+decision structure for a tired human to resume them without reconstructing the
+plan from memory.
 
 - **Sampling** (`apps/api/src/cleanupRound/sampler.ts`) selects, not
   diagnoses: up to five open tasks (captured/actionable/someday action tasks in
@@ -718,10 +720,19 @@ work items ("would a tired human know what to do next?").
   projects when possible.
 - **Contract** (`packages/shared/src/cleanupRound.ts`): each sampled item is
   sent as a `CleanupItemContext` with mechanical facts as context only. The AI
-  returns one `CleanupTriageResult` per item from closed proposal, resolution
-  surface, inferred work type, and flow vocabularies. Work type and
-  uphill/downhill are reasoning lenses and are never persisted on tasks or
-  projects.
+  must not report missing owner/due/scheduled/revisit dates, stale age,
+  blocked state, or graph next-action gaps as findings; those belong to
+  Review/Stuck Detection. It instead looks for unclear intent, hidden
+  decisions, vague outcomes, wrong shape, weak uncertainty-reducing slices,
+  incident follow-up, and admin target ambiguity. A sparse `planningContext`
+  adds only relevant open/waiting/done children, the current next action, and
+  non-empty project acceptance criteria, bounded for the Home Assistant AI
+  Task; empty/default/null fields and the context itself are omitted when
+  there is no useful evidence. This lets the AI avoid duplicating existing
+  plans or completed work without receiving the whole graph. The AI returns
+  one `CleanupTriageResult` per item from closed proposal, resolution surface,
+  inferred work type, and flow vocabularies. Work type and uphill/downhill are
+  reasoning lenses and are never persisted on tasks or projects.
 - **Validation** (`validate.ts`) normalizes strings and enums, trims excessive
   text, rejects unknown targets, type mismatches, duplicates, and malformed
   entries as warnings, and keeps raw and validated responses separately. All

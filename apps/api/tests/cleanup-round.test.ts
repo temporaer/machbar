@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { cleanupProposalKinds, cleanupResolutionSurfaces } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
 import { Graph } from "../src/domain/graph.js";
-import { sampleCleanupCandidates, selectCleanupBatch } from "../src/cleanupRound/sampler.js";
+import { projectContext, sampleCleanupCandidates, selectCleanupBatch, taskContext } from "../src/cleanupRound/sampler.js";
 import { validateCleanupRoundResponse } from "../src/cleanupRound/validate.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -473,6 +473,46 @@ describe("cleanup rounds", () => {
     expect(inBig.length).toBeLessThanOrEqual(2);
     expect(sample.some((item) => item.targetType === "project")).toBe(true);
     expect(sample.some((item) => item.targetType === "task")).toBe(true);
+  });
+
+  it("adds sparse planning context for open, waiting, done, next-action, and criteria evidence", async () => {
+    const backup = await project("Backup Konzept");
+    const open = await task("Restore-Test durchführen", { projectId: backup, notes: "Mit einer echten Sicherung testen." });
+    const waiting = await task("Antwort Versicherung abwarten", { projectId: backup });
+    ctx.handle.db.insert(schema.taskExternalWaits).values({
+      taskId: waiting,
+      waitingFor: "Versicherung",
+      revisitDate: null,
+    }).run();
+    const done = await task("Angebote eingeholt", { projectId: backup });
+    await ctx.app.inject({ method: "POST", url: `/api/tasks/${done}/complete`, payload: {} });
+    await ctx.app.inject({ method: "POST", url: `/api/projects/${backup}/criteria`, payload: { text: "Restore-Test erfolgreich dokumentiert" } });
+
+    const graph = Graph.load(ctx.handle.db);
+    const context = projectContext(graph, backup)!;
+    expect(context.planningContext?.currentNextAction).toMatchObject({ id: open, title: "Restore-Test durchführen" });
+    expect(context.planningContext?.openChildren).toContainEqual(expect.objectContaining({ title: "Restore-Test durchführen" }));
+    expect(context.planningContext?.waitingChildren).toContainEqual(expect.objectContaining({
+      title: "Antwort Versicherung abwarten",
+      externalWait: expect.objectContaining({ label: "Versicherung" }),
+    }));
+    expect(context.planningContext?.doneChildren?.map((child) => child.title)).toContain("Angebote eingeholt");
+    expect(context.planningContext?.existingAcceptanceCriteria).toEqual(["Restore-Test erfolgreich dokumentiert"]);
+    expect(context.planningContext?.openChildren?.length).toBeLessThanOrEqual(8);
+    expect(context.planningContext?.waitingChildren?.length).toBeLessThanOrEqual(5);
+    expect(context.planningContext?.doneChildren?.length).toBeLessThanOrEqual(5);
+
+    const serialized = JSON.stringify(context.planningContext);
+    expect(serialized).not.toContain('"dueDate":null');
+    expect(serialized).not.toContain('"blocked":false');
+    expect(serialized).not.toContain('"openChildren":[]');
+    expect(serialized).not.toContain('"externalWait":{}');
+  });
+
+  it("omits planning context when there is no useful structured evidence", async () => {
+    const id = await task("Klarer Einzelschritt");
+    const context = taskContext(Graph.load(ctx.handle.db), Graph.load(ctx.handle.db).tasksById.get(id)!);
+    expect(context.planningContext).toBeUndefined();
   });
 
   it("keeps the cluster cap when swapping in the missing shape", () => {

@@ -1,5 +1,7 @@
 import type {
   CleanupItemContext,
+  CleanupPlanningChildContext,
+  CleanupPlanningContext,
   CleanupTargetType,
   WorkItemScope,
 } from "@machbar/shared";
@@ -13,6 +15,10 @@ const STALENESS_HORIZON_DAYS = 60;
 const MAX_PER_CLUSTER = 2;
 const MAX_TITLES = 10;
 const MAX_NOTES = 1_500;
+const MAX_PLANNING_OPEN_CHILDREN = 8;
+const MAX_PLANNING_DONE_CHILDREN = 5;
+const MAX_PLANNING_WAITING_CHILDREN = 5;
+const MAX_PLANNING_CHILD_NOTES = 300;
 
 export interface CleanupSampleOptions {
   scope: WorkItemScope;
@@ -94,6 +100,140 @@ function clipNotes(notes: string): string | null {
   return trimmed.length > MAX_NOTES ? `${trimmed.slice(0, MAX_NOTES)}…` : trimmed;
 }
 
+function clipText(value: string, max: number): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length <= max) return trimmed;
+  const headLength = Math.max(1, Math.floor((max - 3) * 0.65));
+  const tailLength = Math.max(1, max - 3 - headLength);
+  return `${trimmed.slice(0, headLength)} … ${trimmed.slice(-tailLength)}`;
+}
+
+function taskPlanningChild(task: TaskRecord): CleanupPlanningChildContext {
+  const result: CleanupPlanningChildContext = { id: task.id, title: task.title };
+  if (task.status !== "actionable") result.status = task.status;
+  if (task.kind !== "action") result.kind = task.kind;
+  if (task.blocked) result.blocked = true;
+  if (task.externalWait) {
+    const externalWait: NonNullable<CleanupPlanningChildContext["externalWait"]> = {};
+    const label = task.externalWait.waitingFor?.trim();
+    if (label) externalWait.label = label;
+    if (task.externalWait.revisitDate) externalWait.revisitDate = task.externalWait.revisitDate;
+    if (Object.keys(externalWait).length > 0) result.externalWait = externalWait;
+  }
+  if (task.scheduledDate) result.scheduledDate = task.scheduledDate;
+  if (task.dueDate) result.dueDate = task.dueDate;
+  const notes = clipText(task.notes, MAX_PLANNING_CHILD_NOTES);
+  if (notes) result.notes = notes;
+  return result;
+}
+
+function projectPlanningChild(project: ProjectRecord): CleanupPlanningChildContext {
+  const result: CleanupPlanningChildContext = { id: project.id, title: project.title };
+  if (project.status !== "active") result.status = project.status;
+  const label = project.waitingOn?.map((value) => value.trim()).filter(Boolean).join(", ");
+  if (label || project.waitingUntil) {
+    result.externalWait = {
+      ...(label ? { label } : {}),
+      ...(project.waitingUntil ? { revisitDate: project.waitingUntil } : {}),
+    };
+  }
+  if (project.scheduledDate) result.scheduledDate = project.scheduledDate;
+  if (project.dueDate) result.dueDate = project.dueDate;
+  const notes = clipText(project.notes, MAX_PLANNING_CHILD_NOTES);
+  if (notes) result.notes = notes;
+  return result;
+}
+
+export function omitEmptyPlanningContext(
+  context: CleanupPlanningContext,
+): CleanupPlanningContext | undefined {
+  return context.currentNextAction
+    || context.openChildren?.length
+    || context.waitingChildren?.length
+    || context.doneChildren?.length
+    || context.existingAcceptanceCriteria?.length
+    ? context
+    : undefined;
+}
+
+function taskPlanningContext(
+  graph: Graph,
+  task: TaskRecord,
+  nextAction: TaskRecord | null,
+): CleanupPlanningContext | undefined {
+  const children = graph.childrenByParent.get(task.id) ?? [];
+  const waitingChildren = children
+    .filter((child) => child.status !== "done" && child.status !== "cancelled" && (child.externalWait !== null || child.blocked))
+    .slice(0, MAX_PLANNING_WAITING_CHILDREN)
+    .map(taskPlanningChild);
+  const openChildren = children
+    .filter((child) => child.status !== "done" && child.status !== "cancelled" && child.externalWait === null && !child.blocked)
+    .slice(0, MAX_PLANNING_OPEN_CHILDREN)
+    .map(taskPlanningChild);
+  const doneChildren = children
+    .filter((child) => child.status === "done")
+    .slice(0, MAX_PLANNING_DONE_CHILDREN)
+    .map(taskPlanningChild);
+  return omitEmptyPlanningContext({
+    ...(nextAction && nextAction.id !== task.id
+      ? {
+          currentNextAction: {
+            id: nextAction.id,
+            title: nextAction.title,
+            ...(nextAction.status !== "actionable" ? { status: nextAction.status } : {}),
+          },
+        }
+      : {}),
+    ...(openChildren.length > 0 ? { openChildren } : {}),
+    ...(waitingChildren.length > 0 ? { waitingChildren } : {}),
+    ...(doneChildren.length > 0 ? { doneChildren } : {}),
+  });
+}
+
+function projectPlanningContext(graph: Graph, project: ProjectRecord): CleanupPlanningContext | undefined {
+  const rootTasks = graph.rootsByProject.get(project.id) ?? [];
+  const childProjects = [...graph.projectsById.values()].filter((child) => child.parentId === project.id);
+  const openChildren = [
+    ...rootTasks
+      .filter((task) => task.status !== "done" && task.status !== "cancelled" && task.externalWait === null && !task.blocked)
+      .map(taskPlanningChild),
+    ...childProjects
+      .filter((child) => (child.status === "active" || child.status === "backlog") && !child.waitingOn?.length && !child.waitingUntil)
+      .map(projectPlanningChild),
+  ].slice(0, MAX_PLANNING_OPEN_CHILDREN);
+  const waitingChildren = [
+    ...rootTasks
+      .filter((task) => task.status !== "done" && task.status !== "cancelled" && (task.externalWait !== null || task.blocked))
+      .map(taskPlanningChild),
+    ...childProjects
+      .filter((child) => (child.waitingOn?.length ?? 0) > 0 || child.waitingUntil !== null)
+      .map(projectPlanningChild),
+  ].slice(0, MAX_PLANNING_WAITING_CHILDREN);
+  const doneChildren = [
+    ...rootTasks.filter((task) => task.status === "done").map(taskPlanningChild),
+    ...childProjects.filter((child) => child.status === "completed").map(projectPlanningChild),
+  ].slice(0, MAX_PLANNING_DONE_CHILDREN);
+  const existingAcceptanceCriteria = project.acceptanceCriteria
+    .map((criterion) => criterion.text.trim())
+    .filter(Boolean);
+  return omitEmptyPlanningContext({
+    ...(project.nextAction
+      ? {
+          currentNextAction: {
+            id: project.nextAction.id,
+            title: project.nextAction.title,
+            ...(project.nextAction.status !== "actionable" ? { status: project.nextAction.status } : {}),
+          },
+        }
+      : {}),
+    ...(openChildren.length > 0 ? { openChildren } : {}),
+    ...(waitingChildren.length > 0 ? { waitingChildren } : {}),
+    ...(doneChildren.length > 0 ? { doneChildren } : {}),
+    ...(existingAcceptanceCriteria.length > 0 ? { existingAcceptanceCriteria } : {}),
+  });
+}
+
 export function taskContext(graph: Graph, task: TaskRecord): CleanupItemContext {
   const project = task.projectId !== null ? graph.projectsById.get(task.projectId) : undefined;
   const parent = task.parentTaskId !== null ? graph.tasksById.get(task.parentTaskId) : undefined;
@@ -102,6 +242,7 @@ export function taskContext(graph: Graph, task: TaskRecord): CleanupItemContext 
     : graph.rootsByProject.get(task.projectId)) ?? [];
   const children = taskChildren(graph, task);
   const computedProject = project ? graph.projectWithComputed(project.id) : null;
+  const planningContext = taskPlanningContext(graph, task, computedProject?.nextAction ?? null);
   return {
     targetType: "task",
     targetId: task.id,
@@ -122,6 +263,7 @@ export function taskContext(graph: Graph, task: TaskRecord): CleanupItemContext 
         : titles(siblings.filter((sibling) =>
             sibling.id !== task.id && sibling.status !== "done" && sibling.status !== "cancelled")),
     },
+    ...(planningContext ? { planningContext } : {}),
     mechanicalFacts: {
       hasOwner: task.effectiveOwnerId !== null,
       hasDueDate: task.dueDate !== null,
@@ -144,6 +286,7 @@ export function projectContext(graph: Graph, projectId: number): CleanupItemCont
   if (!project) return null;
   const parent = project.parentId !== null ? graph.projectsById.get(project.parentId) : undefined;
   const children = projectChildren(graph, project);
+  const planningContext = projectPlanningContext(graph, project);
   const siblings = [...graph.projectsById.values()].filter(
     (other) => other.id !== project.id && other.parentId === project.parentId && openProject(other),
   );
@@ -164,6 +307,7 @@ export function projectContext(graph: Graph, projectId: number): CleanupItemCont
       // Top-level projects are independent; only nested stories have siblings.
       siblingTitles: project.parentId === null ? [] : titles(siblings),
     },
+    ...(planningContext ? { planningContext } : {}),
     mechanicalFacts: {
       hasOwner: project.ownerMemberId !== null,
       hasDueDate: project.dueDate !== null,

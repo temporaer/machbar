@@ -109,6 +109,12 @@ export interface CleanupItemContext {
   };
 
   /**
+   * Sparse planning evidence that helps avoid duplicate suggestions. Omitted
+   * fields mean the fact is not relevant or not filled, not necessarily false.
+   */
+  planningContext?: CleanupPlanningContext;
+
+  /**
    * Facts Machbar already derives. They are context for the AI, not
    * findings it should report.
    */
@@ -126,6 +132,33 @@ export interface CleanupItemContext {
     notesLength: number;
     reviewedAt: string | null;
   };
+}
+
+export interface CleanupPlanningChildContext {
+  id: number;
+  title: string;
+  status?: string;
+  kind?: "action" | "reference";
+  blocked?: true;
+  externalWait?: {
+    label?: string;
+    revisitDate?: string;
+  };
+  scheduledDate?: string;
+  dueDate?: string;
+  notes?: string;
+}
+
+export interface CleanupPlanningContext {
+  currentNextAction?: {
+    id: number;
+    title: string;
+    status?: string;
+  };
+  openChildren?: CleanupPlanningChildContext[];
+  waitingChildren?: CleanupPlanningChildContext[];
+  doneChildren?: CleanupPlanningChildContext[];
+  existingAcceptanceCriteria?: string[];
 }
 
 export interface CleanupTriageResult {

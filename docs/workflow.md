@@ -211,11 +211,18 @@ Optional owner/effort planning tools remain available inside Review without
 becoming another required workflow.
 
 The optional **Klärungsrunde** (More, when the Home Assistant AI Task is
-configured) complements Review with semantic coaching. Machbar samples a few
-liegengebliebene tasks and projects, and the AI asks one focused question per
-item: is the title an actual action, is a decision hidden inside it, what does
-done mean, what is the first slice, does an incident need aftermath, or is this
-really information? Suggestions are never applied automatically. Each card
+configured) is a planning-clarity pass over semantic work-item quality. Machbar
+Review/Stuck Detection handles mechanical workflow hygiene such as owner, dates,
+waiting/blocking state, stale age, status, and graph next-action gaps. The AI
+must not echo those facts as findings; it asks one focused question about the
+thinking artifact instead: is the title an actual action, is a decision hidden
+inside it, what does done mean, what is the first uncertainty-reducing slice,
+does an incident need aftermath, or is this really information? If the only
+problem is mechanical, the AI should leave the item alone. Suggestions are
+never applied automatically. The AI receives only compact `planningContext`
+when useful: relevant open/waiting/done children, the current next action, and
+existing acceptance criteria. Empty/default fields are omitted so this context
+helps prevent duplicate suggestions without dumping the graph. Each card
 offers **Hinten anstellen** (acknowledge like Review), **Öffnen**,
 **Einschätzung ausblenden** (hides the card, leaves the item unchanged), or one
 button that answers the question. For text answers (new title, done-when,
