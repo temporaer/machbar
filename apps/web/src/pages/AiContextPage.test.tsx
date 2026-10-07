@@ -61,7 +61,7 @@ describe("AiContextPage", () => {
     renderWithProviders(<AiContextPage />);
     const household = await screen.findByLabelText("Haushaltsbeschreibung");
 
-    await user.click(screen.getByRole("button", { name: "Leeren" }));
+    await user.click(screen.getByRole("button", { name: "Entwurf leeren" }));
 
     expect(household).toHaveValue("");
     expect(api.updateHouseholdAiContext).not.toHaveBeenCalled();

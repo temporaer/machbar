@@ -552,6 +552,7 @@ const extra = {
   suggestionGuidanceHint: "Optionale Hinweise, was die KI bei Vorschlägen bevorzugen oder vermeiden soll. Nützlich, wenn dir ein wiederkehrendes Muster auffällt.",
   suggestionGuidancePlaceholder: "Beispiel: Bitte nicht jede unklare Sache zu einem Projekt machen. Bevorzuge kleine nächste Schritte, klare Übergaben und konkrete Rückfragen.",
   aiContextRulesHint: "Diese Angaben helfen der KI beim Einordnen. Sie ersetzen keine Machbar-Regeln.",
+  aiContextClearDraft: "Entwurf leeren",
   saving: "Wird gespeichert …",
   saved: "Gespeichert.",
   clear: "Leeren",

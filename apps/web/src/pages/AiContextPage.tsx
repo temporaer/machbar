@@ -109,7 +109,7 @@ export function AiContextPage() {
             {saving ? strings.saving : strings.save}
           </button>
           <button type="button" className="btn btn-ghost" onClick={clear} disabled={loading || saving}>
-            {strings.clear}
+            {strings.aiContextClearDraft}
           </button>
         </div>
       </div>

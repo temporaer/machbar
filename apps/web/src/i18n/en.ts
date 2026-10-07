@@ -564,6 +564,7 @@ const en = {
   suggestionGuidanceHint: "Optional notes about what the AI should prefer or avoid in suggestions. Useful when you notice a recurring pattern.",
   suggestionGuidancePlaceholder: "Example: Do not turn every unclear thing into a project. Prefer small next steps, clear handoffs, and concrete questions.",
   aiContextRulesHint: "These notes help the AI interpret work. They do not replace Machbar rules.",
+  aiContextClearDraft: "Clear draft",
   saving: "Saving …",
   saved: "Saved.",
   clear: "Clear",
