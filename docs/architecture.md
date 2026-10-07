@@ -749,8 +749,13 @@ work items ("would a tired human know what to do next?").
     sends one request to a narrow action endpoint,
     `POST /api/cleanup-rounds/:id/items/:itemId/actions/<action>`
     (`apps/api/src/cleanupRound/actions.ts`). In one transaction it checks
-    that the round is open, the card is open and `ready`, and the target
-    still exists with the card's type. It then calls the canonical domain
+    that the round is open and the card is open and `ready`; that the action
+    fits the card's stored `resolutionSurface` (`rename` ← `rename_item`;
+    `create-task` ← `create_decision_task`/`create_first_slice`/
+    `create_followup`; `add-done-when` ← `edit_done_when`; `clarify-admin` ←
+    `clarify_admin_target`; otherwise `cleanup_round_action_surface_mismatch`,
+    and a missing or unreadable stored result is rejected); and that the
+    target still exists with the card's type. It then calls the canonical domain
     function and dismisses the card (never `reviewedAt`). Either the item
     improves and the card disappears, or nothing changes; the page renders the
     returned round:

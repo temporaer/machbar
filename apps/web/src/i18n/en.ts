@@ -91,8 +91,8 @@ const en = {
   } satisfies Record<CleanupProposalKind, string>,
   cleanupActionLabels: {
     rename: "Rename …",
-    doneWhenNotes: "Add done-when to notes …",
-    doneWhenCriterion: "Add done-when …",
+    doneWhenNotes: "Add to notes …",
+    doneWhenCriterion: "Add criterion …",
     decision: "Add decision task …",
     firstSlice: "Add first step …",
     followup: "Add follow-up …",
@@ -104,6 +104,8 @@ const en = {
     structure: "Open and structure",
   },
   cleanupFlow: {
+    confirmHint:
+      "Confirming changes the entry and hides this assessment. “Look again later” stays a separate action.",
     renameTask: "Rename task?",
     renameProject: "Rename project?",
     oldTitle: "Old",
@@ -1383,6 +1385,7 @@ const en = {
     cleanup_round_no_candidates: "There is nothing Machbar needs to look at right now.",
     cleanup_round_target_mismatch: "This item no longer matches its target. Please reload.",
     cleanup_round_action_no_change: "This confirmation would not change anything.",
+    cleanup_round_action_surface_mismatch: "This action does not fit this suggestion.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `A person named “${name}” already exists.`,

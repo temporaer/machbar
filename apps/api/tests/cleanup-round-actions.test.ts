@@ -39,7 +39,7 @@ describe("cleanup round micro-flow actions", () => {
   }
 
   /** Creates a round over `target` whose single card is ready. */
-  async function readyCard(target: Target) {
+  async function readyCard(target: Target, surface = "rename_item") {
     const created = await ctx.app.inject({ method: "POST", url: "/api/cleanup-rounds", payload: {} });
     expect(created.statusCode, created.body).toBe(201);
     const roundId = created.json().id as string;
@@ -52,7 +52,7 @@ describe("cleanup round micro-flow actions", () => {
       targetType: item.targetType,
       targetId: item.targetId,
       proposal: "rename_for_actionability",
-      resolutionSurface: "rename_item",
+      resolutionSurface: item.targetType === target.type && item.targetId === target.id ? surface : "rename_item",
       inferredWorkType: "normal",
       inferredFlow: "uphill",
       confidence: "medium",
@@ -143,12 +143,12 @@ describe("cleanup round micro-flow actions", () => {
   });
 
   it.each([
-    ["rename", { title: "Keller" }],
-    ["clarify-admin", { title: "Keller", notes: "  " }],
-    ["clarify-admin", {}],
-  ])("rejects a %s that changes nothing", async (action, payload) => {
+    ["rename", "rename_item", { title: "Keller" }],
+    ["clarify-admin", "clarify_admin_target", { title: "Keller", notes: "  " }],
+    ["clarify-admin", "clarify_admin_target", {}],
+  ])("rejects a %s that changes nothing", async (action, surface, payload) => {
     const keller = await task("Keller");
-    const card = await readyCard({ type: "task", id: keller });
+    const card = await readyCard({ type: "task", id: keller }, surface);
     const response = await act(card, action, payload);
     expect(response.statusCode).toBe(400);
     expect(response.json().error.code).toBe("cleanup_round_action_no_change");
@@ -158,7 +158,7 @@ describe("cleanup round micro-flow actions", () => {
   it("creates a child task under a task target and inherits from it", async () => {
     const member = (await ctx.app.inject({ method: "POST", url: "/api/members", payload: { name: "Kim" } })).json().id as number;
     const keller = await task("Keller", { ownerMemberId: member, ownerInheritanceMode: "explicit" });
-    const card = await readyCard({ type: "task", id: keller });
+    const card = await readyCard({ type: "task", id: keller }, "create_decision_task");
     const response = await act(card, "create-task", { title: "Entscheiden: Welche Ecke zuerst?", purpose: "decision" });
     expect(response.statusCode, response.body).toBe(200);
     const [child] = children(keller);
@@ -171,7 +171,7 @@ describe("cleanup round micro-flow actions", () => {
 
   it("creates a project task under a project target", async () => {
     const haustuer = await project("Haustür");
-    const card = await readyCard({ type: "project", id: haustuer });
+    const card = await readyCard({ type: "project", id: haustuer }, "create_first_slice");
     const response = await act(card, "create-task", { title: "Angebote vergleichen", purpose: "firstSlice" });
     expect(response.statusCode, response.body).toBe(200);
     const created = ctx.handle.db.select().from(schema.workItems)
@@ -184,7 +184,7 @@ describe("cleanup round micro-flow actions", () => {
 
   it("keeps the card when the canonical creation rejects the change", async () => {
     const captured = await task("Keller", { status: "captured" });
-    const card = await readyCard({ type: "task", id: captured });
+    const card = await readyCard({ type: "task", id: captured }, "create_first_slice");
     const response = await act(card, "create-task", { title: "Ecke sortieren", purpose: "firstSlice" });
     expect(response.statusCode).toBe(409);
     expect(children(captured)).toHaveLength(0);
@@ -193,7 +193,7 @@ describe("cleanup round micro-flow actions", () => {
 
   it("adds a done-when criterion to a project", async () => {
     const haustuer = await project("Haustür");
-    const card = await readyCard({ type: "project", id: haustuer });
+    const card = await readyCard({ type: "project", id: haustuer }, "edit_done_when");
     const response = await act(card, "add-done-when", { text: "Tür ist montiert." });
     expect(response.statusCode, response.body).toBe(200);
     const criteria = ctx.handle.db.select().from(schema.workItemAcceptanceCriteria)
@@ -205,7 +205,7 @@ describe("cleanup round micro-flow actions", () => {
 
   it("appends done-when text to task notes, preserving existing notes", async () => {
     const backup = await task("Backup prüfen", { notes: "Alt" });
-    const card = await readyCard({ type: "task", id: backup });
+    const card = await readyCard({ type: "task", id: backup }, "edit_done_when");
     const response = await act(card, "add-done-when", { text: "Erledigt, wenn: PBS grün." });
     expect(response.statusCode, response.body).toBe(200);
     expect(row(backup)!.notes).toContain("Alt");
@@ -216,7 +216,7 @@ describe("cleanup round micro-flow actions", () => {
 
   it("clarifies an admin step by renaming and appending notes together", async () => {
     const kur = await task("Kur-Nachweis");
-    const card = await readyCard({ type: "task", id: kur });
+    const card = await readyCard({ type: "task", id: kur }, "clarify_admin_target");
     const response = await act(card, "clarify-admin", {
       title: "Kur-Nachweis an Minijob-Zentrale einreichen",
       notes: "Empfänger: Minijob-Zentrale",
@@ -229,7 +229,7 @@ describe("cleanup round micro-flow actions", () => {
 
   it("clarifies an admin step with notes only", async () => {
     const kur = await task("Kur-Nachweis einreichen");
-    const card = await readyCard({ type: "task", id: kur });
+    const card = await readyCard({ type: "task", id: kur }, "clarify_admin_target");
     const response = await act(card, "clarify-admin", { title: "Kur-Nachweis einreichen", notes: "Dokument: Nachweis" });
     expect(response.statusCode, response.body).toBe(200);
     expect(row(kur)).toMatchObject({ title: "Kur-Nachweis einreichen", notes: "Dokument: Nachweis" });
@@ -237,7 +237,7 @@ describe("cleanup round micro-flow actions", () => {
 
   it("rejects a stale clarify-admin revision before writing anything", async () => {
     const kur = await task("Kur-Nachweis");
-    const card = await readyCard({ type: "task", id: kur });
+    const card = await readyCard({ type: "task", id: kur }, "clarify_admin_target");
     const revision = row(kur)!.revision;
     await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${kur}`, payload: { priority: 2 } });
     const response = await act(card, "clarify-admin", { notes: "Empfänger", expectedRevision: revision });
@@ -297,18 +297,70 @@ describe("cleanup round micro-flow actions", () => {
     expect(row(keller)!.title).toBe("Keller");
   });
 
-  it("rolls the mutation back when the card cannot be dismissed", async () => {
+  it.each([
+    ["create-task", "create_first_slice", { title: "Ecke sortieren", purpose: "firstSlice" }],
+    ["rename", "rename_item", { title: "Ecke sortieren" }],
+    ["add-done-when", "edit_done_when", { text: "Erledigt, wenn: sortiert." }],
+    ["clarify-admin", "clarify_admin_target", { title: "Ecke sortieren", notes: "Werkzeug" }],
+  ])("rolls %s back when the card cannot be dismissed", async (action, surface, payload) => {
     const keller = await task("Keller");
-    const card = await readyCard({ type: "task", id: keller });
+    const card = await readyCard({ type: "task", id: keller }, surface);
+    const before = row(keller)!;
     ctx.handle.db.run(sql.raw(`
       CREATE TRIGGER fail_card_dismissal BEFORE UPDATE OF status ON cleanup_round_items
       WHEN NEW.status = 'dismissed' BEGIN SELECT RAISE(ABORT, 'dismissal failed'); END
     `));
-    const response = await act(card, "create-task", { title: "Ecke sortieren", purpose: "firstSlice" });
+    const response = await act(card, action, payload);
     expect(response.statusCode).toBeGreaterThanOrEqual(500);
     expect(children(keller)).toHaveLength(0);
-    const renamed = await act(card, "rename", { title: "Ecke sortieren" });
-    expect(renamed.statusCode).toBeGreaterThanOrEqual(500);
+    expect(row(keller)).toEqual(before);
+    expect(cardStatus(card)).toBe("ready");
+  });
+
+  it.each([
+    ["rename_item", "create-task", { title: "Ecke sortieren", purpose: "decision" }],
+    ["edit_done_when", "rename", { title: "Ecke sortieren" }],
+    ["clarify_admin_target", "add-done-when", { text: "Erledigt, wenn: sortiert." }],
+    ["create_first_slice", "clarify-admin", { notes: "Werkzeug" }],
+    ["open_item", "rename", { title: "Ecke sortieren" }],
+    ["choose_shape", "create-task", { title: "Ecke sortieren", purpose: "firstSlice" }],
+  ])("rejects a %s card confirmed as %s without changing anything", async (surface, action, payload) => {
+    const keller = await task("Keller", { notes: "Alt" });
+    const card = await readyCard({ type: "task", id: keller }, surface);
+    const before = row(keller)!;
+    const response = await act(card, action, payload);
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({
+      code: "cleanup_round_action_surface_mismatch",
+      details: { action, resolutionSurface: surface },
+    });
+    expect(row(keller)).toEqual(before);
+    expect(children(keller)).toHaveLength(0);
+    expect(cardStatus(card)).toBe("ready");
+  });
+
+  it("rejects adding a project criterion through a mismatched card", async () => {
+    const haustuer = await project("Haustür");
+    const card = await readyCard({ type: "project", id: haustuer }, "clarify_admin_target");
+    const response = await act(card, "add-done-when", { text: "Tür ist montiert." });
+    expect(response.statusCode).toBe(409);
+    expect(ctx.handle.db.select().from(schema.workItemAcceptanceCriteria)
+      .where(eq(schema.workItemAcceptanceCriteria.workItemId, haustuer)).all()).toHaveLength(0);
+    expect(cardStatus(card)).toBe("ready");
+  });
+
+  it.each([
+    ["missing", null],
+    ["malformed", "{not json"],
+    ["surface-less", JSON.stringify({ proposal: "rename_for_actionability" })],
+  ])("rejects a ready card with a %s stored result", async (_label, resultJson) => {
+    const keller = await task("Keller");
+    const card = await readyCard({ type: "task", id: keller });
+    ctx.handle.db.update(schema.cleanupRoundItems).set({ resultJson })
+      .where(eq(schema.cleanupRoundItems.id, card.itemId)).run();
+    const response = await act(card, "rename", { title: "Ecke sortieren" });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("cleanup_round_state_conflict");
     expect(row(keller)!.title).toBe("Keller");
     expect(cardStatus(card)).toBe("ready");
   });

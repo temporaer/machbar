@@ -225,8 +225,9 @@ what will change (old and new title, the task to create and where, the
 criterion, or the notes entry). Only its confirm button (for example
 **Umbenennen** or **Teilaufgabe anlegen**) changes the item. The change and
 hiding the card happen together: either the item is improved and the card
-disappears, or nothing changes and the sheet shows the error. The item is not
-marked reviewed. Buttons say
+disappears, or nothing changes and the sheet keeps the draft and shows the
+error. The sheet says so; the item is not marked reviewed, which stays the
+separate **Hinten anstellen** action. Buttons say
 what they really do: where Machbar has no direct conversion (for example to
 information) the button reads **Öffnen und als Information prüfen**. Items Machbar could not
 assess stay visible as cards; **Erneut versuchen** (on the card, or once in the

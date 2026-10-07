@@ -67,8 +67,8 @@ const base = {
   } satisfies Record<CleanupProposalKind, string>,
   cleanupActionLabels: {
     rename: "Umbenennen …",
-    doneWhenNotes: "Erledigt-wenn in Notizen ergänzen …",
-    doneWhenCriterion: "Erledigt-wenn ergänzen …",
+    doneWhenNotes: "In Notizen ergänzen …",
+    doneWhenCriterion: "Kriterium hinzufügen …",
     decision: "Entscheidungsaufgabe anlegen …",
     firstSlice: "Ersten Schritt anlegen …",
     followup: "Follow-up anlegen …",
@@ -80,6 +80,8 @@ const base = {
     structure: "Öffnen und strukturieren",
   },
   cleanupFlow: {
+    confirmHint:
+      "Nach dem Bestätigen wird der Eintrag geändert und diese Einschätzung ausgeblendet. „Hinten anstellen“ bleibt eine separate Aktion.",
     renameTask: "Aufgabe umbenennen?",
     renameProject: "Projekt umbenennen?",
     oldTitle: "Alt",
@@ -1389,6 +1391,7 @@ const extra = {
     cleanup_round_no_candidates: "Gerade gibt es nichts, was Machbar sich ansehen müsste.",
     cleanup_round_target_mismatch: "Dieser Eintrag passt nicht mehr zu seinem Ziel. Bitte die Seite neu laden.",
     cleanup_round_action_no_change: "Diese Bestätigung würde nichts ändern.",
+    cleanup_round_action_surface_mismatch: "Diese Aktion passt nicht zu dieser Einschätzung.",
   } satisfies Record<ApiErrorCode, string>,
   apiErrorMemberNameConflict: (name: string) =>
     `Eine Person mit dem Namen „${name}“ ist bereits vorhanden.`,

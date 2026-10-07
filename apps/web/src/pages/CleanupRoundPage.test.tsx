@@ -345,7 +345,7 @@ describe("CleanupRoundPage", () => {
       surface: "edit_done_when",
       suggestedTitle: null,
       suggestedDefault: "Tür ist montiert und dicht",
-      button: "Erledigt-wenn ergänzen …",
+      button: "Kriterium hinzufügen …",
       heading: "Erledigt-wenn ergänzen?",
       shown: ["Projekt", "Keller"],
       field: "Neues Kriterium",
@@ -363,7 +363,7 @@ describe("CleanupRoundPage", () => {
       surface: "edit_done_when",
       suggestedTitle: null,
       suggestedDefault: "Letztes Backup erfolgreich",
-      button: "Erledigt-wenn in Notizen ergänzen …",
+      button: "In Notizen ergänzen …",
       heading: "Erledigt-wenn in Notizen ergänzen?",
       shown: ["Aufgabe", "Keller"],
       field: "Eintrag",
@@ -404,6 +404,7 @@ describe("CleanupRoundPage", () => {
     await waitFor(() => expect(within(sheet).getByText(flow.shown[1])).toBeInTheDocument());
     expect(within(sheet).getByText(flow.shown[0])).toBeInTheDocument();
     expect(within(sheet).getByLabelText(flow.field)).toHaveValue(flow.value);
+    expect(within(sheet).getByText(/Eintrag geändert und diese Einschätzung ausgeblendet/)).toBeInTheDocument();
     expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
 
     await userEvent.click(within(sheet).getByRole("button", { name: flow.confirm }));
@@ -507,6 +508,84 @@ describe("CleanupRoundPage", () => {
     expect(within(sheet).getByLabelText("Neue Teilaufgabe")).toHaveValue("Werkzeugecke sortieren");
     expect(within(sheet).getByRole("button", { name: "Teilaufgabe anlegen" })).toBeEnabled();
     expect(screen.getByRole("article", { name: "Keller" })).toBeInTheDocument();
+  });
+
+  it("keeps the draft and refreshes the preview after a stale write conflict", async () => {
+    mocked.getTask
+      .mockResolvedValueOnce(makeTask({ id: 7, title: "Keller", revision: 3 }))
+      .mockResolvedValue(makeTask({ id: 7, title: "Keller (Haus)", revision: 4 }));
+    mocked.applyCleanupRoundAction.mockRejectedValueOnce(
+      Object.assign(new Error("stale"), { name: "ApiError", status: 409, code: "stale_write_conflict" }),
+    );
+    mocked.getCleanupRound.mockResolvedValue(round({
+      items: [item({
+        result: { ...item().result!, proposal: "rename_for_actionability", resolutionSurface: "rename_item", suggestedTitle: "Werkzeugecke sortieren" },
+      })],
+    }));
+    renderAt("/more/cleanup-round/r1");
+
+    const card = await screen.findByRole("article", { name: "Keller" });
+    await userEvent.click(within(card).getByRole("button", { name: "Umbenennen …" }));
+    const sheet = await screen.findByRole("dialog", { name: "Aufgabe umbenennen?" });
+    const field = await within(sheet).findByLabelText("Neu");
+    await userEvent.clear(field);
+    await userEvent.type(field, "Werkzeugecke im Keller sortieren");
+    await userEvent.click(within(sheet).getByRole("button", { name: "Umbenennen" }));
+
+    expect(await within(sheet).findByRole("alert")).toBeInTheDocument();
+    // The preview reloads the current title; the draft survives.
+    expect(await within(sheet).findByText("Keller (Haus)")).toBeInTheDocument();
+    expect(within(sheet).getByLabelText("Neu")).toHaveValue("Werkzeugecke im Keller sortieren");
+    expect(screen.getByRole("article", { name: "Keller" })).toBeInTheDocument();
+    expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
+
+    mocked.applyCleanupRoundAction.mockResolvedValueOnce(round({ status: "completed", items: [item({ status: "dismissed" })] }));
+    await userEvent.click(within(sheet).getByRole("button", { name: "Umbenennen" }));
+    await waitFor(() =>
+      expect(mocked.applyCleanupRoundAction).toHaveBeenLastCalledWith("r1", "item-1", {
+        action: "rename",
+        title: "Werkzeugecke im Keller sortieren",
+        expectedRevision: 4,
+      }),
+    );
+    expect(await screen.findByText("Alles durchgesehen.")).toBeInTheDocument();
+  });
+
+  it("disables confirmation until the change is meaningful", async () => {
+    mocked.getTask.mockImplementation(async (id: number) =>
+      makeTask({ id, title: id === 8 ? "Kur-Nachweis" : "Keller", revision: 3 }));
+    mocked.getCleanupRound.mockResolvedValue(round({
+      items: [
+        item({ result: { ...item().result!, resolutionSurface: "rename_item", suggestedTitle: "Werkzeugecke sortieren" } }),
+        item({
+          id: "item-2",
+          targetId: 8,
+          title: "Kur-Nachweis",
+          result: { ...item().result!, targetId: 8, resolutionSurface: "clarify_admin_target", suggestedTitle: null, suggestedDefault: null },
+        }),
+      ],
+    }));
+    renderAt("/more/cleanup-round/r1");
+
+    const rename = await screen.findByRole("article", { name: "Keller" });
+    await userEvent.click(within(rename).getByRole("button", { name: "Umbenennen …" }));
+    let sheet = await screen.findByRole("dialog", { name: "Aufgabe umbenennen?" });
+    const title = await within(sheet).findByLabelText("Neu");
+    await userEvent.clear(title);
+    await userEvent.type(title, "Keller");
+    expect(within(sheet).getByRole("button", { name: "Umbenennen" })).toBeDisabled();
+    await userEvent.clear(title);
+    expect(within(sheet).getByRole("button", { name: "Umbenennen" })).toBeDisabled();
+    await userEvent.click(within(sheet).getByRole("button", { name: "Abbrechen" }));
+
+    const admin = screen.getByRole("article", { name: "Kur-Nachweis" });
+    await userEvent.click(within(admin).getByRole("button", { name: "Verwaltungsschritt konkretisieren …" }));
+    sheet = await screen.findByRole("dialog", { name: "Verwaltungsschritt konkretisieren?" });
+    await within(sheet).findByLabelText("Neue Formulierung");
+    expect(within(sheet).getByRole("button", { name: "Aktualisieren" })).toBeDisabled();
+    await userEvent.type(within(sheet).getByLabelText("Notiz ergänzen (optional)"), "Empfänger: Minijob-Zentrale");
+    expect(within(sheet).getByRole("button", { name: "Aktualisieren" })).toBeEnabled();
+    expect(mocked.applyCleanupRoundAction).not.toHaveBeenCalled();
   });
 
   it("names the only real shape change and keeps other shapes as checks", async () => {

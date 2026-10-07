@@ -104,6 +104,8 @@ export function CleanupRoundActionSheet({
       onClose();
       onApplied(round);
     } catch (cause) {
+      // Nothing was applied: keep the sheet, the card, and the user's draft.
+      // A stale target only refreshes the preview; the draft stays as typed.
       if (isStaleWriteConflict(cause)) target.reload();
       setError(localizedErrorMessage(cause, strings));
       setBusy(false);
@@ -178,6 +180,7 @@ export function CleanupRoundActionSheet({
               {flow.kind !== "addCriterion" ? <small className="text-muted">{labels.notesHint}</small> : null}
             </div>
           ) : null}
+          <p className="text-muted cleanup-flow-hint">{labels.confirmHint}</p>
           {error ? (
             <p className="task-row-error" role="alert">
               {error}

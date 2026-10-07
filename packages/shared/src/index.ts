@@ -241,7 +241,8 @@ export type ApiErrorCode =
   | "cleanup_round_item_not_found"
   | "cleanup_round_no_candidates"
   | "cleanup_round_target_mismatch"
-  | "cleanup_round_action_no_change";
+  | "cleanup_round_action_no_change"
+  | "cleanup_round_action_surface_mismatch";
 
 export interface ApiErrorPayload {
   code: ApiErrorCode;
