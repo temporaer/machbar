@@ -5,10 +5,12 @@ import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { api } from "../lib/api";
 import { makeMember, makeTask } from "../test/fixtures";
+import { TaskWorkflowHost } from "./TaskWorkflowHost";
 
 vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
+    getTask: vi.fn(),
     completeTask: vi.fn(),
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
@@ -47,7 +49,12 @@ describe("TaskRow – reference presentation", () => {
       title: "Camping Wang",
       notes: "https://camping-wang.ch/\n\nDirekt am See",
     });
-    renderWithProviders(<TaskOutline tasks={[reference]} emptyMessage="Nichts da" />);
+    renderWithProviders(
+      <>
+        <TaskOutline tasks={[reference]} emptyMessage="Nichts da" />
+        <TaskWorkflowHost />
+      </>,
+    );
 
     const link = await screen.findByRole("link", { name: /camping-wang\.ch/ });
     expect(link).toHaveAttribute("href", "https://camping-wang.ch/");
@@ -76,11 +83,18 @@ describe("TaskRow – reference presentation", () => {
     mockedApi.makeTaskAction.mockResolvedValue(
       makeTask({ id: 1, kind: "action", title: "Unterkunft" }),
     );
-    renderWithProviders(<TaskOutline tasks={[reference]} emptyMessage="Nichts da" />);
+    mockedApi.getTask.mockResolvedValue(reference);
+    renderWithProviders(
+      <>
+        <TaskOutline tasks={[reference]} emptyMessage="Nichts da" />
+        <TaskWorkflowHost />
+      </>,
+    );
 
     await screen.findByText("Unterkunft");
     await userEvent.click(screen.getByRole("button", { name: /weitere aktionen/i }));
-    await userEvent.click(screen.getByRole("button", { name: "Als Aufgabe behandeln" }));
+    await userEvent.click(screen.getByRole("button", { name: "Art" }));
+    await userEvent.click(screen.getByRole("button", { name: /Als Aufgabe behandeln/ }));
 
     expect(mockedApi.makeTaskAction).toHaveBeenCalledWith(1, 1);
   });

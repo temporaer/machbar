@@ -14,8 +14,8 @@ import type { ReactNode } from "react";
  * `TaskWorkflowHost.tsx`, which is the only component that imports every
  * one of the focused sheets below and switches on `kind`.
  *
- * `availability` backs the fixed row rail's `Ab …` button and opens
- * `TaskAvailabilitySheet`. `structure` opens
+ * `availability` and `plan` both open the canonical unified planning sheet,
+ * with different initial focus. `structure` opens
  * `TaskStructureSheet` (Aufteilen/
  * Verschieben …/Zum Projekt machen), which itself only ever dispatches
  * `task.split`/`task.changeProject`/`task.convertToProject` rather than
@@ -24,6 +24,7 @@ import type { ReactNode } from "react";
 export type TaskWorkflowKind =
   | "plan"
   | "availability"
+  | "shape"
   | "structure"
   | "reminders"
   | "waitingLifecycle"

@@ -292,7 +292,13 @@ export function TaskRow({
   );
 
   const runRailCommand = (
-    command: "task.availability" | "task.plan" | "task.open" | "task.makeAction",
+    command:
+      | "task.availability"
+      | "task.plan"
+      | "task.shape"
+      | "task.waitingLifecycle"
+      | "task.open"
+      | "task.makeAction",
   ) => {
     // Move focus to the kebab before the rail unmounts, so a focused-
     // workflow sheet's opener-restore targets a control that stays
@@ -606,14 +612,23 @@ export function TaskRow({
           actions={
             isReference
               ? [
-                  { label: strings.makeAction, onSelect: () => runRailCommand("task.makeAction") },
+                  { label: strings.railShape, onSelect: () => runRailCommand("task.shape") },
                   { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
                 ]
-              : [
-                  { label: strings.railAvailableFrom, onSelect: () => runRailCommand("task.availability") },
-                  { label: strings.railPlan, onSelect: () => runRailCommand("task.plan") },
-                  { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
-                ]
+              : task.status === "captured"
+                ? [
+                    { label: strings.railPlan, onSelect: () => runRailCommand("task.plan") },
+                    { label: strings.railShape, onSelect: () => runRailCommand("task.shape") },
+                    { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
+                  ]
+                : [
+                    { label: strings.railPlan, onSelect: () => runRailCommand("task.plan") },
+                    {
+                      label: task.externalWait ? strings.railFollowUp : strings.railWaiting,
+                      onSelect: () => runRailCommand("task.waitingLifecycle"),
+                    },
+                    { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
+                  ]
           }
         />
       ) : null}

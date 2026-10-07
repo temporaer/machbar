@@ -301,7 +301,7 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
     await userEvent.keyboard("j");
     await userEvent.keyboard("s");
     expect(screen.getByTestId("open-workflow")).toHaveTextContent("42|plan");
-    expect(await screen.findByLabelText("Wann nimmst du dir das vor?")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Geplant für")).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.getByTestId("open-workflow")).toHaveTextContent("none|none"));
 

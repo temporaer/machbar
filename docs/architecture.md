@@ -1331,10 +1331,15 @@ while editing text, or while a `BottomSheet`/modal is open.
 
 **Command rails.** `WorkItemActionRail.tsx` renders fixed, non-configurable
 buttons per row; there is no per-household favorite/overflow configuration.
-Tasks use `Ab …` · `Einplanen` · `Mehr`: `Ab …` dispatches
-`task.availability` and edits persistent `Task.notBeforeAt` plus its local
-calendar date `Task.notBeforeDate`; `Einplanen` dispatches `task.plan` for
-`scheduledDate`/deadline; `Mehr` opens task detail. Backlog projects use
+Tasks use a status/kind-specific non-lifecycle rail: planning, shape,
+waiting/follow-up, and `Mehr` as appropriate; `Planung` dispatches either
+`task.availability` or `task.plan` into the unified
+`TaskPlanningSheet`, which edits persistent `Task.notBeforeAt` plus its local
+calendar date `Task.notBeforeDate`, `scheduledDate`, and `dueDate` in one
+draft/commit. `Art` opens `TaskShapeSheet`; project conversion delegates to
+the existing guarded backlog handoff, while task-to-reference conversion is
+not offered because no canonical mutation exists. `Mehr` opens task detail.
+Backlog projects use
 Wiedervorlage/Struktur/Mehr, while active projects omit the Wiedervorlage
 button. `Struktur` opens `ProjectStructureSheet` for project rows and remains
 available from task detail for task split/move/convert workflows.
