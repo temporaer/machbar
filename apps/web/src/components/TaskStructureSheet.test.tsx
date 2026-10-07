@@ -6,6 +6,7 @@ import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
+import { useTaskDetail } from "../lib/taskDetailContext";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { ProjectWorkflowHost } from "./ProjectWorkflowHost";
 import { de as strings } from "../i18n/de";
@@ -38,10 +39,14 @@ vi.mock("../lib/api", () => ({
 
 const mockedApi = vi.mocked(api, true);
 
-function OpenStructureHarness({ taskId }: { taskId: number }) {
+function OpenStructureHarness({ taskId, openDetails = false }: { taskId: number; openDetails?: boolean }) {
   const workflow = useTaskWorkflow();
+  const detail = useTaskDetail();
   return (
-    <button type="button" onClick={() => workflow.open("structure", taskId)}>
+    <button type="button" onClick={() => {
+      if (openDetails) detail.open(taskId);
+      workflow.open("structure", taskId);
+    }}>
       open structure
     </button>
   );
@@ -49,7 +54,13 @@ function OpenStructureHarness({ taskId }: { taskId: number }) {
 
 function LocationProbe() {
   const location = useLocation();
-  return <output>{location.pathname}{location.search}</output>;
+  const detail = useTaskDetail();
+  return (
+    <>
+      <output>{location.pathname}{location.search}</output>
+      <output>Open task: {detail.openTaskId ?? "none"}</output>
+    </>
+  );
 }
 
 function renderStructure(taskId: number) {
@@ -229,7 +240,7 @@ describe("TaskStructureSheet routing", () => {
     mockedApi.updateProject.mockResolvedValue({ ...project, ownerMemberId: 1, revision: 3 });
     renderWithProviders(
       <>
-        <OpenStructureHarness taskId={72} />
+        <OpenStructureHarness taskId={72} openDetails />
         <TaskWorkflowHost />
         <ProjectWorkflowHost />
         <LocationProbe />
@@ -249,6 +260,8 @@ describe("TaskStructureSheet routing", () => {
       }),
     );
     expect(await screen.findByText("/projects/72?focus=next-action")).toBeInTheDocument();
+    expect(screen.getByText("Open task: none")).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Schritt …")).not.toBeInTheDocument();
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });

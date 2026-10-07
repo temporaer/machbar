@@ -11,6 +11,7 @@ import { sortByPosition } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { useProjectActions } from "../lib/useProjectActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
+import { useAsync } from "../lib/useAsync";
 import { hasProjectProgressPath } from "../lib/projectCommitments";
 
 /**
@@ -52,19 +53,13 @@ export function CapturedProjectHandoff({
   const canStart =
     displayedProject.availableActions.includes("activate") &&
     hasProjectProgressPath(displayedProject);
+  const { data: projectDetail } = useAsync(() => api.getProject(project.id), [project.id]);
 
   useEffect(() => {
-    let cancelled = false;
-    void api.getProject(project.id).then((detail) => {
-      if (cancelled) return;
-      setSteps(sortByPosition(detail.tasks));
-    });
-    return () => {
-      cancelled = true;
-    };
-    // Re-fetch only when a different project is handed off, not on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id]);
+    if (!projectDetail) return;
+    setCurrentProject(projectDetail);
+    setSteps(sortByPosition(projectDetail.tasks));
+  }, [projectDetail]);
 
   const submitStep = async () => {
     const title = stepDraft.trim();

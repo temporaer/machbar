@@ -94,6 +94,7 @@ describe("CapturedProjectHandoff", () => {
       ownerMemberId: 1,
       nextAction,
     });
+    mockedApi.getProject.mockResolvedValue({ ...project, tasks: [nextAction] });
     mockedApi.activateProject.mockResolvedValue({
       ...makeProject({
         id: 42,
@@ -167,6 +168,37 @@ describe("CapturedProjectHandoff", () => {
       expect(screen.queryByRole("button", { name: "Starten" })).not.toBeInTheDocument();
     },
   );
+
+  it("keeps the confirmed activation after the retained result expires", async () => {
+    const project = makeProject({
+      id: 42,
+      status: "backlog",
+      ownerMemberId: 1,
+      nextAction: makeTask({ projectId: 42, executable: true }),
+    });
+    const activated = makeProject({
+      ...project,
+      status: "active",
+      revision: 2,
+      availableActions: ["return_to_backlog", "complete", "archive"],
+    });
+    mockedApi.getProject.mockResolvedValueOnce({ ...project, tasks: [] });
+    mockedApi.getProject.mockResolvedValue({ ...activated, tasks: [] });
+    mockedApi.activateProject.mockResolvedValue(activated);
+    renderWithProviders(
+      <CapturedProjectHandoff project={project} onDone={vi.fn()} />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Starten" }));
+    await waitFor(() => expect(mockedApi.getProject).toHaveBeenCalledTimes(2), {
+      timeout: 6000,
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Starten" })).not.toBeInTheDocument(),
+    );
+    expect(mockedApi.activateProject).toHaveBeenCalledTimes(1);
+  }, 7000);
 
   it("leaves the handoff available when driver selection is cancelled", async () => {
     const project = makeProject({

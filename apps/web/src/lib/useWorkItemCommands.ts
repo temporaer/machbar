@@ -177,6 +177,13 @@ export function useWorkItemCommands() {
           projectWorkflow.open("completeWithOpenTasks", story.id);
           return true;
         case "progressPath":
+          if (
+            taskWorkflow.current?.kind === "convertToProject" &&
+            taskWorkflow.current.taskId === story.id
+          ) {
+            taskWorkflow.close();
+            if (taskDetail.openTaskId === story.id) taskDetail.close();
+          }
           navigate(`/projects/${story.id}?focus=next-action`);
           return true;
         case "driver":
@@ -189,7 +196,7 @@ export function useWorkItemCommands() {
           return false;
       }
     },
-    [navigate, projectWorkflow],
+    [navigate, projectWorkflow, taskWorkflow, taskDetail],
   );
 
   const continueStoryLifecycle = useCallback(
