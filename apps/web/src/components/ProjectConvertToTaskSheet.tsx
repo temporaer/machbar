@@ -38,19 +38,22 @@ export function ProjectConvertToTaskSheet({
   const canConvert = project !== undefined && !hasChildren && !hasAcceptanceCriteria;
 
   const convert = async () => {
-    if (busy || !canConvert) return;
+    if (busy || !canConvert || !project) return;
     setBusy(true);
     setError(null);
     try {
       await api.convertStoryToTask(story.id, {
         title,
         notes,
-        expectedRevision: story.revision,
+        expectedRevision: project.revision,
       });
       bump();
       onClose();
     } catch (cause) {
-      if (isStaleWriteConflict(cause)) bump();
+      if (isStaleWriteConflict(cause)) {
+        bump();
+        reload();
+      }
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setBusy(false);
@@ -99,7 +102,7 @@ export function ProjectConvertToTaskSheet({
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={busy || title.trim() === ""}
+                  disabled={busy || title.trim() === "" || !canConvert}
                   onClick={() => void convert()}
                 >
                   {strings.convertProjectToTask}

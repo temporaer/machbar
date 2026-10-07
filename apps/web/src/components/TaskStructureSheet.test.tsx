@@ -10,6 +10,7 @@ import { useProjectWorkflow } from "../lib/projectWorkflowContext";
 import { useTaskDetail } from "../lib/taskDetailContext";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { ProjectWorkflowHost } from "./ProjectWorkflowHost";
+import { ProjectConvertToTaskSheet } from "./ProjectConvertToTaskSheet";
 import { de as strings } from "../i18n/de";
 
 /**
@@ -93,6 +94,12 @@ function renderProjectStructure(projectId: number) {
   );
 }
 
+function renderProjectConversion(project: ReturnType<typeof makeProject>) {
+  return renderWithProviders(
+    <ProjectConvertToTaskSheet story={project} onClose={vi.fn()} />,
+  );
+}
+
 describe("TaskStructureSheet routing", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -139,6 +146,69 @@ describe("TaskStructureSheet routing", () => {
         title: "Keller als Aufgabe",
         notes: "Neue Notiz",
         expectedRevision: project.revision,
+      }),
+    );
+  });
+
+  it("uses the fresh detail revision rather than the stale list revision", async () => {
+    const story = makeProject({
+      id: 88,
+      revision: 3,
+      title: "Keller planen",
+      notes: "Notiz",
+    });
+    mockedApi.getProject.mockResolvedValue({
+      ...story,
+      revision: 4,
+      tasks: [],
+    });
+    mockedApi.convertStoryToTask.mockResolvedValue(makeTask({ id: story.id }));
+    renderProjectConversion(story);
+
+    const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
+    await userEvent.click(within(sheet).getByRole("button", { name: "Zur Aufgabe machen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.convertStoryToTask).toHaveBeenCalledWith(story.id, {
+        title: story.title,
+        notes: story.notes ?? "",
+        expectedRevision: 4,
+      }),
+    );
+    expect(mockedApi.convertStoryToTask).not.toHaveBeenCalledWith(
+      story.id,
+      expect.objectContaining({ expectedRevision: 3 }),
+    );
+  });
+
+  it("reloads fresh detail after a stale conflict so retry uses the new revision", async () => {
+    const story = makeProject({ id: 89, revision: 3 });
+    const stale = Object.assign(new Error("stale"), {
+      name: "ApiError",
+      code: "stale_write_conflict",
+      details: {},
+    });
+    mockedApi.getProject
+      .mockResolvedValueOnce({ ...story, revision: 4, tasks: [] })
+      .mockResolvedValueOnce({ ...story, revision: 5, tasks: [] });
+    mockedApi.convertStoryToTask
+      .mockRejectedValueOnce(stale)
+      .mockResolvedValueOnce(makeTask({ id: story.id }));
+    renderProjectConversion(story);
+
+    const sheet = await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" });
+    const convertButton = within(sheet).getByRole("button", { name: "Zur Aufgabe machen" });
+    await userEvent.click(convertButton);
+
+    expect(await within(sheet).findByRole("alert")).toBeInTheDocument();
+    await waitFor(() => expect(mockedApi.getProject).toHaveBeenCalledTimes(2));
+    await userEvent.click(convertButton);
+
+    await waitFor(() =>
+      expect(mockedApi.convertStoryToTask).toHaveBeenLastCalledWith(story.id, {
+        title: story.title,
+        notes: story.notes ?? "",
+        expectedRevision: 5,
       }),
     );
   });
