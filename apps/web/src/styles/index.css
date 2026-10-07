@@ -610,6 +610,11 @@ a {
   color: var(--color-primary);
 }
 
+.cleanup-round-shortcut {
+  font-size: 1.1rem;
+  text-decoration: none;
+}
+
 .page-header-button[aria-pressed="true"],
 .page-info-button[aria-expanded="true"] {
   border-color: color-mix(in srgb, var(--color-primary) 32%, var(--color-border));

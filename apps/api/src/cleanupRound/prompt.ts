@@ -29,6 +29,25 @@ A good project describes a finite outcome: what will be different, what "done" m
 
 Thinking vs execution: uphill work is deciding, choosing, comparing, understanding, asking someone, clarifying constraints. Downhill work is ordering, booking, sending, buying, checking off known steps. Use this only as a lens and translate it into one concrete coaching question: uphill -> "What decision is missing?"; downhill -> "Is this ready to order into steps?"; mixed -> "Should we separate clarification from execution?"`;
 
+const HOUSEHOLD_TEAMWORK_LENS = `## Household teamwork lens
+
+This is shared household work. Items may involve two adults, children, school, daycare, clubs, tradespeople, relatives, authorities, or other external people.
+
+Machbar tracks mechanical ownership and workflow state. Do not merely report missing owner, missing assignee, missing due date, missing scheduled date, missing revisit date, stale review age, blocked/waiting state, or graph next-action gaps as findings.
+
+Instead, look for collaboration ambiguity:
+- Does this require a shared household decision before execution?
+- Is it unclear whether one person can execute this alone?
+- Is the handoff between household members unclear?
+- Is it unclear who has the information, document, approval, or context needed to proceed?
+- Is it unclear who must be informed or contacted?
+- Is the task understandable only to the person who captured it?
+- Does the item mix "decide together" with "one person executes"?
+
+A useful household work item should be pick-up-able by the right person without hidden memory or a side conversation.
+
+If the only issue is that no owner is assigned, return \`leave_alone\`. If the issue is that the collaboration model, handoff, shared decision, or external response is unclear, treat that as a planning-quality gap.`;
+
 const LENSES = `Informal work-type lenses (choose the question, not a label):
 - normal: Is this actionable? Does the title say what to do? Is there a hidden decision? Help: rename for actionability, create a decision task, change shape.
 - problem (something does not work, e.g. "Drucker geht nicht"): Is this diagnosis or repair? What is the first test? Help: first diagnostic action, split diagnosis from repair.
@@ -79,17 +98,17 @@ Choose \`rename_item\` when the title is semantically vague or topic-like and a 
 
 Choose \`edit_done_when\` when the success condition is cognitively unclear: the human cannot tell what "done" would mean. Do not choose it merely because an acceptance-criteria field is empty.
 
-Choose \`create_decision_task\` when the next useful work is deciding something, not executing something.
+Choose \`create_decision_task\` when the next useful work is deciding something, not executing something. In household work, this includes shared decisions such as who will handle something, which option the household chooses, what boundary or constraint applies, or what information must be gathered before one person can proceed.
 
 Choose \`create_first_slice\` when the item is too broad, uncertain, or abstract and needs a small uncertainty-reducing slice. Do not choose \`create_first_slice\` merely because Machbar says there is no graph next action.
 
-Choose \`create_followup\` when an incident/problem/waiting item needs explicit follow-up learning, repair, or closure.
+Choose \`create_followup\` when an incident/problem/waiting item needs explicit follow-up learning, repair, or closure. When an external person or institution is involved, use it when the item does not preserve what response, confirmation, appointment, or next contact would close the loop.
 
-Choose \`clarify_admin_target\` when an admin item is missing the recipient, document, desired response, or exact communication target.
+Choose \`clarify_admin_target\` when an admin/family/school/daycare/authority item is missing the recipient, document, communication channel, desired response, or the person who has the relevant information.
 
 Choose \`convert_to_reference\` when the item is information/reference material and no action is implied.
 
-Choose \`split_clarify_execute\` when the item mixes thinking work and execution work in a way that makes both unclear.
+Choose \`split_clarify_execute\` when the item mixes thinking work and execution work in a way that makes both unclear, especially when a shared decision or clarification step should happen before one person executes.
 
 Choose \`define_rhythm_or_revisit\` only when the planning concept itself is a check/rhythm/revisit, not merely because a revisit date is absent.
 
@@ -153,6 +172,24 @@ Admin blob:
 Input: Title "Kur-Nachweis"; notes: "05.–26.10."
 Expected: proposal clarify_recipient_or_document, resolutionSurface clarify_admin_target. Reason: "The item names a document but not the recipient, submission channel, or desired outcome." Question: "Who needs this document, through which channel, and what response confirms it is done?"`;
 
+const HOUSEHOLD_FEW_SHOT_EXAMPLES = `## Household teamwork examples
+
+Shared household decision:
+Input: Title "Schreibtisch für Kinder"; notes: "IKEA oder gebraucht? Paidi/Moll vergleichen."; mechanical facts: no owner.
+Expected: {"proposal":"clarify_next_decision","resolutionSurface":"create_decision_task","reason":"This is not merely missing an owner; the household has not preserved the decision to make before one person can buy anything.","question":"Which decision needs to be made together first: budget, model, used vs new, or size?"}
+
+Handoff ambiguity:
+Input: Title "Kita Formular"; notes: "liegt irgendwo, muss zurück".
+Expected: {"proposal":"clarify_recipient_or_document","resolutionSurface":"clarify_admin_target","reason":"The item does not preserve who has the form, where it must go, or what response confirms completion.","question":"Who has the form, who must receive it, and what confirms it is done?"}
+
+External follow-up:
+Input: Title "Handwerker Rückmeldung"; notes: "warten auf Termin"; mechanical facts: hasExternalWait true.
+Expected: {"proposal":"add_followup_after_incident","resolutionSurface":"create_followup","reason":"The item says it is waiting, but not what response or appointment confirmation would close the loop.","question":"What exact response from the tradesperson would let the household move forward?"}
+
+Mechanical-only owner issue:
+Input: Title "Mülltonne rausstellen"; mechanical facts: no owner.
+Expected: {"proposal":"leave_alone","resolutionSurface":"mark_reviewed","reason":"The item is semantically clear; assigning an owner is mechanical workflow hygiene.","question":"No planning-clarity question needed."}`;
+
 function contractSection(): string {
   return [
     "Output contract (JSON matching the provided structure):",
@@ -184,11 +221,13 @@ export function buildCleanupRoundInstructions(input: {
   const sections = [
     ROLE,
     DOCTRINE,
+    HOUSEHOLD_TEAMWORK_LENS,
     LENSES,
     NOT_TO_REPORT,
     SURFACE_GUIDE,
     PLANNING_CONTEXT_GUIDE,
     FEW_SHOT_EXAMPLES,
+    HOUSEHOLD_FEW_SHOT_EXAMPLES,
     contractSection(),
   ];
   if (input.validationIssues && input.validationIssues.length > 0) {

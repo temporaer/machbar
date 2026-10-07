@@ -49,6 +49,8 @@ const en = {
   weekPlanning: "Week planning",
   weekPlanningDescription: "Spread work across the next seven days",
   cleanupRound: "Review round",
+  cleanupRoundShortcutLabel: "Start clarification round",
+  cleanupRoundShortcutTitle: "Review planning with AI",
   cleanupRoundDescription:
     "Machbar looks at a few things that have been sitting around and asks which decision would help.",
   cleanupRoundStart: "Start round",

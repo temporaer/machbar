@@ -21,9 +21,11 @@ import { InteractionScopeProvider } from "../lib/interactionScope";
 import { WorkItemKeyboardNavMount } from "../components/WorkItemKeyboardNavMount";
 import { useVisibleRefreshInterval } from "../lib/refresh";
 import type { AttentionTone } from "../lib/attentionTone";
+import { useHomeAssistantStatus } from "../lib/useHomeAssistantStatus";
 
 export function TodayPage() {
   const strings = useStrings();
+  const { data: homeAssistant } = useHomeAssistantStatus();
   const [scope, setScope] = useState<AgendaScope>(readTodayScope);
   const sections: Array<{
     key: "planned" | "overdue" | "dueToday" | "dueSoon";
@@ -127,6 +129,16 @@ export function TodayPage() {
           title={strings.today}
           actions={
             <>
+              {homeAssistant?.intakeReady ? (
+                <Link
+                  to="/more/cleanup-round"
+                  className="page-header-button cleanup-round-shortcut"
+                  aria-label={strings.cleanupRoundShortcutLabel}
+                  title={strings.cleanupRoundShortcutTitle}
+                >
+                  <span aria-hidden="true">✨</span>
+                </Link>
+              ) : null}
               <Link
                 to="/more/week"
                 className="page-header-button"

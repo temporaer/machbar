@@ -77,6 +77,12 @@ describe("cleanup round prompt", () => {
     expect(instructions).toContain("Use `doneChildren` as evidence of what has already been handled");
     expect(instructions).toContain('targetType: "project"');
     expect(instructions).toContain("Missing fields usually mean “not relevant or not filled”");
+    expect(instructions).toContain("Household teamwork lens");
+    expect(instructions).toContain("Do not merely report missing owner");
+    expect(instructions).toContain("handoff between household members");
+    expect(instructions).toContain("task understandable only to the person who captured it");
+    expect(instructions).toContain("shared household decision");
+    expect(instructions).toContain("If the only issue is that no owner is assigned, return `leave_alone`");
     for (const kind of cleanupProposalKinds) expect(instructions).toContain(kind);
     for (const surface of cleanupResolutionSurfaces) expect(instructions).toContain(surface);
   });
@@ -91,6 +97,10 @@ describe("cleanup round prompt", () => {
     expect(instructions).toContain("Never report \"This is blocked.\"");
     expect(instructions).toContain("Öffnungszeiten Bürgerbüro");
     expect(instructions).toContain("Kur-Nachweis");
+    expect(instructions).toContain("Schreibtisch für Kinder");
+    expect(instructions).toContain("Kita Formular");
+    expect(instructions).toContain("Handwerker Rückmeldung");
+    expect(instructions).toContain("Mülltonne rausstellen");
   });
 
   it("embeds the sampled items as data", () => {

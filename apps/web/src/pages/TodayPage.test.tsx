@@ -14,6 +14,7 @@ vi.mock("../lib/api", () => ({
     getMembers: vi.fn(),
     getAgenda: vi.fn(),
     getContributionSummary: vi.fn(),
+    getHomeAssistantStatus: vi.fn(),
     completeTask: vi.fn(),
     cancelTask: vi.fn(),
     reopenTask: vi.fn(),
@@ -58,6 +59,22 @@ describe("TodayPage", () => {
         level: "none" as const,
       })),
     });
+    mockedApi.getHomeAssistantStatus.mockResolvedValue({
+      connected: false,
+      instanceId: null,
+      protocolVersion: null,
+      connectedAt: null,
+      lastUpdateAt: null,
+      stale: false,
+      supportedProtocolVersion: 3,
+      protocolOutdated: false,
+      lastRequestPollAt: null,
+      workerOnline: false,
+      intake: null,
+      intakeReady: false,
+      contexts: [],
+      people: [],
+    });
   });
 
   afterEach(() => {
@@ -71,6 +88,7 @@ describe("TodayPage", () => {
     const pulse = await screen.findByRole("link", {
       name: /Gemeinsame Beiträge der letzten sieben Tage\. Zur ausführlichen Ansicht\./,
     });
+
     expect(pulse).toHaveAttribute("href", "/more");
     expect(pulse).toHaveTextContent("Gemeinsam · 7 Tage");
     expect(pulse.querySelectorAll(".contribution-pulse-segment")).toHaveLength(7);
@@ -81,6 +99,45 @@ describe("TodayPage", () => {
     expect(
       header.compareDocumentPosition(pulse) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("offers the Klärungsrunde shortcut only when the Home Assistant AI Task is ready", async () => {
+    mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
+    mockedApi.getHomeAssistantStatus.mockResolvedValueOnce({
+      connected: true,
+      instanceId: "ha-1",
+      protocolVersion: 3,
+      connectedAt: null,
+      lastUpdateAt: null,
+      stale: false,
+      supportedProtocolVersion: 3,
+      protocolOutdated: false,
+      lastRequestPollAt: null,
+      workerOnline: true,
+      intake: null,
+      intakeReady: true,
+      contexts: [],
+      people: [],
+    });
+    const { container } = renderWithProviders(<TodayPage />);
+    const shortcut = await screen.findByRole("link", {
+      name: "Klärungsrunde starten",
+    });
+    expect(shortcut).toHaveAttribute("href", "/more/cleanup-round");
+    expect(shortcut).toHaveClass("cleanup-round-shortcut");
+    expect(container.querySelector(".cleanup-round-card")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Runde starten" })).not.toBeInTheDocument();
+  });
+
+  it("hides the Klärungsrunde shortcut when the Home Assistant AI Task is unavailable", async () => {
+    mockedApi.getAgenda.mockResolvedValue(makeEmptyAgenda());
+    renderWithProviders(<TodayPage />);
+    await screen.findByRole("link", {
+      name: /Gemeinsame Beiträge der letzten sieben Tage/,
+    });
+    expect(
+      screen.queryByRole("link", { name: "Klärungsrunde starten" }),
+    ).not.toBeInTheDocument();
   });
 
   it("switches between my and the household agenda from the compact header toggle", async () => {
