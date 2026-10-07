@@ -153,8 +153,8 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
 
     const chipButtons = [
       screen.getByRole("button", { name: "Planung" }),
-      screen.getByRole("button", { name: "Warten" }),
-      screen.getByRole("button", { name: "Mehr" }),
+      screen.getByRole("button", { name: "Struktur" }),
+      screen.getByRole("button", { name: "Notiz" }),
     ];
     for (const btn of chipButtons) {
       expect(btn).toBeEnabled();

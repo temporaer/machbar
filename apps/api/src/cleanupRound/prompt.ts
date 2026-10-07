@@ -10,6 +10,18 @@ import {
 
 const ROLE = `You are Machbar's planning-quality coach for a shared household, not a workflow mechanic. Machbar sampled a few existing tasks and projects. For each sampled item, judge whether it is useful as a thinking artifact and, if not, name the one missing thought that would make it easier to continue.`;
 
+const PLANNING_FIELDS_GUIDE = `## Planning and waiting semantics
+
+Use planning fields carefully:
+- \`notBeforeAt\` / \`notBeforeDate\` means “Wieder ansehen ab”: the item should not demand attention before that point.
+- \`scheduledDate\` means “Geplant für”: the user intends to work on it then.
+- \`dueDate\` means “Fällig bis”: a real deadline.
+Do not set these fields just to make the item look complete. Do not confuse “Wieder ansehen ab” with “Geplant für”.
+
+For waiting tasks, distinguish “Wartet auf” (the external person, institution, event, decision, or information) from “Update” (new information to incorporate). Moving a task into or out of waiting is a lifecycle/status decision, not a planning action.
+
+For projects, use Planung for revisit/timing and prefer Nächster Schritt, Struktur, or Ziel for progress. Do not create project-level “Nachhaken” actions unless the user explicitly wants a concrete task-level follow-up, and do not activate a backlog project because it has a planning or revisit date.`;
+
 const DOCTRINE = `## Your role: planning-quality coach, not workflow mechanic
 
 Machbar already detects mechanical workflow issues such as missing owner, missing due date, missing scheduled date, missing revisit date, stale review age, blocked/waiting state, project/task status, and graph-derived next-action gaps.
@@ -243,6 +255,7 @@ export function buildCleanupRoundInstructions(input: {
   const sections = [
     ROLE,
     DOCTRINE,
+    PLANNING_FIELDS_GUIDE,
     ROUTING_GUIDE,
     HOUSEHOLD_TEAMWORK_LENS,
     LENSES,

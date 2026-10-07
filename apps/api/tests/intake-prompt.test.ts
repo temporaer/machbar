@@ -14,6 +14,9 @@ describe("intake AI instructions", () => {
 
     expect(instructions).toContain("tasks, projects, references, and calendar events");
     expect(instructions).toContain("Preserve explicit dates, times, relationships, and reminder intent");
+    expect(instructions).toContain("notBeforeAt/notBeforeDate means “Wieder ansehen ab”");
+    expect(instructions).toContain("Moving into or out of waiting is a lifecycle decision");
+    expect(instructions).toContain("Do not activate a backlog project");
     expect(instructions).toContain("mentioning someone who cannot perform it is not an ownership assignment");
     expect(instructions).not.toContain("JSON null");
   });

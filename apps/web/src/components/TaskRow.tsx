@@ -34,6 +34,7 @@ import { TaskRowAttachmentPreview } from "./TaskRowAttachmentPreview";
 import { WorkItemActionRail } from "./WorkItemActionRail";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import type { AttentionTone } from "../lib/attentionTone";
+import type { TaskDetailFocusField } from "../lib/taskDetailContext";
 
 const LONG_PRESS_MS = 480;
 
@@ -296,9 +297,10 @@ export function TaskRow({
       | "task.availability"
       | "task.plan"
       | "task.shape"
+      | "task.structure"
       | "task.waitingLifecycle"
-      | "task.open"
-      | "task.makeAction",
+      | "task.open",
+    focusField?: TaskDetailFocusField,
   ) => {
     // Move focus to the kebab before the rail unmounts, so a focused-
     // workflow sheet's opener-restore targets a control that stays
@@ -306,8 +308,12 @@ export function TaskRow({
     // to <body>.
     kebabButtonRef.current?.focus();
     scope.setOpenRail(null);
-    if (command === "task.makeAction") {
-      dispatch({ type: "task.makeAction", task });
+    if (command === "task.open") {
+      dispatch({
+        type: command,
+        taskId: task.id,
+        ...(focusField ? { focusField } : {}),
+      });
       return;
     }
     dispatch({ type: command, taskId: task.id });
@@ -613,21 +619,25 @@ export function TaskRow({
             isReference
               ? [
                   { label: strings.railShape, onSelect: () => runRailCommand("task.shape") },
-                  { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
+                  { label: strings.railStructure, onSelect: () => runRailCommand("task.structure") },
+                  { label: strings.railNote, onSelect: () => runRailCommand("task.open", "notes") },
                 ]
               : task.status === "captured"
                 ? [
-                    { label: strings.railPlan, onSelect: () => runRailCommand("task.plan") },
+                    { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
                     { label: strings.railShape, onSelect: () => runRailCommand("task.shape") },
-                    { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
+                    { label: strings.railStructure, onSelect: () => runRailCommand("task.structure") },
                   ]
+                : task.externalWait
+                  ? [
+                      { label: strings.railWaitingFor, onSelect: () => runRailCommand("task.waitingLifecycle") },
+                      { label: strings.railUpdate, onSelect: () => runRailCommand("task.open", "notes") },
+                      { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
+                    ]
                 : [
-                    { label: strings.railPlan, onSelect: () => runRailCommand("task.plan") },
-                    {
-                      label: task.externalWait ? strings.railFollowUp : strings.railWaiting,
-                      onSelect: () => runRailCommand("task.waitingLifecycle"),
-                    },
-                    { label: strings.railMore, onSelect: () => runRailCommand("task.open") },
+                    { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
+                    { label: strings.railStructure, onSelect: () => runRailCommand("task.structure") },
+                    { label: strings.railNote, onSelect: () => runRailCommand("task.open", "notes") },
                   ]
           }
         />

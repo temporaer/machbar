@@ -1322,8 +1322,8 @@ be read from an ancestor) handles the scope-independent `g`-prefix
 navigation sequence and returns descriptor-derived prefix choices for the
 which-key hint. `?` opens the scoped `CommandHelpSheet`, `c` dispatches
 `capture.open`, and semantic task shortcuts dispatch `task.plan`,
-`task.waitingLifecycle`, `task.assignOwner`, and `task.open` (`Mehr`, opening
-the detail directly) when the logical active item is a task. These bindings
+`task.waitingLifecycle`, `task.assignOwner`, and `task.open` (opening the task
+detail directly) when the logical active item is a task. These bindings
 are independent of the fixed action rail's presentation. Both keyboard hooks
 suppress themselves via one shared
 `shouldSuppressGlobalShortcuts()` (`apps/web/src/lib/keyboardShortcuts.ts`)
@@ -1331,17 +1331,20 @@ while editing text, or while a `BottomSheet`/modal is open.
 
 **Command rails.** `WorkItemActionRail.tsx` renders fixed, non-configurable
 buttons per row; there is no per-household favorite/overflow configuration.
-Tasks use a status/kind-specific non-lifecycle rail: planning, shape,
-waiting/follow-up, and `Mehr` as appropriate; `Planung` dispatches either
+The left rail contains contextual non-status actions only. Tasks use a
+status/kind-specific rail: `Planung`, `Art`, `Struktur`, `Notiz`, or the
+waiting-task pair `Wartet auf`/`Update`; `Planung` dispatches either
 `task.availability` or `task.plan` into the unified
 `TaskPlanningSheet`, which edits persistent `Task.notBeforeAt` plus its local
 calendar date `Task.notBeforeDate`, `scheduledDate`, and `dueDate` in one
 draft/commit. `Art` opens `TaskShapeSheet`; project conversion delegates to
 the existing guarded backlog handoff, while task-to-reference conversion is
-not offered because no canonical mutation exists. `Mehr` opens task detail.
-Backlog projects use
-Wiedervorlage/Struktur/Mehr, while active projects omit the Wiedervorlage
-button. `Struktur` opens `ProjectStructureSheet` for project rows and remains
+not offered because no canonical mutation exists. Task details remain
+available from the row tap or kebab fallback, not as a generic rail action.
+Project rails use `Planung`, `Struktur`, `Ziel`, and `Nächster Schritt`
+according to the project classification; backlog-project `Planung` remains the
+revisit workflow and active-project `Planung` edits the project's deadline.
+`Struktur` opens `ProjectStructureSheet` for project rows and remains
 available from task detail for task split/move/convert workflows.
 The separate status/lifecycle rail (swipe right, `*-row-lifecycle`) is
 unchanged and, for tasks, now also carries the waiting/follow-up

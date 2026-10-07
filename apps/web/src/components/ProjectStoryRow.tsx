@@ -233,10 +233,44 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
     navigate(`/projects/${story.id}`);
   };
 
-  const runRailCommand = (command: "story.defer" | "story.structure") => {
+  const runRailCommand = (
+    command:
+      | "story.defer"
+      | "story.structure"
+      | "story.editOutcome"
+      | "story.planWork"
+      | "story.deadline",
+  ) => {
     scope?.setOpenRail(null);
     dispatch({ type: command, story });
   };
+
+  const projectRailActions =
+    story.status === "backlog"
+      ? [
+          { label: strings.planning, command: "story.defer" as const },
+          { label: strings.railStructure, command: "story.structure" as const },
+          { label: strings.railGoal, command: "story.editOutcome" as const },
+        ]
+      : classification === "active-review" || classification === "active-stuck"
+        ? [
+            { label: strings.railNextStep, command: "story.planWork" as const },
+            { label: strings.railGoal, command: "story.editOutcome" as const },
+            { label: strings.railStructure, command: "story.structure" as const },
+          ]
+        : classification === "active-waiting"
+          ? [
+              { label: strings.planning, command: "story.deadline" as const },
+              { label: strings.railStructure, command: "story.structure" as const },
+              { label: strings.railNextStep, command: "story.planWork" as const },
+            ]
+          : classification === "active-actionable" || classification === "active-deferred"
+            ? [
+                { label: strings.railNextStep, command: "story.planWork" as const },
+                { label: strings.railStructure, command: "story.structure" as const },
+                { label: strings.planning, command: "story.deadline" as const },
+              ]
+            : [];
 
 
   const runLifecycleAction = (action: ProjectWorkflowAction) => {
@@ -427,18 +461,15 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
         <SwipeCoachHint primaryAction={primaryLabel} onDismiss={swipeCoach.dismiss} />
       ) : null}
 
-      {chipsOpen ? (
+      {chipsOpen && projectRailActions.length > 0 ? (
         <WorkItemActionRail
           kind="project"
           disabled={busy}
           groupLabel={strings.moreActions}
-          actions={[
-            ...(story.status === "backlog"
-              ? [{ label: strings.projectRevisitDate, onSelect: () => runRailCommand("story.defer") }]
-              : []),
-            { label: strings.railStructure, onSelect: () => runRailCommand("story.structure") },
-            { label: strings.railMore, onSelect: handleMainClick },
-          ]}
+          actions={projectRailActions.map(({ label, command }) => ({
+            label,
+            onSelect: () => runRailCommand(command),
+          }))}
         />
       ) : null}
       {lifecycleOpen ? (

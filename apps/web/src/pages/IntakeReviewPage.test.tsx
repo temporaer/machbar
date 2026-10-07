@@ -276,7 +276,7 @@ describe("IntakeReviewPage", () => {
     expect(within(card).getByText("Mira")).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "Fällig: 02.10.2026" })).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "+ Geplant für" })).toBeInTheDocument();
-    expect(within(card).getByRole("button", { name: "+ Ab" })).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: "+ Wieder ansehen ab" })).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "+ Erinnerung" })).toBeInTheDocument();
     expect(within(card).queryByRole("textbox")).not.toBeInTheDocument();
     expect(within(card).queryByRole("combobox")).not.toBeInTheDocument();
@@ -474,7 +474,7 @@ describe("IntakeReviewPage", () => {
   it.each([
     ["Fällig", "dueDate"],
     ["Geplant für", "scheduledDate"],
-    ["Ab", "notBeforeDate"],
+    ["Wieder ansehen ab", "notBeforeDate"],
   ] as const)("keeps the malformed %s editor reachable", async (buttonLabel, field) => {
     mockedApi.getIntake.mockResolvedValue({
       ...record(),
@@ -566,7 +566,7 @@ describe("IntakeReviewPage", () => {
     const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Geplant für");
     expect(editor.getByRole("textbox", { name: "Geplant für" })).toBeInTheDocument();
     expect(editor.queryByLabelText("Fällig")).not.toBeInTheDocument();
-    expect(editor.queryByLabelText("Ab")).not.toBeInTheDocument();
+    expect(editor.queryByLabelText("Wieder ansehen ab")).not.toBeInTheDocument();
     const date = editor.getByRole("textbox", { name: "Geplant für" });
     fireEvent.change(date, { target: { value: "12.10.2026" } });
     fireEvent.blur(date);
@@ -579,7 +579,7 @@ describe("IntakeReviewPage", () => {
     const focusedEditor = within(await screen.findByRole("dialog"));
     expect(focusedEditor.getByRole("textbox", { name: "Geplant für" })).toHaveValue("12.10.2026");
     expect(focusedEditor.queryByLabelText("Fällig")).not.toBeInTheDocument();
-    expect(focusedEditor.queryByLabelText("Ab")).not.toBeInTheDocument();
+    expect(focusedEditor.queryByLabelText("Wieder ansehen ab")).not.toBeInTheDocument();
     closeEditor(focusedEditor);
   });
 
@@ -1189,8 +1189,8 @@ describe("IntakeReviewPage", () => {
 
   it("supports a date-only availability value and keeps the API pair coherent", async () => {
     renderPage();
-    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Ab");
-    const date = editor.getByRole("textbox", { name: "Ab" });
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Wieder ansehen ab");
+    const date = editor.getByRole("textbox", { name: "Wieder ansehen ab" });
     fireEvent.change(date, { target: { value: "12.10.2026" } });
     fireEvent.blur(date);
     closeEditor(editor);
@@ -1204,8 +1204,8 @@ describe("IntakeReviewPage", () => {
 
   it("changes a timed availability date and clears both date and time fields", async () => {
     renderPage();
-    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Ab");
-    const date = editor.getByRole("textbox", { name: "Ab" });
+    const editor = await openWorkPropertyEditor("Rückmeldezettel abgeben", "+ Wieder ansehen ab");
+    const date = editor.getByRole("textbox", { name: "Wieder ansehen ab" });
     fireEvent.change(date, { target: { value: "12.10.2026" } });
     fireEvent.blur(date);
     fireEvent.click(editor.getByRole("checkbox", { name: "Uhrzeit" }));

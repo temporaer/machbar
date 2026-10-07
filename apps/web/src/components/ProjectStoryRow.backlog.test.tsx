@@ -239,11 +239,11 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(mainGrid).toHaveStyle({
       gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
     });
-    // The rail is fixed — always exactly Wiedervorlage/Struktur/Mehr, never a
-    // configurable/overflow set (see `WorkItemActionRail.tsx`).
-    expect(within(chips).getByRole("button", { name: "Wiedervorlage" })).toBeInTheDocument();
+    // The rail is fixed and contextual: backlog projects expose
+    // Planung/Struktur/Ziel, never a configurable/overflow set.
+    expect(within(chips).getByRole("button", { name: "Planung" })).toBeInTheDocument();
     expect(within(chips).getByRole("button", { name: "Struktur" })).toBeInTheDocument();
-    expect(within(chips).getByRole("button", { name: "Mehr" })).toBeInTheDocument();
+    expect(within(chips).getByRole("button", { name: "Ziel" })).toBeInTheDocument();
     expect(chips.querySelector(".rail-overflow-grid")).not.toBeInTheDocument();
 
     // Closing and reopening via the kebab (no swipe gesture at all).
@@ -385,13 +385,13 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 19");
   });
 
-  it("navigates directly to the project detail page through the rail's 'Mehr' action", async () => {
+  it("does not add a generic project detail action to the rail", async () => {
     const story = makeProject({ id: 20, title: "Werkzeugkiste sortieren", status: "backlog" });
     const { container } = renderAtRootWithProjectRoute(<Harness story={story} />);
     await screen.findByText("Werkzeugkiste sortieren");
 
     swipe(container, -100);
-    await userEvent.click(screen.getByRole("button", { name: "Mehr" }));
-    expect(await screen.findByTestId("project-page")).toHaveTextContent("Projektseite 20");
+    expect(screen.queryByRole("button", { name: "Mehr" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
   });
 });

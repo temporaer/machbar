@@ -66,6 +66,9 @@ describe("cleanup round prompt", () => {
     expect(instructions).toContain("Would a tired human understand the intent, decision, outcome, and next useful thought");
     expect(instructions).toContain("planning-quality coach");
     expect(instructions).toContain("not a workflow mechanic");
+    expect(instructions).toContain("notBeforeAt");
+    expect(instructions).toContain("Do not confuse “Wieder ansehen ab” with “Geplant für”");
+    expect(instructions).toContain("Moving a task into or out of waiting is a lifecycle/status decision");
     expect(instructions).toContain("Do not duplicate those checks");
     expect(instructions).toContain("If the only problem is mechanical, return `leave_alone`");
     expect(instructions).toContain("Do not choose `create_first_slice` merely because Machbar says there is no graph next action");
