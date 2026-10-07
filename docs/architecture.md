@@ -731,7 +731,9 @@ work items ("would a tired human know what to do next?").
   accepted cards stays `partial` even when the retry fails. Failed items stay
   reserved from new rounds while their round is open. The Home Assistant
   structure only enforces the response envelope; this validator is the strict
-  boundary.
+  boundary: the Home Assistant result fields are optional and nullable, so an
+  incomplete entry reaches this validator and becomes one `schema_invalid`
+  warning (the round turns `partial`) instead of failing the whole response.
 - **Persistence**: `cleanup_rounds` and `cleanup_round_items` are temporary
   operational state (24-hour expiry, purged with intake jobs); a
   `home_assistant_requests` row belongs to either an intake job or a round.
@@ -751,8 +753,14 @@ work items ("would a tired human know what to do next?").
   (`?focus=next-action&draft=` prefills QuickAdd), and `story.editOutcome`
   `initialCriterion`. The destination's own Save/Add still commits. Surfaces
   that only reach the plain item view get no action button of their own, and
-  labels never promise a change the destination does not perform. Failed items
-  stay visible as cards with retry, open, and hide.
+  labels (`CleanupActionLabel`, chosen per surface and target type) never
+  promise a change the destination does not perform: `choose_shape` on a task
+  is “Zum Projekt machen” (the only shape conversion), `reference` suggestions
+  and `convert_to_reference` are “Öffnen und als Information prüfen”,
+  `split_clarify_execute` is “Öffnen und strukturieren”, and rhythm/revisit
+  opens the planning or project Wiedervorlage without prefilling a date.
+  Failed items stay visible as cards with open and hide; a single failed item
+  carries its own retry, while several failed items share one banner retry.
 
 The More entry appears only when the Home Assistant AI Task is ready. Older
 Home Assistant components answer the new request kind with

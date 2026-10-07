@@ -344,6 +344,28 @@ describe("cleanup rounds", () => {
       .toBe("define_check_or_rhythm");
   });
 
+  it("treats an incomplete entry from Home Assistant as one bad entry, not a failed round", async () => {
+    const token = await pair();
+    const a = await task("Keller");
+    const b = await task("Backup");
+    const id = await createRound();
+    // Shape the HA adapter now forwards: a complete entry plus an entry with
+    // only target fields (and strict-provider nulls).
+    await complete(token, await lease(token), {
+      outcome: "succeeded",
+      result: {
+        summary: "x",
+        results: [triage("task", a), { targetType: "task", targetId: b, proposal: null, reason: null }],
+        warnings: [],
+      },
+    });
+    const round = (await ctx.app.inject({ method: "GET", url: `/api/cleanup-rounds/${id}` })).json();
+    expect(round.status).toBe("partial");
+    expect(round.error.details.issues.map((issue: { code: string }) => issue.code)).toContain("schema_invalid");
+    expect(round.items.find((item: { targetId: number }) => item.targetId === a).status).toBe("ready");
+    expect(round.items.find((item: { targetId: number }) => item.targetId === b).status).toBe("failed");
+  });
+
   it("keeps accepted cards when retrying the missing items fails again", async () => {
     const token = await pair();
     const a = await task("Keller");

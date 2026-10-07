@@ -21,8 +21,29 @@ export type CleanupStoryCommand =
  */
 export type CleanupSurfaceAction =
   | { kind: "markReviewed" }
-  | { kind: "command"; command: WorkItemCommand }
-  | { kind: "story"; command: CleanupStoryCommand; projectId: number; draft?: string };
+  | { kind: "command"; command: WorkItemCommand; label: CleanupActionLabel | null }
+  | { kind: "story"; command: CleanupStoryCommand; projectId: number; label: CleanupActionLabel; draft?: string };
+
+/**
+ * What the card's primary button says. Labels describe what the destination
+ * actually does: "… anlegen/übernehmen …" only where the answer is carried
+ * into that workflow, "Öffnen und …" where the user still decides there.
+ * `null` means the surface only reaches the plain item view, which the card's
+ * own "Öffnen" button already covers.
+ */
+export type CleanupActionLabel =
+  | "rename"
+  | "doneWhenNotes"
+  | "doneWhenCriterion"
+  | "decision"
+  | "firstSlice"
+  | "followup"
+  | "planTask"
+  | "deferProject"
+  | "adminNotes"
+  | "convertToProject"
+  | "checkReference"
+  | "structure";
 
 export interface CleanupAnswerPrefixes {
   decision: string;
@@ -77,80 +98,94 @@ export function cleanupDefaultAnswer(
 
 export function cleanupSurfaceAction(
   item: Pick<CleanupRoundItemRecord, "targetType" | "targetId" | "itemStatus">,
-  surface: CleanupResolutionSurface,
+  result: Pick<CleanupTriageResult, "resolutionSurface" | "suggestedShape">,
   answer = "",
 ): CleanupSurfaceAction {
+  const surface = result.resolutionSurface;
   if (surface === "mark_reviewed") return { kind: "markReviewed" };
   const id = item.targetId;
   const draft = answer.trim();
   const withDraft = draft ? { draft } : {};
+  const command = (value: WorkItemCommand, label: CleanupActionLabel | null): CleanupSurfaceAction => ({
+    kind: "command",
+    command: value,
+    label,
+  });
   if (item.targetType === "project") {
-    const open = (focusField?: "title" | "notes", text?: string): CleanupSurfaceAction => ({
-      kind: "command",
-      command: {
-        type: "workItem.open",
-        workItem: { id, role: "story" },
-        ...(focusField ? { focusField } : {}),
-        ...(focusField && text ? { draft: text } : {}),
-      },
+    const open = (focusField?: "title" | "notes", text?: string): WorkItemCommand => ({
+      type: "workItem.open",
+      workItem: { id, role: "story" },
+      ...(focusField ? { focusField } : {}),
+      ...(focusField && text ? { draft: text } : {}),
+    });
+    const story = (value: CleanupStoryCommand, label: CleanupActionLabel, text?: string): CleanupSurfaceAction => ({
+      kind: "story",
+      command: value,
+      projectId: id,
+      label,
+      ...(text ? { draft: text } : {}),
     });
     switch (surface) {
       case "rename_item":
-        return open("title", draft);
+        return command(open("title", draft), "rename");
       case "clarify_admin_target":
-        return open("notes", draft);
+        return command(open("notes", draft), "adminNotes");
       case "convert_to_reference":
-        return open("notes");
+        return command(open("notes"), "checkReference");
       case "edit_done_when":
-        return { kind: "story", command: "story.editOutcome", projectId: id, ...withDraft };
+        return story("story.editOutcome", "doneWhenCriterion", draft);
       case "create_decision_task":
+        return story("story.planWork", "decision", draft);
       case "create_first_slice":
+        return story("story.planWork", "firstSlice", draft);
       case "create_followup":
-        return { kind: "story", command: "story.planWork", projectId: id, ...withDraft };
+        return story("story.planWork", "followup", draft);
       case "split_clarify_execute":
-        return { kind: "story", command: "story.structure", projectId: id };
+        return story("story.structure", "structure");
       case "define_rhythm_or_revisit":
         // Project Wiedervorlage exists only for backlog projects.
-        return item.itemStatus === "backlog"
-          ? { kind: "story", command: "story.defer", projectId: id }
-          : open();
+        return item.itemStatus === "backlog" ? story("story.defer", "deferProject") : command(open(), null);
+      case "choose_shape":
+        // There is no project → task/reference conversion; only a check.
+        return result.suggestedShape === "reference"
+          ? command(open("notes"), "checkReference")
+          : command(open(), null);
       default:
-        return open();
+        return command(open(), null);
     }
   }
-  const command = (value: WorkItemCommand): CleanupSurfaceAction => ({ kind: "command", command: value });
   switch (surface) {
     case "rename_item":
-      return command({ type: "task.open", taskId: id, focusField: "title", ...withDraft });
+      return command({ type: "task.open", taskId: id, focusField: "title", ...withDraft }, "rename");
     case "edit_done_when":
+      return command({ type: "task.open", taskId: id, focusField: "notes", ...withDraft }, "doneWhenNotes");
     case "clarify_admin_target":
-      return command({ type: "task.open", taskId: id, focusField: "notes", ...withDraft });
+      return command({ type: "task.open", taskId: id, focusField: "notes", ...withDraft }, "adminNotes");
     case "convert_to_reference":
-      return command({ type: "task.open", taskId: id, focusField: "notes" });
+      return command({ type: "task.open", taskId: id, focusField: "notes" }, "checkReference");
     case "create_decision_task":
     case "create_first_slice":
     case "create_followup":
-      return command({ type: "task.split", taskId: id, ...(draft ? { initialTitles: [draft] } : {}) });
+      return command(
+        { type: "task.split", taskId: id, ...(draft ? { initialTitles: [draft] } : {}) },
+        surface === "create_decision_task" ? "decision" : surface === "create_followup" ? "followup" : "firstSlice",
+      );
     case "define_rhythm_or_revisit":
-      return command({ type: "task.plan", taskId: id });
+      return command({ type: "task.plan", taskId: id }, "planTask");
     case "choose_shape":
-      return command({ type: "task.convertToProject", taskId: id });
+      // Only task → project is a real conversion; other shapes stay a check.
+      if (result.suggestedShape === "reference") {
+        return command({ type: "task.open", taskId: id, focusField: "notes" }, "checkReference");
+      }
+      return result.suggestedShape === "task"
+        ? command({ type: "workItem.open", workItem: { id, role: "task" } }, null)
+        : command({ type: "task.convertToProject", taskId: id }, "convertToProject");
     case "split_clarify_execute":
-      return command({ type: "task.structure", taskId: id });
+      return command({ type: "task.structure", taskId: id }, "structure");
     case "open_item":
     default:
-      return command({ type: "workItem.open", workItem: { id, role: "task" } });
+      return command({ type: "workItem.open", workItem: { id, role: "task" } }, null);
   }
-}
-
-/**
- * A surface that only reaches the plain item view adds nothing over the
- * card's own "Öffnen" button, so it gets no action label of its own.
- */
-export function cleanupSurfaceIsPlainOpen(action: CleanupSurfaceAction): boolean {
-  return action.kind === "command"
-    && action.command.type === "workItem.open"
-    && action.command.focusField === undefined;
 }
 
 /** Rounds still waiting for Home Assistant are polled. */

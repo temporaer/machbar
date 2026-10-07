@@ -221,9 +221,12 @@ offers **Hinten anstellen** (acknowledge like Review), **Öffnen**,
 button into the existing editor that answers the question. For text answers
 (new title, done-when, decision/first step/follow-up, recipient or document)
 the card shows the suggestion as an editable answer and prefills the editor
-with it; nothing is saved until you save there. Items Machbar could not assess
-stay visible with **Erneut versuchen**; retrying only re-asks for those items
-and keeps the existing cards.
+with it; nothing is saved until you save there. Buttons say what they really
+do: where Machbar has no direct conversion (for example to information) the
+button reads **Öffnen und als Information prüfen**. Items Machbar could not
+assess stay visible as cards; **Erneut versuchen** (on the card, or once in the
+banner when several failed) only re-asks for those items and keeps the
+existing cards.
 
 ### 6. Inventory
 

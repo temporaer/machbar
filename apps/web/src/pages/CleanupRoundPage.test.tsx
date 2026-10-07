@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Route, Routes } from "react-router-dom";
+import { Route, Routes, useLocation } from "react-router-dom";
 import type { CleanupRoundItemRecord, CleanupRoundRecord } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { useTaskDetail } from "../lib/taskDetailContext";
+import { useProjectWorkflow } from "../lib/projectWorkflowContext";
+import { makeProject } from "../test/fixtures";
 import { CleanupRoundPage } from "./CleanupRoundPage";
 
 vi.mock("../lib/api", () => ({
@@ -90,6 +92,21 @@ function DetailProbe() {
   ) : null;
 }
 
+function ProjectProbe() {
+  const workflow = useProjectWorkflow();
+  const location = useLocation();
+  return (
+    <>
+      <output data-testid="location">{`${location.pathname}${location.search}`}</output>
+      {workflow.current ? (
+        <output data-testid="project-workflow">
+          {`${workflow.current.kind}:${workflow.current.projectId}:${workflow.current.draft ?? ""}`}
+        </output>
+      ) : null}
+    </>
+  );
+}
+
 function renderAt(path: string) {
   return renderWithProviders(
     <>
@@ -100,6 +117,7 @@ function renderAt(path: string) {
       </Routes>
       <WorkflowProbe />
       <DetailProbe />
+      <ProjectProbe />
     </>,
     { initialEntries: [path] },
   );
@@ -137,7 +155,7 @@ describe("CleanupRoundPage", () => {
     expect(answer).toHaveValue("Werkzeugecke sortieren");
     await userEvent.clear(answer);
     await userEvent.type(answer, "Schraubenregal sortieren");
-    await userEvent.click(within(card).getByRole("button", { name: "Ersten Schnitt anlegen …" }));
+    await userEvent.click(within(card).getByRole("button", { name: "Ersten Schritt anlegen …" }));
     expect(screen.getByTestId("workflow")).toHaveTextContent("split:7:Schraubenregal sortieren");
     expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
   });
@@ -212,20 +230,89 @@ describe("CleanupRoundPage", () => {
     expect(screen.queryByText("Alles durchgesehen.")).not.toBeInTheDocument();
     expect(screen.getByRole("article", { name: "Keller" })).toBeInTheDocument();
 
+    // A single failed card owns the only retry control.
+    expect(screen.queryByRole("button", { name: "Fehlende erneut versuchen" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /erneut versuchen/i })).toHaveLength(1);
     await userEvent.click(within(failed).getByRole("button", { name: "Erneut versuchen" }));
     expect(mocked.retryCleanupRound).toHaveBeenCalledWith("r1");
   });
 
-  it("offers retrying only the missing items from the partial banner", async () => {
+  it("moves retry to the banner when several items failed", async () => {
     mocked.getCleanupRound.mockResolvedValue(round({
       status: "partial",
-      items: [item(), item({ id: "item-2", targetId: 8, title: "Backup", status: "failed", result: null })],
+      items: [
+        item(),
+        item({ id: "item-2", targetId: 8, title: "Backup", status: "failed", result: null }),
+        item({ id: "item-3", targetId: 9, title: "Drucker", status: "failed", result: null }),
+      ],
     }));
     mocked.retryCleanupRound.mockResolvedValue(round({ status: "queued" }));
     renderAt("/more/cleanup-round/r1");
 
-    await userEvent.click(await screen.findByRole("button", { name: "Fehlende erneut versuchen" }));
+    const failed = await screen.findByRole("article", { name: "Backup" });
+    expect(within(failed).queryByRole("button", { name: "Erneut versuchen" })).not.toBeInTheDocument();
+    expect(within(failed).getByRole("button", { name: "Öffnen" })).toBeInTheDocument();
+    expect(within(failed).getByRole("button", { name: "Einschätzung ausblenden" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Fehlende erneut versuchen" }));
     expect(mocked.retryCleanupRound).toHaveBeenCalledWith("r1");
+  });
+
+  it.each([
+    ["task notes as done-when", "task", "edit_done_when", "Erledigt-wenn in Notizen übernehmen …", "Erledigt, wenn: Tür ist dicht", "detail", "7:notes:Erledigt, wenn: Tür ist dicht – geprüft"],
+    ["task notes for an admin target", "task", "clarify_admin_target", "Antwort in Notizen übernehmen …", "An die Krankenkasse", "detail", "7:notes:An die Krankenkasse – geprüft"],
+    ["project criterion", "project", "edit_done_when", "Als Erledigt-wenn-Kriterium übernehmen …", "Tür ist dicht", "project-workflow", "editOutcome:7:Tür ist dicht – geprüft"],
+    ["project next action as first step", "project", "create_first_slice", "Ersten Schritt anlegen …", "Angebote vergleichen", "location", "/projects/7?focus=next-action&draft=Angebote+vergleichen+%E2%80%93+gepr%C3%BCft"],
+    ["project next action as follow-up", "project", "create_followup", "Follow-up anlegen …", "Nachhalten: Rechnung", "location", "/projects/7?focus=next-action&draft=Nachhalten%3A+Rechnung+%E2%80%93+gepr%C3%BCft"],
+    ["project title", "project", "rename_item", "Umbenennen …", "Neue Haustür montieren", "location", "/projects/7?focus=title&draft=Neue+Haust%C3%BCr+montieren+%E2%80%93+gepr%C3%BCft"],
+  ] as const)("carries the edited answer into the %s", async (_name, targetType, surface, label, start, probe, expected) => {
+    mocked.getProject.mockResolvedValue({ ...makeProject({ id: 7, title: "Keller" }), tasks: [] });
+    mocked.getCleanupRound.mockResolvedValue(round({
+      items: [item({
+        targetType,
+        itemStatus: targetType === "project" ? "active" : "actionable",
+        result: {
+          ...item().result!,
+          targetType,
+          resolutionSurface: surface,
+          suggestedDefault: start.replace(/^(Erledigt, wenn|Nachhalten): /, ""),
+          suggestedTitle: surface === "rename_item" ? start : null,
+        },
+      })],
+    }));
+    renderAt("/more/cleanup-round/r1");
+
+    const card = await screen.findByRole("article", { name: "Keller" });
+    const answer = within(card).getByLabelText("Deine Antwort");
+    expect(answer).toHaveValue(start);
+    await userEvent.type(answer, " – geprüft");
+    await userEvent.click(within(card).getByRole("button", { name: label }));
+
+    await waitFor(() => expect(screen.getByTestId(probe)).toHaveTextContent(expected));
+    // Nothing is saved from the card; the destination's own Save commits.
+    expect(mocked.resolveCleanupRoundItem).not.toHaveBeenCalled();
+  });
+
+  it("names the only real shape change and keeps other shapes as checks", async () => {
+    mocked.getCleanupRound.mockResolvedValue(round({
+      items: [
+        item({ result: { ...item().result!, proposal: "wrong_shape", resolutionSurface: "choose_shape", suggestedShape: "project" } }),
+        item({
+          id: "item-2",
+          targetId: 8,
+          title: "Öffnungszeiten",
+          result: { ...item().result!, targetId: 8, proposal: "wrong_shape", resolutionSurface: "choose_shape", suggestedShape: "reference" },
+        }),
+      ],
+    }));
+    renderAt("/more/cleanup-round/r1");
+
+    const project = await screen.findByRole("article", { name: "Keller" });
+    await userEvent.click(within(project).getByRole("button", { name: "Zum Projekt machen …" }));
+    expect(screen.getByTestId("workflow")).toHaveTextContent("convertToProject:7:");
+
+    const reference = screen.getByRole("article", { name: "Öffnungszeiten" });
+    expect(within(reference).queryByRole("button", { name: /Projekt|Form ändern/ })).not.toBeInTheDocument();
+    expect(within(reference).getByRole("button", { name: "Öffnen und als Information prüfen" })).toBeInTheDocument();
   });
 
   it("marks an item reviewed only through the explicit action", async () => {
@@ -249,8 +336,8 @@ describe("CleanupRoundPage", () => {
     renderAt("/more/cleanup-round/r1");
 
     expect(await screen.findByText("Machbar konnte keine sichere Klärungsrunde erstellen.")).toBeInTheDocument();
-    expect(screen.getByRole("article", { name: "Keller" })).toBeInTheDocument();
-    await userEvent.click(screen.getAllByRole("button", { name: "Erneut versuchen" })[0]!);
+    const card = screen.getByRole("article", { name: "Keller" });
+    await userEvent.click(within(card).getByRole("button", { name: "Erneut versuchen" }));
     expect(mocked.retryCleanupRound).toHaveBeenCalledWith("r1");
     expect(await screen.findByText("Machbar prüft ein paar Dinge …")).toBeInTheDocument();
 

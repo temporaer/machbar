@@ -11,7 +11,6 @@ import {
   cleanupDefaultAnswer,
   cleanupRoundPending,
   cleanupSurfaceAction,
-  cleanupSurfaceIsPlainOpen,
   type CleanupSurfaceAction,
 } from "../lib/cleanupRound";
 import { ErrorState, LoadingState } from "../components/AsyncStates";
@@ -133,7 +132,10 @@ function CleanupRoundReview({ id }: { id: string }) {
   const retry = () => void run(() => api.retryCleanupRound(id));
   // Failed items stay visible: they are still open in this round.
   const openItems = round.items.filter((item) => item.status === "ready" || item.status === "failed");
-  const hasFailed = openItems.some((item) => item.status === "failed");
+  const failedItems = openItems.filter((item) => item.status === "failed");
+  const hasFailed = failedItems.length > 0;
+  // One retry control at a time: a lone failed card owns it, otherwise the banner.
+  const cardRetry = failedItems.length === 1 && failedItems[0]!.exists;
   return (
     <div className="stack cleanup-round-page">
       {header}
@@ -141,7 +143,7 @@ function CleanupRoundReview({ id }: { id: string }) {
       {round.status === "failed" || (round.status === "partial" && hasFailed) ? (
         <section className="card stack" role={round.status === "failed" ? "alert" : "status"}>
           <p>{round.status === "failed" ? strings.cleanupRoundFailed : strings.cleanupRoundPartial}</p>
-          {hasFailed ? (
+          {hasFailed && !cardRetry ? (
             <div className="row">
               <button type="button" className="btn btn-primary" disabled={busy} onClick={retry}>
                 {round.status === "failed" ? strings.cleanupRoundRetry : strings.cleanupRoundRetryMissing}
@@ -161,7 +163,7 @@ function CleanupRoundReview({ id }: { id: string }) {
           key={item.id}
           item={item}
           busy={busy}
-          onRetry={retry}
+          {...(cardRetry ? { onRetry: retry } : {})}
           onResolve={(resolution) =>
             void run(() => api.resolveCleanupRoundItem(id, item.id, resolution))
           }
@@ -184,7 +186,8 @@ function CleanupRoundCard({
 }: {
   item: CleanupRoundItemRecord;
   busy: boolean;
-  onRetry: () => void;
+  /** Present only when this card owns the round's retry control. */
+  onRetry?: (() => void) | undefined;
   onResolve: (resolution: "dismiss" | "mark-reviewed") => void;
 }) {
   const strings = useStrings();
@@ -210,8 +213,8 @@ function CleanupRoundCard({
   ].filter(Boolean).join(" · ");
   const surface = result?.resolutionSurface;
   const answerSurface = surface ? cleanupAnswerSurface(surface) : false;
-  const action: CleanupSurfaceAction | null = surface ? cleanupSurfaceAction(item, surface, answer) : null;
-  const showSurface = action !== null && action.kind !== "markReviewed" && !cleanupSurfaceIsPlainOpen(action);
+  const action: CleanupSurfaceAction | null = result ? cleanupSurfaceAction(item, result, answer) : null;
+  const actionLabel = action && action.kind !== "markReviewed" ? action.label : null;
   const suggestion = result && !answerSurface ? result.suggestedTitle ?? result.suggestedDefault : null;
   const answerId = `cleanup-answer-${item.id}`;
 
@@ -276,9 +279,9 @@ function CleanupRoundCard({
       <div className="row cleanup-round-actions">
         {item.exists && result ? (
           <>
-            {showSurface && surface ? (
+            {actionLabel ? (
               <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void resolveSurface()}>
-                {strings.cleanupSurfaceLabels[surface]}
+                {strings.cleanupActionLabels[actionLabel]}
               </button>
             ) : null}
             <button type="button" className="btn" disabled={busy} onClick={() => onResolve("mark-reviewed")}>
@@ -286,7 +289,7 @@ function CleanupRoundCard({
             </button>
           </>
         ) : null}
-        {item.exists && !result ? (
+        {item.exists && !result && onRetry ? (
           <button type="button" className="btn btn-primary" disabled={busy} onClick={onRetry}>
             {strings.cleanupRoundRetry}
           </button>

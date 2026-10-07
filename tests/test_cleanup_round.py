@@ -60,6 +60,17 @@ def test_structure_only_enforces_the_envelope():
     # Extra result keys are tolerated and dropped.
     extra = CLEANUP_ROUND_STRUCTURE({**response, "results": [{**_valid_result(), "plan": ["a"]}]})
     assert "plan" not in extra["results"][0]
+    # Incomplete entries are not rejected here; Machbar reports them per entry.
+    incomplete = CLEANUP_ROUND_STRUCTURE({
+        **response,
+        "results": [_valid_result(), {"targetType": "task", "targetId": 8}, {}],
+    })
+    assert incomplete["results"][1] == {"targetType": "task", "targetId": 8}
+    assert incomplete["results"][2] == {}
+    nulls = CLEANUP_ROUND_STRUCTURE({**response, "results": [{"targetId": None, "proposal": None}]})
+    assert nulls["results"][0] == {"targetId": None, "proposal": None}
+    with pytest.raises(vol.Invalid):
+        CLEANUP_ROUND_STRUCTURE({**response, "results": ["not an object"]})
     with pytest.raises(vol.Invalid):
         CLEANUP_ROUND_STRUCTURE({"summary": "Runde", "warnings": []})
     with pytest.raises(vol.Invalid):
@@ -68,8 +79,13 @@ def test_structure_only_enforces_the_envelope():
 
 def test_structure_converts_to_a_strict_provider_safe_schema():
     converted = to_openapi(_probatio_schema_from_voluptuous(CLEANUP_ROUND_STRUCTURE))
+    # No result field is required by the shape guide itself.
+    assert not converted["properties"]["results"]["items"].get("required")
+    assert set(converted["required"]) == {"summary", "results", "warnings"}
     _ha_2026_9_3_adjust_schema(converted)
     result = converted["properties"]["results"]["items"]
+    # Single JSON types per field: multi-type unions break HA's adjustment.
+    assert all("anyOf" not in prop for prop in result["properties"].values())
     # No closed enums at the HA boundary, but the vocabulary guides the model.
     for field in ("targetType", "proposal", "resolutionSurface", "inferredWorkType", "inferredFlow", "confidence"):
         assert "enum" not in result["properties"][field]
@@ -78,7 +94,10 @@ def test_structure_converts_to_a_strict_provider_safe_schema():
     # Strict structured-output providers require closed objects.
     assert result["additionalProperties"] is False
     assert converted["additionalProperties"] is False
-    assert set(result["required"]) >= {"targetType", "targetId", "proposal", "resolutionSurface"}
+    # Strict mode lists every key as required but nullable, so the model can
+    # still omit a value and Machbar decides whether the entry is usable.
+    assert "null" in result["properties"]["proposal"]["type"]
+    assert "null" in result["properties"]["targetId"]["type"]
 
 
 def test_normalize_strips_strings_coerces_ids_and_drops_unknown_keys():
@@ -96,6 +115,17 @@ def test_normalize_strips_strings_coerces_ids_and_drops_unknown_keys():
     assert "plan" not in normalized["results"][0]
     assert normalized["results"][1] == "not an object"
     assert normalized["warnings"] == [{"message": "Hinweis"}]
+
+
+def test_normalize_forwards_incomplete_entries_for_api_validation():
+    normalized = normalize_cleanup_response({
+        "summary": "Runde",
+        "results": [_valid_result(), {"targetType": " task ", "targetId": "8", "extra": 1}, {}],
+        "warnings": [],
+    })
+    assert normalized["results"][0] == _valid_result()
+    assert normalized["results"][1] == {"targetType": "task", "targetId": 8}
+    assert normalized["results"][2] == {}
 
 
 @pytest.mark.parametrize("data", [None, [], {"summary": "x"}, {"results": {}}])

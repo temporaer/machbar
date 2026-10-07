@@ -65,7 +65,9 @@ def _field(key: str, allowed: list[str] | None = None) -> Any:
 
 
 def _optional_field(key: str, allowed: list[str] | None = None) -> Any:
-    return vol.Optional(key, default=None, description=_description(key, allowed))
+    # No default: an entry missing a field reaches Machbar incomplete, so the
+    # API can reject that one entry instead of HA rejecting the response.
+    return vol.Optional(key, description=_description(key, allowed))
 
 
 def _description(key: str, allowed: list[str] | None) -> str:
@@ -73,23 +75,28 @@ def _description(key: str, allowed: list[str] | None) -> str:
     return f"{description}; one of: {', '.join(allowed)}" if allowed else description
 
 
+_NULLABLE_INT = vol.Any(None, int)
+
+
 def _result_schema() -> vol.Schema:
-    # Envelope only: vocabularies are guidance in the descriptions, not closed
-    # enums. Machbar's API is the authoritative validator and accepts valid
-    # entries while reporting malformed ones. REMOVE_EXTRA tolerates and drops
-    # unknown keys while the provider schema keeps additionalProperties false,
-    # which strict structured-output providers require.
+    # A shape guide only: every field is optional and nullable, vocabularies
+    # are described rather than closed enums, and unknown keys are dropped.
+    # Machbar's API is the authoritative validator; one malformed entry must
+    # not poison the whole response before it gets there. Each field keeps a
+    # single JSON type (`targetId` integer, the rest string) because HA's
+    # OpenAI/Cloud schema adjustment cannot handle multi-type unions, and
+    # REMOVE_EXTRA keeps `additionalProperties` false for strict providers.
     return vol.Schema(
         {
-            _field("targetType", ["task", "project"]): str,
-            _field("targetId"): int,
-            _field("proposal", PROPOSAL_KINDS): str,
-            _field("resolutionSurface", RESOLUTION_SURFACES): str,
-            _field("inferredWorkType", WORK_TYPES): str,
-            _field("inferredFlow", FLOWS): str,
-            _field("confidence", CONFIDENCES): str,
-            _field("reason"): str,
-            _field("question"): str,
+            _optional_field("targetType", ["task", "project"]): _NULL,
+            _optional_field("targetId"): _NULLABLE_INT,
+            _optional_field("proposal", PROPOSAL_KINDS): _NULL,
+            _optional_field("resolutionSurface", RESOLUTION_SURFACES): _NULL,
+            _optional_field("inferredWorkType", WORK_TYPES): _NULL,
+            _optional_field("inferredFlow", FLOWS): _NULL,
+            _optional_field("confidence", CONFIDENCES): _NULL,
+            _optional_field("reason"): _NULL,
+            _optional_field("question"): _NULL,
             _optional_field("suggestedDefault"): _NULL,
             _optional_field("suggestedTitle"): _NULL,
             _optional_field("suggestedShape", SHAPES): _NULL,
