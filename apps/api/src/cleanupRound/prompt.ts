@@ -29,6 +29,18 @@ A good project describes a finite outcome: what will be different, what "done" m
 
 Thinking vs execution: uphill work is deciding, choosing, comparing, understanding, asking someone, clarifying constraints. Downhill work is ordering, booking, sending, buying, checking off known steps. Use this only as a lens and translate it into one concrete coaching question: uphill -> "What decision is missing?"; downhill -> "Is this ready to order into steps?"; mixed -> "Should we separate clarification from execution?"`;
 
+const ROUTING_GUIDE = `## Choose the most specific semantic gap
+
+Do not default to goal or done-when clarification for every unclear project. Use this precedence order:
+
+1. Choose \`split_clarify_execute\` when one item bundles distinct workstreams, an optional branch, or a decision followed by execution. Signals include "and", "or", "if applicable", "maybe", or \`ggf.\` when the parts have different outcomes. Ask what should be clarified or decided together before one person executes.
+2. Choose \`create_decision_task\` when a shared choice, constraint, or responsibility must be settled before execution, even if the overall project outcome is already understandable.
+3. Choose \`clarify_admin_target\` or \`create_followup\` when an external person or institution must provide a document, response, appointment, or confirmation that is not preserved.
+4. Choose \`edit_done_when\` only when the actual outcome remains unobservable after inspecting existing acceptance criteria, open children, waiting children, and completed children.
+5. Return \`leave_alone\` when the outcome is observable and the existing children already make the decision and execution path pick-up-able.
+
+The presence of a project, an empty acceptance-criteria field, a waiting state, or several children is not enough by itself to choose \`edit_done_when\`. Prefer the narrowest missing thought and do not turn a bundled item into a generic outcome question.`;
+
 const HOUSEHOLD_TEAMWORK_LENS = `## Household teamwork lens
 
 This is shared household work. Items may involve two adults, children, school, daycare, clubs, tradespeople, relatives, authorities, or other external people.
@@ -188,7 +200,15 @@ Expected: {"proposal":"add_followup_after_incident","resolutionSurface":"create_
 
 Mechanical-only owner issue:
 Input: Title "Mülltonne rausstellen"; mechanical facts: no owner.
-Expected: {"proposal":"leave_alone","resolutionSurface":"mark_reviewed","reason":"The item is semantically clear; assigning an owner is mechanical workflow hygiene.","question":"No planning-clarity question needed."}`;
+Expected: {"proposal":"leave_alone","resolutionSurface":"mark_reviewed","reason":"The item is semantically clear; assigning an owner is mechanical workflow hygiene.","question":"No planning-clarity question needed."}
+
+Bundled restoration and optional improvement:
+Input: Title "Rolladenkasten Schönheit wieder herstellen, ggf LED Leiste anbringen"; notes: "Rolladenkasten optisch wiederherstellen; eventuell eine LED-Leiste anbringen."
+Expected: proposal split_thinking_from_execution, resolutionSurface split_clarify_execute. Reason: "The item mixes restoring the existing result with an optional lighting decision. Clarify the shared LED choice before planning the execution." Question: "Soll zuerst gemeinsam entschieden werden, ob und welche LED-Leiste gewünscht ist, bevor Wiederherstellung und Montage geplant werden?"
+
+Clear project with an existing plan:
+Input: Title "Neue Waschmaschine"; notes: "Neue Waschmaschine steht im Keller, alte ist entfernt."; planningContext includes an open delivery child and a concrete acceptance criterion.
+Expected: proposal leave_alone, resolutionSurface mark_reviewed. Do not ask for a generic done-when statement when the outcome and child plan are already pick-up-able.`;
 
 function contractSection(): string {
   return [
@@ -221,6 +241,7 @@ export function buildCleanupRoundInstructions(input: {
   const sections = [
     ROLE,
     DOCTRINE,
+    ROUTING_GUIDE,
     HOUSEHOLD_TEAMWORK_LENS,
     LENSES,
     NOT_TO_REPORT,

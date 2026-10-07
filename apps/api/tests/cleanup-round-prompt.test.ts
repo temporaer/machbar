@@ -83,6 +83,11 @@ describe("cleanup round prompt", () => {
     expect(instructions).toContain("task understandable only to the person who captured it");
     expect(instructions).toContain("shared household decision");
     expect(instructions).toContain("If the only issue is that no owner is assigned, return `leave_alone`");
+    expect(instructions).toContain("Choose the most specific semantic gap");
+    expect(instructions).toContain("Do not default to goal or done-when clarification");
+    expect(instructions).toContain("Choose `split_clarify_execute` when one item bundles distinct workstreams");
+    expect(instructions).toContain("Choose `edit_done_when` only when the actual outcome remains unobservable");
+    expect(instructions).toContain("Return `leave_alone` when the outcome is observable");
     for (const kind of cleanupProposalKinds) expect(instructions).toContain(kind);
     for (const surface of cleanupResolutionSurfaces) expect(instructions).toContain(surface);
   });
@@ -101,6 +106,9 @@ describe("cleanup round prompt", () => {
     expect(instructions).toContain("Kita Formular");
     expect(instructions).toContain("Handwerker Rückmeldung");
     expect(instructions).toContain("Mülltonne rausstellen");
+    expect(instructions).toContain("Rolladenkasten Schönheit wieder herstellen");
+    expect(instructions).toContain("Bundled restoration and optional improvement");
+    expect(instructions).toContain("Neue Waschmaschine");
   });
 
   it("embeds the sampled items as data", () => {
