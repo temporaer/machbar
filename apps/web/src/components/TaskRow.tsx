@@ -326,6 +326,7 @@ export function TaskRow({
       | "task.waitingLifecycle"
       | "task.open",
     focusField?: TaskDetailFocusField,
+    taskId = task.id,
   ) => {
     // Move focus to the kebab before the rail unmounts, so a focused-
     // workflow sheet's opener-restore targets a control that stays
@@ -336,12 +337,18 @@ export function TaskRow({
     if (command === "task.open") {
       dispatch({
         type: command,
-        taskId: task.id,
+        taskId,
         ...(focusField ? { focusField } : {}),
       });
       return;
     }
-    dispatch({ type: command, taskId: task.id });
+    dispatch({ type: command, taskId });
+  };
+
+  const runRailMutation = (command: "task.startToday" | "task.endWaiting") => {
+    kebabButtonRef.current?.focus();
+    scope.setOpenRail(null);
+    dispatch({ type: command, task });
   };
 
   const [successorComposerOpen, setSuccessorComposerOpen] = useState(false);
@@ -631,79 +638,6 @@ export function TaskRow({
           }
         />
       </div>
-      {showTodayRevisitActions ? (
-        <div className="task-row-revisit-actions" role="group" aria-label={strings.revisit}>
-          {task.externalWait ? (
-            <>
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={busy}
-                onClick={() =>
-                  dispatch({ type: "task.waitingLifecycle", taskId: task.id })
-                }
-              >
-                {strings.followUp}
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={busy}
-                onClick={() => dispatch({ type: "task.endWaiting", task })}
-              >
-                {strings.endWaiting}
-              </button>
-            </>
-          ) : task.blocked && unresolvedDependency ? (
-            <>
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={busy}
-                onClick={() =>
-                  dispatch({
-                    type: "task.open",
-                    taskId: unresolvedDependency.dependsOnTaskId,
-                  })
-                }
-              >
-                {strings.revisitInspectBlocker}
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={busy}
-                onClick={() =>
-                  dispatch({ type: "task.availability", taskId: task.id })
-                }
-              >
-                {strings.revisitLater}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="btn btn-sm btn-primary"
-                disabled={busy}
-                onClick={() => dispatch({ type: "task.startToday", task })}
-              >
-                {strings.revisitWorkNow}
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                disabled={busy}
-                onClick={() =>
-                  dispatch({ type: "task.availability", taskId: task.id })
-                }
-              >
-                {strings.revisitLater}
-              </button>
-            </>
-          )}
-        </div>
-      ) : null}
       {!isReference && swipeCoach.active ? (
         <SwipeCoachHint primaryAction={primarySwipeLabel} onDismiss={swipeCoach.dismiss} />
       ) : null}
@@ -717,27 +651,50 @@ export function TaskRow({
             showTodayRevisitActions && task.externalWait
               ? [
                   {
-                    label: strings.continueWaiting,
+                    label: strings.followUp,
                     onSelect: () => runRailCommand("task.waitingLifecycle"),
                   },
+                  {
+                    label: strings.endWaiting,
+                    onSelect: () => runRailMutation("task.endWaiting"),
+                  },
                 ]
-              : showTodayRevisitActions
+              : showTodayRevisitActions && task.blocked && unresolvedDependency
                 ? [
                     {
-                      label: strings.revisitPlanForDay,
-                      onSelect: () => runRailCommand("task.plan"),
+                      label: strings.revisitInspectBlocker,
+                      onSelect: () =>
+                        runRailCommand(
+                          "task.open",
+                          undefined,
+                          unresolvedDependency.dependsOnTaskId,
+                        ),
                     },
-                    ...(task.blocked
-                      ? [
-                          {
-                            label: strings.revisitProceedAnyway,
-                            onSelect: () =>
-                              dispatch({ type: "task.startToday", task }),
-                          },
-                        ]
-                      : []),
+                    {
+                      label: strings.revisitLater,
+                      onSelect: () => runRailCommand("task.availability"),
+                    },
+                    {
+                      label: strings.revisitProceedAnyway,
+                      onSelect: () => runRailMutation("task.startToday"),
+                    },
                   ]
-                : isReference
+                : showTodayRevisitActions
+                  ? [
+                      {
+                        label: strings.revisitWorkNow,
+                        onSelect: () => runRailMutation("task.startToday"),
+                      },
+                      {
+                        label: strings.revisitLater,
+                        onSelect: () => runRailCommand("task.availability"),
+                      },
+                      {
+                        label: strings.revisitPlanForDay,
+                        onSelect: () => runRailCommand("task.plan"),
+                      },
+                    ]
+                  : isReference
               ? [
                   { label: strings.railShape, onSelect: () => runRailCommand("task.shape") },
                   { label: strings.railStructure, onSelect: () => runRailCommand("task.structure") },
