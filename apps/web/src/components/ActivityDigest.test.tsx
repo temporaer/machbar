@@ -54,6 +54,25 @@ function entry(index: number): ActivityDigest["entries"][number] {
   };
 }
 
+function planEntry(
+  index: number,
+  params: ActivityDigest["entries"][number]["params"],
+): ActivityDigest["entries"][number] {
+  return {
+    key: `plan-${index}`,
+    category: "personal",
+    priority: 1,
+    kind: "plan_changed",
+    params: { title: `Aufgabe ${index}`, ...params },
+    actor: { id: 2, name: "Sarah", color: "#fff", pictureUrl: null },
+    project: null,
+    primary: { type: "task", id: index, title: `Aufgabe ${index}` },
+    related: [],
+    eventIds: [index],
+    latestEventAt: "2026-10-08T08:00:00.000Z",
+  };
+}
+
 function renderDigest() {
   return render(
     <LocaleProvider initialLocale="de">
@@ -102,4 +121,84 @@ describe("ActivityDigest", () => {
     expect(await screen.findByText("Änderungen konnten nicht als gelesen markiert werden.")).toBeInTheDocument();
     expect(screen.getByText("Seit deinem letzten Besuch")).toBeInTheDocument();
   });
+
+  it("renders an availability timestamp without throwing", async () => {
+    const timestamp = "2026-10-08T09:00:00.000Z";
+    mockedGetDigest.mockResolvedValue(
+      digest([
+        planEntry(1, {
+          date: timestamp,
+          dateType: "availability",
+          direction: "later",
+        }),
+      ]),
+    );
+
+    renderDigest();
+
+    expect(await screen.findByText(/Aufgabe 1/)).toBeInTheDocument();
+    expect(screen.getByText(/„Aufgabe 1“ ist ab/)).toBeInTheDocument();
+  });
+
+  it("formats offset timestamps in the local timezone", async () => {
+    const timestamp = "2026-10-08T09:00:00+02:00";
+    mockedGetDigest.mockResolvedValue(
+      digest([
+        planEntry(2, {
+          date: timestamp,
+          dateType: "availability",
+          direction: "later",
+        }),
+      ]),
+    );
+
+    renderDigest();
+
+    const expected = new Intl.DateTimeFormat(undefined, {
+      dateStyle: "long",
+      timeStyle: "short",
+    }).format(new Date(timestamp));
+    expect(await screen.findByText(`„Aufgabe 2“ ist ab ${expected} verfügbar.`)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["dueDate", "deadline"],
+    ["scheduledDate", "scheduled"],
+    ["notBeforeDate", "availability"],
+  ])("keeps date-only %s values stable", async (_field, dateType) => {
+    const date = "2026-10-08";
+    mockedGetDigest.mockResolvedValue(
+      digest([
+        planEntry(3, {
+          date,
+          dateType,
+          direction: "earlier",
+        }),
+      ]),
+    );
+
+    renderDigest();
+
+    expect(await screen.findByText(/Aufgabe 3/)).toBeInTheDocument();
+    expect(screen.getByText(/8\. Oktober 2026|October 8, 2026/)).toBeInTheDocument();
+  });
+
+  it.each([undefined, "not-a-timestamp"])(
+    "uses a safe availability fallback for %s",
+    async (date) => {
+      mockedGetDigest.mockResolvedValue(
+        digest([
+          planEntry(4, {
+            ...(date === undefined ? {} : { date }),
+            dateType: "availability",
+            direction: "earlier",
+          }),
+        ]),
+      );
+
+      renderDigest();
+
+      expect(await screen.findByText("„Aufgabe 4“ kann wieder bearbeitet werden.")).toBeInTheDocument();
+    },
+  );
 });

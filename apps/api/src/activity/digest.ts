@@ -248,7 +248,7 @@ function relevantDateChange(
   for (const candidate of candidates) {
     if (!fields.includes(candidate.field)) continue;
     if (candidate.previousDate === candidate.date) continue;
-    if (candidate.date === null && candidate.dateType !== "deadline") continue;
+    if (candidate.date === null && candidate.dateType === "scheduled") continue;
     const previousDistance =
       candidate.dateType === "availability"
         ? null
@@ -669,7 +669,45 @@ function classify(
           collaborativeDateFields,
           timezone,
         );
-  if (planChange !== null && !entries.some((entry) => entry.kind === "task_assigned")) {
+  const planEvent =
+    planChange === null ? null : dateEvents.get(planChange.field) ?? null;
+  if (
+    planChange?.dateType === "availability" &&
+    planChange.priority === 1 &&
+    planEvent !== null &&
+    itemId !== null &&
+    last.entityType === "task"
+  ) {
+    const task = graph.tasksById.get(itemId);
+    if (
+      task?.executable === true &&
+      task.status !== "done" &&
+      task.status !== "cancelled" &&
+      task.kind === "action" &&
+      task.effectiveOwnerId === viewerMemberId &&
+      planEvent.actor?.id !== viewerMemberId
+    ) {
+      const affectedProject =
+        task.projectId === null ? null : projects.get(task.projectId);
+      entries.push(
+        makeEntry(`executable:${itemId}`, "personal", 1, "task_executable", [planEvent], {
+          project: affectedProject
+            ? {
+                type: "project",
+                id: affectedProject.id,
+                title: affectedProject.title,
+              }
+            : null,
+          primary: { type: "task", id: task.id, title: task.title },
+          params: params({ title: task.title }),
+          actor: planEvent.actor,
+        }),
+      );
+    }
+  } else if (
+    planChange !== null &&
+    !entries.some((entry) => entry.kind === "task_assigned")
+  ) {
     const personal =
       last.entityType === "task" &&
       effectiveOwner(after) === viewerMemberId;

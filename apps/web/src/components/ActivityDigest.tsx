@@ -26,6 +26,16 @@ function entryText(
   const actor =
     entry.actor?.name ?? strings.activityText.unknownActor;
   const title = String(entry.params.title ?? entry.primary?.title ?? "");
+  const formatDate = (value: string): string | null => {
+    const isCalendarDate = /^\d{4}-\d{2}-\d{2}$/.test(value);
+    const parsed = isCalendarDate
+      ? new Date(`${value}T00:00:00Z`)
+      : new Date(value);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return new Intl.DateTimeFormat(undefined, isCalendarDate
+      ? { dateStyle: "long", timeZone: "UTC" }
+      : { dateStyle: "long", timeStyle: "short" }).format(parsed);
+  };
   switch (entry.kind) {
     case "task_assigned":
       return strings.activityDigestTaskAssigned(actor, title);
@@ -93,22 +103,21 @@ function entryText(
       );
     case "plan_changed":
       if (typeof entry.params.date === "string") {
-        const date = new Intl.DateTimeFormat(undefined, {
-          dateStyle: "long",
-          timeZone: "UTC",
-        }).format(new Date(`${entry.params.date}T00:00:00Z`));
-        if (entry.params.dateType === "deadline") {
+        const date = formatDate(entry.params.date);
+        if (!date) {
+          if (entry.params.dateType === "availability") {
+            return strings.activityDigestWaitResolved(title);
+          }
+        } else if (entry.params.dateType === "deadline") {
           return strings.activityDigestDeadlineChanged(
             actor,
             title,
             date,
             String(entry.params.direction ?? "later"),
           );
-        }
-        if (entry.params.dateType === "scheduled") {
+        } else if (entry.params.dateType === "scheduled") {
           return strings.activityDigestScheduledChanged(title, date);
-        }
-        if (entry.params.dateType === "availability") {
+        } else if (entry.params.dateType === "availability") {
           return strings.activityDigestAvailabilityChanged(title, date);
         }
       }
@@ -117,6 +126,9 @@ function entryText(
         entry.params.direction === "removed"
       ) {
         return strings.activityDigestDeadlineRemoved(actor, title);
+      }
+      if (entry.params.dateType === "availability") {
+        return strings.activityDigestWaitResolved(title);
       }
       return strings.activityDigestPlanChanged(actor, title);
     case "wait_started":

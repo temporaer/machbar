@@ -811,6 +811,48 @@ describe("activity digest", () => {
     expect(getActivityDigest(ctx.handle.db, viewer.id).entries).toEqual([]);
   });
 
+  it("reports one executable outcome when availability restrictions are removed", () => {
+    const viewer = member("Hannes");
+    const sarah = member("Sarah");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Unterlagen einreichen",
+      ownerMemberId: viewer.id,
+      ownerInheritanceMode: "explicit",
+      status: "actionable",
+    });
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values({
+      kind: "task_updated",
+      entityType: "task",
+      entityId: task.id,
+      entityTitle: task.title,
+      actorMemberId: sarah.id,
+      metadata: {
+        scope: "household",
+        affectedWorkItemId: task.id,
+        changedFields: ["notBeforeAt", "notBeforeDate"],
+        before: {
+          notBeforeAt: "2099-10-09T08:00:00.000Z",
+          notBeforeDate: "2099-10-09",
+          executable: false,
+          effectiveOwnerId: viewer.id,
+        },
+        after: {
+          notBeforeAt: null,
+          notBeforeDate: null,
+          executable: true,
+          effectiveOwnerId: viewer.id,
+        },
+      },
+    }).run();
+
+    const entries = getActivityDigest(ctx.handle.db, viewer.id).entries;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.kind).toBe("task_executable");
+    expect(entries[0]?.actor?.name).toBe("Sarah");
+    expect(entries[0]?.primary?.id).toBe(task.id);
+  });
+
   it("suppresses a deadline announcement when the viewer supersedes it", () => {
     const viewer = member("Hannes");
     const sarah = member("Sarah");
