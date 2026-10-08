@@ -1147,6 +1147,69 @@ const en = {
   recentActivityEmpty: "No recent activity.",
   viewAllActivities: "View all activity",
   loadMore: "Load more",
+  activityDigestTitle: "Since your last visit",
+  activityDigestShowMore: "Show more changes",
+  activityDigestShowLess: "Show fewer",
+  activityDigestAcknowledge: "Mark as read",
+  activityDigestRetry: "Reload changes",
+  activityDigestAcknowledgeError: "Changes could not be marked as read.",
+  activityDigestCategoryPersonal: "You are needed",
+  activityDigestCategoryMilestone: "Important results",
+  activityDigestCategoryProgress: "What got done",
+  activityDigestCategoryPlan: "Plans changed",
+  activityDigestCategoryNewWork: "New work",
+  activityDigestTaskAssigned: (actor: string, title: string) =>
+    `${actor} assigned “${title}” to you.`,
+  activityDigestTaskUnassigned: (title: string) =>
+    `You are no longer responsible for “${title}”.`,
+  activityDigestTaskCompleted: (actor: string, title: string) =>
+    `${actor} completed “${title}”.`,
+  activityDigestProjectCompleted: (actor: string, title: string) =>
+    `${actor} completed project “${title}”.`,
+  activityDigestProjectReopened: (title: string) =>
+    `Project “${title}” was reopened.`,
+  activityDigestProjectActivated: (title: string) =>
+    `Project “${title}” was activated.`,
+  activityDigestProjectProgress: (count: number, project: string) =>
+    `${count} tasks were completed in project “${project}”.`,
+  activityDigestProjectProgressDetailed: (
+    count: number,
+    project: string,
+    breakdown: string,
+    titles: string,
+  ) =>
+    `${count} tasks were completed in project “${project}”: ${breakdown}, including ${titles}.`,
+  activityDigestProjectAssigned: (count: number, project: string) =>
+    `${count} tasks were assigned to you in project “${project}”.`,
+  activityDigestProjectCompletedWithProgress: (
+    actor: string,
+    project: string,
+    count: number,
+  ) =>
+    `${actor} completed project “${project}”. The last ${count} tasks were completed as well.`,
+  activityDigestPlanChanged: (actor: string, title: string) =>
+    `${actor} changed the planning for “${title}”.`,
+  activityDigestDeadlineChanged: (
+    actor: string,
+    title: string,
+    date: string,
+    direction: string,
+  ) =>
+    direction === "earlier"
+      ? `${actor} moved the deadline for “${title}” to ${date}.`
+      : `${actor} postponed the deadline for “${title}” to ${date}.`,
+  activityDigestDeadlineRemoved: (actor: string, title: string) =>
+    `${actor} removed the deadline for “${title}”.`,
+  activityDigestScheduledChanged: (title: string, date: string) =>
+    `The scheduled date for “${title}” was moved to ${date}.`,
+  activityDigestAvailabilityChanged: (title: string, date: string) =>
+    `“${title}” is available from ${date}.`,
+  activityDigestWaitStarted: (title: string) =>
+    `“${title}” is now waiting for a response.`,
+  activityDigestWaitResolved: (title: string) =>
+    `“${title}” can be worked on again.`,
+  activityDigestNewWork: (title: string) =>
+    `New work: “${title}”.`,
 
   documentTitle: "Machbar",
   metaDescription: "Machbar – We can do this.",
@@ -1286,6 +1349,9 @@ const en = {
     activity_actor_not_found: "The selected person could not be found.",
     activity_cursor_invalid: "The activity page is invalid.",
     activity_query_invalid: "The activity filters are invalid.",
+    activity_digest_query_invalid: "The changes could not be loaded.",
+    activity_digest_ack_invalid: "The changes could not be marked as read.",
+    activity_digest_member_required: "Select a member first.",
     agenda_query_invalid: "The Today query is invalid.",
     authentication_required: "Please sign in first.",
     auth_return_target_invalid: "The sign-in return target is invalid.",

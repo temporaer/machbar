@@ -26,6 +26,7 @@ import {
   projectHasNextAction,
   touchTask,
 } from "./workItemShared.js";
+import { Graph } from "./graph.js";
 
 // ---------------------------------------------------------------------------
 // External waits
@@ -182,6 +183,21 @@ export function followUpExternalWait(
           ...(waitChanged ? ["externalWait"] : []),
           ...(revisitChanged ? ["revisitDate"] : []),
         ],
+        before: {
+          externalWait: {
+            title: existing.waitingFor ?? "",
+            revisitDate: existing.revisitDate,
+          },
+        },
+        after: {
+          externalWait:
+            input.action === "resolve"
+              ? null
+              : {
+                  title: waitingFor ?? "",
+                  revisitDate,
+                },
+        },
       },
     });
     if (input.action === "resolve") {
@@ -262,7 +278,6 @@ export function upsertExternalWait(
       task.projectId === null
         ? true
         : projectHasNextAction(txDb, task.projectId);
-
     const existing = tx
       .select()
       .from(schema.taskExternalWaits)
@@ -317,6 +332,20 @@ export function upsertExternalWait(
           ...(waitChanged ? ["externalWait"] : []),
           ...(revisitChanged ? ["revisitDate"] : []),
         ],
+        before: existing
+          ? {
+              externalWait: {
+                title: existing.waitingFor ?? "",
+                revisitDate: existing.revisitDate,
+              },
+            }
+          : { externalWait: null },
+        after: {
+          externalWait: {
+            title: waitingFor ?? "",
+            revisitDate,
+          },
+        },
       },
     });
     if ((existing?.revisitDate ?? null) === null && revisitDate !== null) {
@@ -383,11 +412,16 @@ export function resolveExternalWait(
       task.projectId === null
         ? true
         : projectHasNextAction(txDb, task.projectId);
+    const graphBefore = Graph.load(txDb);
 
     tx.delete(schema.taskExternalWaits)
       .where(eq(schema.taskExternalWaits.taskId, taskId))
       .run();
     touchTask(txDb, taskId);
+    const graphAfter = Graph.load(txDb);
+    const becameExecutable =
+      graphBefore.tasksById.get(taskId)?.executable !== true &&
+      graphAfter.tasksById.get(taskId)?.executable === true;
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_external_wait_resolved",
@@ -400,6 +434,7 @@ export function resolveExternalWait(
           "externalWait",
           ...(existing.revisitDate !== null ? ["revisitDate"] : []),
         ],
+        ...(becameExecutable ? { newlyExecutableTaskIds: [taskId] } : {}),
       },
     });
     neutralizeContribution(txDb, {

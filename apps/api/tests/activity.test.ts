@@ -147,6 +147,113 @@ describe("activity repository", () => {
       projectId: null,
     });
   });
+
+  it("filters private work activity to the effective owner when a viewer is supplied", () => {
+    const owner = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Owner", color: "#111111" })
+      .returning()
+      .get();
+    const other = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Other", color: "#222222" })
+      .returning()
+      .get();
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Private task",
+      scope: "work",
+      ownerMemberId: owner.id,
+      ownerInheritanceMode: "explicit",
+    });
+    ctx.handle.db.insert(schema.activityEvents).values({
+      actorMemberId: other.id,
+      kind: "task_updated",
+      entityId: task.id,
+      entityType: "task",
+      entityTitle: task.title,
+      metadata: {
+        scope: "work",
+        after: { effectiveOwnerId: owner.id },
+      },
+    }).run();
+
+    expect(
+      getActivityPage(ctx.handle.db, {
+        limit: 50,
+        viewerMemberId: owner.id,
+      }).items.some((event) => event.entity.title === task.title),
+    ).toBe(true);
+    expect(
+      getActivityPage(ctx.handle.db, {
+        limit: 50,
+        viewerMemberId: other.id,
+      }).items.some((event) => event.entity.title === task.title),
+    ).toBe(false);
+  });
+
+  it("fills a visible page past invisible private events without leaking them", () => {
+    const viewer = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Viewer", color: "#111111" })
+      .returning()
+      .get();
+    const owner = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Owner", color: "#222222" })
+      .returning()
+      .get();
+    const visibleIds = [1, 2].map((index) =>
+      ctx.handle.db
+        .insert(schema.activityEvents)
+        .values({
+          kind: "task_created",
+          entityType: "task",
+          entityTitle: `Shared ${index}`,
+          metadata: { scope: "household" },
+        })
+        .returning({ id: schema.activityEvents.id })
+        .get().id,
+    );
+    for (let index = 0; index < 60; index += 1) {
+      ctx.handle.db.insert(schema.activityEvents).values({
+        kind: "task_created",
+        entityType: "task",
+        entityTitle: `Private ${index}`,
+        metadata: {
+          scope: "work",
+          after: { effectiveOwnerId: owner.id },
+        },
+      }).run();
+    }
+
+    const first = getActivityPage(ctx.handle.db, {
+      limit: 2,
+      viewerMemberId: viewer.id,
+    });
+    expect(first.items.map((event) => event.id)).toEqual(visibleIds.reverse());
+    expect(first.items.map((event) => event.entity.title)).not.toContain("Private 0");
+    expect(first.nextCursor).toBeNull();
+  });
+
+  it("suppresses legacy deleted events whose scope cannot be established", () => {
+    const viewer = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Viewer", color: "#111111" })
+      .returning()
+      .get();
+    ctx.handle.db.insert(schema.activityEvents).values({
+      kind: "task_deleted",
+      entityType: "task",
+      entityTitle: "Unbekannt privat",
+      entityId: null,
+      metadata: {},
+    }).run();
+
+    expect(getActivityPage(ctx.handle.db, {
+      limit: 50,
+      viewerMemberId: viewer.id,
+    }).items).toEqual([]);
+  });
 });
 
 describe("GET /api/activity", () => {
@@ -159,7 +266,7 @@ describe("GET /api/activity", () => {
       kind: "task_created",
       entityType: "task",
       entityTitle: "Erfasst",
-      metadata: {},
+      metadata: { scope: "household" },
     }).run();
   });
 
@@ -187,7 +294,7 @@ describe("GET /api/activity", () => {
             taskId: null,
             projectId: null,
           },
-          metadata: {},
+          metadata: { scope: "household" },
         },
       ],
       nextCursor: null,

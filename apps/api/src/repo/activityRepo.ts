@@ -3,12 +3,14 @@ import type {
   ActivityEvent,
   ActivityEventKind,
   ActivityEventMetadata,
+  ActivityStateSnapshot,
   ActivityPage,
 } from "@machbar/shared";
 import { and, desc, eq, inArray, lt, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
+import { getEffectiveOwners } from "../repo/effectiveRepo.js";
 
 const CURSOR_PATTERN = /^[A-Za-z0-9_-]+$/;
 const ISO_TIMESTAMP_PATTERN =
@@ -17,9 +19,80 @@ const ISO_TIMESTAMP_PATTERN =
 export interface ActivityFilters {
   cursor?: string;
   limit: number;
+  viewerMemberId?: number | null;
   actorId?: number;
   taskId?: number;
   projectId?: number;
+}
+
+interface VisibilityRow {
+  scope: "household" | "work";
+  ownerMemberId: number | null;
+}
+
+function loadVisibilityRows(
+  db: Db,
+  rows: Array<{ entityId: number | null; metadata: unknown }>,
+): Map<number, VisibilityRow> {
+  const ids = new Set<number>();
+  for (const row of rows) {
+    if (row.entityId !== null) ids.add(row.entityId);
+    const metadata = (row.metadata ?? {}) as ActivityEventMetadata;
+    if (metadata.affectedWorkItemId !== undefined) {
+      ids.add(metadata.affectedWorkItemId);
+    }
+  }
+  if (ids.size === 0) return new Map();
+  const effectiveOwners = getEffectiveOwners(db);
+  const currentRows = db
+    .select({
+      id: schema.workItems.id,
+      role: schema.workItems.role,
+      scope: schema.workItems.scope,
+      ownerMemberId: schema.workItems.ownerMemberId,
+    })
+    .from(schema.workItems)
+    .where(inArray(schema.workItems.id, [...ids]))
+    .all();
+  return new Map(
+    currentRows.map((row) => [
+      row.id,
+      {
+        scope: row.scope as "household" | "work",
+        ownerMemberId:
+          row.role === "task"
+            ? effectiveOwners.get(row.id)?.ownerId ?? null
+            : row.ownerMemberId,
+      },
+    ]),
+  );
+}
+
+function visibleToViewer(
+  row: {
+    entityId: number | null;
+    metadata: unknown;
+  },
+  viewerMemberId: number | null,
+  currentRows: Map<number, VisibilityRow>,
+): boolean {
+  const metadata = (row.metadata ?? {}) as ActivityEventMetadata;
+  let scope = metadata.scope;
+  let owner =
+    metadata.after?.effectiveOwnerId ??
+    metadata.before?.effectiveOwnerId ??
+    metadata.after?.ownerMemberId ??
+    metadata.before?.ownerMemberId;
+  const current = currentRows.get(metadata.affectedWorkItemId ?? row.entityId ?? -1);
+  if (scope === undefined && current !== undefined) {
+    scope = current.scope;
+    if (owner === undefined) {
+      owner = current.ownerMemberId;
+    }
+  }
+  if (scope === undefined) return false;
+  if (scope === "household") return true;
+  return viewerMemberId !== null && owner === viewerMemberId;
 }
 
 interface ActivityCursor {
@@ -37,9 +110,111 @@ export interface RecordActivityInput {
   metadata?: ActivityEventMetadata;
 }
 
+type ActivityQueryRow = {
+  id: number;
+  createdAt: string;
+  kind: (typeof schema.activityEvents.kind.enumValues)[number];
+  entityId: number | null;
+  entityType: "task" | "project";
+  entityTitle: string;
+  metadata: unknown;
+  actorId: number | null;
+  actorName: string | null;
+  actorColor: string | null;
+  actorPictureUrl: string | null;
+};
+
+function activityContext(
+  db: Db,
+  workItemId: number | null,
+): {
+  scope?: "household" | "work";
+  projectContextId?: number | null;
+  snapshot?: ActivityStateSnapshot;
+} {
+  if (workItemId === null) return {};
+  const row = db
+    .select({
+      id: schema.workItems.id,
+      parentId: schema.workItems.parentId,
+      role: schema.workItems.role,
+      ownerMemberId: schema.workItems.ownerMemberId,
+      scope: schema.workItems.scope,
+      dueDate: schema.workItems.dueDate,
+      scheduledDate: schema.workItems.scheduledDate,
+      notBeforeAt: schema.workItems.notBeforeAt,
+      notBeforeDate: schema.workItems.notBeforeDate,
+      taskKind: schema.workItems.taskKind,
+    })
+    .from(schema.workItems)
+    .where(eq(schema.workItems.id, workItemId))
+    .get();
+  if (!row) return {};
+
+  let projectContextId: number | null =
+    row.role === "story" ? row.id : null;
+  let parentId = row.parentId;
+  for (let depth = 0; projectContextId === null && parentId !== null && depth < 100; depth += 1) {
+    const parent = db
+      .select({
+        id: schema.workItems.id,
+        parentId: schema.workItems.parentId,
+        role: schema.workItems.role,
+      })
+      .from(schema.workItems)
+      .where(eq(schema.workItems.id, parentId))
+      .get();
+    if (!parent) break;
+    if (parent.role === "story") projectContextId = parent.id;
+    parentId = parent.parentId;
+  }
+
+  return {
+    scope: row.scope as "household" | "work",
+    projectContextId,
+    snapshot: {
+      ownerMemberId: row.ownerMemberId,
+      effectiveOwnerId:
+        row.role === "task"
+          ? getEffectiveOwners(db).get(workItemId)?.ownerId ?? null
+          : row.ownerMemberId,
+      dueDate: row.dueDate,
+      scheduledDate: row.scheduledDate,
+      notBeforeAt: row.notBeforeAt,
+      notBeforeDate: row.notBeforeDate,
+      taskKind: row.taskKind === null ? undefined : row.taskKind as "action" | "reference",
+      projectId: projectContextId,
+    },
+  };
+}
+
 /** Inserts an activity event using the caller's transaction-bound database. */
 export function recordActivity(db: Db, input: RecordActivityInput): number {
   const entityId = input.taskId ?? input.projectId ?? null;
+  const context = activityContext(db, entityId);
+  const metadata: ActivityEventMetadata = {
+    ...(input.metadata ?? {}),
+    ...(context.scope !== undefined && input.metadata?.scope === undefined
+      ? { scope: context.scope }
+      : {}),
+    ...(input.metadata?.projectContextId === undefined
+      ? { projectContextId: context.projectContextId ?? null }
+      : {}),
+    ...(input.metadata?.affectedWorkItemId === undefined && entityId !== null
+      ? { affectedWorkItemId: entityId }
+      : {}),
+    ...(input.metadata?.affectedEntityType === undefined
+      ? { affectedEntityType: input.entityType }
+      : {}),
+    ...(context.snapshot || input.metadata?.after
+      ? {
+          after: {
+            ...(context.snapshot ?? {}),
+            ...(input.metadata?.after ?? {}),
+          },
+        }
+      : {}),
+  };
   return db.insert(schema.activityEvents)
     .values({
       actorMemberId: input.actorMemberId ?? null,
@@ -47,7 +222,7 @@ export function recordActivity(db: Db, input: RecordActivityInput): number {
       entityType: input.entityType,
       entityTitle: input.entityTitle,
       entityId,
-      metadata: input.metadata ?? {},
+      metadata,
     })
     .returning({ id: schema.activityEvents.id })
     .get().id;
@@ -98,42 +273,48 @@ export function getActivityPage(
   db: Db,
   filters: ActivityFilters,
 ): ActivityPage {
-  const conditions: SQL[] = [];
-  if (filters.actorId !== undefined) {
-    conditions.push(eq(schema.activityEvents.actorMemberId, filters.actorId));
-  }
-  if (filters.taskId !== undefined) {
-    conditions.push(eq(schema.activityEvents.entityId, filters.taskId));
-  }
-  if (filters.projectId !== undefined) {
-    const descendantRows = db.all<{ id: number }>(sql`
-      WITH RECURSIVE descendants(id) AS (
-        SELECT ${filters.projectId}
-        UNION ALL
-        SELECT child.id
-        FROM work_items child
-        JOIN descendants d ON child.parent_id = d.id
-      )
-      SELECT id FROM descendants
-    `);
-    const ids = descendantRows.map((row) => row.id);
-    conditions.push(inArray(schema.activityEvents.entityId, ids));
-  }
-  if (filters.cursor !== undefined) {
-    const cursor = decodeCursor(filters.cursor);
-    conditions.push(
-      or(
-        lt(schema.activityEvents.createdAt, cursor.createdAt),
-        and(
-          eq(schema.activityEvents.createdAt, cursor.createdAt),
-          lt(schema.activityEvents.id, cursor.id),
-        ),
-      )!,
-    );
-  }
+  let cursor = filters.cursor === undefined ? undefined : decodeCursor(filters.cursor);
+  const visibleRows: ActivityQueryRow[] = [];
+  const batchSize =
+    filters.viewerMemberId === undefined
+      ? filters.limit + 1
+      : Math.max(filters.limit * 4, 50);
+  let fetchedRows: ActivityQueryRow[] = [];
+  do {
+    const conditions: SQL[] = [];
+    if (filters.actorId !== undefined) {
+      conditions.push(eq(schema.activityEvents.actorMemberId, filters.actorId));
+    }
+    if (filters.taskId !== undefined) {
+      conditions.push(eq(schema.activityEvents.entityId, filters.taskId));
+    }
+    if (filters.projectId !== undefined) {
+      const descendantRows = db.all<{ id: number }>(sql`
+        WITH RECURSIVE descendants(id) AS (
+          SELECT ${filters.projectId}
+          UNION ALL
+          SELECT child.id
+          FROM work_items child
+          JOIN descendants d ON child.parent_id = d.id
+        )
+        SELECT id FROM descendants
+      `);
+      conditions.push(inArray(schema.activityEvents.entityId, descendantRows.map((row) => row.id)));
+    }
+    if (cursor !== undefined) {
+      conditions.push(
+        or(
+          lt(schema.activityEvents.createdAt, cursor.createdAt),
+          and(
+            eq(schema.activityEvents.createdAt, cursor.createdAt),
+            lt(schema.activityEvents.id, cursor.id),
+          ),
+        )!,
+      );
+    }
 
-  const rows = db
-    .select({
+    fetchedRows = db
+      .select({
       id: schema.activityEvents.id,
       createdAt: schema.activityEvents.createdAt,
       kind: schema.activityEvents.kind,
@@ -145,26 +326,34 @@ export function getActivityPage(
       actorName: schema.members.name,
       actorColor: schema.members.color,
       actorPictureUrl: schema.memberOidcIdentities.pictureUrl,
-    })
-    .from(schema.activityEvents)
-    .leftJoin(
-      schema.members,
-      eq(schema.activityEvents.actorMemberId, schema.members.id),
-    )
-    .leftJoin(
-      schema.memberOidcIdentities,
-      eq(schema.members.id, schema.memberOidcIdentities.memberId),
-    )
-    .where(conditions.length > 0 ? and(...conditions) : undefined)
-    .orderBy(
-      desc(schema.activityEvents.createdAt),
-      desc(schema.activityEvents.id),
-    )
-    .limit(filters.limit + 1)
-    .all();
+      })
+      .from(schema.activityEvents)
+      .leftJoin(schema.members, eq(schema.activityEvents.actorMemberId, schema.members.id))
+      .leftJoin(schema.memberOidcIdentities, eq(schema.members.id, schema.memberOidcIdentities.memberId))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(schema.activityEvents.createdAt), desc(schema.activityEvents.id))
+      .limit(batchSize)
+      .all();
+    const currentRows = loadVisibilityRows(db, fetchedRows);
+    visibleRows.push(
+      ...(filters.viewerMemberId === undefined
+        ? fetchedRows
+        : fetchedRows.filter((row) =>
+            visibleToViewer(row, filters.viewerMemberId ?? null, currentRows),
+          )),
+    );
+    const lastFetched = fetchedRows.at(-1);
+    cursor = lastFetched
+      ? { createdAt: lastFetched.createdAt, id: lastFetched.id }
+      : undefined;
+  } while (
+    filters.viewerMemberId !== undefined &&
+    visibleRows.length <= filters.limit &&
+    fetchedRows.length === batchSize
+  );
 
-  const hasMore = rows.length > filters.limit;
-  const pageRows = hasMore ? rows.slice(0, filters.limit) : rows;
+  const hasMore = visibleRows.length > filters.limit;
+  const pageRows = hasMore ? visibleRows.slice(0, filters.limit) : visibleRows;
   const items: ActivityEvent[] = pageRows.map((row) => ({
     id: row.id,
     createdAt: row.createdAt,

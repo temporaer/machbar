@@ -119,6 +119,9 @@ export type ApiErrorCode =
   | "activity_actor_not_found"
   | "activity_cursor_invalid"
   | "activity_query_invalid"
+  | "activity_digest_query_invalid"
+  | "activity_digest_ack_invalid"
+  | "activity_digest_member_required"
   | "agenda_query_invalid"
   | "contribution_query_invalid"
   | "authentication_required"
@@ -277,10 +280,18 @@ export interface ActivityEventMetadata {
   changedFields?: string[];
   previousStatus?: TaskStatus | ProjectStatus;
   nextStatus?: TaskStatus | ProjectStatus;
+  before?: ActivityStateSnapshot;
+  after?: ActivityStateSnapshot;
+  affectedWorkItemId?: number;
+  affectedEntityType?: ActivityEntityType;
+  projectContextId?: number | null;
+  scope?: WorkItemScope;
   checked?: boolean;
   affectedCount?: number;
   relatedTaskIds?: number[];
   relatedTaskTitles?: string[];
+  relatedTaskOwnerIds?: Array<number | null>;
+  newlyExecutableTaskIds?: number[];
   relatedProjectIds?: number[];
   relatedProjectTitles?: string[];
   recurrenceOccurrenceId?: number;
@@ -290,6 +301,104 @@ export interface ActivityEventMetadata {
   occurrenceCompletedOn?: string;
   nextScheduledDate?: string;
   nextDeadlineDate?: string;
+}
+
+/** Stable, privacy-safe state used to interpret activity after later edits. */
+export interface ActivityStateSnapshot {
+  status?: TaskStatus | ProjectStatus;
+  ownerMemberId?: number | null;
+  effectiveOwnerId?: number | null;
+  dueDate?: string | null;
+  scheduledDate?: string | null;
+  notBeforeAt?: string | null;
+  notBeforeDate?: string | null;
+  executable?: boolean;
+  blocked?: boolean;
+  taskKind?: TaskKind;
+  projectId?: number | null;
+  externalWait?: {
+    title: string;
+    revisitDate: string | null;
+  } | null;
+}
+
+export const activityDigestCategories = [
+  "personal",
+  "milestone",
+  "progress",
+  "plan",
+  "new_work",
+] as const;
+export type ActivityDigestCategory = (typeof activityDigestCategories)[number];
+
+export const activityDigestEntryKinds = [
+  "task_assigned",
+  "task_unassigned",
+  "task_executable",
+  "task_completed",
+  "project_completed",
+  "project_reopened",
+  "project_activated",
+  "project_progress",
+  "project_assignment",
+  "plan_changed",
+  "wait_started",
+  "wait_resolved",
+  "new_work",
+] as const;
+export type ActivityDigestEntryKind =
+  (typeof activityDigestEntryKinds)[number];
+
+export interface ActivityDigestPerson {
+  id: number;
+  name: string;
+}
+
+export interface ActivityDigestActorCount {
+  actor: ActivityDigestPerson | null;
+  count: number;
+}
+
+export interface ActivityDigestReference {
+  type: ActivityEntityType;
+  id: number | null;
+  title: string;
+}
+
+export interface ActivityDigestParams {
+  [key: string]:
+    | string
+    | string[]
+    | number
+    | boolean
+    | null
+    | ActivityDigestPerson
+    | ActivityDigestPerson[]
+    | ActivityDigestActorCount[]
+    | ActivityDigestReference
+    | ActivityDigestReference[];
+}
+
+export interface ActivityDigestEntry {
+  key: string;
+  category: ActivityDigestCategory;
+  priority: 1 | 2 | 3 | 4 | 5;
+  kind: ActivityDigestEntryKind;
+  params: ActivityDigestParams;
+  actor: ActivityActor | null;
+  project: ActivityDigestReference | null;
+  primary: ActivityDigestReference | null;
+  related: ActivityDigestReference[];
+  eventIds: number[];
+  latestEventAt: string;
+}
+
+export interface ActivityDigest {
+  acknowledgedThroughEventId: number;
+  throughEventId: number;
+  entries: ActivityDigestEntry[];
+  totalEntryCount: number;
+  hiddenEntryCount: number;
 }
 
 export interface ActivityActor {

@@ -6,6 +6,7 @@ import { EmptyState, ErrorState, LoadingState } from "../components/AsyncStates"
 import { api, type ActivityFilters } from "../lib/api";
 import { useStrings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
+import { useOptionalIdentity } from "../lib/identity";
 
 const PAGE_SIZE = 25;
 
@@ -28,9 +29,10 @@ export function activityFiltersFromSearchParams(params: URLSearchParams): Activi
 
 export function ActivityPage() {
   const strings = useStrings();
+  const { currentMemberId } = useOptionalIdentity();
   const [searchParams] = useSearchParams();
   const filters = activityFiltersFromSearchParams(searchParams);
-  const filterKey = `${filters.actorId ?? ""}:${filters.taskId ?? ""}:${filters.projectId ?? ""}`;
+  const filterKey = `${currentMemberId ?? ""}:${filters.actorId ?? ""}:${filters.taskId ?? ""}:${filters.projectId ?? ""}`;
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,6 +47,7 @@ export function ActivityPage() {
     try {
       const page = await api.getActivity({
         ...filters,
+        ...(currentMemberId !== null ? { memberId: currentMemberId } : {}),
         ...(cursor ? { cursor } : {}),
         limit: PAGE_SIZE,
       });

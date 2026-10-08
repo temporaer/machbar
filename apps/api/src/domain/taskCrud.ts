@@ -1275,6 +1275,28 @@ export function updateTask(
         metadata: {
           previousStatus: currentTask.status as TaskStatus,
           nextStatus: "actionable",
+          before: {
+            effectiveOwnerId: effectiveOwnerBefore,
+            dueDate: currentTask.dueDate,
+            scheduledDate: currentTask.scheduledDate,
+            notBeforeAt: currentTask.notBeforeAt,
+            notBeforeDate: currentTask.notBeforeDate,
+            executable: currentTask.executable,
+            blocked: currentTask.blocked,
+            taskKind: currentTask.kind,
+            projectId: currentTask.projectId,
+          },
+          after: {
+            effectiveOwnerId: effectiveOwnerAfter,
+            dueDate: updated.dueDate,
+            scheduledDate: updated.scheduledDate,
+            notBeforeAt: updated.notBeforeAt,
+            notBeforeDate: updated.notBeforeDate,
+            executable: updated.executable,
+            blocked: updated.blocked,
+            taskKind: updated.kind,
+            projectId: updated.projectId,
+          },
           recurrenceOccurrenceId: occurrence.id,
           recurrenceResult: occurrence.result,
           occurrenceScheduledDate: occurrence.scheduledDate,
@@ -1320,6 +1342,20 @@ export function updateTask(
         metadata: {
           previousStatus: currentTask.status as TaskStatus,
           nextStatus: updated.status as TaskStatus,
+          before: {
+            effectiveOwnerId: effectiveOwnerBefore,
+            executable: currentTask.executable,
+            blocked: currentTask.blocked,
+            taskKind: currentTask.kind,
+            projectId: currentTask.projectId,
+          },
+          after: {
+            effectiveOwnerId: effectiveOwnerAfter,
+            executable: updated.executable,
+            blocked: updated.blocked,
+            taskKind: updated.kind,
+            projectId: updated.projectId,
+          },
           ...(coalescedChangedFields.length > 0
             ? { changedFields: coalescedChangedFields }
             : {}),
@@ -1400,7 +1436,31 @@ export function updateTask(
         entityTitle: updated.title,
         taskId: id,
         projectId: updated.projectId,
-        metadata: { changedFields: coalescedChangedFields },
+        metadata: {
+          changedFields: coalescedChangedFields,
+          before: {
+            effectiveOwnerId: effectiveOwnerBefore,
+            dueDate: currentTask.dueDate,
+            scheduledDate: currentTask.scheduledDate,
+            notBeforeAt: currentTask.notBeforeAt,
+            notBeforeDate: currentTask.notBeforeDate,
+            executable: currentTask.executable,
+            blocked: currentTask.blocked,
+            taskKind: currentTask.kind,
+            projectId: currentTask.projectId,
+          },
+          after: {
+            effectiveOwnerId: effectiveOwnerAfter,
+            dueDate: updated.dueDate,
+            scheduledDate: updated.scheduledDate,
+            notBeforeAt: updated.notBeforeAt,
+            notBeforeDate: updated.notBeforeDate,
+            executable: updated.executable,
+            blocked: updated.blocked,
+            taskKind: updated.kind,
+            projectId: updated.projectId,
+          },
+        },
       });
       if (
         effectiveOwnerBefore === null &&
@@ -1611,17 +1671,30 @@ export function deleteTask(db: Db, id: number, context?: MutationContext) {
     // internal cascade does not clean up each descendant's own shared
     // work_items row, so retire the whole subtree's ids explicitly here
     // (deleting each work_items row also cascades to its tasks row).
-    tx.delete(schema.workItems)
-      .where(inArray(schema.workItems.id, [id, ...descendantIds]))
-      .run();
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_deleted",
       entityType: "task",
       entityTitle: task.title,
+      taskId: id,
       projectId: task.projectId,
-      metadata: affectedCount > 1 ? { affectedCount } : {},
+      metadata: {
+        scope: task.scope,
+        affectedWorkItemId: id,
+        affectedEntityType: "task",
+        ...(affectedCount > 1 ? { affectedCount } : {}),
+        before: {
+          status: task.status,
+          ownerMemberId: task.ownerMemberId,
+          effectiveOwnerId: effectiveOwnerId(txDb, id),
+          projectId: task.projectId,
+          taskKind: task.kind ?? undefined,
+        },
+      },
     });
+    tx.delete(schema.workItems)
+      .where(inArray(schema.workItems.id, [id, ...descendantIds]))
+      .run();
     for (const taskId of [id, ...descendantIds]) {
       neutralizeEntityContributions(txDb, {
         activityEventId,

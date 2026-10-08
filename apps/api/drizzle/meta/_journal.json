@@ -120,6 +120,13 @@
       "when": 1791372839338,
       "tag": "0016_add_household_ai_context",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1791444184645,
+      "tag": "0017_add_activity_digest_state",
+      "breakpoints": true
     }
   ]
 }

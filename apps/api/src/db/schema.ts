@@ -103,6 +103,21 @@ export const members = sqliteTable("members", {
   color: text("color").notNull(),
 });
 
+export const memberActivityDigestState = sqliteTable(
+  "member_activity_digest_state",
+  {
+    memberId: integer("member_id")
+      .primaryKey()
+      .references(() => members.id, { onDelete: "cascade" }),
+    acknowledgedThroughEventId: integer("acknowledged_through_event_id")
+      .notNull()
+      .default(0),
+    updatedAt: text("updated_at")
+      .notNull()
+      .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+  },
+);
+
 export const householdAiContext = sqliteTable("household_ai_context", {
   id: integer("id").primaryKey(),
   householdDescription: text("household_description"),
