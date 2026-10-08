@@ -690,18 +690,22 @@ function classify(
     );
   }
 
-  if (
-    (last.kind === "task_external_wait_started" ||
-      (last.kind === "task_external_wait_updated" &&
-        last.metadata.changedFields?.some((field) =>
-          ["externalWait", "revisitDate"].includes(field),
-        ))) &&
-    events.some((event) => event.actor?.id !== viewerMemberId)
-  ) {
+  const waitStartedEvent = finalEvent(
+    events,
+    (event) =>
+      event.actor?.id !== viewerMemberId &&
+      (event.kind === "task_external_wait_started" ||
+        (event.kind === "task_external_wait_updated" &&
+          event.metadata.changedFields?.some((field) =>
+            ["externalWait", "revisitDate"].includes(field),
+          ) === true)),
+  );
+  if (waitStartedEvent !== undefined) {
     entries.push(
-      makeEntry("wait:" + itemId, "plan", 4, "wait_started", events, {
+      makeEntry("wait:" + itemId, "plan", 4, "wait_started", [waitStartedEvent], {
         project,
-        params: params({ title: last.entityTitle }),
+        params: params({ title: waitStartedEvent.entityTitle }),
+        actor: waitStartedEvent.actor,
       }),
     );
   }
