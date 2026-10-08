@@ -287,7 +287,7 @@ describe("AI intake draft helpers", () => {
   it("keeps date-only and date-plus-time availability pairs coherent when dates change", () => {
     const dateOnly = taskAvailabilityForLocalDate("2026-10-08", null);
     expect(dateOnly?.notBeforeDate).toBe("2026-10-08");
-    expect(taskAvailabilityClock(dateOnly?.notBeforeAt ?? null)).toBe("00:00");
+    expect(taskAvailabilityClock(dateOnly?.notBeforeAt ?? null)).toBe("06:00");
 
     const timed = taskAvailabilityForLocalDate("2026-10-08", "15:30");
     expect(timed?.notBeforeDate).toBe("2026-10-08");

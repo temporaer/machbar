@@ -5,6 +5,7 @@ import {
   normalizeIntakeNullableAbsenceFields,
   resolveOwnerSuggestion,
 } from "./inputNormalization.js";
+import { newDateOnlyRevisitAt } from "./revisit.js";
 
 import { Temporal } from "@js-temporal/polyfill";
 
@@ -560,37 +561,6 @@ export function intakePlanIssues(plan: IntakePlan): IntakeIssue[] {
   return issues;
 }
 
-function berlinMidnight(date: string): string | null {
-  if (!validDate(date)) return null;
-  const [year, month, day] = date.split("-").map(Number);
-  let candidate = Date.UTC(year!, month! - 1, day!, 0, 0, 0);
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: INTAKE_TIMEZONE,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: "h23",
-    }).formatToParts(new Date(candidate));
-    const values = Object.fromEntries(parts
-      .filter((part) => part.type !== "literal")
-      .map((part) => [part.type, Number(part.value)])) as Record<string, number>;
-    const local = Date.UTC(
-      values.year ?? 0,
-      (values.month ?? 1) - 1,
-      values.day ?? 1,
-      values.hour ?? 0,
-      values.minute ?? 0,
-      values.second ?? 0,
-    );
-    candidate += Date.UTC(year!, month! - 1, day!, 0, 0, 0) - local;
-  }
-  return new Date(candidate).toISOString();
-}
-
 function berlinDateForInstant(value: string): string | null {
   if (!validDateTime(value)) return null;
   return new Intl.DateTimeFormat("en-CA", {
@@ -669,7 +639,7 @@ export function normalizeIntakePlan(plan: IntakePlan): IntakeNormalizationResult
         );
       }
     } else if (item.notBeforeDate !== null && item.notBeforeAt === null) {
-      item.notBeforeAt = berlinMidnight(item.notBeforeDate);
+      item.notBeforeAt = newDateOnlyRevisitAt(item.notBeforeDate, INTAKE_TIMEZONE);
     }
 
     if (item.parentKey !== null) {

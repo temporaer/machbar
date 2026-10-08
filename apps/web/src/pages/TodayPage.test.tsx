@@ -6,7 +6,11 @@ import { TodayPage } from "./TodayPage";
 import { IdentitySelector } from "../components/IdentitySelector";
 import { api } from "../lib/api";
 import { makeMember, makeProject, makeTag, makeTask } from "../test/fixtures";
-import type { Agenda } from "@machbar/shared";
+import {
+  calendarDateForInstant,
+  newDateOnlyRevisitAt,
+  type Agenda,
+} from "@machbar/shared";
 import { TIMED_ELIGIBILITY_REFRESH_MS } from "../lib/refresh";
 
 vi.mock("../lib/api", () => ({
@@ -91,7 +95,9 @@ describe("TodayPage", () => {
 
     expect(pulse).toHaveAttribute("href", "/more");
     expect(pulse).toHaveTextContent("Gemeinsam · 7 Tage");
-    expect(pulse.querySelectorAll(".contribution-pulse-segment")).toHaveLength(7);
+    expect(pulse.querySelectorAll(".contribution-pulse-segment")).toHaveLength(
+      7,
+    );
     expect(pulse.querySelectorAll(".contribution-pulse-none")).toHaveLength(7);
     expect(pulse).not.toHaveTextContent(/\d+ Punkte/);
 
@@ -126,7 +132,9 @@ describe("TodayPage", () => {
     expect(shortcut).toHaveAttribute("href", "/more/cleanup-round");
     expect(shortcut).toHaveClass("cleanup-round-shortcut");
     expect(container.querySelector(".cleanup-round-card")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Runde starten" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Runde starten" }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides the Klärungsrunde shortcut when the Home Assistant AI Task is unavailable", async () => {
@@ -149,7 +157,9 @@ describe("TodayPage", () => {
       revisit: [makeTask({ id: 504, title: "Revisit task" })],
       dueSoon: [makeTask({ id: 505, title: "Due soon task" })],
       shared: [makeTask({ id: 506, title: "Additional task" })],
-      completedToday: [makeTask({ id: 507, title: "Completed task", status: "done" })],
+      completedToday: [
+        makeTask({ id: 507, title: "Completed task", status: "done" }),
+      ],
     });
     const { container } = renderWithProviders(<TodayPage />);
     await screen.findByText("Overdue task");
@@ -169,11 +179,11 @@ describe("TodayPage", () => {
           index === orderedLabels.length - 1 ||
           Boolean(
             label.compareDocumentPosition(orderedLabels[index + 1]!) &
-              Node.DOCUMENT_POSITION_FOLLOWING,
+            Node.DOCUMENT_POSITION_FOLLOWING,
           ),
       ),
     ).toBe(true);
-    expect(container.querySelector('details.section[open]')).toBeNull();
+    expect(container.querySelector("details.section[open]")).toBeNull();
   });
 
   it("switches between my and the household agenda from the compact header toggle", async () => {
@@ -327,7 +337,9 @@ describe("TodayPage", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.getByText("Für heute ist nichts geplant.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Für heute ist nichts geplant."),
+    ).toBeInTheDocument();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(TIMED_ELIGIBILITY_REFRESH_MS);
@@ -361,7 +373,9 @@ describe("TodayPage", () => {
       screen.getByRole("button", { name: "Hinweise zu dieser Seite anzeigen" }),
     );
     expect(screen.getByText(explanation)).toBeInTheDocument();
-    expect(container.querySelector(".task-row-surface-actionable")).toBeInTheDocument();
+    expect(
+      container.querySelector(".task-row-surface-actionable"),
+    ).toBeInTheDocument();
     expect(container.querySelector(".task-row-header")).toContainElement(
       screen.getByText("Finanzen"),
     );
@@ -369,18 +383,17 @@ describe("TodayPage", () => {
   });
 
   it("bündelt alle sichtbaren Abschnittshinweise im einzigen Seitenhinweis", async () => {
-    const now = new Date();
-    const today = [
-      now.getFullYear(),
-      String(now.getMonth() + 1).padStart(2, "0"),
-      String(now.getDate()).padStart(2, "0"),
-    ].join("-");
+    const today = calendarDateForInstant(
+      new Date().toISOString(),
+      "Europe/Berlin",
+    )!;
     const revisitTask = makeTask({
       id: 2,
       title: "Leiter zurückbringen",
       blocked: true,
       executable: false,
       scheduledDate: today,
+      revisitAt: newDateOnlyRevisitAt(today, "Europe/Berlin"),
       externalWait: {
         waitingFor: "Rückmeldung der Nachbarn",
         revisitDate: today,
@@ -448,7 +461,9 @@ describe("TodayPage", () => {
   it("zeigt machbare Aufgaben ohne Termin als standardmäßig geöffneten Nebenabschnitt, wenn es die einzige Arbeitsgruppe ist", async () => {
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
-      unscheduled: [makeTask({ id: 4, title: "Keller aufräumen", scheduledDate: null })],
+      unscheduled: [
+        makeTask({ id: 4, title: "Keller aufräumen", scheduledDate: null }),
+      ],
     });
     renderWithProviders(<TodayPage />);
 
@@ -465,7 +480,11 @@ describe("TodayPage", () => {
       unscheduled: [makeTask({ id: 6, title: "Ohne Termin" })],
       projects: [
         {
-          project: makeProject({ id: 88, title: "Heute-Projekt", dueDate: "2026-08-25" }),
+          project: makeProject({
+            id: 88,
+            title: "Heute-Projekt",
+            dueDate: "2026-08-25",
+          }),
           qualification: "due",
           attentionBucket: "dueToday",
           nextAction: null,
@@ -478,11 +497,19 @@ describe("TodayPage", () => {
     const { container } = renderWithProviders(<TodayPage />);
 
     await screen.findByText("Heute erledigen");
-    const additional = screen.getByText("Weitere machbare Aufgaben (1)").closest("details");
+    const additional = screen
+      .getByText("Weitere machbare Aufgaben (1)")
+      .closest("details");
     expect(additional).not.toHaveAttribute("open");
-    expect(container.querySelector(".task-row-attention-due-today")).toBeInTheDocument();
-    expect(container.querySelector(".task-row-attention-available")).toBeInTheDocument();
-    expect(container.querySelector(".project-agenda-row--due-today")).toBeInTheDocument();
+    expect(
+      container.querySelector(".task-row-attention-due-today"),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(".task-row-attention-available"),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector(".project-agenda-row--due-today"),
+    ).toBeInTheDocument();
   });
 
   it("zeigt keinen eigenen Projekte-Abschnitt mehr in der Heute-Ansicht", async () => {
@@ -511,7 +538,9 @@ describe("TodayPage", () => {
       screen.queryByRole("heading", { name: "Projekte" }),
     ).not.toBeInTheDocument();
     // The Next Action must never be duplicated inside the project row.
-    expect(screen.queryByText(/Transporter reservieren/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Transporter reservieren/),
+    ).not.toBeInTheDocument();
   });
 
   it("zeigt ein heute fälliges Projekt unter der Überschrift 'Heute fällig'", async () => {
@@ -520,7 +549,11 @@ describe("TodayPage", () => {
       dueToday: [makeTask({ id: 1, title: "Fällige Aufgabe" })],
       projects: [
         {
-          project: makeProject({ id: 78, title: "Heute fälliges Projekt", dueDate: "2026-08-25" }),
+          project: makeProject({
+            id: 78,
+            title: "Heute fälliges Projekt",
+            dueDate: "2026-08-25",
+          }),
           qualification: "due",
           attentionBucket: "dueToday",
           nextAction: null,
@@ -537,7 +570,9 @@ describe("TodayPage", () => {
     });
     const section = projectLink.closest(".section");
     expect(section).not.toBeNull();
-    expect(within(section as HTMLElement).getByText("Heute fällig")).toBeInTheDocument();
+    expect(
+      within(section as HTMLElement).getByText("Heute fällig"),
+    ).toBeInTheDocument();
   });
 
   it("zeigt ein bald fälliges Projekt unter der Überschrift 'Bald fällig'", async () => {
@@ -545,7 +580,11 @@ describe("TodayPage", () => {
       ...makeEmptyAgenda(),
       projects: [
         {
-          project: makeProject({ id: 79, title: "Bald fälliges Projekt", dueDate: "2026-08-28" }),
+          project: makeProject({
+            id: 79,
+            title: "Bald fälliges Projekt",
+            dueDate: "2026-08-28",
+          }),
           qualification: "due",
           attentionBucket: "dueSoon",
           nextAction: null,
@@ -561,7 +600,9 @@ describe("TodayPage", () => {
       name: "Bald fälliges Projekt",
     });
     const section = projectLink.closest(".section");
-    expect(within(section as HTMLElement).getByText("Bald fällig")).toBeInTheDocument();
+    expect(
+      within(section as HTMLElement).getByText("Bald fällig"),
+    ).toBeInTheDocument();
   });
 
   it("zeigt ein überfälliges Projekt unter der Überschrift 'Überfällig'", async () => {
@@ -569,7 +610,11 @@ describe("TodayPage", () => {
       ...makeEmptyAgenda(),
       projects: [
         {
-          project: makeProject({ id: 80, title: "Überfälliges Projekt", dueDate: "2026-08-01" }),
+          project: makeProject({
+            id: 80,
+            title: "Überfälliges Projekt",
+            dueDate: "2026-08-01",
+          }),
           qualification: "due",
           attentionBucket: "overdue",
           nextAction: null,
@@ -585,7 +630,9 @@ describe("TodayPage", () => {
       name: "Überfälliges Projekt",
     });
     const section = projectLink.closest(".section");
-    expect(within(section as HTMLElement).getByText("Überfällig")).toBeInTheDocument();
+    expect(
+      within(section as HTMLElement).getByText("Überfällig"),
+    ).toBeInTheDocument();
   });
 
   it("zeigt ein geplantes Projekt unter derselben Überschrift wie geplante Aufgaben", async () => {
@@ -594,7 +641,11 @@ describe("TodayPage", () => {
       planned: [makeTask({ id: 2, title: "Geplante Aufgabe" })],
       projects: [
         {
-          project: makeProject({ id: 81, title: "Geplantes Projekt", scheduledDate: "2026-08-20" }),
+          project: makeProject({
+            id: 81,
+            title: "Geplantes Projekt",
+            scheduledDate: "2026-08-20",
+          }),
           qualification: "scheduled",
           attentionBucket: "planned",
           nextAction: null,
@@ -610,8 +661,12 @@ describe("TodayPage", () => {
       name: "Geplantes Projekt",
     });
     const section = projectLink.closest(".section");
-    expect(within(section as HTMLElement).getByText("Für heute geplant")).toBeInTheDocument();
-    expect(within(section as HTMLElement).getByText("Geplante Aufgabe")).toBeInTheDocument();
+    expect(
+      within(section as HTMLElement).getByText("Für heute geplant"),
+    ).toBeInTheDocument();
+    expect(
+      within(section as HTMLElement).getByText("Geplante Aufgabe"),
+    ).toBeInTheDocument();
   });
 
   it("zeigt weiterhin den kompakten Hinweis für ein blockiertes Projekt", async () => {
@@ -619,7 +674,11 @@ describe("TodayPage", () => {
       ...makeEmptyAgenda(),
       projects: [
         {
-          project: makeProject({ id: 82, title: "Blockiertes Projekt", dueDate: "2026-08-01" }),
+          project: makeProject({
+            id: 82,
+            title: "Blockiertes Projekt",
+            dueDate: "2026-08-01",
+          }),
           qualification: "due",
           attentionBucket: "overdue",
           nextAction: null,
@@ -646,7 +705,9 @@ describe("TodayPage", () => {
     // agenda must be requested for exactly that member — never a
     // different/other member's id (only a transient `null` may precede it,
     // while identity is still resolving on first mount).
-    await waitFor(() => expect(mockedApi.getAgenda).toHaveBeenCalledWith(1, "mine"));
+    await waitFor(() =>
+      expect(mockedApi.getAgenda).toHaveBeenCalledWith(1, "mine"),
+    );
     for (const [memberId, scope] of mockedApi.getAgenda.mock.calls) {
       expect(memberId === null || memberId === 1).toBe(true);
       expect(scope).toBe("mine");
@@ -698,8 +759,16 @@ describe("TodayPage", () => {
   });
 
   it("renders task subtrees compactly, hiding terminal descendants behind an inline summary", async () => {
-    const doneChild = makeTask({ id: 401, title: "Erledigter Nachkomme", status: "done" });
-    const openChild = makeTask({ id: 402, title: "Offener Nachkomme", status: "actionable" });
+    const doneChild = makeTask({
+      id: 401,
+      title: "Erledigter Nachkomme",
+      status: "done",
+    });
+    const openChild = makeTask({
+      id: 402,
+      title: "Offener Nachkomme",
+      status: "actionable",
+    });
     mockedApi.getAgenda.mockResolvedValue({
       ...makeEmptyAgenda(),
       dueToday: [
@@ -718,7 +787,9 @@ describe("TodayPage", () => {
     // Compact Today presentation hides done/cancelled descendants by
     // default, behind a "N erledigt anzeigen" affordance.
     expect(screen.queryByText("Erledigter Nachkomme")).not.toBeInTheDocument();
-    const toggle = await screen.findByRole("button", { name: "1 erledigt anzeigen" });
+    const toggle = await screen.findByRole("button", {
+      name: "1 erledigt anzeigen",
+    });
     await userEvent.click(toggle);
     expect(await screen.findByText("Erledigter Nachkomme")).toBeInTheDocument();
   });

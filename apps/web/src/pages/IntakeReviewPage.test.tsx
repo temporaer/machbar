@@ -1199,7 +1199,7 @@ describe("IntakeReviewPage", () => {
     const availability = mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0];
     expect(availability?.notBeforeDate).toBe("2026-10-12");
     expect(availability?.notBeforeAt).toBeTruthy();
-    expect(availability?.notBeforeAt).toBe("2026-10-11T22:00:00Z");
+    expect(availability?.notBeforeAt).toBe("2026-10-12T04:00:00Z");
   });
 
   it("changes a timed availability date and clears both date and time fields", async () => {
@@ -1209,7 +1209,7 @@ describe("IntakeReviewPage", () => {
     fireEvent.change(date, { target: { value: "12.10.2026" } });
     fireEvent.blur(date);
     fireEvent.click(editor.getByRole("checkbox", { name: "Uhrzeit" }));
-    fireEvent.change(editor.getByDisplayValue("08:00"), { target: { value: "17:30" } });
+    fireEvent.change(editor.getByDisplayValue("06:00"), { target: { value: "17:30" } });
     fireEvent.change(date, { target: { value: "13.10.2026" } });
     fireEvent.blur(date);
     expect(date).toHaveValue("13.10.2026");
