@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
 import { getActivityDigest, acknowledgeActivityDigest } from "../src/activity/digest.js";
 import * as schema from "../src/db/schema.js";
 import {
@@ -424,6 +425,96 @@ describe("activity digest", () => {
     expect(entries[0]?.actor?.name).toBe("Sarah");
   });
 
+  it("reduces a wait start followed by resolution to the surviving resolution", () => {
+    const viewer = member("Hannes");
+    const sarah = member("Sarah");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Rückmeldung prüfen",
+      ownerMemberId: viewer.id,
+      ownerInheritanceMode: "explicit",
+      status: "actionable",
+    });
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values([
+      {
+        kind: "task_external_wait_started",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["externalWait"],
+        },
+      },
+      {
+        kind: "task_external_wait_resolved",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["externalWait"],
+          after: { executable: true, effectiveOwnerId: viewer.id },
+        },
+      },
+    ]).run();
+
+    const entries = getActivityDigest(ctx.handle.db, viewer.id).entries;
+    expect(entries.map((entry) => entry.kind)).toEqual(["wait_resolved"]);
+  });
+
+  it("does not retain a wait resolution when a later wait is active", () => {
+    const viewer = member("Hannes");
+    const sarah = member("Sarah");
+    const lars = member("Lars");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Anbieter kontaktieren",
+      ownerMemberId: viewer.id,
+      ownerInheritanceMode: "explicit",
+      status: "actionable",
+    });
+    ctx.handle.db.insert(schema.taskExternalWaits).values({
+      taskId: task.id,
+      waitingFor: "Anbieter",
+      revisitDate: null,
+    }).run();
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values([
+      {
+        kind: "task_external_wait_resolved",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["externalWait"],
+        },
+      },
+      {
+        kind: "task_external_wait_started",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: lars.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["externalWait"],
+        },
+      },
+    ]).run();
+
+    const entries = getActivityDigest(ctx.handle.db, viewer.id).entries;
+    expect(entries.map((entry) => entry.kind)).toEqual(["wait_started"]);
+    expect(entries[0]?.actor?.name).toBe("Lars");
+  });
+
   it("keeps an unlock recorded before an unrelated edit", () => {
     const viewer = member("Hannes");
     const sarah = member("Sarah");
@@ -624,6 +715,117 @@ describe("activity digest", () => {
     expect(entry.kind).toBe("plan_changed");
     expect(entry.params.dateType).toBe("deadline");
     expect(entry.actor?.name).toBe("Sarah");
+  });
+
+  it("suppresses a deadline announcement when the viewer supersedes it", () => {
+    const viewer = member("Hannes");
+    const sarah = member("Sarah");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Frist überarbeiten",
+      ownerMemberId: viewer.id,
+      ownerInheritanceMode: "explicit",
+      status: "actionable",
+    });
+    const date = (offset: number) => {
+      const value = new Date();
+      value.setUTCDate(value.getUTCDate() + offset);
+      return value.toISOString().slice(0, 10);
+    };
+    const finalDate = date(5);
+    ctx.handle.db.update(schema.workItems)
+      .set({ dueDate: finalDate })
+      .where(eq(schema.workItems.id, task.id))
+      .run();
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values([
+      {
+        kind: "task_updated",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["dueDate"],
+          before: { dueDate: date(10), effectiveOwnerId: viewer.id },
+          after: { dueDate: date(7), effectiveOwnerId: viewer.id },
+        },
+      },
+      {
+        kind: "task_updated",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: viewer.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["dueDate"],
+          before: { dueDate: date(7), effectiveOwnerId: viewer.id },
+          after: { dueDate: finalDate, effectiveOwnerId: viewer.id },
+        },
+      },
+    ]).run();
+
+    expect(getActivityDigest(ctx.handle.db, viewer.id).entries).toEqual([]);
+  });
+
+  it("attributes a superseding deadline to the member who set its final value", () => {
+    const viewer = member("Hannes");
+    const sarah = member("Sarah");
+    const lars = member("Lars");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Frist festlegen",
+      ownerMemberId: viewer.id,
+      ownerInheritanceMode: "explicit",
+      status: "actionable",
+    });
+    const date = (offset: number) => {
+      const value = new Date();
+      value.setUTCDate(value.getUTCDate() + offset);
+      return value.toISOString().slice(0, 10);
+    };
+    const finalDate = date(5);
+    ctx.handle.db.update(schema.workItems)
+      .set({ dueDate: finalDate })
+      .where(eq(schema.workItems.id, task.id))
+      .run();
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values([
+      {
+        kind: "task_updated",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["dueDate"],
+          before: { dueDate: date(10), effectiveOwnerId: viewer.id },
+          after: { dueDate: date(7), effectiveOwnerId: viewer.id },
+        },
+      },
+      {
+        kind: "task_updated",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: lars.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["dueDate"],
+          before: { dueDate: date(7), effectiveOwnerId: viewer.id },
+          after: { dueDate: finalDate, effectiveOwnerId: viewer.id },
+        },
+      },
+    ]).run();
+
+    const entry = getActivityDigest(ctx.handle.db, viewer.id).entries[0]!;
+    expect(entry.kind).toBe("plan_changed");
+    expect(entry.actor?.name).toBe("Lars");
   });
 
   it("does not expose invisible event counts in the digest response", () => {

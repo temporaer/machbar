@@ -388,10 +388,6 @@ function classify(
     );
   }
 
-  const waitResolvedEvent = finalEvent(
-    events,
-    (event) => event.kind === "task_external_wait_resolved",
-  );
   const unlockCandidates = new Map<number, DigestEvent>();
   for (const event of events) {
     for (const taskId of event.metadata.newlyExecutableTaskIds ?? []) {
@@ -636,7 +632,7 @@ function classify(
   for (const event of events) {
     if (
       (event.kind !== "task_updated" && event.kind !== "project_updated") ||
-      event.actor?.id === viewerMemberId
+      event.metadata.changedFields === undefined
     ) {
       continue;
     }
@@ -644,22 +640,20 @@ function classify(
       if (relevantDateFields.includes(field)) dateEvents.set(field, event);
     }
   }
-  const changedDateFields = [
+  const collaborativeDateFields = [
     ...new Set(
-      events.flatMap((event) =>
-        event.actor?.id !== viewerMemberId
-          ? event.metadata.changedFields ?? []
-          : [],
-      ),
+      [...dateEvents.entries()]
+        .filter(([, event]) => event.actor?.id !== viewerMemberId)
+        .map(([field]) => field),
     ),
   ];
   const planChange =
-    dateEvents.size === 0
+    collaborativeDateFields.length === 0
       ? null
       : relevantDateChange(
           before,
           after,
-          changedDateFields,
+          collaborativeDateFields,
           timezone,
         );
   if (planChange !== null && !entries.some((entry) => entry.kind === "task_assigned")) {
@@ -690,16 +684,27 @@ function classify(
     );
   }
 
-  const waitStartedEvent = finalEvent(
-    events,
+  const waitLifecycleEvents = events.filter(
     (event) =>
-      event.actor?.id !== viewerMemberId &&
-      (event.kind === "task_external_wait_started" ||
-        (event.kind === "task_external_wait_updated" &&
-          event.metadata.changedFields?.some((field) =>
-            ["externalWait", "revisitDate"].includes(field),
-          ) === true)),
+      event.kind === "task_external_wait_started" ||
+      event.kind === "task_external_wait_updated" ||
+      event.kind === "task_external_wait_resolved",
   );
+  const finalWaitEvent = waitLifecycleEvents.at(-1);
+  const currentTask = itemId === null ? undefined : graph.tasksById.get(itemId);
+  const currentlyWaiting =
+    currentTask !== undefined && currentTask.externalWait !== null;
+  const waitStartedEvent =
+    finalWaitEvent !== undefined &&
+    currentlyWaiting &&
+    finalWaitEvent.actor?.id !== viewerMemberId &&
+    (finalWaitEvent.kind === "task_external_wait_started" ||
+      (finalWaitEvent.kind === "task_external_wait_updated" &&
+        finalWaitEvent.metadata.changedFields?.some((field) =>
+          ["externalWait", "revisitDate"].includes(field),
+        ) === true))
+      ? finalWaitEvent
+      : undefined;
   if (waitStartedEvent !== undefined) {
     entries.push(
       makeEntry("wait:" + itemId, "plan", 4, "wait_started", [waitStartedEvent], {
@@ -709,8 +714,13 @@ function classify(
       }),
     );
   }
+  const waitResolvedEvent =
+    finalWaitEvent?.kind === "task_external_wait_resolved"
+      ? finalWaitEvent
+      : undefined;
   if (
     waitResolvedEvent !== undefined &&
+    !currentlyWaiting &&
     waitResolvedEvent.actor?.id !== viewerMemberId &&
     itemId !== null &&
     graph.tasksById.get(itemId)?.executable === true &&
