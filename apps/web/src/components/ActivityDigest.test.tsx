@@ -102,6 +102,44 @@ describe("ActivityDigest", () => {
     expect(container.querySelector(".activity-digest")).toBeNull();
   });
 
+  it("shows a retryable error when the initial fetch fails", async () => {
+    mockedGetDigest.mockRejectedValue(new Error("offline"));
+    renderDigest();
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Änderungen neu laden" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Als gelesen markieren" })).toBeNull();
+  });
+
+  it("renders the digest after retrying an initial fetch failure", async () => {
+    mockedGetDigest
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(digest([entry(1)]));
+    renderDigest();
+
+    const retry = await screen.findByRole("button", { name: "Änderungen neu laden" });
+    await userEvent.click(retry);
+
+    expect(await screen.findByText("Seit deinem letzten Besuch")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(mockedGetDigest).toHaveBeenCalledTimes(2);
+  });
+
+  it("retains existing entries when a background refresh fails", async () => {
+    mockedGetDigest
+      .mockResolvedValueOnce(digest([entry(1)]))
+      .mockRejectedValueOnce(new Error("offline"));
+    renderDigest();
+    await screen.findByText("Seit deinem letzten Besuch");
+
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() => expect(mockedGetDigest).toHaveBeenCalledTimes(2));
+    expect(screen.getByText("Seit deinem letzten Besuch")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Änderungen neu laden" })).toBeInTheDocument();
+  });
+
   it("shows five entries and expands the remaining curated entries", async () => {
     mockedGetDigest.mockResolvedValue(digest(Array.from({ length: 6 }, (_, i) => entry(i + 1))));
     renderDigest();

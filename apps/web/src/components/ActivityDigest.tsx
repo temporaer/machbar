@@ -177,7 +177,7 @@ export function ActivityDigest() {
   const [acknowledging, setAcknowledging] = useState(false);
   const [ackError, setAckError] = useState<string | null>(null);
   const memberKey = currentMemberId ?? "none";
-  const { data, error, reload } = useAsync<ActivityDigest | null>(
+  const { data, error, refreshError, reload } = useAsync<ActivityDigest | null>(
     () =>
       currentMemberId === null
         ? Promise.resolve(null)
@@ -206,7 +206,22 @@ export function ActivityDigest() {
     return [...map.entries()].filter(([, values]) => values.length > 0);
   }, [visibleEntries]);
 
-  if (entries.length === 0) return null;
+  if (entries.length === 0) {
+    const emptyStateError = data === null ? error : refreshError;
+    if (emptyStateError !== null) {
+      return (
+        <div className="activity-digest-error">
+          <p className="form-error" role="alert">
+            {emptyStateError}
+          </p>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={reload}>
+            {strings.activityDigestRetry}
+          </button>
+        </div>
+      );
+    }
+    return null;
+  }
 
   const acknowledge = async () => {
     if (!data || acknowledging) return;
@@ -266,7 +281,12 @@ export function ActivityDigest() {
           </section>
         ))}
       </div>
-      {error ? (
+      {refreshError ? (
+        <p className="form-error" role="alert">
+          {refreshError}
+        </p>
+      ) : null}
+      {refreshError ? (
         <button type="button" className="btn btn-sm btn-ghost" onClick={reload}>
           {strings.activityDigestRetry}
         </button>
