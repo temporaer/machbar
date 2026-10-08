@@ -1143,6 +1143,37 @@ const extra = {
   recentActivityEmpty: "Noch keine Aktivitäten.",
   viewAllActivities: "Alle Aktivitäten anzeigen",
   loadMore: "Mehr laden",
+  activityDigestTitle: "Seit deinem letzten Besuch",
+  activityDigestShowMore: "Weitere Änderungen anzeigen",
+  activityDigestShowLess: "Weniger anzeigen",
+  activityDigestAcknowledge: "Als gelesen markieren",
+  activityDigestRetry: "Änderungen neu laden",
+  activityDigestAcknowledgeError: "Änderungen konnten nicht als gelesen markiert werden.",
+  activityDigestCategoryPersonal: "Du bist gefragt",
+  activityDigestCategoryMilestone: "Wichtige Ergebnisse",
+  activityDigestCategoryProgress: "Das wurde geschafft",
+  activityDigestCategoryPlan: "Pläne haben sich geändert",
+  activityDigestCategoryNewWork: "Neue Arbeit",
+  activityDigestTaskAssigned: (actor: string, title: string) =>
+    `${actor} hat dir „${title}“ zugewiesen.`,
+  activityDigestTaskUnassigned: (title: string) =>
+    `„${title}“ wird nicht mehr von dir erwartet.`,
+  activityDigestTaskCompleted: (actor: string, title: string) =>
+    `${actor} hat „${title}“ erledigt.`,
+  activityDigestProjectCompleted: (actor: string, title: string) =>
+    `${actor} hat das Projekt „${title}“ abgeschlossen.`,
+  activityDigestProjectReopened: (title: string) =>
+    `Das Projekt „${title}“ wurde wieder geöffnet.`,
+  activityDigestProjectProgress: (count: number, project: string) =>
+    `Im Projekt „${project}“ wurden ${count} Aufgaben erledigt.`,
+  activityDigestPlanChanged: (actor: string, title: string) =>
+    `${actor} hat die Planung für „${title}“ geändert.`,
+  activityDigestWaitStarted: (title: string) =>
+    `„${title}“ wartet jetzt auf eine Rückmeldung.`,
+  activityDigestWaitResolved: (title: string) =>
+    `„${title}“ kann wieder bearbeitet werden.`,
+  activityDigestNewWork: (title: string) =>
+    `Neue Arbeit: „${title}“.`,
 
   documentTitle: "Machbar",
   metaDescription: "Machbar – Das ist machbar.",
@@ -1284,6 +1315,9 @@ const extra = {
     activity_actor_not_found: "Die ausgewählte Person wurde nicht gefunden.",
     activity_cursor_invalid: "Die Aktivitätsseite ist ungültig.",
     activity_query_invalid: "Die Aktivitätsfilter sind ungültig.",
+    activity_digest_query_invalid: "Die Änderungen konnten nicht geladen werden.",
+    activity_digest_ack_invalid: "Die Änderungen konnten nicht als gelesen markiert werden.",
+    activity_digest_member_required: "Bitte wähle zuerst eine Person aus.",
     agenda_query_invalid: "Die Heute-Abfrage ist ungültig.",
     authentication_required: "Bitte melde dich zuerst an.",
     auth_return_target_invalid: "Das Rückkehrziel der Anmeldung ist ungültig.",

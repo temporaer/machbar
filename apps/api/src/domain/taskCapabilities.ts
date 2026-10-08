@@ -182,6 +182,21 @@ export function followUpExternalWait(
           ...(waitChanged ? ["externalWait"] : []),
           ...(revisitChanged ? ["revisitDate"] : []),
         ],
+        before: {
+          externalWait: {
+            title: existing.waitingFor ?? "",
+            revisitDate: existing.revisitDate,
+          },
+        },
+        after: {
+          externalWait:
+            input.action === "resolve"
+              ? null
+              : {
+                  title: waitingFor ?? "",
+                  revisitDate,
+                },
+        },
       },
     });
     if (input.action === "resolve") {
@@ -317,6 +332,20 @@ export function upsertExternalWait(
           ...(waitChanged ? ["externalWait"] : []),
           ...(revisitChanged ? ["revisitDate"] : []),
         ],
+        before: existing
+          ? {
+              externalWait: {
+                title: existing.waitingFor ?? "",
+                revisitDate: existing.revisitDate,
+              },
+            }
+          : { externalWait: null },
+        after: {
+          externalWait: {
+            title: waitingFor ?? "",
+            revisitDate,
+          },
+        },
       },
     });
     if ((existing?.revisitDate ?? null) === null && revisitDate !== null) {

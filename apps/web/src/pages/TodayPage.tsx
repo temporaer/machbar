@@ -15,6 +15,7 @@ import { QuickAdd } from "../components/QuickAdd";
 import { ProjectAgendaRow } from "../components/ProjectAgendaRow";
 import { PageHeader, type PageHint } from "../components/PageHeader";
 import { ContributionPulse } from "../components/ContributionPulse";
+import { ActivityDigest } from "../components/ActivityDigest";
 import { readTodayScope, writeTodayScope, nextAgendaScope } from "../lib/todayScope";
 import { IconActionGlyph } from "../components/IconActionButton";
 import { InteractionScopeProvider } from "../lib/interactionScope";
@@ -177,6 +178,7 @@ export function TodayPage() {
           }
           hints={pageHints}
         />
+        <ActivityDigest />
         <ContributionPulse />
         {loading ? <LoadingState /> : null}
         {error ? <ErrorState message={error} onRetry={reload} /> : null}

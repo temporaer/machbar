@@ -383,6 +383,18 @@ export function updateProject(
             ...(tagsChanged ? ["tags"] : []),
             ...(contextsChanged ? ["contexts"] : []),
           ],
+          before: {
+            ownerMemberId: project.ownerMemberId,
+            dueDate: project.dueDate,
+            scheduledDate: project.scheduledDate,
+            projectId: id,
+          },
+          after: {
+            ownerMemberId: updated.ownerMemberId,
+            dueDate: updated.dueDate,
+            scheduledDate: updated.scheduledDate,
+            projectId: id,
+          },
         },
       });
       if (project.ownerMemberId === null && updated.ownerMemberId !== null) {

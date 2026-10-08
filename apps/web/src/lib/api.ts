@@ -1,6 +1,7 @@
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import type {
   ActivityPage,
+  ActivityDigest,
   HouseholdAiContext,
   Agenda,
   ApiErrorCode,
@@ -387,6 +388,7 @@ export interface RefinementFilters {
 export interface ActivityFilters {
   cursor?: string;
   limit?: number;
+  memberId?: number | null;
   actorId?: number;
   taskId?: number;
   projectId?: number;
@@ -648,11 +650,24 @@ export const api = {
       `/activity${query({
         cursor: filters?.cursor,
         limit: filters?.limit,
+        memberId: filters?.memberId,
         actorId: filters?.actorId,
         taskId: filters?.taskId,
         projectId: filters?.projectId,
       })}`,
     ),
+  getActivityDigest: (memberId?: number | null) =>
+    request<ActivityDigest>(
+      `/activity/digest${query({ memberId })}`,
+    ),
+  acknowledgeActivityDigest: (
+    throughEventId: number,
+    memberId?: number | null,
+  ) =>
+    request<{ acknowledgedThroughEventId: number }>("/activity/digest/ack", {
+      method: "POST",
+      body: JSON.stringify({ throughEventId, memberId }),
+    }),
 
   getContributionSummary: () => {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";

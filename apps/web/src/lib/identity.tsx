@@ -303,3 +303,7 @@ export function useIdentity(): IdentityContextValue {
   if (!ctx) throw new Error("useIdentity must be used within an IdentityProvider");
   return ctx;
 }
+
+export function useOptionalIdentity(): Pick<IdentityContextValue, "currentMemberId"> {
+  return useContext(IdentityContext) ?? { currentMemberId: null };
+}

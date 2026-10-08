@@ -654,6 +654,7 @@ export const searchQuerySchema = z.object({
 export const activityQuerySchema = z.object({
   cursor: z.string().min(1).max(512).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  memberId: z.coerce.number().int().positive().optional(),
   actorId: z.coerce.number().int().positive().optional(),
   taskId: z.coerce.number().int().positive().optional(),
   projectId: z.coerce.number().int().positive().optional(),

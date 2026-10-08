@@ -95,7 +95,7 @@ describe("atomic activity recording", () => {
     const edit = events().at(-1)!;
     expect(edit.kind).toBe("task_updated");
     expect(edit.entityTitle).toBe("Nachher");
-    expect(edit.metadata).toEqual({
+    expect(edit.metadata).toMatchObject({
       changedFields: ["title", "notes", "dueDate"],
     });
     expect(JSON.stringify(edit.metadata)).not.toContain("streng vertraulich");
@@ -111,7 +111,7 @@ describe("atomic activity recording", () => {
 
     expect(response.statusCode).toBe(200);
     const event = events().at(-1)!;
-    expect(event.metadata).toEqual({ changedFields: ["notesAppended"] });
+    expect(event.metadata).toMatchObject({ changedFields: ["notesAppended"] });
     expect(JSON.stringify(event)).not.toContain("dieser Text darf nicht");
   });
 
@@ -131,7 +131,7 @@ describe("atomic activity recording", () => {
 
     expect(response.statusCode).toBe(200);
     const event = events().at(-1)!;
-    expect(event.metadata).toEqual({ changedFields: ["notesAppended"] });
+    expect(event.metadata).toMatchObject({ changedFields: ["notesAppended"] });
     expect(JSON.stringify(event)).not.toContain("dieser Projekttext");
   });
 
@@ -167,11 +167,11 @@ describe("atomic activity recording", () => {
     expect(events().slice(before)).toEqual([
       expect.objectContaining({
         kind: "project_acceptance_criterion_checked",
-        metadata: { checked: true },
+        metadata: expect.objectContaining({ checked: true }),
       }),
       expect.objectContaining({
         kind: "project_acceptance_criterion_checked",
-        metadata: { checked: false },
+        metadata: expect.objectContaining({ checked: false }),
       }),
     ]);
   });
@@ -254,10 +254,10 @@ describe("atomic activity recording", () => {
       expect(events().slice(before)).toEqual([
         expect.objectContaining({
           kind: "task_descendants_status_changed",
-          metadata: {
+          metadata: expect.objectContaining({
             nextStatus: expectedStatus,
             affectedCount: 1,
-          },
+          }),
         }),
       ]);
     },

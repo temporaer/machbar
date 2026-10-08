@@ -147,6 +147,49 @@ describe("activity repository", () => {
       projectId: null,
     });
   });
+
+  it("filters private work activity to the effective owner when a viewer is supplied", () => {
+    const owner = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Owner", color: "#111111" })
+      .returning()
+      .get();
+    const other = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Other", color: "#222222" })
+      .returning()
+      .get();
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Private task",
+      scope: "work",
+      ownerMemberId: owner.id,
+      ownerInheritanceMode: "explicit",
+    });
+    ctx.handle.db.insert(schema.activityEvents).values({
+      actorMemberId: other.id,
+      kind: "task_updated",
+      entityId: task.id,
+      entityType: "task",
+      entityTitle: task.title,
+      metadata: {
+        scope: "work",
+        after: { effectiveOwnerId: owner.id },
+      },
+    }).run();
+
+    expect(
+      getActivityPage(ctx.handle.db, {
+        limit: 50,
+        viewerMemberId: owner.id,
+      }).items.some((event) => event.entity.title === task.title),
+    ).toBe(true);
+    expect(
+      getActivityPage(ctx.handle.db, {
+        limit: 50,
+        viewerMemberId: other.id,
+      }).items.some((event) => event.entity.title === task.title),
+    ).toBe(false);
+  });
 });
 
 describe("GET /api/activity", () => {
@@ -159,7 +202,7 @@ describe("GET /api/activity", () => {
       kind: "task_created",
       entityType: "task",
       entityTitle: "Erfasst",
-      metadata: {},
+      metadata: { scope: "household" },
     }).run();
   });
 
@@ -187,7 +230,7 @@ describe("GET /api/activity", () => {
             taskId: null,
             projectId: null,
           },
-          metadata: {},
+          metadata: { scope: "household" },
         },
       ],
       nextCursor: null,

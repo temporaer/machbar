@@ -14,6 +14,7 @@ import {
 } from "../repo/index.js";
 import { getTaskOrThrow, listDescendants, updateTask } from "./taskCrud.js";
 import { assertActionTask } from "./taskKindGuard.js";
+import { Graph } from "./graph.js";
 import {
   MutationContext,
   actor,
@@ -103,6 +104,13 @@ export function completeTask(
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
     assertExpectedRevision("task", id, task.revision, expectedRevision);
+    const graphBefore = Graph.load(txDb);
+    const dependentTaskIds = tx
+      .select({ taskId: schema.taskDependencies.taskId })
+      .from(schema.taskDependencies)
+      .where(eq(schema.taskDependencies.dependsOnTaskId, id))
+      .all()
+      .map((row) => row.taskId);
     const openChildren = openDescendants(txDb, id);
     const descendantsOnly =
       task.status === "done" &&
@@ -185,6 +193,19 @@ export function completeTask(
       }
     }
     const updated = getTaskOrThrow(txDb, id);
+    const graphAfter = Graph.load(txDb);
+    const newlyExecutable = dependentTaskIds
+      .map((taskId) => ({
+        before: graphBefore.tasksById.get(taskId),
+        after: graphAfter.tasksById.get(taskId),
+      }))
+      .filter(
+        (value) =>
+          value.before !== undefined &&
+          value.after !== undefined &&
+          !value.before.executable &&
+          value.after.executable,
+      );
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: descendantsOnly
@@ -203,6 +224,17 @@ export function completeTask(
         : {
             previousStatus: task.status as TaskStatus,
             nextStatus: "done",
+          ...(newlyExecutable.length > 0
+            ? {
+                relatedTaskIds: newlyExecutable.map((value) => value.after!.id),
+                relatedTaskTitles: newlyExecutable.map(
+                  (value) => value.after!.title,
+                ),
+                relatedTaskOwnerIds: newlyExecutable.map(
+                  (value) => value.after!.effectiveOwnerId,
+                ),
+              }
+            : {}),
             ...(descendantsPolicy !== undefined &&
             descendantsPolicy !== "leave_open"
               ? { affectedCount: openChildren.length + 1 }

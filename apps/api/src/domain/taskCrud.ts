@@ -1275,6 +1275,28 @@ export function updateTask(
         metadata: {
           previousStatus: currentTask.status as TaskStatus,
           nextStatus: "actionable",
+          before: {
+            effectiveOwnerId: effectiveOwnerBefore,
+            dueDate: currentTask.dueDate,
+            scheduledDate: currentTask.scheduledDate,
+            notBeforeAt: currentTask.notBeforeAt,
+            notBeforeDate: currentTask.notBeforeDate,
+            executable: currentTask.executable,
+            blocked: currentTask.blocked,
+            taskKind: currentTask.kind,
+            projectId: currentTask.projectId,
+          },
+          after: {
+            effectiveOwnerId: effectiveOwnerAfter,
+            dueDate: updated.dueDate,
+            scheduledDate: updated.scheduledDate,
+            notBeforeAt: updated.notBeforeAt,
+            notBeforeDate: updated.notBeforeDate,
+            executable: updated.executable,
+            blocked: updated.blocked,
+            taskKind: updated.kind,
+            projectId: updated.projectId,
+          },
           recurrenceOccurrenceId: occurrence.id,
           recurrenceResult: occurrence.result,
           occurrenceScheduledDate: occurrence.scheduledDate,
@@ -1320,6 +1342,20 @@ export function updateTask(
         metadata: {
           previousStatus: currentTask.status as TaskStatus,
           nextStatus: updated.status as TaskStatus,
+          before: {
+            effectiveOwnerId: effectiveOwnerBefore,
+            executable: currentTask.executable,
+            blocked: currentTask.blocked,
+            taskKind: currentTask.kind,
+            projectId: currentTask.projectId,
+          },
+          after: {
+            effectiveOwnerId: effectiveOwnerAfter,
+            executable: updated.executable,
+            blocked: updated.blocked,
+            taskKind: updated.kind,
+            projectId: updated.projectId,
+          },
           ...(coalescedChangedFields.length > 0
             ? { changedFields: coalescedChangedFields }
             : {}),
@@ -1400,7 +1436,31 @@ export function updateTask(
         entityTitle: updated.title,
         taskId: id,
         projectId: updated.projectId,
-        metadata: { changedFields: coalescedChangedFields },
+        metadata: {
+          changedFields: coalescedChangedFields,
+          before: {
+            effectiveOwnerId: effectiveOwnerBefore,
+            dueDate: currentTask.dueDate,
+            scheduledDate: currentTask.scheduledDate,
+            notBeforeAt: currentTask.notBeforeAt,
+            notBeforeDate: currentTask.notBeforeDate,
+            executable: currentTask.executable,
+            blocked: currentTask.blocked,
+            taskKind: currentTask.kind,
+            projectId: currentTask.projectId,
+          },
+          after: {
+            effectiveOwnerId: effectiveOwnerAfter,
+            dueDate: updated.dueDate,
+            scheduledDate: updated.scheduledDate,
+            notBeforeAt: updated.notBeforeAt,
+            notBeforeDate: updated.notBeforeDate,
+            executable: updated.executable,
+            blocked: updated.blocked,
+            taskKind: updated.kind,
+            projectId: updated.projectId,
+          },
+        },
       });
       if (
         effectiveOwnerBefore === null &&

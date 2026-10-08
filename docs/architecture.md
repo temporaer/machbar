@@ -107,6 +107,23 @@ Machbar work, using `createProject()`, `createTask()`, and
 `createChildTask()` so normal hierarchy, activity, status, and contribution
 semantics remain in force.
 
+### Curated activity digest
+
+The Today page's **Seit deinem letzten Besuch** card is a curated projection
+over the existing transactional `activity_events` history, not a second event
+log or a replacement for the chronological Activity page. `apps/api/src/activity/digest.ts`
+loads a fixed event high-water mark, filters private `work`-scope history,
+reduces intermediate changes by stable work-item identity, and applies explicit
+P1–P5 classification and aggregation rules. It returns language-neutral
+semantic entries; the web layer owns wording and locale-specific formatting.
+
+Each member has a durable `member_activity_digest_state` cursor. First use
+starts at the current event maximum, requests do not acknowledge anything,
+and the explicit acknowledgement endpoint advances the cursor monotonically
+through the digest snapshot. Activity metadata keeps privacy-safe before/after
+state and stable affected-item/project context so later moves, edits, or
+deletions do not require reconstructing history from current hierarchy alone.
+
 ### Persistence, expiry, and idempotency
 
 `intake_jobs`, `intake_attachments`, and `home_assistant_requests` are

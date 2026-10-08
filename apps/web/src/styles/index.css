@@ -4411,6 +4411,61 @@ details[open] > .disclosure-summary::after {
   margin-top: 16px;
 }
 
+.activity-digest {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.activity-digest-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.activity-digest-header h2,
+.activity-digest-group h3 {
+  margin: 0;
+}
+
+.activity-digest-group {
+  display: grid;
+  gap: 6px;
+}
+
+.activity-digest-group h3 {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.activity-digest-list {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.activity-digest-entry {
+  line-height: 1.4;
+}
+
+.activity-digest-entry a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.activity-digest-entry a:hover {
+  text-decoration: underline;
+}
+
 .contextual-activity {
   min-width: 0;
 }
