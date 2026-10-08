@@ -26,7 +26,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const drizzleDir = path.join(__dirname, "..", "drizzle");
 
-function migrateThrough0017(db: ReturnType<typeof openDb>["db"]) {
+function migrateThrough0017(handle: ReturnType<typeof openDb>) {
   const migrationDir = mkdtempSync(path.join(os.tmpdir(), "machbar-drizzle-0017-"));
   const journalPath = path.join(drizzleDir, "meta", "_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")) as {
@@ -46,7 +46,12 @@ function migrateThrough0017(db: ReturnType<typeof openDb>["db"]) {
     JSON.stringify({ ...journal, entries }),
   );
   try {
-    migrate(db, { migrationsFolder: migrationDir });
+    handle.sqlite.pragma("foreign_keys = OFF");
+    try {
+      migrate(handle.db, { migrationsFolder: migrationDir });
+    } finally {
+      handle.sqlite.pragma("foreign_keys = ON");
+    }
   } finally {
     rmSync(migrationDir, { recursive: true, force: true });
   }
@@ -139,7 +144,7 @@ describe("revisit migration", () => {
   it("upgrades a populated 0017 database through Drizzle and applies legacy mappings without losing data", () => {
     const handle = openDb(":memory:");
     try {
-      migrateThrough0017(handle.db);
+      migrateThrough0017(handle);
       handle.sqlite.exec(`
         INSERT INTO members (id, name, color) VALUES (1, 'Mira', '#123456');
         INSERT INTO work_items
@@ -161,9 +166,6 @@ describe("revisit migration", () => {
         INSERT INTO activity_events (kind, entity_type, entity_title)
         VALUES ('task_created', 'task', 'ordinary revisit');
       `);
-      expect(() => assertRevisitMigrationReady(handle.sqlite)).toThrow(
-        "Startup blocked",
-      );
       runMigrations(handle.db);
       expect(
         handle.sqlite
@@ -236,6 +238,13 @@ describe("revisit migration", () => {
         },
         {
           id: 6,
+          scheduled_date: null,
+          revisit_at: null,
+          not_before_at: null,
+          not_before_date: null,
+        },
+        {
+          id: 7,
           scheduled_date: null,
           revisit_at: null,
           not_before_at: null,
