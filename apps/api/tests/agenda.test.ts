@@ -1,10 +1,25 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  calendarDateForInstant,
+  DEFAULT_HOUSEHOLD_TIMEZONE,
+} from "@machbar/shared";
 import { buildAgenda } from "../src/domain/agenda.js";
 import { Graph } from "../src/domain/graph.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
+beforeAll(() => {
+  vi.setSystemTime(new Date("2026-10-09T12:00:00+02:00"));
+});
+
+afterAll(() => {
+  vi.useRealTimers();
+});
+
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return calendarDateForInstant(
+    new Date().toISOString(),
+    DEFAULT_HOUSEHOLD_TIMEZONE,
+  )!;
 }
 
 function addDaysIso(dateIso: string, days: number): string {
@@ -1225,12 +1240,7 @@ describe("Heute agenda: compiled project prompts", () => {
   });
 
   function localTodayIso(): string {
-    const date = new Date();
-    return [
-      date.getFullYear(),
-      String(date.getMonth() + 1).padStart(2, "0"),
-      String(date.getDate()).padStart(2, "0"),
-    ].join("-");
+    return todayIso();
   }
 
   async function createActiveProject(payload: Record<string, unknown>) {
