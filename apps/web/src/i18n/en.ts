@@ -1108,6 +1108,9 @@ const en = {
   },
   language: "Language",
   languageHint: "Choose the language used on this device.",
+  householdTimezone: "Household time zone",
+  householdTimezoneHint:
+    "Used for revisits and local calendar dates in the household.",
   localeLabels: {
     de: "Deutsch",
     en: "English",

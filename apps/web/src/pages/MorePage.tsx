@@ -16,6 +16,7 @@ import { useAsync } from "../lib/useAsync";
 import { useDeveloperMode } from "../lib/developerMode";
 import { HomeAssistantPersonLocation } from "../components/HomeAssistantPersonLocation";
 import { useHomeAssistantStatus } from "../lib/useHomeAssistantStatus";
+import { HouseholdTimezoneSetting } from "../components/HouseholdTimezoneSetting";
 
 export function MorePage() {
   const strings = useStrings();
@@ -110,6 +111,7 @@ export function MorePage() {
           </div>
 
           <PushNotificationSettings />
+          <HouseholdTimezoneSetting />
 
           <div className="card more-setting-card">
             <h3>{strings.language}</h3>

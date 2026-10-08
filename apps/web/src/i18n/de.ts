@@ -1104,6 +1104,9 @@ const extra = {
   },
   language: "Sprache",
   languageHint: "Wähle die Sprache für dieses Gerät.",
+  householdTimezone: "Haushaltszeitzone",
+  householdTimezoneHint:
+    "Wird für Wiedervorlagen und lokale Kalenderdaten im Haushalt verwendet.",
   localeLabels: {
     de: "Deutsch",
     en: "English",

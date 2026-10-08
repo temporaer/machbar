@@ -469,8 +469,8 @@ export function TaskDetailSheet() {
         .filter((value): value is string => value !== null)
         .join(" · ")
     : "";
-  const notBeforeValue = task?.notBeforeAt
-    ? formatDateTime(task.notBeforeAt, locale)
+  const revisitAtValue = task?.revisitAt
+    ? formatDateTime(task.revisitAt, locale)
     : null;
   const reminderSummary = task
     ? formatReminderSummary(task.reminders, task.dueDate, strings, locale)
@@ -746,12 +746,12 @@ export function TaskDetailSheet() {
                 {strings.addPlan}
               </DetailPropertyPill>
             )}
-            {notBeforeValue ? (
+            {revisitAtValue ? (
               <DetailPropertyPill
                 label={strings.planning}
                 onClick={() => runCommand("task.availability")}
               >
-                <span>{notBeforeValue}</span>
+                <span>{revisitAtValue}</span>
               </DetailPropertyPill>
             ) : (
               <DetailPropertyPill variant="unset" onClick={() => runCommand("task.availability")}>

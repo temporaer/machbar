@@ -15,6 +15,7 @@ import { formatExactLocalDate } from "../lib/relativeDate";
 import { BottomSheet } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { HumanDateInput } from "./HumanDateInput";
+import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
 
 /**
  * The canonical `task.waitingLifecycle` workflow for a task with no
@@ -68,7 +69,12 @@ export function TaskWaitSheet({
     taskActions.clearError(task.id);
     const updated = await taskActions.setExternalWait(
       task,
-      { waitingFor: waitingFor.trim(), revisitDate },
+      {
+        waitingFor: waitingFor.trim(),
+        revisitAt: revisitDate
+          ? taskAvailabilityForLocalDate(revisitDate, "00:00")?.notBeforeAt ?? null
+          : null,
+      },
       { throwOnError: false },
     );
     if (updated) onClose();

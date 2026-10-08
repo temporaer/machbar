@@ -312,7 +312,7 @@ export type WeekAgendaResponse = Omit<WeekAgenda, "days" | "unplanned"> & {
 /** Body for `POST /api/projects/:id/activate` (matches `activateProjectSchema`). */
 export interface ProjectWorkflowInput {
   expectedRevision: number;
-  scheduledDate?: string | null;
+  revisitAt?: string | null;
 }
 
 export interface ActivateProjectInput extends ProjectWorkflowInput {
@@ -364,6 +364,8 @@ export interface RefinementTaskRow {
 export interface ExternalWaitInput {
   waitingFor?: string | null;
   revisitAt?: string | null;
+  /** @deprecated Use revisitAt. */
+  revisitDate?: string | null;
   expectedRevision?: number;
 }
 
@@ -378,6 +380,8 @@ export type ExternalWaitFollowUpInput =
       content: string;
       waitingFor?: string | null;
       revisitAt?: string | null;
+      /** @deprecated Use revisitAt. */
+      revisitDate?: string | null;
       expectedRevision: number;
     };
 
@@ -643,6 +647,13 @@ export const api = {
     request<MoreCounts>("/views/more-counts"),
   getHouseholdAiContext: () =>
     request<HouseholdAiContext>("/settings/ai-context"),
+  getHouseholdTimezone: () =>
+    request<{ timezone: string }>("/settings/household"),
+  updateHouseholdTimezone: (timezone: string) =>
+    request<{ timezone: string }>("/settings/household", {
+      method: "PUT",
+      body: JSON.stringify({ timezone }),
+    }),
   updateHouseholdAiContext: (input: HouseholdAiContext) =>
     request<HouseholdAiContext>("/settings/ai-context", {
       method: "PUT",

@@ -39,10 +39,10 @@ export function TaskPlanningSheet({
   const { locale } = useLocale();
   const taskActions = useTaskActions();
   const initialAvailabilityDate =
-    task.notBeforeDate ?? (task.notBeforeAt ? localDateForInstant(task.notBeforeAt) : "");
+    task.revisitAt ? localDateForInstant(task.revisitAt) : "";
   const [notBeforeDate, setNotBeforeDate] = useState(initialAvailabilityDate);
   const [notBeforeTime, setNotBeforeTime] = useState(
-    taskAvailabilityClock(task.notBeforeAt) ?? "08:00",
+    taskAvailabilityClock(task.revisitAt) ?? "08:00",
   );
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
@@ -75,8 +75,7 @@ export function TaskPlanningSheet({
     ? taskAvailabilityForLocalDate(notBeforeDate, notBeforeTime)
     : null;
   const dirty =
-    (nextAvailability?.notBeforeAt ?? null) !== task.notBeforeAt ||
-    (nextAvailability?.notBeforeDate ?? null) !== task.notBeforeDate ||
+    (nextAvailability?.notBeforeAt ?? null) !== task.revisitAt ||
     (scheduledDate || null) !== task.scheduledDate ||
     (dueDate || null) !== task.dueDate ||
     cleanedTitle !== task.title;
@@ -111,8 +110,7 @@ export function TaskPlanningSheet({
     setError(null);
     try {
       const patch = {
-        notBeforeAt: nextAvailability?.notBeforeAt ?? null,
-        notBeforeDate: nextAvailability?.notBeforeDate ?? null,
+        revisitAt: nextAvailability?.notBeforeAt ?? null,
         scheduledDate: scheduledDate || null,
         dueDate: dueDate || null,
         ...(cleanedTitle !== task.title ? { title: cleanedTitle } : {}),
@@ -215,7 +213,7 @@ export function TaskPlanningSheet({
           <button
             type="button"
             className="btn btn-sm btn-ghost"
-            disabled={saving || (!notBeforeDate && !task.notBeforeAt)}
+            disabled={saving || (!notBeforeDate && !task.revisitAt)}
             onClick={() => {
               setNotBeforeDate("");
               setNotBeforeTime("08:00");

@@ -53,7 +53,7 @@ describe("WaitingFollowUpSheet", () => {
         action: "continue",
         content: "Erneut angerufen.",
         waitingFor: "Vermieter",
-        revisitDate: addIsoCalendarDays(toIsoCalendarDate(new Date()), 1),
+        revisitAt: expect.any(String),
         expectedRevision: 3,
       }),
     );

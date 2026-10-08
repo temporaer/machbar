@@ -221,7 +221,7 @@ export function TaskRow({
         : ownerMember?.name ?? strings.unknownMember;
   const due = formatDate(task.dueDate, locale);
   const scheduled = formatDate(task.scheduledDate, locale);
-  const notBefore = formatDateTime(task.notBeforeAt, locale);
+  const revisitAt = formatDateTime(task.revisitAt, locale);
   const projectDueRelative = task.projectDueDate
     ? formatRelativeDueDate(task.projectDueDate, new Date(), locale)
     : null;
@@ -519,9 +519,9 @@ export function TaskRow({
                       {strings.due}: {due}
                     </span>
                   ) : null}
-                  {isCompact ? null : notBefore ? (
+                  {isCompact ? null : revisitAt ? (
                     <span className="task-row-meta-item">
-                      {strings.notBefore}: {notBefore}
+                      {strings.revisitDate}: {revisitAt}
                     </span>
                   ) : null}
                   {isCompact ? null : scheduled ? (

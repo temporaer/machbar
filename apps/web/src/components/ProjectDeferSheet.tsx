@@ -5,11 +5,16 @@ import { useStrings } from "../lib/strings";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
+import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
+
+function toRevisitAt(date: string): string | null {
+  return taskAvailabilityForLocalDate(date, "00:00")?.notBeforeAt ?? null;
+}
 
 /**
  * The canonical `story.defer` workflow, separate from deadline editing.
- * `scheduledDate` has explicit semantics for a project
- * ("before this date, this project is intentionally not relevant"), so
+ * `revisitAt` has explicit semantics for a project
+ * ("before this instant, this project is intentionally not relevant"), so
  * the question is "Bis wann zurückstellen?" with convenience shortcuts.
  */
 export function ProjectDeferSheet({
@@ -19,17 +24,19 @@ export function ProjectDeferSheet({
 }: {
   story: Project;
   onClose: () => void;
-  onSave: (patch: { scheduledDate: string | null }) => Promise<void>;
+  onSave: (patch: { revisitAt: string | null }) => Promise<void>;
 }) {
   const strings = useStrings();
   const [customDate, setCustomDate] = useState(false);
-  const [scheduledDate, setScheduledDate] = useState(story.scheduledDate ?? "");
+  const [revisitDate, setRevisitDate] = useState(
+    story.revisitAt?.slice(0, 10) ?? "",
+  );
   const [dateValid, setDateValid] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const today = () => toIsoCalendarDate(new Date());
 
-  const commit = async (patch: { scheduledDate: string | null }) => {
+  const commit = async (patch: { revisitAt: string | null }) => {
     if (saving) return;
     setSaving(true);
     setError(null);
@@ -59,7 +66,7 @@ export function ProjectDeferSheet({
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => void commit({ scheduledDate: addIsoCalendarDays(today(), 1) })}
+              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 1)) })}
             >
               {strings.projectDeferShortcutLabels.tomorrow}
             </button>
@@ -67,7 +74,7 @@ export function ProjectDeferSheet({
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => void commit({ scheduledDate: addIsoCalendarDays(today(), 7) })}
+              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 7)) })}
             >
               {strings.projectDeferShortcutLabels.nextWeek}
             </button>
@@ -75,7 +82,7 @@ export function ProjectDeferSheet({
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => void commit({ scheduledDate: addIsoCalendarDays(today(), 14) })}
+              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 14)) })}
             >
               {strings.projectDeferShortcutLabels.twoWeeks}
             </button>
@@ -83,7 +90,7 @@ export function ProjectDeferSheet({
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => void commit({ scheduledDate: addIsoCalendarDays(today(), 30) })}
+              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 30)) })}
             >
               {strings.projectDeferShortcutLabels.nextMonth}
             </button>
@@ -91,7 +98,7 @@ export function ProjectDeferSheet({
               type="button"
               className="choice-chip"
               disabled={saving}
-              onClick={() => void commit({ scheduledDate: null })}
+              onClick={() => void commit({ revisitAt: null })}
             >
               {strings.projectDeferWithoutRevisit}
             </button>
@@ -109,8 +116,8 @@ export function ProjectDeferSheet({
             <div className="row">
               <HumanDateInput
                 id="project-defer-date"
-                value={scheduledDate}
-                onChange={(date) => setScheduledDate(date ?? "")}
+                value={revisitDate}
+                onChange={(date) => setRevisitDate(date ?? "")}
                 onValidityChange={setDateValid}
                 disabled={saving}
               />
@@ -118,7 +125,7 @@ export function ProjectDeferSheet({
                 type="button"
                 className="btn btn-sm btn-primary"
                 disabled={saving || !dateValid}
-                onClick={() => void commit({ scheduledDate: scheduledDate || null })}
+                onClick={() => void commit({ revisitAt: revisitDate ? toRevisitAt(revisitDate) : null })}
               >
                 {strings.save}
               </button>

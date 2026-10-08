@@ -5,6 +5,7 @@ import { useTaskActions } from "../lib/useTaskActions";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
+import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
 
 /**
  * The canonical `task.waitingLifecycle` workflow for a task that already
@@ -44,7 +45,9 @@ export function WaitingFollowUpSheet({
       action: "continue",
       content: content.trim(),
       waitingFor: task.externalWait?.waitingFor ?? null,
-      revisitDate: nextRevisitDate,
+      revisitAt: nextRevisitDate
+        ? taskAvailabilityForLocalDate(nextRevisitDate, "00:00")?.notBeforeAt ?? null
+        : null,
     });
     if (updated) onClose();
   };

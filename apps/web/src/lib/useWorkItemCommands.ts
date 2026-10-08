@@ -10,6 +10,7 @@ import { useTaskWorkflow } from "./taskWorkflowContext";
 import { useProjectWorkflow } from "./projectWorkflowContext";
 import { useSwipeSettings } from "./swipeSettings";
 import { useOptionalInteractionScope } from "./interactionScope";
+import { taskAvailabilityForLocalDate } from "./taskAvailability";
 
 /**
  * Every `task.*`/`story.*` command carries the id of the WorkItem it
@@ -349,9 +350,12 @@ export function useWorkItemCommands() {
           });
         case "workItem.setRevisitDate":
           if (command.item.role === "task" && command.item.task.externalWait) {
+            const revisitAt = command.date
+              ? taskAvailabilityForLocalDate(command.date, "00:00")?.notBeforeAt ?? null
+              : null;
             return taskActions.setExternalWait(command.item.task, {
               waitingFor: command.item.task.externalWait.waitingFor,
-              revisitDate: command.date,
+              revisitAt,
             }, {
               throwOnError: true,
             });

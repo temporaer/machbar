@@ -46,8 +46,7 @@ describe("TaskAvailabilitySheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(40, {
-        notBeforeAt: expect.any(String),
-        notBeforeDate: expect.any(String),
+        revisitAt: expect.any(String),
         scheduledDate: "2026-09-14",
         dueDate: null,
         expectedRevision: 1,
@@ -72,8 +71,7 @@ describe("TaskAvailabilitySheet", () => {
     });
 
     expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
-      notBeforeAt: expect.any(String),
-      notBeforeDate: expect.any(String),
+      revisitAt: expect.any(String),
       scheduledDate: null,
       dueDate: null,
       expectedRevision: 1,
@@ -108,8 +106,7 @@ describe("TaskAvailabilitySheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
-        notBeforeAt: expect.any(String),
-        notBeforeDate: expect.any(String),
+        revisitAt: expect.any(String),
         scheduledDate: null,
         dueDate: null,
         expectedRevision: 1,
@@ -119,8 +116,8 @@ describe("TaskAvailabilitySheet", () => {
   });
 
   it("clears an existing availability gate", async () => {
-    mockedApi.updateTask.mockResolvedValue(makeTask({ id: 44, notBeforeAt: null }));
-    const task = makeTask({ id: 44, title: "Handwerker beauftragen", notBeforeAt: "2026-09-19T18:00:00.000Z" });
+    mockedApi.updateTask.mockResolvedValue(makeTask({ id: 44, revisitAt: null }));
+    const task = makeTask({ id: 44, title: "Handwerker beauftragen", revisitAt: "2026-09-19T18:00:00.000Z" });
     const onClose = vi.fn();
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
@@ -129,8 +126,7 @@ describe("TaskAvailabilitySheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(44, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: null,
         dueDate: null,
         expectedRevision: 1,

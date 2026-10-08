@@ -49,7 +49,7 @@ export function ProjectWorkflowHost() {
           onClose={close}
           onSave={async (patch) => {
             if (story.status === "active") {
-              await projectActions.returnToBacklog(story, patch.scheduledDate);
+              await projectActions.returnToBacklog(story, patch.revisitAt);
             } else {
               await projectActions.schedule(story, patch);
             }
