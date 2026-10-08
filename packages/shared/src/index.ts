@@ -310,6 +310,7 @@ export interface ActivityStateSnapshot {
   effectiveOwnerId?: number | null;
   dueDate?: string | null;
   scheduledDate?: string | null;
+  revisitAt?: string | null;
   notBeforeAt?: string | null;
   notBeforeDate?: string | null;
   executable?: boolean;
@@ -571,6 +572,7 @@ export interface Project {
   scope: WorkItemScope;
   dueDate: string | null;
   scheduledDate: string | null;
+  revisitAt: string | null;
   position: number;
   createdAt: string;
   updatedAt: string;
@@ -610,6 +612,7 @@ export interface Dependency {
 
 export interface ExternalWait {
   waitingFor: string | null;
+  /** @deprecated Read only during migration; active writes use workItem.revisitAt. */
   revisitDate: string | null;
 }
 
@@ -688,6 +691,7 @@ export interface Task {
   createdByMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
+  revisitAt: string | null;
   notBeforeAt: string | null;
   /** Local calendar date selected with `notBeforeAt`; used for date-only invariants. */
   notBeforeDate: string | null;
@@ -948,6 +952,7 @@ export type WeekWorkItemRole = "task" | "story";
 export * from "./intake.js";
 export * from "./cleanupRound.js";
 export * from "./inputNormalization.js";
+export * from "./revisit.js";
 
 export type WeekWorkItemPlacement =
   | "scheduled"

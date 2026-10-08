@@ -93,6 +93,7 @@ interface RawTask {
   createdByMemberId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
+  revisitAt: string | null;
   notBeforeAt: string | null;
   notBeforeDate: string | null;
   priority: number | null;
@@ -121,6 +122,7 @@ interface RawProject {
   scope: WorkItemScope;
   dueDate: string | null;
   scheduledDate: string | null;
+  revisitAt: string | null;
   position: number;
   createdAt: string;
   updatedAt: string;
@@ -324,6 +326,7 @@ export class Graph {
         scope: row.scope as WorkItemScope,
         dueDate: row.dueDate,
         scheduledDate: row.scheduledDate,
+        revisitAt: row.revisitAt,
         position: row.position,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -353,6 +356,7 @@ export class Graph {
         createdByMemberId: row.createdByMemberId,
         dueDate: row.dueDate,
         scheduledDate: row.scheduledDate,
+        revisitAt: row.revisitAt,
         notBeforeAt: row.notBeforeAt,
         notBeforeDate: row.notBeforeDate,
         priority: row.priority,
@@ -447,7 +451,10 @@ export class Graph {
       dependenciesByTask.set(row.taskId, list);
     }
     const externalWaitRows = db.select().from(schema.taskExternalWaits).all();
-    const externalWaitByTask = new Map(
+    const externalWaitByTask = new Map<number, {
+      waitingFor: string | null;
+      revisitDate: string | null;
+    }>(
       externalWaitRows
         .filter((row) => Boolean(row.waitingFor?.trim()))
         .map((row) => [
@@ -559,6 +566,7 @@ export class Graph {
         scope: p.scope,
         dueDate: p.dueDate,
         scheduledDate: p.scheduledDate,
+        revisitAt: p.revisitAt,
         position: p.position,
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
@@ -698,6 +706,7 @@ export class Graph {
         createdByMemberId: raw.createdByMemberId,
         dueDate: raw.dueDate,
         scheduledDate: raw.scheduledDate,
+        revisitAt: raw.revisitAt,
         notBeforeAt: raw.notBeforeAt,
         notBeforeDate: raw.notBeforeDate,
         externalWait,

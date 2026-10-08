@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { loadEnv } from "../env.js";
 import { openDb, type Db } from "./client.js";
+import { applyRevisitMigration } from "./revisitMigration.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const migrationsFolder = path.resolve(__dirname, "../../drizzle");
@@ -25,6 +26,9 @@ export function runMigrations(db: Db): void {
   db.run(sql`PRAGMA foreign_keys = OFF`);
   try {
     migrate(db, { migrationsFolder });
+    applyRevisitMigration(
+      (db as Db & { $client: import("better-sqlite3").Database }).$client,
+    );
   } finally {
     db.run(sql`PRAGMA foreign_keys = ON`);
   }

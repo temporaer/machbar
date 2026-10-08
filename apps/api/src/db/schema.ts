@@ -128,6 +128,14 @@ export const householdAiContext = sqliteTable("household_ai_context", {
     .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
 });
 
+export const householdSettings = sqliteTable("household_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
+});
+
 export const memberOidcIdentities = sqliteTable(
   "member_oidc_identities",
   {
@@ -521,6 +529,7 @@ export const workItems = sqliteTable(
     ),
     dueDate: text("due_date"),
     scheduledDate: text("scheduled_date"),
+    revisitAt: text("revisit_at"),
     notBeforeAt: text("not_before_at"),
     notBeforeDate: text("not_before_date"),
     priority: integer("priority"),
