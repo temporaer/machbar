@@ -240,7 +240,7 @@ function relevantDateChange(
   for (const candidate of candidates) {
     if (!fields.includes(candidate.field) && !fields.includes("notBeforeAt")) continue;
     if (candidate.previousDate === candidate.date) continue;
-    if (candidate.date === null) continue;
+    if (candidate.date === null && candidate.dateType !== "deadline") continue;
     const previousDistance = daysFromToday(candidate.previousDate, timezone);
     const distance = daysFromToday(candidate.date, timezone);
     const direction =

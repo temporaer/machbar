@@ -1198,6 +1198,8 @@ const en = {
     direction === "earlier"
       ? `${actor} moved the deadline for “${title}” to ${date}.`
       : `${actor} postponed the deadline for “${title}” to ${date}.`,
+  activityDigestDeadlineRemoved: (actor: string, title: string) =>
+    `${actor} removed the deadline for “${title}”.`,
   activityDigestScheduledChanged: (title: string, date: string) =>
     `The scheduled date for “${title}” was moved to ${date}.`,
   activityDigestAvailabilityChanged: (title: string, date: string) =>

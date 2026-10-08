@@ -112,6 +112,12 @@ function entryText(
           return strings.activityDigestAvailabilityChanged(title, date);
         }
       }
+      if (
+        entry.params.dateType === "deadline" &&
+        entry.params.direction === "removed"
+      ) {
+        return strings.activityDigestDeadlineRemoved(actor, title);
+      }
       return strings.activityDigestPlanChanged(actor, title);
     case "wait_started":
       return strings.activityDigestWaitStarted(title);

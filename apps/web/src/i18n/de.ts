@@ -1194,6 +1194,8 @@ const extra = {
     direction === "earlier"
       ? `${actor} hat die Frist für „${title}“ auf den ${date} vorgezogen.`
       : `${actor} hat die Frist für „${title}“ auf den ${date} verschoben.`,
+  activityDigestDeadlineRemoved: (actor: string, title: string) =>
+    `${actor} hat die Frist für „${title}“ entfernt.`,
   activityDigestScheduledChanged: (title: string, date: string) =>
     `Der Termin für „${title}“ wurde auf ${date} verschoben.`,
   activityDigestAvailabilityChanged: (title: string, date: string) =>
