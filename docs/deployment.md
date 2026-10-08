@@ -124,7 +124,10 @@ docker compose stop machbar
 OLD_IMAGE_NAME="$(docker compose config --images | head -n 1)"
 OLD_IMAGE_TAG="${OLD_IMAGE_NAME}-before-revisit"
 OLD_IMAGE_ID="$(docker compose images -q machbar)"
+test -n "$OLD_IMAGE_ID"
 docker image tag "$OLD_IMAGE_ID" "$OLD_IMAGE_TAG"
+printf 'Rollback image tag: %s\nCompose image name: %s\n' \
+  "$OLD_IMAGE_TAG" "$OLD_IMAGE_NAME"
 
 # Make a consistent offline copy from the stopped service container.
 docker compose cp machbar:/data/machbar.db ./machbar-before-revisit.db
@@ -194,6 +197,7 @@ is not a complete rollback: the new image may require the migrated schema. For
 Compose, restore both the backup and the retained pre-upgrade image tag. These
 commands restore the old image to the Compose image name before using
 `--no-build`, so the new image is not started against the restored database:
+use the exact two image values printed and recorded before the upgrade.
 
 ```bash
 docker compose stop machbar
