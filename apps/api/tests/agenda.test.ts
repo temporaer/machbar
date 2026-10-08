@@ -376,7 +376,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Später nachhaken")).toEqual([]);
   });
 
-  it("excludes blocked tasks from every normal bucket, even when due today", async () => {
+  it("keeps a blocked task visible in its urgent due-today deadline bucket", async () => {
     const blocker = await createTask({ title: "Blockierer offen" });
     const blocked = await createTask({ title: "Blockierte Aufgabe fällig heute", dueDate: today });
     await addDependency(blocked.id, blocker.id);

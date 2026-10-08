@@ -89,11 +89,12 @@ export interface BuildAgendaOptions {
  * `shared`.
  *
  * Captured tasks that still need clarification are excluded from every
- * bucket. Among clarified work, blocked tasks (unresolved dependencies)
- * are normally excluded from every bucket above — they aren't actionable,
- * so surfacing them in "Heute" would just be noise. The one exception is
- * `revisit`: a task with a direct external wait whose revisit date is today
- * or earlier reappears as a reminder to check on it.
+ * bucket. Attention and explicit plans remain visible even when a task is
+ * blocked or its physical context is unavailable: overdue/due-soon deadlines,
+ * scheduled work, and reached revisits all need a decision. An external wait
+ * with a retained historical schedule is excluded from planned work. Ordinary
+ * automatic work recommendations still require executable tasks and available
+ * context.
  *
  * `createAgendaSelection()` centralizes how `options.memberId` restricts every
  * bucket, revisit included, to the selected member's own and shared tasks.
