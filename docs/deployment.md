@@ -119,6 +119,13 @@ specifically `/data/machbar.db`.
 # Stop the service while preserving its named volume.
 docker compose stop machbar
 
+# Preserve the currently deployed image and its Compose image name before
+# rebuilding. Keep both values for a possible rollback.
+OLD_IMAGE_NAME="$(docker compose config --images | head -n 1)"
+OLD_IMAGE_TAG="${OLD_IMAGE_NAME}-before-revisit"
+OLD_IMAGE_ID="$(docker compose images -q machbar)"
+docker image tag "$OLD_IMAGE_ID" "$OLD_IMAGE_TAG"
+
 # Make a consistent offline copy from the stopped service container.
 docker compose cp machbar:/data/machbar.db ./machbar-before-revisit.db
 
@@ -182,13 +189,17 @@ If the dry-run shows conflicts, stop before applying and investigate the
 affected records. Applying is transactional; retrying after success is safe.
 For recovery, stop the service, preserve the failed/current database separately,
 restore the pre-migration copy to the exact database path, and only then start
-the old or otherwise compatible application version. For Compose, restore the
-backup into the mounted volume while the service is stopped:
+the old or otherwise compatible application version. A database backup alone
+is not a complete rollback: the new image may require the migrated schema. For
+Compose, restore both the backup and the retained pre-upgrade image tag. These
+commands restore the old image to the Compose image name before using
+`--no-build`, so the new image is not started against the restored database:
 
 ```bash
 docker compose stop machbar
 docker compose cp ./machbar-before-revisit.db machbar:/data/machbar.db
-docker compose up -d machbar
+docker image tag "$OLD_IMAGE_TAG" "$OLD_IMAGE_NAME"
+docker compose up -d --no-build machbar
 ```
 
 For standalone, with the service stopped, restore the chosen backup to

@@ -103,6 +103,17 @@ describe("revisit migration", () => {
   it("applies the full schema chain and initializes a fresh database idempotently", () => {
     const handle = readyHandle();
     try {
+      const journal = JSON.parse(
+        readFileSync(path.join(drizzleDir, "meta", "_journal.json"), "utf8"),
+      ) as { entries: Array<{ idx: number; tag: string }> };
+      expect(journal.entries).toHaveLength(19);
+      expect(journal.entries.at(-1)).toEqual({
+        idx: 18,
+        tag: "0018_add_revisit_and_household_settings",
+        version: "6",
+        when: expect.any(Number),
+        breakpoints: true,
+      });
       const workItemColumns = handle.sqlite
         .prepare("PRAGMA table_info(work_items)")
         .all() as Array<{ name: string }>;
@@ -136,6 +147,11 @@ describe("revisit migration", () => {
           .prepare("SELECT COUNT(*) AS count FROM data_migrations")
           .get(),
       ).toEqual({ count: 1 });
+      expect(
+        handle.sqlite
+          .prepare("SELECT COUNT(*) AS count FROM __drizzle_migrations")
+          .get(),
+      ).toEqual({ count: 19 });
     } finally {
       handle.close();
     }
@@ -192,6 +208,32 @@ describe("revisit migration", () => {
       expect(report.rows.find((row) => row.id === 4)?.conflicts).toContain(
         "external_wait_revisit_preferred_over_not_before",
       );
+
+      handle.sqlite.exec(`
+        CREATE TRIGGER fail_revisit_backfill_for_test
+        BEFORE UPDATE ON work_items
+        WHEN NEW.id = 4
+        BEGIN
+          SELECT RAISE(ABORT, 'forced backfill failure');
+        END;
+      `);
+      expect(() =>
+        applyRevisitMigration(handle.sqlite, { allowConflicts: true }),
+      ).toThrow("forced backfill failure");
+      expect(
+        handle.sqlite
+          .prepare("SELECT revisit_at, not_before_at FROM work_items WHERE id = 1")
+          .get(),
+      ).toEqual({
+        revisit_at: null,
+        not_before_at: "2026-01-15T09:00:00.000Z",
+      });
+      expect(
+        handle.sqlite
+          .prepare("SELECT COUNT(*) AS count FROM data_migrations")
+          .get(),
+      ).toEqual({ count: 0 });
+      handle.sqlite.exec("DROP TRIGGER fail_revisit_backfill_for_test");
 
       applyRevisitMigration(handle.sqlite, { allowConflicts: true });
       const rows = handle.sqlite
