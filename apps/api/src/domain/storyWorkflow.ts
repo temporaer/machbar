@@ -104,7 +104,7 @@ export function activateProject(
       .set({
         status: "active",
         archivedAt: null,
-        scheduledDate: null,
+        revisitAt: null,
         ownerMemberId,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
@@ -150,7 +150,7 @@ export function returnProjectToBacklog(
   id: number,
   context?: MutationContext,
   expectedRevision?: number,
-  scheduledDate?: string | null,
+  revisitAt?: string | null,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -161,9 +161,7 @@ export function returnProjectToBacklog(
       .set({
         status: "backlog",
         archivedAt: null,
-        ...(project.status === "archived"
-          ? { scheduledDate: null }
-          : { scheduledDate: scheduledDate ?? null }),
+        revisitAt: project.status === "archived" ? null : revisitAt ?? null,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })
@@ -229,7 +227,7 @@ export function completeProject(
       .set({
         status: "done",
         archivedAt: null,
-        scheduledDate: null,
+        revisitAt: null,
         completedAt: nowIso(),
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
@@ -281,7 +279,7 @@ export function reopenProject(
         status: "active",
         archivedAt: null,
         completedAt: null,
-        scheduledDate: null,
+        revisitAt: null,
         ownerMemberId: nextOwnerMemberId,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
@@ -325,7 +323,7 @@ export function archiveProject(
     tx.update(schema.workItems)
       .set({
         archivedAt: nowIso(),
-        scheduledDate: null,
+        revisitAt: null,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: nowIso(),
       })

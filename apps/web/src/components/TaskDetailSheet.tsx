@@ -19,7 +19,8 @@ import { WorkItemBreadcrumbs } from "./WorkItemBreadcrumbs";
 import { useStrings } from "../lib/strings";
 import { ExternalRefBadge } from "./ExternalRefBadge";
 import { formatDateTime } from "../lib/format";
-import { formatExactLocalDate } from "../lib/relativeDate";
+import { formatExactLocalDate, formatRevisitAt } from "../lib/relativeDate";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { isCapturedInboxItem, sortByPosition } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
@@ -107,6 +108,7 @@ export function TaskDetailSheet() {
   const navigate = useNavigate();
   const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close } = useTaskDetail();
   const { bump } = useRefresh();
+  const { timezone: householdTimezone } = useHouseholdTimezone();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
@@ -143,6 +145,7 @@ export function TaskDetailSheet() {
   const dependencyInputRef = useRef<HTMLInputElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
   const revisionRef = useRef<number | null>(null);
+
   const workflowKind = taskWorkflow.current?.kind ?? null;
 
   const {
@@ -461,30 +464,17 @@ export function TaskDetailSheet() {
     : undefined;
   const localDate = (value: string) =>
     formatExactLocalDate(value, locale) ?? value;
-  const planValue = task
-    ? [
-        task.scheduledDate ? localDate(task.scheduledDate) : null,
-        task.dueDate ? `${strings.due} ${localDate(task.dueDate)}` : null,
-      ]
-        .filter((value): value is string => value !== null)
-        .join(" · ")
-    : "";
-  const notBeforeValue = task?.notBeforeAt
-    ? formatDateTime(task.notBeforeAt, locale)
+  const scheduledDateValue = task?.scheduledDate
+    ? localDate(task.scheduledDate)
+    : null;
+  const dueDateValue = task?.dueDate ? localDate(task.dueDate) : null;
+  const revisitAtValue = task?.revisitAt
+    ? formatRevisitAt(task.revisitAt, locale, householdTimezone)
     : null;
   const reminderSummary = task
     ? formatReminderSummary(task.reminders, task.dueDate, strings, locale)
     : null;
-  const waitValue = task?.externalWait
-    ? [
-        task.externalWait.waitingFor?.trim() ?? null,
-        task.externalWait.revisitDate
-          ? localDate(task.externalWait.revisitDate)
-          : null,
-      ]
-        .filter((value): value is string => Boolean(value))
-        .join(" · ")
-    : "";
+  const waitValue = task?.externalWait?.waitingFor?.trim() ?? "";
 
   const runCommand = (
     command:
@@ -734,28 +724,39 @@ export function TaskDetailSheet() {
                 </span>
               </DetailPropertyPill>
             ) : null}
-            {planValue ? (
+            {scheduledDateValue ? (
               <DetailPropertyPill
                 label={strings.taskPlanFor}
                 onClick={() => runCommand("task.plan")}
               >
-                <span>{planValue}</span>
+                <span>{scheduledDateValue}</span>
               </DetailPropertyPill>
             ) : (
               <DetailPropertyPill variant="unset" onClick={() => runCommand("task.plan")}>
                 {strings.addPlan}
               </DetailPropertyPill>
             )}
-            {notBeforeValue ? (
+            {dueDateValue ? (
               <DetailPropertyPill
-                label={strings.planning}
+                label={strings.planningDueBy}
+                onClick={() => runCommand("task.plan")}
+              >
+                <span>{dueDateValue}</span>
+              </DetailPropertyPill>
+            ) : null}
+            {revisitAtValue ? (
+              <DetailPropertyPill
+                label={strings.revisit}
                 onClick={() => runCommand("task.availability")}
               >
-                <span>{notBeforeValue}</span>
+                <span>{revisitAtValue}</span>
               </DetailPropertyPill>
             ) : (
-              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.availability")}>
-                {strings.planning}
+              <DetailPropertyPill
+                variant="unset"
+                onClick={() => runCommand("task.availability")}
+              >
+                {strings.revisit}
               </DetailPropertyPill>
             )}
             {task.reminders.length > 0 && reminderSummary ? (

@@ -16,6 +16,8 @@ import { QuickAdd } from "../components/QuickAdd";
 import { countTasks, flattenTasks } from "../lib/taskHelpers";
 import { useIdentity } from "../lib/identity";
 import { formatDate } from "../lib/format";
+import { formatRevisitAt } from "../lib/relativeDate";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { ProjectStuckNotice } from "../components/ProjectStuckNotice";
 import { ExternalRefBadge } from "../components/ExternalRefBadge";
 import { MarkdownNotes } from "../components/MarkdownNotes";
@@ -63,6 +65,7 @@ import { ProjectDeleteChoiceSheet } from "../components/ProjectDeleteChoiceSheet
 export function ProjectDetailPage() {
   const strings = useStrings();
   const { locale } = useLocale();
+  const { timezone: householdTimezone } = useHouseholdTimezone();
   const location = useLocation();
   const navigate = useNavigate();
   const params = useParams<{ id: string }>();
@@ -150,9 +153,10 @@ export function ProjectDetailPage() {
   const criteriaPct =
     criteriaTotal > 0 ? Math.round((criteriaDone / criteriaTotal) * 100) : 0;
   const dueDate = project ? formatDate(project.dueDate, locale) : null;
-  const showProjectRevisit = project?.status === "backlog";
-  const scheduledDate = project && showProjectRevisit
-    ? formatDate(project.scheduledDate, locale)
+  const showProjectRevisit =
+    project?.status === "backlog" && !project.archivedAt;
+  const revisitDate = project && showProjectRevisit && project.revisitAt
+    ? formatRevisitAt(project.revisitAt, locale, householdTimezone)
     : null;
 
   const reviewReturn = (
@@ -576,7 +580,7 @@ export function ProjectDetailPage() {
                       <span>{dueDate}</span>
                     </DetailPropertyPill>
                   ) : null}
-                  {scheduledDate ? (
+                  {revisitDate ? (
                     <DetailPropertyPill
                       label={strings.projectRevisitDate}
                       disabled={projectMutationPending}
@@ -584,7 +588,7 @@ export function ProjectDetailPage() {
                         dispatch({ type: "story.defer", story: project })
                       }
                     >
-                      <span>{scheduledDate}</span>
+                      <span>{revisitDate}</span>
                     </DetailPropertyPill>
                   ) : null}
                   {!dueDate ? (
@@ -598,7 +602,7 @@ export function ProjectDetailPage() {
                       {strings.addDeadline}
                     </DetailPropertyPill>
                   ) : null}
-                  {showProjectRevisit && !scheduledDate ? (
+                  {showProjectRevisit && !revisitDate ? (
                     <DetailPropertyPill
                       variant="unset"
                       disabled={projectMutationPending}

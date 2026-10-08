@@ -255,8 +255,35 @@ describe("project workflow (HTTP routes)", () => {
         method: "POST",
         url: `/api/projects/${project.id}/activate`,
       });
-      expect(activation.statusCode).toBe(200);
+      expect(activation.statusCode, JSON.stringify(activation.json())).toBe(200);
       expect(activation.json().status).toBe("active");
+  });
+
+  it("allows activation for an intentionally future ordinary revisit", async () => {
+    const anna = await createMemberRoute("Deferred owner");
+    const project = await createProjectRoute({ ownerMemberId: anna.id });
+    const task = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/tasks",
+        payload: { projectId: project.id, title: "Deferred progress" },
+      })
+    ).json();
+    const update = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: {
+        revisitAt: "2099-01-01T00:00:00.000Z",
+        expectedRevision: task.revision,
+      },
+    });
+    expect(update.statusCode).toBe(200);
+
+    const activation = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/activate`,
+    });
+    expect(activation.statusCode).toBe(200);
   });
 
   it("keeps the driver when returning an active project to the backlog, and allows clearing it only then", async () => {
@@ -567,11 +594,11 @@ describe("project workflow (service layer)", () => {
       project.id,
       undefined,
       project.revision + 1,
-      "2030-01-15",
+      "2030-01-15T00:00:00.000Z",
     );
 
     expect(deferred.status).toBe("backlog");
-    expect(deferred.scheduledDate).toBe("2030-01-15");
+    expect(deferred.revisitAt).toBe("2030-01-15T00:00:00.000Z");
   });
 
   it("throws a not-found AppError for a nonexistent project on every transition", () => {

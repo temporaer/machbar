@@ -1,19 +1,22 @@
-import { useState } from "react";
-import type { Task } from "@machbar/shared";
+import { useEffect, useState } from "react";
+import {
+  calendarDateForInstant,
+  type Task,
+} from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useTaskActions } from "../lib/useTaskActions";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
+import { taskRevisitForLocalDate } from "../lib/taskAvailability";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 
 /**
  * The canonical `task.waitingLifecycle` workflow for a task that already
  * has an external wait ("Nachhaken") — `TaskWorkflowHost` resolves here
- * whenever `task.externalWait` is set (see `TaskWaitSheet` for the "start
- * waiting" case). The decision is structured around the outcome first
- * ("Was ist passiert?"), then either "Weiter warten" with quick revisit
- * shortcuts or a separate, equally-weighted "Warten beenden" — not a
- * generic textarea + date + checkbox + Save form.
+ *  whenever `task.externalWait` is set (see `TaskWaitSheet` for the "start
+ *  waiting" case). Notes are optional; continuing or ending a wait is a
+ *  complete action without text.
  */
 export function WaitingFollowUpSheet({
   task,
@@ -24,27 +27,73 @@ export function WaitingFollowUpSheet({
 }) {
   const strings = useStrings();
   const taskActions = useTaskActions();
+  const { timezone: householdTimezone, loaded: timezoneLoaded } =
+    useHouseholdTimezone();
   const [content, setContent] = useState("");
+  const [dateDraftChanged, setDateDraftChanged] = useState(false);
   const [revisitDate, setRevisitDate] = useState<string | null>(
-    task.externalWait?.revisitDate ?? null,
+    task.revisitAt
+      ? calendarDateForInstant(task.revisitAt, householdTimezone)
+      : null,
   );
   const [customDate, setCustomDate] = useState(false);
   const [dateValid, setDateValid] = useState(true);
+  const [revisitError, setRevisitError] = useState(false);
   const saving = taskActions.isPending(task.id);
   const error = taskActions.errors[task.id] ?? null;
+  const customRevisitAt = revisitDate
+    ? taskRevisitForLocalDate(revisitDate, task.revisitAt, householdTimezone)
+    : null;
+  const invalidCustomDate =
+    customDate &&
+    (!revisitDate || !dateValid || !customRevisitAt);
   const closeIfIdle = () => {
     if (!saving) onClose();
   };
-  const today = () => toIsoCalendarDate(new Date());
+  const today = () =>
+    calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
+    toIsoCalendarDate(new Date());
 
-  const continueWaiting = async (nextRevisitDate: string | null) => {
-    if (saving || !dateValid) return;
+  useEffect(() => {
+    if (dateDraftChanged) return;
+    setRevisitDate(
+      task.revisitAt
+        ? calendarDateForInstant(task.revisitAt, householdTimezone)
+        : null,
+    );
+  }, [dateDraftChanged, householdTimezone, task.revisitAt]);
+
+  const continueWaiting = async (
+    nextRevisitDate: string | null,
+    fromShortcut = false,
+  ) => {
+    if (
+      saving ||
+      !timezoneLoaded ||
+      (!fromShortcut && customDate && !dateValid)
+    ) return;
+    if (!fromShortcut && customDate && !nextRevisitDate) {
+      setRevisitError(true);
+      return;
+    }
+    const revisitAt = nextRevisitDate
+      ? taskRevisitForLocalDate(
+          nextRevisitDate,
+          task.revisitAt,
+          householdTimezone,
+        )
+      : null;
+    if (nextRevisitDate && !revisitAt) {
+      setRevisitError(true);
+      return;
+    }
+    setRevisitError(false);
     taskActions.clearError(task.id);
     const updated = await taskActions.followUpExternalWait(task, {
       action: "continue",
-      content: content.trim(),
+      ...(content.trim() ? { content: content.trim() } : {}),
       waitingFor: task.externalWait?.waitingFor ?? null,
-      revisitDate: nextRevisitDate,
+      revisitAt,
     });
     if (updated) onClose();
   };
@@ -54,7 +103,7 @@ export function WaitingFollowUpSheet({
     taskActions.clearError(task.id);
     const updated = await taskActions.followUpExternalWait(task, {
       action: "resolve",
-      content: content.trim(),
+      ...(content.trim() ? { content: content.trim() } : {}),
     });
     if (updated) onClose();
   };
@@ -66,11 +115,14 @@ export function WaitingFollowUpSheet({
     >
       <div className="stack">
         <div className="field">
-          <label htmlFor={`follow-up-notes-${task.id}`}>{strings.whatHappened}</label>
+          <label htmlFor={`follow-up-notes-${task.id}`}>
+            {strings.waitingFollowUpNote}
+          </label>
           <textarea
             id={`follow-up-notes-${task.id}`}
             rows={4}
             value={content}
+            placeholder={strings.waitingFollowUpNotePlaceholder}
             onChange={(event) => setContent(event.target.value)}
             disabled={saving}
             autoFocus
@@ -84,24 +136,39 @@ export function WaitingFollowUpSheet({
             <button
               type="button"
               className="choice-chip"
-              disabled={saving}
-              onClick={() => void continueWaiting(addIsoCalendarDays(today(), 1))}
+              disabled={saving || !timezoneLoaded}
+              onClick={() => {
+                setCustomDate(false);
+                setDateValid(true);
+                setRevisitError(false);
+                void continueWaiting(addIsoCalendarDays(today(), 1), true);
+              }}
             >
               {strings.revisitShortcutLabels.tomorrow}
             </button>
             <button
               type="button"
               className="choice-chip"
-              disabled={saving}
-              onClick={() => void continueWaiting(addIsoCalendarDays(today(), 3))}
+              disabled={saving || !timezoneLoaded}
+              onClick={() => {
+                setCustomDate(false);
+                setDateValid(true);
+                setRevisitError(false);
+                void continueWaiting(addIsoCalendarDays(today(), 3), true);
+              }}
             >
               {strings.revisitShortcutLabels.threeDays}
             </button>
             <button
               type="button"
               className="choice-chip"
-              disabled={saving}
-              onClick={() => void continueWaiting(addIsoCalendarDays(today(), 7))}
+              disabled={saving || !timezoneLoaded}
+              onClick={() => {
+                setCustomDate(false);
+                setDateValid(true);
+                setRevisitError(false);
+                void continueWaiting(addIsoCalendarDays(today(), 7), true);
+              }}
             >
               {strings.revisitShortcutLabels.oneWeek}
             </button>
@@ -109,10 +176,10 @@ export function WaitingFollowUpSheet({
               type="button"
               className="choice-chip"
               aria-pressed={customDate}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => setCustomDate(true)}
             >
-              {strings.due} …
+              {strings.chooseRevisitDate}
             </button>
           </div>
           {customDate ? (
@@ -120,14 +187,20 @@ export function WaitingFollowUpSheet({
               <HumanDateInput
                 id={`follow-up-date-${task.id}`}
                 value={revisitDate ?? ""}
-                onChange={(date) => setRevisitDate(date)}
+                onChange={(date) => {
+                  setRevisitDate(date);
+                  setDateDraftChanged(true);
+                  setRevisitError(false);
+                }}
                 onValidityChange={setDateValid}
-                disabled={saving}
+                disabled={saving || !timezoneLoaded}
               />
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                disabled={saving || !dateValid}
+                disabled={
+                  saving || !timezoneLoaded || !dateValid || invalidCustomDate
+                }
                 onClick={() => void continueWaiting(revisitDate)}
               >
                 {strings.save}
@@ -136,6 +209,13 @@ export function WaitingFollowUpSheet({
           ) : null}
         </div>
 
+        {revisitError || invalidCustomDate ? (
+          <div className="task-row-error" role="alert">
+            {!revisitDate && dateValid
+              ? strings.revisitDateRequired
+              : strings.invalidRevisitTime}
+          </div>
+        ) : null}
         {error ? (
           <div className="task-row-error" role="alert">
             {error}
@@ -148,7 +228,7 @@ export function WaitingFollowUpSheet({
           </button>
           <button
             type="button"
-            className="btn btn-primary btn-danger"
+            className="btn btn-primary"
             onClick={() => void endWaiting()}
             disabled={saving}
           >

@@ -161,20 +161,20 @@ function useProjectActionsState() {
   const schedule = useCallback(
     (
       story: ProjectWithActions,
-      patch: { dueDate?: string | null; scheduledDate?: string | null },
+      patch: { dueDate?: string | null; revisitAt?: string | null },
     ) => update(story, patch, patch, true),
     [update],
   );
 
   const returnToBacklog = useCallback(
-    (story: ProjectWithActions, scheduledDate: string | null) =>
+    (story: ProjectWithActions, revisitAt: string | null) =>
       run({
         id: story.id,
         optimistic: {
           story: {
             ...story,
             status: "backlog",
-            scheduledDate,
+            revisitAt,
             revision: story.revision + 1,
             availableActions: workflowActionsByStatus.backlog,
           },
@@ -183,7 +183,7 @@ function useProjectActionsState() {
         mutate: () =>
           api.returnProjectToBacklog(story.id, {
             expectedRevision: story.revision,
-            scheduledDate,
+            revisitAt,
           }),
         confirmed: (confirmed) => ({ story: confirmed, action: "return_to_backlog" }),
       }),

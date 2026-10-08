@@ -58,8 +58,7 @@ describe("MCP integration", () => {
     });
     expect(created.structuredContent).toEqual({
       result: expect.objectContaining({
-        notBeforeAt: "2026-10-09T04:00:00.000Z",
-        notBeforeDate: "2026-10-09",
+        revisitAt: "2026-10-09T04:00:00.000Z",
       }),
     });
 
@@ -585,8 +584,6 @@ describe("MCP integration", () => {
         ownerMemberId: owner.id,
         dueDate: "2026-10-12",
         scheduledDate: "2026-10-15",
-        notBeforeDate: "2026-10-14",
-        notBeforeAt: "2026-10-14T08:00:00+02:00",
         tagIds: [tag.id],
         contextIds: [context.id],
       },
@@ -618,7 +615,6 @@ describe("MCP integration", () => {
       result: expect.objectContaining({
         dueDate: "2026-10-12",
         scheduledDate: "2026-10-15",
-        notBeforeDate: "2026-10-14",
         explicitTags: [expect.objectContaining({ id: tag.id })],
         explicitContexts: [expect.objectContaining({ id: context.id })],
       }),
@@ -656,7 +652,6 @@ describe("MCP integration", () => {
       result: expect.objectContaining({
         dueDate: "2026-10-12",
         scheduledDate: "2026-10-15",
-        notBeforeDate: "2026-10-14",
         effectiveOwnerId: owner.id,
       }),
     });
@@ -679,8 +674,7 @@ describe("MCP integration", () => {
       result: expect.objectContaining({
         dueDate: null,
         scheduledDate: null,
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         effectiveOwnerId: null,
       }),
     });
@@ -785,14 +779,13 @@ describe("MCP integration", () => {
       name: "machbar_create_task",
       arguments: {
         title: "Tokyo availability",
-        notBeforeDate: "2026-10-14",
+        revisitAt: "2026-10-14T00:00:00",
         timezone: "Asia/Tokyo",
       },
     });
     expect(dateOnly.structuredContent).toEqual({
       result: expect.objectContaining({
-        notBeforeAt: "2026-10-13T15:00:00.000Z",
-        notBeforeDate: "2026-10-14",
+        revisitAt: "2026-10-13T15:00:00.000Z",
       }),
     });
 
@@ -800,7 +793,7 @@ describe("MCP integration", () => {
       name: "machbar_create_task",
       arguments: {
         title: "Ambiguous availability",
-        notBeforeAt: "2026-10-25T02:30",
+        revisitAt: "2026-10-25T02:30",
         timezone: "Europe/Berlin",
       },
     });
@@ -809,7 +802,7 @@ describe("MCP integration", () => {
       name: "machbar_create_task",
       arguments: {
         title: "Nonexistent availability",
-        notBeforeAt: "2026-03-29T02:30",
+        revisitAt: "2026-03-29T02:30",
         timezone: "Europe/Berlin",
       },
     });
@@ -834,8 +827,7 @@ describe("MCP integration", () => {
       });
       expect(created.structuredContent).toEqual({
         result: expect.objectContaining({
-          notBeforeAt: null,
-          notBeforeDate: null,
+          revisitAt: null,
         }),
       });
     }
@@ -861,8 +853,7 @@ describe("MCP integration", () => {
     });
     expect(cleared.structuredContent).toEqual({
       result: expect.objectContaining({
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
       }),
     });
 
@@ -959,7 +950,6 @@ describe("MCP integration", () => {
         title: "Project metadata",
         ownerMemberId: owner.id,
         dueDate: "2026-10-20",
-        scheduledDate: "2026-10-21",
         contextIds: [context.id],
       },
     });
@@ -982,7 +972,6 @@ describe("MCP integration", () => {
     expect(preserved.structuredContent).toEqual({
       result: expect.objectContaining({
         dueDate: "2026-10-20",
-        scheduledDate: "2026-10-21",
         ownerMemberId: owner.id,
       }),
     });
@@ -1157,6 +1146,7 @@ describe("MCP integration", () => {
         taskId,
         expectedRevision: defaultSearchResult.items[0]!.revision,
         waitingFor: "a reply",
+        revisitAt: null,
       },
     });
     expect(waitingMutation.structuredContent).toEqual({
@@ -1459,13 +1449,11 @@ describe("MCP integration", () => {
         result: {
           id: number;
           revision: number;
-          notBeforeAt: string | null;
-          notBeforeDate: string | null;
+          revisitAt: string | null;
         };
       }
     ).result;
-    expect(createdTask.notBeforeAt).toBe("2026-09-21T16:00:00.000Z");
-    expect(createdTask.notBeforeDate).toBe("2026-09-21");
+    expect(createdTask.revisitAt).toBe("2026-09-21T16:00:00.000Z");
 
     const search = await client.callTool({
       name: "machbar_search",
@@ -1475,10 +1463,10 @@ describe("MCP integration", () => {
       (
         search.structuredContent as {
           result: {
-            items: Array<{ notBeforeAt: string | null; notBeforeDate: string | null }>;
+            items: Array<{ revisitAt: string | null }>;
           };
         }
-      ).result.items[0]?.notBeforeAt,
+      ).result.items[0]?.revisitAt,
     ).toBe("2026-09-21T16:00:00.000Z");
 
     const updated = await client.callTool({
@@ -1486,16 +1474,15 @@ describe("MCP integration", () => {
       arguments: {
         taskId: createdTask.id,
         expectedRevision: createdTask.revision,
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
       },
     });
     expect(
       (
         updated.structuredContent as {
-          result: { notBeforeAt: string | null; notBeforeDate: string | null };
+          result: { revisitAt: string | null };
         }
-      ).result.notBeforeAt,
+      ).result.revisitAt,
     ).toBeNull();
 
     await client.close();
@@ -1860,12 +1847,13 @@ describe("MCP integration", () => {
         taskId: createdTask.id,
         expectedRevision: createdTask.revision,
         waitingFor: "Alex",
-        revisitDate: "2026-09-22",
+        revisitAt: "2026-09-22T00:00:00.000Z",
       },
     });
     expect(waiting.structuredContent).toEqual({
       result: expect.objectContaining({
-        externalWait: { waitingFor: "Alex", revisitDate: "2026-09-22" },
+        externalWait: { waitingFor: "Alex" },
+        revisitAt: "2026-09-22T00:00:00.000Z",
       }),
     });
 

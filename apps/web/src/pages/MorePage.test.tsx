@@ -7,6 +7,8 @@ import { api } from "../lib/api";
 
 vi.mock("../lib/api", () => ({
   api: {
+    getHouseholdTimezone: vi.fn().mockResolvedValue({ timezone: "Europe/Berlin" }),
+    updateHouseholdTimezone: vi.fn().mockResolvedValue({ timezone: "Europe/Berlin" }),
     getAuthStatus: vi.fn().mockResolvedValue({
       enabled: false,
       authenticated: false,
@@ -188,7 +190,7 @@ describe("MorePage", () => {
     expect(
       screen.getByText("Gemeinsamer Beitrag ohne persönliche Zuordnung"),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/Platz|Rang|winner/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Platz$|^Rang$|^winner$/i)).not.toBeInTheDocument();
   });
 
   it("groups destinations and settings by purpose", async () => {

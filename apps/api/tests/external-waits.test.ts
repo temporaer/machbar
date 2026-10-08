@@ -182,7 +182,7 @@ describe("task external waits", () => {
     });
     expect(dependencyResolved.json()).toMatchObject({
       blocked: true,
-      externalWait: { waitingFor: "IKEA-Lieferung", revisitDate: null },
+      externalWait: { waitingFor: "IKEA-Lieferung" },
     });
 
     await ctx.app.inject({
@@ -388,7 +388,6 @@ describe("task external waits", () => {
     });
     expect(current.json().externalWait).toEqual({
       waitingFor: "Amt",
-      revisitDate: null,
     });
   });
 
@@ -397,6 +396,7 @@ describe("task external waits", () => {
       title: "Später entscheiden",
       scheduledDate: "2026-09-12",
     });
+
     const waiting = await ctx.app.inject({
       method: "PUT",
       url: `/api/tasks/${task.id}/external-wait`,
@@ -420,6 +420,31 @@ describe("task external waits", () => {
       scheduledDate: "2026-09-12",
       blocked: false,
     });
+  });
+
+  it("honors an explicit null when clearing an external-wait revisit", async () => {
+    const task = await createTask({ title: "Nachhaken löschen" });
+    const waiting = await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${task.id}/external-wait`,
+      payload: {
+        waitingFor: "Amt",
+        revisitAt: "2026-09-20T08:00:00.000Z",
+      },
+    });
+    expect(waiting.statusCode).toBe(200);
+
+    const cleared = await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${task.id}/external-wait`,
+      payload: {
+        waitingFor: "Amt",
+        revisitAt: null,
+        expectedRevision: waiting.json().revision,
+      },
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().revisitAt).toBeNull();
   });
 
   it("rejects waits on non-actionable and recurring tasks", async () => {
@@ -499,7 +524,6 @@ describe("task external waits", () => {
       scheduledDate: "2026-09-06",
       externalWait: {
         waitingFor: "Property manager",
-        revisitDate: "2026-09-09",
       },
       revision: waiting.revision + 1,
     });
@@ -547,6 +571,118 @@ describe("task external waits", () => {
     expect(response.json().notes).toContain(
       "· Unknown actor]\nThe delivery was confirmed.",
     );
+  });
+
+  it("continues waiting without a note while recording the attributed transition", async () => {
+    const member = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/members",
+        payload: { name: "Mira" },
+      })
+    ).json();
+    const task = await createTask({
+      title: "Continue without note",
+      notes: "Original note.",
+      scheduledDate: "2026-09-11",
+    });
+    const waiting = (
+      await ctx.app.inject({
+        method: "PUT",
+        url: `/api/tasks/${task.id}/external-wait`,
+        payload: {
+          waitingFor: "Supplier",
+          revisitAt: "2026-09-02T16:00:00.000Z",
+          expectedRevision: task.revision,
+        },
+      })
+    ).json();
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/external-wait/follow-up`,
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(member.id) },
+      payload: {
+        action: "continue",
+        content: "   ",
+        revisitAt: "2026-09-14T22:00:00.000Z",
+        expectedRevision: waiting.revision,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      notes: "Original note.",
+      revisitAt: "2026-09-14T22:00:00.000Z",
+      scheduledDate: "2026-09-11",
+      externalWait: { waitingFor: "Supplier" },
+      revision: waiting.revision + 1,
+    });
+    const event = ctx.handle.db
+      .select()
+      .from(schema.activityEvents)
+      .all()
+      .find((row) => row.entityId === task.id && row.kind === "task_external_wait_updated");
+    expect(event).toMatchObject({
+      actorMemberId: member.id,
+      kind: "task_external_wait_updated",
+    });
+    expect(event?.metadata.changedFields).not.toContain("notesAppended");
+  });
+
+  it("resolves waiting without a note, clears only the revisit, and records the actor", async () => {
+    const member = (
+      await ctx.app.inject({
+        method: "POST",
+        url: "/api/members",
+        payload: { name: "Mira" },
+      })
+    ).json();
+    const task = await createTask({
+      title: "Resolve without note",
+      notes: "Original note.",
+      scheduledDate: "2026-09-11",
+    });
+    const waiting = (
+      await ctx.app.inject({
+        method: "PUT",
+        url: `/api/tasks/${task.id}/external-wait`,
+        payload: {
+          waitingFor: "Supplier",
+          revisitAt: "2026-09-02T16:00:00.000Z",
+          expectedRevision: task.revision,
+        },
+      })
+    ).json();
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${task.id}/external-wait/follow-up`,
+      headers: { [ACTIVITY_ACTOR_HEADER]: String(member.id) },
+      payload: {
+        action: "resolve",
+        expectedRevision: waiting.revision,
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      notes: "Original note.",
+      revisitAt: null,
+      scheduledDate: "2026-09-11",
+      externalWait: null,
+      revision: waiting.revision + 1,
+    });
+    const event = ctx.handle.db
+      .select()
+      .from(schema.activityEvents)
+      .all()
+      .find((row) => row.entityId === task.id && row.kind === "task_external_wait_resolved");
+    expect(event).toMatchObject({
+      actorMemberId: member.id,
+      kind: "task_external_wait_resolved",
+    });
+    expect(event?.metadata.changedFields).not.toContain("notesAppended");
   });
 
   it("rolls back the whole follow-up on stale revision or a missing continuation reason", async () => {
@@ -601,7 +737,6 @@ describe("task external waits", () => {
       scheduledDate: "2026-09-06",
       externalWait: {
         waitingFor: "Authority",
-        revisitDate: "2026-09-02",
       },
       revision: waiting.revision,
     });

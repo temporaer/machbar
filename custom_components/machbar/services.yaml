@@ -26,6 +26,9 @@ sync_task:
     due_date:
       selector:
         date:
+    revisit_at:
+      selector:
+        text:
     not_before_at:
       selector:
         text:

@@ -3,6 +3,7 @@ export const INTAKE_NULLABLE_ABSENCE_FIELDS = new Set([
   "ownerName",
   "dueDate",
   "scheduledDate",
+  "revisitAt",
   "notBeforeDate",
   "notBeforeAt",
   "startDate",
@@ -62,6 +63,7 @@ const CALENDAR_FIELDS = new Set([
 const WORK_FIELDS = new Set([
   "key", "kind", "title", "notes", "parentKey", "ownerName", "dueDate",
   "scheduledDate", "notBeforeDate", "notBeforeAt", "reminders",
+  "revisitAt",
   "needsClarification", "relatedCalendarKeys",
 ]);
 const WARNING_FIELDS = new Set(["message"]);

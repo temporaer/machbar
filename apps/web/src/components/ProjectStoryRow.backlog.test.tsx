@@ -126,7 +126,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
       status: "backlog",
       ownerMemberId: 1,
       dueDate: "2026-03-01",
-      scheduledDate: "2026-02-15",
+      revisitAt: "2026-02-14T23:00:00.000Z",
       openCount: 2,
       doneCount: 1,
       acceptanceCriteria: [
@@ -141,7 +141,9 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
 
     expect(screen.getByText(/Erledigt, wenn …: 1\/2/)).toBeInTheDocument();
     expect(screen.getByText(/Fällig: 01.03.2026/)).toBeInTheDocument();
-    expect(screen.getByText(/Wiedervorlage: 15.02.2026/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Wiedervorlage: 15.02.2026" }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Aufgaben: 1\/3/)).toBeInTheDocument();
   });
 

@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
+import * as schema from "../db/schema.js";
 import { Graph } from "../domain/graph.js";
 import { buildAgenda } from "../domain/agenda.js";
 import { buildWeekAgenda } from "../domain/weekAgenda.js";
@@ -15,6 +17,17 @@ import {
   contextAvailabilityForHousehold,
   contextAvailabilityForMember,
 } from "../integrations/homeAssistant.js";
+import { DEFAULT_HOUSEHOLD_TIMEZONE } from "@machbar/shared";
+
+function householdTimezone(db: Db): string {
+  return (
+    db
+      .select({ value: schema.householdSettings.value })
+      .from(schema.householdSettings)
+      .where(eq(schema.householdSettings.key, "timezone"))
+      .get()?.value ?? DEFAULT_HOUSEHOLD_TIMEZONE
+  );
+}
 
 const agendaQuerySchema = z.object({
   memberId: z.coerce.number().int().positive().optional(),
@@ -83,18 +96,21 @@ function parseAgendaQuery(query: unknown): z.infer<typeof agendaQuerySchema> {
 }
 
 export function registerViewRoutes(app: FastifyInstance, db: Db) {
+  const getTimezone = () => householdTimezone(db);
   app.get("/api/views/more-counts", async () => {
     // Deliberately household-only: Review has no scope toggle, so pass an
     // explicit (always-absent) viewer to keep every "work" item excluded
     // rather than defaulting to `Graph.load`'s unrestricted internal mode.
     const graph = Graph.load(db, undefined, undefined);
     return {
-      review: buildReviewItems(graph).length,
+      review: buildReviewItems(graph, { householdTimezone: getTimezone() }).length,
     };
   });
 
   app.get("/api/review", async () => {
-    return buildReviewItems(Graph.load(db, undefined, undefined));
+    return buildReviewItems(Graph.load(db, undefined, undefined), {
+      householdTimezone: getTimezone(),
+    });
   });
 
   app.get("/api/agenda/today", async (request) => {
@@ -120,6 +136,7 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       memberId,
       today: date,
       scope: scope === "work" ? "work" : memberId === undefined ? "all" : "mine",
+      householdTimezone: getTimezone(),
       contextAvailability: (task, target) =>
         target === "household"
           ? contextAvailabilityForHousehold(db, task.effectiveContexts)
@@ -152,6 +169,7 @@ export function registerViewRoutes(app: FastifyInstance, db: Db) {
       today,
       memberId,
       scope: scope === "work" ? "work" : memberId === undefined ? "all" : "mine",
+      householdTimezone: getTimezone(),
       contextAvailability: (task, target) =>
         target === "household"
           ? contextAvailabilityForHousehold(db, task.effectiveContexts)

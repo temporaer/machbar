@@ -36,7 +36,7 @@ export function ProjectAgendaRow({
   const now = new Date();
   const scheduled = attentionBucket === "planned";
   const date = scheduled ? project.scheduledDate : project.dueDate;
-  const label = scheduled ? strings.projectRevisitDate : strings.due;
+  const label = scheduled ? strings.planningScheduledFor : strings.due;
   const relative = date
     ? scheduled
       ? formatRelativeScheduleDate(date, now, locale)

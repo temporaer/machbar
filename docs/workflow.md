@@ -100,6 +100,15 @@ status is shown.
 person’s planned work, deadlines, due-soon tasks, reached follow-ups, standalone
 available work, and the next useful action from each active project.
 
+Urgent overdue and due-today deadlines precede planned work; planned work
+precedes due Wiedervorlagen, which precede upcoming deadlines. Each task appears
+in only one section, while its row retains secondary deadline, revisit, and
+external-wait context. A due revisit exposes the next decision directly:
+start work today (clearing the revisit and scheduling today atomically), open
+the existing planning or revisit workflow, follow up on an external wait, or
+end that wait. Merely viewing details, editing notes, or changing a title does
+not acknowledge or clear a revisit.
+
 The compact **Meine | Alle** toggle can broaden this to the whole household
 without changing who is signed in or who is recorded as making changes.
 
@@ -132,14 +141,13 @@ projects still appear in Week because they are intentional planning signals;
 unscheduled backlog-project tasks stay out of **Ohne Planung** until the project
 is active.
 
-Each task has distinct temporal semantics: `notBeforeAt`/`notBeforeDate`
-("Wieder ansehen ab") gates when it may enter the executable pool,
-`scheduledDate` ("Geplant für …") records when the household intends to work
-on it, `dueDate` records the real deadline or
-constraint, and `externalWait.revisitDate` records the follow-up date for a
-direct external wait. Week task placement uses the attention dates
-`scheduledDate`/`dueDate`/`externalWait.revisitDate`; `notBeforeAt` is only an
-eligibility gate. From these, Week derives one explicit projected
+Each task has distinct temporal semantics: `scheduledDate` ("Geplant für …")
+records when the household intends to work on it, `revisitAt` records a
+follow-up or decision instant, and `dueDate` records the real deadline or
+constraint. An external wait is the blocker reason; its follow-up is stored in
+the same work-item `revisitAt` field. Week task placement uses the attention
+dates `scheduledDate`/`dueDate`/`revisitAt`; revisit is not a separate
+availability gate. From these, Week derives one explicit projected
 `attentionDate` (and matching `placement`) per item: the earliest applicable
 date, clamped forward to today when it has passed. This means a due date that
 is chronologically earlier than a scheduled/revisit date wins the placement
@@ -162,8 +170,8 @@ tasks.
 
 Dragging a card edits whichever date field is responsible for its current
 placement, not simply its task-vs-project role: a `scheduled` task card changes
-`scheduledDate`, and a `revisit` card changes `externalWait.revisitDate`.
-Backlog-project `scheduledDate` is exclusively a Wiedervorlage: it is edited
+`scheduledDate`, and a `revisit` card changes `revisitAt`. Backlog-project
+`revisitAt` is exclusively a Wiedervorlage: it is edited
 through `story.defer`, surfaces in Review when reached, and is never Week
 placement or active-project attention. A `due`-placement card's deadline is a
 hard constraint and is never moved by generic drag; the

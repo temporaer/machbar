@@ -1,6 +1,6 @@
 {
   "name": "@machbar/api",
-  "version": "0.8.0",
+  "version": "0.9.1",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "tsx src/db/migrate.ts",
+    "db:revisit-dry-run": "tsx src/db/revisitMigrationCli.ts",
+    "db:revisit-apply": "tsx src/db/revisitMigrationCli.ts --apply",
     "db:seed": "tsx src/db/seed.ts",
     "generate:paperless-types": "node scripts/generate-paperless-types.mjs"
   },
@@ -19,7 +21,7 @@
     "@fastify/cookie": "^11.1.2",
     "@fastify/multipart": "^10.1.1",
     "@fastify/static": "^10.1.3",
-    "@machbar/shared": "^0.4.0",
+    "@machbar/shared": "^0.5.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "better-sqlite3": "12.11.1",
     "drizzle-orm": "^0.45.2",

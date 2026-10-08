@@ -4,6 +4,7 @@ import type {
   ProjectAgendaBucket,
   ProjectAgendaEntry,
 } from "@machbar/shared";
+import { calendarDateForInstant } from "@machbar/shared";
 import type { Graph } from "./graph.js";
 import type { TaskRecord } from "./graph.js";
 import {
@@ -15,8 +16,16 @@ import {
   pruneReferenceContainers,
 } from "./compiledViewProjection.js";
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+function todayIso(timezone?: string): string {
+  if (!timezone) return new Date().toISOString().slice(0, 10);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts();
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function addDaysIso(dateIso: string, days: number): string {
@@ -46,9 +55,6 @@ function sortByDateThenPriorityTitleId(
 const sortByScheduledThenPriorityTitleId = sortByDateThenPriorityTitleId(
   (task) => task.scheduledDate,
 );
-const sortByRevisitThenPriorityTitleId = sortByDateThenPriorityTitleId(
-  (task) => task.externalWait?.revisitDate ?? null,
-);
 const sortByDueThenPriorityTitleId = sortByDateThenPriorityTitleId(
   (task) => task.dueDate,
 );
@@ -57,6 +63,8 @@ export interface BuildAgendaOptions {
   dueSoonDays?: number;
   /** Browser-local calendar date used consistently for task and project boundaries. */
   today?: string;
+  now?: string;
+  householdTimezone?: string;
   /**
    * The currently selected household member. When provided, every bucket
    * (including `revisit`) is restricted to tasks whose *effective* owner is
@@ -74,18 +82,19 @@ export interface BuildAgendaOptions {
 /**
  * Builds the "Heute" (today) agenda. Categories are mutually exclusive:
  * a task is placed in the first matching bucket in the order
- * revisit > planned > overdue > dueToday > dueSoon > shared > unscheduled, so
+ * overdue > dueToday > planned > revisit > dueSoon > shared > unscheduled, so
  * nothing is duplicated across sections. The final bucket keeps actionable
  * work assigned to the selected member visible even when it has no
  * `scheduledDate`; unassigned actionable work has already been claimed by
  * `shared`.
  *
  * Captured tasks that still need clarification are excluded from every
- * bucket. Among clarified work, blocked tasks (unresolved dependencies)
- * are normally excluded from every bucket above — they aren't actionable,
- * so surfacing them in "Heute" would just be noise. The one exception is
- * `revisit`: a task with a direct external wait whose revisit date is today
- * or earlier reappears as a reminder to check on it.
+ * bucket. Attention and explicit plans remain visible even when a task is
+ * blocked or its physical context is unavailable: overdue/due-soon deadlines,
+ * scheduled work, and reached revisits all need a decision. An external wait
+ * with a retained historical schedule is excluded from planned work. Ordinary
+ * automatic work recommendations still require executable tasks and available
+ * context.
  *
  * `createAgendaSelection()` centralizes how `options.memberId` restricts every
  * bucket, revisit included, to the selected member's own and shared tasks.
@@ -94,7 +103,18 @@ export function buildAgenda(
   graph: Graph,
   options: BuildAgendaOptions = {},
 ): Agenda {
-  const { dueSoonDays = 3, memberId, today = todayIso() } = options;
+  const {
+    dueSoonDays = 3,
+    memberId,
+    householdTimezone,
+    today = todayIso(householdTimezone),
+  } = options;
+  const sortByRevisitThenPriorityTitleId = sortByDateThenPriorityTitleId(
+    (task) =>
+      calendarDateForInstant(task.revisitAt, householdTimezone) ??
+      null,
+  );
+  const now = Date.parse(options.now ?? new Date().toISOString());
   const selection = createAgendaSelection(graph, options);
   const { contextAvailability, isContextAvailable } = selection;
   const soonLimit = addDaysIso(today, dueSoonDays);
@@ -103,14 +123,21 @@ export function buildAgenda(
   const take = (
     predicate: (t: TaskRecord) => boolean,
     compare: (a: TaskRecord, b: TaskRecord) => number,
+    options: {
+      requireExecutable?: boolean;
+      requireContextAvailable?: boolean;
+    } = {},
   ): TaskRecord[] => {
+    const requireExecutable = options.requireExecutable ?? true;
+    const requireContextAvailable = options.requireContextAvailable ?? true;
     const results = graph
       .allTasks()
       .filter(
         (t) =>
           selection.isAgendaTask(t) &&
-          t.executable &&
-          isContextAvailable(t) &&
+          (requireExecutable || t.status === "actionable") &&
+          (!requireExecutable || t.executable) &&
+          (!requireContextAvailable || isContextAvailable(t)) &&
           !seen.has(t.id) &&
           predicate(t),
       )
@@ -119,40 +146,54 @@ export function buildAgenda(
     return results;
   };
 
-  const revisit = graph
-    .allTasks()
-    .filter(
-      (t) =>
-        selection.isDirectExternalWaitAttention(t) &&
-        !!t.externalWait?.revisitDate &&
-        t.externalWait.revisitDate <= today,
-    )
-    .sort(sortByRevisitThenPriorityTitleId);
-  for (const task of revisit) seen.add(task.id);
-  const planned = take(
-    (t) =>
-      t.status === "actionable" &&
-      !!t.scheduledDate &&
-      t.scheduledDate <= today,
-    sortByScheduledThenPriorityTitleId,
-  );
   const overdue = take(
     (t) => !!t.dueDate && t.dueDate < today,
     sortByDueThenPriorityTitleId,
+    { requireExecutable: false, requireContextAvailable: false },
   );
   const dueToday = take(
     (t) => t.dueDate === today,
     sortByDueThenPriorityTitleId,
+    { requireExecutable: false, requireContextAvailable: false },
   );
+  const planned = take(
+    (t) =>
+      t.status === "actionable" &&
+      !!t.scheduledDate &&
+      t.scheduledDate <= today &&
+      t.externalWait === null,
+    sortByScheduledThenPriorityTitleId,
+    { requireExecutable: false, requireContextAvailable: false },
+  );
+  const revisit = graph
+    .allTasks()
+    .filter((t) => {
+      const attentionDate =
+        calendarDateForInstant(t.revisitAt, householdTimezone) ??
+        null;
+      const reached =
+        attentionDate !== null &&
+        (attentionDate < today ||
+          (attentionDate === today &&
+            t.revisitAt !== null &&
+            t.revisitAt !== undefined &&
+            Date.parse(t.revisitAt) <= now));
+      return selection.isAgendaTask(t) && reached && !seen.has(t.id);
+    })
+    .sort(sortByRevisitThenPriorityTitleId);
+  for (const task of revisit) seen.add(task.id);
   const dueSoon = take(
     (t) => !!t.dueDate && t.dueDate > today && t.dueDate <= soonLimit,
     sortByDueThenPriorityTitleId,
+    { requireExecutable: false, requireContextAvailable: false },
   );
-  const { shared, unscheduled } = selectCurrentAvailableWork(graph, {
+  const availableWork = selectCurrentAvailableWork(graph, {
     ...options,
     today,
     dueSoonDays,
   });
+  const shared = availableWork.shared.filter((task) => !seen.has(task.id));
+  const unscheduled = availableWork.unscheduled.filter((task) => !seen.has(task.id));
   for (const task of [...shared, ...unscheduled]) seen.add(task.id);
   const completedToday = graph
     .allTasks()

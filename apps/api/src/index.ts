@@ -1,6 +1,7 @@
 import { buildApp } from "./app.js";
 import { openDb } from "./db/client.js";
 import { runMigrations } from "./db/migrate.js";
+import { assertRevisitMigrationReady } from "./db/revisitMigration.js";
 import { seedDatabase } from "./db/seed.js";
 import * as schema from "./db/schema.js";
 import { loadEnv } from "./env.js";
@@ -9,6 +10,7 @@ async function main() {
   const env = loadEnv();
   const { db, sqlite } = openDb(env.databasePath);
   runMigrations(db);
+  assertRevisitMigrationReady(sqlite);
 
   if (env.seedDatabase) {
     const hasMembers = db.select().from(schema.members).limit(1).all().length > 0;

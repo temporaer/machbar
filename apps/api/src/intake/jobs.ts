@@ -58,6 +58,7 @@ const SAFE_CONTRACT_PREVIEW_FIELDS = new Set([
   "relatedCalendarKeys",
   "dueDate",
   "scheduledDate",
+  "revisitAt",
   "notBeforeDate",
   "notBeforeAt",
   "startDate",

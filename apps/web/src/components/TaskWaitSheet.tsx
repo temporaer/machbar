@@ -1,5 +1,9 @@
-import { useMemo, useState } from "react";
-import type { Member, Task } from "@machbar/shared";
+import { useEffect, useMemo, useState } from "react";
+import {
+  calendarDateForInstant,
+  type Member,
+  type Task,
+} from "@machbar/shared";
 import {
   extractCaptionHints,
   strongestCaptionHints,
@@ -15,6 +19,8 @@ import { formatExactLocalDate } from "../lib/relativeDate";
 import { BottomSheet } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { HumanDateInput } from "./HumanDateInput";
+import { taskRevisitForLocalDate } from "../lib/taskAvailability";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 
 /**
  * The canonical `task.waitingLifecycle` workflow for a task with no
@@ -34,12 +40,26 @@ export function TaskWaitSheet({
   const strings = useStrings();
   const { locale } = useLocale();
   const taskActions = useTaskActions();
+  const { timezone: householdTimezone, loaded: timezoneLoaded } =
+    useHouseholdTimezone();
   const [waitingFor, setWaitingFor] = useState("");
-  const [revisitDate, setRevisitDate] = useState<string | null>(null);
+  const [revisitDate, setRevisitDate] = useState<string | null>(
+    task.revisitAt
+      ? calendarDateForInstant(task.revisitAt, householdTimezone)
+      : null,
+  );
+  const [revisitIntent, setRevisitIntent] = useState<
+    "unchanged" | "replace" | "clear"
+  >("unchanged");
   const [customDate, setCustomDate] = useState(false);
   const [dateValid, setDateValid] = useState(true);
   const saving = taskActions.isPending(task.id);
   const error = taskActions.errors[task.id] ?? null;
+  const replacementRevisitAt = revisitDate
+    ? taskRevisitForLocalDate(revisitDate, task.revisitAt, householdTimezone)
+    : null;
+  const invalidRevisitDate =
+    revisitIntent === "replace" && (!revisitDate || !replacementRevisitAt);
   const captionHints = useMemo(
     () =>
       extractCaptionHints(task.title, {
@@ -61,14 +81,41 @@ export function TaskWaitSheet({
     ),
   );
 
-  const today = () => toIsoCalendarDate(new Date());
+  useEffect(() => {
+    if (revisitIntent !== "unchanged") return;
+    setRevisitDate(
+      task.revisitAt
+        ? calendarDateForInstant(task.revisitAt, householdTimezone)
+        : null,
+    );
+  }, [householdTimezone, revisitIntent, task.revisitAt]);
+
+  const today = () =>
+    calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
+    toIsoCalendarDate(new Date());
 
   const commit = async () => {
-    if (saving || !waitingFor.trim() || !dateValid) return;
+    if (
+      saving ||
+      !timezoneLoaded ||
+      !waitingFor.trim() ||
+      (customDate && !dateValid) ||
+      invalidRevisitDate
+    ) return;
     taskActions.clearError(task.id);
     const updated = await taskActions.setExternalWait(
       task,
-      { waitingFor: waitingFor.trim(), revisitDate },
+      {
+        waitingFor: waitingFor.trim(),
+        ...(revisitIntent === "unchanged"
+          ? {}
+          : {
+              revisitAt:
+                revisitIntent === "clear"
+                  ? null
+                  : replacementRevisitAt,
+            }),
+      },
       { throwOnError: false },
     );
     if (updated) onClose();
@@ -121,10 +168,12 @@ export function TaskWaitSheet({
               type="button"
               className="choice-chip"
               aria-pressed={!customDate && revisitDate === addIsoCalendarDays(today(), 1)}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
+                setDateValid(true);
                 setRevisitDate(addIsoCalendarDays(today(), 1));
+                setRevisitIntent("replace");
               }}
             >
               {strings.revisitShortcutLabels.tomorrow}
@@ -133,10 +182,12 @@ export function TaskWaitSheet({
               type="button"
               className="choice-chip"
               aria-pressed={!customDate && revisitDate === addIsoCalendarDays(today(), 3)}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
+                setDateValid(true);
                 setRevisitDate(addIsoCalendarDays(today(), 3));
+                setRevisitIntent("replace");
               }}
             >
               {strings.revisitShortcutLabels.threeDays}
@@ -145,10 +196,12 @@ export function TaskWaitSheet({
               type="button"
               className="choice-chip"
               aria-pressed={!customDate && revisitDate === addIsoCalendarDays(today(), 7)}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
+                setDateValid(true);
                 setRevisitDate(addIsoCalendarDays(today(), 7));
+                setRevisitIntent("replace");
               }}
             >
               {strings.revisitShortcutLabels.oneWeek}
@@ -156,11 +209,13 @@ export function TaskWaitSheet({
             <button
               type="button"
               className="choice-chip"
-              aria-pressed={!customDate && revisitDate === null}
-              disabled={saving}
+              aria-pressed={!customDate && revisitIntent === "clear"}
+              disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
+                setDateValid(true);
                 setRevisitDate(null);
+                setRevisitIntent("clear");
               }}
             >
               {strings.revisitShortcutLabels.noDate}
@@ -169,20 +224,31 @@ export function TaskWaitSheet({
               type="button"
               className="choice-chip"
               aria-pressed={customDate}
-              disabled={saving}
-              onClick={() => setCustomDate(true)}
+              disabled={saving || !timezoneLoaded}
+              onClick={() => {
+                setCustomDate(true);
+                setRevisitIntent("replace");
+              }}
             >
-              {strings.due} …
+              {strings.chooseRevisitDate}
             </button>
           </div>
           {customDate ? (
             <HumanDateInput
               id={`wait-revisit-${task.id}`}
               value={revisitDate ?? ""}
-              onChange={(date) => setRevisitDate(date)}
+              onChange={(date) => {
+                setRevisitDate(date);
+                setRevisitIntent("replace");
+              }}
               onValidityChange={setDateValid}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
             />
+          ) : null}
+          {invalidRevisitDate ? (
+            <p className="human-date-error" role="alert">
+              {revisitDate ? strings.invalidRevisitTime : strings.revisitDateRequired}
+            </p>
           ) : null}
           <CaptionHintSuggestions
             hints={revisitHints.map((hint) => {
@@ -193,7 +259,7 @@ export function TaskWaitSheet({
                 label: strings.titleHintFollowUp(date),
               };
             })}
-            disabled={saving}
+            disabled={saving || !timezoneLoaded}
             onSelect={(key) => {
               const hint = revisitHints.find(
                 (candidate) => candidate.key === key,
@@ -201,6 +267,7 @@ export function TaskWaitSheet({
               if (hint) {
                 setRevisitDate(hint.date);
                 setCustomDate(true);
+                setRevisitIntent("replace");
               }
             }}
           />
@@ -220,7 +287,13 @@ export function TaskWaitSheet({
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={saving || !waitingFor.trim() || !dateValid}
+            disabled={
+              saving ||
+              !timezoneLoaded ||
+              !waitingFor.trim() ||
+              !dateValid ||
+              invalidRevisitDate
+            }
           >
             {strings.startWaitingConfirm}
           </button>

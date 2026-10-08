@@ -89,7 +89,10 @@ export interface CreateTaskInput {
   scope?: WorkItemScope;
   dueDate?: string | null;
   scheduledDate?: string | null;
+  revisitAt?: string | null;
+  /** @deprecated Use revisitAt. */
   notBeforeAt?: string | null;
+  /** @deprecated Use revisitAt. */
   notBeforeDate?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
@@ -109,50 +112,6 @@ function isValidIanaTimezone(value: string): boolean {
     return true;
   } catch {
     return false;
-  }
-}
-
-function assertScheduleNotBeforeAvailability(
-  scheduledDate: string | null,
-  notBeforeAt: string | null,
-  notBeforeDate: string | null,
-) {
-  if ((notBeforeAt === null) !== (notBeforeDate === null)) {
-    throw AppError.badRequest(
-      "task_availability_date_required",
-      "Task availability requires both an instant and its local calendar date.",
-      { notBeforeAt, notBeforeDate },
-    );
-  }
-  if (notBeforeAt !== null && notBeforeDate !== null) {
-    const utcDate = new Date(notBeforeAt).toISOString().substring(0, 10);
-    const localDateEpoch = Date.parse(`${notBeforeDate}T00:00:00.000Z`);
-    const utcDateEpoch = Date.parse(`${utcDate}T00:00:00.000Z`);
-    const calendarDistance = Math.abs(localDateEpoch - utcDateEpoch);
-    // Every IANA offset maps an instant to the previous, same, or next UTC
-    // calendar date. Reject unrelated dates while keeping the caller-provided
-    // local date authoritative for the schedule invariant below.
-    if (
-      !isIsoCalendarDate(notBeforeDate) ||
-      calendarDistance > 24 * 60 * 60 * 1000
-    ) {
-      throw AppError.badRequest(
-        "task_availability_date_required",
-        "The local task availability date does not match its instant.",
-        { notBeforeAt, notBeforeDate },
-      );
-    }
-  }
-  if (
-    scheduledDate !== null &&
-    notBeforeDate !== null &&
-    scheduledDate < notBeforeDate
-  ) {
-    throw AppError.conflict(
-      "task_schedule_before_available",
-      "A task cannot be planned before it becomes available.",
-      { scheduledDate, notBeforeAt, notBeforeDate },
-    );
   }
 }
 
@@ -475,9 +434,17 @@ function insertTask(
   const allowedDeviationDays =
     kind === "reference" ? null : input.allowedDeviationDays ?? null;
   const scheduledDate = kind === "reference" ? null : input.scheduledDate ?? null;
-  const notBeforeAt = kind === "reference" ? null : input.notBeforeAt ?? null;
-  const notBeforeDate = kind === "reference" ? null : input.notBeforeDate ?? null;
-  assertScheduleNotBeforeAvailability(scheduledDate, notBeforeAt, notBeforeDate);
+  const revisitAt =
+    kind === "reference"
+      ? null
+      : input.revisitAt ?? input.notBeforeAt ?? null;
+  if (scheduledDate !== null && revisitAt !== null && repeatAfterDays === null) {
+    throw AppError.conflict(
+      "task_schedule_before_available",
+      "An ordinary task cannot have both a work plan and a revisit.",
+      { scheduledDate, revisitAt },
+    );
+  }
   const recurrence = recurrenceDates(
     repeatAfterDays,
     allowedDeviationDays,
@@ -518,8 +485,7 @@ function insertTask(
             ? recurrence.dueDate
             : input.dueDate ?? null,
       scheduledDate,
-      notBeforeAt,
-      notBeforeDate,
+      revisitAt,
       priority: kind === "reference" ? null : input.priority ?? null,
       size: kind === "reference" ? null : input.size ?? null,
       repeatAfterDays,
@@ -808,8 +774,7 @@ export interface UpdateTaskInput {
   scope?: WorkItemScope;
   dueDate?: string | null;
   scheduledDate?: string | null;
-  notBeforeAt?: string | null;
-  notBeforeDate?: string | null;
+  revisitAt?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
   repeatAfterDays?: number | null;
@@ -892,28 +857,47 @@ export function updateTask(
       input.scheduledDate !== undefined
         ? input.scheduledDate
         : currentTask.scheduledDate;
-    const nextNotBeforeAt =
-      input.notBeforeAt !== undefined ? input.notBeforeAt : currentTask.notBeforeAt;
-    const nextNotBeforeDate =
-      input.notBeforeDate !== undefined ? input.notBeforeDate : currentTask.notBeforeDate;
+    const nextRevisitAt =
+      input.revisitAt !== undefined ? input.revisitAt : currentTask.revisitAt;
+    const hasExternalWait = currentExternalWait !== undefined;
+    const recurrenceAllowsBoth = nextRepeatAfterDays !== null;
+    const allowsBoth = hasExternalWait || recurrenceAllowsBoth;
     if (
-      (input.notBeforeAt === undefined) !==
-      (input.notBeforeDate === undefined)
+      input.scheduledDate !== undefined &&
+      input.revisitAt !== undefined &&
+      input.scheduledDate !== null &&
+      input.revisitAt !== null &&
+      !allowsBoth
     ) {
-      throw AppError.badRequest(
-        "task_availability_date_required",
-        "Task availability must update its instant and local calendar date together.",
-        {
-          notBeforeAt: input.notBeforeAt,
-          notBeforeDate: input.notBeforeDate,
-        },
+      throw AppError.conflict(
+        "task_schedule_before_available",
+        "An ordinary task cannot have both a work plan and a revisit.",
+        { taskId: id, scheduledDate: input.scheduledDate, revisitAt: input.revisitAt },
       );
     }
-    assertScheduleNotBeforeAvailability(
-      nextScheduledDate,
-      nextNotBeforeAt,
-      nextNotBeforeDate,
-    );
+    let effectiveScheduledDate = nextScheduledDate;
+    let effectiveRevisitAt = nextRevisitAt;
+    if (!allowsBoth) {
+      if (
+        input.scheduledDate !== undefined &&
+        input.revisitAt === undefined &&
+        input.scheduledDate !== null
+      ) {
+        effectiveRevisitAt = null;
+      } else if (
+        input.revisitAt !== undefined &&
+        input.scheduledDate === undefined &&
+        input.revisitAt !== null
+      ) {
+        effectiveScheduledDate = null;
+      }
+    }
+    if (
+      (nextStatus === "done" || nextStatus === "cancelled") &&
+      effectiveRevisitAt !== null
+    ) {
+      effectiveRevisitAt = null;
+    }
     if ((nextStatus ?? currentTask.status) === "captured") {
       assertCapturedTaskShape("captured", {
         repeatAfterDays: nextRepeatAfterDays,
@@ -939,7 +923,7 @@ export function updateTask(
     const recurrence = recurrenceDates(
       nextRepeatAfterDays,
       nextAllowedDeviationDays,
-      nextScheduledDate,
+      effectiveScheduledDate,
       input.dueDate,
     );
     if (currentExternalWait && nextRepeatAfterDays !== null) {
@@ -982,6 +966,10 @@ export function updateTask(
       patch.needsClarification = nextStatus === "captured";
       patch.completedAt = nextStatus === "done" ? nowIso() : null;
       patch.cancelledAt = nextStatus === "cancelled" ? nowIso() : null;
+      if (nextStatus === "done" || nextStatus === "cancelled") {
+        patch.revisitAt = null;
+        if (currentTask.revisitAt !== null) changedFields.push("revisitAt");
+      }
       if (removingExternalWait) {
         changedFields.push("externalWait");
       }
@@ -1057,26 +1045,15 @@ export function updateTask(
       patch.dueDate = input.dueDate;
       changedFields.push("dueDate");
     }
-    if (
-      input.scheduledDate !== undefined &&
-      input.scheduledDate !== currentTask.scheduledDate
-    ) {
-      patch.scheduledDate = input.scheduledDate;
+    if (effectiveScheduledDate !== currentTask.scheduledDate) {
+      patch.scheduledDate = effectiveScheduledDate;
       changedFields.push("scheduledDate");
     }
     if (
-      input.notBeforeAt !== undefined &&
-      input.notBeforeAt !== currentTask.notBeforeAt
+      effectiveRevisitAt !== currentTask.revisitAt
     ) {
-      patch.notBeforeAt = input.notBeforeAt;
-      changedFields.push("notBeforeAt");
-    }
-    if (
-      input.notBeforeDate !== undefined &&
-      input.notBeforeDate !== currentTask.notBeforeDate
-    ) {
-      patch.notBeforeDate = input.notBeforeDate;
-      changedFields.push("notBeforeDate");
+      patch.revisitAt = effectiveRevisitAt;
+      changedFields.push("revisitAt");
     }
     for (const field of [
       "priority",
@@ -1107,7 +1084,7 @@ export function updateTask(
       | null = null;
     if (recurringCompletion) {
       const completedOn = input.completedOn!;
-      const scheduledDate = nextScheduledDate!;
+      const scheduledDate = effectiveScheduledDate!;
       const deadlineDate = recurrence.dueDate!;
       const result = completedOn <= deadlineDate ? "hit" : "miss";
       occurrence = tx
@@ -1135,6 +1112,8 @@ export function updateTask(
         followingScheduledDate,
         nextAllowedDeviationDays!,
       );
+      patch.revisitAt = null;
+      if (!changedFields.includes("revisitAt")) changedFields.push("revisitAt");
     }
 
     const existingTagIds = sortedIds(
@@ -1257,11 +1236,6 @@ export function updateTask(
       ...(contextsChanged ? ["contexts"] : []),
       ...(remindersChanged ? ["reminders"] : []),
     ];
-    const availabilityOnlyChange =
-      coalescedChangedFields.length > 0 &&
-      coalescedChangedFields.every(
-        (field) => field === "notBeforeAt" || field === "notBeforeDate",
-      );
     if (recurringCompletion && occurrence) {
       const updatedScheduledDate = updated.scheduledDate!;
       const updatedDueDate = updated.dueDate!;
@@ -1279,8 +1253,7 @@ export function updateTask(
             effectiveOwnerId: effectiveOwnerBefore,
             dueDate: currentTask.dueDate,
             scheduledDate: currentTask.scheduledDate,
-            notBeforeAt: currentTask.notBeforeAt,
-            notBeforeDate: currentTask.notBeforeDate,
+            revisitAt: currentTask.revisitAt,
             executable: currentTask.executable,
             blocked: currentTask.blocked,
             taskKind: currentTask.kind,
@@ -1290,8 +1263,7 @@ export function updateTask(
             effectiveOwnerId: effectiveOwnerAfter,
             dueDate: updated.dueDate,
             scheduledDate: updated.scheduledDate,
-            notBeforeAt: updated.notBeforeAt,
-            notBeforeDate: updated.notBeforeDate,
+            revisitAt: updated.revisitAt,
             executable: updated.executable,
             blocked: updated.blocked,
             taskKind: updated.kind,
@@ -1442,8 +1414,7 @@ export function updateTask(
             effectiveOwnerId: effectiveOwnerBefore,
             dueDate: currentTask.dueDate,
             scheduledDate: currentTask.scheduledDate,
-            notBeforeAt: currentTask.notBeforeAt,
-            notBeforeDate: currentTask.notBeforeDate,
+            revisitAt: currentTask.revisitAt,
             executable: currentTask.executable,
             blocked: currentTask.blocked,
             taskKind: currentTask.kind,
@@ -1453,8 +1424,7 @@ export function updateTask(
             effectiveOwnerId: effectiveOwnerAfter,
             dueDate: updated.dueDate,
             scheduledDate: updated.scheduledDate,
-            notBeforeAt: updated.notBeforeAt,
-            notBeforeDate: updated.notBeforeDate,
+            revisitAt: updated.revisitAt,
             executable: updated.executable,
             blocked: updated.blocked,
             taskKind: updated.kind,
@@ -1509,7 +1479,7 @@ export function updateTask(
         });
       } else if (
         updated.projectId !== null &&
-        !availabilityOnlyChange &&
+
         !projectHadNextAction &&
         projectHasNextAction(txDb, updated.projectId)
       ) {
@@ -1524,7 +1494,7 @@ export function updateTask(
         });
       } else if (
         updated.projectId !== null &&
-        !availabilityOnlyChange &&
+
         !projectHadTaskPlan &&
         projectHasTaskPlan(txDb, updated.projectId)
       ) {

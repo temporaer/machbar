@@ -133,7 +133,10 @@ export interface IntakeWorkItem {
   ownerName: string | null;
   dueDate: string | null;
   scheduledDate: string | null;
+  revisitAt?: string | null;
+  /** @deprecated Compatibility for pre-revisit intake drafts. */
   notBeforeDate: string | null;
+  /** @deprecated Compatibility for pre-revisit intake drafts. */
   notBeforeAt: string | null;
   reminders: TaskReminderInput[];
   needsClarification: boolean;

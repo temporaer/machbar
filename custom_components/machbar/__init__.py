@@ -71,6 +71,8 @@ def _sync_task_schema() -> vol.Schema:
     deadline_reminders_schema = validate_deadline_reminders
 
     def validate_sync_task_availability(value: dict[str, Any]) -> dict[str, Any]:
+        if "revisit_at" in value:
+            return value
         has_at = "not_before_at" in value
         has_date = "not_before_date" in value
         if has_at != has_date:
@@ -101,6 +103,7 @@ def _sync_task_schema() -> vol.Schema:
                 ),
                 vol.Optional("scheduled_date"): vol.Any(str, None),
                 vol.Optional("due_date"): vol.Any(str, None),
+                vol.Optional("revisit_at"): vol.Any(str, None),
                 vol.Optional("not_before_at"): vol.Any(str, None),
                 vol.Optional("not_before_date"): vol.Any(str, None),
                 vol.Optional("notes"): vol.Any(str, None),
@@ -155,6 +158,7 @@ async def async_setup(hass: HomeAssistant, _config: dict[str, Any]) -> bool:
             ("person", "person"),
             ("scheduled_date", "scheduledDate"),
             ("due_date", "dueDate"),
+            ("revisit_at", "revisitAt"),
             ("not_before_at", "notBeforeAt"),
             ("not_before_date", "notBeforeDate"),
             ("notes", "notes"),

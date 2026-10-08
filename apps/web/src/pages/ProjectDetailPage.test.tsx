@@ -402,7 +402,7 @@ describe("ProjectDetailPage task explanations", () => {
         id: 42,
         title: "Sommerfest planen",
         status: "backlog",
-        scheduledDate: "2026-09-20",
+        revisitAt: "2026-09-19T22:00:00.000Z",
       }),
       tasks: [],
     });
@@ -1049,8 +1049,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(7, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: expect.any(String),
         dueDate: null,
         expectedRevision: 1,

@@ -76,15 +76,19 @@ export function IntakeWorkItemCard({
     ? formatExactLocalDate(item.scheduledDate, locale) ??
       formatInvalidIntakeValue(item.scheduledDate, strings)
     : null;
-  const notBefore = item.notBeforeDate
-    ? formatExactLocalDate(item.notBeforeDate, locale) ??
-      formatInvalidIntakeValue(item.notBeforeDate, strings)
+  const revisitDate = item.revisitAt
+    ? item.revisitAt.slice(0, 10)
+    : item.notBeforeDate;
+  const notBefore = revisitDate
+    ? formatExactLocalDate(revisitDate, locale) ??
+      formatInvalidIntakeValue(revisitDate, strings)
     : null;
   const reminders = item.reminders.map((reminder) =>
     formatReminderLabel(reminder, item.dueDate, strings, locale));
   const availabilityTime =
-    item.notBeforeAt && taskAvailabilityClock(item.notBeforeAt) !== "00:00"
-      ? taskAvailabilityClock(item.notBeforeAt)
+    (item.revisitAt ?? item.notBeforeAt) &&
+    taskAvailabilityClock(item.revisitAt ?? item.notBeforeAt) !== "00:00"
+      ? taskAvailabilityClock(item.revisitAt ?? item.notBeforeAt)
       : null;
 
   return (
@@ -139,7 +143,7 @@ export function IntakeWorkItemCard({
               {scheduled}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && item.notBeforeDate !== null ? (
+          {item.kind === "action" && (item.revisitAt ?? item.notBeforeDate) != null ? (
             <DetailPropertyPill
               label={strings.notBefore}
               ariaLabel={`${strings.notBefore}: ${notBefore}`}
@@ -212,7 +216,7 @@ export function IntakeWorkItemCard({
               + {strings.scheduled}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && item.notBeforeDate === null ? (
+          {item.kind === "action" && (item.revisitAt ?? item.notBeforeDate) == null ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.notBefore}`}

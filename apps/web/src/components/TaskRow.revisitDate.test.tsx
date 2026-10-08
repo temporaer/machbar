@@ -29,14 +29,12 @@ describe("TaskRow Wiedervorlage date", () => {
     vi.clearAllMocks();
   });
 
-  it("shows the wait revisit relatively only when the outline requests it", async () => {
+  it("shows revisit metadata normally and a relative label when the outline requests it", async () => {
     const task = makeTask({
       title: "Lieferung erneut prüfen",
       scheduledDate: "2026-09-02",
-      externalWait: {
-        waitingFor: "Lieferung",
-        revisitDate: "2026-08-22",
-      },
+      externalWait: { waitingFor: "Lieferung" },
+      revisitAt: "2026-08-21T22:00:00.000Z",
       nextBlockerAttentionDate: "2026-08-22",
       blocked: true,
       executable: false,
@@ -48,7 +46,7 @@ describe("TaskRow Wiedervorlage date", () => {
       await Promise.resolve();
     });
 
-    expect(screen.queryByText(/^Wiedervorlage:/)).not.toBeInTheDocument();
+    expect(screen.getByText("Wiedervorlage: 22.08.2026")).toBeInTheDocument();
 
     rerender(
       <TaskOutline tasks={[task]} emptyMessage="Nichts da" showRevisitDate />,
@@ -68,10 +66,8 @@ describe("TaskRow Wiedervorlage date", () => {
           makeTask({
             title: "Abhängigkeit nachhalten",
             scheduledDate: "2026-09-05",
-            externalWait: {
-              waitingFor: "Antwort",
-              revisitDate: "2026-08-25",
-            },
+            externalWait: { waitingFor: "Antwort" },
+            revisitAt: "2026-08-24T22:00:00.000Z",
             nextBlockerAttentionDate: "2026-08-25",
             blocked: true,
             executable: false,

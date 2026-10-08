@@ -94,8 +94,7 @@ export const homeAssistantSyncTaskSchema = z
     person: z.string().min(1).nullable().optional(),
     scheduledDate: isoDate.nullable().optional(),
     dueDate: isoDate.nullable().optional(),
-    notBeforeAt: isoDateTime.nullable().optional(),
-    notBeforeDate: isoDate.nullable().optional(),
+    revisitAt: isoDateTime.nullable().optional(),
     notes: z.string().nullable().optional(),
     reactivateCompleted: z.boolean().optional(),
     overwriteNotes: z.boolean().optional(),
@@ -105,25 +104,6 @@ export const homeAssistantSyncTaskSchema = z
     size: z.enum(taskSizes).nullable().optional(),
   })
   .superRefine((input, context) => {
-    const hasAt = input.notBeforeAt !== undefined;
-    const hasDate = input.notBeforeDate !== undefined;
-    if (hasAt !== hasDate) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["notBeforeAt"],
-        message: "notBeforeAt and notBeforeDate must be supplied together.",
-      });
-    } else if (
-      hasAt &&
-      hasDate &&
-      (input.notBeforeAt === null) !== (input.notBeforeDate === null)
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["notBeforeDate"],
-        message: "notBeforeAt and notBeforeDate must both be set or both be null.",
-      });
-    }
     if (input.deadlineReminder !== undefined && input.deadlineReminders !== undefined) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -141,7 +121,7 @@ export const createProjectSchema = z.object({
   ownerMemberId: z.number().int().nullable().optional(),
   scope: z.enum(workItemScopes).optional(),
   dueDate: isoDate.nullable().optional(),
-  scheduledDate: isoDate.nullable().optional(),
+  revisitAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
   contextIds: z.array(z.number().int().positive()).optional(),
 });
@@ -152,7 +132,7 @@ export const updateProjectSchema = z.object({
   ownerMemberId: z.number().int().nullable().optional(),
   scope: z.enum(workItemScopes).optional(),
   dueDate: isoDate.nullable().optional(),
-  scheduledDate: isoDate.nullable().optional(),
+  revisitAt: isoDateTime.nullable().optional(),
   position: z.number().int().optional(),
   tagIds: z.array(z.number().int()).optional(),
   contextIds: z.array(z.number().int().positive()).optional(),
@@ -174,7 +154,7 @@ export const projectLifecycleSchema = z.object({
 
 export const returnProjectToBacklogSchema = z.object({
   expectedRevision: z.number().int().positive().optional(),
-  scheduledDate: isoDate.nullable().optional(),
+  revisitAt: isoDateTime.nullable().optional(),
 });
 
 export const acknowledgeReviewSchema = projectLifecycleSchema;
@@ -263,8 +243,7 @@ export const createTaskSchema = z.object({
   scope: z.enum(workItemScopes).optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
-  notBeforeAt: isoDateTime.nullable().optional(),
-  notBeforeDate: isoDate.nullable().optional(),
+  revisitAt: isoDateTime.nullable().optional(),
   priority: z.number().int().nullable().optional(),
   size: z.enum(taskSizes).nullable().optional(),
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
@@ -290,8 +269,7 @@ export const updateTaskSchema = z.object({
   scope: z.enum(workItemScopes).optional(),
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
-  notBeforeAt: isoDateTime.nullable().optional(),
-  notBeforeDate: isoDate.nullable().optional(),
+  revisitAt: isoDateTime.nullable().optional(),
   priority: z.number().int().nullable().optional(),
   size: z.enum(taskSizes).nullable().optional(),
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
@@ -356,6 +334,8 @@ export const dependencySchema = z.object({
 
 export const upsertExternalWaitSchema = z.object({
   waitingFor: z.string().nullable().optional(),
+  revisitAt: isoDateTime.nullable().optional(),
+  /** @deprecated Compatibility for older clients; normalized by the route. */
   revisitDate: isoDate.nullable().optional(),
   expectedRevision: z.number().int().positive().optional(),
 });
@@ -365,7 +345,7 @@ export const resolveExternalWaitSchema = z.object({
 });
 
 const externalWaitFollowUpBaseSchema = z.object({
-  content: z.string().trim().min(1, "Follow-up text must not be empty."),
+  content: z.string().trim().optional(),
   expectedRevision: z.number().int().positive().optional(),
 });
 
@@ -376,6 +356,8 @@ export const externalWaitFollowUpSchema = z.discriminatedUnion("action", [
   externalWaitFollowUpBaseSchema.extend({
     action: z.literal("continue"),
     waitingFor: z.string().nullable().optional(),
+    revisitAt: isoDateTime.nullable().optional(),
+    /** @deprecated Compatibility for older clients; normalized by the route. */
     revisitDate: isoDate.nullable().optional(),
   }),
 ]);
@@ -528,6 +510,7 @@ const intakeWorkItemSchema = z
     ownerName: z.string().nullable().optional(),
     dueDate: intakeShapeDateSchema.optional(),
     scheduledDate: intakeShapeDateSchema.optional(),
+    revisitAt: intakeShapeDateTimeSchema.optional(),
     notBeforeDate: intakeShapeDateSchema.optional(),
     notBeforeAt: intakeShapeDateTimeSchema.optional(),
     reminders: z.array(intakeShapeReminderSchema).optional(),
@@ -545,7 +528,10 @@ export const intakePlanStructureSchema = z
   .strip();
 
 const intakeCalendarEventCanonicalSchema = intakeCalendarEventSchema.required().strict();
-const intakeWorkItemCanonicalSchema = intakeWorkItemSchema.required().strict();
+const intakeWorkItemCanonicalSchema = intakeWorkItemSchema
+  .required()
+  .extend({ revisitAt: intakeShapeDateTimeSchema.optional() })
+  .strict();
 const intakeWarningSchema = z.object({ message: z.string().trim().min(1).max(500) }).strict();
 
 export const intakePlanSchema = z

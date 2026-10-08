@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { makeTask } from "../test/fixtures";
+import { householdCalendarDateTimeToRevisitAt } from "@machbar/shared";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { TaskAvailabilitySheet } from "./TaskAvailabilitySheet";
@@ -46,9 +47,8 @@ describe("TaskAvailabilitySheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(40, {
-        notBeforeAt: expect.any(String),
-        notBeforeDate: expect.any(String),
-        scheduledDate: "2026-09-14",
+        revisitAt: expect.any(String),
+        scheduledDate: null,
         dueDate: null,
         expectedRevision: 1,
       }),
@@ -72,8 +72,7 @@ describe("TaskAvailabilitySheet", () => {
     });
 
     expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
-      notBeforeAt: expect.any(String),
-      notBeforeDate: expect.any(String),
+      revisitAt: expect.any(String),
       scheduledDate: null,
       dueDate: null,
       expectedRevision: 1,
@@ -108,8 +107,7 @@ describe("TaskAvailabilitySheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
-        notBeforeAt: expect.any(String),
-        notBeforeDate: expect.any(String),
+        revisitAt: expect.any(String),
         scheduledDate: null,
         dueDate: null,
         expectedRevision: 1,
@@ -119,18 +117,17 @@ describe("TaskAvailabilitySheet", () => {
   });
 
   it("clears an existing availability gate", async () => {
-    mockedApi.updateTask.mockResolvedValue(makeTask({ id: 44, notBeforeAt: null }));
-    const task = makeTask({ id: 44, title: "Handwerker beauftragen", notBeforeAt: "2026-09-19T18:00:00.000Z" });
+    mockedApi.updateTask.mockResolvedValue(makeTask({ id: 44, revisitAt: null }));
+    const task = makeTask({ id: 44, title: "Handwerker beauftragen", revisitAt: "2026-09-19T18:00:00.000Z" });
     const onClose = vi.fn();
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Ab-Datum entfernen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Wiedervorlage entfernen" }));
     await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(44, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: null,
         dueDate: null,
         expectedRevision: 1,
@@ -143,11 +140,61 @@ describe("TaskAvailabilitySheet", () => {
     const task = makeTask({ id: 45, title: "Termin abstimmen" });
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={vi.fn()} />);
 
-    await userEvent.type(screen.getByLabelText("Wieder ansehen ab"), "morgen");
+    await userEvent.type(screen.getByLabelText("Wiedervorlage"), "morgen");
     await userEvent.tab();
     await userEvent.clear(screen.getByLabelText("Uhrzeit"));
 
     expect(screen.getByRole("button", { name: "Fertig" })).toBeDisabled();
+  });
+
+  it.each(["2026-03-29", "2026-10-25"])(
+    "rejects nonexistent or ambiguous household-local times on %s without submitting a clear",
+    async (date) => {
+      const task = makeTask({
+        id: 47,
+        revisitAt: "2026-03-28T01:30:00.000Z",
+      });
+      renderWithProviders(
+        <TaskAvailabilitySheet task={task} onClose={vi.fn()} />,
+      );
+      const picker = document.querySelector<HTMLInputElement>('input[type="date"]')!;
+      fireEvent.change(picker, { target: { value: date } });
+      fireEvent.change(screen.getByLabelText("Uhrzeit"), {
+        target: { value: "02:30" },
+      });
+
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Diese lokale Uhrzeit ist in der Haushaltszeitzone ungültig oder doppeldeutig.",
+      );
+      expect(screen.getByLabelText("Uhrzeit")).toHaveValue("02:30");
+      expect(screen.getByRole("button", { name: "Fertig" })).toBeDisabled();
+      expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    },
+  );
+
+  it("accepts a valid post-overlap time as the correct household-zone instant", async () => {
+    const task = makeTask({ id: 48, revisitAt: "2026-10-24T00:30:00.000Z" });
+    renderWithProviders(
+      <TaskAvailabilitySheet task={task} onClose={vi.fn()} />,
+    );
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="date"]')!, {
+      target: { value: "2026-10-25" },
+    });
+    fireEvent.change(screen.getByLabelText("Uhrzeit"), {
+      target: { value: "03:30" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(48, {
+      revisitAt: householdCalendarDateTimeToRevisitAt(
+        "2026-10-25",
+        "03:30",
+        "Europe/Berlin",
+      ),
+      scheduledDate: null,
+      dueDate: null,
+      expectedRevision: 1,
+    });
   });
 
   it("uses the same unified planning workflow for task.availability", async () => {
@@ -168,7 +215,7 @@ describe("TaskAvailabilitySheet", () => {
     renderWithProviders(<Harness />);
 
     await userEvent.click(screen.getByRole("button", { name: "open availability" }));
-    expect(await screen.findByLabelText("Wieder ansehen ab")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Wiedervorlage")).toBeInTheDocument();
     expect(screen.getByLabelText("Geplant für")).toBeInTheDocument();
     expect(screen.getByLabelText("Fällig bis")).toBeInTheDocument();
   });

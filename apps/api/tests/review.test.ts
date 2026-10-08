@@ -39,7 +39,10 @@ describe("review queue", () => {
   }
 
   function reviewItems() {
-    return buildReviewItems(Graph.load(ctx.handle.db, today), { today });
+    return buildReviewItems(Graph.load(ctx.handle.db, today), {
+      today,
+      now: `${today}T12:00:00.000Z`,
+    });
   }
 
   it("derives structural, completion, backlog, active, and standalone someday review reasons deterministically", () => {
@@ -165,7 +168,7 @@ describe("review queue", () => {
         role: "story",
         status: "backlog",
         title: "Reached revisit",
-        scheduledDate: today,
+        revisitAt: `${today}T00:00:00.000Z`,
         reviewedAt: `${today}T12:00:00.000Z`,
       })
       .returning()
@@ -176,7 +179,7 @@ describe("review queue", () => {
         role: "story",
         status: "backlog",
         title: "Future revisit",
-        scheduledDate: "2026-09-05",
+        revisitAt: "2026-09-05T00:00:00.000Z",
       })
       .returning()
       .get();
@@ -196,6 +199,33 @@ describe("review queue", () => {
       },
     });
     expect(items.some((item) => item.entityId === future.id)).toBe(false);
+  });
+
+  it("does not treat a later revisit as due earlier on the selected day", () => {
+    const project = ctx.handle.db
+      .insert(schema.workItems)
+      .values({
+        role: "story",
+        status: "backlog",
+        title: "Evening revisit",
+        revisitAt: `${today}T20:00:00.000Z`,
+      })
+      .returning()
+      .get();
+    const graph = Graph.load(ctx.handle.db, today);
+
+    expect(
+      buildReviewItems(graph, {
+        today,
+        now: `${today}T08:00:00.000Z`,
+      }).some((item) => item.entityId === project.id),
+    ).toBe(false);
+    expect(
+      buildReviewItems(graph, {
+        today,
+        now: `${today}T20:00:00.000Z`,
+      }).some((item) => item.entityId === project.id),
+    ).toBe(true);
   });
 
   it("suppresses active staleness for a healthy future wait and does not age project someday tasks", () => {
@@ -1029,7 +1059,7 @@ describe("review queue", () => {
         role: "story",
         status: "backlog",
         title: "Deferred project",
-        scheduledDate: "2026-09-20",
+        revisitAt: "2026-09-20T00:00:00.000Z",
       })
       .returning()
       .get();
@@ -1099,7 +1129,7 @@ describe("review queue", () => {
         role: "story",
         status: "backlog",
         title: "Contradictory dates",
-        scheduledDate: "2026-09-20",
+        revisitAt: "2026-09-20T00:00:00.000Z",
         dueDate: "2026-09-10",
       })
       .returning()
@@ -1110,7 +1140,7 @@ describe("review queue", () => {
         role: "story",
         status: "backlog",
         title: "Consistent dates",
-        scheduledDate: "2026-09-10",
+        revisitAt: "2026-09-10T00:00:00.000Z",
         dueDate: "2026-09-20",
       })
       .returning()

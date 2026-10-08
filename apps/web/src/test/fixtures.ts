@@ -5,6 +5,7 @@ import type {
   Tag,
   Task,
 } from "@machbar/shared";
+import { householdCalendarDateToRevisitAt } from "@machbar/shared";
 import type { ProjectWithActions, StuckProjectWithActions } from "../lib/api";
 import { workflowActionsByStatus } from "../lib/projectWorkflow";
 
@@ -57,6 +58,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     (overrides.status === undefined || overrides.status === "actionable")
       ? "captured"
       : overrides.status ?? "actionable";
+  const legacyRevisitDate = overrides.externalWait?.revisitDate;
   return {
     id,
     revision: 1,
@@ -72,6 +74,15 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     createdByMemberId: null,
     dueDate: null,
     scheduledDate: null,
+    revisitAt:
+      overrides.revisitAt ??
+      overrides.notBeforeAt ??
+      (overrides.notBeforeDate
+        ? householdCalendarDateToRevisitAt(overrides.notBeforeDate, "Europe/Berlin")
+        : null) ??
+      (legacyRevisitDate
+        ? householdCalendarDateToRevisitAt(legacyRevisitDate, "Europe/Berlin")
+        : null),
     notBeforeAt: null,
     notBeforeDate: null,
     externalWait: null,
@@ -130,6 +141,7 @@ export function makeProject(overrides: Partial<ProjectWithActions> = {}): Projec
     scope: "household",
     dueDate: null,
     scheduledDate: null,
+    revisitAt: null,
     position: 0,
     createdAt: new Date("2026-01-01T09:00:00Z").toISOString(),
     updatedAt: new Date("2026-01-01T09:00:00Z").toISOString(),

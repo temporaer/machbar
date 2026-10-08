@@ -100,6 +100,118 @@ docker compose up --build -d
 Pending migrations run during startup. Review release notes and migration
 changes before upgrading an important installation.
 
+### Revisit data migration
+
+The revisit schema migration runs separately from the one-time legacy-data
+backfill. On an existing database, startup applies the schema and then refuses
+to serve until the backfill has been reviewed and explicitly applied. Do not
+start the new application for normal traffic until the steps below are complete.
+The backfill is not part of startup and must not be run against production
+without first reviewing its dry-run output.
+
+#### Docker Compose
+
+Run these commands from the deployment checkout containing `compose.yml`. They
+target the `machbar-data` volume mounted as `/data` in the `machbar` service,
+specifically `/data/machbar.db`.
+
+```bash
+# Stop the service while preserving its named volume.
+docker compose stop machbar
+
+# Preserve the currently deployed image and its Compose image name before
+# rebuilding. Keep both values for a possible rollback.
+OLD_IMAGE_NAME="$(docker compose config --images | head -n 1)"
+OLD_IMAGE_TAG="${OLD_IMAGE_NAME}-before-revisit"
+OLD_IMAGE_ID="$(docker compose images -q machbar)"
+test -n "$OLD_IMAGE_ID"
+docker image tag "$OLD_IMAGE_ID" "$OLD_IMAGE_TAG"
+printf 'Rollback image tag: %s\nCompose image name: %s\n' \
+  "$OLD_IMAGE_TAG" "$OLD_IMAGE_NAME"
+
+# Make a consistent offline copy from the stopped service container.
+docker compose cp machbar:/data/machbar.db ./machbar-before-revisit.db
+
+# Build the new image, then run the compiled API migration CLI against the
+# same Compose volume and production environment.
+docker compose build machbar
+docker compose run --rm --no-deps --entrypoint node machbar apps/api/dist/db/migrate.js
+
+# Print the deterministic backfill report; inspect every conflict and changed row.
+docker compose run --rm --no-deps --entrypoint node machbar apps/api/dist/db/revisitMigrationCli.js
+
+# Apply after review. Add --allow-conflicts only after explicitly resolving
+# the reported conflicts and deciding that the proposed mappings are correct.
+docker compose run --rm --no-deps --entrypoint node machbar apps/api/dist/db/revisitMigrationCli.js --apply
+
+# If conflicts were reviewed and explicitly approved:
+# docker compose run --rm --no-deps --entrypoint node machbar apps/api/dist/db/revisitMigrationCli.js --apply --allow-conflicts
+
+# The successful apply records readiness. Start the service and check health/logs.
+docker compose up -d machbar
+docker compose logs --tail=100 machbar
+```
+
+The standalone compiled API commands above use the image's `DATA_DIR=/data`
+and `DATABASE_FILE=machbar.db`. Do not run a CLI in a different container or
+checkout unless it is pointed at this same persistent volume and database file.
+
+#### Standalone npm
+
+Run from the upgraded source checkout. Set `DATA_DIR` to the absolute directory
+containing the production database (and `DATABASE_FILE` if it is not
+`machbar.db`). These commands run the `@machbar/api` package scripts from
+`apps/api`; they operate on `$DATA_DIR/$DATABASE_FILE`, not a test database.
+Stop the systemd service first (replace `machbar` if the unit has another name).
+
+```bash
+sudo systemctl stop machbar
+cd /path/to/machbar/apps/api
+export DATA_DIR=/absolute/path/to/production/data
+export DATABASE_FILE=machbar.db
+
+# Save an offline, consistent copy outside the database directory.
+cp "$DATA_DIR/$DATABASE_FILE" "/safe/backup/machbar-before-revisit-$(date +%Y%m%d-%H%M%S).db"
+
+# Apply schema only, then review the separate data-conversion report.
+npm run db:migrate
+npm run db:revisit-dry-run
+
+# Apply only after reviewing the report; add --allow-conflicts only after
+# explicitly deciding how each reported conflict should be handled.
+npm run db:revisit-apply
+# Or, only when reviewed and approved:
+# npm run db:revisit-apply -- --allow-conflicts
+
+# Start and inspect the service after the backfill marker is recorded.
+sudo systemctl start machbar
+sudo systemctl status machbar
+```
+
+If the dry-run shows conflicts, stop before applying and investigate the
+affected records. Applying is transactional; retrying after success is safe.
+For recovery, stop the service, preserve the failed/current database separately,
+restore the pre-migration copy to the exact database path, and only then start
+the old or otherwise compatible application version. A database backup alone
+is not a complete rollback: the new image may require the migrated schema. For
+Compose, restore both the backup and the retained pre-upgrade image tag. These
+commands restore the old image to the Compose image name before using
+`--no-build`, so the new image is not started against the restored database:
+use the exact two image values printed and recorded before the upgrade.
+
+```bash
+docker compose stop machbar
+docker compose cp ./machbar-before-revisit.db machbar:/data/machbar.db
+docker image tag "$OLD_IMAGE_TAG" "$OLD_IMAGE_NAME"
+docker compose up -d --no-build machbar
+```
+
+For standalone, with the service stopped, restore the chosen backup to
+`$DATA_DIR/$DATABASE_FILE` before starting the compatible version. Keep the
+backup until the upgraded service is healthy and the migrated data has been
+verified. Fixture tests and a successful local dry-run do not mean that a
+production database has been migrated.
+
 When upgrading Verarbeiten, upgrade the paired Machbar Home Assistant custom
 integration at the same time. Protocol 2 has no v1 compatibility mode. After
 the Home Assistant component update, reopen its options flow and select the

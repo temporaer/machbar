@@ -196,7 +196,10 @@ export interface CreateTaskInput {
   createdByMemberId?: number | null;
   dueDate?: string | null;
   scheduledDate?: string | null;
+  revisitAt?: string | null;
+  /** @deprecated Use revisitAt. */
   notBeforeAt?: string | null;
+  /** @deprecated Use revisitAt. */
   notBeforeDate?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
@@ -249,6 +252,7 @@ export interface CreateProjectInput {
   scope?: WorkItemScope;
   dueDate?: string | null;
   scheduledDate?: string | null;
+  revisitAt?: string | null;
   tagIds?: number[];
   contextIds?: number[];
 }
@@ -308,7 +312,7 @@ export type WeekAgendaResponse = Omit<WeekAgenda, "days" | "unplanned"> & {
 /** Body for `POST /api/projects/:id/activate` (matches `activateProjectSchema`). */
 export interface ProjectWorkflowInput {
   expectedRevision: number;
-  scheduledDate?: string | null;
+  revisitAt?: string | null;
 }
 
 export interface ActivateProjectInput extends ProjectWorkflowInput {
@@ -359,6 +363,8 @@ export interface RefinementTaskRow {
 
 export interface ExternalWaitInput {
   waitingFor?: string | null;
+  revisitAt?: string | null;
+  /** @deprecated Use revisitAt. */
   revisitDate?: string | null;
   expectedRevision?: number;
 }
@@ -366,13 +372,15 @@ export interface ExternalWaitInput {
 export type ExternalWaitFollowUpInput =
   | {
       action: "resolve";
-      content: string;
+      content?: string;
       expectedRevision: number;
     }
   | {
       action: "continue";
-      content: string;
+      content?: string;
       waitingFor?: string | null;
+      revisitAt?: string | null;
+      /** @deprecated Use revisitAt. */
       revisitDate?: string | null;
       expectedRevision: number;
     };
@@ -639,6 +647,13 @@ export const api = {
     request<MoreCounts>("/views/more-counts"),
   getHouseholdAiContext: () =>
     request<HouseholdAiContext>("/settings/ai-context"),
+  getHouseholdTimezone: () =>
+    request<{ timezone: string }>("/settings/household"),
+  updateHouseholdTimezone: (timezone: string) =>
+    request<{ timezone: string }>("/settings/household", {
+      method: "PUT",
+      body: JSON.stringify({ timezone }),
+    }),
   updateHouseholdAiContext: (input: HouseholdAiContext) =>
     request<HouseholdAiContext>("/settings/ai-context", {
       method: "PUT",

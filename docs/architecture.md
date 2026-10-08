@@ -272,7 +272,7 @@ The API computes several derived fields before returning tasks to the client:
 | `effectiveAreaTags` / `effectiveActorTags` | Kind-filtered views of `effectiveTags` |
 | `explicitContexts` / `inheritedContexts` / `effectiveContexts` | Stable physical-context requirements |
 | `explicitTags` | Tags directly on this task |
-| `externalWait` | Nullable unresolved external blocker with a required non-empty reason and optional independent `revisitDate` |
+| `externalWait` | Nullable unresolved external blocker with a required non-empty reason; its optional follow-up is represented by the work item's `revisitAt` |
 | `blocked` | `true` for actionable tasks with an external wait or any unresolved dependency |
 | `executable` | `true` only for actionable, unblocked tasks |
 | `blockers` | Structured external/dependency blocker summaries |
@@ -305,9 +305,12 @@ Projects additionally carry:
 
 These views are **read-only projections** — they are not stored in SQLite; they are assembled per-request.
 
-The **Heute** agenda is also query-derived. Its primary sections contain work
-explicitly scheduled for today or earlier, overdue work, work due today,
-soon-due work, and directly externally waiting tasks whose Wiedervorlage is due.
+The **Heute** agenda is also query-derived. Its primary sections are ordered
+overdue deadlines, deadlines due today, planned work, due Wiedervorlagen, and
+soon-due deadlines. Selection is single-placement in that same precedence:
+`overdue > dueToday > planned > revisit > dueSoon > available`; an urgent
+deadline remains prominent while the row retains any secondary revisit or
+waiting context.
 It is member-scoped by default (including shared/unassigned work), while the
 explicit `scope=all` query returns the same compiled buckets for the complete
 household. The frontend exposes that distinction as a session-scoped
@@ -358,11 +361,11 @@ sections.
 There are three distinct source attention dates for a card:
 - task `scheduledDate` = intended work date;
 - `dueDate` = deadline or constraint;
-- `externalWait.revisitDate` = follow-up date for a direct external wait.
-Task `notBeforeAt` is a separate availability gate, not a Week placement date:
-while it is in the future the task is not executable or selected as a next
-action; once reached, normal eligibility resumes without creating a special
-bucket.
+- `revisitAt` = follow-up or decision instant, including the follow-up for a
+  direct external wait.
+`revisitAt` is stored as an ISO timestamp and projected into the household
+timezone for date-based views. It is not a separate task status or workflow
+store.
 
 From these task dates, `projectWeekAttention` (in `@machbar/shared`, reused by both the
 backend projection and the frontend's optimistic drag/clear recompute)
@@ -385,20 +388,21 @@ blocked work, captured work, someday/backlog work, or already scheduled work.
 Current physical context does not remove a task from Week's planning pool.
 Dragging a task card edits whichever date is responsible for its *current*
 placement, not simply its task-vs-project role: a `scheduled` card changes
-`scheduledDate`; a `revisit` card changes `externalWait.revisitDate`. A `due`-placement
+`scheduledDate`; a `revisit` card changes `revisitAt`. A `due`-placement
 card is never movable by generic drag - its deadline is a hard constraint, so
 day-column drop is rejected for it instead. Clearing a `scheduled`/`revisit`
 date (including via the **Ohne Planung** drop) recomputes placement rather
 than assuming `unplanned`: if an in-week due (or revisit) date still applies,
 the item lands there instead. `workItem.setDeadline` remains the semantic
-deadline command for surfaces that offer due-date editing. Project `scheduledDate` is not a Week placement field: it is the backlog-only
+deadline command for surfaces that offer due-date editing. Project `revisitAt`
+is not a Week placement field when it is a backlog-only
 Wiedervorlage, edited through `story.defer` and surfaced in Review when reached.
 Active projects have no project-level Wiedervorlage. Project dates never
 propagate to descendants.
 
 Active projects have a separate compiled `projects` bucket. A project enters
-Heute seven local calendar days before its `dueDate`; project `scheduledDate`
-is a backlog-only Wiedervorlage and does not surface active project attention.
+Heute seven local calendar days before its `dueDate`; a backlog project's
+`revisitAt` is a Wiedervorlage and does not surface active project attention.
 Reached backlog Wiedervorlagen surface in Review for an activation/defer/archive
 decision. Project dates never become task dates.
 

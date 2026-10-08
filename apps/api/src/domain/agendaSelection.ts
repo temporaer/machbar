@@ -183,8 +183,8 @@ export function selectCurrentAvailableWork(
   for (const task of graph.allTasks()) {
     if (
       selection.isDirectExternalWaitAttention(task) &&
-      task.externalWait?.revisitDate &&
-      task.externalWait.revisitDate <= options.today
+      task.revisitAt &&
+      Date.parse(task.revisitAt) <= Date.now()
     ) {
       takenByCurrentAttention.add(task.id);
       for (const descendantId of descendantIds(task)) {

@@ -340,7 +340,7 @@ describe("TaskDetailSheet", () => {
       "Status",
       "Priorität",
       "Fällig",
-      "Eingeplant für",
+      "Geplant für",
       "Worauf wartet die Aufgabe?",
       "Wiederholen nach Tagen",
     ]) {
@@ -714,9 +714,9 @@ describe("TaskDetailSheet", () => {
     const task = makeTask({
       id: 42,
       title: "Freigabe",
+      revisitAt: "2026-09-04T22:00:00Z",
       externalWait: {
         waitingFor: "Vermieter",
-        revisitDate: "2026-09-05",
       },
       blocked: true,
       executable: false,
@@ -731,8 +731,11 @@ describe("TaskDetailSheet", () => {
     // Waiting is blocker data, never a status.
     expect(screen.queryByLabelText("Status")).not.toBeInTheDocument();
     const waitValue = screen.getByRole("button", {
-      name: /Wartet auf.*Vermieter.*05\.09\.2026/,
+      name: "Wartet auf Vermieter",
     });
+    expect(
+      screen.getByRole("button", { name: "Wiedervorlage 05.09.2026" }),
+    ).toBeInTheDocument();
 
     await userEvent.click(waitValue);
 
@@ -1124,9 +1127,9 @@ describe("TaskDetailSheet", () => {
 
     // The detail owns no date input; the existing planning value is a
     // command that reaches the same sheet as the rail and keyboard.
-    expect(screen.queryByLabelText("Eingeplant für")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Geplant für")).not.toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: /Eingeplant für.*04\.09\.2026/ }),
+      screen.getByRole("button", { name: /Geplant für.*04\.09\.2026/ }),
     );
 
     const shortcuts = await screen.findByRole("group", { name: "Schnell planen" });
@@ -1137,8 +1140,7 @@ describe("TaskDetailSheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(56, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: null,
         dueDate: null,
         expectedRevision: 1,
@@ -1148,13 +1150,13 @@ describe("TaskDetailSheet", () => {
 
   it("opens the focused availability workflow from an unset detail value", async () => {
     mockedApi.getTask.mockResolvedValue(
-      makeTask({ id: 61, title: "Noch nicht verfügbar", notBeforeAt: null }),
+      makeTask({ id: 61, title: "Noch nicht verfügbar", revisitAt: null }),
     );
     renderSheet(61);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Noch nicht verfügbar");
 
-    await userEvent.click(screen.getByRole("button", { name: "Planung" }));
+    await userEvent.click(screen.getByRole("button", { name: "Wiedervorlage" }));
 
     expect(
       await screen.findByRole("dialog", { name: "Planung: Noch nicht verfügbar" }),
@@ -1166,21 +1168,23 @@ describe("TaskDetailSheet", () => {
       makeTask({
         id: 62,
         title: "Abends verfügbar",
-        notBeforeAt: "2026-09-19T18:00:00.000Z",
+        revisitAt: "2026-09-19T18:00:00.000Z",
       }),
     );
     renderSheet(62);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Abends verfügbar");
 
-    await userEvent.click(screen.getByRole("button", { name: /Planung.*18:00/ }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /Wiedervorlage.*19\.09\.2026, 20:00/ }),
+    );
 
     expect(
       await screen.findByRole("dialog", { name: "Planung: Abends verfügbar" }),
     ).toBeInTheDocument();
   });
 
-  it("shows a deadline beside the planned date and edits both in one transaction", async () => {
+  it("shows the deadline separately from planned work and edits both in one transaction", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({
         id: 59,
@@ -1193,10 +1197,11 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Fälligkeit planen");
 
+    expect(
+      screen.getByRole("button", { name: "Geplant für 10.09.2026" }),
+    ).toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", {
-        name: /Eingeplant für.*10\.09\.2026.*Fällig 20\.09\.2026/,
-      }),
+      screen.getByRole("button", { name: "Fällig bis 20.09.2026" }),
     );
 
     const dueDate = await screen.findByLabelText("Fällig bis");
@@ -1206,8 +1211,7 @@ describe("TaskDetailSheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(59, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: "2026-09-10",
         dueDate: "2026-09-13",
         expectedRevision: 1,

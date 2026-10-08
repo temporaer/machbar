@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildAgenda } from "../src/domain/agenda.js";
+import { Graph } from "../src/domain/graph.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 function todayIso(): string {
@@ -251,17 +253,15 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
   it("excludes tasks before their global availability date and includes them once reached", async () => {
     await createTask({
       title: "Erst morgen machbar",
-      notBeforeAt: `${tomorrow}T00:00:00.000Z`,
-      notBeforeDate: tomorrow,
+      revisitAt: `${tomorrow}T00:00:00.000Z`,
     });
     await createTask({
       title: "Schon wieder machbar",
-      notBeforeAt: `${yesterday}T00:00:00.000Z`,
-      notBeforeDate: yesterday,
+      revisitAt: `${yesterday}T00:00:00.000Z`,
     });
 
     expect(await bucketsContaining("Erst morgen machbar")).toEqual([]);
-    expect(await bucketsContaining("Schon wieder machbar")).toEqual(["shared"]);
+    expect(await bucketsContaining("Schon wieder machbar")).toEqual(["revisit"]);
   });
 
   it("rejects planning a task before its availability date", async () => {
@@ -272,8 +272,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
         title: "Widersprüchliche Planung",
         status: "actionable",
         scheduledDate: today,
-        notBeforeAt: `${tomorrow}T00:00:00.000Z`,
-        notBeforeDate: tomorrow,
+        revisitAt: `${tomorrow}T00:00:00.000Z`,
       },
     });
 
@@ -281,67 +280,48 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(response.json().error.code).toBe("task_schedule_before_available");
   });
 
-  it("compares planning against the selected local availability date, not its UTC date", async () => {
-    const rejected = await ctx.app.inject({
-      method: "POST",
-      url: "/api/tasks",
-      payload: {
-        title: "Nach Berliner Mitternacht verfügbar",
-        status: "actionable",
-        scheduledDate: "2026-09-19",
-        // Europe/Berlin is UTC+2 on this date, so this instant belongs to
-        // local calendar date 2026-09-20.
-        notBeforeAt: "2026-09-19T22:30:00.000Z",
-        notBeforeDate: "2026-09-20",
-      },
+  it("projects revisit instants using the household calendar date", async () => {
+    await createTask({
+      title: "Nach Berliner Mitternacht verfügbar",
+      revisitAt: "2026-09-19T22:30:00.000Z",
     });
-
-    expect(rejected.statusCode).toBe(409);
-    expect(rejected.json().error.code).toBe("task_schedule_before_available");
-
-    const accepted = await ctx.app.inject({
-      method: "POST",
-      url: "/api/tasks",
-      payload: {
-        title: "Am lokalen Verfügbarkeitstag geplant",
-        status: "actionable",
-        scheduledDate: "2026-09-20",
-        notBeforeAt: "2026-09-19T22:30:00.000Z",
-        notBeforeDate: "2026-09-20",
-      },
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: "/api/agenda/today?date=2026-09-20",
     });
-    expect(accepted.statusCode).toBe(201);
+    expect(response.statusCode).toBe(200);
+    expect(titlesOf(response.json().revisit)).toContain(
+      "Nach Berliner Mitternacht verfügbar",
+    );
   });
 
-  it("requires the local calendar date when setting task availability", async () => {
+  it("accepts a canonical revisit instant without a separate calendar field", async () => {
     const response = await ctx.app.inject({
       method: "POST",
       url: "/api/tasks",
       payload: {
         title: "Unvollständige Verfügbarkeit",
         status: "actionable",
-        notBeforeAt: "2026-09-19T22:30:00.000Z",
+        revisitAt: "2026-09-19T22:30:00.000Z",
       },
     });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe("task_availability_date_required");
+    expect(response.statusCode).toBe(201);
+    expect(response.json().revisitAt).toBe("2026-09-19T22:30:00.000Z");
   });
 
-  it("rejects a local availability date that cannot contain the supplied instant", async () => {
+  it("rejects malformed canonical revisit values", async () => {
     const response = await ctx.app.inject({
       method: "POST",
       url: "/api/tasks",
       payload: {
         title: "Widersprüchliche Verfügbarkeit",
         status: "actionable",
-        notBeforeAt: "2026-10-01T08:00:00.000Z",
-        notBeforeDate: "2026-09-01",
+        revisitAt: "not-a-timestamp",
       },
     });
 
     expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe("task_availability_date_required");
   });
 
   it("excludes Später-klären captures from Heute", async () => {
@@ -396,13 +376,13 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Später nachhaken")).toEqual([]);
   });
 
-  it("excludes blocked tasks from every normal bucket, even when due today", async () => {
+  it("keeps a blocked task visible in its urgent due-today deadline bucket", async () => {
     const blocker = await createTask({ title: "Blockierer offen" });
     const blocked = await createTask({ title: "Blockierte Aufgabe fällig heute", dueDate: today });
     await addDependency(blocked.id, blocker.id);
 
     const foundIn = await bucketsContaining("Blockierte Aufgabe fällig heute");
-    expect(foundIn).toEqual([]);
+    expect(foundIn).toEqual(["dueToday"]);
   });
 
   it("excludes a blocked task entirely when it has no scheduledDate of its own", async () => {
@@ -424,17 +404,101 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Blockiert, aber erst morgen geplant")).toEqual([]);
   });
 
-  it("does not reinterpret a dependency-blocked task's work plan as a revisit", async () => {
+  it("keeps an explicitly planned dependency-blocked task visible without resolving its blocker", async () => {
     const blocker = await createTask({ title: "Blockierer 4" });
     const blocked = await createTask({
       title: "Blockiert, heute zur Wiedervorlage",
-      scheduledDate: today,
+      revisitAt: `${yesterday}T18:00:00.000Z`,
     });
     await addDependency(blocked.id, blocker.id);
 
-    expect(
-      await bucketsContaining("Blockiert, heute zur Wiedervorlage"),
-    ).toEqual([]);
+    expect(await bucketsContaining("Blockiert, heute zur Wiedervorlage")).toEqual([
+      "revisit",
+    ]);
+
+    const latestTask = await ctx.app.inject({
+      method: "GET",
+      url: `/api/tasks/${blocked.id}`,
+    });
+    expect(latestTask.statusCode).toBe(200);
+    const startToday = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${blocked.id}`,
+      payload: {
+        scheduledDate: today,
+        revisitAt: null,
+        expectedRevision: latestTask.json().revision,
+      },
+    });
+    expect(startToday.statusCode).toBe(200);
+    expect(startToday.json().revisitAt).toBeNull();
+    expect(startToday.json().scheduledDate).toBe(today);
+
+    const agenda = await getAgenda();
+    const planned = agenda.planned.filter(
+      (item: { id: number }) => item.id === blocked.id,
+    );
+    expect(planned).toHaveLength(1);
+    expect(planned[0].blocked).toBe(true);
+    expect(planned[0].dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ dependsOnTaskId: blocker.id, resolved: false }),
+      ]),
+    );
+    expect(agenda.revisit.some((item: { id: number }) => item.id === blocked.id))
+      .toBe(false);
+    expect(agenda.unscheduled.some((item: { id: number }) => item.id === blocked.id))
+      .toBe(false);
+  });
+
+  it("keeps historical schedules of externally waiting tasks out of planned work", async () => {
+    const waiting = await createTask({
+      title: "Wartend trotz alter Planung",
+      scheduledDate: today,
+    });
+    await addExternalWait(waiting.id, "Antwort");
+
+    expect(await bucketsContaining("Wartend trotz alter Planung")).toEqual([]);
+  });
+
+  it("does not let unavailable physical contexts hide attention or explicit plans", async () => {
+    const unavailable = () => ({
+      status: "unavailable" as const,
+      availableNow: false,
+      missingContexts: [],
+    });
+    await createTask({ title: "Kontext: überfällig", dueDate: yesterday });
+    await createTask({ title: "Kontext: heute fällig", dueDate: today });
+    await createTask({ title: "Kontext: bald fällig", dueDate: tomorrow });
+    await createTask({ title: "Kontext: heute geplant", scheduledDate: today });
+    await createTask({
+      title: "Kontext: Wiedervorlage",
+      revisitAt: `${yesterday}T18:00:00.000Z`,
+    });
+    await createTask({ title: "Kontext: ohne Empfehlung" });
+
+    const agenda = buildAgenda(Graph.load(ctx.handle.db, today), {
+      today,
+      now: `${today}T12:00:00.000Z`,
+      contextAvailability: unavailable,
+    });
+    expect(titlesOf(agenda.overdue)).toContain("Kontext: überfällig");
+    expect(titlesOf(agenda.dueToday)).toContain("Kontext: heute fällig");
+    expect(titlesOf(agenda.dueSoon)).toContain("Kontext: bald fällig");
+    expect(titlesOf(agenda.planned)).toContain("Kontext: heute geplant");
+    expect(titlesOf(agenda.revisit)).toContain("Kontext: Wiedervorlage");
+    expect([...agenda.shared, ...agenda.unscheduled].map((item) => item.title))
+      .not.toContain("Kontext: ohne Empfehlung");
+    const placements = [
+      ...agenda.overdue,
+      ...agenda.dueToday,
+      ...agenda.dueSoon,
+      ...agenda.planned,
+      ...agenda.revisit,
+      ...agenda.shared,
+      ...agenda.unscheduled,
+    ].filter((item) => item.title === "Kontext: heute fällig");
+    expect(placements).toHaveLength(1);
   });
 
   it("surfaces a direct external wait when its revisit date is in the past", async () => {
@@ -505,8 +569,31 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     const allIds = bucketKeys.flatMap((key) => agenda[key]).map((t: { id: number }) => t.id);
     expect(new Set(allIds).size).toBe(allIds.length);
 
-    // The externally waiting, planned, and due task lands only in revisit.
-    expect(await bucketsContaining("Revisit-Kandidat")).toEqual(["revisit"]);
+    // Urgent deadlines and planned work take precedence over revisit.
+    expect(await bucketsContaining("Revisit-Kandidat")).toEqual(["dueToday"]);
+  });
+
+  it("prioritizes urgent deadlines over a due revisit without duplicating the task", async () => {
+    const overdue = await createTask({
+      title: "Überfällig mit Wiedervorlage",
+      dueDate: yesterday,
+    });
+    await addExternalWait(overdue.id, "Antwort", today);
+    const dueToday = await createTask({
+      title: "Heute fällig mit Wiedervorlage",
+      dueDate: today,
+    });
+    await addExternalWait(dueToday.id, "Antwort", today);
+    const revisitOnly = await createTask({ title: "Nur Wiedervorlage" });
+    await addExternalWait(revisitOnly.id, "Antwort", today);
+
+    expect(await bucketsContaining("Überfällig mit Wiedervorlage")).toEqual([
+      "overdue",
+    ]);
+    expect(await bucketsContaining("Heute fällig mit Wiedervorlage")).toEqual([
+      "dueToday",
+    ]);
+    expect(await bucketsContaining("Nur Wiedervorlage")).toEqual(["revisit"]);
   });
 
   it("excludes captured work from normal and revisit buckets", async () => {

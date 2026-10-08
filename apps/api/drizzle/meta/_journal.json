@@ -127,6 +127,13 @@
       "when": 1791444184645,
       "tag": "0017_add_activity_digest_state",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1791485261639,
+      "tag": "0018_add_revisit_and_household_settings",
+      "breakpoints": true
     }
   ]
 }

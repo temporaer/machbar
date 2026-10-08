@@ -45,6 +45,8 @@ export type WorkItemCommand =
   | { type: "task.structure"; taskId: number }
   | { type: "task.reminders"; taskId: number }
   | { type: "task.waitingLifecycle"; taskId: number }
+  | { type: "task.startToday"; task: Task }
+  | { type: "task.endWaiting"; task: Task }
   | { type: "task.split"; taskId: number }
   | { type: "task.assignOwner"; taskId: number }
   | { type: "task.changeProject"; taskId: number }
@@ -61,7 +63,12 @@ export type WorkItemCommand =
   | { type: "task.makeAction"; task: Task }
   | { type: "workItem.schedule"; item: WeekTaskPlanningItem; date: string | null }
   | { type: "workItem.setDeadline"; item: WeekPlanningItem; date: string | null }
-  | { type: "workItem.setRevisitDate"; item: WeekPlanningItem; date: string | null }
+  | {
+      type: "workItem.setRevisitDate";
+      item: WeekPlanningItem;
+      date: string | null;
+      householdTimezone?: string;
+    }
   | { type: "workItem.open"; workItem: { id: number; role: "story" | "task" } }
   | { type: "story.activate"; story: ProjectWithActions; ownerMemberId?: number | null }
   | { type: "story.deferProject"; story: ProjectWithActions }

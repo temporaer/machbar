@@ -128,6 +128,7 @@ function normalizedWorkItemKind(
     return {
       ...base,
       scheduledDate: null,
+      revisitAt: null,
       notBeforeDate: null,
       notBeforeAt: null,
       reminders: [],
@@ -140,6 +141,7 @@ function normalizedWorkItemKind(
       ownerMemberId: null,
       dueDate: null,
       scheduledDate: null,
+      revisitAt: null,
       notBeforeDate: null,
       notBeforeAt: null,
       reminders: [],
@@ -149,6 +151,7 @@ function normalizedWorkItemKind(
   return {
     ...base,
     scheduledDate: null,
+    revisitAt: null,
     notBeforeDate: null,
     notBeforeAt: null,
     reminders: [],

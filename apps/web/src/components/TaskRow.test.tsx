@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { calendarDateForInstant } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { TaskDetailSheet } from "./TaskDetailSheet";
@@ -26,6 +27,8 @@ vi.mock("../lib/api", () => ({
     reopenTask: vi.fn(),
     clarifyTask: vi.fn(),
     updateTask: vi.fn(),
+    resolveExternalWait: vi.fn(),
+    followUpExternalWait: vi.fn(),
     createTaskSuccessor: vi.fn(),
   },
 }));
@@ -709,12 +712,133 @@ describe("TaskRow – calm shared card presentation", () => {
     const task = makeTask({
       id: 27,
       title: "Erst abends erledigen",
-      notBeforeAt: "2026-09-19T18:00:00.000Z",
+      revisitAt: "2026-09-19T18:00:00.000Z",
     });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
 
     await screen.findByText("Erst abends erledigen");
-    expect(screen.getByText(/Wieder ansehen ab: .*18:00/)).toBeInTheDocument();
+    expect(screen.getByText(/Wiedervorlage\s*:/)).toBeInTheDocument();
+  });
+
+  it("starts a due revisit today with one atomic planned-work update and only adds actions to roots", async () => {
+    const task = makeTask({
+      id: 78,
+      title: "Due revisit",
+      revisitAt: "2026-01-01T10:00:00.000Z",
+      dueDate: "2026-12-31",
+      children: [makeTask({ id: 79, parentTaskId: 78, title: "Child" })],
+    });
+    mockedApi.updateTask.mockResolvedValue(task);
+    const { container } = renderWithProviders(
+      <TaskOutline
+        tasks={[task]}
+        emptyMessage="Nichts da"
+        showRevisitDate
+        compactDescendants
+        attentionTone="revisit"
+      />,
+    );
+
+    await screen.findByText("Due revisit");
+    const groups = screen.getAllByRole("group", { name: "Wiedervorlage" });
+    expect(groups).toHaveLength(1);
+    expect(container.querySelector(".task-row-revisit-actions")).toBeInTheDocument();
+    expect(
+      within(groups[0]!).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["Jetzt angehen", "Später"]);
+
+    await userEvent.click(
+      within(groups[0]!).getByRole("button", { name: "Jetzt angehen" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(78, {
+        revisitAt: null,
+        scheduledDate: calendarDateForInstant(
+          new Date().toISOString(),
+          "Europe/Berlin",
+        ),
+        expectedRevision: 1,
+      }),
+    );
+    expect(mockedApi.updateTask.mock.calls[0]?.[1]).not.toHaveProperty("dueDate");
+    expect(container.querySelectorAll(".task-row-revisit-actions")).toHaveLength(1);
+  });
+
+  it("ends a waiting revisit directly without changing its scheduled work", async () => {
+    const task = makeTask({
+      id: 80,
+      title: "Waiting revisit",
+      revisitAt: "2026-01-01T10:00:00.000Z",
+      scheduledDate: "2026-12-31",
+      externalWait: { waitingFor: "Antwort" },
+      blocked: true,
+    });
+    mockedApi.resolveExternalWait.mockResolvedValue({
+      ...task,
+      externalWait: null,
+      revisitAt: null,
+    });
+    renderWithProviders(
+      <TaskOutline
+        tasks={[task]}
+        emptyMessage="Nichts da"
+        showRevisitDate
+        attentionTone="revisit"
+      />,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Warten beenden" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.resolveExternalWait).toHaveBeenCalledWith(80, 1),
+    );
+  });
+
+  it("keeps 'Trotzdem angehen' secondary for a dependency-blocked revisit", async () => {
+    const task = makeTask({
+      id: 81,
+      title: "Blockierte Wiedervorlage",
+      revisitAt: "2026-01-01T10:00:00.000Z",
+      blocked: true,
+      dependencies: [
+        {
+          id: 90,
+          taskId: 81,
+          dependsOnTaskId: 91,
+          title: "Voraussetzung",
+          resolved: false,
+        },
+      ],
+    });
+    const { container } = renderWithProviders(
+      <TaskOutline
+        tasks={[task]}
+        emptyMessage="Nichts da"
+        attentionTone="revisit"
+      />,
+    );
+    const row = container.querySelector<HTMLElement>(".task-row")!;
+    const directActions = within(row).getByRole("group", {
+      name: "Wiedervorlage",
+    });
+    expect(
+      within(directActions).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["Blocker ansehen", "Später"]);
+    expect(
+      within(directActions).queryByRole("button", { name: "Trotzdem angehen" }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(within(row).getByRole("button", { name: "Weitere Aktionen" }));
+    const rail = within(row).getByRole("group", { name: "Weitere Aktionen" });
+    expect(
+      within(rail).getByRole("button", { name: "Trotzdem angehen" }),
+    ).toBeInTheDocument();
+    expect(
+      within(rail).getByRole("button", { name: "Für Tag planen" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps a long wrapping title complete while tags occupy the upper-right", async () => {
@@ -762,6 +886,34 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
       </div>,
     );
   }
+
+  it("opens the existing planning workflow from the direct 'Später' action", async () => {
+    const task = makeTask({
+      id: 82,
+      title: "Später erneut entscheiden",
+      revisitAt: "2026-01-01T10:00:00.000Z",
+    });
+    renderWithProviders(
+      <div>
+        <TaskOutline
+          tasks={[task]}
+          emptyMessage="Nichts da"
+          showRevisitDate
+          attentionTone="revisit"
+        />
+        <TaskDetailSheet />
+        <TaskWorkflowHost />
+      </div>,
+    );
+    await screen.findByText(task.title);
+
+    await userEvent.click(screen.getByRole("button", { name: "Später" }));
+
+    expect(
+      await screen.findByLabelText("Wiedervorlage", { selector: "input" }),
+    ).toBeInTheDocument();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
 
   it("opens the owner assignment sheet directly from the row's owner avatar and returns without opening full details", async () => {
     const task = makeTask({
@@ -860,8 +1012,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: resolveScheduleShortcut("tomorrow"),
         dueDate: null,
         expectedRevision: 1,
