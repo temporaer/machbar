@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildAgenda } from "../src/domain/agenda.js";
+import { Graph } from "../src/domain/graph.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 function todayIso(): string {
@@ -402,17 +404,96 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Blockiert, aber erst morgen geplant")).toEqual([]);
   });
 
-  it("does not reinterpret a dependency-blocked task's work plan as a revisit", async () => {
+  it("keeps an explicitly planned dependency-blocked task visible without resolving its blocker", async () => {
     const blocker = await createTask({ title: "Blockierer 4" });
     const blocked = await createTask({
       title: "Blockiert, heute zur Wiedervorlage",
-      scheduledDate: today,
+      revisitAt: `${yesterday}T18:00:00.000Z`,
     });
     await addDependency(blocked.id, blocker.id);
 
-    expect(
-      await bucketsContaining("Blockiert, heute zur Wiedervorlage"),
-    ).toEqual([]);
+    expect(await bucketsContaining("Blockiert, heute zur Wiedervorlage")).toEqual([
+      "revisit",
+    ]);
+
+    const startToday = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${blocked.id}`,
+      payload: {
+        scheduledDate: today,
+        revisitAt: null,
+        expectedRevision: blocked.revision,
+      },
+    });
+    expect(startToday.statusCode).toBe(200);
+    expect(startToday.json().revisitAt).toBeNull();
+    expect(startToday.json().scheduledDate).toBe(today);
+
+    const agenda = await getAgenda();
+    const planned = agenda.planned.filter(
+      (item: { id: number }) => item.id === blocked.id,
+    );
+    expect(planned).toHaveLength(1);
+    expect(planned[0].blocked).toBe(true);
+    expect(planned[0].dependencies).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ dependsOnTaskId: blocker.id, resolvedAt: null }),
+      ]),
+    );
+    expect(agenda.revisit.some((item: { id: number }) => item.id === blocked.id))
+      .toBe(false);
+    expect(agenda.unscheduled.some((item: { id: number }) => item.id === blocked.id))
+      .toBe(false);
+  });
+
+  it("keeps historical schedules of externally waiting tasks out of planned work", async () => {
+    const waiting = await createTask({
+      title: "Wartend trotz alter Planung",
+      scheduledDate: today,
+    });
+    await addExternalWait(waiting.id, "Antwort");
+
+    expect(await bucketsContaining("Wartend trotz alter Planung")).toEqual([]);
+  });
+
+  it("does not let unavailable physical contexts hide attention or explicit plans", async () => {
+    const unavailable = () => ({
+      status: "unavailable" as const,
+      availableNow: false,
+      missingContexts: ["Werkstatt"],
+    });
+    await createTask({ title: "Kontext: überfällig", dueDate: yesterday });
+    await createTask({ title: "Kontext: heute fällig", dueDate: today });
+    await createTask({ title: "Kontext: bald fällig", dueDate: tomorrow });
+    await createTask({ title: "Kontext: heute geplant", scheduledDate: today });
+    await createTask({
+      title: "Kontext: Wiedervorlage",
+      revisitAt: `${yesterday}T18:00:00.000Z`,
+    });
+    await createTask({ title: "Kontext: ohne Empfehlung" });
+
+    const agenda = buildAgenda(Graph.load(ctx.handle.db, today), {
+      today,
+      now: `${today}T12:00:00.000Z`,
+      contextAvailability: unavailable,
+    });
+    expect(titlesOf(agenda.overdue)).toContain("Kontext: überfällig");
+    expect(titlesOf(agenda.dueToday)).toContain("Kontext: heute fällig");
+    expect(titlesOf(agenda.dueSoon)).toContain("Kontext: bald fällig");
+    expect(titlesOf(agenda.planned)).toContain("Kontext: heute geplant");
+    expect(titlesOf(agenda.revisit)).toContain("Kontext: Wiedervorlage");
+    expect([...agenda.shared, ...agenda.unscheduled].map((item) => item.title))
+      .not.toContain("Kontext: ohne Empfehlung");
+    const placements = [
+      ...agenda.overdue,
+      ...agenda.dueToday,
+      ...agenda.dueSoon,
+      ...agenda.planned,
+      ...agenda.revisit,
+      ...agenda.shared,
+      ...agenda.unscheduled,
+    ].filter((item) => item.title === "Kontext: heute fällig");
+    expect(placements).toHaveLength(1);
   });
 
   it("surfaces a direct external wait when its revisit date is in the past", async () => {

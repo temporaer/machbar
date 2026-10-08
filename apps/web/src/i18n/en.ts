@@ -156,7 +156,7 @@ const en = {
   continueWaiting: "Continue waiting",
   revisit: "Follow-up",
   revisitHint: "Decide again today: work on it, schedule it, or defer it.",
-  invalidRevisitTime: "This time does not exist on that date in the household timezone.",
+  invalidRevisitTime: "This local time is invalid or ambiguous in the household timezone.",
   completedToday: "Completed today",
   completedTodayHint: "Reactivate a completed task if it still needs attention.",
   nextAction: "Next step",

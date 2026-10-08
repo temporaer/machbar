@@ -743,6 +743,9 @@ describe("TaskRow – calm shared card presentation", () => {
     const groups = screen.getAllByRole("group", { name: "Wiedervorlage" });
     expect(groups).toHaveLength(1);
     expect(container.querySelector(".task-row-revisit-actions")).toBeInTheDocument();
+    expect(
+      within(groups[0]!).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["Jetzt angehen", "Später"]);
 
     await userEvent.click(
       within(groups[0]!).getByRole("button", { name: "Jetzt angehen" }),
@@ -794,6 +797,51 @@ describe("TaskRow – calm shared card presentation", () => {
     );
   });
 
+  it("keeps 'Trotzdem angehen' secondary for a dependency-blocked revisit", async () => {
+    const task = makeTask({
+      id: 81,
+      title: "Blockierte Wiedervorlage",
+      revisitAt: "2026-01-01T10:00:00.000Z",
+      blocked: true,
+      dependencies: [
+        {
+          id: 90,
+          taskId: 81,
+          dependsOnTaskId: 91,
+          title: "Voraussetzung",
+          status: "actionable",
+          resolved: false,
+        },
+      ],
+    });
+    const { container } = renderWithProviders(
+      <TaskOutline
+        tasks={[task]}
+        emptyMessage="Nichts da"
+        attentionTone="revisit"
+      />,
+    );
+    const row = container.querySelector(".task-row")!;
+    const directActions = within(row).getByRole("group", {
+      name: "Wiedervorlage",
+    });
+    expect(
+      within(directActions).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["Blocker ansehen", "Später"]);
+    expect(
+      within(directActions).queryByRole("button", { name: "Trotzdem angehen" }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(within(row).getByRole("button", { name: "Weitere Aktionen" }));
+    const rail = within(row).getByRole("group", { name: "Weitere Aktionen" });
+    expect(
+      within(rail).getByRole("button", { name: "Trotzdem angehen" }),
+    ).toBeInTheDocument();
+    expect(
+      within(rail).getByRole("button", { name: "Für Tag planen" }),
+    ).toBeInTheDocument();
+  });
+
   it("keeps a long wrapping title complete while tags occupy the upper-right", async () => {
     const title =
       "Sehr lange Aufgabe, die über mehrere Zeilen läuft und unter den Tags wieder die volle Kartenbreite nutzt";
@@ -839,6 +887,21 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
       </div>,
     );
   }
+
+  it("opens the existing planning workflow from the direct 'Später' action", async () => {
+    const task = makeTask({
+      id: 82,
+      title: "Später erneut entscheiden",
+      revisitAt: "2026-01-01T10:00:00.000Z",
+    });
+    renderOutlineWithDetail(task);
+    await screen.findByText(task.title);
+
+    await userEvent.click(screen.getByRole("button", { name: "Später" }));
+
+    expect(await screen.findByLabelText("Wiedervorlage")).toBeInTheDocument();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
 
   it("opens the owner assignment sheet directly from the row's owner avatar and returns without opening full details", async () => {
     const task = makeTask({

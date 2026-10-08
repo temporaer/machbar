@@ -19,7 +19,7 @@ import { formatExactLocalDate } from "../lib/relativeDate";
 import { BottomSheet } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { HumanDateInput } from "./HumanDateInput";
-import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
+import { taskRevisitForLocalDate } from "../lib/taskAvailability";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 
 /**
@@ -55,6 +55,11 @@ export function TaskWaitSheet({
   const [dateValid, setDateValid] = useState(true);
   const saving = taskActions.isPending(task.id);
   const error = taskActions.errors[task.id] ?? null;
+  const replacementRevisitAt = revisitDate
+    ? taskRevisitForLocalDate(revisitDate, task.revisitAt, householdTimezone)
+    : null;
+  const invalidRevisitDate =
+    revisitIntent === "replace" && Boolean(revisitDate) && !replacementRevisitAt;
   const captionHints = useMemo(
     () =>
       extractCaptionHints(task.title, {
@@ -90,7 +95,13 @@ export function TaskWaitSheet({
     toIsoCalendarDate(new Date());
 
   const commit = async () => {
-    if (saving || !timezoneLoaded || !waitingFor.trim() || !dateValid) return;
+    if (
+      saving ||
+      !timezoneLoaded ||
+      !waitingFor.trim() ||
+      !dateValid ||
+      invalidRevisitDate
+    ) return;
     taskActions.clearError(task.id);
     const updated = await taskActions.setExternalWait(
       task,
@@ -102,13 +113,7 @@ export function TaskWaitSheet({
               revisitAt:
                 revisitIntent === "clear"
                   ? null
-                  : revisitDate
-                    ? taskAvailabilityForLocalDate(
-                        revisitDate,
-                        "00:00",
-                        householdTimezone,
-                      )?.notBeforeAt ?? null
-                    : null,
+                  : replacementRevisitAt,
             }),
       },
       { throwOnError: false },
@@ -233,6 +238,11 @@ export function TaskWaitSheet({
               disabled={saving || !timezoneLoaded}
             />
           ) : null}
+          {invalidRevisitDate ? (
+            <p className="human-date-error" role="alert">
+              {strings.invalidRevisitTime}
+            </p>
+          ) : null}
           <CaptionHintSuggestions
             hints={revisitHints.map((hint) => {
               const date =
@@ -271,7 +281,11 @@ export function TaskWaitSheet({
             type="submit"
             className="btn btn-primary"
             disabled={
-              saving || !timezoneLoaded || !waitingFor.trim() || !dateValid
+              saving ||
+              !timezoneLoaded ||
+              !waitingFor.trim() ||
+              !dateValid ||
+              invalidRevisitDate
             }
           >
             {strings.startWaitingConfirm}

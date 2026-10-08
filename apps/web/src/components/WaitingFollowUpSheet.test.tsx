@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { WaitingFollowUpSheet } from "./WaitingFollowUpSheet";
 import { api } from "../lib/api";
 import { makeMember, makeTask } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
-import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
+import { addIsoCalendarDays } from "../lib/naturalDate";
+import {
+  calendarDateForInstant,
+  householdCalendarDateTimeToRevisitAt,
+} from "@machbar/shared";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -84,10 +88,106 @@ describe("WaitingFollowUpSheet", () => {
       expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(13, {
         action: "continue",
         waitingFor: "Lieferant",
-        revisitAt: expect.any(String),
+        revisitAt: householdCalendarDateTimeToRevisitAt(
+          addIsoCalendarDays(
+            calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!,
+            1,
+          ),
+          "00:00",
+          "Europe/Berlin",
+        ),
         expectedRevision: 2,
       }),
     );
+  });
+
+  it("preserves the exact revisit instant when a shortcut selects the same local date", async () => {
+    const tomorrow = addIsoCalendarDays(
+      calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!,
+      1,
+    );
+    const original = householdCalendarDateTimeToRevisitAt(
+      tomorrow,
+      "18:00",
+      "Europe/Berlin",
+    )!;
+    const task = makeTask({
+      id: 15,
+      revision: 1,
+      revisitAt: original,
+      externalWait: { waitingFor: "Antwort" },
+    });
+    mockedApi.followUpExternalWait.mockResolvedValue(task);
+    renderWithProviders(<WaitingFollowUpSheet task={task} onClose={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(15, {
+        action: "continue",
+        waitingFor: "Antwort",
+        revisitAt: original,
+        expectedRevision: 1,
+      }),
+    );
+  });
+
+  it("preserves the household-local clock when a shortcut moves a revisit to another day", async () => {
+    const today = calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!;
+    const original = householdCalendarDateTimeToRevisitAt(
+      addIsoCalendarDays(today, 1),
+      "18:00",
+      "Europe/Berlin",
+    )!;
+    const task = makeTask({
+      id: 16,
+      revision: 1,
+      revisitAt: original,
+      externalWait: { waitingFor: "Antwort" },
+    });
+    mockedApi.followUpExternalWait.mockResolvedValue(task);
+    renderWithProviders(<WaitingFollowUpSheet task={task} onClose={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "3 Tage" }));
+
+    await waitFor(() =>
+      expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(16, {
+        action: "continue",
+        waitingFor: "Antwort",
+        revisitAt: householdCalendarDateTimeToRevisitAt(
+          addIsoCalendarDays(today, 3),
+          "18:00",
+          "Europe/Berlin",
+        ),
+        expectedRevision: 1,
+      }),
+    );
+  });
+
+  it.each([
+    ["2026-03-28T01:30:00.000Z", "2026-03-29"],
+    ["2026-10-24T00:30:00.000Z", "2026-10-25"],
+  ])("rejects a DST-invalid follow-up destination %s", async (revisitAt, date) => {
+    const task = makeTask({
+      id: 17,
+      revisitAt,
+      externalWait: { waitingFor: "Antwort" },
+    });
+    const onClose = vi.fn();
+    const { container } = renderWithProviders(
+      <WaitingFollowUpSheet task={task} onClose={onClose} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Fällig …" }));
+    fireEvent.change(container.querySelector('input[type="date"]')!, {
+      target: { value: date },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Diese lokale Uhrzeit ist in der Haushaltszeitzone ungültig oder doppeldeutig.",
+    );
+    expect(mockedApi.followUpExternalWait).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("resolves the wait via the separate 'Warten beenden' action", async () => {

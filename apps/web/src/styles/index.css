@@ -2836,8 +2836,9 @@ details[open] > .disclosure-summary::after {
 }
 
 .task-row-revisit-actions .btn {
+  min-width: 0;
   min-height: 44px;
-  flex: 1 1 auto;
+  flex: 1 1 calc(50% - 3px);
   white-space: normal;
 }
 

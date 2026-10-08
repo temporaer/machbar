@@ -535,7 +535,7 @@ describe("WeekPage", () => {
     fireEvent.drop(screen.getByLabelText("So., 29."), { dataTransfer: transfer });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Diese Uhrzeit existiert an diesem Tag in der Haushaltszeitzone nicht.",
+      "Diese lokale Uhrzeit ist in der Haushaltszeitzone ungültig oder doppeldeutig.",
     );
     expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
     expect(

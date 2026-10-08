@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "../test/testUtils";
 import { api } from "../lib/api";
 import { makeTask } from "../test/fixtures";
+import { householdCalendarDateTimeToRevisitAt } from "@machbar/shared";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
 import { TaskWorkflowHost } from "./TaskWorkflowHost";
 import { TaskAvailabilitySheet } from "./TaskAvailabilitySheet";
@@ -144,6 +145,56 @@ describe("TaskAvailabilitySheet", () => {
     await userEvent.clear(screen.getByLabelText("Uhrzeit"));
 
     expect(screen.getByRole("button", { name: "Fertig" })).toBeDisabled();
+  });
+
+  it.each(["2026-03-29", "2026-10-25"])(
+    "rejects nonexistent or ambiguous household-local times on %s without submitting a clear",
+    async (date) => {
+      const task = makeTask({
+        id: 47,
+        revisitAt: "2026-03-28T01:30:00.000Z",
+      });
+      const { container } = renderWithProviders(
+        <TaskAvailabilitySheet task={task} onClose={vi.fn()} />,
+      );
+      const picker = container.querySelector('input[type="date"]')!;
+      fireEvent.change(picker, { target: { value: date } });
+      fireEvent.change(screen.getByLabelText("Uhrzeit"), {
+        target: { value: "02:30" },
+      });
+
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Diese lokale Uhrzeit ist in der Haushaltszeitzone ungültig oder doppeldeutig.",
+      );
+      expect(screen.getByLabelText("Uhrzeit")).toHaveValue("02:30");
+      expect(screen.getByRole("button", { name: "Fertig" })).toBeDisabled();
+      expect(mockedApi.updateTask).not.toHaveBeenCalled();
+    },
+  );
+
+  it("accepts a valid post-overlap time as the correct household-zone instant", async () => {
+    const task = makeTask({ id: 48, revisitAt: "2026-10-24T00:30:00.000Z" });
+    const { container } = renderWithProviders(
+      <TaskAvailabilitySheet task={task} onClose={vi.fn()} />,
+    );
+    fireEvent.change(container.querySelector('input[type="date"]')!, {
+      target: { value: "2026-10-25" },
+    });
+    fireEvent.change(screen.getByLabelText("Uhrzeit"), {
+      target: { value: "03:30" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+
+    expect(mockedApi.updateTask).toHaveBeenCalledWith(48, {
+      revisitAt: householdCalendarDateTimeToRevisitAt(
+        "2026-10-25",
+        "03:30",
+        "Europe/Berlin",
+      ),
+      scheduledDate: null,
+      dueDate: null,
+      expectedRevision: 1,
+    });
   });
 
   it("uses the same unified planning workflow for task.availability", async () => {

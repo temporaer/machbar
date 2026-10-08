@@ -8,7 +8,7 @@ import { useTaskActions } from "../lib/useTaskActions";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
-import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
+import { taskRevisitForLocalDate } from "../lib/taskAvailability";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 
 /**
@@ -38,6 +38,7 @@ export function WaitingFollowUpSheet({
   );
   const [customDate, setCustomDate] = useState(false);
   const [dateValid, setDateValid] = useState(true);
+  const [revisitError, setRevisitError] = useState(false);
   const saving = taskActions.isPending(task.id);
   const error = taskActions.errors[task.id] ?? null;
   const closeIfIdle = () => {
@@ -58,18 +59,24 @@ export function WaitingFollowUpSheet({
 
   const continueWaiting = async (nextRevisitDate: string | null) => {
     if (saving || !timezoneLoaded || !dateValid) return;
+    const revisitAt = nextRevisitDate
+      ? taskRevisitForLocalDate(
+          nextRevisitDate,
+          task.revisitAt,
+          householdTimezone,
+        )
+      : null;
+    if (nextRevisitDate && !revisitAt) {
+      setRevisitError(true);
+      return;
+    }
+    setRevisitError(false);
     taskActions.clearError(task.id);
     const updated = await taskActions.followUpExternalWait(task, {
       action: "continue",
       ...(content.trim() ? { content: content.trim() } : {}),
       waitingFor: task.externalWait?.waitingFor ?? null,
-      revisitAt: nextRevisitDate
-        ? taskAvailabilityForLocalDate(
-            nextRevisitDate,
-            "00:00",
-            householdTimezone,
-          )?.notBeforeAt ?? null
-        : null,
+      revisitAt,
     });
     if (updated) onClose();
   };
@@ -151,6 +158,7 @@ export function WaitingFollowUpSheet({
                 onChange={(date) => {
                   setRevisitDate(date);
                   setDateDraftChanged(true);
+                  setRevisitError(false);
                 }}
                 onValidityChange={setDateValid}
                 disabled={saving || !timezoneLoaded}
@@ -167,6 +175,11 @@ export function WaitingFollowUpSheet({
           ) : null}
         </div>
 
+        {revisitError ? (
+          <div className="task-row-error" role="alert">
+            {strings.invalidRevisitTime}
+          </div>
+        ) : null}
         {error ? (
           <div className="task-row-error" role="alert">
             {error}

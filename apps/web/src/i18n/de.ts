@@ -132,7 +132,7 @@ const base = {
   continueWaiting: "Weiter warten",
   revisit: "Wiedervorlage",
   revisitHint: "Heute erneut entscheiden: angehen, planen oder zurückstellen.",
-  invalidRevisitTime: "Diese Uhrzeit existiert an diesem Tag in der Haushaltszeitzone nicht.",
+  invalidRevisitTime: "Diese lokale Uhrzeit ist in der Haushaltszeitzone ungültig oder doppeldeutig.",
   completedToday: "Heute erledigt",
   completedTodayHint: "Erledigte Aufgaben bei Bedarf wieder aktivieren.",
   nextAction: "Nächster Schritt",

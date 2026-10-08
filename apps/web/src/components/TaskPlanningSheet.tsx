@@ -98,6 +98,8 @@ export function TaskPlanningSheet({
         householdTimezone,
       )
     : null;
+  const invalidRevisitSelection =
+    availabilityEdited && Boolean(notBeforeDate) && nextAvailability === null;
   const householdToday =
     calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
     toIsoCalendarDate(new Date());
@@ -149,7 +151,7 @@ export function TaskPlanningSheet({
   };
 
   const commit = async () => {
-    if (saving || !dateValid) return;
+    if (saving || !dateValid || invalidRevisitSelection) return;
     setSaving(true);
     setError(null);
     try {
@@ -206,6 +208,11 @@ export function TaskPlanningSheet({
           <label htmlFor={`planning-availability-time-${task.id}`}>
             {strings.availabilityCustomTime}
           </label>
+          {invalidRevisitSelection ? (
+            <p className="human-date-error" role="alert">
+              {strings.invalidRevisitTime}
+            </p>
+          ) : null}
           <div className="choice-group" role="group" aria-label={strings.availabilitySameDayGroup}>
             <button
               type="button"
@@ -345,7 +352,7 @@ export function TaskPlanningSheet({
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={saving || !dateValid || !dirty}
+            disabled={saving || !dateValid || invalidRevisitSelection || !dirty}
           >
             {strings.confirmDone}
           </button>

@@ -671,11 +671,13 @@ export function TaskRow({
               </button>
               <button
                 type="button"
-                className="btn btn-sm btn-primary"
+                className="btn btn-sm"
                 disabled={busy}
-                onClick={() => dispatch({ type: "task.startToday", task })}
+                onClick={() =>
+                  dispatch({ type: "task.availability", taskId: task.id })
+                }
               >
-                {strings.revisitProceedAnyway}
+                {strings.revisitLater}
               </button>
             </>
           ) : (
@@ -686,19 +688,17 @@ export function TaskRow({
                 disabled={busy}
                 onClick={() => dispatch({ type: "task.startToday", task })}
               >
-                {task.blocked
-                  ? strings.revisitProceedAnyway
-                  : strings.revisitWorkNow}
+                {strings.revisitWorkNow}
               </button>
               <button
                 type="button"
                 className="btn btn-sm"
                 disabled={busy}
                 onClick={() =>
-                  dispatch({ type: "task.plan", taskId: task.id })
+                  dispatch({ type: "task.availability", taskId: task.id })
                 }
               >
-                {strings.revisitPlanForDay}
+                {strings.revisitLater}
               </button>
             </>
           )}
@@ -724,9 +724,18 @@ export function TaskRow({
               : showTodayRevisitActions
                 ? [
                     {
-                      label: strings.revisitLater,
-                      onSelect: () => runRailCommand("task.availability"),
+                      label: strings.revisitPlanForDay,
+                      onSelect: () => runRailCommand("task.plan"),
                     },
+                    ...(task.blocked
+                      ? [
+                          {
+                            label: strings.revisitProceedAnyway,
+                            onSelect: () =>
+                              dispatch({ type: "task.startToday", task }),
+                          },
+                        ]
+                      : []),
                   ]
                 : isReference
               ? [

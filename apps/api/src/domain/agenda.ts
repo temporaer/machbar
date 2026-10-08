@@ -122,9 +122,13 @@ export function buildAgenda(
   const take = (
     predicate: (t: TaskRecord) => boolean,
     compare: (a: TaskRecord, b: TaskRecord) => number,
-    options: { requireExecutable?: boolean } = {},
+    options: {
+      requireExecutable?: boolean;
+      requireContextAvailable?: boolean;
+    } = {},
   ): TaskRecord[] => {
     const requireExecutable = options.requireExecutable ?? true;
+    const requireContextAvailable = options.requireContextAvailable ?? true;
     const results = graph
       .allTasks()
       .filter(
@@ -132,7 +136,7 @@ export function buildAgenda(
           selection.isAgendaTask(t) &&
           (requireExecutable || t.status === "actionable") &&
           (!requireExecutable || t.executable) &&
-          isContextAvailable(t) &&
+          (!requireContextAvailable || isContextAvailable(t)) &&
           !seen.has(t.id) &&
           predicate(t),
       )
@@ -144,19 +148,21 @@ export function buildAgenda(
   const overdue = take(
     (t) => !!t.dueDate && t.dueDate < today,
     sortByDueThenPriorityTitleId,
-    { requireExecutable: false },
+    { requireExecutable: false, requireContextAvailable: false },
   );
   const dueToday = take(
     (t) => t.dueDate === today,
     sortByDueThenPriorityTitleId,
-    { requireExecutable: false },
+    { requireExecutable: false, requireContextAvailable: false },
   );
   const planned = take(
     (t) =>
       t.status === "actionable" &&
       !!t.scheduledDate &&
-      t.scheduledDate <= today,
+      t.scheduledDate <= today &&
+      t.externalWait === null,
     sortByScheduledThenPriorityTitleId,
+    { requireExecutable: false, requireContextAvailable: false },
   );
   const revisit = graph
     .allTasks()
@@ -178,7 +184,7 @@ export function buildAgenda(
   const dueSoon = take(
     (t) => !!t.dueDate && t.dueDate > today && t.dueDate <= soonLimit,
     sortByDueThenPriorityTitleId,
-    { requireExecutable: false },
+    { requireExecutable: false, requireContextAvailable: false },
   );
   const availableWork = selectCurrentAvailableWork(graph, {
     ...options,
