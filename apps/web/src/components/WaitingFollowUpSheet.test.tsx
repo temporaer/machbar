@@ -93,7 +93,7 @@ describe("WaitingFollowUpSheet", () => {
             calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!,
             1,
           ),
-          "00:00",
+          "06:00",
           "Europe/Berlin",
         ),
         expectedRevision: 2,

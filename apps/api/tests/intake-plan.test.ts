@@ -167,7 +167,7 @@ describe("intake plan contracts", () => {
     const normalized = normalizeIntakePlan(plan);
     expect(normalized.plan.calendarEvents[0]?.relatedWorkKeys).toEqual(["action"]);
     expect(normalized.plan.workItems[0]?.relatedCalendarKeys).toEqual(["event"]);
-    expect(normalized.plan.workItems[0]?.notBeforeAt).toBe("2026-10-07T22:00:00.000Z");
+    expect(normalized.plan.workItems[0]?.notBeforeAt).toBe("2026-10-08T04:00:00Z");
     expect(normalized.plan.workItems[1]?.notBeforeDate).toBe("2026-10-08");
     expect(normalized.plan.workItems[1]?.parentKey).toBeNull();
     expect(normalized.plan.workItems[0]?.parentKey).toBe("child");
@@ -186,7 +186,7 @@ describe("intake plan contracts", () => {
     }).map((item) => item.code)).not.toContain("captured_reminder");
   });
 
-  it("derives local-midnight availability without a routine warning", () => {
+  it("derives 06:00 local availability without a routine warning", () => {
     const plan = readFixture("valid-elternabend.json") as IntakePlan;
     plan.workItems[0]!.notBeforeDate = "2026-10-02";
     plan.workItems[0]!.notBeforeAt = null;

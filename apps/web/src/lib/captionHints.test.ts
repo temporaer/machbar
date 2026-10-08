@@ -44,6 +44,25 @@ describe("captionHints", () => {
     expect(temporal(text, "en")[0]?.date).toBe(expected);
   });
 
+  it("retains explicit clock and daypart intent", () => {
+    expect(temporal("Dienstag um 14:30")[0]).toEqual(
+      expect.objectContaining({
+        date: "2026-09-15",
+        time: "14:30",
+        daypart: null,
+        timeExplicit: true,
+      }),
+    );
+    expect(temporal("heute Abend")[0]).toEqual(
+      expect.objectContaining({
+        date: "2026-09-14",
+        time: null,
+        daypart: "evening",
+        timeExplicit: false,
+      }),
+    );
+  });
+
   it("keeps multiple dates and ranks their semantics", () => {
     const hints = temporal("Angebot bis Freitag prüfen, Montag nochmal nachhaken");
     expect(hints).toEqual([

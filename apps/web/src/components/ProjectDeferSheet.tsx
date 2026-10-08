@@ -8,11 +8,15 @@ import { useStrings } from "../lib/strings";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
-import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
+import { taskRevisitForLocalDate } from "../lib/taskAvailability";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 
-function toRevisitAt(date: string, timezone: string): string | null {
-  return taskAvailabilityForLocalDate(date, "00:00", timezone)?.notBeforeAt ?? null;
+function toRevisitAt(
+  date: string,
+  existing: string | null,
+  timezone: string,
+): string | null {
+  return taskRevisitForLocalDate(date, existing, timezone);
 }
 
 /**
@@ -86,7 +90,7 @@ export function ProjectDeferSheet({
               type="button"
               className="choice-chip"
               disabled={saving || !timezoneLoaded}
-              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 1), householdTimezone) })}
+              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 1), story.revisitAt, householdTimezone) })}
             >
               {strings.projectDeferShortcutLabels.tomorrow}
             </button>
@@ -94,7 +98,7 @@ export function ProjectDeferSheet({
               type="button"
               className="choice-chip"
               disabled={saving || !timezoneLoaded}
-              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 7), householdTimezone) })}
+              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 7), story.revisitAt, householdTimezone) })}
             >
               {strings.projectDeferShortcutLabels.nextWeek}
             </button>
@@ -102,7 +106,7 @@ export function ProjectDeferSheet({
               type="button"
               className="choice-chip"
               disabled={saving || !timezoneLoaded}
-              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 14), householdTimezone) })}
+              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 14), story.revisitAt, householdTimezone) })}
             >
               {strings.projectDeferShortcutLabels.twoWeeks}
             </button>
@@ -110,7 +114,7 @@ export function ProjectDeferSheet({
               type="button"
               className="choice-chip"
               disabled={saving || !timezoneLoaded}
-              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 30), householdTimezone) })}
+              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 30), story.revisitAt, householdTimezone) })}
             >
               {strings.projectDeferShortcutLabels.nextMonth}
             </button>
@@ -148,7 +152,7 @@ export function ProjectDeferSheet({
                 type="button"
                 className="btn btn-sm btn-primary"
                 disabled={saving || !timezoneLoaded || !dateValid}
-                onClick={() => void commit({ revisitAt: revisitDate ? toRevisitAt(revisitDate, householdTimezone) : null })}
+                onClick={() => void commit({ revisitAt: revisitDate ? toRevisitAt(revisitDate, story.revisitAt, householdTimezone) : null })}
               >
                 {strings.save}
               </button>

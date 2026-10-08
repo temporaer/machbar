@@ -1,10 +1,10 @@
 import {
   DEFAULT_HOUSEHOLD_TIMEZONE,
   householdCalendarDateTimeToRevisitAt,
-  householdCalendarDateToRevisitAt,
   calendarDateForInstant,
   localTimeForInstant,
   moveRevisitToCalendarDate,
+  newDateOnlyRevisitAt,
 } from "@machbar/shared";
 
 export interface TaskAvailabilityValue {
@@ -20,7 +20,7 @@ export function taskAvailabilityForLocalDate(
 ): TaskAvailabilityValue | null {
   const notBeforeAt = householdCalendarDateTimeToRevisitAt(
     date,
-    time ?? "00:00",
+    time ?? "06:00",
     timezone,
   );
   return notBeforeAt ? { notBeforeAt, notBeforeDate: date } : null;
@@ -39,7 +39,7 @@ export function taskRevisitForLocalDate(
   timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
 ): string | null {
   if (!date) return null;
-  if (!currentRevisitAt) return householdCalendarDateToRevisitAt(date, timezone);
+  if (!currentRevisitAt) return newDateOnlyRevisitAt(date, timezone);
   if (calendarDateForInstant(currentRevisitAt, timezone) === date) {
     return currentRevisitAt;
   }

@@ -2,9 +2,11 @@ import type { HouseholdAiContext, IntakeIssue, IntakePlan } from "@machbar/share
 import { householdAiContextSection } from "../aiContext.js";
 
 const rules = [
-  "Today is {today} ({weekday}) in timezone {timezone}. Resolve relative dates using this date and timezone.",
+  "Today is {today} ({weekday}) in timezone {timezone}; the current household-local datetime is {currentLocalDateTime}. Resolve relative dates and dayparts from this current context.",
   "Extract the user's intended tasks, projects, references, and calendar events. Preserve explicit dates, times, relationships, and reminder intent.",
   "Use planning fields carefully: revisitAt means “Wieder ansehen” and is an ISO timestamp for a future follow-up; scheduledDate means “Geplant für” and records intended work; dueDate means “Fällig bis” and is a real deadline. Do not fill these fields mechanically or confuse revisit with planned-for.",
+  "Respect explicit clock times exactly. Resolve explicit dayparts such as morning, afternoon, and evening through the current household-local clock; never suggest a relative time in the past, and do not silently move an explicitly requested today action to tomorrow.",
+  "For a newly created date-only revisit that requires an instant, use 06:00 local time. Preserve unrelated existing values when reprocessing a proposal, and never change a stored revisit clock merely because its date changed.",
   "For waiting tasks, distinguish “Wartet auf” (the external person, institution, event, decision, or information) from “Update” (new information to incorporate). Moving into or out of waiting is a lifecycle decision, not a planning action.",
   "For projects, use planning for timing and revisit; prefer a next step, structure, or goal for progress. Do not activate a backlog project because it has a planning or revisit date.",
   "Assign owners only when the source supports that assignment and the person is a household member who can perform the work; mentioning someone who cannot perform it is not an ownership assignment.",
@@ -28,7 +30,8 @@ function formatValidationFeedback(issues: readonly IntakeIssue[]): string {
 
 export function buildIntakeInstructions(input: {
   today: string;
-  timezone?: "Europe/Berlin";
+  timezone?: string;
+  currentLocalDateTime?: string;
   memberNames: string[];
   hasText: boolean;
   attachmentCount: number;
@@ -38,9 +41,11 @@ export function buildIntakeInstructions(input: {
   aiContext?: HouseholdAiContext | null;
 }): string {
   const date = new Date(`${input.today}T12:00:00Z`);
+  const timezone = input.timezone ?? "Europe/Berlin";
+  const currentLocalDateTime = input.currentLocalDateTime ?? `${input.today}T12:00:00`;
   const weekday = new Intl.DateTimeFormat("en-US", {
     weekday: "long",
-    timeZone: input.timezone ?? "Europe/Berlin",
+    timeZone: timezone,
   }).format(date);
   const sections = [
     "Analyze the source into a complete new plan. When retrying, return a complete replacement plan, never a patch.",
@@ -50,7 +55,8 @@ export function buildIntakeInstructions(input: {
       rule
         .replace("{today}", input.today)
         .replace("{weekday}", weekday)
-        .replace("{timezone}", input.timezone ?? "Europe/Berlin")
+        .replace("{timezone}", timezone)
+        .replace("{currentLocalDateTime}", currentLocalDateTime)
         .replace("{members}", input.memberNames.join(", ") || "(none)"),
     ),
   ];

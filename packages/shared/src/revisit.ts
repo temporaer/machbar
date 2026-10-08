@@ -1,6 +1,24 @@
 import { Temporal } from "@js-temporal/polyfill";
 
 export const DEFAULT_HOUSEHOLD_TIMEZONE = "Europe/Berlin" as const;
+export const DEFAULT_DATE_ONLY_REVISIT_TIME = "06:00" as const;
+
+export type RevisitDaypart = "morning" | "afternoon" | "evening";
+
+export interface RevisitDaypartPolicy {
+  defaultTime: string;
+  startHour: number;
+  endHour: number;
+}
+
+export const REVISIT_DAYPART_POLICIES: Record<
+  RevisitDaypart,
+  RevisitDaypartPolicy
+> = {
+  morning: { defaultTime: "08:00", startHour: 6, endHour: 11 },
+  afternoon: { defaultTime: "15:00", startHour: 13, endHour: 17 },
+  evening: { defaultTime: "19:00", startHour: 19, endHour: 22 },
+};
 
 export type RevisitInputStatus =
   | "normalized"
@@ -13,6 +31,10 @@ export interface RevisitInputNormalization {
   value: string;
   status: RevisitInputStatus;
   timezone: string;
+}
+
+function acceptsNormalized(status: RevisitInputStatus): boolean {
+  return status === "normalized" || status === "unchanged";
 }
 
 function parseInput(value: string): {
@@ -149,15 +171,89 @@ export function householdCalendarDateToRevisitAt(
     : null;
 }
 
+/** Creates a new timestamp for a date-only choice without changing legacy normalization. */
+export function newDateOnlyRevisitAt(
+  date: string,
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
+): string | null {
+  return householdCalendarDateTimeToRevisitAt(
+    date,
+    DEFAULT_DATE_ONLY_REVISIT_TIME,
+    timezone,
+  );
+}
+
 export function householdCalendarDateTimeToRevisitAt(
   date: string,
   time: string,
   timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
 ): string | null {
   const normalized = normalizeRevisitInput(`${date}T${time}`, timezone);
-  return normalized.status === "normalized" || normalized.status === "unchanged"
+  return acceptsNormalized(normalized.status)
     ? normalized.value
     : null;
+}
+
+/**
+ * Resolves a date change while keeping an existing local clock. New
+ * date-only timestamps use the product's 06:00 fallback.
+ */
+export function resolveDateOnlyRevisitChange(
+  date: string,
+  existing: string | null | undefined,
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
+): string | null {
+  if (!existing) return newDateOnlyRevisitAt(date, timezone);
+  return moveRevisitToCalendarDate(existing, date, timezone);
+}
+
+function ceilToNextHour(time: Temporal.PlainTime): Temporal.PlainTime | null {
+  const hour = time.minute === 0 && time.second === 0 && time.millisecond === 0
+    ? time.hour
+    : time.hour + 1;
+  if (hour > 23) return null;
+  return Temporal.PlainTime.from({ hour, minute: 0 });
+}
+
+/**
+ * Resolves a daypart suggestion from an injected instant. Same-day
+ * suggestions require a 30-minute lead and never roll into tomorrow.
+ */
+export function resolveRevisitDaypart(
+  daypart: RevisitDaypart,
+  now: string | Temporal.Instant,
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
+  date: string = Temporal.Instant.from(now).toZonedDateTimeISO(timezone).toPlainDate().toString(),
+): string | null {
+  const policy = REVISIT_DAYPART_POLICIES[daypart];
+  const nowInstant = Temporal.Instant.from(now);
+  const zonedNow = nowInstant.toZonedDateTimeISO(timezone);
+  const targetDate = Temporal.PlainDate.from(date);
+  const today = zonedNow.toPlainDate();
+  if (Temporal.PlainDate.compare(targetDate, today) < 0) return null;
+  let targetTime = Temporal.PlainTime.from(policy.defaultTime);
+
+  if (targetDate.equals(today)) {
+    const earliest = zonedNow.add({ minutes: 30 });
+    if (Temporal.PlainTime.compare(targetTime, earliest.toPlainTime()) < 0) {
+      const rounded = ceilToNextHour(earliest.toPlainTime());
+      if (!rounded) return null;
+      targetTime = rounded;
+    }
+  }
+
+  if (
+    targetTime.hour < policy.startHour ||
+    targetTime.hour > policy.endHour ||
+    (targetTime.hour === policy.endHour && targetTime.minute > 0)
+  ) {
+    return null;
+  }
+  return householdCalendarDateTimeToRevisitAt(
+    targetDate.toString(),
+    targetTime.toString({ smallestUnit: "minute" }),
+    timezone,
+  );
 }
 
 export function localTimeForInstant(

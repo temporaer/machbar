@@ -7,43 +7,34 @@ import {
 } from "./reminderPresets";
 
 describe("reminderPresets", () => {
+  const timezone = "Europe/Berlin";
   const now = new Date("2026-09-01T14:30:00.000Z");
 
-  it("resolves 'tonight' to 19:00 the same local day", () => {
-    const at = resolveAbsolutePreset("tonight", now);
-    const resolved = new Date(at);
-    expect(resolved.getDate()).toBe(now.getDate());
-    expect(resolved.getHours()).toBe(19);
-    expect(resolved.getMinutes()).toBe(0);
+  it("resolves 'tonight' to the next valid evening slot", () => {
+    const at = resolveAbsolutePreset("tonight", new Date("2026-09-01T18:00:00+02:00"), timezone);
+    expect(at).toBe("2026-09-01T17:00:00Z");
   });
 
-  it("offers tonight at 18:00 and rejects it after its 19:00 target", () => {
-    const beforeEvening = new Date(2026, 8, 19, 18, 0);
-    const afterEvening = new Date(2026, 8, 19, 21, 0);
+  it("adapts tonight to the current clock and hides it when no time remains", () => {
+    const beforeEvening = new Date("2026-09-19T18:00:00+02:00");
+    const afterEvening = new Date("2026-09-19T21:45:00+02:00");
 
-    expect(absolutePresetIsFuture("tonight", beforeEvening)).toBe(true);
-    const target = new Date(resolveAbsolutePreset("tonight", beforeEvening));
-    expect(target.getDate()).toBe(beforeEvening.getDate());
-    expect(target.getHours()).toBe(19);
-    expect(absolutePresetIsFuture("tonight", afterEvening)).toBe(false);
+    expect(absolutePresetIsFuture("tonight", beforeEvening, timezone)).toBe(true);
+    expect(resolveAbsolutePreset("tonight", new Date("2026-09-19T20:00:00+02:00"), timezone))
+      .toBe("2026-09-19T19:00:00Z");
+    expect(absolutePresetIsFuture("tonight", afterEvening, timezone)).toBe(false);
   });
 
   it("resolves 'tomorrowMorning' to 08:00 the next local day", () => {
-    const at = resolveAbsolutePreset("tomorrowMorning", now);
-    const resolved = new Date(at);
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    expect(resolved.getDate()).toBe(tomorrow.getDate());
-    expect(resolved.getHours()).toBe(8);
+    expect(resolveAbsolutePreset("tomorrowMorning", now, timezone)).toBe(
+      "2026-09-02T06:00:00Z",
+    );
   });
 
   it("resolves 'tomorrowEvening' to 19:00 the next local day", () => {
-    const at = resolveAbsolutePreset("tomorrowEvening", now);
-    const resolved = new Date(at);
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    expect(resolved.getDate()).toBe(tomorrow.getDate());
-    expect(resolved.getHours()).toBe(19);
+    expect(resolveAbsolutePreset("tomorrowEvening", now, timezone)).toBe(
+      "2026-09-02T17:00:00Z",
+    );
   });
 
   it("resolves 'in1Hour' and 'in3Hours' relative to now", () => {
@@ -56,7 +47,7 @@ describe("reminderPresets", () => {
   });
 
   it("builds an absolute reminder input resolved immediately, independent of any deadline", () => {
-    const input = absolutePresetReminderInput("in1Hour", now);
+    const input = absolutePresetReminderInput("in1Hour", now, timezone);
     expect(input).toEqual({
       kind: "absolute",
       at: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addIsoCalendarDays,
   parseNaturalDate,
+  parseNaturalDateIntent,
   toIsoCalendarDate,
 } from "./naturalDate";
 
@@ -115,5 +116,29 @@ describe("addIsoCalendarDays", () => {
   it("uses calendar arithmetic across month and leap-day boundaries", () => {
     expect(addIsoCalendarDays("2028-02-28", 1)).toBe("2028-02-29");
     expect(addIsoCalendarDays("2028-02-29", 1)).toBe("2028-03-01");
+  });
+
+  describe("parseNaturalDateIntent", () => {
+    it.each([
+      ["heute Abend", "2026-08-27", null, "evening"],
+      ["tomorrow evening", "2026-08-28", null, "evening"],
+      ["Dienstag um 14:30", "2026-09-01", "14:30", null],
+      ["Tuesday at 2:15 pm", "2026-09-01", "14:15", null],
+    ] as const)(
+      "retains time intent for %s",
+      (input, date, time, daypart) => {
+        expect(parseNaturalDateIntent(input, reference, input.includes("Tuesday") ? "en" : "de"))
+          .toEqual({
+            date,
+            time,
+            daypart,
+            timeExplicit: time !== null,
+          });
+      },
+    );
+
+    it("keeps the existing date-only parser contract", () => {
+      expect(parseNaturalDate("heute Abend", reference)).toBeNull();
+    });
   });
 });

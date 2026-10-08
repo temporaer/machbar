@@ -53,9 +53,9 @@ describe("TaskRemindersSheet", () => {
     const task = makeTask({ id: 11, title: "Ohne Erinnerung", reminders: [] });
     renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "Heute Abend" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Morgen früh" }));
 
-    expect(screen.getByText(/Heute Abend/)).toBeInTheDocument();
+    expect(screen.getByText(/Morgen früh/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
@@ -68,7 +68,7 @@ describe("TaskRemindersSheet", () => {
   it("only offers deadline-relative presets when the task currently has a deadline", async () => {
     const withoutDeadline = makeTask({ id: 12, title: "Ohne Deadline", dueDate: null, reminders: [] });
     renderWithProviders(<TaskRemindersSheet task={withoutDeadline} onClose={vi.fn()} />);
-    await screen.findByRole("button", { name: "Heute Abend" });
+    await screen.findByRole("button", { name: "Morgen früh" });
     expect(screen.queryByRole("button", { name: "Am selben Tag" })).not.toBeInTheDocument();
   });
 
@@ -117,7 +117,7 @@ describe("TaskRemindersSheet", () => {
     const task = makeTask({ id: 16, title: "Frisch ohne Erinnerung", reminders: [] });
     renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
 
-    expect(await screen.findByRole("button", { name: "Heute Abend" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Morgen früh" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "+ Erinnerung" })).not.toBeInTheDocument();
   });
 

@@ -1,6 +1,10 @@
 import type { Member, PhysicalContext, Tag } from "@machbar/shared";
 import type { Locale } from "../i18n/catalog";
-import { parseNaturalDate } from "./naturalDate";
+import {
+  parseNaturalDate,
+  parseNaturalDateIntent,
+  type NaturalDateDaypart,
+} from "./naturalDate";
 
 export interface CaptionHintSpan {
   start: number;
@@ -24,6 +28,9 @@ export type TemporalHintSemantic =
 export interface TemporalCaptionHint extends CaptionHintBase {
   kind: "temporal";
   date: string;
+  time: string | null;
+  daypart: NaturalDateDaypart | null;
+  timeExplicit: boolean;
   semantic: TemporalHintSemantic;
 }
 
@@ -66,6 +73,9 @@ export interface CaptionHintContext {
 const TEMPORAL_FRAGMENT = [
   "heute\\s+abend",
   "morgen\\s+früh",
+  "morgen\\s+abend",
+  "today\\s+evening",
+  "tomorrow\\s+(?:morning|evening)",
   "uebermorgen",
   "übermorgen",
   "heute",
@@ -81,6 +91,8 @@ const TEMPORAL_FRAGMENT = [
   "\\d{1,2}\\.\\d{1,2}(?:\\.\\d{2,4})?(?:\\s+\\d{1,2}(?::\\d{2})?)?",
   "\\d{1,2}\\/\\d{1,2}(?:\\/\\d{2,4})?(?:\\s+\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?)?",
 ].join("|");
+const EXPLICIT_CLOCK_FRAGMENT =
+  "(?:heute|morgen|today|tomorrow|(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|mo|di|mi|do|fr|sa|so|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\\.?)\\s+(?:um|at)\\s+\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?";
 
 const DEADLINE_MARKER = "(?:bis|spätestens|spaetestens|fällig(?:\\s+am)?|faellig(?:\\s+am)?|due(?:\\s+by)?|by|no\\s+later\\s+than)";
 const FOLLOW_UP_MARKER = "(?:erinnern|nachhaken|nochmal(?:\\s+nachhaken)?|follow[\\s-]?up|remind)";
@@ -102,6 +114,14 @@ interface TemporalPattern {
 }
 
 const temporalPatterns: readonly TemporalPattern[] = [
+  {
+    regex: new RegExp(
+      `${LEFT_BOUNDARY}(?<source>(?<date>${EXPLICIT_CLOCK_FRAGMENT}))${RIGHT_BOUNDARY}`,
+      "giu",
+    ),
+    semantic: "scheduledDate",
+    rank: 1,
+  },
   {
     regex: new RegExp(
       `${LEFT_BOUNDARY}(?<source>${DEADLINE_MARKER}\\s+(?<date>${TEMPORAL_FRAGMENT}))${RIGHT_BOUNDARY}`,
@@ -140,16 +160,24 @@ function parseTemporalFragment(
   fragment: string,
   referenceDate: Date,
   locale: Locale,
-): string | null {
-  const parsed = parseNaturalDate(fragment, referenceDate, locale);
-  if (parsed) return parsed;
+): {
+  date: string;
+  time: string | null;
+  daypart: NaturalDateDaypart | null;
+  timeExplicit: boolean;
+} | null {
+  const intent = parseNaturalDateIntent(fragment, referenceDate, locale);
+  if (intent) return intent;
   const withoutTime = fragment.replace(
     /\s+(?:früh|abend|\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}:\d{2})$/i,
     "",
   );
-  return withoutTime === fragment
+  const parsed = withoutTime === fragment
     ? null
     : parseNaturalDate(withoutTime, referenceDate, locale);
+  return parsed
+    ? { date: parsed, time: null, daypart: null, timeExplicit: false }
+    : null;
 }
 
 function overlaps(a: CaptionHintSpan, b: CaptionHintSpan): boolean {
@@ -181,17 +209,20 @@ function temporalHints(
       ) {
         continue;
       }
-      const date = parseTemporalFragment(fragment, referenceDate, locale);
-      if (!date) continue;
+      const temporal = parseTemporalFragment(fragment, referenceDate, locale);
+      if (!temporal) continue;
       const start = match.index;
       const span = { start, end: start + source.length };
       candidates.push({
         kind: "temporal",
-        key: `temporal:${start}:${span.end}:${date}:${pattern.semantic}`,
+        key: `temporal:${start}:${span.end}:${temporal.date}:${pattern.semantic}`,
         source,
         sourceSpan: span,
         removalSpan: span,
-        date,
+        date: temporal.date,
+        time: temporal.time,
+        daypart: temporal.daypart,
+        timeExplicit: temporal.timeExplicit,
         semantic: pattern.semantic,
         rank: pattern.rank,
       });

@@ -1,3 +1,9 @@
+import {
+  DEFAULT_HOUSEHOLD_TIMEZONE,
+  resolveRevisitDaypart,
+  type RevisitDaypart,
+} from "@machbar/shared";
+import { Temporal } from "@js-temporal/polyfill";
 import type { TaskReminderInput } from "@machbar/shared";
 
 /**
@@ -39,31 +45,39 @@ export const DEADLINE_RELATIVE_REMINDER_PRESET_DEFAULTS: Record<
   oneWeekBefore: { daysBefore: 7, time: "09:00" },
 };
 
-function atLocalTime(date: Date, hours: number, minutes: number): Date {
-  const result = new Date(date);
-  result.setHours(hours, minutes, 0, 0);
-  return result;
-}
-
 /** Resolves an absolute preset to a concrete ISO instant, evaluated immediately at selection time. */
-export function resolveAbsolutePreset(preset: AbsoluteReminderPreset, now = new Date()): string {
+export function resolveAbsolutePreset(
+  preset: AbsoluteReminderPreset,
+  now = new Date(),
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
+): string | null {
   switch (preset) {
     case "tonight":
-      return atLocalTime(now, 19, 0).toISOString();
+      return resolveRevisitDaypart("evening", now.toISOString(), timezone);
     case "tomorrowMorning": {
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      return atLocalTime(tomorrow, 8, 0).toISOString();
+      return resolveFutureDaypart("morning", now, timezone);
     }
     case "tomorrowEvening": {
-      const tomorrow = new Date(now);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      return atLocalTime(tomorrow, 19, 0).toISOString();
+      return resolveFutureDaypart("evening", now, timezone);
     }
     case "in1Hour":
       return new Date(now.getTime() + 60 * 60 * 1000).toISOString();
     case "in3Hours":
       return new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString();
+  }
+
+  function resolveFutureDaypart(
+    daypart: RevisitDaypart,
+    now: Date,
+    timezone: string,
+  ): string | null {
+    const instant = Temporal.Instant.from(now.toISOString());
+    const tomorrow = instant
+      .toZonedDateTimeISO(timezone)
+      .toPlainDate()
+      .add({ days: 1 })
+      .toString();
+    return resolveRevisitDaypart(daypart, instant, timezone, tomorrow);
   }
 }
 
@@ -71,16 +85,21 @@ export function resolveAbsolutePreset(preset: AbsoluteReminderPreset, now = new 
 export function absolutePresetIsFuture(
   preset: AbsoluteReminderPreset,
   now = new Date(),
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
 ): boolean {
-  return new Date(resolveAbsolutePreset(preset, now)).getTime() > now.getTime();
+  const resolved = resolveAbsolutePreset(preset, now, timezone);
+  return resolved !== null && new Date(resolved).getTime() > now.getTime();
 }
 
 /** Builds the `TaskReminderInput` for a selected absolute preset. */
 export function absolutePresetReminderInput(
   preset: AbsoluteReminderPreset,
   now = new Date(),
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
 ): TaskReminderInput {
-  return { kind: "absolute", at: resolveAbsolutePreset(preset, now) };
+  const at = resolveAbsolutePreset(preset, now, timezone);
+  if (!at) throw new Error(`Reminder preset ${preset} is unavailable.`);
+  return { kind: "absolute", at };
 }
 
 /** Builds the `TaskReminderInput` for a selected deadline-relative preset. */

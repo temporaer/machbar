@@ -7,6 +7,7 @@ describe("intake AI instructions", () => {
     const instructions = buildIntakeInstructions({
       today: "2026-09-28",
       timezone: "Europe/Berlin",
+      currentLocalDateTime: "2026-09-28T20:00:00",
       memberNames: ["Alex"],
       hasText: true,
       attachmentCount: 0,
@@ -15,6 +16,9 @@ describe("intake AI instructions", () => {
     expect(instructions).toContain("tasks, projects, references, and calendar events");
     expect(instructions).toContain("Preserve explicit dates, times, relationships, and reminder intent");
     expect(instructions).toContain("revisitAt means “Wieder ansehen”");
+    expect(instructions).toContain("current household-local datetime is 2026-09-28T20:00:00");
+    expect(instructions).toContain("explicit dayparts");
+    expect(instructions).toContain("use 06:00 local time");
     expect(instructions).toContain("Moving into or out of waiting is a lifecycle decision");
     expect(instructions).toContain("Do not activate a backlog project");
     expect(instructions).toContain("mentioning someone who cannot perform it is not an ownership assignment");

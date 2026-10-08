@@ -265,3 +265,96 @@ export function parseNaturalDate(
     parseWithSugar(input, locale === "de" ? "en" : "de", referenceDate);
   return parsed ? toIsoCalendarDate(parsed) : null;
 }
+
+export type NaturalDateDaypart = "morning" | "afternoon" | "evening";
+
+export interface NaturalDateIntent {
+  date: string;
+  time: string | null;
+  daypart: NaturalDateDaypart | null;
+  timeExplicit: boolean;
+}
+
+const EXPLICIT_TIME_SUFFIX =
+  /(?:^|\s)(?:um|at)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/iu;
+const BARE_TIME_SUFFIX = /(?:^|\s)(\d{1,2}):(\d{2})\s*(am|pm)?$/iu;
+const DAYPART_SUFFIX =
+  /(?:^|\s)(früh|frueh|morgen|morning|nachmittag|afternoon|abend|evening|tonight)$/iu;
+
+function normalizeClockTime(
+  hourValue: string,
+  minuteValue: string | undefined,
+  meridiem: string | undefined,
+): string | null {
+  let hour = Number(hourValue);
+  const minute = Number(minuteValue ?? "00");
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || minute > 59) {
+    return null;
+  }
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return null;
+    if (meridiem.toLowerCase() === "pm" && hour !== 12) hour += 12;
+    if (meridiem.toLowerCase() === "am" && hour === 12) hour = 0;
+  }
+  if (hour > 23) return null;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function daypartForWord(value: string): NaturalDateDaypart | null {
+  switch (value.toLocaleLowerCase("de")) {
+    case "früh":
+    case "frueh":
+    case "morgen":
+    case "morning":
+      return "morning";
+    case "nachmittag":
+    case "afternoon":
+      return "afternoon";
+    case "abend":
+    case "evening":
+    case "tonight":
+      return "evening";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Keeps time/daypart intent alongside the stable date-only parser contract.
+ * Consumers targeting calendar-date fields should continue using
+ * `parseNaturalDate` directly.
+ */
+export function parseNaturalDateIntent(
+  value: string,
+  referenceDate = new Date(),
+  locale: Locale = "de",
+): NaturalDateIntent | null {
+  const input = value.trim();
+  if (!input) return null;
+
+  const explicitMatch = EXPLICIT_TIME_SUFFIX.exec(input) ?? BARE_TIME_SUFFIX.exec(input);
+  if (explicitMatch) {
+    const time = normalizeClockTime(
+      explicitMatch[1]!,
+      explicitMatch[2],
+      explicitMatch[3],
+    );
+    if (!time) return null;
+    const dateInput = input.slice(0, explicitMatch.index + (explicitMatch[0].startsWith(" ") ? 0 : 0)).trim();
+    const date = parseNaturalDate(dateInput, referenceDate, locale);
+    return date ? { date, time, daypart: null, timeExplicit: true } : null;
+  }
+
+  const daypartMatch = DAYPART_SUFFIX.exec(input);
+  if (daypartMatch) {
+    const daypart = daypartForWord(daypartMatch[1]!);
+    const dateInput = input.slice(0, daypartMatch.index).trim();
+    const date = parseNaturalDate(dateInput || input, referenceDate, locale);
+    return date && daypart
+      ? { date, time: null, daypart, timeExplicit: false }
+      : null;
+  }
+
+  const date = parseNaturalDate(input, referenceDate, locale);
+  return date ? { date, time: null, daypart: null, timeExplicit: false } : null;
+}
