@@ -143,15 +143,15 @@ export function IntakeAvailabilityEditor({
   const strings = useStrings();
   const key = `work:${item.key}:availability`;
   const onValidityChange = useDateValidityCallback(key, onDateValidityChange);
-  const currentClock = taskAvailabilityClock(item.notBeforeAt);
+  const currentClock = taskAvailabilityClock(item.revisitAt ?? item.notBeforeAt);
   const hasTime = currentClock !== null && currentClock !== "00:00";
   const updateAvailability = (date: string, time: string | null) => {
     if (!date) {
-      onChange({ ...item, notBeforeDate: null, notBeforeAt: null });
+      onChange({ ...item, revisitAt: null, notBeforeDate: null, notBeforeAt: null });
       return;
     }
     const availability = taskAvailabilityForLocalDate(date, time);
-    if (availability) onChange({ ...item, ...availability });
+    if (availability) onChange({ ...item, revisitAt: availability.notBeforeAt, ...availability });
   };
 
   return (
@@ -168,7 +168,7 @@ export function IntakeAvailabilityEditor({
         </label>
         <HumanDateInput
           id={`intake-work-${item.key}-availability`}
-          value={item.notBeforeDate}
+          value={item.revisitAt?.slice(0, 10) ?? item.notBeforeDate}
           onValidityChange={onValidityChange}
           onChange={(date) =>
             updateAvailability(date ?? "", hasTime ? currentClock : null)
@@ -181,7 +181,7 @@ export function IntakeAvailabilityEditor({
             disabled={!item.notBeforeDate}
             onChange={(event) =>
               updateAvailability(
-                item.notBeforeDate ?? "",
+                item.revisitAt?.slice(0, 10) ?? item.notBeforeDate ?? "",
                 event.target.checked
                   ? currentClock && currentClock !== "00:00"
                     ? currentClock
