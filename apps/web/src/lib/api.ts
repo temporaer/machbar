@@ -656,9 +656,9 @@ export const api = {
         projectId: filters?.projectId,
       })}`,
     ),
-  getActivityDigest: (memberId?: number | null) =>
+  getActivityDigest: (memberId?: number | null, timezone?: string) =>
     request<ActivityDigest>(
-      `/activity/digest${query({ memberId })}`,
+      `/activity/digest${query({ memberId, timezone })}`,
     ),
   acknowledgeActivityDigest: (
     throughEventId: number,

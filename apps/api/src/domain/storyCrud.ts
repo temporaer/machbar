@@ -496,6 +496,23 @@ export function deleteProject(
     const project = getProjectOrThrow(txDb, id);
 
     if (!options.deleteTasks) {
+      const activityEventId = recordActivity(txDb, {
+        actorMemberId: actor(context),
+        kind: "project_deleted",
+        entityType: "project",
+        entityTitle: project.title,
+        projectId: id,
+        metadata: {
+          scope: project.scope,
+          affectedWorkItemId: id,
+          affectedEntityType: "project",
+          before: {
+            status: projectStatusFromStored(project.status, project.archivedAt),
+            ownerMemberId: project.ownerMemberId,
+            projectId: id,
+          },
+        },
+      });
       tx.update(schema.workItems)
         .set({
           parentId: null,
@@ -504,13 +521,6 @@ export function deleteProject(
         .where(eq(schema.workItems.parentId, id))
         .run();
       tx.delete(schema.workItems).where(eq(schema.workItems.id, id)).run();
-      const activityEventId = recordActivity(txDb, {
-        actorMemberId: actor(context),
-        kind: "project_deleted",
-        entityType: "project",
-        entityTitle: project.title,
-        metadata: {},
-      });
       neutralizeEntityContributions(txDb, {
         activityEventId,
         entityType: "project",
@@ -526,16 +536,29 @@ export function deleteProject(
       .where(inArray(schema.taskRecurrenceOccurrences.taskId, descendantIds))
       .all()
       .map((row) => row.id);
-    tx.delete(schema.workItems)
-      .where(inArray(schema.workItems.id, [id, ...descendantIds]))
-      .run();
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "project_deleted",
       entityType: "project",
       entityTitle: project.title,
-      metadata: descendantIds.length > 0 ? { affectedCount: descendantIds.length + 1 } : {},
+      projectId: id,
+      metadata: {
+        scope: project.scope,
+        affectedWorkItemId: id,
+        affectedEntityType: "project",
+        before: {
+          status: projectStatusFromStored(project.status, project.archivedAt),
+          ownerMemberId: project.ownerMemberId,
+          projectId: id,
+        },
+        ...(descendantIds.length > 0
+          ? { affectedCount: descendantIds.length + 1 }
+          : {}),
+      },
     });
+    tx.delete(schema.workItems)
+      .where(inArray(schema.workItems.id, [id, ...descendantIds]))
+      .run();
     neutralizeEntityContributions(txDb, {
       activityEventId,
       entityType: "project",

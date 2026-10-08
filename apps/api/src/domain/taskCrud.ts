@@ -1671,17 +1671,30 @@ export function deleteTask(db: Db, id: number, context?: MutationContext) {
     // internal cascade does not clean up each descendant's own shared
     // work_items row, so retire the whole subtree's ids explicitly here
     // (deleting each work_items row also cascades to its tasks row).
-    tx.delete(schema.workItems)
-      .where(inArray(schema.workItems.id, [id, ...descendantIds]))
-      .run();
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: "task_deleted",
       entityType: "task",
       entityTitle: task.title,
+      taskId: id,
       projectId: task.projectId,
-      metadata: affectedCount > 1 ? { affectedCount } : {},
+      metadata: {
+        scope: task.scope,
+        affectedWorkItemId: id,
+        affectedEntityType: "task",
+        ...(affectedCount > 1 ? { affectedCount } : {}),
+        before: {
+          status: task.status,
+          ownerMemberId: task.ownerMemberId,
+          effectiveOwnerId: effectiveOwnerId(txDb, id),
+          projectId: task.projectId,
+          taskKind: task.kind ?? undefined,
+        },
+      },
     });
+    tx.delete(schema.workItems)
+      .where(inArray(schema.workItems.id, [id, ...descendantIds]))
+      .run();
     for (const taskId of [id, ...descendantIds]) {
       neutralizeEntityContributions(txDb, {
         activityEventId,

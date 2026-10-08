@@ -147,6 +147,166 @@ describe("activity digest", () => {
     expect(getActivityDigest(ctx.handle.db, viewer.id).entries).toEqual([]);
   });
 
+  it.each([
+    ["created then deleted", ["task_created", "task_deleted"]],
+    ["self-created open task", ["task_created"]],
+  ])("%s does not become collaborative new work", (_name, kinds) => {
+    const viewer = member("Mira");
+    const actor = _name === "self-created open task" ? viewer : member("Sarah");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Transient",
+      status: "actionable",
+    });
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values(
+      kinds.map((kind, index) => ({
+        kind: kind as "task_created" | "task_deleted",
+        entityType: "task" as const,
+        entityId: kind === "task_deleted" ? null : task.id,
+        entityTitle: task.title,
+        actorMemberId: actor.id,
+        metadata: {
+          scope: "household" as const,
+          affectedWorkItemId: task.id,
+          ...(kind === "task_deleted"
+            ? { before: { status: "actionable" as const } }
+            : { after: { status: "actionable" as const } }),
+        },
+      })),
+    ).run();
+    expect(getActivityDigest(ctx.handle.db, viewer.id).entries).toEqual([]);
+  });
+
+  it("attributes completion to the completing member, not a later editor", () => {
+    const viewer = member("Mira");
+    const sarah = member("Sarah");
+    const hannes = member("Hannes");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Hotel buchen",
+      status: "done",
+    });
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values([
+      {
+        kind: "task_status_changed",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          previousStatus: "actionable",
+          nextStatus: "done",
+          after: { status: "done" },
+        },
+      },
+      {
+        kind: "task_updated",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: hannes.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["notes"],
+          after: { status: "done" },
+        },
+      },
+    ]).run();
+
+    const entry = getActivityDigest(ctx.handle.db, viewer.id).entries[0]!;
+    expect(entry.kind).toBe("task_completed");
+    expect(entry.actor?.name).toBe("Sarah");
+  });
+
+  it("aggregates project task completions with actor counts and references", () => {
+    const viewer = member("Mira");
+    const sarah = member("Sarah");
+    const lars = member("Lars");
+    const project = insertTestProject(ctx.handle.db, {
+      title: "Urlaub",
+      status: "active",
+    });
+    const hotel = insertTestTask(ctx.handle.db, {
+      title: "Hotel buchen",
+      projectId: project.id,
+      status: "done",
+    });
+    const tickets = insertTestTask(ctx.handle.db, {
+      title: "Zugtickets kaufen",
+      projectId: project.id,
+      status: "done",
+    });
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values([
+      {
+        kind: "task_status_changed",
+        entityType: "task",
+        entityId: hotel.id,
+        entityTitle: hotel.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: hotel.id,
+          projectContextId: project.id,
+          previousStatus: "actionable",
+          nextStatus: "done",
+          after: { status: "done" },
+        },
+      },
+      {
+        kind: "task_status_changed",
+        entityType: "task",
+        entityId: tickets.id,
+        entityTitle: tickets.title,
+        actorMemberId: lars.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: tickets.id,
+          projectContextId: project.id,
+          previousStatus: "actionable",
+          nextStatus: "done",
+          after: { status: "done" },
+        },
+      },
+    ]).run();
+
+    const entry = getActivityDigest(ctx.handle.db, viewer.id).entries[0]!;
+    expect(entry.kind).toBe("project_progress");
+    expect(entry.params.count).toBe(2);
+    expect(entry.params.titles).toEqual(["Hotel buchen", "Zugtickets kaufen"]);
+    expect(entry.params.actorCounts).toEqual(
+      expect.arrayContaining([
+        { actor: { id: sarah.id, name: "Sarah" }, count: 1 },
+        { actor: { id: lars.id, name: "Lars" }, count: 1 },
+      ]),
+    );
+  });
+
+  it("does not expose invisible event counts in the digest response", () => {
+    const viewer = member("Mira");
+    const owner = member("Sarah");
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values({
+      kind: "task_created",
+      entityType: "task",
+      entityTitle: "Private title",
+      actorMemberId: owner.id,
+      metadata: {
+        scope: "work",
+        affectedWorkItemId: 999,
+        after: { effectiveOwnerId: owner.id },
+      },
+    }).run();
+
+    const digest = getActivityDigest(ctx.handle.db, viewer.id);
+    expect(digest.entries).toEqual([]);
+    expect(digest.totalEntryCount).toBe(0);
+    expect(digest.hiddenEntryCount).toBe(0);
+  });
+
   it("hides private work events from other members, including deleted legacy events", () => {
     const viewer = member("Mira");
     const owner = member("Sarah");

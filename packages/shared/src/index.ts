@@ -337,6 +337,7 @@ export const activityDigestEntryKinds = [
   "task_completed",
   "project_completed",
   "project_reopened",
+  "project_activated",
   "project_progress",
   "project_assignment",
   "plan_changed",

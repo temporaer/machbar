@@ -34,15 +34,84 @@ function entryText(
     case "task_completed":
       return strings.activityDigestTaskCompleted(actor, title);
     case "project_completed":
+      if (typeof entry.params.completionCount === "number") {
+        return strings.activityDigestProjectCompletedWithProgress(
+          actor,
+          title,
+          entry.params.completionCount,
+        );
+      }
       return strings.activityDigestProjectCompleted(actor, title);
     case "project_reopened":
       return strings.activityDigestProjectReopened(title);
+    case "project_activated":
+      return strings.activityDigestProjectActivated(title);
     case "project_progress":
+      if (Array.isArray(entry.params.actorCounts)) {
+        const breakdown = entry.params.actorCounts
+          .map((value) => {
+            if (
+              typeof value !== "object" ||
+              value === null ||
+              !("count" in value) ||
+              !("actor" in value) ||
+              typeof value.count !== "number"
+            ) {
+              return null;
+            }
+            const actorValue = value.actor;
+            const name =
+              typeof actorValue === "object" &&
+              actorValue !== null &&
+              "name" in actorValue &&
+              typeof actorValue.name === "string"
+                ? actorValue.name
+                : strings.activityText.unknownActor;
+            return `${value.count} ${name}`;
+          })
+          .filter((value): value is string => value !== null)
+          .join(" · ");
+        if (breakdown) {
+          return strings.activityDigestProjectProgressDetailed(
+            Number(entry.params.count ?? 0),
+            entry.project?.title ?? title,
+            breakdown,
+            Array.isArray(entry.params.titles)
+              ? entry.params.titles.slice(0, 2).join(" · ")
+              : title,
+          );
+        }
+      }
       return strings.activityDigestProjectProgress(
         Number(entry.params.count ?? 0),
         entry.project?.title ?? title,
       );
+    case "project_assignment":
+      return strings.activityDigestProjectAssigned(
+        Number(entry.params.count ?? 0),
+        entry.project?.title ?? title,
+      );
     case "plan_changed":
+      if (typeof entry.params.date === "string") {
+        const date = new Intl.DateTimeFormat(undefined, {
+          dateStyle: "long",
+          timeZone: "UTC",
+        }).format(new Date(`${entry.params.date}T00:00:00Z`));
+        if (entry.params.dateType === "deadline") {
+          return strings.activityDigestDeadlineChanged(
+            actor,
+            title,
+            date,
+            String(entry.params.direction ?? "later"),
+          );
+        }
+        if (entry.params.dateType === "scheduled") {
+          return strings.activityDigestScheduledChanged(title, date);
+        }
+        if (entry.params.dateType === "availability") {
+          return strings.activityDigestAvailabilityChanged(title, date);
+        }
+      }
       return strings.activityDigestPlanChanged(actor, title);
     case "wait_started":
       return strings.activityDigestWaitStarted(title);
@@ -95,7 +164,10 @@ export function ActivityDigest() {
       currentMemberId === null
         ? Promise.resolve(null)
         : typeof api.getActivityDigest === "function"
-          ? api.getActivityDigest(currentMemberId)
+          ? api.getActivityDigest(
+              currentMemberId,
+              Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+            )
           : Promise.resolve(null),
     [memberKey],
   );

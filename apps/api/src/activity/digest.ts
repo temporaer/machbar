@@ -5,11 +5,14 @@ import type {
   ActivityEventMetadata,
   ActivityStateSnapshot,
   ActivityActor,
+  ActivityDigestActorCount,
 } from "@machbar/shared";
 import { and, asc, eq, gt, lte, max, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
+import { Graph } from "../domain/graph.js";
+import { getEffectiveOwners } from "../repo/effectiveRepo.js";
 
 interface DigestEvent {
   id: number;
@@ -33,6 +36,7 @@ interface WorkItemRow {
   parentId: number | null;
   projectId: number | null;
   taskKind: "action" | "reference" | null;
+  effectiveOwnerId: number | null;
 }
 
 function stableId(event: DigestEvent): number | null {
@@ -68,6 +72,7 @@ function currentSnapshot(row: WorkItemRow | undefined): ActivityStateSnapshot | 
   if (!row) return null;
   return {
     ownerMemberId: row.ownerMemberId,
+    effectiveOwnerId: row.effectiveOwnerId,
     projectId: row.projectId,
     taskKind: row.taskKind ?? undefined,
     status:
@@ -92,12 +97,131 @@ function currentSnapshot(row: WorkItemRow | undefined): ActivityStateSnapshot | 
 }
 
 function isOpen(snapshot: ActivityStateSnapshot | null): boolean {
+  if (snapshot === null) return false;
   return (
-    snapshot?.status !== "done" &&
-    snapshot?.status !== "cancelled" &&
-    snapshot?.status !== "completed" &&
-    snapshot?.status !== "archived"
+    snapshot.status !== "done" &&
+    snapshot.status !== "cancelled" &&
+    snapshot.status !== "completed" &&
+    snapshot.status !== "archived"
   );
+}
+
+function finalEvent(
+  events: DigestEvent[],
+  predicate: (event: DigestEvent) => boolean,
+): DigestEvent | undefined {
+  return [...events].reverse().find(predicate);
+}
+
+function finalStatus(events: DigestEvent[]): string | undefined {
+  return finalEvent(events, (event) => event.metadata.nextStatus !== undefined)
+    ?.metadata.nextStatus;
+}
+
+function todayInTimezone(timezone: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  }
+}
+
+function daysFromToday(value: string | null | undefined, timezone: string): number | null {
+  if (!value) return null;
+  const today = todayInTimezone(timezone);
+  const date = Date.parse(`${value}T00:00:00Z`);
+  const start = Date.parse(`${today}T00:00:00Z`);
+  if (Number.isNaN(date) || Number.isNaN(start)) return null;
+  return Math.round((date - start) / 86_400_000);
+}
+
+function relevantDateChange(
+  before: ActivityStateSnapshot | undefined,
+  after: ActivityStateSnapshot | null,
+  fields: string[],
+  timezone: string,
+): {
+  priority: 1 | 4;
+  dateType: "deadline" | "scheduled" | "availability";
+  previousDate: string | null;
+  date: string | null;
+  direction: "earlier" | "later" | "new" | "removed";
+} | null {
+  if (!after) return null;
+  const candidates: Array<{
+    field: string;
+    dateType: "deadline" | "scheduled" | "availability";
+    previousDate: string | null;
+    date: string | null;
+    horizon: number;
+  }> = [
+    {
+      field: "dueDate",
+      dateType: "deadline",
+      previousDate: before?.dueDate ?? null,
+      date: after.dueDate ?? null,
+      horizon: 14,
+    },
+    {
+      field: "scheduledDate",
+      dateType: "scheduled",
+      previousDate: before?.scheduledDate ?? null,
+      date: after.scheduledDate ?? null,
+      horizon: 7,
+    },
+    {
+      field: "notBeforeDate",
+      dateType: "availability",
+      previousDate: before?.notBeforeDate ?? null,
+      date: after.notBeforeDate ?? null,
+      horizon: 0,
+    },
+  ];
+  for (const candidate of candidates) {
+    if (!fields.includes(candidate.field) && !fields.includes("notBeforeAt")) continue;
+    if (candidate.previousDate === candidate.date) continue;
+    if (candidate.date === null) continue;
+    const previousDistance = daysFromToday(candidate.previousDate, timezone);
+    const distance = daysFromToday(candidate.date, timezone);
+    const direction =
+      candidate.previousDate === null
+        ? "new"
+        : candidate.date === null
+          ? "removed"
+          : distance !== null && previousDistance !== null && distance < previousDistance
+            ? "earlier"
+            : "later";
+    const imminent =
+      (distance !== null && distance <= candidate.horizon) ||
+      (previousDistance !== null && previousDistance <= candidate.horizon);
+    if (candidate.dateType === "availability") {
+      if (after.executable !== true) continue;
+      return { ...candidate, priority: 1, direction };
+    }
+    if (imminent) {
+      return {
+        ...candidate,
+        priority: candidate.dateType === "deadline" && direction !== "later" ? 1 : 4,
+        direction,
+      };
+    }
+  }
+  return null;
+}
+
+function isDeleted(events: DigestEvent[]): boolean {
+  const last = latest(events);
+  return last.kind === "task_deleted" || last.kind === "project_deleted";
 }
 
 function hasNetCompletion(events: DigestEvent[]): boolean {
@@ -136,6 +260,7 @@ function makeEntry(
     project?: ActivityDigestEntry["project"];
     primary?: ActivityDigestEntry["primary"];
     related?: ActivityDigestEntry["related"];
+    actor?: ActivityActor | null;
   } = {},
 ): ActivityDigestEntry {
   const last = latest(events);
@@ -145,7 +270,7 @@ function makeEntry(
     priority,
     kind,
     params: params(values.params),
-    actor: actorFor(events),
+    actor: values.actor === undefined ? actorFor(events) : values.actor,
     project: values.project ?? null,
     primary: values.primary ?? ref(last),
     related: values.related ?? [],
@@ -159,6 +284,8 @@ function classify(
   viewerMemberId: number,
   rows: Map<number, WorkItemRow>,
   projects: Map<number, WorkItemRow>,
+  graph: Graph,
+  timezone: string,
 ): ActivityDigestEntry[] {
   const last = latest(events);
   const itemId = stableId(last);
@@ -176,10 +303,12 @@ function classify(
     [...events].reverse().find((event) => event.metadata.after)?.metadata.after ??
     currentSnapshot(row);
   const entries: ActivityDigestEntry[] = [];
+  if (isDeleted(events)) return entries;
 
   if (
     last.entityType === "project" &&
     last.kind === "project_created" &&
+    last.actor?.id !== viewerMemberId &&
     projectRow?.status === "active" &&
     isOpen(after)
   ) {
@@ -195,47 +324,53 @@ function classify(
     last.entityType === "project" &&
     last.kind === "project_status_changed" &&
     last.metadata.previousStatus === "backlog" &&
-    last.metadata.nextStatus === "active"
+    last.metadata.nextStatus === "active" &&
+    last.actor?.id !== viewerMemberId
   ) {
     entries.push(
-      makeEntry(`project-active:${itemId}`, "milestone", 2, "project_reopened", events, {
+      makeEntry(`project-active:${itemId}`, "milestone", 2, "project_activated", events, {
         project,
         params: params({ title: last.entityTitle }),
       }),
     );
   }
 
-  const unblockedIndex =
-    last.metadata.relatedTaskIds?.findIndex(
-      (_taskId, index) =>
-        last.metadata.relatedTaskOwnerIds?.[index] === viewerMemberId,
-    ) ?? -1;
-  if (unblockedIndex >= 0) {
-    const unblockedId = last.metadata.relatedTaskIds![unblockedIndex]!;
-    const unblockedTitle =
-      last.metadata.relatedTaskTitles?.[unblockedIndex] ??
-      rows.get(unblockedId)?.title ??
-      "task";
+  for (const [index, unblockedId] of (last.metadata.relatedTaskIds ?? []).entries()) {
+    const task = graph.tasksById.get(unblockedId);
+    if (
+      task === undefined ||
+      !task.executable ||
+      task.status === "done" ||
+      task.status === "cancelled" ||
+      task.kind !== "action" ||
+      task.effectiveOwnerId !== viewerMemberId
+    ) {
+      continue;
+    }
+    const unblockedTitle = last.metadata.relatedTaskTitles?.[index] ?? task.title;
     entries.push(
-      makeEntry(`executable:${unblockedId}`, "personal", 1, "task_executable", events, {
+      makeEntry(`executable:${unblockedId}`, "personal", 1, "task_executable", [last], {
         project,
-        primary: {
-          type: "task",
-          id: unblockedId,
-          title: unblockedTitle,
-        },
+        primary: { type: "task", id: unblockedId, title: unblockedTitle },
         params: params({ title: unblockedTitle }),
+        actor: last.actor,
       }),
     );
   }
 
-  if (events.some((event) => event.kind === "task_created") && !hasNetCompletion(events)) {
+  const createdEvent = finalEvent(events, (event) => event.kind === "task_created");
+  if (
+    createdEvent !== undefined &&
+    createdEvent.actor?.id !== viewerMemberId &&
+    !hasNetCompletion(events)
+  ) {
     const assigned = after?.effectiveOwnerId === viewerMemberId;
     if (assigned && !entries.some((entry) => entry.kind === "task_executable")) {
       entries.push(
-        makeEntry("assignment:" + itemId, "personal", 1, "task_assigned", events, {
+        makeEntry("assignment:" + itemId, "personal", 1, "task_assigned", [createdEvent], {
           project,
           params: params({ title: last.entityTitle }),
+          actor: createdEvent.actor,
         }),
       );
     } else if (
@@ -244,9 +379,10 @@ function classify(
       isOpen(after)
     ) {
       entries.push(
-        makeEntry("new:" + itemId, "new_work", 5, "new_work", events, {
+        makeEntry("new:" + itemId, "new_work", 5, "new_work", [createdEvent], {
           project,
           params: params({ title: last.entityTitle }),
+          actor: createdEvent.actor,
         }),
       );
     }
@@ -261,21 +397,36 @@ function classify(
       (before.ownerMemberId !== undefined &&
         after.ownerMemberId !== undefined &&
         before.ownerMemberId !== after.ownerMemberId));
-  if (assignmentChanged && isOpen(after)) {
+  const assignmentEvent = finalEvent(
+    events,
+    (event) =>
+      (event.kind === "task_updated" || event.kind === "project_updated") &&
+      (event.metadata.changedFields ?? []).some((field) =>
+        ["ownerMemberId", "effectiveOwnerId", "ownerInheritanceMode"].includes(field),
+      ),
+  );
+  if (
+    assignmentChanged &&
+    assignmentEvent !== undefined &&
+    assignmentEvent.actor?.id !== viewerMemberId &&
+    isOpen(after)
+  ) {
     const afterOwner = after.effectiveOwnerId ?? after.ownerMemberId;
     const beforeOwner = before?.effectiveOwnerId ?? before?.ownerMemberId;
     if (afterOwner === viewerMemberId) {
       entries.push(
-        makeEntry("assignment:" + itemId, "personal", 1, "task_assigned", events, {
+        makeEntry("assignment:" + itemId, "personal", 1, "task_assigned", [assignmentEvent], {
           project,
           params: params({ title: last.entityTitle }),
+          actor: assignmentEvent.actor,
         }),
       );
     } else if (beforeOwner === viewerMemberId) {
       entries.push(
-        makeEntry("unassignment:" + itemId, "personal", 1, "task_unassigned", events, {
+        makeEntry("unassignment:" + itemId, "personal", 1, "task_unassigned", [assignmentEvent], {
           project,
           params: params({ title: last.entityTitle }),
+          actor: assignmentEvent.actor,
         }),
       );
     }
@@ -287,27 +438,31 @@ function classify(
         event.kind === "task_status_changed" &&
         event.metadata.nextStatus === "done",
     );
-    if (completionEvents.some((event) => event.actor?.id !== viewerMemberId)) {
+    const completion = completionEvents.at(-1);
+    if (completion !== undefined && completion.actor?.id !== viewerMemberId) {
       entries.push(
         makeEntry("completion:" + itemId, "progress", 3, "task_completed", events, {
           project,
           params: params({ title: last.entityTitle }),
+          actor: completion.actor,
         }),
       );
     }
   }
 
-  if (last.entityType === "project" && hasNetCompletion(events)) {
+  if (last.entityType === "project" && finalStatus(events) === "completed") {
     const completionEvents = events.filter(
       (event) =>
         event.kind === "project_status_changed" &&
         event.metadata.nextStatus === "completed",
     );
-    if (completionEvents.some((event) => event.actor?.id !== viewerMemberId)) {
+    const completion = completionEvents.at(-1);
+    if (completion !== undefined && completion.actor?.id !== viewerMemberId) {
       entries.push(
-        makeEntry("project-completed:" + itemId, "milestone", 2, "project_completed", completionEvents, {
+        makeEntry("project-completed:" + itemId, "milestone", 2, "project_completed", events, {
           project,
           params: params({ title: last.entityTitle }),
+          actor: completion.actor,
         }),
       );
     }
@@ -330,16 +485,31 @@ function classify(
         event.actor?.id !== viewerMemberId,
     )
   ) {
-    entries.push(
-      makeEntry("task-reopened:" + itemId, after?.effectiveOwnerId === viewerMemberId ? "personal" : "plan", after?.effectiveOwnerId === viewerMemberId ? 1 : 4, "task_executable", events, {
-        project,
-        params: params({ title: last.entityTitle }),
-      }),
+    const task = itemId === null ? undefined : graph.tasksById.get(itemId);
+    const reopening = finalEvent(events, (event) =>
+      event.kind === "task_status_changed" &&
+      event.metadata.previousStatus === "done" &&
+      event.metadata.nextStatus === "actionable",
     );
+    if (
+      task?.executable &&
+      task.effectiveOwnerId === viewerMemberId &&
+      reopening !== undefined &&
+      reopening.actor?.id !== viewerMemberId
+    ) {
+      entries.push(
+        makeEntry("task-reopened:" + itemId, "personal", 1, "task_executable", [reopening], {
+          project,
+          params: params({ title: last.entityTitle }),
+          actor: reopening.actor,
+        }),
+      );
+    }
   }
 
   if (
     last.entityType === "project" &&
+    finalStatus(events) === "active" &&
     events.some(
       (event) =>
         event.kind === "project_status_changed" &&
@@ -347,34 +517,47 @@ function classify(
         event.metadata.nextStatus === "active",
     )
   ) {
+    const reopening = finalEvent(events, (event) =>
+      event.kind === "project_status_changed" &&
+      event.metadata.previousStatus === "completed" &&
+      event.metadata.nextStatus === "active",
+    );
     entries.push(
-      makeEntry("project-reopened:" + itemId, "milestone", 2, "project_reopened", events, {
+      makeEntry("project-reopened:" + itemId, "milestone", 2, "project_reopened", [reopening!], {
         project,
         params: params({ title: last.entityTitle }),
+        actor: reopening?.actor,
       }),
     );
   }
 
-  const meaningfulPlanChange = events.some((event) => {
-    if (event.kind !== "task_updated" && event.kind !== "project_updated") return false;
-    const changed = event.metadata.changedFields ?? [];
-    return changed.some((field) =>
-      ["ownerMemberId", "effectiveOwnerId", "dueDate", "scheduledDate", "notBeforeAt", "notBeforeDate"].includes(field),
-    );
-  });
-  if (
-    meaningfulPlanChange &&
-    events.some((event) => event.actor?.id !== viewerMemberId) &&
-    !entries.some((entry) => entry.kind === "task_assigned")
-  ) {
+  const planEvent = finalEvent(
+    events,
+    (event) =>
+      (event.kind === "task_updated" || event.kind === "project_updated") &&
+      event.actor?.id !== viewerMemberId,
+  );
+  const planChange =
+    planEvent === undefined
+      ? null
+      : relevantDateChange(
+          before,
+          after,
+          planEvent.metadata.changedFields ?? [],
+          timezone,
+        );
+  if (planChange !== null && !entries.some((entry) => entry.kind === "task_assigned")) {
     entries.push(
-      makeEntry("plan:" + itemId, "plan", 4, "plan_changed", events, {
+      makeEntry("plan:" + itemId, "plan", planChange.priority, "plan_changed", events, {
         project,
         params: params({
           title: last.entityTitle,
-          previousDate: before?.dueDate ?? before?.scheduledDate ?? null,
-          date: after?.dueDate ?? after?.scheduledDate ?? null,
+          previousDate: planChange.previousDate,
+          date: planChange.date,
+          dateType: planChange.dateType,
+          direction: planChange.direction,
         }),
+        actor: planEvent?.actor ?? null,
       }),
     );
   }
@@ -394,11 +577,17 @@ function classify(
       }),
     );
   }
-  if (last.kind === "task_external_wait_resolved" && after?.effectiveOwnerId === viewerMemberId) {
+  if (
+    last.kind === "task_external_wait_resolved" &&
+    itemId !== null &&
+    graph.tasksById.get(itemId)?.executable === true &&
+    graph.tasksById.get(itemId)?.effectiveOwnerId === viewerMemberId
+  ) {
     entries.push(
-      makeEntry("wait-resolved:" + itemId, "personal", 1, "wait_resolved", events, {
+      makeEntry("wait-resolved:" + itemId, "personal", 1, "wait_resolved", [last], {
         project,
         params: params({ title: last.entityTitle }),
+        actor: last.actor,
       }),
     );
   }
@@ -426,8 +615,62 @@ function aggregate(entries: ActivityDigestEntry[]): ActivityDigestEntry[] {
       .filter((id): id is number => id !== null && id !== undefined),
   );
   const projectProgress = new Map<string, ActivityDigestEntry[]>();
+  const completionSupport = new Map<string, ActivityDigestEntry[]>();
+  const projectAssignments = new Map<string, ActivityDigestEntry[]>();
   const standalone: ActivityDigestEntry[] = [];
   for (const entry of entries) {
+    const projectId = entry.project?.id;
+    if (entry.kind === "task_completed" && typeof projectId === "number") {
+      const key = String(projectId);
+      const list = completionSupport.get(key) ?? [];
+      list.push(entry);
+      completionSupport.set(key, list);
+    }
+    if (entry.kind === "task_assigned" && typeof projectId === "number") {
+      const key = String(projectId);
+      const list = projectAssignments.get(key) ?? [];
+      list.push(entry);
+      projectAssignments.set(key, list);
+      continue;
+    }
+    if (entry.kind === "project_completed" && typeof projectId === "number") {
+      const support = completionSupport.get(String(projectId)) ?? [];
+      const actorCounts = new Map<number | null, ActivityDigestActorCount>();
+      for (const taskEntry of support) {
+        const actorId = taskEntry.actor?.id ?? null;
+        const current = actorCounts.get(actorId) ?? {
+          actor: taskEntry.actor
+            ? { id: taskEntry.actor.id, name: taskEntry.actor.name }
+            : null,
+          count: 0,
+        };
+        current.count += 1;
+        actorCounts.set(actorId, current);
+      }
+      standalone.push({
+        ...entry,
+        params: params({
+          ...entry.params,
+          ...(support.length > 0
+            ? {
+                completionCount: support.length,
+                titles: support.slice(0, 2).map((value) =>
+                  String(value.params.title ?? ""),
+                ),
+                actorCounts: [...actorCounts.values()],
+              }
+            : {}),
+        }),
+        related: [
+          ...entry.related,
+          ...support.flatMap((value) => [
+            ...(value.primary ? [value.primary] : []),
+            ...value.related,
+          ]),
+        ],
+      });
+      continue;
+    }
     if (
       (entry.kind === "task_completed" || entry.kind === "project_progress") &&
       entry.project?.id !== null &&
@@ -441,7 +684,7 @@ function aggregate(entries: ActivityDigestEntry[]): ActivityDigestEntry[] {
       const list = projectProgress.get(key) ?? [];
       list.push(entry);
       projectProgress.set(key, list);
-    } else {
+    } else if (entry.kind !== "project_completed") {
       standalone.push(entry);
     }
   }
@@ -449,6 +692,29 @@ function aggregate(entries: ActivityDigestEntry[]): ActivityDigestEntry[] {
     if (list.length === 1) {
       standalone.push(list[0]!);
       continue;
+    }
+    for (const [projectId, list] of projectAssignments) {
+      if (list.length === 1) {
+        standalone.push(list[0]!);
+        continue;
+      }
+      const first = list[0]!;
+      standalone.push({
+        ...first,
+        key: `assignment:${projectId}`,
+        kind: "project_assignment",
+        params: params({
+          count: list.length,
+          titles: list.slice(0, 2).map((entry) => String(entry.params.title ?? "")),
+        }),
+        primary: first.project,
+        related: list.flatMap((entry) => [
+          ...(entry.primary ? [entry.primary] : []),
+          ...entry.related,
+        ]),
+        eventIds: list.flatMap((entry) => entry.eventIds),
+        latestEventAt: list.map((entry) => entry.latestEventAt).sort().at(-1)!,
+      });
     }
     const first = list[0]!;
     const related = list.flatMap((entry) => [entry.primary, ...entry.related]).filter(
@@ -566,6 +832,7 @@ function loadWorkItems(db: Db): { rows: Map<number, WorkItemRow>; projects: Map<
   }
   const rows = new Map<number, WorkItemRow>();
   const projects = new Map<number, WorkItemRow>();
+  const effectiveOwners = getEffectiveOwners(db);
   for (const row of raw) {
     const item: WorkItemRow = {
       ...row,
@@ -573,6 +840,10 @@ function loadWorkItems(db: Db): { rows: Map<number, WorkItemRow>; projects: Map<
       scope: row.scope,
       projectId: row.role === "story" ? row.id : projectByTask.get(row.id) ?? null,
       taskKind: row.taskKind as "action" | "reference" | null,
+      effectiveOwnerId:
+        row.role === "task"
+          ? effectiveOwners.get(row.id)?.ownerId ?? null
+          : row.ownerMemberId,
     };
     rows.set(item.id, item);
     if (item.role === "story") projects.set(item.id, item);
@@ -594,13 +865,14 @@ function visibleToViewer(
   const owner =
     after?.effectiveOwnerId ??
     before?.effectiveOwnerId ??
-    row?.ownerMemberId;
+    row?.effectiveOwnerId;
   return owner === viewerMemberId;
 }
 
 export function getActivityDigest(
   db: Db,
   viewerMemberId: number,
+  timezone = "UTC",
 ): ActivityDigest {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
@@ -635,13 +907,15 @@ export function getActivityDigest(
       };
     }
     const { rows, projects } = loadWorkItems(txDb);
+    const graph = Graph.load(txDb);
     const allEvents = loadEvents(txDb, acknowledgedThroughEventId, maximum);
     const visible = allEvents.filter((event) =>
       visibleToViewer(event, viewerMemberId, rows),
     );
-    const hiddenEntryCount = allEvents.length - visible.length;
     const entries = aggregate(
-      groupEvents(visible).flatMap((group) => classify(group, viewerMemberId, rows, projects)),
+      groupEvents(visible).flatMap((group) =>
+        classify(group, viewerMemberId, rows, projects, graph, timezone),
+      ),
     ).sort(
       (a, b) =>
         a.priority - b.priority ||
@@ -653,7 +927,7 @@ export function getActivityDigest(
       throughEventId: maximum,
       entries,
       totalEntryCount: entries.length,
-      hiddenEntryCount,
+      hiddenEntryCount: 0,
     };
   });
 }

@@ -1164,10 +1164,40 @@ const extra = {
     `${actor} hat das Projekt „${title}“ abgeschlossen.`,
   activityDigestProjectReopened: (title: string) =>
     `Das Projekt „${title}“ wurde wieder geöffnet.`,
+  activityDigestProjectActivated: (title: string) =>
+    `Das Projekt „${title}“ wurde aktiviert.`,
   activityDigestProjectProgress: (count: number, project: string) =>
     `Im Projekt „${project}“ wurden ${count} Aufgaben erledigt.`,
+  activityDigestProjectProgressDetailed: (
+    count: number,
+    project: string,
+    breakdown: string,
+    titles: string,
+  ) =>
+    `Im Projekt „${project}“ wurden ${count} Aufgaben erledigt: ${breakdown}, darunter ${titles}.`,
+  activityDigestProjectAssigned: (count: number, project: string) =>
+    `Dir wurden ${count} Aufgaben im Projekt „${project}“ zugewiesen.`,
+  activityDigestProjectCompletedWithProgress: (
+    actor: string,
+    project: string,
+    count: number,
+  ) =>
+    `${actor} hat das Projekt „${project}“ abgeschlossen. Die letzten ${count} Aufgaben wurden ebenfalls erledigt.`,
   activityDigestPlanChanged: (actor: string, title: string) =>
     `${actor} hat die Planung für „${title}“ geändert.`,
+  activityDigestDeadlineChanged: (
+    actor: string,
+    title: string,
+    date: string,
+    direction: string,
+  ) =>
+    direction === "earlier"
+      ? `${actor} hat die Frist für „${title}“ auf den ${date} vorgezogen.`
+      : `${actor} hat die Frist für „${title}“ auf den ${date} verschoben.`,
+  activityDigestScheduledChanged: (title: string, date: string) =>
+    `Der Termin für „${title}“ wurde auf ${date} verschoben.`,
+  activityDigestAvailabilityChanged: (title: string, date: string) =>
+    `„${title}“ ist ab ${date} verfügbar.`,
   activityDigestWaitStarted: (title: string) =>
     `„${title}“ wartet jetzt auf eine Rückmeldung.`,
   activityDigestWaitResolved: (title: string) =>

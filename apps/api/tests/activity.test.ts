@@ -190,6 +190,70 @@ describe("activity repository", () => {
       }).items.some((event) => event.entity.title === task.title),
     ).toBe(false);
   });
+
+  it("fills a visible page past invisible private events without leaking them", () => {
+    const viewer = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Viewer", color: "#111111" })
+      .returning()
+      .get();
+    const owner = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Owner", color: "#222222" })
+      .returning()
+      .get();
+    const visibleIds = [1, 2].map((index) =>
+      ctx.handle.db
+        .insert(schema.activityEvents)
+        .values({
+          kind: "task_created",
+          entityType: "task",
+          entityTitle: `Shared ${index}`,
+          metadata: { scope: "household" },
+        })
+        .returning({ id: schema.activityEvents.id })
+        .get().id,
+    );
+    for (let index = 0; index < 60; index += 1) {
+      ctx.handle.db.insert(schema.activityEvents).values({
+        kind: "task_created",
+        entityType: "task",
+        entityTitle: `Private ${index}`,
+        metadata: {
+          scope: "work",
+          after: { effectiveOwnerId: owner.id },
+        },
+      }).run();
+    }
+
+    const first = getActivityPage(ctx.handle.db, {
+      limit: 2,
+      viewerMemberId: viewer.id,
+    });
+    expect(first.items.map((event) => event.id)).toEqual(visibleIds.reverse());
+    expect(first.items.map((event) => event.entity.title)).not.toContain("Private 0");
+    expect(first.nextCursor).toBeNull();
+  });
+
+  it("suppresses legacy deleted events whose scope cannot be established", () => {
+    const viewer = ctx.handle.db
+      .insert(schema.members)
+      .values({ name: "Viewer", color: "#111111" })
+      .returning()
+      .get();
+    ctx.handle.db.insert(schema.activityEvents).values({
+      kind: "task_deleted",
+      entityType: "task",
+      entityTitle: "Unbekannt privat",
+      entityId: null,
+      metadata: {},
+    }).run();
+
+    expect(getActivityPage(ctx.handle.db, {
+      limit: 50,
+      viewerMemberId: viewer.id,
+    }).items).toEqual([]);
+  });
 });
 
 describe("GET /api/activity", () => {

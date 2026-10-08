@@ -29,6 +29,7 @@ export function registerActivityRoutes(app: FastifyInstance, db: Db) {
 
   const digestQuerySchema = z.object({
     memberId: z.coerce.number().int().positive().optional(),
+    timezone: z.string().min(1).max(100).optional(),
   });
   const digestAckSchema = z.object({
     memberId: z.coerce.number().int().positive().optional(),
@@ -51,7 +52,7 @@ export function registerActivityRoutes(app: FastifyInstance, db: Db) {
       );
     }
     getMemberOrThrow(db, memberId);
-    return getActivityDigest(db, memberId);
+    return getActivityDigest(db, memberId, query.timezone);
   });
 
   app.post("/api/activity/digest/ack", async (request) => {
