@@ -41,12 +41,12 @@ export interface UpsertExternalWaitInput {
 export type ExternalWaitFollowUpInput =
   | {
       action: "resolve";
-      content: string;
+      content?: string;
       expectedRevision?: number;
     }
   | {
       action: "continue";
-      content: string;
+      content?: string;
       waitingFor?: string | null;
       revisitAt?: string | null;
       expectedRevision?: number;
@@ -106,14 +106,7 @@ export function followUpExternalWait(
         { taskId, reason: "external_wait_missing" },
       );
     }
-    const content = input.content.trim();
-    if (content === "") {
-      throw AppError.badRequest(
-        "request_body_invalid",
-        "Follow-up text must not be empty.",
-        { taskId, field: "content" },
-      );
-    }
+    const content = input.content?.trim() ?? "";
 
     const waitingFor =
       input.action === "continue"
@@ -139,10 +132,13 @@ export function followUpExternalWait(
         ? true
         : projectHasNextAction(txDb, task.projectId);
     const now = nowIso();
-    const notes = appendNoteContent(
-      task.notes,
-      `[${now} · ${followUpAttribution(txDb, context)}]\n${content}`,
-    );
+    const notes =
+      content === ""
+        ? task.notes
+        : appendNoteContent(
+            task.notes,
+            `[${now} · ${followUpAttribution(txDb, context)}]\n${content}`,
+          );
 
     if (input.action === "resolve") {
       tx.delete(schema.taskExternalWaits)
@@ -180,7 +176,7 @@ export function followUpExternalWait(
       projectId: task.projectId,
       metadata: {
         changedFields: [
-          "notesAppended",
+          ...(content === "" ? [] : ["notesAppended"]),
           ...(waitChanged ? ["externalWait"] : []),
           ...(revisitChanged ? ["revisitAt"] : []),
         ],

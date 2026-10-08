@@ -61,6 +61,35 @@ describe("WaitingFollowUpSheet", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("continues waiting without a note", async () => {
+    const task = makeTask({
+      id: 13,
+      revision: 2,
+      externalWait: { waitingFor: "Lieferant", revisitDate: null },
+    });
+    mockedApi.followUpExternalWait.mockResolvedValue({
+      ...task,
+      revision: 3,
+    });
+    renderWithProviders(
+      <WaitingFollowUpSheet task={task} onClose={vi.fn()} />,
+    );
+
+    expect(
+      screen.getByLabelText("Notiz zum Nachhaken (optional)"),
+    ).toHaveAttribute("placeholder", "Angerufen, Rückmeldung erhalten …");
+    await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
+
+    await waitFor(() =>
+      expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(13, {
+        action: "continue",
+        waitingFor: "Lieferant",
+        revisitAt: expect.any(String),
+        expectedRevision: 2,
+      }),
+    );
+  });
+
   it("resolves the wait via the separate 'Warten beenden' action", async () => {
     const task = makeTask({
       id: 10,
@@ -95,6 +124,35 @@ describe("WaitingFollowUpSheet", () => {
     );
     expect(mockedApi.followUpExternalWait).toHaveBeenCalledTimes(1);
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends waiting without a note", async () => {
+    const task = makeTask({
+      id: 14,
+      revision: 6,
+      scheduledDate: "2026-09-05",
+      externalWait: { waitingFor: "Lieferant", revisitDate: "2026-09-05" },
+    });
+    mockedApi.followUpExternalWait.mockResolvedValue({
+      ...task,
+      revision: 7,
+      externalWait: null,
+      revisitAt: null,
+    });
+    renderWithProviders(
+      <WaitingFollowUpSheet task={task} onClose={vi.fn()} />,
+    );
+
+    const endButton = screen.getByRole("button", { name: "Warten beenden" });
+    expect(endButton).not.toHaveClass("btn-danger");
+    await userEvent.click(endButton);
+
+    await waitFor(() =>
+      expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(14, {
+        action: "resolve",
+        expectedRevision: 6,
+      }),
+    );
   });
 
   it("retains the draft and error after a failed atomic save", async () => {

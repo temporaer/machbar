@@ -16,11 +16,9 @@ import { api } from "../lib/api";
 /**
  * The canonical `task.waitingLifecycle` workflow for a task that already
  * has an external wait ("Nachhaken") — `TaskWorkflowHost` resolves here
- * whenever `task.externalWait` is set (see `TaskWaitSheet` for the "start
- * waiting" case). The decision is structured around the outcome first
- * ("Was ist passiert?"), then either "Weiter warten" with quick revisit
- * shortcuts or a separate, equally-weighted "Warten beenden" — not a
- * generic textarea + date + checkbox + Save form.
+ *  whenever `task.externalWait` is set (see `TaskWaitSheet` for the "start
+ *  waiting" case). Notes are optional; continuing or ending a wait is a
+ *  complete action without text.
  */
 export function WaitingFollowUpSheet({
   task,
@@ -61,7 +59,7 @@ export function WaitingFollowUpSheet({
     taskActions.clearError(task.id);
     const updated = await taskActions.followUpExternalWait(task, {
       action: "continue",
-      content: content.trim(),
+      ...(content.trim() ? { content: content.trim() } : {}),
       waitingFor: task.externalWait?.waitingFor ?? null,
       revisitAt: nextRevisitDate
         ? taskAvailabilityForLocalDate(
@@ -79,7 +77,7 @@ export function WaitingFollowUpSheet({
     taskActions.clearError(task.id);
     const updated = await taskActions.followUpExternalWait(task, {
       action: "resolve",
-      content: content.trim(),
+      ...(content.trim() ? { content: content.trim() } : {}),
     });
     if (updated) onClose();
   };
@@ -91,11 +89,14 @@ export function WaitingFollowUpSheet({
     >
       <div className="stack">
         <div className="field">
-          <label htmlFor={`follow-up-notes-${task.id}`}>{strings.whatHappened}</label>
+          <label htmlFor={`follow-up-notes-${task.id}`}>
+            {strings.waitingFollowUpNote}
+          </label>
           <textarea
             id={`follow-up-notes-${task.id}`}
             rows={4}
             value={content}
+            placeholder={strings.waitingFollowUpNotePlaceholder}
             onChange={(event) => setContent(event.target.value)}
             disabled={saving}
             autoFocus
@@ -173,7 +174,7 @@ export function WaitingFollowUpSheet({
           </button>
           <button
             type="button"
-            className="btn btn-primary btn-danger"
+            className="btn btn-primary"
             onClick={() => void endWaiting()}
             disabled={saving}
           >

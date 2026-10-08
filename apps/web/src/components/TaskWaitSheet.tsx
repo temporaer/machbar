@@ -51,7 +51,14 @@ export function TaskWaitSheet({
   const householdTimezone =
     timezoneData?.timezone ?? DEFAULT_HOUSEHOLD_TIMEZONE;
   const [waitingFor, setWaitingFor] = useState("");
-  const [revisitDate, setRevisitDate] = useState<string | null>(null);
+  const [revisitDate, setRevisitDate] = useState<string | null>(
+    task.revisitAt
+      ? calendarDateForInstant(task.revisitAt, householdTimezone)
+      : null,
+  );
+  const [revisitIntent, setRevisitIntent] = useState<
+    "unchanged" | "replace" | "clear"
+  >("unchanged");
   const [customDate, setCustomDate] = useState(false);
   const [dateValid, setDateValid] = useState(true);
   const saving = taskActions.isPending(task.id);
@@ -88,13 +95,20 @@ export function TaskWaitSheet({
       task,
       {
         waitingFor: waitingFor.trim(),
-        revisitAt: revisitDate
-          ? taskAvailabilityForLocalDate(
-              revisitDate,
-              "00:00",
-              householdTimezone,
-            )?.notBeforeAt ?? null
-          : null,
+        ...(revisitIntent === "unchanged"
+          ? {}
+          : {
+              revisitAt:
+                revisitIntent === "clear"
+                  ? null
+                  : revisitDate
+                    ? taskAvailabilityForLocalDate(
+                        revisitDate,
+                        "00:00",
+                        householdTimezone,
+                      )?.notBeforeAt ?? null
+                    : null,
+            }),
       },
       { throwOnError: false },
     );
@@ -152,6 +166,7 @@ export function TaskWaitSheet({
               onClick={() => {
                 setCustomDate(false);
                 setRevisitDate(addIsoCalendarDays(today(), 1));
+                setRevisitIntent("replace");
               }}
             >
               {strings.revisitShortcutLabels.tomorrow}
@@ -164,6 +179,7 @@ export function TaskWaitSheet({
               onClick={() => {
                 setCustomDate(false);
                 setRevisitDate(addIsoCalendarDays(today(), 3));
+                setRevisitIntent("replace");
               }}
             >
               {strings.revisitShortcutLabels.threeDays}
@@ -176,6 +192,7 @@ export function TaskWaitSheet({
               onClick={() => {
                 setCustomDate(false);
                 setRevisitDate(addIsoCalendarDays(today(), 7));
+                setRevisitIntent("replace");
               }}
             >
               {strings.revisitShortcutLabels.oneWeek}
@@ -183,11 +200,12 @@ export function TaskWaitSheet({
             <button
               type="button"
               className="choice-chip"
-              aria-pressed={!customDate && revisitDate === null}
+              aria-pressed={!customDate && revisitIntent === "clear"}
               disabled={saving}
               onClick={() => {
                 setCustomDate(false);
                 setRevisitDate(null);
+                setRevisitIntent("clear");
               }}
             >
               {strings.revisitShortcutLabels.noDate}
@@ -206,7 +224,10 @@ export function TaskWaitSheet({
             <HumanDateInput
               id={`wait-revisit-${task.id}`}
               value={revisitDate ?? ""}
-              onChange={(date) => setRevisitDate(date)}
+              onChange={(date) => {
+                setRevisitDate(date);
+                setRevisitIntent("replace");
+              }}
               onValidityChange={setDateValid}
               disabled={saving}
             />
@@ -228,6 +249,7 @@ export function TaskWaitSheet({
               if (hint) {
                 setRevisitDate(hint.date);
                 setCustomDate(true);
+                setRevisitIntent("replace");
               }
             }}
           />

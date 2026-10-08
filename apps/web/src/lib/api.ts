@@ -372,12 +372,12 @@ export interface ExternalWaitInput {
 export type ExternalWaitFollowUpInput =
   | {
       action: "resolve";
-      content: string;
+      content?: string;
       expectedRevision: number;
     }
   | {
       action: "continue";
-      content: string;
+      content?: string;
       waitingFor?: string | null;
       revisitAt?: string | null;
       /** @deprecated Use revisitAt. */

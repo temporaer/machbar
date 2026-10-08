@@ -196,4 +196,105 @@ describe("caption hints in focused task workflows", () => {
     );
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
+
+  it("preserves an existing timed revisit and work plan when starting a wait without changing its date", async () => {
+    const task = makeTask({
+      id: 46,
+      revision: 2,
+      revisitAt: "2026-09-18T16:00:00.000Z",
+      scheduledDate: "2026-09-25",
+    });
+    mockedApi.setExternalWait.mockResolvedValue({
+      ...task,
+      revision: 3,
+      externalWait: { waitingFor: "Lieferant", revisitDate: null },
+    } as never);
+    renderWithProviders(
+      <TaskWaitSheet task={task} members={[]} onClose={vi.fn()} />,
+    );
+
+    await userEvent.type(
+      screen.getByLabelText("Worauf wartest du?"),
+      "Lieferant",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Warten" }));
+
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(46, {
+        waitingFor: "Lieferant",
+        expectedRevision: 2,
+      }),
+    );
+  });
+
+  it("replaces the revisit only when the user chooses a new follow-up date", async () => {
+    const task = makeTask({
+      id: 47,
+      revision: 5,
+      revisitAt: "2026-09-18T16:00:00.000Z",
+      scheduledDate: "2026-09-25",
+    });
+    mockedApi.setExternalWait.mockResolvedValue({
+      ...task,
+      revision: 6,
+      externalWait: { waitingFor: "Lieferant", revisitDate: null },
+    } as never);
+    renderWithProviders(
+      <TaskWaitSheet task={task} members={[]} onClose={vi.fn()} />,
+    );
+
+    await userEvent.type(
+      screen.getByLabelText("Worauf wartest du?"),
+      "Lieferant",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Warten" }));
+
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(
+        47,
+        expect.objectContaining({
+          waitingFor: "Lieferant",
+          revisitAt: expect.any(String),
+          expectedRevision: 5,
+        }),
+      ),
+    );
+    expect(mockedApi.setExternalWait.mock.calls[0]?.[1]).not.toHaveProperty(
+      "scheduledDate",
+    );
+  });
+
+  it("clears a revisit only after explicitly choosing no date", async () => {
+    const task = makeTask({
+      id: 48,
+      revision: 3,
+      revisitAt: "2026-09-18T16:00:00.000Z",
+      scheduledDate: "2026-09-25",
+    });
+    mockedApi.setExternalWait.mockResolvedValue({
+      ...task,
+      revision: 4,
+      revisitAt: null,
+      externalWait: { waitingFor: "Lieferant", revisitDate: null },
+    } as never);
+    renderWithProviders(
+      <TaskWaitSheet task={task} members={[]} onClose={vi.fn()} />,
+    );
+
+    await userEvent.type(
+      screen.getByLabelText("Worauf wartest du?"),
+      "Lieferant",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Kein Datum" }));
+    await userEvent.click(screen.getByRole("button", { name: "Warten" }));
+
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(48, {
+        waitingFor: "Lieferant",
+        revisitAt: null,
+        expectedRevision: 3,
+      }),
+    );
+  });
 });
