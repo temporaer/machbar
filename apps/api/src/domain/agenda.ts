@@ -47,7 +47,10 @@ const sortByScheduledThenPriorityTitleId = sortByDateThenPriorityTitleId(
   (task) => task.scheduledDate,
 );
 const sortByRevisitThenPriorityTitleId = sortByDateThenPriorityTitleId(
-  (task) => task.externalWait?.revisitDate ?? null,
+  (task) =>
+    task.externalWait?.revisitDate ??
+    task.revisitAt?.slice(0, 10) ??
+    null,
 );
 const sortByDueThenPriorityTitleId = sortByDateThenPriorityTitleId(
   (task) => task.dueDate,
@@ -121,12 +124,15 @@ export function buildAgenda(
 
   const revisit = graph
     .allTasks()
-    .filter(
-      (t) =>
-        selection.isDirectExternalWaitAttention(t) &&
-        !!t.externalWait?.revisitDate &&
-        t.externalWait.revisitDate <= today,
-    )
+    .filter((t) => {
+      const attentionDate =
+        t.externalWait?.revisitDate ?? t.revisitAt?.slice(0, 10) ?? null;
+      return (
+        selection.isAgendaTask(t) &&
+        attentionDate !== null &&
+        attentionDate <= today
+      );
+    })
     .sort(sortByRevisitThenPriorityTitleId);
   for (const task of revisit) seen.add(task.id);
   const planned = take(

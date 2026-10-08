@@ -67,7 +67,7 @@ export interface CreateProjectInput {
   status?: ProjectStatus;
   ownerMemberId?: number | null;
   dueDate?: string | null;
-  scheduledDate?: string | null;
+  revisitAt?: string | null;
   tagIds?: number[];
   contextIds?: number[];
   /** Only meaningful for a root project (no `parentId`); a nested project
@@ -147,7 +147,7 @@ export function createProject(
         ownerMemberId,
         scope,
         dueDate: input.dueDate ?? null,
-        scheduledDate: (input.status ?? "backlog") === "backlog" ? input.scheduledDate ?? null : null,
+        revisitAt: (input.status ?? "backlog") === "backlog" ? input.revisitAt ?? null : null,
         position: maxPosition + 1,
       })
       .returning()
@@ -195,7 +195,7 @@ export interface UpdateProjectInput {
    * when no owner is set, since a work item is always owner-only. */
   scope?: WorkItemScope;
   dueDate?: string | null;
-  scheduledDate?: string | null;
+  revisitAt?: string | null;
   position?: number;
   tagIds?: number[];
   contextIds?: number[];
@@ -242,8 +242,8 @@ export function updateProject(
     }
     if (
       project.status !== "backlog" &&
-      input.scheduledDate !== undefined &&
-      input.scheduledDate !== null
+      input.revisitAt !== undefined &&
+      input.revisitAt !== null
     ) {
       throw AppError.conflict(
         "project_transition_invalid",
@@ -274,11 +274,11 @@ export function updateProject(
       changedFields.push("dueDate");
     }
     if (
-      input.scheduledDate !== undefined &&
-      input.scheduledDate !== project.scheduledDate
+      input.revisitAt !== undefined &&
+      input.revisitAt !== project.revisitAt
     ) {
-      patch.scheduledDate = input.scheduledDate;
-      changedFields.push("scheduledDate");
+      patch.revisitAt = input.revisitAt;
+      changedFields.push("revisitAt");
     }
     if (input.position !== undefined && input.position !== project.position) {
       patch.position = input.position;
@@ -386,13 +386,13 @@ export function updateProject(
           before: {
             ownerMemberId: project.ownerMemberId,
             dueDate: project.dueDate,
-            scheduledDate: project.scheduledDate,
+            revisitAt: project.revisitAt,
             projectId: id,
           },
           after: {
             ownerMemberId: updated.ownerMemberId,
             dueDate: updated.dueDate,
-            scheduledDate: updated.scheduledDate,
+            revisitAt: updated.revisitAt,
             projectId: id,
           },
         },

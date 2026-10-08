@@ -16,8 +16,11 @@ export interface BlockerTaskInput {
   status: TaskStatus;
   projectId: number | null;
   scheduledDate: string | null;
-  notBeforeAt: string | null;
-  notBeforeDate: string | null;
+  revisitAt?: string | null;
+  /** @deprecated Compatibility for old snapshots. */
+  notBeforeAt?: string | null;
+  /** @deprecated Compatibility for old snapshots. */
+  notBeforeDate?: string | null;
   externalWait: {
     waitingFor: string | null;
     revisitDate: string | null;
@@ -101,6 +104,7 @@ export function analyzeTaskBlockers(
     }
 
     const path = [...stack, taskId];
+    const revisitAt = task.revisitAt ?? task.notBeforeAt ?? null;
     const projectStatus =
       task.projectId === null ? null : projectStatuses.get(task.projectId);
     if (projectStatus === "backlog") {
@@ -148,10 +152,10 @@ export function analyzeTaskBlockers(
     }
 
     const branchResults: PathAnalysis[] = [];
-    if (task.notBeforeAt !== null && task.notBeforeAt > now) {
+    if (revisitAt !== null) {
       branchResults.push({
         healthy: true,
-        attentionDate: task.notBeforeDate,
+        attentionDate: revisitAt.slice(0, 10),
         diagnoses: [],
       });
     }
@@ -225,7 +229,7 @@ export function analyzeTaskBlockers(
       executable:
         task.status === "actionable" &&
         !blocked &&
-        (task.notBeforeAt === null || task.notBeforeAt <= now),
+        (task.revisitAt ?? task.notBeforeAt ?? null) === null,
       healthyProgressPath: path.healthy,
       nextBlockerAttentionDate: blocked ? path.attentionDate : null,
       diagnoses: path.diagnoses,

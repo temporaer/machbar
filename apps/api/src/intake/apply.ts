@@ -261,7 +261,9 @@ export async function applyIntake(
           parentId: parent?.kind === "project" ? parentId : null,
           ...(item.ownerMemberId === null ? {} : { ownerMemberId: item.ownerMemberId }),
           dueDate: item.dueDate,
-          scheduledDate: item.scheduledDate,
+          revisitAt: item.scheduledDate
+            ? `${item.scheduledDate}T00:00:00.000Z`
+            : null,
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
         }, context);
         created = { id: project.id, title: project.title, role: "story" };

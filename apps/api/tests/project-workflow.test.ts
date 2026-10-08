@@ -567,11 +567,11 @@ describe("project workflow (service layer)", () => {
       project.id,
       undefined,
       project.revision + 1,
-      "2030-01-15",
+      "2030-01-15T00:00:00.000Z",
     );
 
     expect(deferred.status).toBe("backlog");
-    expect(deferred.scheduledDate).toBe("2030-01-15");
+    expect(deferred.revisitAt).toBe("2030-01-15T00:00:00.000Z");
   });
 
   it("throws a not-found AppError for a nonexistent project on every transition", () => {

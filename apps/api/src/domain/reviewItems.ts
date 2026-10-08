@@ -206,8 +206,9 @@ export function buildReviewItems(
     if (!isOpen(task)) continue;
     if (task.projectId === null) continue;
     const project = graph.projectsById.get(task.projectId);
-    if (!project || project.scheduledDate === null) continue;
-    if (task.scheduledDate !== null && task.scheduledDate < project.scheduledDate) {
+    const projectRevisitDate = project?.revisitAt?.slice(0, 10) ?? null;
+    if (projectRevisitDate === null) continue;
+    if (task.scheduledDate !== null && task.scheduledDate < projectRevisitDate) {
       items.push(
         taskItem(
           task,
@@ -217,7 +218,7 @@ export function buildReviewItems(
         ),
       );
     }
-    if (task.dueDate !== null && task.dueDate < project.scheduledDate) {
+    if (task.dueDate !== null && task.dueDate < projectRevisitDate) {
       items.push(
         taskItem(task, "clarification_repair", "task_due_before_resurface", {
           code: "plan_task",
@@ -233,8 +234,8 @@ export function buildReviewItems(
 
     if (
       project.dueDate !== null &&
-      project.scheduledDate !== null &&
-      project.dueDate < project.scheduledDate
+      project.revisitAt !== null &&
+      project.dueDate < project.revisitAt.slice(0, 10)
     ) {
       items.push(
         projectItem(
@@ -286,8 +287,7 @@ export function buildReviewItems(
         return analysis !== null && isViableProgressTask(task, analysis);
       });
       const hasIntentionalWait = openTasks.some(
-        (task) => task.externalWait?.revisitDate !== null &&
-          task.externalWait?.revisitDate !== undefined,
+        (task) => task.revisitAt !== null,
       );
       const hasViablePath = hasHealthyProgressPath || hasIntentionalWait;
       if (project.ownerMemberId === null) {
@@ -343,8 +343,8 @@ export function buildReviewItems(
         project.reviewedAt.slice(0, 10) <=
           addDaysIso(today, -BACKLOG_REVIEW_DAYS);
       if (
-        project.scheduledDate !== null &&
-        project.scheduledDate <= today
+        project.revisitAt !== null &&
+        project.revisitAt.slice(0, 10) <= today
       ) {
         items.push(
           projectItem(project, "reconsider", "backlog_revisit_reached", {

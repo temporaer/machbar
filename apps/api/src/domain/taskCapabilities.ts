@@ -34,7 +34,7 @@ import { Graph } from "./graph.js";
 
 export interface UpsertExternalWaitInput {
   waitingFor?: string | null;
-  revisitDate?: string | null;
+  revisitAt?: string | null;
   expectedRevision?: number;
 }
 
@@ -48,7 +48,7 @@ export type ExternalWaitFollowUpInput =
       action: "continue";
       content: string;
       waitingFor?: string | null;
-      revisitDate?: string | null;
+      revisitAt?: string | null;
       expectedRevision?: number;
     };
 
@@ -128,12 +128,12 @@ export function followUpExternalWait(
         { taskId },
       );
     }
-    const revisitDate =
+    const revisitAt =
       input.action === "resolve"
         ? null
-        : input.revisitDate === undefined
-          ? existing.revisitDate
-          : input.revisitDate;
+        : input.revisitAt === undefined
+          ? task.revisitAt
+          : input.revisitAt;
     const projectHadNextAction =
       task.projectId === null
         ? true
@@ -150,7 +150,7 @@ export function followUpExternalWait(
         .run();
     } else {
       tx.update(schema.taskExternalWaits)
-        .set({ waitingFor, revisitDate, updatedAt: now })
+        .set({ waitingFor, revisitDate: null, updatedAt: now })
         .where(eq(schema.taskExternalWaits.taskId, taskId))
         .run();
     }
@@ -158,6 +158,7 @@ export function followUpExternalWait(
       .update(schema.workItems)
       .set({
         notes,
+        revisitAt,
         revision: sql`${schema.workItems.revision} + 1`,
         updatedAt: now,
       })
@@ -166,7 +167,7 @@ export function followUpExternalWait(
       .get();
     const waitChanged =
       input.action === "resolve" || waitingFor !== existing.waitingFor;
-    const revisitChanged = revisitDate !== existing.revisitDate;
+    const revisitChanged = revisitAt !== task.revisitAt;
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind:
@@ -181,12 +182,12 @@ export function followUpExternalWait(
         changedFields: [
           "notesAppended",
           ...(waitChanged ? ["externalWait"] : []),
-          ...(revisitChanged ? ["revisitDate"] : []),
+          ...(revisitChanged ? ["revisitAt"] : []),
         ],
         before: {
           externalWait: {
             title: existing.waitingFor ?? "",
-            revisitDate: existing.revisitDate,
+            revisitDate: task.revisitAt,
           },
         },
         after: {
@@ -195,7 +196,7 @@ export function followUpExternalWait(
               ? null
               : {
                   title: waitingFor ?? "",
-                  revisitDate,
+                  revisitDate: revisitAt,
                 },
         },
       },
@@ -222,7 +223,7 @@ export function followUpExternalWait(
           personalEligible: true,
         });
       }
-    } else if (existing.revisitDate === null && revisitDate !== null) {
+    } else if (task.revisitAt === null && revisitAt !== null) {
       recordContribution(txDb, {
         activityEventId,
         actorMemberId: actor(context),
@@ -232,7 +233,7 @@ export function followUpExternalWait(
         entityId: taskId,
         personalEligible: true,
       });
-    } else if (existing.revisitDate !== null && revisitDate === null) {
+    } else if (task.revisitAt !== null && revisitAt === null) {
       neutralizeContribution(txDb, {
         activityEventId,
         reason: "waiting_followup_added",
@@ -294,18 +295,16 @@ export function upsertExternalWait(
         { taskId },
       );
     }
-    const revisitDate =
-      input.revisitDate === undefined
-        ? existing?.revisitDate ?? null
-        : input.revisitDate;
+    const revisitAt =
+      input.revisitAt === undefined ? task.revisitAt : input.revisitAt;
     const waitChanged = !existing || existing.waitingFor !== waitingFor;
-    const revisitChanged = !existing || existing.revisitDate !== revisitDate;
+    const revisitChanged = !existing || task.revisitAt !== revisitAt;
     if (!waitChanged && !revisitChanged) return existing;
 
     const now = nowIso();
     if (existing) {
       tx.update(schema.taskExternalWaits)
-        .set({ waitingFor, revisitDate, updatedAt: now })
+        .set({ waitingFor, revisitDate: null, updatedAt: now })
         .where(eq(schema.taskExternalWaits.taskId, taskId))
         .run();
     } else {
@@ -313,13 +312,21 @@ export function upsertExternalWait(
         .values({
           taskId,
           waitingFor,
-          revisitDate,
+          revisitDate: null,
           createdAt: now,
           updatedAt: now,
         })
         .run();
     }
-    touchTask(txDb, taskId);
+    tx
+      .update(schema.workItems)
+      .set({
+        revisitAt,
+        revision: sql`${schema.workItems.revision} + 1`,
+        updatedAt: now,
+      })
+      .where(eq(schema.workItems.id, taskId))
+      .run();
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
       kind: existing ? "task_external_wait_updated" : "task_external_wait_started",
@@ -330,25 +337,25 @@ export function upsertExternalWait(
       metadata: {
         changedFields: [
           ...(waitChanged ? ["externalWait"] : []),
-          ...(revisitChanged ? ["revisitDate"] : []),
+          ...(revisitChanged ? ["revisitAt"] : []),
         ],
         before: existing
           ? {
               externalWait: {
                 title: existing.waitingFor ?? "",
-                revisitDate: existing.revisitDate,
+                revisitDate: task.revisitAt,
               },
             }
           : { externalWait: null },
         after: {
           externalWait: {
             title: waitingFor ?? "",
-            revisitDate,
+            revisitDate: revisitAt,
           },
         },
       },
     });
-    if ((existing?.revisitDate ?? null) === null && revisitDate !== null) {
+    if (task.revisitAt === null && revisitAt !== null) {
       recordContribution(txDb, {
         activityEventId,
         actorMemberId: actor(context),
@@ -358,7 +365,7 @@ export function upsertExternalWait(
         entityId: taskId,
         personalEligible: true,
       });
-    } else if (existing?.revisitDate != null && revisitDate === null) {
+    } else if (task.revisitAt !== null && revisitAt === null) {
       neutralizeContribution(txDb, {
         activityEventId,
         reason: "waiting_followup_added",
@@ -417,7 +424,15 @@ export function resolveExternalWait(
     tx.delete(schema.taskExternalWaits)
       .where(eq(schema.taskExternalWaits.taskId, taskId))
       .run();
-    touchTask(txDb, taskId);
+    tx
+      .update(schema.workItems)
+      .set({
+        revisitAt: null,
+        revision: sql`${schema.workItems.revision} + 1`,
+        updatedAt: nowIso(),
+      })
+      .where(eq(schema.workItems.id, taskId))
+      .run();
     const graphAfter = Graph.load(txDb);
     const becameExecutable =
       graphBefore.tasksById.get(taskId)?.executable !== true &&
@@ -432,7 +447,7 @@ export function resolveExternalWait(
       metadata: {
         changedFields: [
           "externalWait",
-          ...(existing.revisitDate !== null ? ["revisitDate"] : []),
+          ...(task.revisitAt !== null ? ["revisitAt"] : []),
         ],
         ...(becameExecutable ? { newlyExecutableTaskIds: [taskId] } : {}),
       },

@@ -338,7 +338,14 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(upsertExternalWaitSchema, request.body ?? {});
-      upsertExternalWait(db, id, body, {
+      upsertExternalWait(db, id, {
+        ...body,
+        revisitAt:
+          body.revisitAt ??
+          (body.revisitDate
+            ? `${body.revisitDate}T00:00:00.000Z`
+            : body.revisitDate),
+      }, {
         actorMemberId: request.activityActor?.id ?? null,
       });
       return taskOrThrow(db, id, viewerMemberId(request));
@@ -362,7 +369,18 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
     async (request) => {
       const id = parseId(request.params.id);
       const body = parseOrThrow(externalWaitFollowUpSchema, request.body);
-      followUpExternalWait(db, id, body, {
+      followUpExternalWait(db, id, {
+        ...body,
+        ...(body.action === "continue"
+          ? {
+              revisitAt:
+                body.revisitAt ??
+                (body.revisitDate
+                  ? `${body.revisitDate}T00:00:00.000Z`
+                  : body.revisitDate),
+            }
+          : {}),
+      }, {
         actorMemberId: request.activityActor?.id ?? null,
       });
       return taskOrThrow(db, id, viewerMemberId(request));

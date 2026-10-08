@@ -191,7 +191,9 @@ export function buildWeekAgenda(
     const projection = projectWeekAttention(
       {
         scheduledDate: waiting ? null : task.scheduledDate,
-        revisitDate: waiting ? task.externalWait?.revisitDate ?? null : null,
+        revisitDate: waiting
+          ? task.externalWait?.revisitDate ?? null
+          : task.revisitAt?.slice(0, 10) ?? null,
         dueDate: task.dueDate,
       },
       today,
@@ -214,7 +216,10 @@ export function buildWeekAgenda(
     const projection = projectWeekAttention(
       {
         scheduledDate: null,
-        revisitDate: null,
+        revisitDate:
+          story.status === "backlog"
+            ? null
+            : story.revisitAt?.slice(0, 10) ?? null,
         dueDate: story.dueDate,
       },
       today,

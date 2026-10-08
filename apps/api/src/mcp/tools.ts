@@ -639,13 +639,13 @@ export function createMachbarMcpServer({
         ownerMemberId: z.number().int().positive().nullable().optional(),
         ownerName: z.string().nullable().optional(),
         dueDate: mcpNullableCalendarDate,
-        scheduledDate: mcpNullableCalendarDate,
+        revisitAt: z.string().datetime().nullable().optional(),
         contextIds: mcpNullableNumberArray("Physical context IDs, or [] to set an empty collection."),
       },
     },
     async (input) => {
       const dueDate = normalizeMcpCalendarDate(input.dueDate, "dueDate");
-      const scheduledDate = normalizeMcpCalendarDate(input.scheduledDate, "scheduledDate");
+      const revisitAt = input.revisitAt ?? null;
       if (input.parentProjectId !== undefined && input.parentProjectId !== null) {
         scopedProjectOrThrow(input.parentProjectId);
       }
@@ -669,7 +669,7 @@ export function createMachbarMcpServer({
           parentId: input.parentProjectId,
           ownerMemberId,
           dueDate,
-          scheduledDate,
+          revisitAt,
           contextIds: input.contextIds ?? undefined,
           scope: agentScope,
         },
@@ -691,13 +691,13 @@ export function createMachbarMcpServer({
         ownerMemberId: z.number().int().positive().nullable().optional(),
         ownerName: z.string().nullable().optional(),
         dueDate: mcpNullableCalendarDate,
-        scheduledDate: mcpNullableCalendarDate,
+        revisitAt: z.string().datetime().nullable().optional(),
         contextIds: mcpNullableNumberArray("Physical context IDs, or [] to clear the collection."),
       },
     },
     async ({ projectId, expectedRevision, ...input }) => {
       const dueDate = normalizeMcpCalendarDate(input.dueDate, "dueDate");
-      const scheduledDate = normalizeMcpCalendarDate(input.scheduledDate, "scheduledDate");
+      const revisitAt = input.revisitAt ?? null;
       scopedProjectOrThrow(projectId);
       if (
         agentScope === "household" &&
@@ -719,7 +719,7 @@ export function createMachbarMcpServer({
         {
           ...metadata,
           dueDate,
-          scheduledDate,
+          revisitAt,
           ...(contextIds !== null && contextIds !== undefined
             ? { contextIds }
             : {}),
@@ -751,20 +751,20 @@ export function createMachbarMcpServer({
     "machbar_set_waiting",
     {
       description:
-        "Set or update an actionable task's external wait. waitingFor must explain what event or person is awaited. revisitDate, when supplied, is a calendar date in YYYY-MM-DD format only, never a time or timezone. Use the latest expectedRevision.",
+        "Set or update an actionable task's external wait. waitingFor must explain what event or person is awaited. revisitAt, when supplied, is an ISO timestamp. Use the latest expectedRevision.",
       inputSchema: {
         taskId,
         expectedRevision,
         waitingFor: z.string().trim().min(1),
-        revisitDate: calendarDate.nullable(),
+        revisitAt: z.string().datetime().nullable(),
       },
     },
-    async ({ taskId, expectedRevision, waitingFor, revisitDate }) => {
+    async ({ taskId, expectedRevision, waitingFor, revisitAt }) => {
       scopedTaskOrThrow(taskId);
       upsertExternalWait(
         db,
         taskId,
-        { expectedRevision, waitingFor, revisitDate },
+        { expectedRevision, waitingFor, revisitAt },
         mutationContext,
       );
       return result(compactTaskMutation(scopedTaskOrThrow(taskId)));

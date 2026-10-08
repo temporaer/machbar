@@ -196,7 +196,10 @@ export interface CreateTaskInput {
   createdByMemberId?: number | null;
   dueDate?: string | null;
   scheduledDate?: string | null;
+  revisitAt?: string | null;
+  /** @deprecated Use revisitAt. */
   notBeforeAt?: string | null;
+  /** @deprecated Use revisitAt. */
   notBeforeDate?: string | null;
   priority?: number | null;
   size?: TaskSize | null;
@@ -249,6 +252,7 @@ export interface CreateProjectInput {
   scope?: WorkItemScope;
   dueDate?: string | null;
   scheduledDate?: string | null;
+  revisitAt?: string | null;
   tagIds?: number[];
   contextIds?: number[];
 }
@@ -359,7 +363,7 @@ export interface RefinementTaskRow {
 
 export interface ExternalWaitInput {
   waitingFor?: string | null;
-  revisitDate?: string | null;
+  revisitAt?: string | null;
   expectedRevision?: number;
 }
 
@@ -373,7 +377,7 @@ export type ExternalWaitFollowUpInput =
       action: "continue";
       content: string;
       waitingFor?: string | null;
-      revisitDate?: string | null;
+      revisitAt?: string | null;
       expectedRevision: number;
     };
 

@@ -451,6 +451,7 @@ export class Graph {
       dependenciesByTask.set(row.taskId, list);
     }
     const externalWaitRows = db.select().from(schema.taskExternalWaits).all();
+    const workItemById = new Map(workItemRows.map((row) => [row.id, row]));
     const externalWaitByTask = new Map<number, {
       waitingFor: string | null;
       revisitDate: string | null;
@@ -461,7 +462,11 @@ export class Graph {
           row.taskId,
           {
             waitingFor: row.waitingFor?.trim() ?? null,
-            revisitDate: row.revisitDate,
+            // Keep reading the legacy follow-up column during the additive
+            // rollout; all new writes use work_items.revisit_at.
+            revisitDate: (
+              workItemById.get(row.taskId)?.revisitAt ?? row.revisitDate
+            )?.slice(0, 10) ?? null,
           },
         ]),
     );
@@ -501,8 +506,7 @@ export class Graph {
           status: task.status,
           projectId: task.projectId,
           scheduledDate: task.scheduledDate,
-          notBeforeAt: task.notBeforeAt,
-          notBeforeDate: task.notBeforeDate,
+          revisitAt: task.revisitAt,
           externalWait: externalWaitByTask.get(task.id) ?? null,
           dependencies: (dependenciesByTask.get(task.id) ?? []).map(
             (dependency) => {
