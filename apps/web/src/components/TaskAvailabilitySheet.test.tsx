@@ -47,7 +47,7 @@ describe("TaskAvailabilitySheet", () => {
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(40, {
         revisitAt: expect.any(String),
-        scheduledDate: "2026-09-14",
+        scheduledDate: null,
         dueDate: null,
         expectedRevision: 1,
       }),

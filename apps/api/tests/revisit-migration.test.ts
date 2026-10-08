@@ -89,7 +89,7 @@ describe("revisit migration", () => {
         "external_wait_revisit_preferred_over_not_before",
       );
 
-      applyRevisitMigration(handle.sqlite);
+      applyRevisitMigration(handle.sqlite, { allowConflicts: true });
       const rows = handle.sqlite
         .prepare(
           `SELECT id, scheduled_date, revisit_at, not_before_at, not_before_date

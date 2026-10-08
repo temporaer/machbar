@@ -585,8 +585,6 @@ describe("MCP integration", () => {
         ownerMemberId: owner.id,
         dueDate: "2026-10-12",
         scheduledDate: "2026-10-15",
-        notBeforeDate: "2026-10-14",
-        notBeforeAt: "2026-10-14T08:00:00+02:00",
         tagIds: [tag.id],
         contextIds: [context.id],
       },
@@ -618,7 +616,6 @@ describe("MCP integration", () => {
       result: expect.objectContaining({
         dueDate: "2026-10-12",
         scheduledDate: "2026-10-15",
-        notBeforeDate: "2026-10-14",
         explicitTags: [expect.objectContaining({ id: tag.id })],
         explicitContexts: [expect.objectContaining({ id: context.id })],
       }),
@@ -656,7 +653,6 @@ describe("MCP integration", () => {
       result: expect.objectContaining({
         dueDate: "2026-10-12",
         scheduledDate: "2026-10-15",
-        notBeforeDate: "2026-10-14",
         effectiveOwnerId: owner.id,
       }),
     });
@@ -785,14 +781,13 @@ describe("MCP integration", () => {
       name: "machbar_create_task",
       arguments: {
         title: "Tokyo availability",
-        notBeforeDate: "2026-10-14",
+        revisitAt: "2026-10-14T00:00:00",
         timezone: "Asia/Tokyo",
       },
     });
     expect(dateOnly.structuredContent).toEqual({
       result: expect.objectContaining({
-        notBeforeAt: "2026-10-13T15:00:00.000Z",
-        notBeforeDate: "2026-10-14",
+        revisitAt: "2026-10-13T15:00:00.000Z",
       }),
     });
 
@@ -800,7 +795,7 @@ describe("MCP integration", () => {
       name: "machbar_create_task",
       arguments: {
         title: "Ambiguous availability",
-        notBeforeAt: "2026-10-25T02:30",
+        revisitAt: "2026-10-25T02:30",
         timezone: "Europe/Berlin",
       },
     });
@@ -809,7 +804,7 @@ describe("MCP integration", () => {
       name: "machbar_create_task",
       arguments: {
         title: "Nonexistent availability",
-        notBeforeAt: "2026-03-29T02:30",
+        revisitAt: "2026-03-29T02:30",
         timezone: "Europe/Berlin",
       },
     });
@@ -959,7 +954,6 @@ describe("MCP integration", () => {
         title: "Project metadata",
         ownerMemberId: owner.id,
         dueDate: "2026-10-20",
-        scheduledDate: "2026-10-21",
         contextIds: [context.id],
       },
     });
@@ -982,7 +976,6 @@ describe("MCP integration", () => {
     expect(preserved.structuredContent).toEqual({
       result: expect.objectContaining({
         dueDate: "2026-10-20",
-        scheduledDate: "2026-10-21",
         ownerMemberId: owner.id,
       }),
     });
@@ -1157,6 +1150,7 @@ describe("MCP integration", () => {
         taskId,
         expectedRevision: defaultSearchResult.items[0]!.revision,
         waitingFor: "a reply",
+        revisitAt: null,
       },
     });
     expect(waitingMutation.structuredContent).toEqual({
@@ -1860,7 +1854,7 @@ describe("MCP integration", () => {
         taskId: createdTask.id,
         expectedRevision: createdTask.revision,
         waitingFor: "Alex",
-        revisitDate: "2026-09-22",
+        revisitAt: "2026-09-22T00:00:00.000Z",
       },
     });
     expect(waiting.structuredContent).toEqual({

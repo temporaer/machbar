@@ -5,6 +5,7 @@ import type {
   WeekWorkItemPlacement,
   WeekWorkItemSummary,
 } from "@machbar/shared";
+import { calendarDateForInstant } from "@machbar/shared";
 import { projectWeekAttention } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
 import {
@@ -154,6 +155,7 @@ export interface BuildWeekAgendaOptions {
   memberId?: number;
   scope?: "mine" | "all" | "work";
   today?: string;
+  householdTimezone?: string;
   contextAvailability?: (
     task: TaskRecord,
     target: number | "household",
@@ -193,7 +195,7 @@ export function buildWeekAgenda(
         scheduledDate: waiting ? null : task.scheduledDate,
         revisitDate: waiting
           ? task.externalWait?.revisitDate ?? null
-          : task.revisitAt?.slice(0, 10) ?? null,
+          : calendarDateForInstant(task.revisitAt, options.householdTimezone) ?? null,
         dueDate: task.dueDate,
       },
       today,
@@ -219,7 +221,7 @@ export function buildWeekAgenda(
         revisitDate:
           story.status === "backlog"
             ? null
-            : story.revisitAt?.slice(0, 10) ?? null,
+            : calendarDateForInstant(story.revisitAt, options.householdTimezone) ?? null,
         dueDate: story.dueDate,
       },
       today,

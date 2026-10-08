@@ -4,6 +4,7 @@ import type {
   ReviewItem,
   ReviewReason,
 } from "@machbar/shared";
+import { calendarDateForInstant } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
 import type { TaskBlockerAnalysis } from "./blockers.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
@@ -126,6 +127,7 @@ const reasonOrder: Record<ReviewReason, number> = {
 
 export interface BuildReviewItemsOptions {
   today?: string;
+  householdTimezone?: string;
 }
 
 export function buildReviewItems(
@@ -206,7 +208,8 @@ export function buildReviewItems(
     if (!isOpen(task)) continue;
     if (task.projectId === null) continue;
     const project = graph.projectsById.get(task.projectId);
-    const projectRevisitDate = project?.revisitAt?.slice(0, 10) ?? null;
+    const projectRevisitDate =
+      calendarDateForInstant(project?.revisitAt, options.householdTimezone) ?? null;
     if (projectRevisitDate === null) continue;
     if (task.scheduledDate !== null && task.scheduledDate < projectRevisitDate) {
       items.push(
@@ -235,7 +238,8 @@ export function buildReviewItems(
     if (
       project.dueDate !== null &&
       project.revisitAt !== null &&
-      project.dueDate < project.revisitAt.slice(0, 10)
+      project.dueDate <
+      (calendarDateForInstant(project.revisitAt, options.householdTimezone) ?? "")
     ) {
       items.push(
         projectItem(
@@ -287,7 +291,7 @@ export function buildReviewItems(
         return analysis !== null && isViableProgressTask(task, analysis);
       });
       const hasIntentionalWait = openTasks.some(
-        (task) => task.revisitAt !== null,
+        (task) => task.revisitAt !== null || task.externalWait !== null,
       );
       const hasViablePath = hasHealthyProgressPath || hasIntentionalWait;
       if (project.ownerMemberId === null) {
@@ -344,7 +348,8 @@ export function buildReviewItems(
           addDaysIso(today, -BACKLOG_REVIEW_DAYS);
       if (
         project.revisitAt !== null &&
-        project.revisitAt.slice(0, 10) <= today
+        (calendarDateForInstant(project.revisitAt, options.householdTimezone) ?? "") <=
+        today
       ) {
         items.push(
           projectItem(project, "reconsider", "backlog_revisit_reached", {

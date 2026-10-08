@@ -1137,8 +1137,7 @@ describe("TaskDetailSheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(56, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: null,
         dueDate: null,
         expectedRevision: 1,
@@ -1148,7 +1147,7 @@ describe("TaskDetailSheet", () => {
 
   it("opens the focused availability workflow from an unset detail value", async () => {
     mockedApi.getTask.mockResolvedValue(
-      makeTask({ id: 61, title: "Noch nicht verfügbar", notBeforeAt: null }),
+      makeTask({ id: 61, title: "Noch nicht verfügbar", revisitAt: null }),
     );
     renderSheet(61);
     await userEvent.click(screen.getByText("open"));
@@ -1166,14 +1165,16 @@ describe("TaskDetailSheet", () => {
       makeTask({
         id: 62,
         title: "Abends verfügbar",
-        notBeforeAt: "2026-09-19T18:00:00.000Z",
+        revisitAt: "2026-09-19T18:00:00.000Z",
       }),
     );
     renderSheet(62);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Abends verfügbar");
 
-    await userEvent.click(screen.getByRole("button", { name: /Planung.*18:00/ }));
+    await userEvent.click(
+      screen.getByRole("button", { name: /Planung.*19\.09\.2026/ }),
+    );
 
     expect(
       await screen.findByRole("dialog", { name: "Planung: Abends verfügbar" }),
@@ -1206,8 +1207,7 @@ describe("TaskDetailSheet", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(59, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: "2026-09-10",
         dueDate: "2026-09-13",
         expectedRevision: 1,

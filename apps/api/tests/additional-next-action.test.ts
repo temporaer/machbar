@@ -255,8 +255,7 @@ describe("task.additionalNextAction opt-in", () => {
     const deferred = await createTask({
       title: "Erst später verfügbar I",
       projectId: project.id,
-      notBeforeAt: "2999-01-01T18:00:00.000Z",
-      notBeforeDate: "2999-01-01",
+      revisitAt: "2999-01-01T18:00:00.000Z",
     });
     const available = await createTask({
       title: "Jetzt verfügbar I",
@@ -278,8 +277,7 @@ describe("task.additionalNextAction opt-in", () => {
     await createTask({
       title: "Erst später",
       projectId: project.id,
-      notBeforeAt: "2999-01-01T18:00:00.000Z",
-      notBeforeDate: "2999-01-01",
+      revisitAt: "2999-01-01T18:00:00.000Z",
     });
 
     const detail = await getProject(project.id);
@@ -292,8 +290,7 @@ describe("task.additionalNextAction opt-in", () => {
     const deferred = await createTask({
       title: "Erst morgen",
       projectId: project.id,
-      notBeforeAt: "2999-01-01T18:00:00.000Z",
-      notBeforeDate: "2999-01-01",
+      revisitAt: "2999-01-01T18:00:00.000Z",
     });
 
     const detail = await getProject(project.id);

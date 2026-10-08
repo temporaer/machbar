@@ -1049,8 +1049,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(7, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: expect.any(String),
         dueDate: null,
         expectedRevision: 1,

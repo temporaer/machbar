@@ -165,7 +165,7 @@ describe("review queue", () => {
         role: "story",
         status: "backlog",
         title: "Reached revisit",
-        scheduledDate: today,
+        revisitAt: `${today}T00:00:00.000Z`,
         reviewedAt: `${today}T12:00:00.000Z`,
       })
       .returning()
@@ -176,7 +176,7 @@ describe("review queue", () => {
         role: "story",
         status: "backlog",
         title: "Future revisit",
-        scheduledDate: "2026-09-05",
+        revisitAt: "2026-09-05T00:00:00.000Z",
       })
       .returning()
       .get();
@@ -1029,7 +1029,7 @@ describe("review queue", () => {
         role: "story",
         status: "backlog",
         title: "Deferred project",
-        scheduledDate: "2026-09-20",
+        revisitAt: "2026-09-20T00:00:00.000Z",
       })
       .returning()
       .get();
@@ -1099,7 +1099,7 @@ describe("review queue", () => {
         role: "story",
         status: "backlog",
         title: "Contradictory dates",
-        scheduledDate: "2026-09-20",
+        revisitAt: "2026-09-20T00:00:00.000Z",
         dueDate: "2026-09-10",
       })
       .returning()
@@ -1110,7 +1110,7 @@ describe("review queue", () => {
         role: "story",
         status: "backlog",
         title: "Consistent dates",
-        scheduledDate: "2026-09-10",
+        revisitAt: "2026-09-10T00:00:00.000Z",
         dueDate: "2026-09-20",
       })
       .returning()

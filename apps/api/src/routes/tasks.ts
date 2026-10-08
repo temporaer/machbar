@@ -341,10 +341,13 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
       upsertExternalWait(db, id, {
         ...body,
         revisitAt:
-          body.revisitAt ??
-          (body.revisitDate
-            ? `${body.revisitDate}T00:00:00.000Z`
-            : body.revisitDate),
+          body.revisitAt !== undefined
+            ? body.revisitAt
+            : body.revisitDate !== undefined
+              ? body.revisitDate
+                ? `${body.revisitDate}T00:00:00.000Z`
+                : null
+              : undefined,
       }, {
         actorMemberId: request.activityActor?.id ?? null,
       });
@@ -374,10 +377,13 @@ export function registerTaskRoutes(app: FastifyInstance, db: Db) {
         ...(body.action === "continue"
           ? {
               revisitAt:
-                body.revisitAt ??
-                (body.revisitDate
-                  ? `${body.revisitDate}T00:00:00.000Z`
-                  : body.revisitDate),
+                body.revisitAt !== undefined
+                  ? body.revisitAt
+                  : body.revisitDate !== undefined
+                    ? body.revisitDate
+                      ? `${body.revisitDate}T00:00:00.000Z`
+                      : null
+                    : undefined,
             }
           : {}),
       }, {

@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState, type DragEvent } from "react";
-import type { Member } from "@machbar/shared";
+import { calendarDateForInstant, type Member } from "@machbar/shared";
 import { api, type AgendaScope, type WeekAgendaResponse, type WeekPlanningItem } from "../lib/api";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { useAsync } from "../lib/useAsync";
@@ -68,6 +68,7 @@ function addItem(
 function projectAttention(
   item: WeekPlanningItem,
   today: string,
+  householdTimezone = "Europe/Berlin",
 ): { placement: WeekPlanningItem["placement"]; attentionDate: string } | null {
   const waiting = item.role === "task" && item.externalWait !== null;
   const revisitAt = item.role === "task"
@@ -80,7 +81,10 @@ function projectAttention(
   };
   const options: Array<{ placement: "scheduled" | "revisit" | "due"; raw: string }> = [];
   if (candidates.scheduledDate) options.push({ placement: "scheduled", raw: candidates.scheduledDate });
-  if (candidates.revisitAt) options.push({ placement: "revisit", raw: candidates.revisitAt.slice(0, 10) });
+  if (candidates.revisitAt) {
+    const revisitDate = calendarDateForInstant(candidates.revisitAt, householdTimezone);
+    if (revisitDate) options.push({ placement: "revisit", raw: revisitDate });
+  }
   if (candidates.dueDate) options.push({ placement: "due", raw: candidates.dueDate });
   if (options.length === 0) return null;
   const priority = { scheduled: 0, revisit: 1, due: 2 } as const;
@@ -102,11 +106,12 @@ function moveScheduled(
   item: WeekPlanningItem,
   date: string | null,
   today: string,
+  householdTimezone: string,
 ): WeekAgendaResponse {
   const task = item.task ? { ...item.task, scheduledDate: date } : item.task;
   const project = item.project ? { ...item.project, scheduledDate: date } : item.project;
   const withDate: WeekPlanningItem = { ...item, scheduledDate: date, task, project } as WeekPlanningItem;
-  const projected = projectAttention(withDate, today);
+  const projected = projectAttention(withDate, today, householdTimezone);
   const next: WeekPlanningItem = projected
     ? { ...withDate, placement: projected.placement, attentionDate: projected.attentionDate }
     : { ...withDate, placement: "unplanned", attentionDate: null };
@@ -118,6 +123,7 @@ function moveRevisit(
   item: WeekPlanningItem,
   date: string | null,
   today: string,
+  householdTimezone: string,
 ): WeekAgendaResponse {
   const revisitAt = date ? `${date}T00:00:00.000Z` : null;
   const externalWait = item.externalWait
@@ -126,7 +132,7 @@ function moveRevisit(
   const task = item.task ? { ...item.task, revisitAt, externalWait } : item.task;
   const project = item.project ? { ...item.project, revisitAt } : item.project;
   const withDate: WeekPlanningItem = { ...item, externalWait, task, project } as WeekPlanningItem;
-  const projected = projectAttention(withDate, today);
+  const projected = projectAttention(withDate, today, householdTimezone);
   const next: WeekPlanningItem = projected
     ? { ...withDate, placement: projected.placement, attentionDate: projected.attentionDate }
     : { ...withDate, placement: "unplanned", attentionDate: null };
@@ -342,6 +348,8 @@ export function WeekPage() {
     () => api.getWeekAgenda(start, currentMemberId, scope),
     [loadKey],
   );
+  const { data: timezoneData } = useAsync(() => api.getHouseholdTimezone(), []);
+  const householdTimezone = timezoneData?.timezone ?? "Europe/Berlin";
   const selectScope = (nextScope: AgendaScope) => {
     setScope(nextScope);
     writeTodayScope(nextScope);
@@ -358,7 +366,7 @@ export function WeekPage() {
     if (!agenda) return;
     const previous = agenda;
     setMutationError(null);
-    setAgenda(sortAgenda(moveScheduled(agenda, item, date, today)));
+    setAgenda(sortAgenda(moveScheduled(agenda, item, date, today, householdTimezone)));
     try {
       await dispatch({ type: "workItem.schedule", item, date });
     } catch (cause) {
@@ -374,7 +382,7 @@ export function WeekPage() {
     if (!agenda || item.role !== "task" || !item.externalWait) return;
     const previous = agenda;
     setMutationError(null);
-    setAgenda(sortAgenda(moveRevisit(agenda, item, date, today)));
+    setAgenda(sortAgenda(moveRevisit(agenda, item, date, today, householdTimezone)));
     try {
       await dispatch({ type: "workItem.setRevisitDate", item, date });
     } catch (cause) {

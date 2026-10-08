@@ -146,3 +146,16 @@ export function householdCalendarDateToRevisitAt(
   const normalized = normalizeRevisitInput(date, timezone);
   return normalized.status === "invalid" ? null : normalized.value;
 }
+
+export function calendarDateForInstant(
+  value: string | null | undefined,
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
+): string | null {
+  if (!value) return null;
+  try {
+    const instant = Temporal.Instant.from(value);
+    return instant.toZonedDateTimeISO(timezone).toPlainDate().toString();
+  } catch {
+    return null;
+  }
+}

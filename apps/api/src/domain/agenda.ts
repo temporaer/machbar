@@ -4,6 +4,7 @@ import type {
   ProjectAgendaBucket,
   ProjectAgendaEntry,
 } from "@machbar/shared";
+import { calendarDateForInstant } from "@machbar/shared";
 import type { Graph } from "./graph.js";
 import type { TaskRecord } from "./graph.js";
 import {
@@ -15,8 +16,16 @@ import {
   pruneReferenceContainers,
 } from "./compiledViewProjection.js";
 
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+function todayIso(timezone?: string): string {
+  if (!timezone) return new Date().toISOString().slice(0, 10);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts();
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function addDaysIso(dateIso: string, days: number): string {
@@ -46,12 +55,6 @@ function sortByDateThenPriorityTitleId(
 const sortByScheduledThenPriorityTitleId = sortByDateThenPriorityTitleId(
   (task) => task.scheduledDate,
 );
-const sortByRevisitThenPriorityTitleId = sortByDateThenPriorityTitleId(
-  (task) =>
-    task.externalWait?.revisitDate ??
-    task.revisitAt?.slice(0, 10) ??
-    null,
-);
 const sortByDueThenPriorityTitleId = sortByDateThenPriorityTitleId(
   (task) => task.dueDate,
 );
@@ -60,6 +63,7 @@ export interface BuildAgendaOptions {
   dueSoonDays?: number;
   /** Browser-local calendar date used consistently for task and project boundaries. */
   today?: string;
+  householdTimezone?: string;
   /**
    * The currently selected household member. When provided, every bucket
    * (including `revisit`) is restricted to tasks whose *effective* owner is
@@ -97,7 +101,20 @@ export function buildAgenda(
   graph: Graph,
   options: BuildAgendaOptions = {},
 ): Agenda {
-  const { dueSoonDays = 3, memberId, today = todayIso() } = options;
+  const {
+    dueSoonDays = 3,
+    memberId,
+    householdTimezone,
+    today = todayIso(householdTimezone),
+  } = options;
+  const sortByRevisitThenPriorityTitleId = sortByDateThenPriorityTitleId(
+    (task) =>
+      task.externalWait?.revisitDate ??
+      calendarDateForInstant(task.revisitAt, householdTimezone) ??
+      null,
+  );
+  const usesCurrentDate = options.today === undefined;
+  const now = Date.now();
   const selection = createAgendaSelection(graph, options);
   const { contextAvailability, isContextAvailable } = selection;
   const soonLimit = addDaysIso(today, dueSoonDays);
@@ -106,13 +123,16 @@ export function buildAgenda(
   const take = (
     predicate: (t: TaskRecord) => boolean,
     compare: (a: TaskRecord, b: TaskRecord) => number,
+    options: { requireExecutable?: boolean } = {},
   ): TaskRecord[] => {
+    const requireExecutable = options.requireExecutable ?? true;
     const results = graph
       .allTasks()
       .filter(
         (t) =>
           selection.isAgendaTask(t) &&
-          t.executable &&
+          (requireExecutable || t.status === "actionable") &&
+          (!requireExecutable || t.executable) &&
           isContextAvailable(t) &&
           !seen.has(t.id) &&
           predicate(t),
@@ -126,11 +146,22 @@ export function buildAgenda(
     .allTasks()
     .filter((t) => {
       const attentionDate =
-        t.externalWait?.revisitDate ?? t.revisitAt?.slice(0, 10) ?? null;
+        t.externalWait?.revisitDate ??
+        calendarDateForInstant(t.revisitAt, householdTimezone) ??
+        null;
+      const reached =
+        attentionDate !== null &&
+        (attentionDate < today ||
+          (attentionDate === today &&
+            (t.externalWait?.revisitDate !== null &&
+              t.externalWait?.revisitDate !== undefined ||
+              !usesCurrentDate ||
+              (t.revisitAt !== null &&
+                t.revisitAt !== undefined &&
+                Date.parse(t.revisitAt) <= now))));
       return (
         selection.isAgendaTask(t) &&
-        attentionDate !== null &&
-        attentionDate <= today
+        reached
       );
     })
     .sort(sortByRevisitThenPriorityTitleId);
@@ -145,14 +176,17 @@ export function buildAgenda(
   const overdue = take(
     (t) => !!t.dueDate && t.dueDate < today,
     sortByDueThenPriorityTitleId,
+    { requireExecutable: false },
   );
   const dueToday = take(
     (t) => t.dueDate === today,
     sortByDueThenPriorityTitleId,
+    { requireExecutable: false },
   );
   const dueSoon = take(
     (t) => !!t.dueDate && t.dueDate > today && t.dueDate <= soonLimit,
     sortByDueThenPriorityTitleId,
+    { requireExecutable: false },
   );
   const { shared, unscheduled } = selectCurrentAvailableWork(graph, {
     ...options,

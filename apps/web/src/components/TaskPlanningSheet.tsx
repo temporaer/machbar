@@ -88,7 +88,10 @@ export function TaskPlanningSheet({
     const hint = hints.find((candidate) => candidate.key === key);
     if (!hint) return;
     setAcceptedHints((current) => ({ ...current, [field]: hint }));
-    if (field === "scheduledDate") setScheduledDate(hint.date);
+    if (field === "scheduledDate") {
+      setScheduledDate(hint.date);
+      setNotBeforeDate("");
+    }
     else setDueDate(hint.date);
   };
 
@@ -102,6 +105,7 @@ export function TaskPlanningSheet({
   const setAvailability = (date: string, time: string) => {
     setNotBeforeDate(date);
     setNotBeforeTime(time);
+    setScheduledDate("");
   };
 
   const commit = async () => {
@@ -228,14 +232,20 @@ export function TaskPlanningSheet({
           <HumanDateInput
             id={`planning-scheduled-${task.id}`}
             value={scheduledDate}
-            onChange={(date) => setScheduledDate(date ?? "")}
+            onChange={(date) => {
+              setScheduledDate(date ?? "");
+              if (date) setNotBeforeDate("");
+            }}
             onValidityChange={setDateValid}
             disabled={saving}
             autoFocus={focus === "scheduled"}
           />
           <ScheduleShortcuts
             value={scheduledDate}
-            onChange={(date) => setScheduledDate(date ?? "")}
+            onChange={(date) => {
+              setScheduledDate(date ?? "");
+              if (date) setNotBeforeDate("");
+            }}
             disabled={saving}
           />
           <CaptionHintSuggestions

@@ -397,6 +397,7 @@ describe("task external waits", () => {
       title: "Später entscheiden",
       scheduledDate: "2026-09-12",
     });
+
     const waiting = await ctx.app.inject({
       method: "PUT",
       url: `/api/tasks/${task.id}/external-wait`,
@@ -420,6 +421,31 @@ describe("task external waits", () => {
       scheduledDate: "2026-09-12",
       blocked: false,
     });
+  });
+
+  it("honors an explicit null when clearing an external-wait revisit", async () => {
+    const task = await createTask({ title: "Nachhaken löschen" });
+    const waiting = await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${task.id}/external-wait`,
+      payload: {
+        waitingFor: "Amt",
+        revisitAt: "2026-09-20T08:00:00.000Z",
+      },
+    });
+    expect(waiting.statusCode).toBe(200);
+
+    const cleared = await ctx.app.inject({
+      method: "PUT",
+      url: `/api/tasks/${task.id}/external-wait`,
+      payload: {
+        waitingFor: "Amt",
+        revisitAt: null,
+        expectedRevision: waiting.json().revision,
+      },
+    });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().revisitAt).toBeNull();
   });
 
   it("rejects waits on non-actionable and recurring tasks", async () => {

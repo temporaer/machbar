@@ -251,17 +251,15 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
   it("excludes tasks before their global availability date and includes them once reached", async () => {
     await createTask({
       title: "Erst morgen machbar",
-      notBeforeAt: `${tomorrow}T00:00:00.000Z`,
-      notBeforeDate: tomorrow,
+      revisitAt: `${tomorrow}T00:00:00.000Z`,
     });
     await createTask({
       title: "Schon wieder machbar",
-      notBeforeAt: `${yesterday}T00:00:00.000Z`,
-      notBeforeDate: yesterday,
+      revisitAt: `${yesterday}T00:00:00.000Z`,
     });
 
     expect(await bucketsContaining("Erst morgen machbar")).toEqual([]);
-    expect(await bucketsContaining("Schon wieder machbar")).toEqual(["shared"]);
+    expect(await bucketsContaining("Schon wieder machbar")).toEqual(["revisit"]);
   });
 
   it("rejects planning a task before its availability date", async () => {
@@ -272,8 +270,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
         title: "Widersprüchliche Planung",
         status: "actionable",
         scheduledDate: today,
-        notBeforeAt: `${tomorrow}T00:00:00.000Z`,
-        notBeforeDate: tomorrow,
+        revisitAt: `${tomorrow}T00:00:00.000Z`,
       },
     });
 
@@ -281,67 +278,48 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(response.json().error.code).toBe("task_schedule_before_available");
   });
 
-  it("compares planning against the selected local availability date, not its UTC date", async () => {
-    const rejected = await ctx.app.inject({
-      method: "POST",
-      url: "/api/tasks",
-      payload: {
-        title: "Nach Berliner Mitternacht verfügbar",
-        status: "actionable",
-        scheduledDate: "2026-09-19",
-        // Europe/Berlin is UTC+2 on this date, so this instant belongs to
-        // local calendar date 2026-09-20.
-        notBeforeAt: "2026-09-19T22:30:00.000Z",
-        notBeforeDate: "2026-09-20",
-      },
+  it("projects revisit instants using the household calendar date", async () => {
+    await createTask({
+      title: "Nach Berliner Mitternacht verfügbar",
+      revisitAt: "2026-09-19T22:30:00.000Z",
     });
-
-    expect(rejected.statusCode).toBe(409);
-    expect(rejected.json().error.code).toBe("task_schedule_before_available");
-
-    const accepted = await ctx.app.inject({
-      method: "POST",
-      url: "/api/tasks",
-      payload: {
-        title: "Am lokalen Verfügbarkeitstag geplant",
-        status: "actionable",
-        scheduledDate: "2026-09-20",
-        notBeforeAt: "2026-09-19T22:30:00.000Z",
-        notBeforeDate: "2026-09-20",
-      },
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: "/api/agenda/today?date=2026-09-20",
     });
-    expect(accepted.statusCode).toBe(201);
+    expect(response.statusCode).toBe(200);
+    expect(titlesOf(response.json().revisit)).toContain(
+      "Nach Berliner Mitternacht verfügbar",
+    );
   });
 
-  it("requires the local calendar date when setting task availability", async () => {
+  it("accepts a canonical revisit instant without a separate calendar field", async () => {
     const response = await ctx.app.inject({
       method: "POST",
       url: "/api/tasks",
       payload: {
         title: "Unvollständige Verfügbarkeit",
         status: "actionable",
-        notBeforeAt: "2026-09-19T22:30:00.000Z",
+        revisitAt: "2026-09-19T22:30:00.000Z",
       },
     });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe("task_availability_date_required");
+    expect(response.statusCode).toBe(201);
+    expect(response.json().revisitAt).toBe("2026-09-19T22:30:00.000Z");
   });
 
-  it("rejects a local availability date that cannot contain the supplied instant", async () => {
+  it("rejects malformed canonical revisit values", async () => {
     const response = await ctx.app.inject({
       method: "POST",
       url: "/api/tasks",
       payload: {
         title: "Widersprüchliche Verfügbarkeit",
         status: "actionable",
-        notBeforeAt: "2026-10-01T08:00:00.000Z",
-        notBeforeDate: "2026-09-01",
+        revisitAt: "not-a-timestamp",
       },
     });
 
     expect(response.statusCode).toBe(400);
-    expect(response.json().error.code).toBe("task_availability_date_required");
   });
 
   it("excludes Später-klären captures from Heute", async () => {
@@ -402,7 +380,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     await addDependency(blocked.id, blocker.id);
 
     const foundIn = await bucketsContaining("Blockierte Aufgabe fällig heute");
-    expect(foundIn).toEqual([]);
+    expect(foundIn).toEqual(["dueToday"]);
   });
 
   it("excludes a blocked task entirely when it has no scheduledDate of its own", async () => {

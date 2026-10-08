@@ -12,6 +12,7 @@ vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
     getWeekAgenda: vi.fn(),
+    getHouseholdTimezone: vi.fn().mockResolvedValue({ timezone: "Europe/Berlin" }),
     updateTask: vi.fn(),
     updateProject: vi.fn(),
     setExternalWait: vi.fn(),
@@ -391,7 +392,7 @@ describe("WeekPage", () => {
     await waitFor(() =>
       expect(mockedApi.setExternalWait).toHaveBeenCalledWith(61, {
         waitingFor: "IKEA",
-        revisitDate: "2026-09-10",
+        revisitAt: "2026-09-10T00:00:00.000Z",
         expectedRevision: 1,
       }),
     );
@@ -437,7 +438,7 @@ describe("WeekPage", () => {
     await waitFor(() =>
       expect(mockedApi.setExternalWait).toHaveBeenCalledWith(62, {
         waitingFor: "Spedition",
-        revisitDate: null,
+        revisitAt: null,
         expectedRevision: 1,
       }),
     );
@@ -676,7 +677,7 @@ describe("WeekPage", () => {
     await waitFor(() =>
       expect(mockedApi.setExternalWait).toHaveBeenCalledWith(92, {
         waitingFor: "Anbieter",
-        revisitDate: "2026-09-10",
+        revisitAt: "2026-09-10T00:00:00.000Z",
         expectedRevision: 1,
       }),
     );

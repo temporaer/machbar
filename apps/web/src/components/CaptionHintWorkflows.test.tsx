@@ -56,8 +56,7 @@ describe("caption hints in focused task workflows", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: "2026-09-15",
         dueDate: "2026-09-18",
         title: "Fenster putzen",
@@ -191,7 +190,7 @@ describe("caption hints in focused task workflows", () => {
     await waitFor(() =>
       expect(mockedApi.setExternalWait).toHaveBeenCalledWith(45, {
         waitingFor: "Peter",
-        revisitDate: "2026-09-21",
+        revisitAt: "2026-09-21T00:00:00.000Z",
         expectedRevision: 7,
       }),
     );

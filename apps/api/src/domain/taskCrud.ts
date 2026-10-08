@@ -1045,10 +1045,7 @@ export function updateTask(
       patch.dueDate = input.dueDate;
       changedFields.push("dueDate");
     }
-    if (
-      input.scheduledDate !== undefined &&
-      effectiveScheduledDate !== currentTask.scheduledDate
-    ) {
+    if (effectiveScheduledDate !== currentTask.scheduledDate) {
       patch.scheduledDate = effectiveScheduledDate;
       changedFields.push("scheduledDate");
     }

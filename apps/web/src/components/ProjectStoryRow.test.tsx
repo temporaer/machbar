@@ -874,7 +874,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(43, {
       expectedRevision: 1,
-      scheduledDate: null,
+      revisitAt: null,
     });
     expect(screen.getByText("Auf später verschoben")).toBeInTheDocument();
   });
@@ -1008,7 +1008,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
-        scheduledDate: "2026-05-01",
+        revisitAt: "2026-05-01T00:00:00.000Z",
         expectedRevision: 1,
       }),
     );
@@ -1021,7 +1021,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     );
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
-        scheduledDate: null,
+        revisitAt: null,
         expectedRevision: 1,
       }),
     );

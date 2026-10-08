@@ -709,12 +709,12 @@ describe("TaskRow – calm shared card presentation", () => {
     const task = makeTask({
       id: 27,
       title: "Erst abends erledigen",
-      notBeforeAt: "2026-09-19T18:00:00.000Z",
+      revisitAt: "2026-09-19T18:00:00.000Z",
     });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
 
     await screen.findByText("Erst abends erledigen");
-    expect(screen.getByText(/Wieder ansehen ab: .*18:00/)).toBeInTheDocument();
+    expect(screen.getByText(/Wiedervorlage\s*:/)).toBeInTheDocument();
   });
 
   it("keeps a long wrapping title complete while tags occupy the upper-right", async () => {
@@ -860,8 +860,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: resolveScheduleShortcut("tomorrow"),
         dueDate: null,
         expectedRevision: 1,

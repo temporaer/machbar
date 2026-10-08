@@ -254,9 +254,18 @@ export function configuredHouseholdTimezone(sqlite: Database.Database): string {
   }
 }
 
-export function applyRevisitMigration(sqlite: Database.Database): RevisitMigrationReport {
+export function applyRevisitMigration(
+  sqlite: Database.Database,
+  options: { allowConflicts?: boolean } = {},
+): RevisitMigrationReport {
   const report = inspectRevisitMigration(sqlite);
   if (report.alreadyApplied) return report;
+  if (report.conflictCount > 0 && options.allowConflicts !== true) {
+    throw new Error(
+      `Revisit migration has ${report.conflictCount} conflict rows. ` +
+      "Review the dry-run report and rerun with allowConflicts=true.",
+    );
+  }
   const update = sqlite.prepare(
     `UPDATE work_items
        SET revisit_at = @revisitAt,
