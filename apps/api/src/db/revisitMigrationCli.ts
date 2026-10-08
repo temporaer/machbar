@@ -7,6 +7,7 @@ const env = loadEnv();
 const handle = openDb(env.databasePath);
 try {
   runMigrations(handle.db);
+  console.log("Schema migrations applied; revisit data backfill remains explicit.");
   const shouldApply = process.argv.includes("--apply");
   const allowConflicts = process.argv.includes("--allow-conflicts");
   const report = shouldApply

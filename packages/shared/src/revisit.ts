@@ -144,7 +144,42 @@ export function householdCalendarDateToRevisitAt(
   timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
 ): string | null {
   const normalized = normalizeRevisitInput(date, timezone);
-  return normalized.status === "invalid" ? null : normalized.value;
+  return normalized.status === "normalized" || normalized.status === "unchanged"
+    ? normalized.value
+    : null;
+}
+
+export function householdCalendarDateTimeToRevisitAt(
+  date: string,
+  time: string,
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
+): string | null {
+  const normalized = normalizeRevisitInput(`${date}T${time}`, timezone);
+  return normalized.status === "normalized" || normalized.status === "unchanged"
+    ? normalized.value
+    : null;
+}
+
+export function localTimeForInstant(
+  value: string | null | undefined,
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
+): string | null {
+  if (!value) return null;
+  try {
+    const time = Temporal.Instant.from(value).toZonedDateTimeISO(timezone).toPlainTime();
+    return `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`;
+  } catch {
+    return null;
+  }
+}
+
+export function moveRevisitToCalendarDate(
+  value: string,
+  date: string,
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
+): string | null {
+  const time = localTimeForInstant(value, timezone);
+  return time ? householdCalendarDateTimeToRevisitAt(date, time, timezone) : null;
 }
 
 export function calendarDateForInstant(

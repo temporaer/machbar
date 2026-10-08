@@ -63,6 +63,7 @@ export interface BuildAgendaOptions {
   dueSoonDays?: number;
   /** Browser-local calendar date used consistently for task and project boundaries. */
   today?: string;
+  now?: string;
   householdTimezone?: string;
   /**
    * The currently selected household member. When provided, every bucket
@@ -109,12 +110,10 @@ export function buildAgenda(
   } = options;
   const sortByRevisitThenPriorityTitleId = sortByDateThenPriorityTitleId(
     (task) =>
-      task.externalWait?.revisitDate ??
       calendarDateForInstant(task.revisitAt, householdTimezone) ??
       null,
   );
-  const usesCurrentDate = options.today === undefined;
-  const now = Date.now();
+  const now = Date.parse(options.now ?? new Date().toISOString());
   const selection = createAgendaSelection(graph, options);
   const { contextAvailability, isContextAvailable } = selection;
   const soonLimit = addDaysIso(today, dueSoonDays);
@@ -146,19 +145,15 @@ export function buildAgenda(
     .allTasks()
     .filter((t) => {
       const attentionDate =
-        t.externalWait?.revisitDate ??
         calendarDateForInstant(t.revisitAt, householdTimezone) ??
         null;
       const reached =
         attentionDate !== null &&
         (attentionDate < today ||
           (attentionDate === today &&
-            (t.externalWait?.revisitDate !== null &&
-              t.externalWait?.revisitDate !== undefined ||
-              !usesCurrentDate ||
-              (t.revisitAt !== null &&
-                t.revisitAt !== undefined &&
-                Date.parse(t.revisitAt) <= now))));
+            t.revisitAt !== null &&
+            t.revisitAt !== undefined &&
+            Date.parse(t.revisitAt) <= now));
       return (
         selection.isAgendaTask(t) &&
         reached

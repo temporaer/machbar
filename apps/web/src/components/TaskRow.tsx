@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import type { Task } from "@machbar/shared";
+import { calendarDateForInstant, type Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
 import { formatDate, formatDateTime, isOverdue } from "../lib/format";
@@ -221,7 +221,10 @@ export function TaskRow({
         : ownerMember?.name ?? strings.unknownMember;
   const due = formatDate(task.dueDate, locale);
   const scheduled = formatDate(task.scheduledDate, locale);
-  const revisitAt = formatDateTime(task.revisitAt, locale);
+  const revisitAt =
+    task.revisitAt && (!task.externalWait || showRevisitDate)
+      ? formatDateTime(task.revisitAt, locale)
+      : null;
   const projectDueRelative = task.projectDueDate
     ? formatRelativeDueDate(task.projectDueDate, new Date(), locale)
     : null;
@@ -229,12 +232,19 @@ export function TaskRow({
     ? formatExactLocalDate(task.projectDueDate, locale)
     : null;
   const revisitRelative =
-    showRevisitDate && task.externalWait?.revisitDate
-      ? formatRelativeScheduleDate(task.externalWait.revisitDate, new Date(), locale)
+    showRevisitDate && task.revisitAt
+      ? formatRelativeScheduleDate(
+          calendarDateForInstant(task.revisitAt) ?? task.revisitAt,
+          new Date(),
+          locale,
+        )
       : null;
   const revisitExact =
-    showRevisitDate && task.externalWait?.revisitDate
-      ? formatExactLocalDate(task.externalWait.revisitDate, locale)
+    showRevisitDate && task.revisitAt
+      ? formatExactLocalDate(
+          calendarDateForInstant(task.revisitAt) ?? task.revisitAt,
+          locale,
+        )
       : null;
 
   const clearLongPress = useCallback(() => {

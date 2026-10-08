@@ -17,8 +17,7 @@ function task(
     status: "actionable" as TaskStatus,
     projectId: null,
     scheduledDate: null,
-    notBeforeAt: null,
-    notBeforeDate: null,
+    revisitAt: null,
     externalWait: null,
     dependencies: [],
     ...overrides,
@@ -61,8 +60,8 @@ describe("canonical blocker analysis", () => {
       task(1, {
         externalWait: {
           waitingFor: "IKEA",
-          revisitDate: "2026-09-01",
         },
+        revisitAt: "2026-09-01T00:00:00.000Z",
         scheduledDate: "2026-09-10",
         dependencies: [{ dependsOnTaskId: 2, resolved: false }],
       }),
@@ -90,8 +89,8 @@ describe("canonical blocker analysis", () => {
     const c = task(3, {
       externalWait: {
         waitingFor: "External event",
-        revisitDate: "2026-09-02",
       },
+      revisitAt: "2026-09-02T00:00:00.000Z",
     });
     const saturday = task(4, { scheduledDate: "2026-09-05" });
     const result = analyze([a, b, c, saturday]);
@@ -105,10 +104,12 @@ describe("canonical blocker analysis", () => {
   it("diagnoses missing and reached external follow-ups precisely", () => {
     const result = analyze([
       task(1, {
-        externalWait: { waitingFor: "External event", revisitDate: null },
+        externalWait: { waitingFor: "External event" },
+        revisitAt: null,
       }),
       task(2, {
-        externalWait: { waitingFor: "Reply", revisitDate: today },
+        externalWait: { waitingFor: "Reply" },
+        revisitAt: `${today}T00:00:00.000Z`,
         scheduledDate: "2026-09-15",
       }),
     ]);

@@ -619,7 +619,7 @@ describe("search/filter and project CRUD/archive", () => {
       nextAction: null,
       stuckReason: null,
       waitingOn: ["Angebot der Schreinerei", "Liefertermin"],
-      waitingUntil: "2099-10-01",
+      waitingUntil: "2099-10-01T00:00:00.000Z",
     });
 
     const waitingTasks = (
@@ -666,7 +666,7 @@ describe("search/filter and project CRUD/archive", () => {
     expect(projects.find((item) => item.id === project.id)).toMatchObject({
       stuckReason: null,
       waitingOn: ["Rückmeldung der Werkstatt"],
-      waitingUntil: today,
+      waitingUntil: "2026-10-07T22:00:00Z",
     });
 
     const review = (

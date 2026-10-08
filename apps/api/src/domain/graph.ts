@@ -16,6 +16,11 @@ import type {
   WorkItemAncestor,
   WorkItemScope,
 } from "@machbar/shared";
+import {
+  DEFAULT_HOUSEHOLD_TIMEZONE,
+  householdCalendarDateToRevisitAt,
+} from "@machbar/shared";
+import { eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import {
@@ -38,6 +43,21 @@ import {
   type TaskBlockerAnalysis,
 } from "./blockers.js";
 import { evaluateProjectActivationReadiness } from "./projectReadiness.js";
+
+function householdTimezone(db: Db): string {
+  const row = db
+    .select({ value: schema.householdSettings.value })
+    .from(schema.householdSettings)
+    .where(eq(schema.householdSettings.key, "timezone"))
+    .get();
+  const timezone = row?.value ?? DEFAULT_HOUSEHOLD_TIMEZONE;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
+    return timezone;
+  } catch {
+    return DEFAULT_HOUSEHOLD_TIMEZONE;
+  }
+}
 
 export interface ProjectRecord extends SharedProject {
   /** Workflow actions currently legal for this project's status (see
@@ -451,10 +471,9 @@ export class Graph {
       dependenciesByTask.set(row.taskId, list);
     }
     const externalWaitRows = db.select().from(schema.taskExternalWaits).all();
-    const workItemById = new Map(workItemRows.map((row) => [row.id, row]));
     const externalWaitByTask = new Map<number, {
       waitingFor: string | null;
-      revisitDate: string | null;
+      legacyRevisitDate: string | null;
     }>(
       externalWaitRows
         .filter((row) => Boolean(row.waitingFor?.trim()))
@@ -462,11 +481,7 @@ export class Graph {
           row.taskId,
           {
             waitingFor: row.waitingFor?.trim() ?? null,
-            // Keep reading the legacy follow-up column during the additive
-            // rollout; all new writes use work_items.revisit_at.
-            revisitDate: (
-              workItemById.get(row.taskId)?.revisitAt ?? row.revisitDate
-            )?.slice(0, 10) ?? null,
+            legacyRevisitDate: row.revisitDate,
           },
         ]),
     );
@@ -506,7 +521,14 @@ export class Graph {
           status: task.status,
           projectId: task.projectId,
           scheduledDate: task.scheduledDate,
-          revisitAt: task.revisitAt,
+          revisitAt:
+            task.revisitAt ??
+            (externalWaitByTask.get(task.id)?.legacyRevisitDate
+              ? householdCalendarDateToRevisitAt(
+                  externalWaitByTask.get(task.id)!.legacyRevisitDate!,
+                  householdTimezone(db),
+                )
+              : null),
           externalWait: externalWaitByTask.get(task.id) ?? null,
           dependencies: (dependenciesByTask.get(task.id) ?? []).map(
             (dependency) => {
@@ -529,6 +551,7 @@ export class Graph {
       projectStatuses,
       today,
       now,
+      householdTimezone(db),
     );
     for (const [taskId, analysis] of blockerAnalysis) {
       graph.blockerAnalysisByTask.set(taskId, analysis);
@@ -539,7 +562,13 @@ export class Graph {
       const activationBlockers =
         project.status === "active"
           ? blockerAnalysis
-          : analyzeTaskBlockers(blockerInputs, activationStatuses, today, now);
+          : analyzeTaskBlockers(
+              blockerInputs,
+              activationStatuses,
+              today,
+              now,
+              householdTimezone(db),
+            );
       graph.activationReadinessByProject.set(
         project.id,
         evaluateProjectActivationReadiness({
@@ -547,6 +576,21 @@ export class Graph {
           candidateTaskIds: nextActionIdsByProject.get(project.id) ?? [],
           projectTaskIds: rawTasks
             .filter((task) => task.projectId === project.id)
+            .map((task) => task.id),
+          futureRevisitTaskIds: rawTasks
+            .filter(
+              (task) =>
+                task.projectId === project.id &&
+                task.kind === "action" &&
+                task.status === "actionable" &&
+                task.repeatAfterDays === null &&
+                task.revisitAt !== null &&
+                Date.parse(task.revisitAt) > Date.parse(now) &&
+                blockerInputs.get(task.id)?.externalWait === null &&
+                !(blockerInputs.get(task.id)?.dependencies ?? []).some(
+                  (dependency) => !dependency.resolved,
+                ),
+            )
             .map((task) => task.id),
           blockerAnalysisByTask: activationBlockers,
           today,
@@ -670,6 +714,14 @@ export class Graph {
       });
       const execution = blockerAnalysis.get(raw.id);
       const externalWait = externalWaitByTask.get(raw.id) ?? null;
+      const revisitAt =
+        raw.revisitAt ??
+        (externalWait?.legacyRevisitDate
+          ? householdCalendarDateToRevisitAt(
+              externalWait.legacyRevisitDate,
+              householdTimezone(db),
+            )
+          : null);
       const blockers = [
         ...(externalWait
           ? [
@@ -710,10 +762,10 @@ export class Graph {
         createdByMemberId: raw.createdByMemberId,
         dueDate: raw.dueDate,
         scheduledDate: raw.scheduledDate,
-        revisitAt: raw.revisitAt,
-        notBeforeAt: raw.notBeforeAt,
-        notBeforeDate: raw.notBeforeDate,
-        externalWait,
+        revisitAt,
+        externalWait: externalWait
+          ? { waitingFor: externalWait.waitingFor }
+          : null,
         priority: raw.priority,
         size: raw.size,
         position: raw.position,
@@ -1025,7 +1077,7 @@ export class Graph {
     ];
     const waitingUntil =
       tasks
-          .map((task) => task.externalWait?.revisitDate ?? null)
+          .map((task) => task.revisitAt ?? null)
           .filter((date): date is string => date !== null)
           .sort()[0] ?? null;
     const effectiveTags = dedupeTags([

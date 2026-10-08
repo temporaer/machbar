@@ -1008,7 +1008,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
-        revisitAt: "2026-05-01T00:00:00.000Z",
+        revisitAt: "2026-04-30T22:00:00Z",
         expectedRevision: 1,
       }),
     );

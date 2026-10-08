@@ -21,6 +21,7 @@ export function formatDate(
 export function formatDateTime(
   iso: string | null | undefined,
   locale: Locale = "de",
+  timeZone?: string,
 ): string | null {
   if (!iso) return null;
   const d = new Date(iso);
@@ -31,6 +32,7 @@ export function formatDateTime(
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
   }).format(d);
 }
 

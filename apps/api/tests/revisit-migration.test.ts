@@ -9,6 +9,7 @@ import {
 import { openDb } from "../src/db/client.js";
 import {
   applyRevisitMigration,
+  assertRevisitMigrationReady,
   inspectRevisitMigration,
 } from "../src/db/revisitMigration.js";
 
@@ -34,6 +35,51 @@ describe("revisit time conversion", () => {
 });
 
 describe("revisit migration", () => {
+  function readyHandle() {
+    const handle = openDb(":memory:");
+    applyMigration(handle.sqlite, "0000_baseline.sql");
+    applyMigration(handle.sqlite, "0001_work_items_merge.sql");
+    applyMigration(handle.sqlite, "0018_add_revisit_at.sql");
+    applyMigration(handle.sqlite, "0019_add_household_settings.sql");
+    return handle;
+  }
+
+  it("requires explicit acknowledgement for existing databases", () => {
+    const handle = readyHandle();
+    try {
+      handle.sqlite
+        .prepare(
+          "INSERT INTO work_items (id, role, title, status) VALUES (1, 'task', 'legacy', 'captured')",
+        )
+        .run();
+      expect(() => assertRevisitMigrationReady(handle.sqlite)).toThrow(
+        "db:revisit-dry-run",
+      );
+      handle.sqlite
+        .prepare(
+          "INSERT INTO data_migrations (name, completed_at) VALUES ('revisit_at_backfill', 'now')",
+        )
+        .run();
+      expect(() => assertRevisitMigrationReady(handle.sqlite)).not.toThrow();
+    } finally {
+      handle.close();
+    }
+  });
+
+  it("marks an empty fresh database ready atomically", () => {
+    const handle = readyHandle();
+    try {
+      assertRevisitMigrationReady(handle.sqlite);
+      expect(
+        handle.sqlite
+          .prepare("SELECT name FROM data_migrations")
+          .all(),
+      ).toEqual([{ name: "revisit_at_backfill" }]);
+    } finally {
+      handle.close();
+    }
+  });
+
   it("plans and applies legacy mappings without losing protected data", () => {
     const handle = openDb(":memory:");
     try {

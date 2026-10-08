@@ -5,6 +5,7 @@ import type {
   Task,
   TaskStatus,
 } from "@machbar/shared";
+import { calendarDateForInstant } from "@machbar/shared";
 import type { Locale } from "../i18n/catalog";
 import { addIsoCalendarDays, toIsoCalendarDate } from "./naturalDate";
 
@@ -25,7 +26,7 @@ function mostUrgentDate(task: Task): string | null {
   const candidates = [
     task.scheduledDate,
     task.dueDate,
-    task.externalWait?.revisitDate ?? null,
+    calendarDateForInstant(task.revisitAt) ?? null,
   ].filter((value): value is string => !!value);
   if (candidates.length === 0) return null;
   return candidates.reduce((earliest, value) =>

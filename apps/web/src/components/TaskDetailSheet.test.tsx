@@ -714,9 +714,9 @@ describe("TaskDetailSheet", () => {
     const task = makeTask({
       id: 42,
       title: "Freigabe",
+      revisitAt: "2026-09-04T22:00:00Z",
       externalWait: {
         waitingFor: "Vermieter",
-        revisitDate: "2026-09-05",
       },
       blocked: true,
       executable: false,

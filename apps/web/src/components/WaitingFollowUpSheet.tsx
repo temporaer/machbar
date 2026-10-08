@@ -1,11 +1,17 @@
 import { useState } from "react";
-import type { Task } from "@machbar/shared";
+import {
+  calendarDateForInstant,
+  DEFAULT_HOUSEHOLD_TIMEZONE,
+  type Task,
+} from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useTaskActions } from "../lib/useTaskActions";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
+import { useAsync } from "../lib/useAsync";
+import { api } from "../lib/api";
 
 /**
  * The canonical `task.waitingLifecycle` workflow for a task that already
@@ -25,9 +31,19 @@ export function WaitingFollowUpSheet({
 }) {
   const strings = useStrings();
   const taskActions = useTaskActions();
+  const { data: timezoneData } = useAsync(
+    () =>
+      api.getHouseholdTimezone?.() ??
+      Promise.resolve({ timezone: DEFAULT_HOUSEHOLD_TIMEZONE }),
+    [],
+  );
+  const householdTimezone =
+    timezoneData?.timezone ?? DEFAULT_HOUSEHOLD_TIMEZONE;
   const [content, setContent] = useState("");
   const [revisitDate, setRevisitDate] = useState<string | null>(
-    task.externalWait?.revisitDate ?? null,
+    task.revisitAt
+      ? calendarDateForInstant(task.revisitAt, householdTimezone)
+      : null,
   );
   const [customDate, setCustomDate] = useState(false);
   const [dateValid, setDateValid] = useState(true);
@@ -36,7 +52,9 @@ export function WaitingFollowUpSheet({
   const closeIfIdle = () => {
     if (!saving) onClose();
   };
-  const today = () => toIsoCalendarDate(new Date());
+  const today = () =>
+    calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
+    toIsoCalendarDate(new Date());
 
   const continueWaiting = async (nextRevisitDate: string | null) => {
     if (saving || !dateValid) return;
@@ -46,7 +64,11 @@ export function WaitingFollowUpSheet({
       content: content.trim(),
       waitingFor: task.externalWait?.waitingFor ?? null,
       revisitAt: nextRevisitDate
-        ? taskAvailabilityForLocalDate(nextRevisitDate, "00:00")?.notBeforeAt ?? null
+        ? taskAvailabilityForLocalDate(
+            nextRevisitDate,
+            "00:00",
+            householdTimezone,
+          )?.notBeforeAt ?? null
         : null,
     });
     if (updated) onClose();

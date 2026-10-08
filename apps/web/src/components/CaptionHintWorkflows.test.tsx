@@ -190,7 +190,7 @@ describe("caption hints in focused task workflows", () => {
     await waitFor(() =>
       expect(mockedApi.setExternalWait).toHaveBeenCalledWith(45, {
         waitingFor: "Peter",
-        revisitAt: "2026-09-21T00:00:00.000Z",
+        revisitAt: "2026-09-20T22:00:00Z",
         expectedRevision: 7,
       }),
     );

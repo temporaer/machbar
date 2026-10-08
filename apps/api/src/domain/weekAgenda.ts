@@ -191,11 +191,10 @@ export function buildWeekAgenda(
     // Directly-waiting tasks ignore scheduledDate: a wait's revisit date
     // (or its deadline) drives attention, not an incidental schedule.
     const projection = projectWeekAttention(
-      {
-        scheduledDate: waiting ? null : task.scheduledDate,
-        revisitDate: waiting
-          ? task.externalWait?.revisitDate ?? null
-          : calendarDateForInstant(task.revisitAt, options.householdTimezone) ?? null,
+        {
+          scheduledDate: waiting ? null : task.scheduledDate,
+          revisitDate:
+            calendarDateForInstant(task.revisitAt, options.householdTimezone) ?? null,
         dueDate: task.dueDate,
       },
       today,

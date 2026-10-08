@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
-import type { Member, Task } from "@machbar/shared";
+import {
+  calendarDateForInstant,
+  DEFAULT_HOUSEHOLD_TIMEZONE,
+  type Member,
+  type Task,
+} from "@machbar/shared";
 import {
   extractCaptionHints,
   strongestCaptionHints,
@@ -16,6 +21,8 @@ import { BottomSheet } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { HumanDateInput } from "./HumanDateInput";
 import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
+import { useAsync } from "../lib/useAsync";
+import { api } from "../lib/api";
 
 /**
  * The canonical `task.waitingLifecycle` workflow for a task with no
@@ -35,6 +42,14 @@ export function TaskWaitSheet({
   const strings = useStrings();
   const { locale } = useLocale();
   const taskActions = useTaskActions();
+  const { data: timezoneData } = useAsync(
+    () =>
+      api.getHouseholdTimezone?.() ??
+      Promise.resolve({ timezone: DEFAULT_HOUSEHOLD_TIMEZONE }),
+    [],
+  );
+  const householdTimezone =
+    timezoneData?.timezone ?? DEFAULT_HOUSEHOLD_TIMEZONE;
   const [waitingFor, setWaitingFor] = useState("");
   const [revisitDate, setRevisitDate] = useState<string | null>(null);
   const [customDate, setCustomDate] = useState(false);
@@ -62,7 +77,9 @@ export function TaskWaitSheet({
     ),
   );
 
-  const today = () => toIsoCalendarDate(new Date());
+  const today = () =>
+    calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
+    toIsoCalendarDate(new Date());
 
   const commit = async () => {
     if (saving || !waitingFor.trim() || !dateValid) return;
@@ -72,7 +89,11 @@ export function TaskWaitSheet({
       {
         waitingFor: waitingFor.trim(),
         revisitAt: revisitDate
-          ? taskAvailabilityForLocalDate(revisitDate, "00:00")?.notBeforeAt ?? null
+          ? taskAvailabilityForLocalDate(
+              revisitDate,
+              "00:00",
+              householdTimezone,
+            )?.notBeforeAt ?? null
           : null,
       },
       { throwOnError: false },

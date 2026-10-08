@@ -379,7 +379,7 @@ describe("IntakeReviewPage", () => {
       }
 
       expect(editor.getByRole("textbox", { name: "Erinnerung" })).toBe(date);
-      expect(time).toHaveValue("08:30");
+      expect(time).toHaveValue("10:30");
       expect(applyButton()).toBeEnabled();
       closeEditor(editor);
       fireEvent.click(applyButton());
@@ -429,7 +429,7 @@ describe("IntakeReviewPage", () => {
       }
 
       expect(editor.getByRole("textbox", { name: "Ende" })).toBe(date);
-      expect(time).toHaveValue("20:30");
+      expect(time).toHaveValue("22:30");
       expect(applyButton()).toBeEnabled();
       closeEditor(editor);
       fireEvent.click(applyButton());
@@ -1199,7 +1199,7 @@ describe("IntakeReviewPage", () => {
     const availability = mockedApi.applyIntake.mock.calls[0]?.[1].draft?.workItems[0];
     expect(availability?.notBeforeDate).toBe("2026-10-12");
     expect(availability?.notBeforeAt).toBeTruthy();
-    expect(new Date(availability!.notBeforeAt!).getHours()).toBe(0);
+    expect(availability?.notBeforeAt).toBe("2026-10-11T22:00:00Z");
   });
 
   it("changes a timed availability date and clears both date and time fields", async () => {

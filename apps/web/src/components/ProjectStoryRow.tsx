@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
+import { calendarDateForInstant } from "@machbar/shared";
 import { storyWorkflowCommand } from "../lib/commands";
 import { useStrings } from "../lib/strings";
 import { formatDate } from "../lib/format";
@@ -165,11 +166,14 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
     nextActionScheduleExact
       ? `${strings.nextAction} ${nextActionScheduleRelative} (${nextActionScheduleExact}): ${story.nextAction.title}`
       : null;
-  const deferredNextActionRelative = story.deferredNextAction?.notBeforeDate
-    ? formatRelativeScheduleDate(story.deferredNextAction.notBeforeDate, now, locale)
+  const deferredNextActionDate = story.deferredNextAction?.revisitAt
+    ? calendarDateForInstant(story.deferredNextAction.revisitAt)
     : null;
-  const deferredNextActionExact = story.deferredNextAction?.notBeforeDate
-    ? formatExactLocalDate(story.deferredNextAction.notBeforeDate, locale)
+  const deferredNextActionRelative = deferredNextActionDate
+    ? formatRelativeScheduleDate(deferredNextActionDate, now, locale)
+    : null;
+  const deferredNextActionExact = deferredNextActionDate
+    ? formatExactLocalDate(deferredNextActionDate, locale)
     : null;
   const waitingDurationSuffix =
     story.waitingUntil && waitingRelativeDate

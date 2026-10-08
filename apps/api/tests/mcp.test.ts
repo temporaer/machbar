@@ -58,8 +58,7 @@ describe("MCP integration", () => {
     });
     expect(created.structuredContent).toEqual({
       result: expect.objectContaining({
-        notBeforeAt: "2026-10-09T04:00:00.000Z",
-        notBeforeDate: "2026-10-09",
+        revisitAt: "2026-10-09T04:00:00.000Z",
       }),
     });
 
@@ -675,8 +674,7 @@ describe("MCP integration", () => {
       result: expect.objectContaining({
         dueDate: null,
         scheduledDate: null,
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         effectiveOwnerId: null,
       }),
     });
@@ -829,8 +827,7 @@ describe("MCP integration", () => {
       });
       expect(created.structuredContent).toEqual({
         result: expect.objectContaining({
-          notBeforeAt: null,
-          notBeforeDate: null,
+          revisitAt: null,
         }),
       });
     }
@@ -856,8 +853,7 @@ describe("MCP integration", () => {
     });
     expect(cleared.structuredContent).toEqual({
       result: expect.objectContaining({
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
       }),
     });
 
@@ -1453,13 +1449,11 @@ describe("MCP integration", () => {
         result: {
           id: number;
           revision: number;
-          notBeforeAt: string | null;
-          notBeforeDate: string | null;
+          revisitAt: string | null;
         };
       }
     ).result;
-    expect(createdTask.notBeforeAt).toBe("2026-09-21T16:00:00.000Z");
-    expect(createdTask.notBeforeDate).toBe("2026-09-21");
+    expect(createdTask.revisitAt).toBe("2026-09-21T16:00:00.000Z");
 
     const search = await client.callTool({
       name: "machbar_search",
@@ -1469,10 +1463,10 @@ describe("MCP integration", () => {
       (
         search.structuredContent as {
           result: {
-            items: Array<{ notBeforeAt: string | null; notBeforeDate: string | null }>;
+            items: Array<{ revisitAt: string | null }>;
           };
         }
-      ).result.items[0]?.notBeforeAt,
+      ).result.items[0]?.revisitAt,
     ).toBe("2026-09-21T16:00:00.000Z");
 
     const updated = await client.callTool({
@@ -1480,16 +1474,15 @@ describe("MCP integration", () => {
       arguments: {
         taskId: createdTask.id,
         expectedRevision: createdTask.revision,
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
       },
     });
     expect(
       (
         updated.structuredContent as {
-          result: { notBeforeAt: string | null; notBeforeDate: string | null };
+          result: { revisitAt: string | null };
         }
-      ).result.notBeforeAt,
+      ).result.revisitAt,
     ).toBeNull();
 
     await client.close();
@@ -1859,7 +1852,8 @@ describe("MCP integration", () => {
     });
     expect(waiting.structuredContent).toEqual({
       result: expect.objectContaining({
-        externalWait: { waitingFor: "Alex", revisitDate: "2026-09-22" },
+        externalWait: { waitingFor: "Alex" },
+        revisitAt: "2026-09-22T00:00:00.000Z",
       }),
     });
 

@@ -182,7 +182,7 @@ describe("task external waits", () => {
     });
     expect(dependencyResolved.json()).toMatchObject({
       blocked: true,
-      externalWait: { waitingFor: "IKEA-Lieferung", revisitDate: null },
+      externalWait: { waitingFor: "IKEA-Lieferung" },
     });
 
     await ctx.app.inject({
@@ -388,7 +388,6 @@ describe("task external waits", () => {
     });
     expect(current.json().externalWait).toEqual({
       waitingFor: "Amt",
-      revisitDate: null,
     });
   });
 
@@ -525,7 +524,6 @@ describe("task external waits", () => {
       scheduledDate: "2026-09-06",
       externalWait: {
         waitingFor: "Property manager",
-        revisitDate: "2026-09-09",
       },
       revision: waiting.revision + 1,
     });
@@ -627,7 +625,6 @@ describe("task external waits", () => {
       scheduledDate: "2026-09-06",
       externalWait: {
         waitingFor: "Authority",
-        revisitDate: "2026-09-02",
       },
       revision: waiting.revision,
     });

@@ -62,8 +62,8 @@ export interface RefinementTaskRow {
   executable: boolean;
   externalWait: {
     waitingFor: string | null;
-    revisitDate: string | null;
   } | null;
+  revisitAt: string | null;
   nextBlockerAttentionDate: string | null;
   blockers: Array<
     | { type: "external"; waitingFor: string | null }
@@ -291,6 +291,7 @@ export function getRefinementTasks(
       blocked: task.blocked,
       executable: task.executable,
       externalWait: task.externalWait,
+      revisitAt: task.revisitAt,
       nextBlockerAttentionDate: task.nextBlockerAttentionDate,
       blockers: task.blockers,
       dependencies: task.dependencies,

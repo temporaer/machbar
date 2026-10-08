@@ -10,7 +10,7 @@ import { useTaskWorkflow } from "./taskWorkflowContext";
 import { useProjectWorkflow } from "./projectWorkflowContext";
 import { useSwipeSettings } from "./swipeSettings";
 import { useOptionalInteractionScope } from "./interactionScope";
-import { taskAvailabilityForLocalDate } from "./taskAvailability";
+import { moveRevisitToCalendarDate } from "@machbar/shared";
 
 /**
  * Every `task.*`/`story.*` command carries the id of the WorkItem it
@@ -349,10 +349,22 @@ export function useWorkItemCommands() {
             dueDate: command.date,
           });
         case "workItem.setRevisitDate":
+          {
+          const timezone = command.householdTimezone;
           if (command.item.role === "task" && command.item.task.externalWait) {
+            const currentRevisitAt = command.item.task.revisitAt;
             const revisitAt = command.date
-              ? taskAvailabilityForLocalDate(command.date, "00:00")?.notBeforeAt ?? null
+              ? currentRevisitAt
+                ? moveRevisitToCalendarDate(
+                    currentRevisitAt,
+                    command.date,
+                    timezone,
+                  )
+                : null
               : null;
+            if (command.date && currentRevisitAt && !revisitAt) {
+              throw new Error("The selected revisit time is invalid in this timezone.");
+            }
             return taskActions.setExternalWait(command.item.task, {
               waitingFor: command.item.task.externalWait.waitingFor,
               revisitAt,
@@ -362,8 +374,17 @@ export function useWorkItemCommands() {
           }
           if (command.item.role === "task") {
             const revisitAt = command.date
-              ? taskAvailabilityForLocalDate(command.date, "00:00")?.notBeforeAt ?? null
+              ? command.item.task.revisitAt
+                ? moveRevisitToCalendarDate(
+                    command.item.task.revisitAt,
+                    command.date,
+                    timezone,
+                  )
+                : null
               : null;
+            if (command.date && command.item.task.revisitAt && !revisitAt) {
+              throw new Error("The selected revisit time is invalid in this timezone.");
+            }
             return taskActions.update(
               command.item.task,
               { revisitAt },
@@ -373,8 +394,17 @@ export function useWorkItemCommands() {
           }
           if (command.item.role === "story") {
             const revisitAt = command.date
-              ? taskAvailabilityForLocalDate(command.date, "00:00")?.notBeforeAt ?? null
+              ? command.item.project.revisitAt
+                ? moveRevisitToCalendarDate(
+                    command.item.project.revisitAt,
+                    command.date,
+                    timezone,
+                  )
+                : null
               : null;
+            if (command.date && command.item.project.revisitAt && !revisitAt) {
+              throw new Error("The selected revisit time is invalid in this timezone.");
+            }
             return projectActions.update(
               command.item.project,
               { revisitAt },
@@ -382,6 +412,7 @@ export function useWorkItemCommands() {
             );
           }
           return;
+          }
         case "story.activate":
           projectWorkflow.beginContinuation({
             projectId: command.story.id,

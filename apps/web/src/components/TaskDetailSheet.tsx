@@ -5,7 +5,7 @@ import {
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { Task } from "@machbar/shared";
-import { taskStatuses } from "@machbar/shared";
+import { DEFAULT_HOUSEHOLD_TIMEZONE, taskStatuses } from "@machbar/shared";
 import { api } from "../lib/api";
 import type { ProjectWithActions } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -106,7 +106,7 @@ export function TaskDetailSheet() {
   const { locale } = useLocale();
   const navigate = useNavigate();
   const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close } = useTaskDetail();
-  const { bump } = useRefresh();
+  const { bump, version } = useRefresh();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
@@ -132,6 +132,9 @@ export function TaskDetailSheet() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [makeActionBusy, setMakeActionBusy] = useState(false);
   const [makeActionError, setMakeActionError] = useState<string | null>(null);
+  const [householdTimezone, setHouseholdTimezone] = useState<string>(
+    DEFAULT_HOUSEHOLD_TIMEZONE,
+  );
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [classificationBusy, setClassificationBusy] = useState(false);
   const [convertedProject, setConvertedProject] =
@@ -143,6 +146,23 @@ export function TaskDetailSheet() {
   const dependencyInputRef = useRef<HTMLInputElement>(null);
   const lastLoadedTaskIdRef = useRef<number | null>(null);
   const revisionRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (
+      api.getHouseholdTimezone?.() ??
+      Promise.resolve({ timezone: DEFAULT_HOUSEHOLD_TIMEZONE })
+    )
+      .then((timezone) => {
+        if (!cancelled) setHouseholdTimezone(timezone.timezone);
+      })
+      .catch(() => {
+        if (!cancelled) setHouseholdTimezone(DEFAULT_HOUSEHOLD_TIMEZONE);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [version]);
   const workflowKind = taskWorkflow.current?.kind ?? null;
 
   const {
@@ -470,7 +490,7 @@ export function TaskDetailSheet() {
         .join(" · ")
     : "";
   const revisitAtValue = task?.revisitAt
-    ? formatDateTime(task.revisitAt, locale)
+    ? formatDateTime(task.revisitAt, locale, householdTimezone)
     : null;
   const reminderSummary = task
     ? formatReminderSummary(task.reminders, task.dueDate, strings, locale)
@@ -478,8 +498,8 @@ export function TaskDetailSheet() {
   const waitValue = task?.externalWait
     ? [
         task.externalWait.waitingFor?.trim() ?? null,
-        task.externalWait.revisitDate
-          ? localDate(task.externalWait.revisitDate)
+        task.revisitAt
+          ? formatDateTime(task.revisitAt, locale, householdTimezone)
           : null,
       ]
         .filter((value): value is string => Boolean(value))

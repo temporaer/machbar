@@ -298,13 +298,10 @@ function compactTask(task: McpTaskSource) {
     dueDate: task.dueDate,
     scheduledDate: task.scheduledDate,
     revisitAt,
-    notBeforeAt: task.notBeforeAt ?? revisitAt,
-    notBeforeDate: task.notBeforeDate ?? revisitAt?.slice(0, 10) ?? null,
     blocked: task.blocked,
     externalWait: task.externalWait
       ? {
           waitingFor: task.externalWait.waitingFor,
-          revisitDate: task.externalWait.revisitDate,
         }
       : null,
   };
@@ -372,7 +369,7 @@ function compactWaitingEntry(entry: WaitingEntry) {
         ? {
             type: reason.type,
             waitingFor: reason.waitingFor,
-            revisitDate: reason.revisitDate,
+            revisitAt: reason.revisitAt,
           }
         : {
             type: reason.type,

@@ -1,6 +1,10 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useEffect, useMemo, useState, type DragEvent } from "react";
-import { calendarDateForInstant, type Member } from "@machbar/shared";
+import {
+  calendarDateForInstant,
+  moveRevisitToCalendarDate,
+  type Member,
+} from "@machbar/shared";
 import { api, type AgendaScope, type WeekAgendaResponse, type WeekPlanningItem } from "../lib/api";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { useAsync } from "../lib/useAsync";
@@ -125,13 +129,20 @@ function moveRevisit(
   today: string,
   householdTimezone: string,
 ): WeekAgendaResponse {
-  const revisitAt = date ? `${date}T00:00:00.000Z` : null;
-  const externalWait = item.externalWait
-    ? { ...item.externalWait, revisitDate: date }
-    : item.externalWait;
-  const task = item.task ? { ...item.task, revisitAt, externalWait } : item.task;
+  const currentRevisitAt =
+    item.role === "task" ? item.task?.revisitAt : item.project?.revisitAt;
+  const revisitAt =
+    date && currentRevisitAt
+      ? moveRevisitToCalendarDate(currentRevisitAt, date, householdTimezone)
+      : date
+        ? null
+        : null;
+  if (date && currentRevisitAt && revisitAt === null) {
+    throw new Error("The selected revisit time is invalid in this timezone.");
+  }
+  const task = item.task ? { ...item.task, revisitAt } : item.task;
   const project = item.project ? { ...item.project, revisitAt } : item.project;
-  const withDate: WeekPlanningItem = { ...item, externalWait, task, project } as WeekPlanningItem;
+  const withDate: WeekPlanningItem = { ...item, task, project } as WeekPlanningItem;
   const projected = projectAttention(withDate, today, householdTimezone);
   const next: WeekPlanningItem = projected
     ? { ...withDate, placement: projected.placement, attentionDate: projected.attentionDate }
@@ -379,12 +390,17 @@ export function WeekPage() {
     item: WeekPlanningItem,
     date: string | null,
   ) => {
-    if (!agenda || item.role !== "task" || !item.externalWait) return;
+    if (!agenda) return;
     const previous = agenda;
     setMutationError(null);
     setAgenda(sortAgenda(moveRevisit(agenda, item, date, today, householdTimezone)));
     try {
-      await dispatch({ type: "workItem.setRevisitDate", item, date });
+      await dispatch({
+        type: "workItem.setRevisitDate",
+        item,
+        date,
+        householdTimezone,
+      });
     } catch (cause) {
       setAgenda(previous);
       setMutationError(cause instanceof Error ? cause.message : strings.error);

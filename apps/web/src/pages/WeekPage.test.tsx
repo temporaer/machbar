@@ -7,6 +7,7 @@ import { renderWithProviders } from "../test/testUtils";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { WeekPage } from "./WeekPage";
 import { addIsoCalendarDays } from "../lib/naturalDate";
+import { householdCalendarDateToRevisitAt } from "@machbar/shared";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -31,13 +32,21 @@ function day(date: string, items: WeekPlanningItem[] = []) {
 
 function taskItem(overrides: Partial<WeekPlanningItem> & { id: number; title: string }): WeekPlanningItem {
   const { id, title, ...summaryOverrides } = overrides;
+  const legacyRevisitDate = overrides.externalWait?.revisitDate ?? null;
   const task = makeTask({
     id,
     title,
     scheduledDate: overrides.scheduledDate ?? null,
     dueDate: overrides.dueDate ?? null,
     ownerMemberId: overrides.ownerMemberId ?? null,
-    externalWait: overrides.externalWait ?? null,
+    externalWait: overrides.externalWait
+      ? { waitingFor: overrides.externalWait.waitingFor }
+      : null,
+    revisitAt:
+      householdCalendarDateToRevisitAt(
+        legacyRevisitDate ?? "",
+        "Europe/Berlin",
+      ) ?? null,
   });
   return {
     id: task.id,
@@ -392,7 +401,7 @@ describe("WeekPage", () => {
     await waitFor(() =>
       expect(mockedApi.setExternalWait).toHaveBeenCalledWith(61, {
         waitingFor: "IKEA",
-        revisitAt: "2026-09-10T00:00:00.000Z",
+        revisitAt: "2026-09-09T22:00:00Z",
         expectedRevision: 1,
       }),
     );
@@ -677,7 +686,7 @@ describe("WeekPage", () => {
     await waitFor(() =>
       expect(mockedApi.setExternalWait).toHaveBeenCalledWith(92, {
         waitingFor: "Anbieter",
-        revisitAt: "2026-09-10T00:00:00.000Z",
+        revisitAt: "2026-09-09T22:00:00Z",
         expectedRevision: 1,
       }),
     );

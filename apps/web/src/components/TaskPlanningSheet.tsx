@@ -1,8 +1,14 @@
 import { useMemo, useState } from "react";
 import type { Task } from "@machbar/shared";
+import {
+  calendarDateForInstant,
+  DEFAULT_HOUSEHOLD_TIMEZONE,
+} from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { useTaskActions } from "../lib/useTaskActions";
+import { useAsync } from "../lib/useAsync";
+import { api } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import {
   extractCaptionHints,
@@ -11,7 +17,6 @@ import {
   type TemporalCaptionHint,
 } from "../lib/captionHints";
 import { formatExactLocalDate } from "../lib/relativeDate";
-import { localDateForInstant } from "../lib/localDateTime";
 import { taskAvailabilityClock, taskAvailabilityForLocalDate } from "../lib/taskAvailability";
 import { resolveAbsolutePreset, absolutePresetIsFuture } from "../lib/reminderPresets";
 import { resolveScheduleShortcut } from "./ScheduleShortcuts";
@@ -38,11 +43,21 @@ export function TaskPlanningSheet({
   const strings = useStrings();
   const { locale } = useLocale();
   const taskActions = useTaskActions();
+  const { data: timezoneData } = useAsync(
+    () =>
+      api.getHouseholdTimezone?.() ??
+      Promise.resolve({ timezone: DEFAULT_HOUSEHOLD_TIMEZONE }),
+    [],
+  );
+  const householdTimezone =
+    timezoneData?.timezone ?? DEFAULT_HOUSEHOLD_TIMEZONE;
   const initialAvailabilityDate =
-    task.revisitAt ? localDateForInstant(task.revisitAt) : "";
+    task.revisitAt
+      ? calendarDateForInstant(task.revisitAt, householdTimezone) ?? ""
+      : "";
   const [notBeforeDate, setNotBeforeDate] = useState(initialAvailabilityDate);
   const [notBeforeTime, setNotBeforeTime] = useState(
-    taskAvailabilityClock(task.revisitAt) ?? "08:00",
+    taskAvailabilityClock(task.revisitAt, householdTimezone) ?? "08:00",
   );
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
@@ -72,8 +87,13 @@ export function TaskPlanningSheet({
     Object.values(acceptedHints).flatMap((hint) => (hint ? [hint.removalSpan] : [])),
   );
   const nextAvailability = notBeforeDate
-    ? taskAvailabilityForLocalDate(notBeforeDate, notBeforeTime)
+    ? taskAvailabilityForLocalDate(
+        notBeforeDate,
+        notBeforeTime,
+        householdTimezone,
+      )
     : null;
+  const canMutuallyExclude = !task.externalWait && task.repeatAfterDays === null;
   const dirty =
     (nextAvailability?.notBeforeAt ?? null) !== task.revisitAt ||
     (scheduledDate || null) !== task.scheduledDate ||
@@ -89,8 +109,7 @@ export function TaskPlanningSheet({
     if (!hint) return;
     setAcceptedHints((current) => ({ ...current, [field]: hint }));
     if (field === "scheduledDate") {
-      setScheduledDate(hint.date);
-      setNotBeforeDate("");
+      setPlannedDate(hint.date);
     }
     else setDueDate(hint.date);
   };
@@ -102,10 +121,18 @@ export function TaskPlanningSheet({
       : strings.titleHintDeadline(date);
   };
 
-  const setAvailability = (date: string, time: string) => {
+  const setPlannedDate = (date: string) => {
+    setScheduledDate(date);
+    if (date && canMutuallyExclude) {
+      setNotBeforeDate("");
+      setNotBeforeTime("08:00");
+    }
+  };
+
+  const setRevisitDateTime = (date: string, time: string) => {
     setNotBeforeDate(date);
     setNotBeforeTime(time);
-    setScheduledDate("");
+    if (date && canMutuallyExclude) setScheduledDate("");
   };
 
   const commit = async () => {
@@ -149,7 +176,7 @@ export function TaskPlanningSheet({
           <HumanDateInput
             id={`planning-availability-date-${task.id}`}
             value={notBeforeDate}
-            onChange={(date) => setNotBeforeDate(date ?? "")}
+            onChange={(date) => setRevisitDateTime(date ?? "", notBeforeTime)}
             onValidityChange={setDateValid}
             disabled={saving}
             autoFocus={focus === "availability"}
@@ -158,7 +185,9 @@ export function TaskPlanningSheet({
             id={`planning-availability-time-${task.id}`}
             type="time"
             value={notBeforeTime}
-            onChange={(event) => setNotBeforeTime(event.target.value)}
+            onChange={(event) =>
+              setRevisitDateTime(notBeforeDate, event.target.value)
+            }
             disabled={saving || !notBeforeDate}
           />
           <label htmlFor={`planning-availability-time-${task.id}`}>
@@ -171,8 +200,13 @@ export function TaskPlanningSheet({
               disabled={saving}
               onClick={() => {
                 const instant = resolveAbsolutePreset("in3Hours");
-                const date = localDateForInstant(instant);
-                if (date) setAvailability(date, taskAvailabilityClock(instant) ?? "08:00");
+                const date = calendarDateForInstant(instant, householdTimezone);
+                if (date) {
+                  setRevisitDateTime(
+                    date,
+                    taskAvailabilityClock(instant, householdTimezone) ?? "08:00",
+                  );
+                }
               }}
             >
               {strings.availabilityInAWhile}
@@ -184,8 +218,13 @@ export function TaskPlanningSheet({
                 disabled={saving}
                 onClick={() => {
                   const instant = resolveAbsolutePreset("tonight");
-                  const date = localDateForInstant(instant);
-                  if (date) setAvailability(date, taskAvailabilityClock(instant) ?? "08:00");
+                  const date = calendarDateForInstant(instant, householdTimezone);
+                  if (date) {
+                    setRevisitDateTime(
+                      date,
+                      taskAvailabilityClock(instant, householdTimezone) ?? "08:00",
+                    );
+                  }
                 }}
               >
                 {strings.availabilityTonight}
@@ -197,7 +236,7 @@ export function TaskPlanningSheet({
               disabled={saving}
               onClick={() => {
                 const date = resolveScheduleShortcut("tomorrow");
-                if (date) setAvailability(date, "00:00");
+                if (date) setRevisitDateTime(date, "00:00");
               }}
             >
               {strings.scheduleShortcutLabels.tomorrow}
@@ -208,7 +247,7 @@ export function TaskPlanningSheet({
               disabled={saving}
               onClick={() => {
                 const date = resolveScheduleShortcut("weekend");
-                if (date) setAvailability(date, "00:00");
+                if (date) setRevisitDateTime(date, "00:00");
               }}
             >
               {strings.scheduleShortcutLabels.weekend}
@@ -219,8 +258,7 @@ export function TaskPlanningSheet({
             className="btn btn-sm btn-ghost"
             disabled={saving || (!notBeforeDate && !task.revisitAt)}
             onClick={() => {
-              setNotBeforeDate("");
-              setNotBeforeTime("08:00");
+              setRevisitDateTime("", "08:00");
             }}
           >
             {strings.clearNotBefore}
@@ -232,10 +270,7 @@ export function TaskPlanningSheet({
           <HumanDateInput
             id={`planning-scheduled-${task.id}`}
             value={scheduledDate}
-            onChange={(date) => {
-              setScheduledDate(date ?? "");
-              if (date) setNotBeforeDate("");
-            }}
+            onChange={(date) => setPlannedDate(date ?? "")}
             onValidityChange={setDateValid}
             disabled={saving}
             autoFocus={focus === "scheduled"}
@@ -243,8 +278,7 @@ export function TaskPlanningSheet({
           <ScheduleShortcuts
             value={scheduledDate}
             onChange={(date) => {
-              setScheduledDate(date ?? "");
-              if (date) setNotBeforeDate("");
+              setPlannedDate(date ?? "");
             }}
             disabled={saving}
           />

@@ -34,6 +34,40 @@ export interface RevisitMigrationReport {
   alreadyApplied: boolean;
 }
 
+const REVISIT_MIGRATION_NAME = "revisit_at_backfill";
+
+export function assertRevisitMigrationReady(sqlite: Database.Database): void {
+  const alreadyApplied = Boolean(
+    sqlite
+      .prepare(`SELECT 1 FROM data_migrations WHERE name = ?`)
+      .get(REVISIT_MIGRATION_NAME),
+  );
+  if (alreadyApplied) return;
+
+  const workItemCount = (
+    sqlite.prepare(`SELECT COUNT(*) AS count FROM work_items`).get() as {
+      count: number;
+    }
+  ).count;
+  if (workItemCount === 0) {
+    sqlite.transaction(() => {
+      sqlite
+        .prepare(
+          `INSERT OR IGNORE INTO data_migrations (name, completed_at)
+           VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
+        )
+        .run(REVISIT_MIGRATION_NAME);
+    })();
+    return;
+  }
+
+  throw new Error(
+    "Startup blocked: revisit data migration has not been acknowledged. " +
+      "Run `npm run db:revisit-dry-run` to review the deterministic report, " +
+      "then run `npm run db:revisit-apply -- --allow-conflicts` after reviewing conflicts.",
+  );
+}
+
 function normalizeLegacyInstant(value: string | null, timezone: string): string | null {
   if (value === null) return null;
   const normalized = normalizeRevisitInput(value, timezone);
@@ -171,9 +205,9 @@ export function inspectRevisitMigration(
   const alreadyApplied = Boolean(
     sqlite
       .prepare(
-        `SELECT 1 FROM data_migrations WHERE name = 'revisit_at_backfill'`,
+        `SELECT 1 FROM data_migrations WHERE name = ?`,
       )
-      .get(),
+      .get(REVISIT_MIGRATION_NAME),
   );
   const rows = sqlite
     .prepare(
@@ -298,9 +332,9 @@ export function applyRevisitMigration(
     sqlite
       .prepare(
         `INSERT INTO data_migrations (name, completed_at)
-         VALUES ('revisit_at_backfill', strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
+         VALUES (?, strftime('%Y-%m-%dT%H:%M:%fZ','now'))`,
       )
-      .run();
+      .run(REVISIT_MIGRATION_NAME);
   });
   apply();
   return report;
