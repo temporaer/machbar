@@ -238,9 +238,10 @@ describe("TaskWaitSheet", () => {
     const customDate = screen.getByPlaceholderText(
       "z. B. morgen, Freitag, KW 36, 2w",
     );
+    await userEvent.clear(customDate);
     await userEvent.type(customDate, "kein valides Datum");
     await userEvent.tab();
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(await screen.findByText("Datum nicht erkannt")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Warten" })).toBeDisabled();
 
     await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
@@ -277,12 +278,16 @@ describe("TaskWaitSheet", () => {
 
     await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Antwort");
     await userEvent.click(screen.getByRole("button", { name: "Datum auswählen …" }));
+    const customDate = screen.getByPlaceholderText(
+      "z. B. morgen, Freitag, KW 36, 2w",
+    );
+    await userEvent.clear(customDate);
     await userEvent.type(
-      screen.getByPlaceholderText("z. B. morgen, Freitag, KW 36, 2w"),
+      customDate,
       "kein valides Datum",
     );
     await userEvent.tab();
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(await screen.findByText("Datum nicht erkannt")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Kein Datum" }));
 
