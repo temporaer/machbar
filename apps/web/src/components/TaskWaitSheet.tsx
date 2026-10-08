@@ -99,7 +99,7 @@ export function TaskWaitSheet({
       saving ||
       !timezoneLoaded ||
       !waitingFor.trim() ||
-      !dateValid ||
+      (customDate && !dateValid) ||
       invalidRevisitDate
     ) return;
     taskActions.clearError(task.id);
@@ -171,6 +171,7 @@ export function TaskWaitSheet({
               disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
+                setDateValid(true);
                 setRevisitDate(addIsoCalendarDays(today(), 1));
                 setRevisitIntent("replace");
               }}
@@ -184,6 +185,7 @@ export function TaskWaitSheet({
               disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
+                setDateValid(true);
                 setRevisitDate(addIsoCalendarDays(today(), 3));
                 setRevisitIntent("replace");
               }}
@@ -197,6 +199,7 @@ export function TaskWaitSheet({
               disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
+                setDateValid(true);
                 setRevisitDate(addIsoCalendarDays(today(), 7));
                 setRevisitIntent("replace");
               }}
@@ -210,6 +213,7 @@ export function TaskWaitSheet({
               disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
+                setDateValid(true);
                 setRevisitDate(null);
                 setRevisitIntent("clear");
               }}

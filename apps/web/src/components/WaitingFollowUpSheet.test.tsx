@@ -237,6 +237,49 @@ describe("WaitingFollowUpSheet", () => {
     );
   });
 
+  it("recovers from an invalid custom date when a shortcut is selected", async () => {
+    const today = calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!;
+    const original = householdCalendarDateTimeToRevisitAt(
+      addIsoCalendarDays(today, 2),
+      "18:00",
+      "Europe/Berlin",
+    )!;
+    const destination = addIsoCalendarDays(today, 3);
+    const task = makeTask({
+      id: 20,
+      revision: 5,
+      revisitAt: original,
+      externalWait: { waitingFor: "Antwort" },
+    });
+    mockedApi.followUpExternalWait.mockResolvedValue(task);
+    renderWithProviders(<WaitingFollowUpSheet task={task} onClose={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Datum auswählen …" }));
+    await userEvent.type(
+      screen.getByPlaceholderText("z. B. morgen, Freitag, KW 36, 2w"),
+      "kein valides Datum",
+    );
+    await userEvent.tab();
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "3 Tage" }));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(20, {
+        action: "continue",
+        waitingFor: "Antwort",
+        revisitAt: householdCalendarDateTimeToRevisitAt(
+          destination,
+          "18:00",
+          "Europe/Berlin",
+        ),
+        expectedRevision: 5,
+      }),
+    );
+  });
+
   it.each([
     ["2026-03-28T01:30:00.000Z", "2026-03-29"],
     ["2026-10-24T00:30:00.000Z", "2026-10-25"],

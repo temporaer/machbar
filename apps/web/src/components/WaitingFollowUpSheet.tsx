@@ -63,9 +63,16 @@ export function WaitingFollowUpSheet({
     );
   }, [dateDraftChanged, householdTimezone, task.revisitAt]);
 
-  const continueWaiting = async (nextRevisitDate: string | null) => {
-    if (saving || !timezoneLoaded || !dateValid) return;
-    if (customDate && !nextRevisitDate) {
+  const continueWaiting = async (
+    nextRevisitDate: string | null,
+    fromShortcut = false,
+  ) => {
+    if (
+      saving ||
+      !timezoneLoaded ||
+      (!fromShortcut && customDate && !dateValid)
+    ) return;
+    if (!fromShortcut && customDate && !nextRevisitDate) {
       setRevisitError(true);
       return;
     }
@@ -130,7 +137,12 @@ export function WaitingFollowUpSheet({
               type="button"
               className="choice-chip"
               disabled={saving || !timezoneLoaded}
-              onClick={() => void continueWaiting(addIsoCalendarDays(today(), 1))}
+              onClick={() => {
+                setCustomDate(false);
+                setDateValid(true);
+                setRevisitError(false);
+                void continueWaiting(addIsoCalendarDays(today(), 1), true);
+              }}
             >
               {strings.revisitShortcutLabels.tomorrow}
             </button>
@@ -138,7 +150,12 @@ export function WaitingFollowUpSheet({
               type="button"
               className="choice-chip"
               disabled={saving || !timezoneLoaded}
-              onClick={() => void continueWaiting(addIsoCalendarDays(today(), 3))}
+              onClick={() => {
+                setCustomDate(false);
+                setDateValid(true);
+                setRevisitError(false);
+                void continueWaiting(addIsoCalendarDays(today(), 3), true);
+              }}
             >
               {strings.revisitShortcutLabels.threeDays}
             </button>
@@ -146,7 +163,12 @@ export function WaitingFollowUpSheet({
               type="button"
               className="choice-chip"
               disabled={saving || !timezoneLoaded}
-              onClick={() => void continueWaiting(addIsoCalendarDays(today(), 7))}
+              onClick={() => {
+                setCustomDate(false);
+                setDateValid(true);
+                setRevisitError(false);
+                void continueWaiting(addIsoCalendarDays(today(), 7), true);
+              }}
             >
               {strings.revisitShortcutLabels.oneWeek}
             </button>

@@ -215,4 +215,86 @@ describe("TaskWaitSheet", () => {
       }),
     );
   });
+
+  it("recovers from an invalid custom date when a shortcut replaces the draft", async () => {
+    const today = calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!;
+    const tomorrow = addIsoCalendarDays(today, 1);
+    const original = householdCalendarDateTimeToRevisitAt(
+      addIsoCalendarDays(today, 2),
+      "18:00",
+      "Europe/Berlin",
+    )!;
+    const task = makeTask({ id: 27, revisitAt: original });
+    mockedApi.setExternalWait.mockResolvedValue({
+      ...task,
+      externalWait: { waitingFor: "Antwort" },
+    });
+    renderWithProviders(
+      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+    );
+
+    await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Antwort");
+    await userEvent.click(screen.getByRole("button", { name: "Datum auswählen …" }));
+    const customDate = screen.getByPlaceholderText(
+      "z. B. morgen, Freitag, KW 36, 2w",
+    );
+    await userEvent.type(customDate, "kein valides Datum");
+    await userEvent.tab();
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Warten" })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Warten" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "Warten" }));
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(27, {
+        waitingFor: "Antwort",
+        revisitAt: householdCalendarDateTimeToRevisitAt(
+          tomorrow,
+          "18:00",
+          "Europe/Berlin",
+        ),
+        expectedRevision: 1,
+      }),
+    );
+  });
+
+  it("allows explicit clearing after an invalid custom date", async () => {
+    const task = makeTask({
+      id: 28,
+      revisitAt: "2026-09-05T16:00:00.000Z",
+    });
+    mockedApi.setExternalWait.mockResolvedValue({
+      ...task,
+      revisitAt: null,
+      externalWait: { waitingFor: "Antwort" },
+    });
+    renderWithProviders(
+      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+    );
+
+    await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Antwort");
+    await userEvent.click(screen.getByRole("button", { name: "Datum auswählen …" }));
+    await userEvent.type(
+      screen.getByPlaceholderText("z. B. morgen, Freitag, KW 36, 2w"),
+      "kein valides Datum",
+    );
+    await userEvent.tab();
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Kein Datum" }));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Warten" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "Warten" }));
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(28, {
+        waitingFor: "Antwort",
+        revisitAt: null,
+        expectedRevision: 1,
+      }),
+    );
+  });
 });
