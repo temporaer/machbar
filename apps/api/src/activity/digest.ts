@@ -201,6 +201,7 @@ function relevantDateChange(
   fields: string[],
   timezone: string,
 ): {
+  field: string;
   priority: 1 | 4;
   dateType: "deadline" | "scheduled" | "availability";
   previousDate: string | null;
@@ -387,16 +388,22 @@ function classify(
     );
   }
 
-  const unlockEvent =
-    last.kind === "task_status_changed" ||
-    last.kind === "task_external_wait_resolved"
-      ? last
-      : undefined;
-  for (const unblockedId of unlockEvent?.metadata.newlyExecutableTaskIds ?? []) {
+  const waitResolvedEvent = finalEvent(
+    events,
+    (event) => event.kind === "task_external_wait_resolved",
+  );
+  const unlockCandidates = new Map<number, DigestEvent>();
+  for (const event of events) {
+    for (const taskId of event.metadata.newlyExecutableTaskIds ?? []) {
+      unlockCandidates.set(taskId, event);
+    }
+  }
+  for (const [unblockedId, unlockEvent] of unlockCandidates) {
+    if (unlockEvent.kind === "task_external_wait_resolved") continue;
     const task = graph.tasksById.get(unblockedId);
     if (
       task === undefined ||
-      unlockEvent?.actor?.id === viewerMemberId ||
+      unlockEvent.actor?.id === viewerMemberId ||
       !task.executable ||
       task.status === "done" ||
       task.status === "cancelled" ||
@@ -406,12 +413,16 @@ function classify(
       continue;
     }
     const unblockedTitle = task.title;
+    const affectedProject =
+      task.projectId === null ? null : projects.get(task.projectId);
     entries.push(
-      makeEntry(`executable:${unblockedId}`, "personal", 1, "task_executable", [last], {
-        project,
+      makeEntry(`executable:${unblockedId}`, "personal", 1, "task_executable", [unlockEvent], {
+        project: affectedProject
+          ? { type: "project", id: affectedProject.id, title: affectedProject.title }
+          : null,
         primary: { type: "task", id: unblockedId, title: unblockedTitle },
         params: params({ title: unblockedTitle }),
-        actor: last.actor,
+        actor: unlockEvent.actor,
       }),
     );
   }
@@ -464,6 +475,7 @@ function classify(
     } else if (
       (projectRow === undefined || projectRow.status === "active") &&
       eventScope(last) !== "work" &&
+      finalOwner !== viewerMemberId &&
       isOpen(after)
     ) {
       entries.push(
@@ -620,15 +632,18 @@ function classify(
     "externalWait",
     "revisitDate",
   ];
-  const dateEvent = finalEvent(
-    events,
-    (event) =>
-      (event.kind === "task_updated" || event.kind === "project_updated") &&
-      event.actor?.id !== viewerMemberId &&
-      (event.metadata.changedFields ?? []).some((field) =>
-        relevantDateFields.includes(field),
-      ),
-  );
+  const dateEvents = new Map<string, DigestEvent>();
+  for (const event of events) {
+    if (
+      (event.kind !== "task_updated" && event.kind !== "project_updated") ||
+      event.actor?.id === viewerMemberId
+    ) {
+      continue;
+    }
+    for (const field of event.metadata.changedFields ?? []) {
+      if (relevantDateFields.includes(field)) dateEvents.set(field, event);
+    }
+  }
   const changedDateFields = [
     ...new Set(
       events.flatMap((event) =>
@@ -639,7 +654,7 @@ function classify(
     ),
   ];
   const planChange =
-    dateEvent === undefined
+    dateEvents.size === 0
       ? null
       : relevantDateChange(
           before,
@@ -669,7 +684,7 @@ function classify(
           dateType: planChange.dateType,
           direction: planChange.direction,
         }),
-        actor: dateEvent?.actor ?? null,
+        actor: dateEvents.get(planChange.field)?.actor ?? null,
         },
       ),
     );
@@ -691,16 +706,17 @@ function classify(
     );
   }
   if (
-    last.kind === "task_external_wait_resolved" &&
+    waitResolvedEvent !== undefined &&
+    waitResolvedEvent.actor?.id !== viewerMemberId &&
     itemId !== null &&
     graph.tasksById.get(itemId)?.executable === true &&
     graph.tasksById.get(itemId)?.effectiveOwnerId === viewerMemberId
   ) {
     entries.push(
-      makeEntry("wait-resolved:" + itemId, "personal", 1, "wait_resolved", [last], {
+      makeEntry("wait-resolved:" + itemId, "personal", 1, "wait_resolved", [waitResolvedEvent], {
         project,
         params: params({ title: last.entityTitle }),
-        actor: last.actor,
+        actor: waitResolvedEvent.actor,
       }),
     );
   }
