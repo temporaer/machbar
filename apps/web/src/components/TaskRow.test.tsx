@@ -720,7 +720,7 @@ describe("TaskRow – calm shared card presentation", () => {
     expect(screen.getByText(/Wiedervorlage\s*:/)).toBeInTheDocument();
   });
 
-  it("starts a due revisit today with one atomic planned-work update and only adds actions to roots", async () => {
+  it("starts a due revisit today from the rail with one atomic planned-work update", async () => {
     const task = makeTask({
       id: 78,
       title: "Due revisit",
@@ -740,15 +740,17 @@ describe("TaskRow – calm shared card presentation", () => {
     );
 
     await screen.findByText("Due revisit");
-    const groups = screen.getAllByRole("group", { name: "Wiedervorlage" });
-    expect(groups).toHaveLength(1);
-    expect(container.querySelector(".task-row-revisit-actions")).toBeInTheDocument();
+    expect(container.querySelector(".task-row-revisit-actions")).not.toBeInTheDocument();
+    const row = container.querySelector<HTMLElement>(".task-row")!;
+    expect(within(row).queryByRole("button", { name: "Jetzt angehen" })).not.toBeInTheDocument();
+    await userEvent.click(row.querySelector(".task-row-kebab") as HTMLElement);
+    const rail = within(row).getByRole("group", { name: "Weitere Aktionen" });
     expect(
-      within(groups[0]!).getAllByRole("button").map((button) => button.textContent),
-    ).toEqual(["Jetzt angehen", "Später"]);
+      within(rail).getAllByRole("button").map((button) => button.textContent),
+    ).toEqual(["Jetzt angehen", "Später", "Für Tag planen"]);
 
     await userEvent.click(
-      within(groups[0]!).getByRole("button", { name: "Jetzt angehen" }),
+      within(rail).getByRole("button", { name: "Jetzt angehen" }),
     );
 
     await waitFor(() =>
@@ -762,7 +764,7 @@ describe("TaskRow – calm shared card presentation", () => {
       }),
     );
     expect(mockedApi.updateTask.mock.calls[0]?.[1]).not.toHaveProperty("dueDate");
-    expect(container.querySelectorAll(".task-row-revisit-actions")).toHaveLength(1);
+    expect(within(row).queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
   });
 
   it("ends a waiting revisit directly without changing its scheduled work", async () => {
@@ -788,9 +790,14 @@ describe("TaskRow – calm shared card presentation", () => {
       />,
     );
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Warten beenden" }),
-    );
+    const row = (await screen.findByText("Waiting revisit")).closest<HTMLElement>(".task-row")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Weitere Aktionen" }));
+    const rail = within(row).getByRole("group", { name: "Weitere Aktionen" });
+    expect(within(rail).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "Nachhaken",
+      "Warten beenden",
+    ]);
+    await userEvent.click(within(rail).getByRole("button", { name: "Warten beenden" }));
 
     await waitFor(() =>
       expect(mockedApi.resolveExternalWait).toHaveBeenCalledWith(80, 1),
@@ -821,24 +828,12 @@ describe("TaskRow – calm shared card presentation", () => {
       />,
     );
     const row = container.querySelector<HTMLElement>(".task-row")!;
-    const directActions = within(row).getByRole("group", {
-      name: "Wiedervorlage",
-    });
+    expect(within(row).queryByRole("button", { name: "Trotzdem angehen" })).not.toBeInTheDocument();
+    await userEvent.click(within(row).getByRole("button", { name: "Weitere Aktionen" }));
+    const directActions = within(row).getByRole("group", { name: "Weitere Aktionen" });
     expect(
       within(directActions).getAllByRole("button").map((button) => button.textContent),
-    ).toEqual(["Blocker ansehen", "Später"]);
-    expect(
-      within(directActions).queryByRole("button", { name: "Trotzdem angehen" }),
-    ).not.toBeInTheDocument();
-
-    await userEvent.click(within(row).getByRole("button", { name: "Weitere Aktionen" }));
-    const rail = within(row).getByRole("group", { name: "Weitere Aktionen" });
-    expect(
-      within(rail).getByRole("button", { name: "Trotzdem angehen" }),
-    ).toBeInTheDocument();
-    expect(
-      within(rail).getByRole("button", { name: "Für Tag planen" }),
-    ).toBeInTheDocument();
+    ).toEqual(["Blocker ansehen", "Später", "Trotzdem angehen"]);
   });
 
   it("keeps a long wrapping title complete while tags occupy the upper-right", async () => {
@@ -907,7 +902,12 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     );
     await screen.findByText(task.title);
 
-    await userEvent.click(screen.getByRole("button", { name: "Später" }));
+    const row = screen.getByText(task.title).closest<HTMLElement>(".task-row")!;
+    await userEvent.click(row.querySelector(".task-row-kebab") as HTMLElement);
+    const rail = within(row).getByRole("group", { name: "Weitere Aktionen" });
+    await userEvent.click(
+      within(rail).getByRole("button", { name: "Später" }),
+    );
 
     expect(
       await screen.findByLabelText("Wiedervorlage", { selector: "input" }),
