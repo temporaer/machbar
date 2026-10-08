@@ -425,11 +425,57 @@ describe("activity digest", () => {
     expect(entries[0]?.actor?.name).toBe("Sarah");
   });
 
-  it("reduces a wait start followed by resolution to the surviving resolution", () => {
+  it("deduplicates an unlock and later wait resolution for the same task", () => {
+    const viewer = member("Hannes");
+    const sarah = member("Sarah");
+    const dependency = insertTestTask(ctx.handle.db, {
+      title: "Abhängigkeit erledigen",
+      status: "actionable",
+    });
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Freigewordene Aufgabe",
+      ownerMemberId: viewer.id,
+      ownerInheritanceMode: "explicit",
+      status: "actionable",
+    });
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values([
+      {
+        kind: "task_status_changed",
+        entityType: "task",
+        entityId: dependency.id,
+        entityTitle: dependency.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: dependency.id,
+          newlyExecutableTaskIds: [task.id],
+        },
+      },
+      {
+        kind: "task_external_wait_resolved",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["externalWait"],
+        },
+      },
+    ]).run();
+
+    const entries = getActivityDigest(ctx.handle.db, viewer.id).entries;
+    expect(entries.map((entry) => entry.kind)).toEqual(["wait_resolved"]);
+    expect(entries[0]?.primary?.id).toBe(task.id);
+  });
+
+  it("suppresses a wait that starts and resolves without a net availability change", () => {
     const viewer = member("Hannes");
     const sarah = member("Sarah");
     const task = insertTestTask(ctx.handle.db, {
-      title: "Rückmeldung prüfen",
+      title: "Kurz warten",
       ownerMemberId: viewer.id,
       ownerInheritanceMode: "explicit",
       status: "actionable",
@@ -446,6 +492,8 @@ describe("activity digest", () => {
           scope: "household",
           affectedWorkItemId: task.id,
           changedFields: ["externalWait"],
+          before: { externalWait: null },
+          after: { externalWait: { title: "Kurz warten", revisitDate: null } },
         },
       },
       {
@@ -458,13 +506,11 @@ describe("activity digest", () => {
           scope: "household",
           affectedWorkItemId: task.id,
           changedFields: ["externalWait"],
-          after: { executable: true, effectiveOwnerId: viewer.id },
         },
       },
     ]).run();
 
-    const entries = getActivityDigest(ctx.handle.db, viewer.id).entries;
-    expect(entries.map((entry) => entry.kind)).toEqual(["wait_resolved"]);
+    expect(getActivityDigest(ctx.handle.db, viewer.id).entries).toEqual([]);
   });
 
   it("does not retain a wait resolution when a later wait is active", () => {
@@ -715,6 +761,54 @@ describe("activity digest", () => {
     expect(entry.kind).toBe("plan_changed");
     expect(entry.params.dateType).toBe("deadline");
     expect(entry.actor?.name).toBe("Sarah");
+  });
+
+  it("does not infer a deadline change from an unrelated availability update", () => {
+    const viewer = member("Hannes");
+    const sarah = member("Sarah");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Verfügbarkeit prüfen",
+      ownerMemberId: viewer.id,
+      ownerInheritanceMode: "explicit",
+      status: "actionable",
+      dueDate: "2099-10-15",
+    });
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values([
+      {
+        kind: "task_updated",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: viewer.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["dueDate"],
+          before: { dueDate: "2099-10-15", effectiveOwnerId: viewer.id },
+          after: { dueDate: "2099-10-10", effectiveOwnerId: viewer.id },
+        },
+      },
+      {
+        kind: "task_updated",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["notBeforeAt"],
+          before: { notBeforeAt: null, executable: true },
+          after: {
+            notBeforeAt: "2099-10-01T08:00:00.000Z",
+            executable: true,
+          },
+        },
+      },
+    ]).run();
+
+    expect(getActivityDigest(ctx.handle.db, viewer.id).entries).toEqual([]);
   });
 
   it("suppresses a deadline announcement when the viewer supersedes it", () => {

@@ -237,13 +237,26 @@ function relevantDateChange(
       date: after.notBeforeDate ?? null,
       horizon: 0,
     },
+    {
+      field: "notBeforeAt",
+      dateType: "availability",
+      previousDate: before?.notBeforeAt ?? null,
+      date: after.notBeforeAt ?? null,
+      horizon: 0,
+    },
   ];
   for (const candidate of candidates) {
-    if (!fields.includes(candidate.field) && !fields.includes("notBeforeAt")) continue;
+    if (!fields.includes(candidate.field)) continue;
     if (candidate.previousDate === candidate.date) continue;
     if (candidate.date === null && candidate.dateType !== "deadline") continue;
-    const previousDistance = daysFromToday(candidate.previousDate, timezone);
-    const distance = daysFromToday(candidate.date, timezone);
+    const previousDistance =
+      candidate.dateType === "availability"
+        ? null
+        : daysFromToday(candidate.previousDate, timezone);
+    const distance =
+      candidate.dateType === "availability"
+        ? null
+        : daysFromToday(candidate.date, timezone);
     const direction =
       candidate.previousDate === null
         ? "new"
@@ -256,7 +269,7 @@ function relevantDateChange(
       (distance !== null && distance <= candidate.horizon) ||
       (previousDistance !== null && previousDistance <= candidate.horizon);
     if (candidate.dateType === "availability") {
-      if (after.executable !== true) continue;
+      if (before?.executable !== false || after.executable !== true) continue;
       return { ...candidate, priority: 1, direction };
     }
     if (imminent) {
@@ -694,6 +707,13 @@ function classify(
   const currentTask = itemId === null ? undefined : graph.tasksById.get(itemId);
   const currentlyWaiting =
     currentTask !== undefined && currentTask.externalWait !== null;
+  const firstWaitEvent = waitLifecycleEvents[0];
+  const waitExistedAtBoundary =
+    firstWaitEvent?.kind === "task_external_wait_resolved"
+      ? true
+      : firstWaitEvent?.metadata.before?.externalWait !== undefined
+        ? firstWaitEvent.metadata.before.externalWait !== null
+        : false;
   const waitStartedEvent =
     finalWaitEvent !== undefined &&
     currentlyWaiting &&
@@ -720,6 +740,7 @@ function classify(
       : undefined;
   if (
     waitResolvedEvent !== undefined &&
+    waitExistedAtBoundary &&
     !currentlyWaiting &&
     waitResolvedEvent.actor?.id !== viewerMemberId &&
     itemId !== null &&
@@ -736,6 +757,43 @@ function classify(
   }
 
   return entries;
+}
+
+function deduplicateExecutableOutcomes(
+  entries: ActivityDigestEntry[],
+): ActivityDigestEntry[] {
+  const candidates = new Map<number, ActivityDigestEntry>();
+  const eventId = (entry: ActivityDigestEntry): number =>
+    Math.max(...entry.eventIds);
+  const isCandidate = (entry: ActivityDigestEntry): boolean =>
+    (entry.kind === "task_executable" || entry.kind === "wait_resolved") &&
+    entry.primary?.type === "task" &&
+    typeof entry.primary.id === "number";
+  const wins = (
+    candidate: ActivityDigestEntry,
+    incumbent: ActivityDigestEntry,
+  ): boolean => {
+    const candidateId = eventId(candidate);
+    const incumbentId = eventId(incumbent);
+    if (candidateId !== incumbentId) return candidateId > incumbentId;
+    if (candidate.kind !== incumbent.kind) return candidate.kind === "wait_resolved";
+    return candidate.key < incumbent.key;
+  };
+
+  for (const entry of entries) {
+    if (!isCandidate(entry)) continue;
+    const taskId = entry.primary!.id as number;
+    const incumbent = candidates.get(taskId);
+    if (incumbent === undefined || wins(entry, incumbent)) {
+      candidates.set(taskId, entry);
+    }
+  }
+
+  return entries.filter((entry) => {
+    if (!isCandidate(entry)) return true;
+    const taskId = entry.primary!.id as number;
+    return candidates.get(taskId) === entry;
+  });
 }
 
 function groupEvents(events: DigestEvent[]): DigestEvent[][] {
@@ -1049,10 +1107,11 @@ export function getActivityDigest(
     const visible = allEvents.filter((event) =>
       visibleToViewer(event, viewerMemberId, rows),
     );
+    const classifiedEntries = groupEvents(visible).flatMap((group) =>
+      classify(group, viewerMemberId, rows, projects, graph, timezone),
+    );
     const entries = aggregate(
-      groupEvents(visible).flatMap((group) =>
-        classify(group, viewerMemberId, rows, projects, graph, timezone),
-      ),
+      deduplicateExecutableOutcomes(classifiedEntries),
     ).sort(
       (a, b) =>
         a.priority - b.priority ||
