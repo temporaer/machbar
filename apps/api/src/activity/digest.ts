@@ -39,6 +39,7 @@ interface WorkItemRow {
   effectiveOwnerId: number | null;
   dueDate: string | null;
   scheduledDate: string | null;
+  revisitAt: string | null;
   notBeforeAt: string | null;
   notBeforeDate: string | null;
 }
@@ -81,6 +82,7 @@ function currentSnapshot(row: WorkItemRow | undefined): ActivityStateSnapshot | 
     taskKind: row.taskKind ?? undefined,
     dueDate: row.dueDate,
     scheduledDate: row.scheduledDate,
+    revisitAt: row.revisitAt,
     notBeforeAt: row.notBeforeAt,
     notBeforeDate: row.notBeforeDate,
     status:
@@ -229,6 +231,13 @@ function relevantDateChange(
       previousDate: before?.scheduledDate ?? null,
       date: after.scheduledDate ?? null,
       horizon: 7,
+    },
+    {
+      field: "revisitAt",
+      dateType: "availability",
+      previousDate: before?.revisitAt ?? null,
+      date: after.revisitAt ?? null,
+      horizon: 0,
     },
     {
       field: "notBeforeDate",
@@ -636,6 +645,7 @@ function classify(
   const relevantDateFields = [
     "dueDate",
     "scheduledDate",
+    "revisitAt",
     "notBeforeAt",
     "notBeforeDate",
     "externalWait",
@@ -1044,6 +1054,7 @@ function loadWorkItems(db: Db): { rows: Map<number, WorkItemRow>; projects: Map<
       taskKind: schema.workItems.taskKind,
       dueDate: schema.workItems.dueDate,
       scheduledDate: schema.workItems.scheduledDate,
+      revisitAt: schema.workItems.revisitAt,
       notBeforeAt: schema.workItems.notBeforeAt,
       notBeforeDate: schema.workItems.notBeforeDate,
     })

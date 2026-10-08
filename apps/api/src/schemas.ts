@@ -510,6 +510,7 @@ const intakeWorkItemSchema = z
     ownerName: z.string().nullable().optional(),
     dueDate: intakeShapeDateSchema.optional(),
     scheduledDate: intakeShapeDateSchema.optional(),
+    revisitAt: intakeShapeDateTimeSchema.optional(),
     notBeforeDate: intakeShapeDateSchema.optional(),
     notBeforeAt: intakeShapeDateTimeSchema.optional(),
     reminders: z.array(intakeShapeReminderSchema).optional(),
@@ -527,7 +528,10 @@ export const intakePlanStructureSchema = z
   .strip();
 
 const intakeCalendarEventCanonicalSchema = intakeCalendarEventSchema.required().strict();
-const intakeWorkItemCanonicalSchema = intakeWorkItemSchema.required().strict();
+const intakeWorkItemCanonicalSchema = intakeWorkItemSchema
+  .required()
+  .extend({ revisitAt: intakeShapeDateTimeSchema.optional() })
+  .strict();
 const intakeWarningSchema = z.object({ message: z.string().trim().min(1).max(500) }).strict();
 
 export const intakePlanSchema = z

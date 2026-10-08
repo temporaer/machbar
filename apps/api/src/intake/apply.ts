@@ -261,9 +261,7 @@ export async function applyIntake(
           parentId: parent?.kind === "project" ? parentId : null,
           ...(item.ownerMemberId === null ? {} : { ownerMemberId: item.ownerMemberId }),
           dueDate: item.dueDate,
-          revisitAt: item.scheduledDate
-            ? `${item.scheduledDate}T00:00:00.000Z`
-            : null,
+          revisitAt: item.revisitAt ?? item.notBeforeAt ?? null,
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
         }, context);
         created = { id: project.id, title: project.title, role: "story" };
@@ -283,8 +281,7 @@ export async function applyIntake(
           ownerInheritanceMode: item.ownerMemberId === null ? undefined : "explicit" as const,
           dueDate: item.dueDate,
           scheduledDate: item.scheduledDate,
-          notBeforeDate: item.notBeforeDate,
-          notBeforeAt: item.notBeforeAt,
+          revisitAt: item.revisitAt ?? item.notBeforeAt,
           reminders: item.reminders.length > 0 ? item.reminders : undefined,
           createdByMemberId: jobNow.createdByMemberId,
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
