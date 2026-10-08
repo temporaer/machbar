@@ -174,11 +174,9 @@ describe("WaitingFollowUpSheet", () => {
       externalWait: { waitingFor: "Antwort" },
     });
     const onClose = vi.fn();
-    const { container } = renderWithProviders(
-      <WaitingFollowUpSheet task={task} onClose={onClose} />,
-    );
+    renderWithProviders(<WaitingFollowUpSheet task={task} onClose={onClose} />);
     await userEvent.click(screen.getByRole("button", { name: "Fällig …" }));
-    fireEvent.change(container.querySelector('input[type="date"]')!, {
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="date"]')!, {
       target: { value: date },
     });
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));

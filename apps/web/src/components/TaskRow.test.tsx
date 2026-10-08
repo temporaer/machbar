@@ -809,7 +809,6 @@ describe("TaskRow – calm shared card presentation", () => {
           taskId: 81,
           dependsOnTaskId: 91,
           title: "Voraussetzung",
-          status: "actionable",
           resolved: false,
         },
       ],
@@ -821,7 +820,7 @@ describe("TaskRow – calm shared card presentation", () => {
         attentionTone="revisit"
       />,
     );
-    const row = container.querySelector(".task-row")!;
+    const row = container.querySelector<HTMLElement>(".task-row")!;
     const directActions = within(row).getByRole("group", {
       name: "Wiedervorlage",
     });
@@ -894,12 +893,25 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
       title: "Später erneut entscheiden",
       revisitAt: "2026-01-01T10:00:00.000Z",
     });
-    renderOutlineWithDetail(task);
+    renderWithProviders(
+      <div>
+        <TaskOutline
+          tasks={[task]}
+          emptyMessage="Nichts da"
+          showRevisitDate
+          attentionTone="revisit"
+        />
+        <TaskDetailSheet />
+        <TaskWorkflowHost />
+      </div>,
+    );
     await screen.findByText(task.title);
 
     await userEvent.click(screen.getByRole("button", { name: "Später" }));
 
-    expect(await screen.findByLabelText("Wiedervorlage")).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText("Wiedervorlage", { selector: "input" }),
+    ).toBeInTheDocument();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 

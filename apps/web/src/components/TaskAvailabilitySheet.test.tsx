@@ -154,10 +154,10 @@ describe("TaskAvailabilitySheet", () => {
         id: 47,
         revisitAt: "2026-03-28T01:30:00.000Z",
       });
-      const { container } = renderWithProviders(
+      renderWithProviders(
         <TaskAvailabilitySheet task={task} onClose={vi.fn()} />,
       );
-      const picker = container.querySelector('input[type="date"]')!;
+      const picker = document.querySelector<HTMLInputElement>('input[type="date"]')!;
       fireEvent.change(picker, { target: { value: date } });
       fireEvent.change(screen.getByLabelText("Uhrzeit"), {
         target: { value: "02:30" },
@@ -174,10 +174,10 @@ describe("TaskAvailabilitySheet", () => {
 
   it("accepts a valid post-overlap time as the correct household-zone instant", async () => {
     const task = makeTask({ id: 48, revisitAt: "2026-10-24T00:30:00.000Z" });
-    const { container } = renderWithProviders(
+    renderWithProviders(
       <TaskAvailabilitySheet task={task} onClose={vi.fn()} />,
     );
-    fireEvent.change(container.querySelector('input[type="date"]')!, {
+    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="date"]')!, {
       target: { value: "2026-10-25" },
     });
     fireEvent.change(screen.getByLabelText("Uhrzeit"), {

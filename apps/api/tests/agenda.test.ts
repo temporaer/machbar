@@ -416,13 +416,18 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
       "revisit",
     ]);
 
+    const latestTask = await ctx.app.inject({
+      method: "GET",
+      url: `/api/tasks/${blocked.id}`,
+    });
+    expect(latestTask.statusCode).toBe(200);
     const startToday = await ctx.app.inject({
       method: "PATCH",
       url: `/api/tasks/${blocked.id}`,
       payload: {
         scheduledDate: today,
         revisitAt: null,
-        expectedRevision: blocked.revision,
+        expectedRevision: latestTask.json().revision,
       },
     });
     expect(startToday.statusCode).toBe(200);
@@ -437,7 +442,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(planned[0].blocked).toBe(true);
     expect(planned[0].dependencies).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ dependsOnTaskId: blocker.id, resolvedAt: null }),
+        expect.objectContaining({ dependsOnTaskId: blocker.id, resolved: false }),
       ]),
     );
     expect(agenda.revisit.some((item: { id: number }) => item.id === blocked.id))
@@ -460,7 +465,7 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     const unavailable = () => ({
       status: "unavailable" as const,
       availableNow: false,
-      missingContexts: ["Werkstatt"],
+      missingContexts: [],
     });
     await createTask({ title: "Kontext: überfällig", dueDate: yesterday });
     await createTask({ title: "Kontext: heute fällig", dueDate: today });
