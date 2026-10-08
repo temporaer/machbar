@@ -402,7 +402,7 @@ describe("ProjectDetailPage task explanations", () => {
         id: 42,
         title: "Sommerfest planen",
         status: "backlog",
-        scheduledDate: "2026-09-20",
+        revisitAt: "2026-09-19T22:00:00.000Z",
       }),
       tasks: [],
     });

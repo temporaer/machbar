@@ -45,6 +45,8 @@ export type WorkItemCommand =
   | { type: "task.structure"; taskId: number }
   | { type: "task.reminders"; taskId: number }
   | { type: "task.waitingLifecycle"; taskId: number }
+  | { type: "task.startToday"; task: Task }
+  | { type: "task.endWaiting"; task: Task }
   | { type: "task.split"; taskId: number }
   | { type: "task.assignOwner"; taskId: number }
   | { type: "task.changeProject"; taskId: number }

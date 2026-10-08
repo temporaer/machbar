@@ -355,6 +355,29 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it.each(["card", "quiet"] as const)(
+    "shows the same household-local backlog revisit in %s cards and opens the existing defer workflow",
+    async (variant) => {
+      const story = makeProject({
+        id: 90,
+        title: "Zurückgestelltes Projekt",
+        status: "backlog",
+        revisitAt: "2026-09-19T22:00:00.000Z",
+      });
+      mockedApi.getProject.mockResolvedValue({ ...story, tasks: [] });
+      renderWithProviders(<Harness story={story} variant={variant} />);
+
+      const revisit = await screen.findByRole("button", {
+        name: "Wiedervorlage: 20.09.2026",
+      });
+      await userEvent.click(revisit);
+
+      expect(
+        await screen.findByRole("dialog", { name: "Wiedervorlage" }),
+      ).toBeInTheDocument();
+    },
+  );
+
   it("opens the focused open-tasks reconciliation — not the structural editor — when open tasks remain", async () => {
     const story = makeProject({
       id: 30,

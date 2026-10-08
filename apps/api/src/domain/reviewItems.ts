@@ -137,7 +137,7 @@ export function buildReviewItems(
 ): ReviewItem[] {
   const today =
     options.today ?? new Date().toISOString().slice(0, 10);
-  const now = options.now ?? `${today}T23:59:59.999Z`;
+  const now = options.now ?? new Date().toISOString();
   const projectStatuses = new Map(
     [...graph.projectsById.values()].map((project) => [
       project.id,

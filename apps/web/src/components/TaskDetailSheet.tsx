@@ -5,7 +5,7 @@ import {
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { Task } from "@machbar/shared";
-import { DEFAULT_HOUSEHOLD_TIMEZONE, taskStatuses } from "@machbar/shared";
+import { taskStatuses } from "@machbar/shared";
 import { api } from "../lib/api";
 import type { ProjectWithActions } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
@@ -19,7 +19,8 @@ import { WorkItemBreadcrumbs } from "./WorkItemBreadcrumbs";
 import { useStrings } from "../lib/strings";
 import { ExternalRefBadge } from "./ExternalRefBadge";
 import { formatDateTime } from "../lib/format";
-import { formatExactLocalDate } from "../lib/relativeDate";
+import { formatExactLocalDate, formatRevisitAt } from "../lib/relativeDate";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { isCapturedInboxItem, sortByPosition } from "../lib/taskHelpers";
 import { BottomSheet } from "./BottomSheet";
 import { LoadingState, ErrorState } from "./AsyncStates";
@@ -106,7 +107,8 @@ export function TaskDetailSheet() {
   const { locale } = useLocale();
   const navigate = useNavigate();
   const { openTaskId, queueActive, focusField, clearFocusField, open, advanceQueue, close } = useTaskDetail();
-  const { bump, version } = useRefresh();
+  const { bump } = useRefresh();
+  const { timezone: householdTimezone } = useHouseholdTimezone();
   const { members } = useIdentity();
   const taskActions = useTaskActions();
   const dispatch = useWorkItemCommands();
@@ -132,9 +134,6 @@ export function TaskDetailSheet() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [makeActionBusy, setMakeActionBusy] = useState(false);
   const [makeActionError, setMakeActionError] = useState<string | null>(null);
-  const [householdTimezone, setHouseholdTimezone] = useState<string>(
-    DEFAULT_HOUSEHOLD_TIMEZONE,
-  );
   const [shareStatus, setShareStatus] = useState<string | null>(null);
   const [classificationBusy, setClassificationBusy] = useState(false);
   const [convertedProject, setConvertedProject] =
@@ -147,22 +146,6 @@ export function TaskDetailSheet() {
   const lastLoadedTaskIdRef = useRef<number | null>(null);
   const revisionRef = useRef<number | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void (
-      api.getHouseholdTimezone?.() ??
-      Promise.resolve({ timezone: DEFAULT_HOUSEHOLD_TIMEZONE })
-    )
-      .then((timezone) => {
-        if (!cancelled) setHouseholdTimezone(timezone.timezone);
-      })
-      .catch(() => {
-        if (!cancelled) setHouseholdTimezone(DEFAULT_HOUSEHOLD_TIMEZONE);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [version]);
   const workflowKind = taskWorkflow.current?.kind ?? null;
 
   const {
@@ -481,30 +464,17 @@ export function TaskDetailSheet() {
     : undefined;
   const localDate = (value: string) =>
     formatExactLocalDate(value, locale) ?? value;
-  const planValue = task
-    ? [
-        task.scheduledDate ? localDate(task.scheduledDate) : null,
-        task.dueDate ? `${strings.due} ${localDate(task.dueDate)}` : null,
-      ]
-        .filter((value): value is string => value !== null)
-        .join(" · ")
-    : "";
+  const scheduledDateValue = task?.scheduledDate
+    ? localDate(task.scheduledDate)
+    : null;
+  const dueDateValue = task?.dueDate ? localDate(task.dueDate) : null;
   const revisitAtValue = task?.revisitAt
-    ? formatDateTime(task.revisitAt, locale, householdTimezone)
+    ? formatRevisitAt(task.revisitAt, locale, householdTimezone)
     : null;
   const reminderSummary = task
     ? formatReminderSummary(task.reminders, task.dueDate, strings, locale)
     : null;
-  const waitValue = task?.externalWait
-    ? [
-        task.externalWait.waitingFor?.trim() ?? null,
-        task.revisitAt
-          ? formatDateTime(task.revisitAt, locale, householdTimezone)
-          : null,
-      ]
-        .filter((value): value is string => Boolean(value))
-        .join(" · ")
-    : "";
+  const waitValue = task?.externalWait?.waitingFor?.trim() ?? "";
 
   const runCommand = (
     command:
@@ -754,28 +724,39 @@ export function TaskDetailSheet() {
                 </span>
               </DetailPropertyPill>
             ) : null}
-            {planValue ? (
+            {scheduledDateValue ? (
               <DetailPropertyPill
                 label={strings.taskPlanFor}
                 onClick={() => runCommand("task.plan")}
               >
-                <span>{planValue}</span>
+                <span>{scheduledDateValue}</span>
               </DetailPropertyPill>
             ) : (
               <DetailPropertyPill variant="unset" onClick={() => runCommand("task.plan")}>
                 {strings.addPlan}
               </DetailPropertyPill>
             )}
+            {dueDateValue ? (
+              <DetailPropertyPill
+                label={strings.planningDueBy}
+                onClick={() => runCommand("task.plan")}
+              >
+                <span>{dueDateValue}</span>
+              </DetailPropertyPill>
+            ) : null}
             {revisitAtValue ? (
               <DetailPropertyPill
-                label={strings.planning}
+                label={strings.revisit}
                 onClick={() => runCommand("task.availability")}
               >
                 <span>{revisitAtValue}</span>
               </DetailPropertyPill>
             ) : (
-              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.availability")}>
-                {strings.planning}
+              <DetailPropertyPill
+                variant="unset"
+                onClick={() => runCommand("task.availability")}
+              >
+                {strings.revisit}
               </DetailPropertyPill>
             )}
             {task.reminders.length > 0 && reminderSummary ? (

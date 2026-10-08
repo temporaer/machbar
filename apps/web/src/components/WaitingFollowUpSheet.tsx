@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   calendarDateForInstant,
-  DEFAULT_HOUSEHOLD_TIMEZONE,
   type Task,
 } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
@@ -10,8 +9,7 @@ import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
-import { useAsync } from "../lib/useAsync";
-import { api } from "../lib/api";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 
 /**
  * The canonical `task.waitingLifecycle` workflow for a task that already
@@ -29,15 +27,10 @@ export function WaitingFollowUpSheet({
 }) {
   const strings = useStrings();
   const taskActions = useTaskActions();
-  const { data: timezoneData } = useAsync(
-    () =>
-      api.getHouseholdTimezone?.() ??
-      Promise.resolve({ timezone: DEFAULT_HOUSEHOLD_TIMEZONE }),
-    [],
-  );
-  const householdTimezone =
-    timezoneData?.timezone ?? DEFAULT_HOUSEHOLD_TIMEZONE;
+  const { timezone: householdTimezone, loaded: timezoneLoaded } =
+    useHouseholdTimezone();
   const [content, setContent] = useState("");
+  const [dateDraftChanged, setDateDraftChanged] = useState(false);
   const [revisitDate, setRevisitDate] = useState<string | null>(
     task.revisitAt
       ? calendarDateForInstant(task.revisitAt, householdTimezone)
@@ -54,8 +47,17 @@ export function WaitingFollowUpSheet({
     calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
     toIsoCalendarDate(new Date());
 
+  useEffect(() => {
+    if (dateDraftChanged) return;
+    setRevisitDate(
+      task.revisitAt
+        ? calendarDateForInstant(task.revisitAt, householdTimezone)
+        : null,
+    );
+  }, [dateDraftChanged, householdTimezone, task.revisitAt]);
+
   const continueWaiting = async (nextRevisitDate: string | null) => {
-    if (saving || !dateValid) return;
+    if (saving || !timezoneLoaded || !dateValid) return;
     taskActions.clearError(task.id);
     const updated = await taskActions.followUpExternalWait(task, {
       action: "continue",
@@ -110,7 +112,7 @@ export function WaitingFollowUpSheet({
             <button
               type="button"
               className="choice-chip"
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => void continueWaiting(addIsoCalendarDays(today(), 1))}
             >
               {strings.revisitShortcutLabels.tomorrow}
@@ -118,7 +120,7 @@ export function WaitingFollowUpSheet({
             <button
               type="button"
               className="choice-chip"
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => void continueWaiting(addIsoCalendarDays(today(), 3))}
             >
               {strings.revisitShortcutLabels.threeDays}
@@ -126,7 +128,7 @@ export function WaitingFollowUpSheet({
             <button
               type="button"
               className="choice-chip"
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => void continueWaiting(addIsoCalendarDays(today(), 7))}
             >
               {strings.revisitShortcutLabels.oneWeek}
@@ -135,7 +137,7 @@ export function WaitingFollowUpSheet({
               type="button"
               className="choice-chip"
               aria-pressed={customDate}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => setCustomDate(true)}
             >
               {strings.due} …
@@ -146,14 +148,17 @@ export function WaitingFollowUpSheet({
               <HumanDateInput
                 id={`follow-up-date-${task.id}`}
                 value={revisitDate ?? ""}
-                onChange={(date) => setRevisitDate(date)}
+                onChange={(date) => {
+                  setRevisitDate(date);
+                  setDateDraftChanged(true);
+                }}
                 onValidityChange={setDateValid}
-                disabled={saving}
+                disabled={saving || !timezoneLoaded}
               />
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                disabled={saving || !dateValid}
+                disabled={saving || !timezoneLoaded || !dateValid}
                 onClick={() => void continueWaiting(revisitDate)}
               >
                 {strings.save}

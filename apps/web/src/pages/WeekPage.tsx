@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import {
   calendarDateForInstant,
   moveRevisitToCalendarDate,
@@ -9,6 +9,7 @@ import { api, type AgendaScope, type WeekAgendaResponse, type WeekPlanningItem }
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { useAsync } from "../lib/useAsync";
 import { useIdentity } from "../lib/identity";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { ErrorState, LoadingState } from "../components/AsyncStates";
@@ -138,7 +139,7 @@ function moveRevisit(
         ? null
         : null;
   if (date && currentRevisitAt && revisitAt === null) {
-    throw new Error("The selected revisit time is invalid in this timezone.");
+    throw new Error("invalid_revisit_time");
   }
   const task = item.task ? { ...item.task, revisitAt } : item.task;
   const project = item.project ? { ...item.project, revisitAt } : item.project;
@@ -194,8 +195,7 @@ function WeekCard({
   if (item.placement === "scheduled") {
     chipList.push({
       key: "scheduled",
-      label:
-        item.role === "story" ? strings.projectRevisitDate : strings.scheduled,
+      label: strings.scheduled,
       className: "week-card-chip week-card-chip-scheduled",
     });
   }
@@ -346,11 +346,18 @@ export function WeekPage() {
   const { currentMemberId, members } = useIdentity();
   const dispatch = useWorkItemCommands();
   const navigate = useNavigate();
+  const {
+    timezone: householdTimezone,
+    loaded: timezoneLoaded,
+  } = useHouseholdTimezone();
   const [scope, setScope] = useState<AgendaScope>(readTodayScope);
   const [start, setStart] = useState(() => weekWindowStart(new Date()));
-  // Real wall-clock today, independent of `start` paging, used to clamp
-  // overdue attention dates forward when recomputing placement optimistically.
-  const today = useMemo(() => toIsoCalendarDate(new Date()), []);
+  const navigatedRef = useRef(false);
+  const now = useMemo(() => new Date().toISOString(), []);
+  const today = useMemo(
+    () => calendarDateForInstant(now, householdTimezone) ?? toIsoCalendarDate(new Date()),
+    [householdTimezone, now],
+  );
   const [agenda, setAgenda] = useState<WeekAgendaResponse | null>(null);
   const [dragged, setDragged] = useState<WeekPlanningItem | null>(null);
   const [mutationError, setMutationError] = useState<string | null>(null);
@@ -359,12 +366,18 @@ export function WeekPage() {
     () => api.getWeekAgenda(start, currentMemberId, scope),
     [loadKey],
   );
-  const { data: timezoneData } = useAsync(() => api.getHouseholdTimezone(), []);
-  const householdTimezone = timezoneData?.timezone ?? "Europe/Berlin";
   const selectScope = (nextScope: AgendaScope) => {
     setScope(nextScope);
     writeTodayScope(nextScope);
   };
+  const navigateWeek = (days: number) => {
+    navigatedRef.current = true;
+    setStart(addIsoCalendarDays(start, days));
+  };
+
+  useEffect(() => {
+    if (timezoneLoaded && !navigatedRef.current) setStart(today);
+  }, [timezoneLoaded, today]);
 
   useEffect(() => {
     if (data) setAgenda(data);
@@ -393,8 +406,10 @@ export function WeekPage() {
     if (!agenda) return;
     const previous = agenda;
     setMutationError(null);
-    setAgenda(sortAgenda(moveRevisit(agenda, item, date, today, householdTimezone)));
     try {
+      setAgenda(
+        sortAgenda(moveRevisit(agenda, item, date, today, householdTimezone)),
+      );
       await dispatch({
         type: "workItem.setRevisitDate",
         item,
@@ -403,7 +418,13 @@ export function WeekPage() {
       });
     } catch (cause) {
       setAgenda(previous);
-      setMutationError(cause instanceof Error ? cause.message : strings.error);
+      setMutationError(
+        cause instanceof Error && cause.message === "invalid_revisit_time"
+          ? strings.invalidRevisitTime
+          : cause instanceof Error
+            ? cause.message
+            : strings.error,
+      );
     }
   };
 
@@ -436,7 +457,7 @@ export function WeekPage() {
               <button
                 type="button"
                 className="page-header-button"
-                onClick={() => setStart(addIsoCalendarDays(start, -7))}
+                onClick={() => navigateWeek(-7)}
                 aria-label={strings.previousWeek}
               >
                 ‹
@@ -452,7 +473,7 @@ export function WeekPage() {
               <button
                 type="button"
                 className="page-header-button"
-                onClick={() => setStart(addIsoCalendarDays(start, 7))}
+                onClick={() => navigateWeek(7)}
                 aria-label={strings.nextWeek}
               >
                 ›

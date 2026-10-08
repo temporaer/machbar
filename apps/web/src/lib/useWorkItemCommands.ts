@@ -10,7 +10,11 @@ import { useTaskWorkflow } from "./taskWorkflowContext";
 import { useProjectWorkflow } from "./projectWorkflowContext";
 import { useSwipeSettings } from "./swipeSettings";
 import { useOptionalInteractionScope } from "./interactionScope";
-import { moveRevisitToCalendarDate } from "@machbar/shared";
+import {
+  calendarDateForInstant,
+  moveRevisitToCalendarDate,
+} from "@machbar/shared";
+import { useHouseholdTimezone } from "./householdTimezone";
 
 /**
  * Every `task.*`/`story.*` command carries the id of the WorkItem it
@@ -30,6 +34,8 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.structure":
     case "task.reminders":
     case "task.waitingLifecycle":
+    case "task.startToday":
+    case "task.endWaiting":
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
@@ -88,6 +94,8 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.structure":
     case "task.reminders":
     case "task.waitingLifecycle":
+    case "task.startToday":
+    case "task.endWaiting":
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
@@ -158,6 +166,8 @@ export function useWorkItemCommands() {
   const navigate = useNavigate();
   const { primarySwipeAction } = useSwipeSettings();
   const scope = useOptionalInteractionScope();
+  const { timezone: householdTimezone, loaded: timezoneLoaded } =
+    useHouseholdTimezone();
 
   /**
    * Opens whatever a lifecycle transition still needs before it can be
@@ -251,6 +261,23 @@ export function useWorkItemCommands() {
           return;
         case "task.waitingLifecycle":
           taskWorkflow.open("waitingLifecycle", command.taskId);
+          return;
+        case "task.startToday": {
+          if (!timezoneLoaded) return;
+          const scheduledDate = calendarDateForInstant(
+            new Date().toISOString(),
+            householdTimezone,
+          );
+          if (!scheduledDate) return;
+          taskActions.update(
+            command.task,
+            { revisitAt: null, scheduledDate },
+            { revisitAt: null, scheduledDate },
+          );
+          return;
+        }
+        case "task.endWaiting":
+          void taskActions.resolveExternalWait(command.task);
           return;
         case "task.split":
           taskWorkflow.open("split", command.taskId);

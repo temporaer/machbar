@@ -140,6 +140,42 @@ describe("TodayPage", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("orders deadlines, planned work, revisits, and folded low-priority sections", async () => {
+    mockedApi.getAgenda.mockResolvedValue({
+      ...makeEmptyAgenda(),
+      overdue: [makeTask({ id: 501, title: "Overdue task" })],
+      dueToday: [makeTask({ id: 502, title: "Due today task" })],
+      planned: [makeTask({ id: 503, title: "Planned task" })],
+      revisit: [makeTask({ id: 504, title: "Revisit task" })],
+      dueSoon: [makeTask({ id: 505, title: "Due soon task" })],
+      shared: [makeTask({ id: 506, title: "Additional task" })],
+      completedToday: [makeTask({ id: 507, title: "Completed task", status: "done" })],
+    });
+    const { container } = renderWithProviders(<TodayPage />);
+    await screen.findByText("Overdue task");
+
+    const orderedLabels = [
+      screen.getByText("Überfällig"),
+      screen.getByText("Heute fällig"),
+      screen.getByText("Für heute geplant"),
+      screen.getByText("Wiedervorlage"),
+      screen.getByText("Bald fällig"),
+      screen.getByText(/Weitere machbare Aufgaben/),
+      screen.getByText(/Heute erledigt/),
+    ];
+    expect(
+      orderedLabels.every(
+        (label, index) =>
+          index === orderedLabels.length - 1 ||
+          Boolean(
+            label.compareDocumentPosition(orderedLabels[index + 1]!) &
+              Node.DOCUMENT_POSITION_FOLLOWING,
+          ),
+      ),
+    ).toBe(true);
+    expect(container.querySelector('details.section[open]')).toBeNull();
+  });
+
   it("switches between my and the household agenda from the compact header toggle", async () => {
     window.localStorage.setItem("machbar:identity-member-id", "1");
     mockedApi.getMembers.mockResolvedValue([
@@ -358,7 +394,8 @@ describe("TodayPage", () => {
     renderWithProviders(<TodayPage />);
 
     expect(await screen.findByText("Wiedervorlage")).toBeInTheDocument();
-    const revisitHint = "Blockiert, aber heute wieder zu prüfen.";
+    const revisitHint =
+      "Heute erneut entscheiden: angehen, planen oder zurückstellen.";
     expect(screen.queryByText(revisitHint)).not.toBeInTheDocument();
     const infoButtons = screen.getAllByRole("button", {
       name: "Hinweise zu dieser Seite anzeigen",

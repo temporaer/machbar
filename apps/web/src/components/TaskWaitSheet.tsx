@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   calendarDateForInstant,
-  DEFAULT_HOUSEHOLD_TIMEZONE,
   type Member,
   type Task,
 } from "@machbar/shared";
@@ -21,8 +20,7 @@ import { BottomSheet } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { HumanDateInput } from "./HumanDateInput";
 import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
-import { useAsync } from "../lib/useAsync";
-import { api } from "../lib/api";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 
 /**
  * The canonical `task.waitingLifecycle` workflow for a task with no
@@ -42,14 +40,8 @@ export function TaskWaitSheet({
   const strings = useStrings();
   const { locale } = useLocale();
   const taskActions = useTaskActions();
-  const { data: timezoneData } = useAsync(
-    () =>
-      api.getHouseholdTimezone?.() ??
-      Promise.resolve({ timezone: DEFAULT_HOUSEHOLD_TIMEZONE }),
-    [],
-  );
-  const householdTimezone =
-    timezoneData?.timezone ?? DEFAULT_HOUSEHOLD_TIMEZONE;
+  const { timezone: householdTimezone, loaded: timezoneLoaded } =
+    useHouseholdTimezone();
   const [waitingFor, setWaitingFor] = useState("");
   const [revisitDate, setRevisitDate] = useState<string | null>(
     task.revisitAt
@@ -84,12 +76,21 @@ export function TaskWaitSheet({
     ),
   );
 
+  useEffect(() => {
+    if (revisitIntent !== "unchanged") return;
+    setRevisitDate(
+      task.revisitAt
+        ? calendarDateForInstant(task.revisitAt, householdTimezone)
+        : null,
+    );
+  }, [householdTimezone, revisitIntent, task.revisitAt]);
+
   const today = () =>
     calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
     toIsoCalendarDate(new Date());
 
   const commit = async () => {
-    if (saving || !waitingFor.trim() || !dateValid) return;
+    if (saving || !timezoneLoaded || !waitingFor.trim() || !dateValid) return;
     taskActions.clearError(task.id);
     const updated = await taskActions.setExternalWait(
       task,
@@ -162,7 +163,7 @@ export function TaskWaitSheet({
               type="button"
               className="choice-chip"
               aria-pressed={!customDate && revisitDate === addIsoCalendarDays(today(), 1)}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
                 setRevisitDate(addIsoCalendarDays(today(), 1));
@@ -175,7 +176,7 @@ export function TaskWaitSheet({
               type="button"
               className="choice-chip"
               aria-pressed={!customDate && revisitDate === addIsoCalendarDays(today(), 3)}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
                 setRevisitDate(addIsoCalendarDays(today(), 3));
@@ -188,7 +189,7 @@ export function TaskWaitSheet({
               type="button"
               className="choice-chip"
               aria-pressed={!customDate && revisitDate === addIsoCalendarDays(today(), 7)}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
                 setRevisitDate(addIsoCalendarDays(today(), 7));
@@ -201,7 +202,7 @@ export function TaskWaitSheet({
               type="button"
               className="choice-chip"
               aria-pressed={!customDate && revisitIntent === "clear"}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
                 setRevisitDate(null);
@@ -214,7 +215,7 @@ export function TaskWaitSheet({
               type="button"
               className="choice-chip"
               aria-pressed={customDate}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => setCustomDate(true)}
             >
               {strings.due} …
@@ -229,7 +230,7 @@ export function TaskWaitSheet({
                 setRevisitIntent("replace");
               }}
               onValidityChange={setDateValid}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
             />
           ) : null}
           <CaptionHintSuggestions
@@ -241,7 +242,7 @@ export function TaskWaitSheet({
                 label: strings.titleHintFollowUp(date),
               };
             })}
-            disabled={saving}
+            disabled={saving || !timezoneLoaded}
             onSelect={(key) => {
               const hint = revisitHints.find(
                 (candidate) => candidate.key === key,
@@ -269,7 +270,9 @@ export function TaskWaitSheet({
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={saving || !waitingFor.trim() || !dateValid}
+            disabled={
+              saving || !timezoneLoaded || !waitingFor.trim() || !dateValid
+            }
           >
             {strings.startWaitingConfirm}
           </button>

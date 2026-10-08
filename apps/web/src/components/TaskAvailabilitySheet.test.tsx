@@ -121,7 +121,7 @@ describe("TaskAvailabilitySheet", () => {
     const onClose = vi.fn();
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
-    await userEvent.click(screen.getByRole("button", { name: "Ab-Datum entfernen" }));
+    await userEvent.click(screen.getByRole("button", { name: "Wiedervorlage entfernen" }));
     await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
 
     await waitFor(() =>
@@ -139,7 +139,7 @@ describe("TaskAvailabilitySheet", () => {
     const task = makeTask({ id: 45, title: "Termin abstimmen" });
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={vi.fn()} />);
 
-    await userEvent.type(screen.getByLabelText("Wieder ansehen ab"), "morgen");
+    await userEvent.type(screen.getByLabelText("Wiedervorlage"), "morgen");
     await userEvent.tab();
     await userEvent.clear(screen.getByLabelText("Uhrzeit"));
 
@@ -164,7 +164,7 @@ describe("TaskAvailabilitySheet", () => {
     renderWithProviders(<Harness />);
 
     await userEvent.click(screen.getByRole("button", { name: "open availability" }));
-    expect(await screen.findByLabelText("Wieder ansehen ab")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Wiedervorlage")).toBeInTheDocument();
     expect(screen.getByLabelText("Geplant für")).toBeInTheDocument();
     expect(screen.getByLabelText("Fällig bis")).toBeInTheDocument();
   });

@@ -305,9 +305,12 @@ Projects additionally carry:
 
 These views are **read-only projections** — they are not stored in SQLite; they are assembled per-request.
 
-The **Heute** agenda is also query-derived. Its primary sections contain work
-explicitly scheduled for today or earlier, overdue work, work due today,
-soon-due work, and directly externally waiting tasks whose Wiedervorlage is due.
+The **Heute** agenda is also query-derived. Its primary sections are ordered
+overdue deadlines, deadlines due today, planned work, due Wiedervorlagen, and
+soon-due deadlines. Selection is single-placement in that same precedence:
+`overdue > dueToday > planned > revisit > dueSoon > available`; an urgent
+deadline remains prominent while the row retains any secondary revisit or
+waiting context.
 It is member-scoped by default (including shared/unassigned work), while the
 explicit `scope=all` query returns the same compiled buckets for the complete
 household. The frontend exposes that distinction as a session-scoped

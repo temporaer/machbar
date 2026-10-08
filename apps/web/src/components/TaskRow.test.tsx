@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { calendarDateForInstant } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { TaskDetailSheet } from "./TaskDetailSheet";
@@ -26,6 +27,8 @@ vi.mock("../lib/api", () => ({
     reopenTask: vi.fn(),
     clarifyTask: vi.fn(),
     updateTask: vi.fn(),
+    resolveExternalWait: vi.fn(),
+    followUpExternalWait: vi.fn(),
     createTaskSuccessor: vi.fn(),
   },
 }));
@@ -715,6 +718,80 @@ describe("TaskRow – calm shared card presentation", () => {
 
     await screen.findByText("Erst abends erledigen");
     expect(screen.getByText(/Wiedervorlage\s*:/)).toBeInTheDocument();
+  });
+
+  it("starts a due revisit today with one atomic planned-work update and only adds actions to roots", async () => {
+    const task = makeTask({
+      id: 78,
+      title: "Due revisit",
+      revisitAt: "2026-01-01T10:00:00.000Z",
+      dueDate: "2026-12-31",
+      children: [makeTask({ id: 79, parentTaskId: 78, title: "Child" })],
+    });
+    mockedApi.updateTask.mockResolvedValue(task);
+    const { container } = renderWithProviders(
+      <TaskOutline
+        tasks={[task]}
+        emptyMessage="Nichts da"
+        showRevisitDate
+        compactDescendants
+        attentionTone="revisit"
+      />,
+    );
+
+    await screen.findByText("Due revisit");
+    const groups = screen.getAllByRole("group", { name: "Wiedervorlage" });
+    expect(groups).toHaveLength(1);
+    expect(container.querySelector(".task-row-revisit-actions")).toBeInTheDocument();
+
+    await userEvent.click(
+      within(groups[0]!).getByRole("button", { name: "Jetzt angehen" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.updateTask).toHaveBeenCalledWith(78, {
+        revisitAt: null,
+        scheduledDate: calendarDateForInstant(
+          new Date().toISOString(),
+          "Europe/Berlin",
+        ),
+        expectedRevision: 1,
+      }),
+    );
+    expect(mockedApi.updateTask.mock.calls[0]?.[1]).not.toHaveProperty("dueDate");
+    expect(container.querySelectorAll(".task-row-revisit-actions")).toHaveLength(1);
+  });
+
+  it("ends a waiting revisit directly without changing its scheduled work", async () => {
+    const task = makeTask({
+      id: 80,
+      title: "Waiting revisit",
+      revisitAt: "2026-01-01T10:00:00.000Z",
+      scheduledDate: "2026-12-31",
+      externalWait: { waitingFor: "Antwort" },
+      blocked: true,
+    });
+    mockedApi.resolveExternalWait.mockResolvedValue({
+      ...task,
+      externalWait: null,
+      revisitAt: null,
+    });
+    renderWithProviders(
+      <TaskOutline
+        tasks={[task]}
+        emptyMessage="Nichts da"
+        showRevisitDate
+        attentionTone="revisit"
+      />,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Warten beenden" }),
+    );
+
+    await waitFor(() =>
+      expect(mockedApi.resolveExternalWait).toHaveBeenCalledWith(80, 1),
+    );
   });
 
   it("keeps a long wrapping title complete while tags occupy the upper-right", async () => {

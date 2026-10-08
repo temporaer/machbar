@@ -2824,6 +2824,23 @@ details[open] > .disclosure-summary::after {
   min-height: 76px;
 }
 
+.task-row-revisit-actions {
+  grid-column: 1;
+  grid-row: 2;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 0 8px 8px;
+}
+
+.task-row-revisit-actions .btn {
+  min-height: 44px;
+  flex: 1 1 auto;
+  white-space: normal;
+}
+
 .task-row-content.compact {
   padding: 6px 8px;
   gap: 8px;

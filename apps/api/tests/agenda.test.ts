@@ -483,8 +483,31 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     const allIds = bucketKeys.flatMap((key) => agenda[key]).map((t: { id: number }) => t.id);
     expect(new Set(allIds).size).toBe(allIds.length);
 
-    // The externally waiting, planned, and due task lands only in revisit.
-    expect(await bucketsContaining("Revisit-Kandidat")).toEqual(["revisit"]);
+    // Urgent deadlines and planned work take precedence over revisit.
+    expect(await bucketsContaining("Revisit-Kandidat")).toEqual(["dueToday"]);
+  });
+
+  it("prioritizes urgent deadlines over a due revisit without duplicating the task", async () => {
+    const overdue = await createTask({
+      title: "Überfällig mit Wiedervorlage",
+      dueDate: yesterday,
+    });
+    await addExternalWait(overdue.id, "Antwort", today);
+    const dueToday = await createTask({
+      title: "Heute fällig mit Wiedervorlage",
+      dueDate: today,
+    });
+    await addExternalWait(dueToday.id, "Antwort", today);
+    const revisitOnly = await createTask({ title: "Nur Wiedervorlage" });
+    await addExternalWait(revisitOnly.id, "Antwort", today);
+
+    expect(await bucketsContaining("Überfällig mit Wiedervorlage")).toEqual([
+      "overdue",
+    ]);
+    expect(await bucketsContaining("Heute fällig mit Wiedervorlage")).toEqual([
+      "dueToday",
+    ]);
+    expect(await bucketsContaining("Nur Wiedervorlage")).toEqual(["revisit"]);
   });
 
   it("excludes captured work from normal and revisit buckets", async () => {

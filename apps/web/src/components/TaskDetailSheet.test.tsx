@@ -340,7 +340,7 @@ describe("TaskDetailSheet", () => {
       "Status",
       "Priorität",
       "Fällig",
-      "Eingeplant für",
+      "Geplant für",
       "Worauf wartet die Aufgabe?",
       "Wiederholen nach Tagen",
     ]) {
@@ -731,8 +731,11 @@ describe("TaskDetailSheet", () => {
     // Waiting is blocker data, never a status.
     expect(screen.queryByLabelText("Status")).not.toBeInTheDocument();
     const waitValue = screen.getByRole("button", {
-      name: /Wartet auf.*Vermieter.*05\.09\.2026/,
+      name: "Wartet auf Vermieter",
     });
+    expect(
+      screen.getByRole("button", { name: "Wiedervorlage 05.09.2026" }),
+    ).toBeInTheDocument();
 
     await userEvent.click(waitValue);
 
@@ -1124,9 +1127,9 @@ describe("TaskDetailSheet", () => {
 
     // The detail owns no date input; the existing planning value is a
     // command that reaches the same sheet as the rail and keyboard.
-    expect(screen.queryByLabelText("Eingeplant für")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Geplant für")).not.toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: /Eingeplant für.*04\.09\.2026/ }),
+      screen.getByRole("button", { name: /Geplant für.*04\.09\.2026/ }),
     );
 
     const shortcuts = await screen.findByRole("group", { name: "Schnell planen" });
@@ -1153,7 +1156,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Noch nicht verfügbar");
 
-    await userEvent.click(screen.getByRole("button", { name: "Planung" }));
+    await userEvent.click(screen.getByRole("button", { name: "Wiedervorlage" }));
 
     expect(
       await screen.findByRole("dialog", { name: "Planung: Noch nicht verfügbar" }),
@@ -1173,7 +1176,7 @@ describe("TaskDetailSheet", () => {
     await waitForTaskTitle("Abends verfügbar");
 
     await userEvent.click(
-      screen.getByRole("button", { name: /Planung.*19\.09\.2026/ }),
+      screen.getByRole("button", { name: /Wiedervorlage.*19\.09\.2026, 20:00/ }),
     );
 
     expect(
@@ -1181,7 +1184,7 @@ describe("TaskDetailSheet", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows a deadline beside the planned date and edits both in one transaction", async () => {
+  it("shows the deadline separately from planned work and edits both in one transaction", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({
         id: 59,
@@ -1194,10 +1197,11 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Fälligkeit planen");
 
+    expect(
+      screen.getByRole("button", { name: "Geplant für 10.09.2026" }),
+    ).toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", {
-        name: /Eingeplant für.*10\.09\.2026.*Fällig 20\.09\.2026/,
-      }),
+      screen.getByRole("button", { name: "Fällig bis 20.09.2026" }),
     );
 
     const dueDate = await screen.findByLabelText("Fällig bis");

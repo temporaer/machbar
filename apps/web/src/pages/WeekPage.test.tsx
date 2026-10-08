@@ -7,7 +7,10 @@ import { renderWithProviders } from "../test/testUtils";
 import { makeMember, makeProject, makeTask } from "../test/fixtures";
 import { WeekPage } from "./WeekPage";
 import { addIsoCalendarDays } from "../lib/naturalDate";
-import { householdCalendarDateToRevisitAt } from "@machbar/shared";
+import {
+  householdCalendarDateTimeToRevisitAt,
+  householdCalendarDateToRevisitAt,
+} from "@machbar/shared";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -175,12 +178,18 @@ describe("WeekPage", () => {
       dueDate: "2026-09-09",
       placement: "due",
     });
+    const scheduledStory = storyItem({
+      id: 14,
+      title: "Balkon planen",
+      scheduledDate: "2026-09-08",
+      placement: "scheduled",
+    });
     const unplanned = taskItem({ id: 13, title: "Batterien kaufen", placement: "unplanned" });
     mockedApi.getWeekAgenda.mockResolvedValue(
       agenda({
         days: [
           day("2026-09-07", [task]),
-          day("2026-09-08"),
+          day("2026-09-08", [scheduledStory]),
           day("2026-09-09", [story]),
           day("2026-09-10"),
           day("2026-09-11"),
@@ -197,9 +206,15 @@ describe("WeekPage", () => {
       .closest("article") as HTMLElement;
     const storyCard = screen.getByRole("button", { name: /^Urlaub planen/ })
       .closest("article") as HTMLElement;
+    const scheduledStoryCard = screen.getByRole("button", {
+      name: /^Balkon planen/,
+    }).closest("article") as HTMLElement;
     expect(taskCard).toBeInTheDocument();
     expect(storyCard).toBeInTheDocument();
     expect(within(taskCard).getByText("Geplant für")).toBeInTheDocument();
+    expect(
+      within(scheduledStoryCard!).getByText("Geplant für"),
+    ).toBeInTheDocument();
     expect(within(storyCard).getByText(/^⚑/)).toBeInTheDocument();
     expect(within(storyCard).queryByText("Wiedervorlage")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Batterien kaufen/ })).toBeInTheDocument();
@@ -486,6 +501,48 @@ describe("WeekPage", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("stale_write_conflict");
     expect(within(screen.getByLabelText("Mi., 9.")).getByRole("button", { name: /^Lieferung prüfen/ })).toBeInTheDocument();
+  });
+
+  it("shows a localized error when moving a revisit into a daylight-saving gap", async () => {
+    const item = taskItem({
+      id: 64,
+      title: "Lieferzeit prüfen",
+      externalWait: { waitingFor: "Lieferdienst", revisitDate: "2026-03-28" },
+      placement: "revisit",
+    });
+    item.task = {
+      ...item.task!,
+      revisitAt: householdCalendarDateTimeToRevisitAt(
+        "2026-03-28",
+        "02:30",
+        "Europe/Berlin",
+      ),
+    };
+    mockedApi.getWeekAgenda.mockResolvedValue(
+      agenda({
+        start: "2026-03-23",
+        end: "2026-03-29",
+        days: Array.from({ length: 7 }, (_, index) =>
+          day(addIsoCalendarDays("2026-03-23", index), index === 5 ? [item] : []),
+        ),
+      }),
+    );
+    renderWithProviders(<WeekPage />);
+    await screen.findByRole("button", { name: /^Lieferzeit prüfen/ });
+
+    const transfer = dataTransfer();
+    fireEvent.dragStart(card("Lieferzeit prüfen"), { dataTransfer: transfer });
+    fireEvent.drop(screen.getByLabelText("So., 29."), { dataTransfer: transfer });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Diese Uhrzeit existiert an diesem Tag in der Haushaltszeitzone nicht.",
+    );
+    expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
+    expect(
+      within(screen.getByLabelText("Sa., 28.")).getByRole("button", {
+        name: /^Lieferzeit prüfen/,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("navigates scheduled, revisit, and due cards with j/k in one Week scope", async () => {

@@ -82,7 +82,7 @@ export interface BuildAgendaOptions {
 /**
  * Builds the "Heute" (today) agenda. Categories are mutually exclusive:
  * a task is placed in the first matching bucket in the order
- * revisit > planned > overdue > dueToday > dueSoon > shared > unscheduled, so
+ * overdue > dueToday > planned > revisit > dueSoon > shared > unscheduled, so
  * nothing is duplicated across sections. The final bucket keeps actionable
  * work assigned to the selected member visible even when it has no
  * `scheduledDate`; unassigned actionable work has already been claimed by
@@ -141,6 +141,23 @@ export function buildAgenda(
     return results;
   };
 
+  const overdue = take(
+    (t) => !!t.dueDate && t.dueDate < today,
+    sortByDueThenPriorityTitleId,
+    { requireExecutable: false },
+  );
+  const dueToday = take(
+    (t) => t.dueDate === today,
+    sortByDueThenPriorityTitleId,
+    { requireExecutable: false },
+  );
+  const planned = take(
+    (t) =>
+      t.status === "actionable" &&
+      !!t.scheduledDate &&
+      t.scheduledDate <= today,
+    sortByScheduledThenPriorityTitleId,
+  );
   const revisit = graph
     .allTasks()
     .filter((t) => {
@@ -154,40 +171,22 @@ export function buildAgenda(
             t.revisitAt !== null &&
             t.revisitAt !== undefined &&
             Date.parse(t.revisitAt) <= now));
-      return (
-        selection.isAgendaTask(t) &&
-        reached
-      );
+      return selection.isAgendaTask(t) && reached && !seen.has(t.id);
     })
     .sort(sortByRevisitThenPriorityTitleId);
   for (const task of revisit) seen.add(task.id);
-  const planned = take(
-    (t) =>
-      t.status === "actionable" &&
-      !!t.scheduledDate &&
-      t.scheduledDate <= today,
-    sortByScheduledThenPriorityTitleId,
-  );
-  const overdue = take(
-    (t) => !!t.dueDate && t.dueDate < today,
-    sortByDueThenPriorityTitleId,
-    { requireExecutable: false },
-  );
-  const dueToday = take(
-    (t) => t.dueDate === today,
-    sortByDueThenPriorityTitleId,
-    { requireExecutable: false },
-  );
   const dueSoon = take(
     (t) => !!t.dueDate && t.dueDate > today && t.dueDate <= soonLimit,
     sortByDueThenPriorityTitleId,
     { requireExecutable: false },
   );
-  const { shared, unscheduled } = selectCurrentAvailableWork(graph, {
+  const availableWork = selectCurrentAvailableWork(graph, {
     ...options,
     today,
     dueSoonDays,
   });
+  const shared = availableWork.shared.filter((task) => !seen.has(task.id));
+  const unscheduled = availableWork.unscheduled.filter((task) => !seen.has(task.id));
   for (const task of [...shared, ...unscheduled]) seen.add(task.id);
   const completedToday = graph
     .allTasks()
