@@ -59,7 +59,7 @@ export function TaskWaitSheet({
     ? taskRevisitForLocalDate(revisitDate, task.revisitAt, householdTimezone)
     : null;
   const invalidRevisitDate =
-    revisitIntent === "replace" && Boolean(revisitDate) && !replacementRevisitAt;
+    revisitIntent === "replace" && (!revisitDate || !replacementRevisitAt);
   const captionHints = useMemo(
     () =>
       extractCaptionHints(task.title, {
@@ -221,9 +221,12 @@ export function TaskWaitSheet({
               className="choice-chip"
               aria-pressed={customDate}
               disabled={saving || !timezoneLoaded}
-              onClick={() => setCustomDate(true)}
+              onClick={() => {
+                setCustomDate(true);
+                setRevisitIntent("replace");
+              }}
             >
-              {strings.due} …
+              {strings.chooseRevisitDate}
             </button>
           </div>
           {customDate ? (
@@ -240,7 +243,7 @@ export function TaskWaitSheet({
           ) : null}
           {invalidRevisitDate ? (
             <p className="human-date-error" role="alert">
-              {strings.invalidRevisitTime}
+              {revisitDate ? strings.invalidRevisitTime : strings.revisitDateRequired}
             </p>
           ) : null}
           <CaptionHintSuggestions

@@ -164,6 +164,79 @@ describe("WaitingFollowUpSheet", () => {
     );
   });
 
+  it("does not submit an empty custom date or clear the existing revisit", async () => {
+    const today = calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!;
+    const original = householdCalendarDateTimeToRevisitAt(
+      addIsoCalendarDays(today, 2),
+      "18:00",
+      "Europe/Berlin",
+    )!;
+    const task = makeTask({
+      id: 18,
+      revision: 3,
+      revisitAt: original,
+      externalWait: { waitingFor: "Antwort" },
+    });
+    renderWithProviders(<WaitingFollowUpSheet task={task} onClose={vi.fn()} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Datum auswählen …" }),
+    );
+    await userEvent.clear(
+      screen.getByPlaceholderText("z. B. morgen, Freitag, KW 36, 2w"),
+    );
+    await userEvent.tab();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Bitte ein Wiedervorlagedatum auswählen.",
+    );
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    expect(mockedApi.followUpExternalWait).not.toHaveBeenCalled();
+    expect(task.revisitAt).toBe(original);
+  });
+
+  it("saves a valid custom date and preserves the existing household-local clock", async () => {
+    const today = calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!;
+    const original = householdCalendarDateTimeToRevisitAt(
+      addIsoCalendarDays(today, 2),
+      "18:00",
+      "Europe/Berlin",
+    )!;
+    const replacementDate = addIsoCalendarDays(today, 5);
+    const task = makeTask({
+      id: 19,
+      revision: 4,
+      revisitAt: original,
+      externalWait: { waitingFor: "Antwort" },
+    });
+    mockedApi.followUpExternalWait.mockResolvedValue(task);
+    renderWithProviders(<WaitingFollowUpSheet task={task} onClose={vi.fn()} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Datum auswählen …" }),
+    );
+    fireEvent.change(
+      document.querySelector<HTMLInputElement>('input[type="date"]')!,
+      { target: { value: replacementDate } },
+    );
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() =>
+      expect(mockedApi.followUpExternalWait).toHaveBeenCalledWith(19, {
+        action: "continue",
+        waitingFor: "Antwort",
+        revisitAt: householdCalendarDateTimeToRevisitAt(
+          replacementDate,
+          "18:00",
+          "Europe/Berlin",
+        ),
+        expectedRevision: 4,
+      }),
+    );
+  });
+
   it.each([
     ["2026-03-28T01:30:00.000Z", "2026-03-29"],
     ["2026-10-24T00:30:00.000Z", "2026-10-25"],
@@ -175,7 +248,9 @@ describe("WaitingFollowUpSheet", () => {
     });
     const onClose = vi.fn();
     renderWithProviders(<WaitingFollowUpSheet task={task} onClose={onClose} />);
-    await userEvent.click(screen.getByRole("button", { name: "Fällig …" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Datum auswählen …" }),
+    );
     fireEvent.change(document.querySelector<HTMLInputElement>('input[type="date"]')!, {
       target: { value: date },
     });

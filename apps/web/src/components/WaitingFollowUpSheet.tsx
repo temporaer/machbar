@@ -41,6 +41,12 @@ export function WaitingFollowUpSheet({
   const [revisitError, setRevisitError] = useState(false);
   const saving = taskActions.isPending(task.id);
   const error = taskActions.errors[task.id] ?? null;
+  const customRevisitAt = revisitDate
+    ? taskRevisitForLocalDate(revisitDate, task.revisitAt, householdTimezone)
+    : null;
+  const invalidCustomDate =
+    customDate &&
+    (!revisitDate || !dateValid || !customRevisitAt);
   const closeIfIdle = () => {
     if (!saving) onClose();
   };
@@ -59,6 +65,10 @@ export function WaitingFollowUpSheet({
 
   const continueWaiting = async (nextRevisitDate: string | null) => {
     if (saving || !timezoneLoaded || !dateValid) return;
+    if (customDate && !nextRevisitDate) {
+      setRevisitError(true);
+      return;
+    }
     const revisitAt = nextRevisitDate
       ? taskRevisitForLocalDate(
           nextRevisitDate,
@@ -147,7 +157,7 @@ export function WaitingFollowUpSheet({
               disabled={saving || !timezoneLoaded}
               onClick={() => setCustomDate(true)}
             >
-              {strings.due} …
+              {strings.chooseRevisitDate}
             </button>
           </div>
           {customDate ? (
@@ -166,7 +176,9 @@ export function WaitingFollowUpSheet({
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                disabled={saving || !timezoneLoaded || !dateValid}
+                disabled={
+                  saving || !timezoneLoaded || !dateValid || invalidCustomDate
+                }
                 onClick={() => void continueWaiting(revisitDate)}
               >
                 {strings.save}
@@ -175,9 +187,11 @@ export function WaitingFollowUpSheet({
           ) : null}
         </div>
 
-        {revisitError ? (
+        {revisitError || invalidCustomDate ? (
           <div className="task-row-error" role="alert">
-            {strings.invalidRevisitTime}
+            {!revisitDate && dateValid
+              ? strings.revisitDateRequired
+              : strings.invalidRevisitTime}
           </div>
         ) : null}
         {error ? (

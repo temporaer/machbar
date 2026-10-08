@@ -284,6 +284,8 @@ const base = {
   scopeWork: "Arbeit",
   status: "Status",
   due: "Fällig",
+  chooseRevisitDate: "Datum auswählen …",
+  revisitDateRequired: "Bitte ein Wiedervorlagedatum auswählen.",
   pickDate: "Datum …",
   scheduled: "Geplant für",
   notBefore: "Wiedervorlage",

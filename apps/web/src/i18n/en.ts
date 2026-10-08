@@ -306,6 +306,8 @@ const en = {
   scopeWork: "Work",
   status: "Status",
   due: "Due",
+  chooseRevisitDate: "Choose date …",
+  revisitDateRequired: "Choose a revisit date.",
   pickDate: "Date …",
   scheduled: "Planned for",
   notBefore: "Revisit",

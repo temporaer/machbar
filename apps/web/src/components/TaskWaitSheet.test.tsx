@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { householdCalendarDateTimeToRevisitAt, calendarDateForInstant } from "@machbar/shared";
 import { TaskWaitSheet } from "./TaskWaitSheet";
@@ -143,6 +143,75 @@ describe("TaskWaitSheet", () => {
         waitingFor: "Antwort",
         revisitAt: null,
         expectedRevision: 3,
+      }),
+    );
+  });
+
+  it("does not allow an empty custom replacement to clear an existing revisit", async () => {
+    const task = makeTask({
+      id: 25,
+      revisitAt: "2026-09-05T16:00:00.000Z",
+    });
+    renderWithProviders(
+      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+    );
+
+    await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Antwort");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Datum auswählen …" }),
+    );
+    await userEvent.clear(
+      screen.getByPlaceholderText("z. B. morgen, Freitag, KW 36, 2w"),
+    );
+    await userEvent.tab();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Bitte ein Wiedervorlagedatum auswählen.",
+    );
+    expect(screen.getByRole("button", { name: "Warten" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Warten" }));
+    expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid custom replacement date and preserves the existing clock", async () => {
+    const today = calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!;
+    const originalDate = addIsoCalendarDays(today, 1);
+    const replacementDate = addIsoCalendarDays(today, 4);
+    const original = householdCalendarDateTimeToRevisitAt(
+      originalDate,
+      "18:00",
+      "Europe/Berlin",
+    )!;
+    const task = makeTask({ id: 26, revision: 2, revisitAt: original });
+    mockedApi.setExternalWait.mockResolvedValue({
+      ...task,
+      revision: 3,
+      externalWait: { waitingFor: "Lieferant" },
+    });
+    renderWithProviders(
+      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+    );
+
+    await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Lieferant");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Datum auswählen …" }),
+    );
+    fireEvent.change(
+      document.querySelector<HTMLInputElement>('input[type="date"]')!,
+      { target: { value: replacementDate } },
+    );
+
+    expect(screen.getByRole("button", { name: "Warten" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "Warten" }));
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(26, {
+        waitingFor: "Lieferant",
+        revisitAt: householdCalendarDateTimeToRevisitAt(
+          replacementDate,
+          "18:00",
+          "Europe/Berlin",
+        ),
+        expectedRevision: 2,
       }),
     );
   });
