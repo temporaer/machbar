@@ -285,6 +285,212 @@ describe("activity digest", () => {
     );
   });
 
+  it("aggregates assignments independently from project progress", () => {
+    const viewer = member("Mira");
+    const sarah = member("Sarah");
+    const project = insertTestProject(ctx.handle.db, {
+      title: "Schulanfang",
+      status: "active",
+    });
+    const tasks = [1, 2, 3].map((index) =>
+      insertTestTask(ctx.handle.db, {
+        title: `Aufgabe ${index}`,
+        projectId: project.id,
+        ownerMemberId: viewer.id,
+        status: "actionable",
+      }),
+    );
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values(
+      tasks.map((task) => ({
+        kind: "task_updated" as const,
+        entityType: "task" as const,
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household" as const,
+          affectedWorkItemId: task.id,
+          projectContextId: project.id,
+          changedFields: ["ownerMemberId"],
+          before: { effectiveOwnerId: null },
+          after: { effectiveOwnerId: viewer.id },
+        },
+      })),
+    ).run();
+
+    const entries = getActivityDigest(ctx.handle.db, viewer.id).entries;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.kind).toBe("project_assignment");
+    expect(entries[0]?.params.count).toBe(3);
+    expect(entries[0]?.related).toHaveLength(3);
+  });
+
+  it("does not interpret generic related task references as unlocks", () => {
+    const viewer = member("Mira");
+    const sarah = member("Sarah");
+    const predecessor = insertTestTask(ctx.handle.db, {
+      title: "Vorherige Aufgabe",
+      status: "done",
+    });
+    const successor = insertTestTask(ctx.handle.db, {
+      title: "Nachfolger",
+      ownerMemberId: viewer.id,
+      status: "actionable",
+    });
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values({
+      kind: "task_created",
+      entityType: "task",
+      entityId: successor.id,
+      entityTitle: successor.title,
+      actorMemberId: sarah.id,
+      metadata: {
+        scope: "household",
+        affectedWorkItemId: successor.id,
+        relatedTaskIds: [predecessor.id],
+        relatedTaskTitles: [predecessor.title],
+        after: { effectiveOwnerId: viewer.id, executable: true },
+      },
+    }).run();
+
+    expect(
+      getActivityDigest(ctx.handle.db, viewer.id).entries.some(
+        (entry) => entry.kind === "task_executable",
+      ),
+    ).toBe(false);
+  });
+
+  it("reports only explicitly verified task unlocks", () => {
+    const viewer = member("Mira");
+    const sarah = member("Sarah");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Freigewordene Aufgabe",
+      ownerMemberId: viewer.id,
+      ownerInheritanceMode: "explicit",
+      status: "actionable",
+    });
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values({
+      kind: "task_status_changed",
+      entityType: "task",
+      entityId: task.id,
+      entityTitle: task.title,
+      actorMemberId: sarah.id,
+      metadata: {
+        scope: "household",
+        affectedWorkItemId: task.id,
+        newlyExecutableTaskIds: [task.id],
+        previousStatus: "done",
+        nextStatus: "actionable",
+        after: { executable: true, effectiveOwnerId: viewer.id },
+      },
+    }).run();
+
+    const entry = getActivityDigest(ctx.handle.db, viewer.id).entries[0]!;
+    expect(entry.kind).toBe("task_executable");
+    expect(entry.priority).toBe(1);
+    expect(entry.actor?.name).toBe("Sarah");
+  });
+
+  it("attributes a later assignment to the assigning member", () => {
+    const viewer = member("Hannes");
+    const sarah = member("Sarah");
+    const lars = member("Lars");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Rechnung prüfen",
+      status: "actionable",
+    });
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values([
+      {
+        kind: "task_created",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          after: { effectiveOwnerId: null },
+        },
+      },
+      {
+        kind: "task_updated",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: lars.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["ownerMemberId"],
+          before: { effectiveOwnerId: null },
+          after: { effectiveOwnerId: viewer.id },
+        },
+      },
+    ]).run();
+
+    const entries = getActivityDigest(ctx.handle.db, viewer.id).entries;
+    expect(entries.filter((entry) => entry.kind === "task_assigned")).toHaveLength(1);
+    expect(entries[0]?.actor?.name).toBe("Lars");
+  });
+
+  it("keeps a deadline change after a later unrelated edit and its actor", () => {
+    const viewer = member("Mira");
+    const sarah = member("Sarah");
+    const lars = member("Lars");
+    const task = insertTestTask(ctx.handle.db, {
+      title: "Anmeldung",
+      ownerMemberId: viewer.id,
+      status: "actionable",
+    });
+    const today = new Date();
+    const date = (offset: number) => {
+      const value = new Date(today);
+      value.setUTCDate(value.getUTCDate() + offset);
+      return value.toISOString().slice(0, 10);
+    };
+    getActivityDigest(ctx.handle.db, viewer.id);
+    ctx.handle.db.insert(schema.activityEvents).values([
+      {
+        kind: "task_updated",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: sarah.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["dueDate"],
+          before: { dueDate: date(10), effectiveOwnerId: viewer.id },
+          after: { dueDate: date(3), effectiveOwnerId: viewer.id },
+        },
+      },
+      {
+        kind: "task_updated",
+        entityType: "task",
+        entityId: task.id,
+        entityTitle: task.title,
+        actorMemberId: lars.id,
+        metadata: {
+          scope: "household",
+          affectedWorkItemId: task.id,
+          changedFields: ["notes"],
+          before: { dueDate: date(3), effectiveOwnerId: viewer.id },
+          after: { dueDate: date(3), effectiveOwnerId: viewer.id },
+        },
+      },
+    ]).run();
+
+    const entry = getActivityDigest(ctx.handle.db, viewer.id).entries[0]!;
+    expect(entry.kind).toBe("plan_changed");
+    expect(entry.priority).toBe(1);
+    expect(entry.category).toBe("personal");
+    expect(entry.actor?.name).toBe("Sarah");
+    expect(entry.params.date).toBe(date(3));
+  });
+
   it("does not expose invisible event counts in the digest response", () => {
     const viewer = member("Mira");
     const owner = member("Sarah");

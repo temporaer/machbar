@@ -226,12 +226,8 @@ export function completeTask(
             nextStatus: "done",
           ...(newlyExecutable.length > 0
             ? {
-                relatedTaskIds: newlyExecutable.map((value) => value.after!.id),
-                relatedTaskTitles: newlyExecutable.map(
-                  (value) => value.after!.title,
-                ),
-                relatedTaskOwnerIds: newlyExecutable.map(
-                  (value) => value.after!.effectiveOwnerId,
+                newlyExecutableTaskIds: newlyExecutable.map(
+                  (value) => value.after!.id,
                 ),
               }
             : {}),

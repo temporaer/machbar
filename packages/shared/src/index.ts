@@ -291,6 +291,7 @@ export interface ActivityEventMetadata {
   relatedTaskIds?: number[];
   relatedTaskTitles?: string[];
   relatedTaskOwnerIds?: Array<number | null>;
+  newlyExecutableTaskIds?: number[];
   relatedProjectIds?: number[];
   relatedProjectTitles?: string[];
   recurrenceOccurrenceId?: number;
