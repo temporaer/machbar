@@ -21,11 +21,7 @@ export const REVISIT_DAYPART_POLICIES: Record<
 };
 
 export type RevisitInputStatus =
-  | "normalized"
-  | "unchanged"
-  | "ambiguous"
-  | "nonexistent"
-  | "invalid";
+  "normalized" | "unchanged" | "ambiguous" | "nonexistent" | "invalid";
 
 export interface RevisitInputNormalization {
   value: string;
@@ -189,9 +185,7 @@ export function householdCalendarDateTimeToRevisitAt(
   timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
 ): string | null {
   const normalized = normalizeRevisitInput(`${date}T${time}`, timezone);
-  return acceptsNormalized(normalized.status)
-    ? normalized.value
-    : null;
+  return acceptsNormalized(normalized.status) ? normalized.value : null;
 }
 
 /**
@@ -208,9 +202,10 @@ export function resolveDateOnlyRevisitChange(
 }
 
 function ceilToNextHour(time: Temporal.PlainTime): Temporal.PlainTime | null {
-  const hour = time.minute === 0 && time.second === 0 && time.millisecond === 0
-    ? time.hour
-    : time.hour + 1;
+  const hour =
+    time.minute === 0 && time.second === 0 && time.millisecond === 0
+      ? time.hour
+      : time.hour + 1;
   if (hour > 23) return null;
   return Temporal.PlainTime.from({ hour, minute: 0 });
 }
@@ -223,7 +218,10 @@ export function resolveRevisitDaypart(
   daypart: RevisitDaypart,
   now: string | Temporal.Instant,
   timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
-  date: string = Temporal.Instant.from(now).toZonedDateTimeISO(timezone).toPlainDate().toString(),
+  date: string = Temporal.Instant.from(now)
+    .toZonedDateTimeISO(timezone)
+    .toPlainDate()
+    .toString(),
 ): string | null {
   const policy = REVISIT_DAYPART_POLICIES[daypart];
   const nowInstant = Temporal.Instant.from(now);
@@ -235,7 +233,20 @@ export function resolveRevisitDaypart(
 
   if (targetDate.equals(today)) {
     const earliest = zonedNow.add({ minutes: 30 });
-    if (Temporal.PlainTime.compare(targetTime, earliest.toPlainTime()) < 0) {
+    if (!targetDate.equals(earliest.toPlainDate())) return null;
+    const targetDateTime = Temporal.PlainDateTime.from({
+      year: targetDate.year,
+      month: targetDate.month,
+      day: targetDate.day,
+      hour: targetTime.hour,
+      minute: targetTime.minute,
+    });
+    if (
+      Temporal.PlainDateTime.compare(
+        targetDateTime,
+        earliest.toPlainDateTime(),
+      ) < 0
+    ) {
       const rounded = ceilToNextHour(earliest.toPlainTime());
       if (!rounded) return null;
       targetTime = rounded;
@@ -262,7 +273,9 @@ export function localTimeForInstant(
 ): string | null {
   if (!value) return null;
   try {
-    const time = Temporal.Instant.from(value).toZonedDateTimeISO(timezone).toPlainTime();
+    const time = Temporal.Instant.from(value)
+      .toZonedDateTimeISO(timezone)
+      .toPlainTime();
     return `${String(time.hour).padStart(2, "0")}:${String(time.minute).padStart(2, "0")}`;
   } catch {
     return null;
@@ -275,7 +288,9 @@ export function moveRevisitToCalendarDate(
   timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
 ): string | null {
   const time = localTimeForInstant(value, timezone);
-  return time ? householdCalendarDateTimeToRevisitAt(date, time, timezone) : null;
+  return time
+    ? householdCalendarDateTimeToRevisitAt(date, time, timezone)
+    : null;
 }
 
 export function calendarDateForInstant(

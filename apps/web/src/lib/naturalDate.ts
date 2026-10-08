@@ -58,7 +58,8 @@ function monthIndexFor(word: string, locale: Locale): number | null {
   // Try the requested locale first, then the other — mirrors the existing
   // localized/alternate-date fallback pattern below, so e.g. an English
   // month name typed while the app is in German still resolves.
-  const orderedLocales: Locale[] = locale === "en" ? ["en", "de"] : ["de", "en"];
+  const orderedLocales: Locale[] =
+    locale === "en" ? ["en", "de"] : ["de", "en"];
   for (const candidateLocale of orderedLocales) {
     const index = MONTH_NAMES[candidateLocale].findIndex((names) =>
       names.includes(normalized),
@@ -210,7 +211,11 @@ function parseCalendarWeek(
   return isoWeekMonday(year, week);
 }
 
-function parseWithSugar(input: string, locale: "de" | "en", referenceDate: Date): Date | null {
+function parseWithSugar(
+  input: string,
+  locale: "de" | "en",
+  referenceDate: Date,
+): Date | null {
   const previousClock = Sugar.Date.getOption<() => Date>("newDateInternal");
   Sugar.Date.setOption("newDateInternal", () => new Date(referenceDate));
   try {
@@ -332,7 +337,8 @@ export function parseNaturalDateIntent(
   const input = value.trim();
   if (!input) return null;
 
-  const explicitMatch = EXPLICIT_TIME_SUFFIX.exec(input) ?? BARE_TIME_SUFFIX.exec(input);
+  const explicitMatch =
+    EXPLICIT_TIME_SUFFIX.exec(input) ?? BARE_TIME_SUFFIX.exec(input);
   if (explicitMatch) {
     const time = normalizeClockTime(
       explicitMatch[1]!,
@@ -340,7 +346,12 @@ export function parseNaturalDateIntent(
       explicitMatch[3],
     );
     if (!time) return null;
-    const dateInput = input.slice(0, explicitMatch.index + (explicitMatch[0].startsWith(" ") ? 0 : 0)).trim();
+    const dateInput = input
+      .slice(
+        0,
+        explicitMatch.index + (explicitMatch[0].startsWith(" ") ? 0 : 0),
+      )
+      .trim();
     const date = parseNaturalDate(dateInput, referenceDate, locale);
     return date ? { date, time, daypart: null, timeExplicit: true } : null;
   }
@@ -348,8 +359,27 @@ export function parseNaturalDateIntent(
   const daypartMatch = DAYPART_SUFFIX.exec(input);
   if (daypartMatch) {
     const daypart = daypartForWord(daypartMatch[1]!);
-    const dateInput = input.slice(0, daypartMatch.index).trim();
-    const date = parseNaturalDate(dateInput || input, referenceDate, locale);
+    const dateInput = input
+      .slice(0, daypartMatch.index)
+      .replace(/^am\s*$/iu, "")
+      .trim();
+    if (!dateInput && daypartMatch[1]!.toLocaleLowerCase("de") === "morgen") {
+      const isContextualMorning = /^am\s+/iu.test(input);
+      const date = isContextualMorning
+        ? toIsoCalendarDate(referenceDate)
+        : parseNaturalDate(input, referenceDate, locale);
+      return date
+        ? {
+            date,
+            time: null,
+            daypart: isContextualMorning ? "morning" : null,
+            timeExplicit: false,
+          }
+        : null;
+    }
+    const date = dateInput
+      ? parseNaturalDate(dateInput, referenceDate, locale)
+      : toIsoCalendarDate(referenceDate);
     return date && daypart
       ? { date, time: null, daypart, timeExplicit: false }
       : null;

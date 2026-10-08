@@ -1,6 +1,6 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
 import {
   makeMember,
@@ -29,6 +29,10 @@ const mockedApi = vi.mocked(api, true);
 const createdAt = new Date(2026, 8, 14, 12).toISOString();
 
 describe("caption hints in focused task workflows", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([]);
@@ -99,9 +103,7 @@ describe("caption hints in focused task workflows", () => {
       />,
     );
 
-    await userEvent.click(
-      screen.getAllByRole("button", { name: "Anna" })[0]!,
-    );
+    await userEvent.click(screen.getAllByRole("button", { name: "Anna" })[0]!);
 
     expect(onSelect).toHaveBeenCalledWith(
       { ownerMemberId: 7, ownerInheritanceMode: "explicit" },
@@ -165,6 +167,8 @@ describe("caption hints in focused task workflows", () => {
   });
 
   it("prefills waiting-for and revisit hints while preserving the title", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-14T10:00:00+02:00"));
     const peter = makeMember({ id: 10, name: "Peter" });
     const task = makeTask({
       id: 45,
@@ -181,11 +185,12 @@ describe("caption hints in focused task workflows", () => {
       <TaskWaitSheet task={task} members={[peter]} onClose={vi.fn()} />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Peter" }));
-    await userEvent.click(
+    fireEvent.click(screen.getByRole("button", { name: "Peter" }));
+    fireEvent.click(
       screen.getByRole("button", { name: /^Wiedervorlage: 21\./ }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Warten" }));
+    fireEvent.click(screen.getByRole("button", { name: "Warten" }));
+    vi.useRealTimers();
 
     await waitFor(() =>
       expect(mockedApi.setExternalWait).toHaveBeenCalledWith(45, {

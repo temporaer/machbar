@@ -1,7 +1,10 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { householdCalendarDateTimeToRevisitAt, calendarDateForInstant } from "@machbar/shared";
+import {
+  householdCalendarDateTimeToRevisitAt,
+  calendarDateForInstant,
+} from "@machbar/shared";
 import { TaskWaitSheet } from "./TaskWaitSheet";
 import { api } from "../lib/api";
 import { makeMember, makeTask } from "../test/fixtures";
@@ -23,6 +26,10 @@ describe("TaskWaitSheet", () => {
     mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1 })]);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("preserves a timed revisit when replacing it with the same household date", async () => {
     const tomorrow = addIsoCalendarDays(
       calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!,
@@ -40,23 +47,34 @@ describe("TaskWaitSheet", () => {
       externalWait: { waitingFor: "Lieferant" },
     });
     renderWithProviders(
-      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+      <TaskWaitSheet
+        task={task}
+        members={[makeMember({ id: 1 })]}
+        onClose={vi.fn()}
+      />,
     );
 
-    await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Lieferant");
+    await userEvent.type(
+      screen.getByLabelText("Worauf wartest du?"),
+      "Lieferant",
+    );
     await userEvent.click(screen.getByRole("button", { name: "Morgen" }));
     await userEvent.click(screen.getByRole("button", { name: "Warten" }));
 
     await waitFor(() =>
-      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(
-        21,
-        { waitingFor: "Lieferant", revisitAt: original, expectedRevision: 2 },
-      ),
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(21, {
+        waitingFor: "Lieferant",
+        revisitAt: original,
+        expectedRevision: 2,
+      }),
     );
   });
 
   it("preserves the household-local clock when replacing a timed revisit with another day", async () => {
-    const today = calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!;
+    const today = calendarDateForInstant(
+      new Date().toISOString(),
+      "Europe/Berlin",
+    )!;
     const original = householdCalendarDateTimeToRevisitAt(
       addIsoCalendarDays(today, 1),
       "18:00",
@@ -69,7 +87,11 @@ describe("TaskWaitSheet", () => {
       externalWait: { waitingFor: "Amt" },
     });
     renderWithProviders(
-      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+      <TaskWaitSheet
+        task={task}
+        members={[makeMember({ id: 1 })]}
+        onClose={vi.fn()}
+      />,
     );
 
     await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Amt");
@@ -77,18 +99,15 @@ describe("TaskWaitSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Warten" }));
 
     await waitFor(() =>
-      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(
-        22,
-        {
-          waitingFor: "Amt",
-          revisitAt: householdCalendarDateTimeToRevisitAt(
-            addIsoCalendarDays(today, 3),
-            "18:00",
-            "Europe/Berlin",
-          ),
-          expectedRevision: 4,
-        },
-      ),
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(22, {
+        waitingFor: "Amt",
+        revisitAt: householdCalendarDateTimeToRevisitAt(
+          addIsoCalendarDays(today, 3),
+          "18:00",
+          "Europe/Berlin",
+        ),
+        expectedRevision: 4,
+      }),
     );
   });
 
@@ -104,10 +123,17 @@ describe("TaskWaitSheet", () => {
       externalWait: { waitingFor: "Antwort" },
     });
     renderWithProviders(
-      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+      <TaskWaitSheet
+        task={task}
+        members={[makeMember({ id: 1 })]}
+        onClose={vi.fn()}
+      />,
     );
 
-    await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Antwort");
+    await userEvent.type(
+      screen.getByLabelText("Worauf wartest du?"),
+      "Antwort",
+    );
     await userEvent.click(screen.getByRole("button", { name: "Warten" }));
 
     await waitFor(() =>
@@ -131,10 +157,17 @@ describe("TaskWaitSheet", () => {
       externalWait: { waitingFor: "Antwort" },
     });
     renderWithProviders(
-      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+      <TaskWaitSheet
+        task={task}
+        members={[makeMember({ id: 1 })]}
+        onClose={vi.fn()}
+      />,
     );
 
-    await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Antwort");
+    await userEvent.type(
+      screen.getByLabelText("Worauf wartest du?"),
+      "Antwort",
+    );
     await userEvent.click(screen.getByRole("button", { name: "Kein Datum" }));
     await userEvent.click(screen.getByRole("button", { name: "Warten" }));
 
@@ -153,10 +186,17 @@ describe("TaskWaitSheet", () => {
       revisitAt: "2026-09-05T16:00:00.000Z",
     });
     renderWithProviders(
-      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+      <TaskWaitSheet
+        task={task}
+        members={[makeMember({ id: 1 })]}
+        onClose={vi.fn()}
+      />,
     );
 
-    await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Antwort");
+    await userEvent.type(
+      screen.getByLabelText("Worauf wartest du?"),
+      "Antwort",
+    );
     await userEvent.click(
       screen.getByRole("button", { name: "Datum auswählen …" }),
     );
@@ -174,7 +214,10 @@ describe("TaskWaitSheet", () => {
   });
 
   it("accepts a valid custom replacement date and preserves the existing clock", async () => {
-    const today = calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!;
+    const today = calendarDateForInstant(
+      new Date().toISOString(),
+      "Europe/Berlin",
+    )!;
     const originalDate = addIsoCalendarDays(today, 1);
     const replacementDate = addIsoCalendarDays(today, 4);
     const original = householdCalendarDateTimeToRevisitAt(
@@ -189,10 +232,17 @@ describe("TaskWaitSheet", () => {
       externalWait: { waitingFor: "Lieferant" },
     });
     renderWithProviders(
-      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+      <TaskWaitSheet
+        task={task}
+        members={[makeMember({ id: 1 })]}
+        onClose={vi.fn()}
+      />,
     );
 
-    await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Lieferant");
+    await userEvent.type(
+      screen.getByLabelText("Worauf wartest du?"),
+      "Lieferant",
+    );
     await userEvent.click(
       screen.getByRole("button", { name: "Datum auswählen …" }),
     );
@@ -217,7 +267,10 @@ describe("TaskWaitSheet", () => {
   });
 
   it("recovers from an invalid custom date when a shortcut replaces the draft", async () => {
-    const today = calendarDateForInstant(new Date().toISOString(), "Europe/Berlin")!;
+    const today = calendarDateForInstant(
+      new Date().toISOString(),
+      "Europe/Berlin",
+    )!;
     const tomorrow = addIsoCalendarDays(today, 1);
     const original = householdCalendarDateTimeToRevisitAt(
       addIsoCalendarDays(today, 2),
@@ -229,12 +282,22 @@ describe("TaskWaitSheet", () => {
       ...task,
       externalWait: { waitingFor: "Antwort" },
     });
+
     renderWithProviders(
-      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+      <TaskWaitSheet
+        task={task}
+        members={[makeMember({ id: 1 })]}
+        onClose={vi.fn()}
+      />,
     );
 
-    await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Antwort");
-    await userEvent.click(screen.getByRole("button", { name: "Datum auswählen …" }));
+    await userEvent.type(
+      screen.getByLabelText("Worauf wartest du?"),
+      "Antwort",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Datum auswählen …" }),
+    );
     const customDate = screen.getByPlaceholderText(
       "z. B. morgen, Freitag, KW 36, 2w",
     );
@@ -262,6 +325,84 @@ describe("TaskWaitSheet", () => {
     );
   });
 
+  it("applies an explicit follow-up clock from a title hint", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-14T10:00:00+02:00"));
+    const task = makeTask({
+      id: 29,
+      title: "Dienstag um 14:30 nachhaken",
+      createdAt: "2026-09-14T08:00:00.000Z",
+      revision: 2,
+      revisitAt: null,
+    });
+    mockedApi.setExternalWait.mockResolvedValue({
+      ...task,
+      revision: 3,
+      externalWait: { waitingFor: "Amt" },
+    });
+    renderWithProviders(
+      <TaskWaitSheet task={task} members={[]} onClose={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Worauf wartest du?"), {
+      target: { value: "Amt" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /15\./ }));
+    fireEvent.click(screen.getByRole("button", { name: "Warten" }));
+    vi.useRealTimers();
+
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(29, {
+        waitingFor: "Amt",
+        revisitAt: householdCalendarDateTimeToRevisitAt(
+          "2026-09-15",
+          "14:30",
+          "Europe/Berlin",
+        ),
+        expectedRevision: 2,
+      }),
+    );
+    vi.useRealTimers();
+  });
+
+  it("resolves a selected evening follow-up against the current household clock", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-14T18:00:00+02:00"));
+    const task = makeTask({
+      id: 30,
+      title: "heute Abend nachhaken",
+      createdAt: "2026-09-14T08:00:00.000Z",
+      revisitAt: null,
+    });
+    mockedApi.setExternalWait.mockResolvedValue({
+      ...task,
+      externalWait: { waitingFor: "Lieferant" },
+    });
+    renderWithProviders(
+      <TaskWaitSheet task={task} members={[]} onClose={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Worauf wartest du?"), {
+      target: { value: "Lieferant" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /14\./ }));
+    fireEvent.click(screen.getByRole("button", { name: "Warten" }));
+    vi.useRealTimers();
+
+    await waitFor(() =>
+      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(30, {
+        waitingFor: "Lieferant",
+        revisitAt: householdCalendarDateTimeToRevisitAt(
+          "2026-09-14",
+          "19:00",
+          "Europe/Berlin",
+        ),
+        expectedRevision: 1,
+      }),
+    );
+    vi.useRealTimers();
+  });
+
   it("allows explicit clearing after an invalid custom date", async () => {
     const task = makeTask({
       id: 28,
@@ -273,19 +414,25 @@ describe("TaskWaitSheet", () => {
       externalWait: { waitingFor: "Antwort" },
     });
     renderWithProviders(
-      <TaskWaitSheet task={task} members={[makeMember({ id: 1 })]} onClose={vi.fn()} />,
+      <TaskWaitSheet
+        task={task}
+        members={[makeMember({ id: 1 })]}
+        onClose={vi.fn()}
+      />,
     );
 
-    await userEvent.type(screen.getByLabelText("Worauf wartest du?"), "Antwort");
-    await userEvent.click(screen.getByRole("button", { name: "Datum auswählen …" }));
+    await userEvent.type(
+      screen.getByLabelText("Worauf wartest du?"),
+      "Antwort",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Datum auswählen …" }),
+    );
     const customDate = screen.getByPlaceholderText(
       "z. B. morgen, Freitag, KW 36, 2w",
     );
     await userEvent.clear(customDate);
-    await userEvent.type(
-      customDate,
-      "kein valides Datum",
-    );
+    await userEvent.type(customDate, "kein valides Datum");
     await userEvent.tab();
     expect(await screen.findByText("Datum nicht erkannt")).toBeInTheDocument();
 

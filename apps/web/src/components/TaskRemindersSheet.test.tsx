@@ -1,6 +1,6 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../lib/api";
 import { makeTask } from "../test/fixtures";
 import { renderWithProviders } from "../test/testUtils";
@@ -17,6 +17,10 @@ vi.mock("../lib/api", () => ({
 const mockedApi = vi.mocked(api, true);
 
 describe("TaskRemindersSheet", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockedApi.getMembers.mockResolvedValue([]);
@@ -37,7 +41,9 @@ describe("TaskRemindersSheet", () => {
     const onClose = vi.fn();
     renderWithProviders(<TaskRemindersSheet task={task} onClose={onClose} />);
 
-    const removeButtons = await screen.findAllByRole("button", { name: "Erinnerung entfernen" });
+    const removeButtons = await screen.findAllByRole("button", {
+      name: "Erinnerung entfernen",
+    });
     expect(removeButtons).toHaveLength(2);
     await userEvent.click(removeButtons[0]!);
 
@@ -50,39 +56,62 @@ describe("TaskRemindersSheet", () => {
   });
 
   it("adds an absolute quick-preset reminder resolved to a concrete instant", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-14T10:00:00+02:00"));
     const task = makeTask({ id: 11, title: "Ohne Erinnerung", reminders: [] });
     renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "Morgen früh" }));
+    fireEvent.click(screen.getByRole("button", { name: "Morgen früh" }));
 
     expect(screen.getByText(/Morgen früh/)).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    vi.useRealTimers();
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
     const [, patch] = mockedApi.updateTask.mock.calls[0]!;
-    const reminders = (patch as { reminders: Array<{ kind: string }> }).reminders;
+    const reminders = (patch as { reminders: Array<{ kind: string }> })
+      .reminders;
     expect(reminders).toHaveLength(1);
     expect(reminders[0]!.kind).toBe("absolute");
   });
 
   it("only offers deadline-relative presets when the task currently has a deadline", async () => {
-    const withoutDeadline = makeTask({ id: 12, title: "Ohne Deadline", dueDate: null, reminders: [] });
-    renderWithProviders(<TaskRemindersSheet task={withoutDeadline} onClose={vi.fn()} />);
+    const withoutDeadline = makeTask({
+      id: 12,
+      title: "Ohne Deadline",
+      dueDate: null,
+      reminders: [],
+    });
+    renderWithProviders(
+      <TaskRemindersSheet task={withoutDeadline} onClose={vi.fn()} />,
+    );
     await screen.findByRole("button", { name: "Morgen früh" });
-    expect(screen.queryByRole("button", { name: "Am selben Tag" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Am selben Tag" }),
+    ).not.toBeInTheDocument();
   });
 
   it("offers deadline-relative presets once the task has a deadline", async () => {
-    const withDeadline = makeTask({ id: 13, title: "Mit Deadline", dueDate: "2026-09-20", reminders: [] });
-    renderWithProviders(<TaskRemindersSheet task={withDeadline} onClose={vi.fn()} />);
-    await userEvent.click(await screen.findByRole("button", { name: "Am selben Tag" }));
+    const withDeadline = makeTask({
+      id: 13,
+      title: "Mit Deadline",
+      dueDate: "2026-09-20",
+      reminders: [],
+    });
+    renderWithProviders(
+      <TaskRemindersSheet task={withDeadline} onClose={vi.fn()} />,
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Am selben Tag" }),
+    );
 
     expect(screen.getByText(/Am selben Tag/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
     const [, patch] = mockedApi.updateTask.mock.calls[0]!;
-    const reminders = (patch as { reminders: Array<{ kind: string }> }).reminders;
+    const reminders = (patch as { reminders: Array<{ kind: string }> })
+      .reminders;
     expect(reminders[0]!.kind).toBe("deadline_relative");
   });
 
@@ -95,7 +124,11 @@ describe("TaskRemindersSheet", () => {
     const onClose = vi.fn();
     renderWithProviders(<TaskRemindersSheet task={task} onClose={onClose} />);
 
-    await userEvent.click(await screen.findAllByRole("button", { name: "Erinnerung entfernen" }).then((b) => b[0]!));
+    await userEvent.click(
+      await screen
+        .findAllByRole("button", { name: "Erinnerung entfernen" })
+        .then((b) => b[0]!),
+    );
     await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
 
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
@@ -107,18 +140,34 @@ describe("TaskRemindersSheet", () => {
       id: 15,
       title: "Ohne Deadline mit Erinnerung",
       dueDate: null,
-      reminders: [{ id: 1, kind: "deadline_relative", daysBefore: 2, time: "09:00", timezone: "UTC" }],
+      reminders: [
+        {
+          id: 1,
+          kind: "deadline_relative",
+          daysBefore: 2,
+          time: "09:00",
+          timezone: "UTC",
+        },
+      ],
     });
     renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
     expect(await screen.findByText(/keine Deadline/)).toBeInTheDocument();
   });
 
   it("opens straight to the preset choices when the task has no reminders yet", async () => {
-    const task = makeTask({ id: 16, title: "Frisch ohne Erinnerung", reminders: [] });
+    const task = makeTask({
+      id: 16,
+      title: "Frisch ohne Erinnerung",
+      reminders: [],
+    });
     renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
 
-    expect(await screen.findByRole("button", { name: "Morgen früh" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "+ Erinnerung" })).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Morgen früh" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "+ Erinnerung" }),
+    ).not.toBeInTheDocument();
   });
 
   it("opens to the reminder list, not the preset choices, when the task already has reminders", async () => {
@@ -129,28 +178,43 @@ describe("TaskRemindersSheet", () => {
     });
     renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
 
-    expect(await screen.findByRole("button", { name: "Erinnerung entfernen" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Heute Abend" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "+ Erinnerung" })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Erinnerung entfernen" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Heute Abend" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "+ Erinnerung" }),
+    ).toBeInTheDocument();
   });
 
   it("adds a custom absolute reminder inline as one confirmable row, without a separate cancel/done pair", async () => {
-    const task = makeTask({ id: 18, title: "Benutzerdefiniert", reminders: [] });
+    const task = makeTask({
+      id: 18,
+      title: "Benutzerdefiniert",
+      reminders: [],
+    });
     renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "Benutzerdefiniert …" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Benutzerdefiniert …" }),
+    );
 
     // The date/time inputs render inline as a row of the reminder list/table,
     // with a single small confirm action -- no inline Abbrechen/Fertig pair.
     expect(screen.getByLabelText("Fällig")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Bestätigen" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Bestätigen" }),
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Bestätigen" }));
 
     await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
     const [, patch] = mockedApi.updateTask.mock.calls[0]!;
-    const reminders = (patch as { reminders: Array<{ kind: string }> }).reminders;
+    const reminders = (patch as { reminders: Array<{ kind: string }> })
+      .reminders;
     expect(reminders).toHaveLength(1);
     expect(reminders[0]!.kind).toBe("absolute");
   });
@@ -164,7 +228,11 @@ describe("TaskRemindersSheet", () => {
     });
     renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "Benutzerdefiniert vor Deadline …" }));
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: "Benutzerdefiniert vor Deadline …",
+      }),
+    );
 
     expect(screen.getByLabelText("Tage vorher")).toBeInTheDocument();
     const confirmButton = screen.getByRole("button", { name: "Bestätigen" });
@@ -175,7 +243,8 @@ describe("TaskRemindersSheet", () => {
 
     await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(1));
     const [, patch] = mockedApi.updateTask.mock.calls[0]!;
-    const reminders = (patch as { reminders: Array<{ kind: string }> }).reminders;
+    const reminders = (patch as { reminders: Array<{ kind: string }> })
+      .reminders;
     expect(reminders).toHaveLength(1);
     expect(reminders[0]!.kind).toBe("deadline_relative");
   });

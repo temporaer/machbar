@@ -120,22 +120,31 @@ describe("addIsoCalendarDays", () => {
 
   describe("parseNaturalDateIntent", () => {
     it.each([
+      ["morgen", "2026-08-28", null, null],
+      ["morgen früh", "2026-08-28", null, "morning"],
+      ["morgen Abend", "2026-08-28", null, "evening"],
+      ["heute Morgen", "2026-08-27", null, "morning"],
+      ["am Morgen", "2026-08-27", null, "morning"],
       ["heute Abend", "2026-08-27", null, "evening"],
       ["tomorrow evening", "2026-08-28", null, "evening"],
+      ["tomorrow", "2026-08-28", null, null],
+      ["tomorrow morning", "2026-08-28", null, "morning"],
       ["Dienstag um 14:30", "2026-09-01", "14:30", null],
       ["Tuesday at 2:15 pm", "2026-09-01", "14:15", null],
-    ] as const)(
-      "retains time intent for %s",
-      (input, date, time, daypart) => {
-        expect(parseNaturalDateIntent(input, reference, input.includes("Tuesday") ? "en" : "de"))
-          .toEqual({
-            date,
-            time,
-            daypart,
-            timeExplicit: time !== null,
-          });
-      },
-    );
+    ] as const)("retains time intent for %s", (input, date, time, daypart) => {
+      expect(
+        parseNaturalDateIntent(
+          input,
+          reference,
+          input.includes("Tuesday") ? "en" : "de",
+        ),
+      ).toEqual({
+        date,
+        time,
+        daypart,
+        timeExplicit: time !== null,
+      });
+    });
 
     it("keeps the existing date-only parser contract", () => {
       expect(parseNaturalDate("heute Abend", reference)).toBeNull();

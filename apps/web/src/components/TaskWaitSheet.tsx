@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   calendarDateForInstant,
+  householdCalendarDateTimeToRevisitAt,
+  resolveRevisitDaypart,
   type Member,
   type Task,
 } from "@machbar/shared";
@@ -51,12 +53,17 @@ export function TaskWaitSheet({
   const [revisitIntent, setRevisitIntent] = useState<
     "unchanged" | "replace" | "clear"
   >("unchanged");
+  const [revisitAtOverride, setRevisitAtOverride] = useState<
+    string | null | undefined
+  >(undefined);
   const [customDate, setCustomDate] = useState(false);
   const [dateValid, setDateValid] = useState(true);
   const saving = taskActions.isPending(task.id);
   const error = taskActions.errors[task.id] ?? null;
   const replacementRevisitAt = revisitDate
-    ? taskRevisitForLocalDate(revisitDate, task.revisitAt, householdTimezone)
+    ? revisitAtOverride !== undefined
+      ? revisitAtOverride
+      : taskRevisitForLocalDate(revisitDate, task.revisitAt, householdTimezone)
     : null;
   const invalidRevisitDate =
     revisitIntent === "replace" && (!revisitDate || !replacementRevisitAt);
@@ -88,6 +95,7 @@ export function TaskWaitSheet({
         ? calendarDateForInstant(task.revisitAt, householdTimezone)
         : null,
     );
+    setRevisitAtOverride(undefined);
   }, [householdTimezone, revisitIntent, task.revisitAt]);
 
   const today = () =>
@@ -101,7 +109,8 @@ export function TaskWaitSheet({
       !waitingFor.trim() ||
       (customDate && !dateValid) ||
       invalidRevisitDate
-    ) return;
+    )
+      return;
     taskActions.clearError(task.id);
     const updated = await taskActions.setExternalWait(
       task,
@@ -111,9 +120,7 @@ export function TaskWaitSheet({
           ? {}
           : {
               revisitAt:
-                revisitIntent === "clear"
-                  ? null
-                  : replacementRevisitAt,
+                revisitIntent === "clear" ? null : replacementRevisitAt,
             }),
       },
       { throwOnError: false },
@@ -136,7 +143,9 @@ export function TaskWaitSheet({
         }}
       >
         <div className="field">
-          <label htmlFor={`wait-for-${task.id}`}>{strings.taskWaitQuestion}</label>
+          <label htmlFor={`wait-for-${task.id}`}>
+            {strings.taskWaitQuestion}
+          </label>
           <input
             id={`wait-for-${task.id}`}
             type="text"
@@ -163,16 +172,29 @@ export function TaskWaitSheet({
 
         <div className="field">
           <span className="field-label">{strings.taskWaitRevisitQuestion}</span>
-          <div className="choice-group" role="group" aria-label={strings.taskWaitRevisitQuestion}>
+          <div
+            className="choice-group"
+            role="group"
+            aria-label={strings.taskWaitRevisitQuestion}
+          >
             <button
               type="button"
               className="choice-chip"
-              aria-pressed={!customDate && revisitDate === addIsoCalendarDays(today(), 1)}
+              aria-pressed={
+                !customDate && revisitDate === addIsoCalendarDays(today(), 1)
+              }
               disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
                 setDateValid(true);
                 setRevisitDate(addIsoCalendarDays(today(), 1));
+                setRevisitAtOverride(
+                  taskRevisitForLocalDate(
+                    addIsoCalendarDays(today(), 1),
+                    task.revisitAt,
+                    householdTimezone,
+                  ),
+                );
                 setRevisitIntent("replace");
               }}
             >
@@ -181,12 +203,21 @@ export function TaskWaitSheet({
             <button
               type="button"
               className="choice-chip"
-              aria-pressed={!customDate && revisitDate === addIsoCalendarDays(today(), 3)}
+              aria-pressed={
+                !customDate && revisitDate === addIsoCalendarDays(today(), 3)
+              }
               disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
                 setDateValid(true);
                 setRevisitDate(addIsoCalendarDays(today(), 3));
+                setRevisitAtOverride(
+                  taskRevisitForLocalDate(
+                    addIsoCalendarDays(today(), 3),
+                    task.revisitAt,
+                    householdTimezone,
+                  ),
+                );
                 setRevisitIntent("replace");
               }}
             >
@@ -195,12 +226,21 @@ export function TaskWaitSheet({
             <button
               type="button"
               className="choice-chip"
-              aria-pressed={!customDate && revisitDate === addIsoCalendarDays(today(), 7)}
+              aria-pressed={
+                !customDate && revisitDate === addIsoCalendarDays(today(), 7)
+              }
               disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(false);
                 setDateValid(true);
                 setRevisitDate(addIsoCalendarDays(today(), 7));
+                setRevisitAtOverride(
+                  taskRevisitForLocalDate(
+                    addIsoCalendarDays(today(), 7),
+                    task.revisitAt,
+                    householdTimezone,
+                  ),
+                );
                 setRevisitIntent("replace");
               }}
             >
@@ -215,6 +255,7 @@ export function TaskWaitSheet({
                 setCustomDate(false);
                 setDateValid(true);
                 setRevisitDate(null);
+                setRevisitAtOverride(null);
                 setRevisitIntent("clear");
               }}
             >
@@ -227,6 +268,7 @@ export function TaskWaitSheet({
               disabled={saving || !timezoneLoaded}
               onClick={() => {
                 setCustomDate(true);
+                setRevisitAtOverride(undefined);
                 setRevisitIntent("replace");
               }}
             >
@@ -239,6 +281,7 @@ export function TaskWaitSheet({
               value={revisitDate ?? ""}
               onChange={(date) => {
                 setRevisitDate(date);
+                setRevisitAtOverride(undefined);
                 setRevisitIntent("replace");
               }}
               onValidityChange={setDateValid}
@@ -247,13 +290,14 @@ export function TaskWaitSheet({
           ) : null}
           {invalidRevisitDate ? (
             <p className="human-date-error" role="alert">
-              {revisitDate ? strings.invalidRevisitTime : strings.revisitDateRequired}
+              {revisitDate
+                ? strings.invalidRevisitTime
+                : strings.revisitDateRequired}
             </p>
           ) : null}
           <CaptionHintSuggestions
             hints={revisitHints.map((hint) => {
-              const date =
-                formatExactLocalDate(hint.date, locale) ?? hint.date;
+              const date = formatExactLocalDate(hint.date, locale) ?? hint.date;
               return {
                 key: hint.key,
                 label: strings.titleHintFollowUp(date),
@@ -265,7 +309,31 @@ export function TaskWaitSheet({
                 (candidate) => candidate.key === key,
               );
               if (hint) {
+                const now = new Date();
+                const resolved = hint.time
+                  ? householdCalendarDateTimeToRevisitAt(
+                      hint.date,
+                      hint.time,
+                      householdTimezone,
+                    )
+                  : hint.daypart
+                    ? resolveRevisitDaypart(
+                        hint.daypart,
+                        now.toISOString(),
+                        householdTimezone,
+                        hint.date,
+                      )
+                    : taskRevisitForLocalDate(
+                        hint.date,
+                        task.revisitAt,
+                        householdTimezone,
+                      );
+                const futureResolved =
+                  resolved && new Date(resolved).getTime() > now.getTime()
+                    ? resolved
+                    : null;
                 setRevisitDate(hint.date);
+                setRevisitAtOverride(futureResolved);
                 setCustomDate(true);
                 setRevisitIntent("replace");
               }
@@ -281,7 +349,12 @@ export function TaskWaitSheet({
         ) : null}
 
         <div className="row">
-          <button type="button" className="btn" disabled={saving} onClick={onClose}>
+          <button
+            type="button"
+            className="btn"
+            disabled={saving}
+            onClick={onClose}
+          >
             {strings.cancel}
           </button>
           <button

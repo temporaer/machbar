@@ -20,10 +20,7 @@ interface CaptionHintBase {
 }
 
 export type TemporalHintSemantic =
-  | "scheduledDate"
-  | "dueDate"
-  | "followUp"
-  | "ambiguous";
+  "scheduledDate" | "dueDate" | "followUp" | "ambiguous";
 
 export interface TemporalCaptionHint extends CaptionHintBase {
   kind: "temporal";
@@ -83,6 +80,7 @@ const TEMPORAL_FRAGMENT = [
   "today",
   "tomorrow",
   "tonight",
+  "(?:heute|morgen|today|tomorrow|(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mo|di|mi|do|fr|sa|so|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\\.?)\\s+(?:um|at)\\s+\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?",
   "in\\s+\\d+\\s+(?:tagen?|wochen?|days?|weeks?)",
   "nächste\\s+woche",
   "naechste\\s+woche",
@@ -94,17 +92,46 @@ const TEMPORAL_FRAGMENT = [
 const EXPLICIT_CLOCK_FRAGMENT =
   "(?:heute|morgen|today|tomorrow|(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|mo|di|mi|do|fr|sa|so|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)\\.?)\\s+(?:um|at)\\s+\\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?";
 
-const DEADLINE_MARKER = "(?:bis|spätestens|spaetestens|fällig(?:\\s+am)?|faellig(?:\\s+am)?|due(?:\\s+by)?|by|no\\s+later\\s+than)";
-const FOLLOW_UP_MARKER = "(?:erinnern|nachhaken|nochmal(?:\\s+nachhaken)?|follow[\\s-]?up|remind)";
+const DEADLINE_MARKER =
+  "(?:bis|spätestens|spaetestens|fällig(?:\\s+am)?|faellig(?:\\s+am)?|due(?:\\s+by)?|by|no\\s+later\\s+than)";
+const FOLLOW_UP_MARKER =
+  "(?:erinnern|nachhaken|nochmal(?:\\s+nachhaken)?|follow[\\s-]?up|remind)";
 const LEFT_BOUNDARY = "(?<![\\p{L}\\p{N}])";
 const RIGHT_BOUNDARY = "(?![\\p{L}\\p{N}])";
 const GERMAN_WEEKDAYS = new Set([
-  "mo", "di", "mi", "do", "fr", "sa", "so",
-  "montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag", "sonntag",
+  "mo",
+  "di",
+  "mi",
+  "do",
+  "fr",
+  "sa",
+  "so",
+  "montag",
+  "dienstag",
+  "mittwoch",
+  "donnerstag",
+  "freitag",
+  "samstag",
+  "sonntag",
 ]);
 const ENGLISH_WEEKDAYS = new Set([
-  "mon", "tue", "tues", "wed", "thu", "thur", "thurs", "fri", "sat", "sun",
-  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+  "mon",
+  "tue",
+  "tues",
+  "wed",
+  "thu",
+  "thur",
+  "thurs",
+  "fri",
+  "sat",
+  "sun",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
 ]);
 
 interface TemporalPattern {
@@ -172,9 +199,10 @@ function parseTemporalFragment(
     /\s+(?:früh|abend|\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}:\d{2})$/i,
     "",
   );
-  const parsed = withoutTime === fragment
-    ? null
-    : parseNaturalDate(withoutTime, referenceDate, locale);
+  const parsed =
+    withoutTime === fragment
+      ? null
+      : parseNaturalDate(withoutTime, referenceDate, locale);
   return parsed
     ? { date: parsed, time: null, daypart: null, timeExplicit: false }
     : null;
@@ -195,7 +223,10 @@ function temporalHints(
       const source = match.groups?.source;
       const fragment = match.groups?.date;
       if (!source || !fragment || match.index === undefined) continue;
-      const weekdayToken = fold(fragment.split(/\s+/)[0]!.replace(/\.$/, ""), locale);
+      const weekdayToken = fold(
+        fragment.split(/\s+/)[0]!.replace(/\.$/, ""),
+        locale,
+      );
       if (
         (locale === "de" && ENGLISH_WEEKDAYS.has(weekdayToken)) ||
         (locale === "en" && GERMAN_WEEKDAYS.has(weekdayToken))
@@ -233,11 +264,14 @@ function temporalHints(
   for (const candidate of candidates.sort(
     (a, b) =>
       a.rank - b.rank ||
-      b.sourceSpan.end - b.sourceSpan.start -
+      b.sourceSpan.end -
+        b.sourceSpan.start -
         (a.sourceSpan.end - a.sourceSpan.start) ||
       a.sourceSpan.start - b.sourceSpan.start,
   )) {
-    if (!selected.some((hint) => overlaps(hint.sourceSpan, candidate.sourceSpan))) {
+    if (
+      !selected.some((hint) => overlaps(hint.sourceSpan, candidate.sourceSpan))
+    ) {
       selected.push(candidate);
     }
   }
@@ -309,18 +343,24 @@ function entityMatch(
   if (nameWords.length === 0) return null;
   const foldedName = nameWords.map((word) => word.folded).join(" ");
 
-  for (let index = 0; index <= textWords.length - nameWords.length; index += 1) {
+  for (
+    let index = 0;
+    index <= textWords.length - nameWords.length;
+    index += 1
+  ) {
     const slice = textWords.slice(index, index + nameWords.length);
     const candidate = slice.map((word) => word.folded).join(" ");
     const first = slice[0]!;
     const last = slice.at(-1)!;
-    const hasPrefix = text.slice(Math.max(0, first.start - 1), first.start) === explicitPrefix;
+    const hasPrefix =
+      text.slice(Math.max(0, first.start - 1), first.start) === explicitPrefix;
     if (candidate === foldedName) {
       let start = hasPrefix ? first.start - 1 : first.start;
       if (includeOwnerPreposition && !hasPrefix) {
         const before = text.slice(0, start);
         const preposition = /(?:^|\s)(?:für|fuer|for)\s+$/iu.exec(before);
-        if (preposition) start = preposition.index + (preposition[0].startsWith(" ") ? 1 : 0);
+        if (preposition)
+          start = preposition.index + (preposition[0].startsWith(" ") ? 1 : 0);
       }
       return {
         span: { start, end: last.end },
@@ -366,15 +406,17 @@ function memberHints(
   return members.flatMap((member) => {
     const match = entityMatch(text, member.name, locale, "@", true);
     if (!match) return [];
-    return [{
-      kind: "member" as const,
-      key: `member:${member.id}:${match.span.start}:${match.span.end}`,
-      source: match.source,
-      sourceSpan: match.span,
-      removalSpan: match.span,
-      member,
-      rank: match.rank,
-    }];
+    return [
+      {
+        kind: "member" as const,
+        key: `member:${member.id}:${match.span.start}:${match.span.end}`,
+        source: match.source,
+        sourceSpan: match.span,
+        removalSpan: match.span,
+        member,
+        rank: match.rank,
+      },
+    ];
   });
 }
 
@@ -386,15 +428,17 @@ function tagHints(
   return tags.flatMap((tag) => {
     const match = entityMatch(text, tag.name, locale, "#");
     if (!match) return [];
-    return [{
-      kind: "tag" as const,
-      key: `tag:${tag.id}:${match.span.start}:${match.span.end}`,
-      source: match.source,
-      sourceSpan: match.span,
-      removalSpan: match.span,
-      tag,
-      rank: match.rank,
-    }];
+    return [
+      {
+        kind: "tag" as const,
+        key: `tag:${tag.id}:${match.span.start}:${match.span.end}`,
+        source: match.source,
+        sourceSpan: match.span,
+        removalSpan: match.span,
+        tag,
+        rank: match.rank,
+      },
+    ];
   });
 }
 
@@ -407,15 +451,17 @@ function contextHints(
     if (!context.active) return [];
     const match = entityMatch(text, context.name, locale, "%");
     if (!match) return [];
-    return [{
-      kind: "context" as const,
-      key: `context:${context.id}:${match.span.start}:${match.span.end}`,
-      source: match.source,
-      sourceSpan: match.span,
-      removalSpan: match.span,
-      context,
-      rank: match.rank,
-    }];
+    return [
+      {
+        kind: "context" as const,
+        key: `context:${context.id}:${match.span.start}:${match.span.end}`,
+        source: match.source,
+        sourceSpan: match.span,
+        removalSpan: match.span,
+        context,
+        rank: match.rank,
+      },
+    ];
   });
 }
 
@@ -435,11 +481,19 @@ function waitingHints(
   const hints: WaitingCaptionHint[] = [];
   for (const pattern of WAITING_PATTERNS) {
     for (const match of text.matchAll(pattern)) {
-      if (match.index === undefined || !match.groups?.source || !match.groups.person) continue;
+      if (
+        match.index === undefined ||
+        !match.groups?.source ||
+        !match.groups.person
+      )
+        continue;
       const source = match.groups.source.trim();
       const rawPerson = match.groups.person.trim().replace(/[.,;:!?]+$/u, "");
       const member =
-        members.find((candidate) => fold(candidate.name, locale) === fold(rawPerson, locale)) ??
+        members.find(
+          (candidate) =>
+            fold(candidate.name, locale) === fold(rawPerson, locale),
+        ) ??
         members.find((candidate) => {
           const entity = entityMatch(rawPerson, candidate.name, locale, "@");
           return entity?.rank === 1;
@@ -500,7 +554,9 @@ export function removeCaptionHintSpans(
   spans: readonly CaptionHintSpan[],
 ): string {
   let result = text;
-  const unique = new Map(spans.map((span) => [`${span.start}:${span.end}`, span]));
+  const unique = new Map(
+    spans.map((span) => [`${span.start}:${span.end}`, span]),
+  );
   for (const span of [...unique.values()].sort((a, b) => b.start - a.start)) {
     result = `${result.slice(0, span.start)}${result.slice(span.end)}`;
   }

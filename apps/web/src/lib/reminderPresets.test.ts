@@ -11,7 +11,11 @@ describe("reminderPresets", () => {
   const now = new Date("2026-09-01T14:30:00.000Z");
 
   it("resolves 'tonight' to the next valid evening slot", () => {
-    const at = resolveAbsolutePreset("tonight", new Date("2026-09-01T18:00:00+02:00"), timezone);
+    const at = resolveAbsolutePreset(
+      "tonight",
+      new Date("2026-09-01T18:00:00+02:00"),
+      timezone,
+    );
     expect(at).toBe("2026-09-01T17:00:00Z");
   });
 
@@ -19,10 +23,33 @@ describe("reminderPresets", () => {
     const beforeEvening = new Date("2026-09-19T18:00:00+02:00");
     const afterEvening = new Date("2026-09-19T21:45:00+02:00");
 
-    expect(absolutePresetIsFuture("tonight", beforeEvening, timezone)).toBe(true);
-    expect(resolveAbsolutePreset("tonight", new Date("2026-09-19T20:00:00+02:00"), timezone))
-      .toBe("2026-09-19T19:00:00Z");
-    expect(absolutePresetIsFuture("tonight", afterEvening, timezone)).toBe(false);
+    expect(absolutePresetIsFuture("tonight", beforeEvening, timezone)).toBe(
+      true,
+    );
+    expect(
+      resolveAbsolutePreset(
+        "tonight",
+        new Date("2026-09-19T20:00:00+02:00"),
+        timezone,
+      ),
+    ).toBe("2026-09-19T19:00:00Z");
+    expect(absolutePresetIsFuture("tonight", afterEvening, timezone)).toBe(
+      false,
+    );
+    expect(
+      resolveAbsolutePreset(
+        "tonight",
+        new Date("2026-09-19T23:45:00+02:00"),
+        timezone,
+      ),
+    ).toBeNull();
+    expect(
+      absolutePresetIsFuture(
+        "tonight",
+        new Date("2026-09-19T23:45:00+02:00"),
+        timezone,
+      ),
+    ).toBe(false);
   });
 
   it("resolves 'tomorrowMorning' to 08:00 the next local day", () => {
@@ -61,19 +88,25 @@ describe("reminderPresets", () => {
       time: "08:00",
       timezone: "Europe/Berlin",
     });
-    expect(relativePresetReminderInput("eveningBefore", "Europe/Berlin")).toEqual({
+    expect(
+      relativePresetReminderInput("eveningBefore", "Europe/Berlin"),
+    ).toEqual({
       kind: "deadline_relative",
       daysBefore: 1,
       time: "19:00",
       timezone: "Europe/Berlin",
     });
-    expect(relativePresetReminderInput("twoDaysBefore", "Europe/Berlin")).toEqual({
+    expect(
+      relativePresetReminderInput("twoDaysBefore", "Europe/Berlin"),
+    ).toEqual({
       kind: "deadline_relative",
       daysBefore: 2,
       time: "09:00",
       timezone: "Europe/Berlin",
     });
-    expect(relativePresetReminderInput("oneWeekBefore", "Europe/Berlin")).toEqual({
+    expect(
+      relativePresetReminderInput("oneWeekBefore", "Europe/Berlin"),
+    ).toEqual({
       kind: "deadline_relative",
       daysBefore: 7,
       time: "09:00",
