@@ -70,14 +70,17 @@ function projectAttention(
   today: string,
 ): { placement: WeekPlanningItem["placement"]; attentionDate: string } | null {
   const waiting = item.role === "task" && item.externalWait !== null;
+  const revisitAt = item.role === "task"
+    ? item.task.revisitAt
+    : item.project.revisitAt;
   const candidates = {
     scheduledDate: waiting ? null : item.scheduledDate,
-    revisitDate: waiting ? item.externalWait?.revisitDate ?? null : null,
+    revisitAt: revisitAt ?? null,
     dueDate: item.dueDate,
   };
   const options: Array<{ placement: "scheduled" | "revisit" | "due"; raw: string }> = [];
   if (candidates.scheduledDate) options.push({ placement: "scheduled", raw: candidates.scheduledDate });
-  if (candidates.revisitDate) options.push({ placement: "revisit", raw: candidates.revisitDate });
+  if (candidates.revisitAt) options.push({ placement: "revisit", raw: candidates.revisitAt.slice(0, 10) });
   if (candidates.dueDate) options.push({ placement: "due", raw: candidates.dueDate });
   if (options.length === 0) return null;
   const priority = { scheduled: 0, revisit: 1, due: 2 } as const;
@@ -116,10 +119,13 @@ function moveRevisit(
   date: string | null,
   today: string,
 ): WeekAgendaResponse {
-  if (item.role !== "task" || !item.externalWait) return agenda;
-  const externalWait = { ...item.externalWait, revisitDate: date };
-  const task = { ...item.task, externalWait };
-  const withDate: WeekPlanningItem = { ...item, externalWait, task } as WeekPlanningItem;
+  const revisitAt = date ? `${date}T00:00:00.000Z` : null;
+  const externalWait = item.externalWait
+    ? { ...item.externalWait, revisitDate: date }
+    : item.externalWait;
+  const task = item.task ? { ...item.task, revisitAt, externalWait } : item.task;
+  const project = item.project ? { ...item.project, revisitAt } : item.project;
+  const withDate: WeekPlanningItem = { ...item, externalWait, task, project } as WeekPlanningItem;
   const projected = projectAttention(withDate, today);
   const next: WeekPlanningItem = projected
     ? { ...withDate, placement: projected.placement, attentionDate: projected.attentionDate }

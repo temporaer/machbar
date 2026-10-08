@@ -360,6 +360,27 @@ export function useWorkItemCommands() {
               throwOnError: true,
             });
           }
+          if (command.item.role === "task") {
+            const revisitAt = command.date
+              ? taskAvailabilityForLocalDate(command.date, "00:00")?.notBeforeAt ?? null
+              : null;
+            return taskActions.update(
+              command.item.task,
+              { revisitAt },
+              { revisitAt },
+              true,
+            );
+          }
+          if (command.item.role === "story") {
+            const revisitAt = command.date
+              ? taskAvailabilityForLocalDate(command.date, "00:00")?.notBeforeAt ?? null
+              : null;
+            return projectActions.update(
+              command.item.project,
+              { revisitAt },
+              { revisitAt },
+            );
+          }
           return;
         case "story.activate":
           projectWorkflow.beginContinuation({

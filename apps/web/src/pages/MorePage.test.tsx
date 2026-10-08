@@ -7,6 +7,8 @@ import { api } from "../lib/api";
 
 vi.mock("../lib/api", () => ({
   api: {
+    getHouseholdTimezone: vi.fn().mockResolvedValue({ timezone: "Europe/Berlin" }),
+    updateHouseholdTimezone: vi.fn().mockResolvedValue({ timezone: "Europe/Berlin" }),
     getAuthStatus: vi.fn().mockResolvedValue({
       enabled: false,
       authenticated: false,
