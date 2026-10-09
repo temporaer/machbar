@@ -66,7 +66,8 @@ export function TaskPlanningSheet({
   const waitingCardRef = useRef<HTMLElement>(null);
   const deadlineCardRef = useRef<HTMLElement>(null);
   const planningFormRef = useRef<HTMLFormElement>(null);
-  const pendingScrollTargetRef = useRef<PendingScrollTarget>(null);
+  const [pendingScrollTarget, setPendingScrollTarget] =
+    useState<PendingScrollTarget>(null);
   const initialAvailabilityDate = task.revisitAt
     ? calendarDateForInstant(task.revisitAt, householdTimezone) ?? ""
     : "";
@@ -78,6 +79,10 @@ export function TaskPlanningSheet({
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
   const hasExistingWait = task.externalWait !== null;
+  const canAddWaiting =
+    task.kind === "action" &&
+    task.status === "actionable" &&
+    task.repeatAfterDays === null;
   const initialWaitingFor = task.externalWait?.waitingFor ?? "";
   const [waitingOpen, setWaitingOpen] = useState(
     hasExistingWait ||
@@ -127,14 +132,15 @@ export function TaskPlanningSheet({
     ) {
       setWaitingOpen(true);
     }
-    pendingScrollTargetRef.current = initialTarget ?? "top";
+    setPendingScrollTarget(initialTarget ?? "top");
   }, [initialTarget]);
 
   useLayoutEffect(() => {
-    const pendingTarget = pendingScrollTargetRef.current;
+    const pendingTarget = pendingScrollTarget;
     if (pendingTarget === null) return;
     if (pendingTarget === "deadline" && !deadlineOpen) return;
-    pendingScrollTargetRef.current = null;
+    if (pendingTarget === "waiting" && canAddWaiting && !waitingOpen) return;
+    setPendingScrollTarget(null);
 
     if (pendingTarget === "top") {
       const sheet = planningFormRef.current?.closest<HTMLElement>(".sheet");
@@ -153,7 +159,18 @@ export function TaskPlanningSheet({
     if (target && typeof target.scrollIntoView === "function") {
       target.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
-  }, [activeTarget, deadlineOpen, hasExistingWait, initialTarget, task.kind, task.repeatAfterDays, task.status]);
+  }, [
+    activeTarget,
+    canAddWaiting,
+    deadlineOpen,
+    hasExistingWait,
+    initialTarget,
+    pendingScrollTarget,
+    task.kind,
+    task.repeatAfterDays,
+    task.status,
+    waitingOpen,
+  ]);
 
   useEffect(() => {
     if (availabilityEdited) return;
@@ -216,6 +233,8 @@ export function TaskPlanningSheet({
     ? nextAvailability?.notBeforeAt ?? null
     : task.revisitAt;
   const canMutuallyExclude = !waitingDraftActive && task.repeatAfterDays === null;
+  const dateConflict =
+    canMutuallyExclude && Boolean(scheduledDate) && Boolean(notBeforeDate);
   const dirty =
     waitingChanged ||
     revisitAtForCommit !== task.revisitAt ||
@@ -321,11 +340,6 @@ export function TaskPlanningSheet({
     }
   };
 
-  const canAddWaiting =
-    task.kind === "action" &&
-    task.status === "actionable" &&
-    task.repeatAfterDays === null;
-
   const endWaitingLocally = () => {
     if (!hasExistingWait || waitingEnded) return;
     setEndedWaitingSnapshot({
@@ -414,7 +428,8 @@ export function TaskPlanningSheet({
     if (
       saving ||
       !allValid ||
-      invalidRevisitSelection
+      invalidRevisitSelection ||
+      dateConflict
     )
       return;
     if (invalidClearedExistingReason) {
@@ -623,7 +638,7 @@ export function TaskPlanningSheet({
                     onFocusCapture={() => setActiveTarget("availability")}
                     onClick={() => {
                       setActiveTarget("availability");
-                      pendingScrollTargetRef.current = "availability";
+                      setPendingScrollTarget("availability");
                     }}
                   >
                     {strings.planningSetRevisit}
@@ -632,6 +647,11 @@ export function TaskPlanningSheet({
               ) : null}
             </>
           )}
+          {dateConflict ? (
+            <p className="human-date-error" role="alert">
+              {strings.planningWaitingConflictWithoutWait}
+            </p>
+          ) : null}
         </section>
 
         <section
@@ -867,7 +887,13 @@ export function TaskPlanningSheet({
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={saving || !allValid || invalidRevisitSelection || !dirty}
+            disabled={
+              saving ||
+              !allValid ||
+              invalidRevisitSelection ||
+              dateConflict ||
+              !dirty
+            }
           >
             {strings.save}
           </button>

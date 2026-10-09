@@ -338,6 +338,8 @@ const en = {
   planningWaitingReasonRequired: "Please say what this task is waiting for.",
   planningWaitingConflict:
     "After ending the wait, planning and a revisit cannot both remain. Remove one of the two dates.",
+  planningWaitingConflictWithoutWait:
+    "Without an external wait, planning and a revisit cannot both remain. Remove one of the two dates.",
   remove: "Remove",
   removePlanningDate: "Remove planning date",
   removeRevisitDate: "Remove revisit",

@@ -316,6 +316,8 @@ const base = {
   planningWaitingReasonRequired: "Bitte gib an, worauf die Aufgabe wartet.",
   planningWaitingConflict:
     "Nach dem Beenden des Wartens können Planung und Wiedervorlage nicht gleichzeitig gesetzt bleiben. Entferne eines der beiden Daten.",
+  planningWaitingConflictWithoutWait:
+    "Ohne externes Warten können Planung und Wiedervorlage nicht gleichzeitig gesetzt bleiben. Entferne eines der beiden Daten.",
   remove: "Entfernen",
   removePlanningDate: "Planungsdatum entfernen",
   removeRevisitDate: "Wiedervorlage entfernen",

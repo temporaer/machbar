@@ -333,7 +333,13 @@ describe("TaskPlanningSheet", () => {
   });
 
   it("opens the targeted waiting card without focusing its input", () => {
-    const scrollIntoView = stubScrollIntoView(function () {});
+    const observed: Array<{ element: HTMLElement; hasTextbox: boolean }> = [];
+    const scrollIntoView = stubScrollIntoView(function () {
+      observed.push({
+        element: this,
+        hasTextbox: Boolean(within(this).queryByRole("textbox")),
+      });
+    });
     renderWithProviders(
       <TaskPlanningSheet
         task={makeTask()}
@@ -347,6 +353,9 @@ describe("TaskPlanningSheet", () => {
       block: "nearest",
       behavior: "auto",
     });
+    expect(observed).toEqual([
+      { element: card("Wartet auf"), hasTextbox: true },
+    ]);
     expect(document.activeElement).not.toBe(
       within(card("Wartet auf")).getByRole("textbox"),
     );
@@ -504,6 +513,7 @@ describe("TaskPlanningSheet", () => {
 
   it("keeps revisit as the active card when its hint is selected", async () => {
     const user = userEvent.setup();
+    const scrollIntoView = stubScrollIntoView(function () {});
     renderWithProviders(
       <TaskPlanningSheet
         task={makeTask({
@@ -518,8 +528,88 @@ describe("TaskPlanningSheet", () => {
         name: "Wiedervorlage setzen",
       }),
     );
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView).toHaveBeenCalledWith({
+      block: "nearest",
+      behavior: "auto",
+    });
     expect(card("Wiedervorlage")).toHaveClass("task-planning-card-active");
     expect(card("Wartet auf")).not.toHaveClass("task-planning-card-active");
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
+  });
+
+  it("blocks a schedule and revisit conflict after removing a new wait", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TaskPlanningSheet task={makeTask()} onClose={vi.fn()} />);
+
+    await user.click(
+      within(card("Wartet auf")).getByRole("button", {
+        name: "+ Warten hinzufügen",
+      }),
+    );
+    await user.type(
+      within(card("Wartet auf")).getByRole("textbox"),
+      "Werkstatt",
+    );
+    await user.type(
+      within(card("Geplant für")).getByRole("textbox"),
+      "10.10.2026",
+    );
+    await user.tab();
+    await user.click(
+      within(card("Wiedervorlage")).getByRole("button", { name: "Morgen" }),
+    );
+    await user.click(
+      within(card("Wartet auf")).getByRole("button", { name: "Entfernen" }),
+    );
+
+    expect(
+      within(card("Wartet auf")).getByRole("alert"),
+    ).toHaveTextContent(
+      "Ohne externes Warten können Planung und Wiedervorlage nicht gleichzeitig gesetzt bleiben.",
+    );
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
+
+    await user.click(
+      within(card("Geplant für")).getByRole("button", {
+        name: "Planungsdatum entfernen",
+      }),
+    );
+    expect(within(card("Wartet auf")).queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Speichern" })).not.toBeDisabled();
+  });
+
+  it("clearing a new waiting reason exposes the same date conflict", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<TaskPlanningSheet task={makeTask()} onClose={vi.fn()} />);
+
+    await user.click(
+      within(card("Wartet auf")).getByRole("button", {
+        name: "+ Warten hinzufügen",
+      }),
+    );
+    const waitingInput = within(card("Wartet auf")).getByRole("textbox");
+    await user.type(waitingInput, "Werkstatt");
+    await user.type(
+      within(card("Geplant für")).getByRole("textbox"),
+      "10.10.2026",
+    );
+    await user.tab();
+    await user.click(
+      within(card("Wiedervorlage")).getByRole("button", { name: "Morgen" }),
+    );
+    await user.clear(waitingInput);
+
+    expect(
+      within(card("Wartet auf")).getByRole("alert"),
+    ).toHaveTextContent(
+      "Ohne externes Warten können Planung und Wiedervorlage nicht gleichzeitig gesetzt bleiben.",
+    );
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+
+    await user.type(waitingInput, "Werkstatt");
+    expect(within(card("Wartet auf")).queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Speichern" })).not.toBeDisabled();
   });
 });
