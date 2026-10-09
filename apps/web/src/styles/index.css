@@ -2605,6 +2605,14 @@ details[open] > .disclosure-summary::after {
   flex: 0 0 auto;
 }
 
+.task-planning-card > * + * {
+  margin-top: 8px;
+}
+
+.task-planning-card-header + * {
+  margin-top: 0;
+}
+
 .task-planning-datetime {
   display: flex;
   gap: 8px;
@@ -2630,6 +2638,13 @@ details[open] > .disclosure-summary::after {
 }
 
 .task-planning-time input {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  background: var(--color-surface);
+  color: var(--color-text);
   min-height: 44px;
 }
 
@@ -2685,9 +2700,21 @@ details[open] > .disclosure-summary::after {
   min-width: 0;
 }
 
-.human-date-control > input[type="text"] {
+.task-planning-card .human-date-control > input[type="text"] {
+  box-sizing: border-box;
   min-width: 0;
   flex: 1;
+  width: auto;
+  min-height: 44px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.task-planning-card .human-date-control-invalid > input[type="text"] {
+  border-color: var(--color-danger);
 }
 
 .human-date-control-invalid > input[type="text"] {

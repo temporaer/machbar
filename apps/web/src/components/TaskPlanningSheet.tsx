@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { Task } from "@machbar/shared";
 import { calendarDateForInstant } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
@@ -56,6 +63,7 @@ export function TaskPlanningSheet({
   const scheduledCardRef = useRef<HTMLElement>(null);
   const availabilityCardRef = useRef<HTMLElement>(null);
   const deadlineCardRef = useRef<HTMLElement>(null);
+  const planningFormRef = useRef<HTMLFormElement>(null);
   const initialAvailabilityDate = task.revisitAt
     ? calendarDateForInstant(task.revisitAt, householdTimezone) ?? ""
     : "";
@@ -85,16 +93,24 @@ export function TaskPlanningSheet({
     Partial<Record<"scheduledDate" | "dueDate", TemporalCaptionHint>>
   >({});
 
-  useEffect(() => {
-    if (!initialTarget) return;
+  useLayoutEffect(() => {
+    setActiveTarget(initialTarget);
+    if (initialTarget === "deadline") {
+      setDeadlineOpen(true);
+    }
     const target =
       initialTarget === "scheduled"
         ? scheduledCardRef.current
         : initialTarget === "availability"
           ? availabilityCardRef.current
           : deadlineCardRef.current;
-    if (target && typeof target.scrollIntoView === "function") {
-      target.scrollIntoView({ block: "nearest", behavior: "auto" });
+    const scrollTarget = target ?? planningFormRef.current;
+    if (scrollTarget && typeof scrollTarget.scrollIntoView === "function") {
+      if (!initialTarget) {
+        scrollTarget.scrollIntoView({ block: "start", behavior: "auto" });
+        return;
+      }
+      scrollTarget.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
   }, [initialTarget]);
 
@@ -153,9 +169,9 @@ export function TaskPlanningSheet({
     validity.scheduled && validity.availability && validity.deadline;
   const matchesAvailability = (instant: string | null) =>
     Boolean(
-      availabilityEdited &&
-        instant &&
-        nextAvailability?.notBeforeAt === instant,
+      timezoneLoaded &&
+      instant &&
+      nextAvailability?.notBeforeAt === instant,
     );
   const tomorrowAvailability = taskAvailabilityForLocalDate(
     addIsoCalendarDays(householdToday, 1),
@@ -218,6 +234,7 @@ export function TaskPlanningSheet({
   const setPlannedDate = (date: string) => {
     setScheduledDate(date);
     setValidity((current) => ({ ...current, scheduled: true }));
+    setScheduledNotice(null);
     if (!date) {
       setAvailabilityNotice(null);
       return;
@@ -241,14 +258,16 @@ export function TaskPlanningSheet({
       setNotBeforeDate("");
       setNotBeforeTime("06:00");
       setValidity((current) => ({ ...current, availability: true }));
+    } else {
+      setAvailabilityNotice(null);
     }
   };
 
-  const setRevisitDateTime = (date: string, time: string) => {
+  const setRevisitDate = (date: string) => {
     setAvailabilityEdited(true);
     setNotBeforeDate(date);
-    setNotBeforeTime(time);
     setValidity((current) => ({ ...current, availability: true }));
+    setAvailabilityNotice(null);
     if (!date) {
       setScheduledNotice(null);
       return;
@@ -261,6 +280,16 @@ export function TaskPlanningSheet({
     }
   };
 
+  const setRevisitTime = (time: string) => {
+    setAvailabilityEdited(true);
+    setNotBeforeTime(time);
+  };
+
+  const setRevisitDateTime = (date: string, time: string) => {
+    setRevisitDate(date);
+    setNotBeforeTime(time);
+  };
+
   const removeScheduled = () => {
     setScheduledDate("");
     setValidity((current) => ({ ...current, scheduled: true }));
@@ -268,7 +297,9 @@ export function TaskPlanningSheet({
   };
 
   const removeAvailability = () => {
-    setRevisitDateTime("", "06:00");
+    setRevisitDate("");
+    setNotBeforeTime("06:00");
+    setValidity((current) => ({ ...current, availability: true }));
     setAvailabilityNotice(null);
   };
 
@@ -313,6 +344,7 @@ export function TaskPlanningSheet({
     >
       <p className="task-planning-title">{task.title}</p>
       <form
+        ref={planningFormRef}
         className="stack task-planning-form"
         onSubmit={(event) => {
           event.preventDefault();
@@ -404,7 +436,7 @@ export function TaskPlanningSheet({
               <HumanDateInput
                 id={`planning-availability-date-${task.id}`}
                 value={notBeforeDate}
-                onChange={(date) => setRevisitDateTime(date ?? "", notBeforeTime)}
+                onChange={(date) => setRevisitDate(date ?? "")}
                 onValidityChange={setAvailabilityValidity}
                 disabled={saving || !timezoneLoaded}
               />
@@ -418,7 +450,7 @@ export function TaskPlanningSheet({
                 type="time"
                 value={notBeforeTime}
                 onChange={(event) =>
-                  setRevisitDateTime(notBeforeDate, event.target.value)
+                  setRevisitTime(event.target.value)
                 }
                 disabled={saving || !timezoneLoaded || !notBeforeDate}
               />
