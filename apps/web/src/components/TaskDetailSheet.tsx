@@ -65,6 +65,7 @@ import { WorkItemDetailDisclosure } from "./WorkItemDetailSection";
 import { ActionTileGrid } from "./ActionTileGrid";
 import { formatReminderSummary } from "../lib/reminderLabels";
 import { parseReferenceContent } from "../lib/referenceContent";
+import type { TaskPlanningTarget } from "../lib/commands";
 
 /** The subset of task fields edited as free-text drafts in this sheet. */
 interface TextFieldsSnapshot {
@@ -490,13 +491,20 @@ export function TaskDetailSheet() {
       | "task.contexts"
       | "task.split"
       | "task.structure",
+    planningTarget?: TaskPlanningTarget,
   ) => {
     if (!task) return;
     if (command === "task.lifecycle") {
       setLifecycleOpen((current) => !current);
       return;
     }
-    dispatch({ type: command, taskId: task.id });
+    dispatch({
+      type: command,
+      taskId: task.id,
+      ...(command === "task.plan" && planningTarget
+        ? { target: planningTarget }
+        : {}),
+    });
   };
 
   return (
@@ -727,23 +735,33 @@ export function TaskDetailSheet() {
             {scheduledDateValue ? (
               <DetailPropertyPill
                 label={strings.taskPlanFor}
-                onClick={() => runCommand("task.plan")}
+                onClick={() => runCommand("task.plan", "scheduled")}
               >
                 <span>{scheduledDateValue}</span>
               </DetailPropertyPill>
             ) : (
-              <DetailPropertyPill variant="unset" onClick={() => runCommand("task.plan")}>
+              <DetailPropertyPill
+                variant="unset"
+                onClick={() => runCommand("task.plan", "scheduled")}
+              >
                 {strings.addPlan}
               </DetailPropertyPill>
             )}
             {dueDateValue ? (
               <DetailPropertyPill
                 label={strings.planningDueBy}
-                onClick={() => runCommand("task.plan")}
+                onClick={() => runCommand("task.plan", "deadline")}
               >
                 <span>{dueDateValue}</span>
               </DetailPropertyPill>
-            ) : null}
+            ) : (
+              <DetailPropertyPill
+                variant="unset"
+                onClick={() => runCommand("task.plan", "deadline")}
+              >
+                {strings.addDeadline}
+              </DetailPropertyPill>
+            )}
             {revisitAtValue ? (
               <DetailPropertyPill
                 label={strings.revisit}

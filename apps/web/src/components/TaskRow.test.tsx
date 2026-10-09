@@ -521,7 +521,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await userEvent.click(screen.getByRole("button", { name: "Planung" }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Planung: Kurz aufschieben" }),
+      await screen.findByRole("dialog", { name: "Planung" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "In einer Weile" })).toBeInTheDocument();
   });
@@ -540,7 +540,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Planung" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Planung: Struktur ändern" });
+    const dialog = await screen.findByRole("dialog", { name: "Planung" });
     expect(within(dialog).getByLabelText("Geplant für")).toBeInTheDocument();
   });
 
@@ -910,7 +910,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
     );
 
     expect(
-      await screen.findByLabelText("Wiedervorlage", { selector: "input" }),
+      await screen.findByLabelText("Datum", { selector: "input" }),
     ).toBeInTheDocument();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
@@ -1001,14 +1001,14 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     await screen.findByLabelText("Geplant für");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
-    await userEvent.click(screen.getAllByRole("button", { name: "Morgen" })[1]!);
+    await userEvent.click(screen.getAllByRole("button", { name: "Morgen" })[0]!);
 
     // Choosing a shortcut is a local draft, not an immediate commit — the
-    // sheet stays open and nothing is saved until "Fertig".
+    // sheet stays open and nothing is saved until "Speichern".
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {

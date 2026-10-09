@@ -164,7 +164,7 @@ describe("TaskRow – left-swipe reveals a visible, interactable chip strip (reg
     // Actually interactable via a real pointer/click sequence, not just present in the DOM.
     // "Planung" opens the one canonical unified planning workflow.
     await userEvent.click(screen.getByRole("button", { name: "Planung" }));
-    expect(await screen.findByRole("dialog", { name: "Planung: Vertrag unterschreiben" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Planung" })).toBeInTheDocument();
   });
 
   it("closes the command rail predictably when a command is used, hiding the persisted red background again", async () => {

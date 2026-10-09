@@ -54,9 +54,12 @@ describe("caption hints in focused task workflows", () => {
       screen.getByRole("button", { name: /^Planen: 15\./ }),
     );
     await userEvent.click(
+      screen.getByRole("button", { name: "+ Deadline hinzufügen" }),
+    );
+    await userEvent.click(
       screen.getByRole("button", { name: /^Deadline: 18\./ }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {

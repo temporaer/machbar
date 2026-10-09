@@ -43,7 +43,7 @@ describe("TaskAvailabilitySheet", () => {
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "In einer Weile" }));
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(40, {
@@ -68,7 +68,7 @@ describe("TaskAvailabilitySheet", () => {
       fireEvent.click(screen.getByRole("button", { name: "Heute Abend" }));
     });
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Fertig" }));
+      fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
     });
 
     expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
@@ -102,8 +102,8 @@ describe("TaskAvailabilitySheet", () => {
     const onClose = vi.fn();
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
-    await userEvent.click(screen.getAllByRole("button", { name: "Morgen" })[0]!);
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Morgen" })[1]!);
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(42, {
@@ -123,7 +123,7 @@ describe("TaskAvailabilitySheet", () => {
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={onClose} />);
 
     await userEvent.click(screen.getByRole("button", { name: "Wiedervorlage entfernen" }));
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(44, {
@@ -140,11 +140,11 @@ describe("TaskAvailabilitySheet", () => {
     const task = makeTask({ id: 45, title: "Termin abstimmen" });
     renderWithProviders(<TaskAvailabilitySheet task={task} onClose={vi.fn()} />);
 
-    await userEvent.type(screen.getByLabelText("Wiedervorlage"), "morgen");
+    await userEvent.type(screen.getByLabelText("Datum"), "morgen");
     await userEvent.tab();
     await userEvent.clear(screen.getByLabelText("Uhrzeit"));
 
-    expect(screen.getByRole("button", { name: "Fertig" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
   });
 
   it.each(["2026-03-29", "2026-10-25"])(
@@ -157,7 +157,9 @@ describe("TaskAvailabilitySheet", () => {
       renderWithProviders(
         <TaskAvailabilitySheet task={task} onClose={vi.fn()} />,
       );
-      const picker = document.querySelector<HTMLInputElement>('input[type="date"]')!;
+      const picker = document.querySelectorAll<HTMLInputElement>(
+        'input[type="date"]',
+      )[1]!;
       fireEvent.change(picker, { target: { value: date } });
       fireEvent.change(screen.getByLabelText("Uhrzeit"), {
         target: { value: "02:30" },
@@ -167,7 +169,7 @@ describe("TaskAvailabilitySheet", () => {
         "Diese lokale Uhrzeit ist in der Haushaltszeitzone ungültig oder doppeldeutig.",
       );
       expect(screen.getByLabelText("Uhrzeit")).toHaveValue("02:30");
-      expect(screen.getByRole("button", { name: "Fertig" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
       expect(mockedApi.updateTask).not.toHaveBeenCalled();
     },
   );
@@ -177,13 +179,14 @@ describe("TaskAvailabilitySheet", () => {
     renderWithProviders(
       <TaskAvailabilitySheet task={task} onClose={vi.fn()} />,
     );
-    fireEvent.change(document.querySelector<HTMLInputElement>('input[type="date"]')!, {
-      target: { value: "2026-10-25" },
-    });
+    fireEvent.change(
+      document.querySelectorAll<HTMLInputElement>('input[type="date"]')[1]!,
+      { target: { value: "2026-10-25" } },
+    );
     fireEvent.change(screen.getByLabelText("Uhrzeit"), {
       target: { value: "03:30" },
     });
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     expect(mockedApi.updateTask).toHaveBeenCalledWith(48, {
       revisitAt: householdCalendarDateTimeToRevisitAt(
@@ -215,8 +218,8 @@ describe("TaskAvailabilitySheet", () => {
     renderWithProviders(<Harness />);
 
     await userEvent.click(screen.getByRole("button", { name: "open availability" }));
-    expect(await screen.findByLabelText("Wiedervorlage")).toBeInTheDocument();
-    expect(screen.getByLabelText("Geplant für")).toBeInTheDocument();
-    expect(screen.getByLabelText("Fällig bis")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Wiedervorlage" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Geplant für" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Deadline" })).toBeInTheDocument();
   });
 });

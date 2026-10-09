@@ -245,10 +245,16 @@ export function useWorkItemCommands() {
           }
           return;
         case "task.plan":
-          taskWorkflow.open("plan", command.taskId);
+          taskWorkflow.open(
+            "plan",
+            command.taskId,
+            command.target ? { planningTarget: command.target } : undefined,
+          );
           return;
         case "task.availability":
-          taskWorkflow.open("availability", command.taskId);
+          taskWorkflow.open("availability", command.taskId, {
+            planningTarget: "availability",
+          });
           return;
         case "task.shape":
           taskWorkflow.open("shape", command.taskId);

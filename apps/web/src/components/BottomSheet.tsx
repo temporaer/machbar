@@ -11,12 +11,15 @@ type SheetEntry = {
   backdrop: HTMLDivElement;
   opener: HTMLElement | null;
   close: () => void;
+  initialFocus: BottomSheetInitialFocus;
 };
 
 type HiddenState = {
   ariaHidden: string | null;
   inert: string | null;
 };
+
+type BottomSheetInitialFocus = "first-control" | "dialog";
 
 const sheetStack: SheetEntry[] = [];
 const hiddenElements = new Map<HTMLElement, HiddenState>();
@@ -102,8 +105,12 @@ function updatePageIsolation() {
   setHiddenElements(elements);
 }
 
-function focusSheet(entry: SheetEntry) {
+function focusSheet(entry: SheetEntry, initialFocus: BottomSheetInitialFocus) {
   if (entry.dialog.contains(document.activeElement)) return;
+  if (initialFocus === "dialog") {
+    entry.dialog.focus({ preventScroll: true });
+    return;
+  }
   const focusable = focusableElements(entry.dialog);
   const firstContentControl = focusable.find(
     (element) => !element.closest(".sheet-header"),
@@ -154,7 +161,7 @@ function registerSheet(entry: SheetEntry) {
   sheetStack.push(entry);
   sheetStack.sort((left, right) => left.order - right.order);
   updatePageIsolation();
-  if (topSheet() === entry) focusSheet(entry);
+  if (topSheet() === entry) focusSheet(entry, entry.initialFocus);
 }
 
 function unregisterSheet(id: symbol) {
@@ -194,6 +201,7 @@ export function BottomSheet({
   labelledBy,
   headerActions,
   headerStatus,
+  initialFocus = "first-control",
 }: {
   title?: string;
   onClose: () => void;
@@ -201,6 +209,7 @@ export function BottomSheet({
   labelledBy?: string;
   headerActions?: ReactNode;
   headerStatus?: ReactNode;
+  initialFocus?: BottomSheetInitialFocus;
 }) {
   const strings = useStrings();
   const internalHeadingId = useId();
@@ -230,6 +239,7 @@ export function BottomSheet({
       backdrop,
       opener: openerRef.current,
       close: () => onCloseRef.current(),
+      initialFocus,
     });
     return () => unregisterSheet(idRef.current);
   }, []);

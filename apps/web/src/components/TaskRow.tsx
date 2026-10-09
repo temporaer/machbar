@@ -37,6 +37,7 @@ import { WorkItemActionRail } from "./WorkItemActionRail";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import type { AttentionTone } from "../lib/attentionTone";
 import type { TaskDetailFocusField } from "../lib/taskDetailContext";
+import type { TaskPlanningTarget } from "../lib/commands";
 
 const LONG_PRESS_MS = 480;
 
@@ -327,6 +328,7 @@ export function TaskRow({
       | "task.open",
     focusField?: TaskDetailFocusField,
     taskId = task.id,
+    planningTarget?: TaskPlanningTarget,
   ) => {
     // Move focus to the kebab before the rail unmounts, so a focused-
     // workflow sheet's opener-restore targets a control that stays
@@ -342,7 +344,13 @@ export function TaskRow({
       });
       return;
     }
-    dispatch({ type: command, taskId });
+    dispatch({
+      type: command,
+      taskId,
+      ...(command === "task.plan" && planningTarget
+        ? { target: planningTarget }
+        : {}),
+    });
   };
 
   const runRailMutation = (command: "task.startToday" | "task.endWaiting") => {
@@ -691,7 +699,8 @@ export function TaskRow({
                       },
                       {
                         label: strings.revisitPlanForDay,
-                        onSelect: () => runRailCommand("task.plan"),
+                        onSelect: () =>
+                          runRailCommand("task.plan", undefined, task.id, "scheduled"),
                       },
                     ]
                   : isReference

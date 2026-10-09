@@ -1369,7 +1369,9 @@ waiting-task pair `Wartet auf`/`Update`; `Planung` dispatches either
 `task.availability` or `task.plan` into the unified
 `TaskPlanningSheet`, which edits persistent `Task.notBeforeAt` plus its local
 calendar date `Task.notBeforeDate`, `scheduledDate`, and `dueDate` in one
-draft/commit. `Art` opens `TaskShapeSheet`; project conversion delegates to
+draft/commit. Commands may provide a card target (`scheduled`, `availability`,
+or `deadline`) for highlighting and scrolling; this never requests input
+focus. `Art` opens `TaskShapeSheet`; project conversion delegates to
 the existing guarded backlog handoff, while task-to-reference conversion is
 not offered because no canonical mutation exists. Task details remain
 available from the row tap or kebab fallback, not as a generic rail action.

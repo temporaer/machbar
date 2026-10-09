@@ -55,9 +55,23 @@ export function TaskWorkflowHost() {
 
   switch (workflow.current.kind) {
     case "plan":
-      return <TaskPlanningSheet task={task} onClose={close} focus="scheduled" />;
+      return (
+        <TaskPlanningSheet
+          task={task}
+          onClose={close}
+          {...(workflow.current.planningTarget
+            ? { initialTarget: workflow.current.planningTarget }
+            : {})}
+        />
+      );
     case "availability":
-      return <TaskPlanningSheet task={task} onClose={close} focus="availability" />;
+      return (
+        <TaskPlanningSheet
+          task={task}
+          onClose={close}
+          initialTarget="availability"
+        />
+      );
     case "shape":
       return <TaskShapeSheet task={task} onClose={close} />;
     case "structure":

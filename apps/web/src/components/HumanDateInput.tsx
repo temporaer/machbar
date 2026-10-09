@@ -13,6 +13,7 @@ export function HumanDateInput({
   autoFocus,
   inputRef,
   onValidityChange,
+  ariaLabel,
 }: {
   id: string;
   value: string | null | undefined;
@@ -21,6 +22,7 @@ export function HumanDateInput({
   autoFocus?: boolean;
   inputRef?: Ref<HTMLInputElement>;
   onValidityChange?: (valid: boolean) => void;
+  ariaLabel?: string;
 }) {
   const strings = useStrings();
   const { locale } = useLocale();
@@ -91,6 +93,7 @@ export function HumanDateInput({
           inputMode="text"
           value={draft}
           placeholder={strings.dateInputPlaceholder}
+          aria-label={ariaLabel}
           aria-invalid={error ? "true" : undefined}
           aria-describedby={error ? errorId : undefined}
           disabled={disabled}

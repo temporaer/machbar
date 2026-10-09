@@ -3,6 +3,8 @@ import type { ProjectWithActions, WeekPlanningItem } from "./api";
 import type { TaskDetailFocusField } from "./taskDetailContext";
 import type { ProjectWorkflowAction } from "./api";
 
+export type TaskPlanningTarget = "scheduled" | "availability" | "deadline";
+
 type WeekTaskPlanningItem = Extract<WeekPlanningItem, { role: "task" }>;
 
 /**
@@ -39,7 +41,7 @@ type WeekTaskPlanningItem = Extract<WeekPlanningItem, { role: "task" }>;
  */
 export type WorkItemCommand =
   | { type: "task.open"; taskId: number; focusField?: TaskDetailFocusField }
-  | { type: "task.plan"; taskId: number }
+  | { type: "task.plan"; taskId: number; target?: TaskPlanningTarget }
   | { type: "task.availability"; taskId: number }
   | { type: "task.shape"; taskId: number }
   | { type: "task.structure"; taskId: number }

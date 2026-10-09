@@ -6,6 +6,7 @@ import { createTask } from "../src/domain/taskCrud.js";
 import { Graph } from "../src/domain/graph.js";
 import { searchTasks } from "../src/domain/search.js";
 import * as schema from "../src/db/schema.js";
+import { householdCalendarDateTimeToRevisitAt } from "@machbar/shared";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
 describe("search/filter and project CRUD/archive", () => {
@@ -666,7 +667,11 @@ describe("search/filter and project CRUD/archive", () => {
     expect(projects.find((item) => item.id === project.id)).toMatchObject({
       stuckReason: null,
       waitingOn: ["Rückmeldung der Werkstatt"],
-      waitingUntil: "2026-10-07T22:00:00Z",
+      waitingUntil: householdCalendarDateTimeToRevisitAt(
+        today,
+        "00:00",
+        "Europe/Berlin",
+      ),
     });
 
     const review = (
