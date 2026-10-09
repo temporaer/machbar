@@ -3,7 +3,6 @@ import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useStrings } from "../lib/strings";
 import { localizedErrorMessage } from "../lib/errorMessage";
-import { useHouseholdTimezone } from "../lib/householdTimezone";
 
 function supportedTimezones(): string[] {
   const values =
@@ -15,7 +14,6 @@ function supportedTimezones(): string[] {
 
 export function HouseholdTimezoneSetting() {
   const strings = useStrings();
-  const { setTimezone: updateHouseholdTimezone } = useHouseholdTimezone();
   const { data, loading, error, refreshError, reload } = useAsync(
     () => api.getHouseholdTimezone(),
     [],
@@ -34,8 +32,7 @@ export function HouseholdTimezoneSetting() {
     setSaving(true);
     setSaveError(null);
     try {
-      const settings = await api.updateHouseholdTimezone(nextTimezone);
-      updateHouseholdTimezone(settings.timezone);
+      await api.updateHouseholdTimezone(nextTimezone);
       reload();
     } catch (cause) {
       setSaveError(localizedErrorMessage(cause, strings));

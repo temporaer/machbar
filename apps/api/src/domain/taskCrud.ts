@@ -775,6 +775,9 @@ export interface UpdateTaskInput {
   dueDate?: string | null;
   scheduledDate?: string | null;
   revisitAt?: string | null;
+  externalWait?: {
+    waitingFor?: string | null;
+  } | null;
   priority?: number | null;
   size?: TaskSize | null;
   repeatAfterDays?: number | null;
@@ -805,6 +808,14 @@ export function updateTask(
       .from(schema.taskExternalWaits)
       .where(eq(schema.taskExternalWaits.taskId, id))
       .get();
+    const requestedExternalWait: { waitingFor: string } | null =
+      input.externalWait === undefined
+        ? currentExternalWait
+          ? { waitingFor: currentExternalWait.waitingFor?.trim() ?? "" }
+          : null
+        : input.externalWait === null
+          ? null
+          : { waitingFor: input.externalWait.waitingFor?.trim() ?? "" };
     assertExpectedRevision("task", id, currentTask.revision, input.expectedRevision);
     const effectiveOwnerBefore = effectiveOwnerId(txDb, id);
     const projectHadNextAction =
@@ -859,9 +870,33 @@ export function updateTask(
         : currentTask.scheduledDate;
     const nextRevisitAt =
       input.revisitAt !== undefined ? input.revisitAt : currentTask.revisitAt;
-    const hasExternalWait = currentExternalWait !== undefined;
+    const hasExternalWait = requestedExternalWait !== null;
     const recurrenceAllowsBoth = nextRepeatAfterDays !== null;
     const allowsBoth = hasExternalWait || recurrenceAllowsBoth;
+    if (input.externalWait !== undefined && requestedExternalWait !== null) {
+      assertActionTask(currentTask, "updateTask");
+      if (currentTask.status !== "actionable") {
+        throw AppError.conflict(
+          "external_wait_status_invalid",
+          "Only actionable tasks can wait for an external event.",
+          { taskId: id },
+        );
+      }
+      if (nextRepeatAfterDays !== null) {
+        throw AppError.conflict(
+          "external_wait_recurring_forbidden",
+          "Recurring tasks cannot use an external wait.",
+          { taskId: id },
+        );
+      }
+      if (!requestedExternalWait.waitingFor) {
+        throw AppError.badRequest(
+          "external_wait_reason_required",
+          "An external wait requires a reason.",
+          { taskId: id },
+        );
+      }
+    }
     if (
       input.scheduledDate !== undefined &&
       input.revisitAt !== undefined &&
@@ -958,9 +993,9 @@ export function updateTask(
     const statusChanged =
       nextStatus !== undefined && nextStatus !== currentTask.status;
     const removingExternalWait =
-      statusChanged &&
-      nextStatus !== "actionable" &&
-      currentExternalWait !== undefined;
+      currentExternalWait !== undefined &&
+      (input.externalWait === null ||
+        (statusChanged && nextStatus !== "actionable"));
     if (statusChanged && !recurringCompletion) {
       patch.status = taskStatusToStored(nextStatus);
       patch.needsClarification = nextStatus === "captured";
@@ -1170,9 +1205,29 @@ export function updateTask(
       }
     }
     if (removingExternalWait) {
+      if (!changedFields.includes("externalWait")) {
+        changedFields.push("externalWait");
+      }
       tx.delete(schema.taskExternalWaits)
         .where(eq(schema.taskExternalWaits.taskId, id))
         .run();
+    } else if (
+      input.externalWait !== undefined &&
+      requestedExternalWait !== null &&
+      currentExternalWait?.waitingFor !== requestedExternalWait.waitingFor
+    ) {
+      const now = nowIso();
+      if (currentExternalWait) {
+        tx.update(schema.taskExternalWaits)
+          .set({ waitingFor: requestedExternalWait.waitingFor, updatedAt: now })
+          .where(eq(schema.taskExternalWaits.taskId, id))
+          .run();
+      } else {
+        tx.insert(schema.taskExternalWaits)
+          .values({ taskId: id, waitingFor: requestedExternalWait.waitingFor, createdAt: now, updatedAt: now })
+          .run();
+      }
+      changedFields.push("externalWait");
     }
 
     if (tagsChanged) {
@@ -1205,6 +1260,7 @@ export function updateTask(
         : false;
     if (
       Object.keys(patch).length > 0 ||
+      changedFields.includes("externalWait") ||
       tagsChanged ||
       excludedTagsChanged ||
       contextsChanged ||

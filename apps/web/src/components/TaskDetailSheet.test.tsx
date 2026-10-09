@@ -340,7 +340,7 @@ describe("TaskDetailSheet", () => {
       "Status",
       "Priorität",
       "Fällig",
-      "Geplant für",
+      "Eingeplant für",
       "Worauf wartet die Aufgabe?",
       "Wiederholen nach Tagen",
     ]) {
@@ -714,9 +714,9 @@ describe("TaskDetailSheet", () => {
     const task = makeTask({
       id: 42,
       title: "Freigabe",
-      revisitAt: "2026-09-04T22:00:00Z",
       externalWait: {
         waitingFor: "Vermieter",
+        revisitDate: "2026-09-05",
       },
       blocked: true,
       executable: false,
@@ -731,21 +731,15 @@ describe("TaskDetailSheet", () => {
     // Waiting is blocker data, never a status.
     expect(screen.queryByLabelText("Status")).not.toBeInTheDocument();
     const waitValue = screen.getByRole("button", {
-      name: "Wartet auf Vermieter",
+      name: /Wartet auf Vermieter.*05\.09\.2026/,
     });
-    expect(
-      screen.getByRole("button", { name: "Wiedervorlage 05.09.2026" }),
-    ).toBeInTheDocument();
 
     await userEvent.click(waitValue);
 
-    // An already-waiting task resolves to Nachhaken, not "mark as waiting".
     expect(
-      await screen.findByRole("heading", { name: "Nachhaken: Freigabe" }),
+      await screen.findByRole("heading", { name: "Planung" }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByLabelText("Worauf wartest du?"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("Vermieter")).toBeInTheDocument();
   });
 
   it("offers waiting as a lightweight affordance that opens the wait workflow", async () => {
@@ -758,11 +752,10 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "+ Warten auf" }));
 
-    // A task with no external wait resolves to the "start waiting" workflow,
-    // whose commit stays disabled until a reason is given.
-    expect(await screen.findByLabelText("Worauf wartest du?")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Warten" })).toBeDisabled();
-    expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
+    // A task with no external wait resolves to the shared planning workflow.
+    expect(await screen.findByLabelText("Wartet auf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
   it("opens the split workflow from the Teilaufgaben section's Aufteilen button", async () => {
@@ -1127,16 +1120,13 @@ describe("TaskDetailSheet", () => {
 
     // The detail owns no date input; the existing planning value is a
     // command that reaches the same sheet as the rail and keyboard.
-    expect(screen.queryByLabelText("Geplant für")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Eingeplant für")).not.toBeInTheDocument();
     await userEvent.click(
       screen.getByRole("button", { name: /Geplant für.*04\.09\.2026/ }),
     );
 
-    await screen.findByRole("group", { name: "Schnell planen" });
     await userEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
-        name: "Planungsdatum entfernen",
-      }),
+      screen.getByRole("button", { name: "Planungsdatum entfernen" }),
     );
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -1152,13 +1142,13 @@ describe("TaskDetailSheet", () => {
 
   it("opens the focused availability workflow from an unset detail value", async () => {
     mockedApi.getTask.mockResolvedValue(
-      makeTask({ id: 61, title: "Noch nicht verfügbar", revisitAt: null }),
+      makeTask({ id: 61, title: "Noch nicht verfügbar", notBeforeAt: null }),
     );
     renderSheet(61);
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Noch nicht verfügbar");
 
-    await userEvent.click(screen.getByRole("button", { name: "Wiedervorlage" }));
+    await userEvent.click(screen.getByRole("button", { name: "Planung" }));
 
     expect(
       await screen.findByRole("dialog", { name: "Planung" }),
@@ -1177,16 +1167,14 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Abends verfügbar");
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /Wiedervorlage.*19\.09\.2026, 20:00/ }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /Planung.*18:00/ }));
 
     expect(
       await screen.findByRole("dialog", { name: "Planung" }),
     ).toBeInTheDocument();
   });
 
-  it("shows the deadline separately from planned work and edits both in one transaction", async () => {
+  it("shows a deadline beside the planned date and edits both in one transaction", async () => {
     mockedApi.getTask.mockResolvedValue(
       makeTask({
         id: 59,
@@ -1199,14 +1187,13 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByText("open"));
     await waitForTaskTitle("Fälligkeit planen");
 
-    expect(
-      screen.getByRole("button", { name: "Geplant für 10.09.2026" }),
-    ).toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: "Deadline 20.09.2026" }),
+      screen.getByRole("button", {
+        name: /Geplant für.*10\.09\.2026.*Fällig 20\.09\.2026/,
+      }),
     );
 
-    const dueDate = document.getElementById("planning-due-59")!;
+    const dueDate = await screen.findByLabelText("Deadline");
     fireEvent.change(dueDate, { target: { value: "13. September 2026" } });
     fireEvent.blur(dueDate);
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));

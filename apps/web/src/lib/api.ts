@@ -218,6 +218,7 @@ export interface CreateTaskInput {
 export type CreateChildTaskInput = Omit<CreateTaskInput, "projectId" | "parentTaskId">;
 
 export type UpdateTaskInput = Partial<Omit<CreateTaskInput, "parentTaskId" | "projectId">> & {
+  externalWait?: { waitingFor: string | null; revisitDate?: string | null } | null;
   additionalNextAction?: boolean;
   excludedTagIds?: number[];
   expectedRevision?: number;

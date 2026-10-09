@@ -63,9 +63,11 @@ export function TaskPlanningSheet({
     useHouseholdTimezone();
   const scheduledCardRef = useRef<HTMLElement>(null);
   const availabilityCardRef = useRef<HTMLElement>(null);
+  const waitingCardRef = useRef<HTMLElement>(null);
   const deadlineCardRef = useRef<HTMLElement>(null);
   const planningFormRef = useRef<HTMLFormElement>(null);
-  const pendingScrollTargetRef = useRef<PendingScrollTarget>(null);
+  const [pendingScrollTarget, setPendingScrollTarget] =
+    useState<PendingScrollTarget>(null);
   const initialAvailabilityDate = task.revisitAt
     ? calendarDateForInstant(task.revisitAt, householdTimezone) ?? ""
     : "";
@@ -76,6 +78,26 @@ export function TaskPlanningSheet({
   const [availabilityEdited, setAvailabilityEdited] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
+  const hasExistingWait = task.externalWait !== null;
+  const canAddWaiting =
+    task.kind === "action" &&
+    task.status === "actionable" &&
+    task.repeatAfterDays === null;
+  const initialWaitingFor = task.externalWait?.waitingFor ?? "";
+  const [waitingOpen, setWaitingOpen] = useState(
+    hasExistingWait ||
+      (initialTarget === "waiting" &&
+        task.kind === "action" &&
+        task.status === "actionable" &&
+        task.repeatAfterDays === null),
+  );
+  const [waitingFor, setWaitingFor] = useState(initialWaitingFor);
+  const [waitingEnded, setWaitingEnded] = useState(false);
+  const [endedWaitingSnapshot, setEndedWaitingSnapshot] = useState<{
+    waitingFor: string;
+    revisitAt: string | null;
+    availabilityEdited: boolean;
+  } | null>(null);
   const [deadlineOpen, setDeadlineOpen] = useState(
     Boolean(task.dueDate) || initialTarget === "deadline",
   );
@@ -91,6 +113,7 @@ export function TaskPlanningSheet({
   const [error, setError] = useState<string | null>(null);
   const [scheduledNotice, setScheduledNotice] = useState<string | null>(null);
   const [availabilityNotice, setAvailabilityNotice] = useState<string | null>(null);
+  const [waitingError, setWaitingError] = useState<string | null>(null);
   const [acceptedHints, setAcceptedHints] = useState<
     Partial<Record<"scheduledDate" | "dueDate", TemporalCaptionHint>>
   >({});
@@ -100,14 +123,24 @@ export function TaskPlanningSheet({
     if (initialTarget === "deadline") {
       setDeadlineOpen(true);
     }
-    pendingScrollTargetRef.current = initialTarget ?? "top";
+    if (
+      initialTarget === "waiting" &&
+      (hasExistingWait ||
+        (task.kind === "action" &&
+          task.status === "actionable" &&
+          task.repeatAfterDays === null))
+    ) {
+      setWaitingOpen(true);
+    }
+    setPendingScrollTarget(initialTarget ?? "top");
   }, [initialTarget]);
 
   useLayoutEffect(() => {
-    const pendingTarget = pendingScrollTargetRef.current;
+    const pendingTarget = pendingScrollTarget;
     if (pendingTarget === null) return;
     if (pendingTarget === "deadline" && !deadlineOpen) return;
-    pendingScrollTargetRef.current = null;
+    if (pendingTarget === "waiting" && canAddWaiting && !waitingOpen) return;
+    setPendingScrollTarget(null);
 
     if (pendingTarget === "top") {
       const sheet = planningFormRef.current?.closest<HTMLElement>(".sheet");
@@ -118,13 +151,26 @@ export function TaskPlanningSheet({
     const target =
       pendingTarget === "scheduled"
         ? scheduledCardRef.current
+        : pendingTarget === "waiting"
+          ? waitingCardRef.current
         : pendingTarget === "availability"
           ? availabilityCardRef.current
           : deadlineCardRef.current;
     if (target && typeof target.scrollIntoView === "function") {
       target.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
-  }, [deadlineOpen, initialTarget]);
+  }, [
+    activeTarget,
+    canAddWaiting,
+    deadlineOpen,
+    hasExistingWait,
+    initialTarget,
+    pendingScrollTarget,
+    task.kind,
+    task.repeatAfterDays,
+    task.status,
+    waitingOpen,
+  ]);
 
   useEffect(() => {
     if (availabilityEdited) return;
@@ -165,14 +211,32 @@ export function TaskPlanningSheet({
     : null;
   const invalidRevisitSelection =
     availabilityEdited && Boolean(notBeforeDate) && nextAvailability === null;
+  const newWaitingActive =
+    !hasExistingWait && !waitingEnded && waitingFor.trim().length > 0;
+  const waitingDraftActive =
+    hasExistingWait && !waitingEnded ? true : newWaitingActive;
+  const invalidClearedExistingReason =
+    hasExistingWait &&
+    !waitingEnded &&
+    initialWaitingFor.trim().length > 0 &&
+    waitingFor.trim().length === 0;
+  const waitingChanged =
+    waitingEnded ||
+    (!hasExistingWait && newWaitingActive) ||
+    (hasExistingWait &&
+      !waitingEnded &&
+      waitingFor.trim() !== initialWaitingFor.trim());
   const householdToday =
     calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
     toIsoCalendarDate(new Date());
   const revisitAtForCommit = availabilityEdited
     ? nextAvailability?.notBeforeAt ?? null
     : task.revisitAt;
-  const canMutuallyExclude = !task.externalWait && task.repeatAfterDays === null;
+  const canMutuallyExclude = !waitingDraftActive && task.repeatAfterDays === null;
+  const dateConflict =
+    canMutuallyExclude && Boolean(scheduledDate) && Boolean(notBeforeDate);
   const dirty =
+    waitingChanged ||
     revisitAtForCommit !== task.revisitAt ||
     (scheduledDate || null) !== task.scheduledDate ||
     (dueDate || null) !== task.dueDate ||
@@ -276,6 +340,44 @@ export function TaskPlanningSheet({
     }
   };
 
+  const endWaitingLocally = () => {
+    if (!hasExistingWait || waitingEnded) return;
+    setEndedWaitingSnapshot({
+      waitingFor,
+      revisitAt: revisitAtForCommit,
+      availabilityEdited,
+    });
+    setWaitingEnded(true);
+    setWaitingError(null);
+    setAvailabilityEdited(true);
+    setNotBeforeDate("");
+    setNotBeforeTime("06:00");
+    setValidity((current) => ({ ...current, availability: true }));
+  };
+
+  const undoWaitingEnd = () => {
+    if (!waitingEnded) return;
+    setWaitingEnded(false);
+    setWaitingFor(endedWaitingSnapshot?.waitingFor ?? initialWaitingFor);
+    if (endedWaitingSnapshot?.revisitAt) {
+      setNotBeforeDate(
+        calendarDateForInstant(endedWaitingSnapshot.revisitAt, householdTimezone) ?? "",
+      );
+      setNotBeforeTime(
+        taskAvailabilityClock(endedWaitingSnapshot.revisitAt, householdTimezone) ?? "06:00",
+      );
+    }
+    setAvailabilityEdited(endedWaitingSnapshot?.availabilityEdited ?? false);
+    setEndedWaitingSnapshot(null);
+    setWaitingError(null);
+  };
+
+  const removeNewWaiting = () => {
+    setWaitingFor("");
+    setWaitingOpen(false);
+    setWaitingError(null);
+  };
+
   const setRevisitDate = (date: string) => {
     setAvailabilityEdited(true);
     setNotBeforeDate(date);
@@ -323,17 +425,46 @@ export function TaskPlanningSheet({
   };
 
   const commit = async () => {
-    if (saving || !allValid || invalidRevisitSelection) return;
+    if (
+      saving ||
+      !allValid ||
+      invalidRevisitSelection ||
+      dateConflict
+    )
+      return;
+    if (invalidClearedExistingReason) {
+      setWaitingError(strings.planningWaitingReasonRequired);
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
+      const externalWait = waitingEnded
+        ? null
+        : waitingChanged
+          ? newWaitingActive || hasExistingWait
+            ? { waitingFor: waitingFor.trim() }
+            : null
+          : undefined;
       const patch = {
         revisitAt: revisitAtForCommit,
         scheduledDate: scheduledDate || null,
         dueDate: dueDate || null,
+        ...(externalWait !== undefined ? { externalWait } : {}),
         ...(cleanedTitle !== task.title ? { title: cleanedTitle } : {}),
       };
-      await taskActions.update(task, patch, patch, true);
+      const optimisticPatch = {
+        ...patch,
+        ...(externalWait !== undefined
+          ? {
+              externalWait:
+                externalWait === null
+                  ? null
+                  : { waitingFor: externalWait.waitingFor, revisitDate: null },
+            }
+          : {}),
+      };
+      await taskActions.update(task, patch, optimisticPatch, true);
       onClose();
     } catch (cause) {
       setError(localizedErrorMessage(cause, strings));
@@ -416,6 +547,114 @@ export function TaskPlanningSheet({
         </section>
 
         <section
+          ref={waitingCardRef}
+          className={cardClass(activeTarget === "waiting")}
+          onPointerDownCapture={() => setActiveTarget("waiting")}
+          onFocusCapture={() => setActiveTarget("waiting")}
+        >
+          <div className="task-planning-card-header">
+            <div>
+              <h3>{strings.planningWaitingTitle}</h3>
+              {waitingOpen && !waitingEnded ? (
+                <p>{strings.planningWaitingExplanation}</p>
+              ) : null}
+            </div>
+          </div>
+          {!waitingOpen ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              disabled={saving || !canAddWaiting}
+              onClick={() => {
+                setWaitingOpen(true);
+                setActiveTarget("waiting");
+              }}
+            >
+              {strings.planningAddWaiting}
+            </button>
+          ) : waitingEnded ? (
+            <>
+              <p className="text-muted">{strings.planningWaitingWillEnd}.</p>
+              {task.revisitAt ? (
+                <p className="text-muted">{strings.planningRevisitWillBeRemoved}</p>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={saving}
+                onClick={undoWaitingEnd}
+              >
+                {strings.planningUndoWaiting}
+              </button>
+            </>
+          ) : (
+            <>
+              <label htmlFor={`planning-waiting-${task.id}`}>
+                {strings.waitingFor}
+              </label>
+              <input
+                id={`planning-waiting-${task.id}`}
+                type="text"
+                value={waitingFor}
+                placeholder={strings.waitingForPlaceholder}
+                disabled={saving}
+                onChange={(event) => {
+                  setWaitingFor(event.target.value);
+                  setWaitingError(null);
+                }}
+              />
+              {waitingError ? (
+                <div className="human-date-error" role="alert">
+                  {waitingError}
+                </div>
+              ) : null}
+              {hasExistingWait ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  disabled={saving}
+                  onClick={endWaitingLocally}
+                >
+                  {strings.planningEndWaiting}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  disabled={saving}
+                  onClick={removeNewWaiting}
+                >
+                  {strings.planningRemoveWaiting}
+                </button>
+              )}
+              {waitingDraftActive && !notBeforeDate ? (
+                <div className="task-planning-inline-hint">
+                  <span>{strings.planningNoRevisit}</span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    disabled={saving}
+                    onPointerDownCapture={() => setActiveTarget("availability")}
+                    onFocusCapture={() => setActiveTarget("availability")}
+                    onClick={() => {
+                      setActiveTarget("availability");
+                      setPendingScrollTarget("availability");
+                    }}
+                  >
+                    {strings.planningSetRevisit}
+                  </button>
+                </div>
+              ) : null}
+            </>
+          )}
+          {dateConflict ? (
+            <p className="human-date-error" role="alert">
+              {strings.planningWaitingConflictWithoutWait}
+            </p>
+          ) : null}
+        </section>
+
+        <section
           ref={availabilityCardRef}
           className={cardClass(activeTarget === "availability")}
           {...cardEvents("availability")}
@@ -424,7 +663,7 @@ export function TaskPlanningSheet({
             <div>
               <h3>{strings.planningShowFrom}</h3>
               <p>
-                {task.externalWait
+                {waitingDraftActive
                   ? strings.planningAvailabilityExternalExplanation
                   : strings.planningAvailabilityExplanation}
               </p>
@@ -434,7 +673,7 @@ export function TaskPlanningSheet({
                 type="button"
                 className="btn btn-sm btn-ghost"
                 aria-label={strings.removeRevisitDate}
-                disabled={saving || !timezoneLoaded}
+                disabled={saving || !timezoneLoaded || waitingEnded}
                 onClick={removeAvailability}
               >
                 {strings.remove}
@@ -451,7 +690,7 @@ export function TaskPlanningSheet({
                 value={notBeforeDate}
                 onChange={(date) => setRevisitDate(date ?? "")}
                 onValidityChange={setAvailabilityValidity}
-                disabled={saving || !timezoneLoaded}
+                disabled={saving || !timezoneLoaded || waitingEnded}
               />
             </div>
             <div className="task-planning-time">
@@ -485,7 +724,7 @@ export function TaskPlanningSheet({
               aria-pressed={matchesAvailability(
                 resolveAbsolutePreset("in3Hours", new Date(), householdTimezone),
               )}
-              disabled={saving || !timezoneLoaded}
+              disabled={saving || !timezoneLoaded || waitingEnded}
               onClick={() => {
                 const instant = resolveAbsolutePreset(
                   "in3Hours",
@@ -512,7 +751,7 @@ export function TaskPlanningSheet({
                 aria-pressed={matchesAvailability(
                   resolveAbsolutePreset("tonight", new Date(), householdTimezone),
                 )}
-                disabled={saving || !timezoneLoaded}
+                disabled={saving || !timezoneLoaded || waitingEnded}
                 onClick={() => {
                   const instant = resolveAbsolutePreset(
                     "tonight",
@@ -537,7 +776,7 @@ export function TaskPlanningSheet({
               type="button"
               className="choice-chip"
               aria-pressed={matchesAvailability(tomorrowAvailability)}
-              disabled={saving || !timezoneLoaded}
+              disabled={saving || !timezoneLoaded || waitingEnded}
               onClick={() =>
                 setRevisitDateTime(
                   addIsoCalendarDays(householdToday, 1),
@@ -551,7 +790,7 @@ export function TaskPlanningSheet({
               type="button"
               className="choice-chip"
               aria-pressed={matchesAvailability(weekendAvailability)}
-              disabled={saving || !timezoneLoaded}
+              disabled={saving || !timezoneLoaded || waitingEnded}
               onClick={() => {
                 const day = new Date(`${householdToday}T00:00:00.000Z`).getUTCDay();
                 const daysUntilSaturday = (6 - day + 7) % 7;
@@ -568,6 +807,9 @@ export function TaskPlanningSheet({
             <p className="task-planning-replacement-note" role="status">
               {availabilityNotice}
             </p>
+          ) : null}
+          {waitingEnded ? (
+            <p className="text-muted">{strings.planningUndoWaitingToSetRevisit}</p>
           ) : null}
         </section>
 
@@ -645,7 +887,13 @@ export function TaskPlanningSheet({
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={saving || !allValid || invalidRevisitSelection || !dirty}
+            disabled={
+              saving ||
+              !allValid ||
+              invalidRevisitSelection ||
+              dateConflict ||
+              !dirty
+            }
           >
             {strings.save}
           </button>

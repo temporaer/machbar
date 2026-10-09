@@ -3,8 +3,6 @@ import type { ProjectWithActions, WeekPlanningItem } from "./api";
 import type { TaskDetailFocusField } from "./taskDetailContext";
 import type { ProjectWorkflowAction } from "./api";
 
-export type TaskPlanningTarget = "scheduled" | "availability" | "deadline";
-
 type WeekTaskPlanningItem = Extract<WeekPlanningItem, { role: "task" }>;
 
 /**
@@ -99,6 +97,8 @@ export type WorkItemCommand =
   | { type: "navigate.projects" }
   | { type: "navigate.waiting" }
   | { type: "navigate.more" };
+
+export type TaskPlanningTarget = "scheduled" | "waiting" | "availability" | "deadline";
 
 /**
  * Maps a legal `ProjectWorkflowAction` onto its `story.*` semantic command

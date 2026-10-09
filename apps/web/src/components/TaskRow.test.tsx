@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { calendarDateForInstant } from "@machbar/shared";
 import { renderWithProviders } from "../test/testUtils";
 import { TaskOutline } from "./TaskOutline";
 import { TaskDetailSheet } from "./TaskDetailSheet";
@@ -27,8 +26,6 @@ vi.mock("../lib/api", () => ({
     reopenTask: vi.fn(),
     clarifyTask: vi.fn(),
     updateTask: vi.fn(),
-    resolveExternalWait: vi.fn(),
-    followUpExternalWait: vi.fn(),
     createTaskSuccessor: vi.fn(),
   },
 }));
@@ -717,123 +714,7 @@ describe("TaskRow – calm shared card presentation", () => {
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
 
     await screen.findByText("Erst abends erledigen");
-    expect(screen.getByText(/Wiedervorlage\s*:/)).toBeInTheDocument();
-  });
-
-  it("starts a due revisit today from the rail with one atomic planned-work update", async () => {
-    const task = makeTask({
-      id: 78,
-      title: "Due revisit",
-      revisitAt: "2026-01-01T10:00:00.000Z",
-      dueDate: "2026-12-31",
-      children: [makeTask({ id: 79, parentTaskId: 78, title: "Child" })],
-    });
-    mockedApi.updateTask.mockResolvedValue(task);
-    const { container } = renderWithProviders(
-      <TaskOutline
-        tasks={[task]}
-        emptyMessage="Nichts da"
-        showRevisitDate
-        compactDescendants
-        attentionTone="revisit"
-      />,
-    );
-
-    await screen.findByText("Due revisit");
-    expect(container.querySelector(".task-row-revisit-actions")).not.toBeInTheDocument();
-    const row = container.querySelector<HTMLElement>(".task-row")!;
-    expect(within(row).queryByRole("button", { name: "Jetzt angehen" })).not.toBeInTheDocument();
-    await userEvent.click(row.querySelector(".task-row-kebab") as HTMLElement);
-    const rail = within(row).getByRole("group", { name: "Weitere Aktionen" });
-    expect(
-      within(rail).getAllByRole("button").map((button) => button.textContent),
-    ).toEqual(["Jetzt angehen", "Später", "Für Tag planen"]);
-
-    await userEvent.click(
-      within(rail).getByRole("button", { name: "Jetzt angehen" }),
-    );
-
-    await waitFor(() =>
-      expect(mockedApi.updateTask).toHaveBeenCalledWith(78, {
-        revisitAt: null,
-        scheduledDate: calendarDateForInstant(
-          new Date().toISOString(),
-          "Europe/Berlin",
-        ),
-        expectedRevision: 1,
-      }),
-    );
-    expect(mockedApi.updateTask.mock.calls[0]?.[1]).not.toHaveProperty("dueDate");
-    expect(within(row).queryByRole("group", { name: "Weitere Aktionen" })).not.toBeInTheDocument();
-  });
-
-  it("ends a waiting revisit directly without changing its scheduled work", async () => {
-    const task = makeTask({
-      id: 80,
-      title: "Waiting revisit",
-      revisitAt: "2026-01-01T10:00:00.000Z",
-      scheduledDate: "2026-12-31",
-      externalWait: { waitingFor: "Antwort" },
-      blocked: true,
-    });
-    mockedApi.resolveExternalWait.mockResolvedValue({
-      ...task,
-      externalWait: null,
-      revisitAt: null,
-    });
-    renderWithProviders(
-      <TaskOutline
-        tasks={[task]}
-        emptyMessage="Nichts da"
-        showRevisitDate
-        attentionTone="revisit"
-      />,
-    );
-
-    const row = (await screen.findByText("Waiting revisit")).closest<HTMLElement>(".task-row")!;
-    await userEvent.click(within(row).getByRole("button", { name: "Weitere Aktionen" }));
-    const rail = within(row).getByRole("group", { name: "Weitere Aktionen" });
-    expect(within(rail).getAllByRole("button").map((button) => button.textContent)).toEqual([
-      "Nachhaken",
-      "Warten beenden",
-    ]);
-    await userEvent.click(within(rail).getByRole("button", { name: "Warten beenden" }));
-
-    await waitFor(() =>
-      expect(mockedApi.resolveExternalWait).toHaveBeenCalledWith(80, 1),
-    );
-  });
-
-  it("keeps 'Trotzdem angehen' secondary for a dependency-blocked revisit", async () => {
-    const task = makeTask({
-      id: 81,
-      title: "Blockierte Wiedervorlage",
-      revisitAt: "2026-01-01T10:00:00.000Z",
-      blocked: true,
-      dependencies: [
-        {
-          id: 90,
-          taskId: 81,
-          dependsOnTaskId: 91,
-          title: "Voraussetzung",
-          resolved: false,
-        },
-      ],
-    });
-    const { container } = renderWithProviders(
-      <TaskOutline
-        tasks={[task]}
-        emptyMessage="Nichts da"
-        attentionTone="revisit"
-      />,
-    );
-    const row = container.querySelector<HTMLElement>(".task-row")!;
-    expect(within(row).queryByRole("button", { name: "Trotzdem angehen" })).not.toBeInTheDocument();
-    await userEvent.click(within(row).getByRole("button", { name: "Weitere Aktionen" }));
-    const directActions = within(row).getByRole("group", { name: "Weitere Aktionen" });
-    expect(
-      within(directActions).getAllByRole("button").map((button) => button.textContent),
-    ).toEqual(["Blocker ansehen", "Später", "Trotzdem angehen"]);
+    expect(screen.getByText(/Wiedervorlage: .*20:00/)).toBeInTheDocument();
   });
 
   it("keeps a long wrapping title complete while tags occupy the upper-right", async () => {
@@ -881,39 +762,6 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
       </div>,
     );
   }
-
-  it("opens the existing planning workflow from the direct 'Später' action", async () => {
-    const task = makeTask({
-      id: 82,
-      title: "Später erneut entscheiden",
-      revisitAt: "2026-01-01T10:00:00.000Z",
-    });
-    renderWithProviders(
-      <div>
-        <TaskOutline
-          tasks={[task]}
-          emptyMessage="Nichts da"
-          showRevisitDate
-          attentionTone="revisit"
-        />
-        <TaskDetailSheet />
-        <TaskWorkflowHost />
-      </div>,
-    );
-    await screen.findByText(task.title);
-
-    const row = screen.getByText(task.title).closest<HTMLElement>(".task-row")!;
-    await userEvent.click(row.querySelector(".task-row-kebab") as HTMLElement);
-    const rail = within(row).getByRole("group", { name: "Weitere Aktionen" });
-    await userEvent.click(
-      within(rail).getByRole("button", { name: "Später" }),
-    );
-
-    expect(
-      await screen.findByLabelText("Datum", { selector: "input" }),
-    ).toBeInTheDocument();
-    expect(mockedApi.updateTask).not.toHaveBeenCalled();
-  });
 
   it("opens the owner assignment sheet directly from the row's owner avatar and returns without opening full details", async () => {
     const task = makeTask({
@@ -1001,7 +849,12 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     await screen.findByLabelText("Geplant für");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
-    await userEvent.click(screen.getAllByRole("button", { name: "Morgen" })[0]!);
+    const scheduledCard = screen
+      .getByRole("heading", { name: "Geplant für" })
+      .closest<HTMLElement>(".task-planning-card");
+    await userEvent.click(
+      within(scheduledCard!).getByRole("button", { name: "Morgen" }),
+    );
 
     // Choosing a shortcut is a local draft, not an immediate commit — the
     // sheet stays open and nothing is saved until "Speichern".
@@ -1012,8 +865,8 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
-        revisitAt: null,
         scheduledDate: resolveScheduleShortcut("tomorrow"),
+        revisitAt: null,
         dueDate: null,
         expectedRevision: 1,
       }),
@@ -1032,7 +885,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Wartet" }));
 
-    const waitingFor = await screen.findByLabelText("Worauf wartest du?");
+    const waitingFor = await screen.findByLabelText("Wartet auf");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
     expect(waitingFor).toBeInTheDocument();
   });

@@ -3,14 +3,11 @@ import { api } from "../lib/api";
 import { useAsync } from "../lib/useAsync";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useTaskWorkflow } from "../lib/taskWorkflowContext";
-import { useIdentity } from "../lib/identity";
 import { MoveTaskSheet } from "./MoveTaskSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
 import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { TaskStructureSheet } from "./TaskStructureSheet";
 import { TaskRemindersSheet } from "./TaskRemindersSheet";
-import { TaskWaitSheet } from "./TaskWaitSheet";
-import { WaitingFollowUpSheet } from "./WaitingFollowUpSheet";
 import { TaskSplitSheet } from "./TaskSplitSheet";
 import { TaskRecurrenceSheet } from "./TaskRecurrenceSheet";
 import { TaskPrioritySheet } from "./TaskPrioritySheet";
@@ -19,6 +16,7 @@ import { TaskContextsSheet } from "./TaskContextsSheet";
 import { TaskConvertToProjectSheet } from "./TaskConvertToProjectSheet";
 import { TaskShapeSheet } from "./TaskShapeSheet";
 import { useStrings } from "../lib/strings";
+import { useIdentity } from "../lib/identity";
 
 /**
  * The single host for every focused task workflow reachable through a
@@ -65,13 +63,7 @@ export function TaskWorkflowHost() {
         />
       );
     case "availability":
-      return (
-        <TaskPlanningSheet
-          task={task}
-          onClose={close}
-          initialTarget="availability"
-        />
-      );
+      return <TaskPlanningSheet task={task} onClose={close} initialTarget="availability" />;
     case "shape":
       return <TaskShapeSheet task={task} onClose={close} />;
     case "structure":
@@ -79,11 +71,7 @@ export function TaskWorkflowHost() {
     case "reminders":
       return <TaskRemindersSheet task={task} onClose={close} />;
     case "waitingLifecycle":
-      return task.externalWait ? (
-        <WaitingFollowUpSheet task={task} onClose={close} />
-      ) : (
-        <TaskWaitSheet task={task} members={members} onClose={close} />
-      );
+      return <TaskPlanningSheet task={task} onClose={close} initialTarget="waiting" />;
     case "split":
       return (
         <TaskSplitSheet

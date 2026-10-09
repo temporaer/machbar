@@ -301,6 +301,23 @@ const base = {
     `Wiedervorlage für ${date} entfernt, weil die Aufgabe eingeplant wurde.`,
   planningScheduledRemoved: (date: string) =>
     `Planung für ${date} entfernt, weil eine Wiedervorlage gesetzt wurde.`,
+  planningWaitingTitle: "Wartet auf",
+  planningAddWaiting: "+ Warten hinzufügen",
+  planningEndWaiting: "Warten beenden",
+  planningRemoveWaiting: "Entfernen",
+  planningWaitingWillEnd: "Warten wird beendet.",
+  planningRevisitWillBeRemoved: "Die zugehörige Wiedervorlage wird entfernt.",
+  planningUndoWaiting: "Rückgängig",
+  planningWaitingExplanation: "Was muss von außen passieren, bevor es weitergeht?",
+  planningNoRevisit: "Noch keine Wiedervorlage gesetzt.",
+  planningSetRevisit: "Wiedervorlage setzen",
+  planningUndoWaitingToSetRevisit:
+    "Zum Setzen einer Wiedervorlage zuerst das Beenden des Wartens rückgängig machen.",
+  planningWaitingReasonRequired: "Bitte gib an, worauf die Aufgabe wartet.",
+  planningWaitingConflict:
+    "Nach dem Beenden des Wartens können Planung und Wiedervorlage nicht gleichzeitig gesetzt bleiben. Entferne eines der beiden Daten.",
+  planningWaitingConflictWithoutWait:
+    "Ohne externes Warten können Planung und Wiedervorlage nicht gleichzeitig gesetzt bleiben. Entferne eines der beiden Daten.",
   remove: "Entfernen",
   removePlanningDate: "Planungsdatum entfernen",
   removeRevisitDate: "Wiedervorlage entfernen",

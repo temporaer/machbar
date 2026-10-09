@@ -270,6 +270,12 @@ export const updateTaskSchema = z.object({
   dueDate: isoDate.nullable().optional(),
   scheduledDate: isoDate.nullable().optional(),
   revisitAt: isoDateTime.nullable().optional(),
+  externalWait: z
+    .object({
+      waitingFor: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
   priority: z.number().int().nullable().optional(),
   size: z.enum(taskSizes).nullable().optional(),
   repeatAfterDays: z.number().int().min(1).nullable().optional(),

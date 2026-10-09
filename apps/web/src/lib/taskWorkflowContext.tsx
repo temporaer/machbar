@@ -16,7 +16,7 @@ import type { TaskPlanningTarget } from "./commands";
  * one of the focused sheets below and switches on `kind`.
  *
  * `availability` and `plan` both open the canonical unified planning sheet,
- * with an optional card target. `structure` opens
+ * with different initial focus. `structure` opens
  * `TaskStructureSheet` (Aufteilen/
  * Verschieben …/Zum Projekt machen), which itself only ever dispatches
  * `task.split`/`task.changeProject`/`task.convertToProject` rather than
@@ -44,17 +44,9 @@ export interface TaskWorkflowState {
   planningTarget?: TaskPlanningTarget;
 }
 
-export interface TaskWorkflowOpenOptions {
-  planningTarget?: TaskPlanningTarget;
-}
-
 interface TaskWorkflowContextValue {
   current: TaskWorkflowState | null;
-  open: (
-    kind: TaskWorkflowKind,
-    taskId: number,
-    options?: TaskWorkflowOpenOptions,
-  ) => void;
+  open: (kind: TaskWorkflowKind, taskId: number, planningTarget?: TaskPlanningTarget) => void;
   close: () => void;
 }
 
@@ -65,8 +57,12 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
   const value = useMemo<TaskWorkflowContextValue>(
     () => ({
       current,
-      open: (kind, taskId, options) =>
-        setCurrent({ kind, taskId, ...options }),
+      open: (kind, taskId, planningTarget) =>
+        setCurrent({
+          kind,
+          taskId,
+          ...(planningTarget ? { planningTarget } : {}),
+        }),
       close: () => setCurrent(null),
     }),
     [current],

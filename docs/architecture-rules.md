@@ -135,8 +135,8 @@ five places to decide what that command does.
 Surfaces dispatch; they do not choose sheets. Only `TaskWorkflowHost` and
 `ProjectWorkflowHost` import a focused workflow sheet, and only
 `useWorkItemCommands()` may call `taskWorkflow.open`, `projectWorkflow.open`,
-or `taskDetail.open`. State-sensitive resolution belongs there too: whether
-`task.waitingLifecycle` means "start waiting" or "follow up", and whether
+or `taskDetail.open`. State-sensitive resolution belongs there too: `task.waitingLifecycle` opens the
+shared planning workflow with the waiting card targeted, and whether
 `story.complete` must first show unmet acceptance criteria, is decided once.
 
 `task.open` is the only command whose intent *is* opening task details. No
@@ -215,7 +215,7 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Identity-preserving role conversion | `apps/api/src/domain/roleConversion.ts` (`convertTaskToStory` / `convertStoryToTask`), `apps/web/src/components/TaskConvertToProjectSheet.tsx`, and `apps/web/src/components/ProjectConvertToTaskSheet.tsx` |
 | Semantic user-intent commands (mouse/touch/keyboard dispatch a common vocabulary) | `apps/web/src/lib/commands.ts` and `apps/web/src/lib/useWorkItemCommands.ts` |
 | Fixed row action rail (task-kind/status-specific planning/shape/structure/note/waiting actions and project next-step/goal/structure/planning actions; lifecycle remains right-swipe only) | `apps/web/src/components/WorkItemActionRail.tsx`, wired from `apps/web/src/components/TaskRow.tsx` and `apps/web/src/components/ProjectStoryRow.tsx` |
-| Unified task planning (`revisitAt` + `scheduledDate` + `dueDate`) workflow | `apps/web/src/components/TaskPlanningSheet.tsx`, opened by the `plan` task workflow with an optional card target (not input focus), and committed through `apps/web/src/lib/useTaskActions.tsx` |
+| Unified task planning (`scheduledDate` + external wait + `revisitAt` + `dueDate`) workflow | `apps/web/src/components/TaskPlanningSheet.tsx`, opened by `task.plan`, `task.availability`, and targeted `task.waitingLifecycle` workflows; one local draft is committed atomically through `apps/web/src/lib/useTaskActions.tsx` and the canonical API update mutation |
 | Task shape/classification workflow | `apps/web/src/components/TaskShapeSheet.tsx`, opened as the `shape` task workflow; project conversion delegates to the existing guarded `convertToProject` workflow |
 | Project revisit/defer workflow | `apps/web/src/components/ProjectDeferSheet.tsx`, opened by `story.defer` for backlog and active-waiting project planning |
 | Project deadline (`dueDate`) workflow | `apps/web/src/components/ProjectDeadlineSheet.tsx`, opened by `story.deadline` |
@@ -240,7 +240,6 @@ no surface outside the two hosts renders a focused workflow. Never add to it.
 | Legal project transition to `story.*` command | `storyWorkflowCommand()` in `apps/web/src/lib/commands.ts` |
 | Authored project title/notes editing | `apps/web/src/pages/ProjectDetailPage.tsx` |
 | Compiled-view (Today) compact descendant presentation and terminal-descendant hiding | `apps/web/src/components/TaskOutline.tsx` (`compactDescendants` prop) and `apps/web/src/components/TaskRow.tsx` |
-| Focused waiting/follow-up workflow | `apps/web/src/components/WaitingFollowUpSheet.tsx` and `apps/web/src/lib/useTaskActions.ts` |
 | Task/Project scalar-property pill (set and unset states) | `apps/web/src/components/DetailPropertyPill.tsx` |
 | Task/Project inline work-item error presentation | `apps/web/src/components/WorkItemInlineError.tsx` |
 | In-app single-choice delete confirmation | `apps/web/src/components/ConfirmDeleteSheet.tsx` (project deletion's task-cascade choice remains `apps/web/src/components/ProjectDeleteChoiceSheet.tsx`) |

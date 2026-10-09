@@ -1390,7 +1390,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
           stuckReason: null,
           deferredNextAction: makeTask({
             title: "Morgen anfangen",
-            notBeforeDate: localDateAfter(1),
+            revisitAt: `${localDateAfter(1)}T00:00:00.000Z`,
           }),
         })}
       />,
@@ -1409,7 +1409,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
           nextAction: makeTask({ title: "Jetzt anfangen" }),
           deferredNextAction: makeTask({
             title: "Morgen anfangen",
-            notBeforeDate: localDateAfter(1),
+            revisitAt: `${localDateAfter(1)}T00:00:00.000Z`,
           }),
         })}
       />,
@@ -1429,7 +1429,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
           stuckReason: null,
           deferredNextAction: makeTask({
             title: "In drei Tagen anfangen",
-            notBeforeDate: localDateAfter(3),
+            revisitAt: `${localDateAfter(3)}T00:00:00.000Z`,
           }),
         })}
       />,

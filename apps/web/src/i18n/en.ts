@@ -323,6 +323,23 @@ const en = {
     `Revisit for ${date} removed because the task was scheduled.`,
   planningScheduledRemoved: (date: string) =>
     `Schedule for ${date} removed because a revisit was set.`,
+  planningWaitingTitle: "Waiting for",
+  planningAddWaiting: "+ Add waiting",
+  planningEndWaiting: "End waiting",
+  planningRemoveWaiting: "Remove",
+  planningWaitingWillEnd: "Waiting will end.",
+  planningRevisitWillBeRemoved: "The associated revisit will be removed.",
+  planningUndoWaiting: "Undo",
+  planningWaitingExplanation: "What needs to happen externally before this can continue?",
+  planningNoRevisit: "No revisit set yet.",
+  planningSetRevisit: "Set revisit",
+  planningUndoWaitingToSetRevisit:
+    "Undo ending the wait before setting a revisit.",
+  planningWaitingReasonRequired: "Please say what this task is waiting for.",
+  planningWaitingConflict:
+    "After ending the wait, planning and a revisit cannot both remain. Remove one of the two dates.",
+  planningWaitingConflictWithoutWait:
+    "Without an external wait, planning and a revisit cannot both remain. Remove one of the two dates.",
   remove: "Remove",
   removePlanningDate: "Remove planning date",
   removeRevisitDate: "Remove revisit",

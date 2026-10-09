@@ -305,12 +305,9 @@ Projects additionally carry:
 
 These views are **read-only projections** — they are not stored in SQLite; they are assembled per-request.
 
-The **Heute** agenda is also query-derived. Its primary sections are ordered
-overdue deadlines, deadlines due today, planned work, due Wiedervorlagen, and
-soon-due deadlines. Selection is single-placement in that same precedence:
-`overdue > dueToday > planned > revisit > dueSoon > available`; an urgent
-deadline remains prominent while the row retains any secondary revisit or
-waiting context.
+The **Heute** agenda is also query-derived. Its primary sections contain work
+explicitly scheduled for today or earlier, overdue work, work due today,
+soon-due work, and directly externally waiting tasks whose Wiedervorlage is due.
 It is member-scoped by default (including shared/unassigned work), while the
 explicit `scope=all` query returns the same compiled buckets for the complete
 household. The frontend exposes that distinction as a session-scoped
@@ -1019,7 +1016,7 @@ Interactions target one field at a time instead of opening the full detail sheet
 | `CompleteWithOpenTasksSheet` | Focused `story.complete` continuation when criteria are satisfied/absent but open child tasks remain: lets the driver cancel or move each task (reusing `useTaskActions().requestCancel` and `task.changeProject`) and commits the same completion transition once no open tasks remain |
 | `ProjectDeferSheet` | Canonical backlog-project Wiedervorlage (`scheduledDate`) editor |
 | `ProjectDeadlineSheet` | Project deadline (`dueDate`) only |
-| `WaitingFollowUpSheet` | Owns follow-up drafts; delegates the atomic command, pending state, errors, and refresh to `useTaskActions` |
+| `TaskPlanningSheet` | Owns the shared scheduled/waiting/revisit/deadline draft; delegates one revision-safe atomic update, pending state, errors, and refresh to `useTaskActions` |
 | `DestinationPicker` | Searchable refile destination list with recents (see below) |
 
 Assignment surfaces read members from `useIdentity`, so tests mounting them
@@ -1168,20 +1165,19 @@ client-side, and hierarchy/cycle validation stays server-side
 (`wouldCreateHierarchyCycle` / `wouldCreateDependencyCycle` in
 `apps/api/src/repo/treeRepo.ts` and `dependencyRepo.ts`).
 
-### Waiting follow-up notes
+### External-wait planning
 
-`WaitingFollowUpSheet` never rewrites history. Each entry is appended to the task's notes under a generated header:
+The shared `TaskPlanningSheet` owns the local draft for the waiting reason,
+waiting start/end, revisit, scheduled date, and deadline. Opening cards,
+editing text, selecting dates, and ending or undoing a wait are local-only;
+the footer commits the complete draft once through `useTaskActions.update()`
+and the canonical revision-safe task update mutation. Direct wait resolution
+outside planning remains an immediate domain command.
 
-```
-[dd.mm.yy, hh:mm · Name]
-<text>
-```
-
-produced by `followUpEntryHeader()`, so the log stays readable and attributable
-in plain text. The same sheet updates `ExternalWait.revisitDate` and can
-explicitly end the wait. Ending it removes the external-wait row and its
-revisit while preserving `Task.scheduledDate`. The sheet owns only these
-drafts and delegates execution to `useTaskActions.followUpExternalWait`.
+Ending a wait in the shared draft does not silently discard a scheduled date or
+revisit. The API applies the existing lifecycle rules in the same transaction,
+and the UI blocks invalid date combinations before commit while preserving the
+draft for correction.
 
 ### Paperless-backed Markdown attachments
 
@@ -1367,11 +1363,11 @@ The left rail contains contextual non-status actions only. Tasks use a
 status/kind-specific rail: `Planung`, `Art`, `Struktur`, `Notiz`, or the
 waiting-task pair `Wartet auf`/`Update`; `Planung` dispatches either
 `task.availability` or `task.plan` into the unified
-`TaskPlanningSheet`, which edits persistent `Task.notBeforeAt` plus its local
-calendar date `Task.notBeforeDate`, `scheduledDate`, and `dueDate` in one
-draft/commit. Commands may provide a card target (`scheduled`, `availability`,
-or `deadline`) for highlighting and scrolling; this never requests input
-focus. `Art` opens `TaskShapeSheet`; project conversion delegates to
+`TaskPlanningSheet`, which edits persistent external-wait state, `Task.notBeforeAt`
+plus its local calendar date `Task.notBeforeDate`, `scheduledDate`, and
+`dueDate` in one draft/commit. `task.waitingLifecycle` targets the waiting card;
+neutral planning remains at the top of the sheet, and `task.availability`
+targets only the revisit card. `Art` opens `TaskShapeSheet`; project conversion delegates to
 the existing guarded backlog handoff, while task-to-reference conversion is
 not offered because no canonical mutation exists. Task details remain
 available from the row tap or kebab fallback, not as a generic rail action.
@@ -1383,8 +1379,9 @@ exists.
 `Struktur` opens `ProjectStructureSheet` for project rows and remains
 available from task detail for task split/move/convert workflows.
 The separate status/lifecycle rail (swipe right, `*-row-lifecycle`) is
-unchanged and, for tasks, now also carries the waiting/follow-up
-(`task.waitingLifecycle`) affordance. Contextual successor creation
+unchanged and, for tasks, now also carries the waiting
+(`task.waitingLifecycle`) affordance into the shared planning sheet.
+Contextual successor creation
 (a small "+" reading "Aufgabe danach hinzufügen") appears only inside the
 two `organizable` `TaskOutline` mounts (project detail's own outline, the
 split sheet's subtree editor) via `InlineSuccessorComposer`, not in

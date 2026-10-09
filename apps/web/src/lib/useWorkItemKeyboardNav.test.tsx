@@ -316,7 +316,7 @@ describe("useWorkItemKeyboardNav (j/k/h/l/Alt+arrows)", () => {
 
     await userEvent.keyboard("w");
     expect(screen.getByTestId("open-workflow")).toHaveTextContent("42|waitingLifecycle");
-    expect(await screen.findByLabelText("Worauf wartest du?")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Wartet auf" })).toBeInTheDocument();
   });
 
   it("does not run task-focused shortcuts for an active story", async () => {
