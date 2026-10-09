@@ -39,7 +39,7 @@ type WeekTaskPlanningItem = Extract<WeekPlanningItem, { role: "task" }>;
  */
 export type WorkItemCommand =
   | { type: "task.open"; taskId: number; focusField?: TaskDetailFocusField }
-  | { type: "task.plan"; taskId: number }
+  | { type: "task.plan"; taskId: number; target?: TaskPlanningTarget }
   | { type: "task.availability"; taskId: number }
   | { type: "task.shape"; taskId: number }
   | { type: "task.structure"; taskId: number }
@@ -90,6 +90,8 @@ export type WorkItemCommand =
   | { type: "navigate.projects" }
   | { type: "navigate.waiting" }
   | { type: "navigate.more" };
+
+export type TaskPlanningTarget = "scheduled" | "waiting" | "availability" | "deadline";
 
 /**
  * Maps a legal `ProjectWorkflowAction` onto its `story.*` semantic command

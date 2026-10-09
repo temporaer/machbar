@@ -736,13 +736,10 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(waitValue);
 
-    // An already-waiting task resolves to Nachhaken, not "mark as waiting".
     expect(
-      await screen.findByRole("heading", { name: "Nachhaken: Freigabe" }),
+      await screen.findByRole("heading", { name: "Planung: Freigabe" }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByLabelText("Worauf wartest du?"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue("Vermieter")).toBeInTheDocument();
   });
 
   it("offers waiting as a lightweight affordance that opens the wait workflow", async () => {
@@ -755,11 +752,14 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "+ Warten auf" }));
 
-    // A task with no external wait resolves to the "start waiting" workflow,
-    // whose commit stays disabled until a reason is given.
-    expect(await screen.findByLabelText("Worauf wartest du?")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Warten" })).toBeDisabled();
-    expect(mockedApi.setExternalWait).not.toHaveBeenCalled();
+    // A task with no external wait resolves to the shared planning workflow.
+    expect(await screen.findByLabelText("Wartet auf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Speichern" })).not.toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    expect(
+      await screen.findByText("Bitte gib an, worauf die Aufgabe wartet."),
+    ).toBeInTheDocument();
+    expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
   it("opens the split workflow from the Teilaufgaben section's Aufteilen button", async () => {
@@ -1133,12 +1133,11 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(
       within(shortcuts).getByRole("button", { name: "Nicht geplant" }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(56, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: null,
         dueDate: null,
         expectedRevision: 1,
@@ -1166,7 +1165,7 @@ describe("TaskDetailSheet", () => {
       makeTask({
         id: 62,
         title: "Abends verfügbar",
-        notBeforeAt: "2026-09-19T18:00:00.000Z",
+        revisitAt: "2026-09-19T18:00:00.000Z",
       }),
     );
     renderSheet(62);
@@ -1202,12 +1201,11 @@ describe("TaskDetailSheet", () => {
     const dueDate = await screen.findByLabelText("Fällig bis");
     fireEvent.change(dueDate, { target: { value: "13. September 2026" } });
     fireEvent.blur(dueDate);
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(59, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: "2026-09-10",
         dueDate: "2026-09-13",
         expectedRevision: 1,

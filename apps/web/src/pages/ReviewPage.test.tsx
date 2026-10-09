@@ -343,7 +343,7 @@ describe("ReviewPage", () => {
       await userEvent.click(within(card).getByRole("button", { name: "Planen" }));
 
       const sheet = await screen.findByRole("dialog");
-      expect(within(sheet).getByText("Geplant für")).toBeInTheDocument();
+      expect(within(sheet).getAllByText("Geplant für").length).toBeGreaterThan(0);
     });
 
     it("opens the canonical waiting workflow for a set_followup repair", async () => {
@@ -363,7 +363,7 @@ describe("ReviewPage", () => {
       );
 
       const sheet = await screen.findByRole("dialog");
-      expect(within(sheet).getByText("Worauf wartest du?")).toBeInTheDocument();
+      expect(within(sheet).getByText("Wiedervorlage")).toBeInTheDocument();
     });
 
     it("opens the canonical splitting workflow for an add_child repair", async () => {

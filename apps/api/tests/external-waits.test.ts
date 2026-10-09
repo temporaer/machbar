@@ -78,6 +78,51 @@ describe("task external waits", () => {
     });
   });
 
+  it("commits waiting and planning fields atomically through the task update path", async () => {
+    const task = await createTask({ title: "Werkstatt anrufen" });
+    const valid = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: {
+        externalWait: { waitingFor: "Rückruf" },
+        scheduledDate: "2026-09-10",
+        revisitAt: "2026-09-11T08:00:00.000Z",
+        dueDate: "2026-09-12",
+        expectedRevision: task.revision,
+      },
+    });
+    expect(valid.statusCode).toBe(200);
+    expect(valid.json()).toMatchObject({
+      externalWait: { waitingFor: "Rückruf" },
+      scheduledDate: "2026-09-10",
+      revisitAt: "2026-09-11T08:00:00.000Z",
+      dueDate: "2026-09-12",
+    });
+
+    const current = valid.json();
+    const conflict = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: {
+        externalWait: null,
+        scheduledDate: "2026-09-10",
+        revisitAt: "2026-09-11T08:00:00.000Z",
+        expectedRevision: current.revision,
+      },
+    });
+    expect(conflict.statusCode).toBe(409);
+
+    const unchanged = await ctx.app.inject({
+      method: "GET",
+      url: `/api/tasks/${task.id}`,
+    });
+    expect(unchanged.json()).toMatchObject({
+      externalWait: { waitingFor: "Rückruf" },
+      scheduledDate: "2026-09-10",
+      revisitAt: "2026-09-11T08:00:00.000Z",
+    });
+  });
+
   it("rejects every external-wait operation for reference material through the action guard", async () => {
     const reference = await createReference({ title: "Reference material" });
 

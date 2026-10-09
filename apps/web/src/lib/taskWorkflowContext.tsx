@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import type { TaskPlanningTarget } from "./commands";
 
 /**
  * Every focused task workflow reachable through a canonical `task.*`
@@ -40,11 +41,12 @@ export type TaskWorkflowKind =
 export interface TaskWorkflowState {
   kind: TaskWorkflowKind;
   taskId: number;
+  planningTarget?: TaskPlanningTarget;
 }
 
 interface TaskWorkflowContextValue {
   current: TaskWorkflowState | null;
-  open: (kind: TaskWorkflowKind, taskId: number) => void;
+  open: (kind: TaskWorkflowKind, taskId: number, planningTarget?: TaskPlanningTarget) => void;
   close: () => void;
 }
 
@@ -55,7 +57,12 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
   const value = useMemo<TaskWorkflowContextValue>(
     () => ({
       current,
-      open: (kind, taskId) => setCurrent({ kind, taskId }),
+      open: (kind, taskId, planningTarget) =>
+        setCurrent({
+          kind,
+          taskId,
+          ...(planningTarget ? { planningTarget } : {}),
+        }),
       close: () => setCurrent(null),
     }),
     [current],

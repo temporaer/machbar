@@ -11,6 +11,7 @@ type SheetEntry = {
   backdrop: HTMLDivElement;
   opener: HTMLElement | null;
   close: () => void;
+  focusFirst: boolean;
 };
 
 type HiddenState = {
@@ -154,7 +155,7 @@ function registerSheet(entry: SheetEntry) {
   sheetStack.push(entry);
   sheetStack.sort((left, right) => left.order - right.order);
   updatePageIsolation();
-  if (topSheet() === entry) focusSheet(entry);
+  if (topSheet() === entry && entry.focusFirst) focusSheet(entry);
 }
 
 function unregisterSheet(id: symbol) {
@@ -194,6 +195,7 @@ export function BottomSheet({
   labelledBy,
   headerActions,
   headerStatus,
+  initialFocus = "first",
 }: {
   title?: string;
   onClose: () => void;
@@ -201,6 +203,7 @@ export function BottomSheet({
   labelledBy?: string;
   headerActions?: ReactNode;
   headerStatus?: ReactNode;
+  initialFocus?: "first" | "dialog";
 }) {
   const strings = useStrings();
   const internalHeadingId = useId();
@@ -217,6 +220,7 @@ export function BottomSheet({
   const backdropRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const initialFocusRef = useRef(initialFocus);
 
   useLayoutEffect(() => {
     const dialog = dialogRef.current;
@@ -230,6 +234,7 @@ export function BottomSheet({
       backdrop,
       opener: openerRef.current,
       close: () => onCloseRef.current(),
+      focusFirst: initialFocusRef.current === "first",
     });
     return () => unregisterSheet(idRef.current);
   }, []);

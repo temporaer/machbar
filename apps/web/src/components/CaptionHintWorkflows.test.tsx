@@ -13,7 +13,6 @@ import { TaskContextsSheet } from "./TaskContextsSheet";
 import { TaskOwnerSheet } from "./TaskOwnerSheet";
 import { TaskPlanSheet } from "./TaskPlanSheet";
 import { TaskTagsSheet } from "./TaskTagsSheet";
-import { TaskWaitSheet } from "./TaskWaitSheet";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -21,7 +20,6 @@ vi.mock("../lib/api", () => ({
     getTags: vi.fn(),
     getHomeAssistantStatus: vi.fn(),
     updateTask: vi.fn(),
-    setExternalWait: vi.fn(),
   },
 }));
 
@@ -50,15 +48,17 @@ describe("caption hints in focused task workflows", () => {
       screen.getByRole("button", { name: /^Planen: 15\./ }),
     );
     await userEvent.click(
+      screen.getByRole("button", { name: "Fällig bis" }),
+    );
+    await userEvent.click(
       screen.getByRole("button", { name: /^Deadline: 18\./ }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
-        notBeforeAt: null,
-        notBeforeDate: null,
         scheduledDate: "2026-09-15",
+        revisitAt: null,
         dueDate: "2026-09-18",
         title: "Fenster putzen",
         expectedRevision: 3,
@@ -165,36 +165,4 @@ describe("caption hints in focused task workflows", () => {
     );
   });
 
-  it("prefills waiting-for and revisit hints while preserving the title", async () => {
-    const peter = makeMember({ id: 10, name: "Peter" });
-    const task = makeTask({
-      id: 45,
-      revision: 7,
-      title: "auf Peter warten, Montag nachhaken",
-      createdAt,
-    });
-    mockedApi.setExternalWait.mockResolvedValue({
-      ...task,
-      revision: 8,
-      externalWait: { waitingFor: "Peter", revisitDate: "2026-09-21" },
-    } as never);
-    renderWithProviders(
-      <TaskWaitSheet task={task} members={[peter]} onClose={vi.fn()} />,
-    );
-
-    await userEvent.click(screen.getByRole("button", { name: "Peter" }));
-    await userEvent.click(
-      screen.getByRole("button", { name: /^Wiedervorlage: 21\./ }),
-    );
-    await userEvent.click(screen.getByRole("button", { name: "Warten" }));
-
-    await waitFor(() =>
-      expect(mockedApi.setExternalWait).toHaveBeenCalledWith(45, {
-        waitingFor: "Peter",
-        revisitDate: "2026-09-21",
-        expectedRevision: 7,
-      }),
-    );
-    expect(mockedApi.updateTask).not.toHaveBeenCalled();
-  });
 });

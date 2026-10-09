@@ -285,7 +285,7 @@ export function ReviewPage() {
         return;
       case "set_followup":
         dispatchWithReturn(
-          { type: "task.waitingLifecycle", taskId: targetId },
+          { type: "task.availability", taskId: targetId },
           item,
           issueIndex,
         );

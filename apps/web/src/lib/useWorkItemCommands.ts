@@ -235,10 +235,10 @@ export function useWorkItemCommands() {
           }
           return;
         case "task.plan":
-          taskWorkflow.open("plan", command.taskId);
+          taskWorkflow.open("plan", command.taskId, command.target);
           return;
         case "task.availability":
-          taskWorkflow.open("availability", command.taskId);
+          taskWorkflow.open("availability", command.taskId, "availability");
           return;
         case "task.shape":
           taskWorkflow.open("shape", command.taskId);
@@ -250,7 +250,7 @@ export function useWorkItemCommands() {
           taskWorkflow.open("reminders", command.taskId);
           return;
         case "task.waitingLifecycle":
-          taskWorkflow.open("waitingLifecycle", command.taskId);
+          taskWorkflow.open("waitingLifecycle", command.taskId, "waiting");
           return;
         case "task.split":
           taskWorkflow.open("split", command.taskId);

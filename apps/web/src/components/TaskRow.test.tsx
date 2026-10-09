@@ -709,12 +709,12 @@ describe("TaskRow – calm shared card presentation", () => {
     const task = makeTask({
       id: 27,
       title: "Erst abends erledigen",
-      notBeforeAt: "2026-09-19T18:00:00.000Z",
+      revisitAt: "2026-09-19T18:00:00.000Z",
     });
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
 
     await screen.findByText("Erst abends erledigen");
-    expect(screen.getByText(/Wieder ansehen ab: .*18:00/)).toBeInTheDocument();
+    expect(screen.getByText(/Wiedervorlage: .*18:00/)).toBeInTheDocument();
   });
 
   it("keeps a long wrapping title complete while tags occupy the upper-right", async () => {
@@ -849,20 +849,24 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     await screen.findByLabelText("Geplant für");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
-    await userEvent.click(screen.getAllByRole("button", { name: "Morgen" })[1]!);
+    const scheduledCard = screen
+      .getByRole("heading", { name: "Geplant für" })
+      .closest<HTMLElement>(".task-planning-card");
+    await userEvent.click(
+      within(scheduledCard!).getByRole("button", { name: "Morgen" }),
+    );
 
     // Choosing a shortcut is a local draft, not an immediate commit — the
-    // sheet stays open and nothing is saved until "Fertig".
+    // sheet stays open and nothing is saved until "Speichern".
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(31, {
-        notBeforeAt: null,
-        notBeforeDate: null,
         scheduledDate: resolveScheduleShortcut("tomorrow"),
+        revisitAt: null,
         dueDate: null,
         expectedRevision: 1,
       }),
@@ -881,7 +885,7 @@ describe("TaskRow – action chips use focused quick-edit flows", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Wartet" }));
 
-    const waitingFor = await screen.findByLabelText("Worauf wartest du?");
+    const waitingFor = await screen.findByLabelText("Wartet auf");
     expect(screen.queryByLabelText("Titel")).not.toBeInTheDocument();
     expect(waitingFor).toBeInTheDocument();
   });

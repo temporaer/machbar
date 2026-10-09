@@ -266,9 +266,31 @@ function useTaskActionsState() {
       // optimistic snapshot fills in placeholder ones. This is cosmetic:
       // the snapshot is only shown for the brief retention window before
       // the authoritative refetch replaces it.
-      optimisticPatch: Partial<Task> = patch.reminders
-        ? { ...patch, reminders: patch.reminders.map((r, i) => ({ ...r, id: r.id ?? -1 - i })) }
-        : (patch as Partial<Task>),
+      optimisticPatch: Partial<Task> = (() => {
+        const { externalWait, reminders, ...rest } = patch;
+        return {
+          ...rest,
+          ...(externalWait !== undefined
+            ? {
+                externalWait:
+                  externalWait === null
+                    ? null
+                    : {
+                        waitingFor: externalWait.waitingFor ?? null,
+                        revisitDate: externalWait.revisitDate ?? null,
+                      },
+              }
+            : {}),
+          ...(reminders
+            ? {
+                reminders: reminders.map((r, i) => ({
+                  ...r,
+                  id: r.id ?? -1 - i,
+                })),
+              }
+            : {}),
+        };
+      })(),
       throwOnError = false,
     ) => {
       const optimistic: Task = {
