@@ -1,8 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Task } from "@machbar/shared";
-import {
-  calendarDateForInstant,
-} from "@machbar/shared";
+import { calendarDateForInstant } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { useTaskActions } from "../lib/useTaskActions";
@@ -14,39 +12,53 @@ import {
   strongestCaptionHints,
   type TemporalCaptionHint,
 } from "../lib/captionHints";
-import { formatExactLocalDate } from "../lib/relativeDate";
+import { formatExactLocalDate, formatRevisitAt } from "../lib/relativeDate";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
-import { taskAvailabilityClock, taskAvailabilityForLocalDate } from "../lib/taskAvailability";
-import { resolveAbsolutePreset, absolutePresetIsFuture } from "../lib/reminderPresets";
+import {
+  taskAvailabilityClock,
+  taskAvailabilityForLocalDate,
+} from "../lib/taskAvailability";
+import {
+  resolveAbsolutePreset,
+  absolutePresetIsFuture,
+} from "../lib/reminderPresets";
+import type { TaskPlanningTarget } from "../lib/commands";
 import { BottomSheet } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { HumanDateInput } from "./HumanDateInput";
 
-export type TaskPlanningFocus = "availability" | "scheduled";
+type DateField = "scheduled" | "availability" | "deadline";
+type DateValidity = Record<DateField, boolean>;
+
+function cardClass(active: boolean) {
+  return `task-planning-card${active ? " task-planning-card-active" : ""}`;
+}
 
 /**
- * The canonical task planning workflow. Availability, scheduled work, and
- * deadlines are one local draft and one revision-safe commit.
+ * The canonical task planning workflow. All three date types are one local
+ * draft and one revision-safe commit.
  */
 export function TaskPlanningSheet({
   task,
   onClose,
-  focus = "scheduled",
+  initialTarget,
 }: {
   task: Task;
   onClose: () => void;
-  focus?: TaskPlanningFocus;
+  initialTarget?: TaskPlanningTarget;
 }) {
   const strings = useStrings();
   const { locale } = useLocale();
   const taskActions = useTaskActions();
   const { timezone: householdTimezone, loaded: timezoneLoaded } =
     useHouseholdTimezone();
-  const initialAvailabilityDate =
-    task.revisitAt
-      ? calendarDateForInstant(task.revisitAt, householdTimezone) ?? ""
-      : "";
+  const scheduledCardRef = useRef<HTMLElement>(null);
+  const availabilityCardRef = useRef<HTMLElement>(null);
+  const deadlineCardRef = useRef<HTMLElement>(null);
+  const initialAvailabilityDate = task.revisitAt
+    ? calendarDateForInstant(task.revisitAt, householdTimezone) ?? ""
+    : "";
   const [notBeforeDate, setNotBeforeDate] = useState(initialAvailabilityDate);
   const [notBeforeTime, setNotBeforeTime] = useState(
     taskAvailabilityClock(task.revisitAt, householdTimezone) ?? "06:00",
@@ -54,12 +66,37 @@ export function TaskPlanningSheet({
   const [availabilityEdited, setAvailabilityEdited] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
+  const [deadlineOpen, setDeadlineOpen] = useState(
+    Boolean(task.dueDate) || initialTarget === "deadline",
+  );
+  const [activeTarget, setActiveTarget] = useState<TaskPlanningTarget | undefined>(
+    initialTarget,
+  );
+  const [validity, setValidity] = useState<DateValidity>({
+    scheduled: true,
+    availability: true,
+    deadline: true,
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [dateValid, setDateValid] = useState(true);
+  const [scheduledNotice, setScheduledNotice] = useState<string | null>(null);
+  const [availabilityNotice, setAvailabilityNotice] = useState<string | null>(null);
   const [acceptedHints, setAcceptedHints] = useState<
     Partial<Record<"scheduledDate" | "dueDate", TemporalCaptionHint>>
   >({});
+
+  useEffect(() => {
+    if (!initialTarget) return;
+    const target =
+      initialTarget === "scheduled"
+        ? scheduledCardRef.current
+        : initialTarget === "availability"
+          ? availabilityCardRef.current
+          : deadlineCardRef.current;
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ block: "nearest", behavior: "auto" });
+    }
+  }, [initialTarget]);
 
   useEffect(() => {
     if (availabilityEdited) return;
@@ -112,6 +149,46 @@ export function TaskPlanningSheet({
     (scheduledDate || null) !== task.scheduledDate ||
     (dueDate || null) !== task.dueDate ||
     cleanedTitle !== task.title;
+  const allValid =
+    validity.scheduled && validity.availability && validity.deadline;
+  const matchesAvailability = (instant: string | null) =>
+    Boolean(
+      availabilityEdited &&
+        instant &&
+        nextAvailability?.notBeforeAt === instant,
+    );
+  const tomorrowAvailability = taskAvailabilityForLocalDate(
+    addIsoCalendarDays(householdToday, 1),
+    notBeforeTime || "06:00",
+    householdTimezone,
+  )?.notBeforeAt ?? null;
+  const weekendDate = (() => {
+    const day = new Date(`${householdToday}T00:00:00.000Z`).getUTCDay();
+    return addIsoCalendarDays(householdToday, (6 - day + 7) % 7);
+  })();
+  const weekendAvailability = taskAvailabilityForLocalDate(
+    weekendDate,
+    notBeforeTime || "06:00",
+    householdTimezone,
+  )?.notBeforeAt ?? null;
+
+  const setFieldValidity = useCallback((field: DateField, valid: boolean) => {
+    setValidity((current) =>
+      current[field] === valid ? current : { ...current, [field]: valid },
+    );
+  }, []);
+  const setScheduledValidity = useCallback(
+    (valid: boolean) => setFieldValidity("scheduled", valid),
+    [setFieldValidity],
+  );
+  const setAvailabilityValidity = useCallback(
+    (valid: boolean) => setFieldValidity("availability", valid),
+    [setFieldValidity],
+  );
+  const setDeadlineValidity = useCallback(
+    (valid: boolean) => setFieldValidity("deadline", valid),
+    [setFieldValidity],
+  );
 
   const acceptHint = (
     field: "scheduledDate" | "dueDate",
@@ -121,13 +198,17 @@ export function TaskPlanningSheet({
     const hint = hints.find((candidate) => candidate.key === key);
     if (!hint) return;
     setAcceptedHints((current) => ({ ...current, [field]: hint }));
-    if (field === "scheduledDate") {
-      setPlannedDate(hint.date);
+    if (field === "scheduledDate") setPlannedDate(hint.date);
+    else {
+      setDueDate(hint.date);
+      setDeadlineOpen(true);
     }
-    else setDueDate(hint.date);
   };
 
-  const labelFor = (hint: TemporalCaptionHint, field: "scheduledDate" | "dueDate") => {
+  const labelFor = (
+    hint: TemporalCaptionHint,
+    field: "scheduledDate" | "dueDate",
+  ) => {
     const date = formatExactLocalDate(hint.date, locale) ?? hint.date;
     return field === "scheduledDate"
       ? strings.titleHintSchedule(date)
@@ -136,10 +217,30 @@ export function TaskPlanningSheet({
 
   const setPlannedDate = (date: string) => {
     setScheduledDate(date);
-    if (date && canMutuallyExclude) {
+    setValidity((current) => ({ ...current, scheduled: true }));
+    if (!date) {
+      setAvailabilityNotice(null);
+      return;
+    }
+    if (canMutuallyExclude && notBeforeDate) {
+      const previous = formatRevisitAt(
+        nextAvailability?.notBeforeAt ??
+          taskAvailabilityForLocalDate(
+            notBeforeDate,
+            notBeforeTime,
+            householdTimezone,
+          )?.notBeforeAt ??
+          "",
+        locale,
+        householdTimezone,
+      ) ?? `${formatExactLocalDate(notBeforeDate, locale) ?? notBeforeDate} ${notBeforeTime}`;
+      setAvailabilityNotice(
+        strings.planningRevisitRemoved(previous),
+      );
       setAvailabilityEdited(true);
       setNotBeforeDate("");
       setNotBeforeTime("06:00");
+      setValidity((current) => ({ ...current, availability: true }));
     }
   };
 
@@ -147,11 +248,38 @@ export function TaskPlanningSheet({
     setAvailabilityEdited(true);
     setNotBeforeDate(date);
     setNotBeforeTime(time);
-    if (date && canMutuallyExclude) setScheduledDate("");
+    setValidity((current) => ({ ...current, availability: true }));
+    if (!date) {
+      setScheduledNotice(null);
+      return;
+    }
+    if (canMutuallyExclude && scheduledDate) {
+      const previous = formatExactLocalDate(scheduledDate, locale) ?? scheduledDate;
+      setScheduledNotice(strings.planningScheduledRemoved(previous));
+      setScheduledDate("");
+      setValidity((current) => ({ ...current, scheduled: true }));
+    }
+  };
+
+  const removeScheduled = () => {
+    setScheduledDate("");
+    setValidity((current) => ({ ...current, scheduled: true }));
+    setAvailabilityNotice(null);
+  };
+
+  const removeAvailability = () => {
+    setRevisitDateTime("", "06:00");
+    setAvailabilityNotice(null);
+  };
+
+  const removeDeadline = () => {
+    setDueDate("");
+    setDeadlineOpen(false);
+    setValidity((current) => ({ ...current, deadline: true }));
   };
 
   const commit = async () => {
-    if (saving || !dateValid || invalidRevisitSelection) return;
+    if (saving || !allValid || invalidRevisitSelection) return;
     setSaving(true);
     setError(null);
     try {
@@ -170,53 +298,148 @@ export function TaskPlanningSheet({
     }
   };
 
+  const cardEvents = (target: TaskPlanningTarget) => ({
+    onPointerDownCapture: () => setActiveTarget(target),
+    onFocusCapture: () => setActiveTarget(target),
+  });
+
   return (
     <BottomSheet
-      title={`${strings.planning}: ${task.title}`}
+      title={strings.planning}
+      initialFocus="dialog"
       onClose={() => {
         if (!saving) onClose();
       }}
     >
+      <p className="task-planning-title">{task.title}</p>
       <form
-        className="stack"
+        className="stack task-planning-form"
         onSubmit={(event) => {
           event.preventDefault();
           void commit();
         }}
       >
-        <div className="field">
-          <label htmlFor={`planning-availability-date-${task.id}`}>
-            {strings.planningShowFrom}
-          </label>
+        <section
+          ref={scheduledCardRef}
+          className={cardClass(activeTarget === "scheduled")}
+          {...cardEvents("scheduled")}
+        >
+          <div className="task-planning-card-header">
+            <div>
+              <h3>{strings.planningScheduledFor}</h3>
+              <p>{strings.planningScheduledExplanation}</p>
+            </div>
+            {scheduledDate ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                aria-label={strings.removePlanningDate}
+                disabled={saving}
+                onClick={removeScheduled}
+              >
+                {strings.remove}
+              </button>
+            ) : null}
+          </div>
           <HumanDateInput
-            id={`planning-availability-date-${task.id}`}
-            value={notBeforeDate}
-            onChange={(date) => setRevisitDateTime(date ?? "", notBeforeTime)}
-            onValidityChange={setDateValid}
-            disabled={saving || !timezoneLoaded}
-            autoFocus={focus === "availability"}
+            id={`planning-scheduled-${task.id}`}
+            value={scheduledDate}
+            ariaLabel={strings.planningScheduledFor}
+            onChange={(date) => setPlannedDate(date ?? "")}
+            onValidityChange={setScheduledValidity}
+            disabled={saving}
           />
-          <input
-            id={`planning-availability-time-${task.id}`}
-            type="time"
-            value={notBeforeTime}
-            onChange={(event) =>
-              setRevisitDateTime(notBeforeDate, event.target.value)
-            }
-            disabled={saving || !timezoneLoaded || !notBeforeDate}
+          <ScheduleShortcuts
+            value={scheduledDate}
+            onChange={(date) => setPlannedDate(date ?? "")}
+            disabled={saving}
+            includeUnscheduled={false}
           />
-          <label htmlFor={`planning-availability-time-${task.id}`}>
-            {strings.availabilityCustomTime}
-          </label>
+          <CaptionHintSuggestions
+            hints={scheduleHints.map((hint) => ({
+              key: hint.key,
+              label: labelFor(hint, "scheduledDate"),
+            }))}
+            disabled={saving}
+            onSelect={(key) => acceptHint("scheduledDate", scheduleHints, key)}
+          />
+          {scheduledNotice ? (
+            <p className="task-planning-replacement-note" role="status">
+              {scheduledNotice}
+            </p>
+          ) : null}
+        </section>
+
+        <section
+          ref={availabilityCardRef}
+          className={cardClass(activeTarget === "availability")}
+          {...cardEvents("availability")}
+        >
+          <div className="task-planning-card-header">
+            <div>
+              <h3>{strings.planningShowFrom}</h3>
+              <p>
+                {task.externalWait
+                  ? strings.planningAvailabilityExternalExplanation
+                  : strings.planningAvailabilityExplanation}
+              </p>
+            </div>
+            {notBeforeDate ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                aria-label={strings.removeRevisitDate}
+                disabled={saving || !timezoneLoaded}
+                onClick={removeAvailability}
+              >
+                {strings.remove}
+              </button>
+            ) : null}
+          </div>
+          <div className="task-planning-datetime">
+            <div className="task-planning-date">
+              <label htmlFor={`planning-availability-date-${task.id}`}>
+                {strings.date}
+              </label>
+              <HumanDateInput
+                id={`planning-availability-date-${task.id}`}
+                value={notBeforeDate}
+                onChange={(date) => setRevisitDateTime(date ?? "", notBeforeTime)}
+                onValidityChange={setAvailabilityValidity}
+                disabled={saving || !timezoneLoaded}
+              />
+            </div>
+            <div className="task-planning-time">
+              <label htmlFor={`planning-availability-time-${task.id}`}>
+                {strings.time}
+              </label>
+              <input
+                id={`planning-availability-time-${task.id}`}
+                type="time"
+                value={notBeforeTime}
+                onChange={(event) =>
+                  setRevisitDateTime(notBeforeDate, event.target.value)
+                }
+                disabled={saving || !timezoneLoaded || !notBeforeDate}
+              />
+            </div>
+          </div>
           {invalidRevisitSelection ? (
             <p className="human-date-error" role="alert">
               {strings.invalidRevisitTime}
             </p>
           ) : null}
-          <div className="choice-group" role="group" aria-label={strings.availabilitySameDayGroup}>
+          <div
+            className="choice-group"
+            role="group"
+            aria-label={strings.availabilitySameDayGroup}
+          >
             <button
               type="button"
               className="choice-chip"
+              aria-pressed={matchesAvailability(
+                resolveAbsolutePreset("in3Hours", new Date(), householdTimezone),
+              )}
               disabled={saving || !timezoneLoaded}
               onClick={() => {
                 const instant = resolveAbsolutePreset(
@@ -241,6 +464,9 @@ export function TaskPlanningSheet({
               <button
                 type="button"
                 className="choice-chip"
+                aria-pressed={matchesAvailability(
+                  resolveAbsolutePreset("tonight", new Date(), householdTimezone),
+                )}
                 disabled={saving || !timezoneLoaded}
                 onClick={() => {
                   const instant = resolveAbsolutePreset(
@@ -265,16 +491,21 @@ export function TaskPlanningSheet({
             <button
               type="button"
               className="choice-chip"
+              aria-pressed={matchesAvailability(tomorrowAvailability)}
               disabled={saving || !timezoneLoaded}
-              onClick={() => {
-                setRevisitDateTime(addIsoCalendarDays(householdToday, 1), notBeforeTime || "06:00");
-              }}
+              onClick={() =>
+                setRevisitDateTime(
+                  addIsoCalendarDays(householdToday, 1),
+                  notBeforeTime || "06:00",
+                )
+              }
             >
               {strings.scheduleShortcutLabels.tomorrow}
             </button>
             <button
               type="button"
               className="choice-chip"
+              aria-pressed={matchesAvailability(weekendAvailability)}
               disabled={saving || !timezoneLoaded}
               onClick={() => {
                 const day = new Date(`${householdToday}T00:00:00.000Z`).getUTCDay();
@@ -288,67 +519,72 @@ export function TaskPlanningSheet({
               {strings.scheduleShortcutLabels.weekend}
             </button>
           </div>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost"
-            disabled={
-              saving ||
-              !timezoneLoaded ||
-              (!notBeforeDate && !task.revisitAt)
-            }
-            onClick={() => {
-              setRevisitDateTime("", "06:00");
-            }}
-          >
-            {strings.clearNotBefore}
-          </button>
-        </div>
+          {availabilityNotice ? (
+            <p className="task-planning-replacement-note" role="status">
+              {availabilityNotice}
+            </p>
+          ) : null}
+        </section>
 
-        <div className="field">
-          <label htmlFor={`planning-scheduled-${task.id}`}>{strings.planningScheduledFor}</label>
-          <HumanDateInput
-            id={`planning-scheduled-${task.id}`}
-            value={scheduledDate}
-            onChange={(date) => setPlannedDate(date ?? "")}
-            onValidityChange={setDateValid}
-            disabled={saving}
-            autoFocus={focus === "scheduled"}
-          />
-          <ScheduleShortcuts
-            value={scheduledDate}
-            onChange={(date) => {
-              setPlannedDate(date ?? "");
-            }}
-            disabled={saving}
-          />
-          <CaptionHintSuggestions
-            hints={scheduleHints.map((hint) => ({
-              key: hint.key,
-              label: labelFor(hint, "scheduledDate"),
-            }))}
-            disabled={saving}
-            onSelect={(key) => acceptHint("scheduledDate", scheduleHints, key)}
-          />
-        </div>
-
-        <div className="field">
-          <label htmlFor={`planning-due-${task.id}`}>{strings.planningDueBy}</label>
-          <HumanDateInput
-            id={`planning-due-${task.id}`}
-            value={dueDate}
-            onChange={(date) => setDueDate(date ?? "")}
-            onValidityChange={setDateValid}
-            disabled={saving}
-          />
-          <CaptionHintSuggestions
-            hints={deadlineHints.map((hint) => ({
-              key: hint.key,
-              label: labelFor(hint, "dueDate"),
-            }))}
-            disabled={saving}
-            onSelect={(key) => acceptHint("dueDate", deadlineHints, key)}
-          />
-        </div>
+        <section
+          ref={deadlineCardRef}
+          className={`${cardClass(activeTarget === "deadline")}${
+            !deadlineOpen ? " task-planning-card-compact" : ""
+          }`}
+          {...cardEvents("deadline")}
+        >
+          <div className="task-planning-card-header">
+            <div>
+              <h3>{strings.planningDueBy}</h3>
+              {deadlineOpen ? (
+                <p>{strings.planningDeadlineExplanation}</p>
+              ) : null}
+            </div>
+            {dueDate ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                aria-label={strings.removeDeadline}
+                disabled={saving}
+                onClick={removeDeadline}
+              >
+                {strings.remove}
+              </button>
+            ) : null}
+          </div>
+          {!deadlineOpen ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost task-planning-add-deadline"
+              disabled={saving}
+              onClick={() => setDeadlineOpen(true)}
+            >
+              {strings.addDeadline}
+            </button>
+          ) : (
+            <>
+              <HumanDateInput
+                id={`planning-due-${task.id}`}
+                value={dueDate}
+                ariaLabel={strings.planningDueBy}
+                onChange={(date) => {
+                  setDueDate(date ?? "");
+                  setValidity((current) => ({ ...current, deadline: true }));
+                }}
+                onValidityChange={setDeadlineValidity}
+                disabled={saving}
+              />
+              <CaptionHintSuggestions
+                hints={deadlineHints.map((hint) => ({
+                  key: hint.key,
+                  label: labelFor(hint, "dueDate"),
+                }))}
+                disabled={saving}
+                onSelect={(key) => acceptHint("dueDate", deadlineHints, key)}
+              />
+            </>
+          )}
+        </section>
 
         {error ? (
           <div className="task-row-error" role="alert">
@@ -357,16 +593,16 @@ export function TaskPlanningSheet({
           </div>
         ) : null}
 
-        <div className="row">
+        <div className="task-planning-actions">
           <button type="button" className="btn" disabled={saving} onClick={onClose}>
             {strings.cancel}
           </button>
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={saving || !dateValid || invalidRevisitSelection || !dirty}
+            disabled={saving || !allValid || invalidRevisitSelection || !dirty}
           >
-            {strings.confirmDone}
+            {strings.save}
           </button>
         </div>
       </form>

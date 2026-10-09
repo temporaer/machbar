@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import type { TaskPlanningTarget } from "./commands";
 
 /**
  * Every focused task workflow reachable through a canonical `task.*`
@@ -15,7 +16,7 @@ import type { ReactNode } from "react";
  * one of the focused sheets below and switches on `kind`.
  *
  * `availability` and `plan` both open the canonical unified planning sheet,
- * with different initial focus. `structure` opens
+ * with an optional card target. `structure` opens
  * `TaskStructureSheet` (Aufteilen/
  * Verschieben …/Zum Projekt machen), which itself only ever dispatches
  * `task.split`/`task.changeProject`/`task.convertToProject` rather than
@@ -40,11 +41,20 @@ export type TaskWorkflowKind =
 export interface TaskWorkflowState {
   kind: TaskWorkflowKind;
   taskId: number;
+  planningTarget?: TaskPlanningTarget;
+}
+
+export interface TaskWorkflowOpenOptions {
+  planningTarget?: TaskPlanningTarget;
 }
 
 interface TaskWorkflowContextValue {
   current: TaskWorkflowState | null;
-  open: (kind: TaskWorkflowKind, taskId: number) => void;
+  open: (
+    kind: TaskWorkflowKind,
+    taskId: number,
+    options?: TaskWorkflowOpenOptions,
+  ) => void;
   close: () => void;
 }
 
@@ -55,7 +65,8 @@ export function TaskWorkflowProvider({ children }: { children: ReactNode }) {
   const value = useMemo<TaskWorkflowContextValue>(
     () => ({
       current,
-      open: (kind, taskId) => setCurrent({ kind, taskId }),
+      open: (kind, taskId, options) =>
+        setCurrent({ kind, taskId, ...options }),
       close: () => setCurrent(null),
     }),
     [current],

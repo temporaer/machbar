@@ -38,15 +38,20 @@ export function ScheduleShortcuts({
   value,
   onChange,
   disabled = false,
+  includeUnscheduled = true,
 }: {
   value: string | null;
   onChange: (date: string | null) => void;
   disabled?: boolean;
+  includeUnscheduled?: boolean;
 }) {
   const strings = useStrings();
+  const shortcuts = includeUnscheduled
+    ? scheduleShortcuts
+    : scheduleShortcuts.filter((shortcut) => shortcut !== "unscheduled");
   return (
     <div className="choice-group" role="group" aria-label={strings.scheduleShortcuts}>
-      {scheduleShortcuts.map((shortcut) => {
+      {shortcuts.map((shortcut) => {
         const date = resolveScheduleShortcut(shortcut);
         return (
           <button

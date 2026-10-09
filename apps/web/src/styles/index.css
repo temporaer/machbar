@@ -2518,6 +2518,10 @@ details[open] > .disclosure-summary::after {
   margin: 0 auto;
 }
 
+.sheet:focus {
+  outline: none;
+}
+
 .sheet-grabber {
   width: 40px;
   height: 4px;
@@ -2548,6 +2552,119 @@ details[open] > .disclosure-summary::after {
   gap: 8px;
   flex-shrink: 0;
   margin-left: auto;
+}
+
+.task-planning-title {
+  margin: -2px 0 12px;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.task-planning-form {
+  gap: 12px;
+}
+
+.task-planning-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.task-planning-card-active {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.task-planning-card-compact {
+  padding-block: 10px;
+}
+
+.task-planning-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+
+.task-planning-card-header h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.task-planning-card-header p {
+  margin: 3px 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.task-planning-card-header .btn {
+  flex: 0 0 auto;
+}
+
+.task-planning-datetime {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.task-planning-date {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.task-planning-time {
+  flex: 0 1 9rem;
+  min-width: 7.5rem;
+}
+
+.task-planning-datetime label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.task-planning-time input {
+  min-height: 44px;
+}
+
+.task-planning-add-deadline {
+  margin-top: 0;
+}
+
+.task-planning-replacement-note {
+  margin: 8px 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.task-planning-actions {
+  position: sticky;
+  bottom: calc(-1 * (24px + env(safe-area-inset-bottom)));
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 4px -18px calc(-1 * (24px + env(safe-area-inset-bottom)));
+  padding: 10px 18px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+@media (max-width: 380px) {
+  .task-planning-datetime {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .task-planning-time {
+    min-width: 0;
+    flex-basis: auto;
+  }
 }
 
 .sheet-header-status {

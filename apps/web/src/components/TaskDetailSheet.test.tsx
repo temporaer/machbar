@@ -1132,11 +1132,13 @@ describe("TaskDetailSheet", () => {
       screen.getByRole("button", { name: /Geplant für.*04\.09\.2026/ }),
     );
 
-    const shortcuts = await screen.findByRole("group", { name: "Schnell planen" });
+    await screen.findByRole("group", { name: "Schnell planen" });
     await userEvent.click(
-      within(shortcuts).getByRole("button", { name: "Nicht geplant" }),
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Planungsdatum entfernen",
+      }),
     );
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(56, {
@@ -1159,7 +1161,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Wiedervorlage" }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Planung: Noch nicht verfügbar" }),
+      await screen.findByRole("dialog", { name: "Planung" }),
     ).toBeInTheDocument();
   });
 
@@ -1180,7 +1182,7 @@ describe("TaskDetailSheet", () => {
     );
 
     expect(
-      await screen.findByRole("dialog", { name: "Planung: Abends verfügbar" }),
+      await screen.findByRole("dialog", { name: "Planung" }),
     ).toBeInTheDocument();
   });
 
@@ -1201,13 +1203,13 @@ describe("TaskDetailSheet", () => {
       screen.getByRole("button", { name: "Geplant für 10.09.2026" }),
     ).toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: "Fällig bis 20.09.2026" }),
+      screen.getByRole("button", { name: "Deadline 20.09.2026" }),
     );
 
-    const dueDate = await screen.findByLabelText("Fällig bis");
+    const dueDate = document.getElementById("planning-due-59")!;
     fireEvent.change(dueDate, { target: { value: "13. September 2026" } });
     fireEvent.blur(dueDate);
-    await userEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(59, {
