@@ -37,6 +37,7 @@ import { LocaleProvider } from "./lib/locale";
 import { ThemeProvider } from "./lib/theme";
 import { SwipeCoachProvider } from "./lib/swipeCoach";
 import { DeveloperModeProvider, useDeveloperMode } from "./lib/developerMode";
+import { HouseholdTimezoneProvider } from "./lib/householdTimezone";
 import { useStrings } from "./lib/strings";
 
 function TaskDetailHost() {
@@ -56,7 +57,11 @@ function IdentityAwareRefreshProvider({ children }: { children: ReactNode }) {
     <RefreshProvider
       remoteSyncEnabled={!authLoading && (!authEnabled || authenticated)}
     >
-      {children}
+      <HouseholdTimezoneProvider
+        enabled={!authLoading && (!authEnabled || authenticated)}
+      >
+        {children}
+      </HouseholdTimezoneProvider>
     </RefreshProvider>
   );
 }
@@ -133,21 +138,21 @@ export function App() {
           <IdentityProvider>
             <IdentityAwareRefreshProvider>
               <SwipeSettingsProvider>
-                  <SwipeCoachProvider>
-                    <TaskActionsProvider>
-                      <ProjectActionsProvider>
-                        <TaskDetailProvider>
-                          <TaskWorkflowProvider>
-                            <ProjectWorkflowProvider>
-                              <HashRouter>
-                                <Shell />
-                              </HashRouter>
-                            </ProjectWorkflowProvider>
-                          </TaskWorkflowProvider>
-                        </TaskDetailProvider>
-                      </ProjectActionsProvider>
-                    </TaskActionsProvider>
-                  </SwipeCoachProvider>
+                <SwipeCoachProvider>
+                  <TaskActionsProvider>
+                    <ProjectActionsProvider>
+                      <TaskDetailProvider>
+                        <TaskWorkflowProvider>
+                          <ProjectWorkflowProvider>
+                            <HashRouter>
+                              <Shell />
+                            </HashRouter>
+                          </ProjectWorkflowProvider>
+                        </TaskWorkflowProvider>
+                      </TaskDetailProvider>
+                    </ProjectActionsProvider>
+                  </TaskActionsProvider>
+                </SwipeCoachProvider>
               </SwipeSettingsProvider>
             </IdentityAwareRefreshProvider>
           </IdentityProvider>

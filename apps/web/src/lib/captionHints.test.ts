@@ -44,8 +44,42 @@ describe("captionHints", () => {
     expect(temporal(text, "en")[0]?.date).toBe(expected);
   });
 
+  it("retains explicit clock and daypart intent", () => {
+    expect(temporal("Dienstag um 14:30")[0]).toEqual(
+      expect.objectContaining({
+        date: "2026-09-15",
+        time: "14:30",
+        daypart: null,
+        timeExplicit: true,
+      }),
+    );
+    expect(temporal("heute Abend")[0]).toEqual(
+      expect.objectContaining({
+        date: "2026-09-14",
+        time: null,
+        daypart: "evening",
+        timeExplicit: false,
+      }),
+    );
+    expect(temporal("morgen")[0]).toEqual(
+      expect.objectContaining({
+        date: "2026-09-15",
+        time: null,
+        daypart: null,
+      }),
+    );
+    expect(temporal("morgen früh")[0]).toEqual(
+      expect.objectContaining({
+        date: "2026-09-15",
+        daypart: "morning",
+      }),
+    );
+  });
+
   it("keeps multiple dates and ranks their semantics", () => {
-    const hints = temporal("Angebot bis Freitag prüfen, Montag nochmal nachhaken");
+    const hints = temporal(
+      "Angebot bis Freitag prüfen, Montag nochmal nachhaken",
+    );
     expect(hints).toEqual([
       expect.objectContaining({ date: "2026-09-18", semantic: "dueDate" }),
       expect.objectContaining({ date: "2026-09-21", semantic: "followUp" }),
@@ -83,17 +117,34 @@ describe("captionHints", () => {
         referenceDate,
         members: [anna],
         tags: [heizung],
-        contexts: [baumarkt, makePhysicalContext({ id: 4, name: "Büro", active: false })],
+        contexts: [
+          baumarkt,
+          makePhysicalContext({ id: 4, name: "Büro", active: false }),
+        ],
       },
     );
     expect(hints).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "member", member: anna, source: "für Anna" }),
-        expect.objectContaining({ kind: "tag", tag: heizung, source: "#heizung" }),
-        expect.objectContaining({ kind: "context", context: baumarkt, source: "Baumarkt" }),
+        expect.objectContaining({
+          kind: "member",
+          member: anna,
+          source: "für Anna",
+        }),
+        expect.objectContaining({
+          kind: "tag",
+          tag: heizung,
+          source: "#heizung",
+        }),
+        expect.objectContaining({
+          kind: "context",
+          context: baumarkt,
+          source: "Baumarkt",
+        }),
       ]),
     );
-    expect(hints.some((hint) => hint.kind === "context" && hint.context.id === 4)).toBe(false);
+    expect(
+      hints.some((hint) => hint.kind === "context" && hint.context.id === 4),
+    ).toBe(false);
   });
 
   it.each([
@@ -136,7 +187,9 @@ describe("captionHints", () => {
       referenceDate,
       contexts: [context],
     }).find((candidate) => candidate.kind === "context");
-    expect(hint).toEqual(expect.objectContaining({ context, source: "Baumark" }));
+    expect(hint).toEqual(
+      expect.objectContaining({ context, source: "Baumark" }),
+    );
   });
 
   it("does not match one-character words as entity prefixes", () => {
@@ -152,9 +205,14 @@ describe("captionHints", () => {
   it("removes only accepted spans and normalizes punctuation", () => {
     const text = "Angebot bis Freitag prüfen, Montag nochmal nachhaken";
     const hints = temporal(text);
-    expect(removeCaptionHintSpans(text, hints.map((hint) => hint.removalSpan))).toBe(
-      "Angebot prüfen",
+    expect(
+      removeCaptionHintSpans(
+        text,
+        hints.map((hint) => hint.removalSpan),
+      ),
+    ).toBe("Angebot prüfen");
+    expect(removeCaptionHintSpans("@Anna", [{ start: 0, end: 5 }])).toBe(
+      "@Anna",
     );
-    expect(removeCaptionHintSpans("@Anna", [{ start: 0, end: 5 }])).toBe("@Anna");
   });
 });

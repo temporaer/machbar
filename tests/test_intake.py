@@ -124,6 +124,7 @@ def _valid_plan():
                 "ownerName": None,
                 "dueDate": None,
                 "scheduledDate": "2026-09-29",
+                "revisitAt": None,
                 "notBeforeDate": None,
                 "notBeforeAt": None,
                 "reminders": [],
@@ -313,6 +314,7 @@ def test_normalize_plan_handles_flower_watering_compact_input():
         "ownerName": None,
         "dueDate": None,
         "scheduledDate": "2026-10-03",
+        "revisitAt": None,
         "notBeforeDate": None,
         "notBeforeAt": None,
         "reminders": [{
@@ -413,6 +415,7 @@ def test_normalize_plan_discards_false_project_task_fields_without_warning(field
         "ownerName": None,
         "dueDate": None,
         "scheduledDate": None,
+        "revisitAt": None,
         "notBeforeDate": None,
         "notBeforeAt": None,
         "reminders": [],

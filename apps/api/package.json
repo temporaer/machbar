@@ -1,6 +1,6 @@
 {
   "name": "@machbar/api",
-  "version": "0.10.0",
+  "version": "0.9.2",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:revisit-dry-run": "tsx src/db/revisitMigrationCli.ts",
+    "db:revisit-apply": "tsx src/db/revisitMigrationCli.ts --apply",
     "db:seed": "tsx src/db/seed.ts",
     "generate:paperless-types": "node scripts/generate-paperless-types.mjs"
   },

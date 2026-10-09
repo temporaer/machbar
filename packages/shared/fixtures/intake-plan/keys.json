@@ -1,6 +1,6 @@
 {
   "plan": ["summary", "calendarEvents", "workItems", "warnings"],
   "calendarEvent": ["key", "title", "description", "location", "allDay", "startDate", "endDate", "startDateTime", "endDateTime", "relatedWorkKeys"],
-  "workItem": ["key", "kind", "title", "notes", "parentKey", "ownerName", "dueDate", "scheduledDate", "notBeforeDate", "notBeforeAt", "reminders", "needsClarification", "relatedCalendarKeys"],
+  "workItem": ["key", "kind", "title", "notes", "parentKey", "ownerName", "dueDate", "scheduledDate", "revisitAt", "notBeforeDate", "notBeforeAt", "reminders", "needsClarification", "relatedCalendarKeys"],
   "warning": ["message"]
 }

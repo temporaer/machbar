@@ -1,14 +1,19 @@
-import { useState } from "react";
-import type { Project } from "@machbar/shared";
+import { useEffect, useState } from "react";
+import { calendarDateForInstant, type Project } from "@machbar/shared";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import { addIsoCalendarDays, toIsoCalendarDate } from "../lib/naturalDate";
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
-import { taskAvailabilityForLocalDate } from "../lib/taskAvailability";
+import { taskRevisitForLocalDate } from "../lib/taskAvailability";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 
-function toRevisitAt(date: string): string | null {
-  return taskAvailabilityForLocalDate(date, "00:00")?.notBeforeAt ?? null;
+function toRevisitAt(
+  date: string,
+  existing: string | null,
+  timezone: string,
+): string | null {
+  return taskRevisitForLocalDate(date, existing, timezone);
 }
 
 /**
@@ -27,14 +32,30 @@ export function ProjectDeferSheet({
   onSave: (patch: { revisitAt: string | null }) => Promise<void>;
 }) {
   const strings = useStrings();
+  const { timezone: householdTimezone, loaded: timezoneLoaded } =
+    useHouseholdTimezone();
   const [customDate, setCustomDate] = useState(false);
+  const [dateDraftChanged, setDateDraftChanged] = useState(false);
   const [revisitDate, setRevisitDate] = useState(
-    story.revisitAt?.slice(0, 10) ?? "",
+    story.revisitAt
+      ? (calendarDateForInstant(story.revisitAt, householdTimezone) ?? "")
+      : "",
   );
   const [dateValid, setDateValid] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const today = () => toIsoCalendarDate(new Date());
+  const today = () =>
+    calendarDateForInstant(new Date().toISOString(), householdTimezone) ??
+    toIsoCalendarDate(new Date());
+
+  useEffect(() => {
+    if (dateDraftChanged) return;
+    setRevisitDate(
+      story.revisitAt
+        ? (calendarDateForInstant(story.revisitAt, householdTimezone) ?? "")
+        : "",
+    );
+  }, [dateDraftChanged, householdTimezone, story.revisitAt]);
 
   const commit = async (patch: { revisitAt: string | null }) => {
     if (saving) return;
@@ -50,6 +71,19 @@ export function ProjectDeferSheet({
     }
   };
 
+  const commitDate = (date: string) => {
+    if (!date) {
+      setError(strings.revisitDateRequired);
+      return;
+    }
+    const revisitAt = toRevisitAt(date, story.revisitAt, householdTimezone);
+    if (!revisitAt) {
+      setError(strings.invalidRevisitTime);
+      return;
+    }
+    void commit({ revisitAt });
+  };
+
   return (
     <BottomSheet
       title={story.status === "active" ? strings.deferProject : strings.revisit}
@@ -61,43 +95,47 @@ export function ProjectDeferSheet({
         <p className="text-muted">{story.title}</p>
         <div className="field">
           <span className="field-label">{strings.projectDeferQuestion}</span>
-          <div className="choice-group" role="group" aria-label={strings.projectDeferQuestion}>
+          <div
+            className="choice-group"
+            role="group"
+            aria-label={strings.projectDeferQuestion}
+          >
             <button
               type="button"
               className="choice-chip"
-              disabled={saving}
-              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 1)) })}
+              disabled={saving || !timezoneLoaded}
+              onClick={() => commitDate(addIsoCalendarDays(today(), 1))}
             >
               {strings.projectDeferShortcutLabels.tomorrow}
             </button>
             <button
               type="button"
               className="choice-chip"
-              disabled={saving}
-              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 7)) })}
+              disabled={saving || !timezoneLoaded}
+              onClick={() => commitDate(addIsoCalendarDays(today(), 7))}
             >
               {strings.projectDeferShortcutLabels.nextWeek}
             </button>
             <button
               type="button"
               className="choice-chip"
-              disabled={saving}
-              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 14)) })}
+              disabled={saving || !timezoneLoaded}
+              onClick={() => commitDate(addIsoCalendarDays(today(), 14))}
             >
               {strings.projectDeferShortcutLabels.twoWeeks}
             </button>
             <button
               type="button"
               className="choice-chip"
-              disabled={saving}
-              onClick={() => void commit({ revisitAt: toRevisitAt(addIsoCalendarDays(today(), 30)) })}
+              disabled={saving || !timezoneLoaded}
+              onClick={() => commitDate(addIsoCalendarDays(today(), 30))}
             >
               {strings.projectDeferShortcutLabels.nextMonth}
             </button>
             <button
               type="button"
               className="choice-chip"
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => void commit({ revisitAt: null })}
             >
               {strings.projectDeferWithoutRevisit}
@@ -106,7 +144,7 @@ export function ProjectDeferSheet({
               type="button"
               className="choice-chip"
               aria-pressed={customDate}
-              disabled={saving}
+              disabled={saving || !timezoneLoaded}
               onClick={() => setCustomDate(true)}
             >
               {strings.pickDate}
@@ -117,15 +155,18 @@ export function ProjectDeferSheet({
               <HumanDateInput
                 id="project-defer-date"
                 value={revisitDate}
-                onChange={(date) => setRevisitDate(date ?? "")}
+                onChange={(date) => {
+                  setRevisitDate(date ?? "");
+                  setDateDraftChanged(true);
+                }}
                 onValidityChange={setDateValid}
-                disabled={saving}
+                disabled={saving || !timezoneLoaded}
               />
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
-                disabled={saving || !dateValid}
-                onClick={() => void commit({ revisitAt: revisitDate ? toRevisitAt(revisitDate) : null })}
+                disabled={saving || !timezoneLoaded || !dateValid}
+                onClick={() => commitDate(revisitDate)}
               >
                 {strings.save}
               </button>
@@ -138,7 +179,12 @@ export function ProjectDeferSheet({
             {error}
           </div>
         ) : null}
-        <button type="button" className="btn" disabled={saving} onClick={onClose}>
+        <button
+          type="button"
+          className="btn"
+          disabled={saving}
+          onClick={onClose}
+        >
           {strings.cancel}
         </button>
       </div>

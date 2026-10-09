@@ -1,4 +1,9 @@
-import type { ProjectStatus, TaskStatus } from "@machbar/shared";
+import {
+  calendarDateForInstant,
+  DEFAULT_HOUSEHOLD_TIMEZONE,
+  type ProjectStatus,
+  type TaskStatus,
+} from "@machbar/shared";
 
 export type BlockerPathReason =
   | "captured"
@@ -16,14 +21,12 @@ export interface BlockerTaskInput {
   status: TaskStatus;
   projectId: number | null;
   scheduledDate: string | null;
-  revisitAt?: string | null;
-  /** @deprecated Compatibility for old snapshots. */
   notBeforeAt?: string | null;
-  /** @deprecated Compatibility for old snapshots. */
   notBeforeDate?: string | null;
+  revisitAt?: string | null;
   externalWait: {
     waitingFor: string | null;
-    revisitDate: string | null;
+    revisitDate?: string | null;
   } | null;
   dependencies: Array<{
     dependsOnTaskId: number;
@@ -70,6 +73,7 @@ export function analyzeTaskBlockers(
   projectStatuses: ReadonlyMap<number, ProjectStatus>,
   today: string,
   now: string,
+  householdTimezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
 ): Map<number, TaskBlockerAnalysis> {
   const analyzePath = (
     taskId: number,
@@ -104,7 +108,7 @@ export function analyzeTaskBlockers(
     }
 
     const path = [...stack, taskId];
-    const revisitAt = task.revisitAt ?? task.notBeforeAt ?? null;
+    const revisitAt = task.revisitAt ?? null;
     const projectStatus =
       task.projectId === null ? null : projectStatuses.get(task.projectId);
     if (projectStatus === "backlog") {
@@ -152,15 +156,31 @@ export function analyzeTaskBlockers(
     }
 
     const branchResults: PathAnalysis[] = [];
-    if (revisitAt !== null) {
-      branchResults.push({
-        healthy: true,
-        attentionDate: revisitAt.slice(0, 10),
-        diagnoses: [],
-      });
+    if (revisitAt !== null && !task.externalWait) {
+      const attentionDate = calendarDateForInstant(revisitAt, householdTimezone);
+      const reached = Date.parse(revisitAt) <= Date.parse(now);
+      branchResults.push(
+        reached
+          ? {
+              healthy: false,
+              attentionDate,
+              diagnoses: [
+                {
+                  reason: "followup_due",
+                  targetTaskId: task.id,
+                  path,
+                },
+              ],
+            }
+          : {
+              healthy: true,
+              attentionDate,
+              diagnoses: [],
+            },
+      );
     }
     if (task.externalWait) {
-      if (!task.externalWait.revisitDate) {
+      if (!revisitAt) {
         branchResults.push({
           healthy: false,
           attentionDate: null,
@@ -172,10 +192,10 @@ export function analyzeTaskBlockers(
             },
           ],
         });
-      } else if (task.externalWait.revisitDate <= today) {
+      } else if (Date.parse(revisitAt) <= Date.parse(now)) {
         branchResults.push({
           healthy: false,
-          attentionDate: task.externalWait.revisitDate,
+          attentionDate: calendarDateForInstant(revisitAt, householdTimezone),
           diagnoses: [
             {
               reason: "followup_due",
@@ -187,7 +207,7 @@ export function analyzeTaskBlockers(
       } else {
         branchResults.push({
           healthy: true,
-          attentionDate: task.externalWait.revisitDate,
+          attentionDate: calendarDateForInstant(revisitAt, householdTimezone),
           diagnoses: [],
         });
       }
@@ -229,7 +249,7 @@ export function analyzeTaskBlockers(
       executable:
         task.status === "actionable" &&
         !blocked &&
-        (task.revisitAt ?? task.notBeforeAt ?? null) === null,
+        task.revisitAt === null,
       healthyProgressPath: path.healthy,
       nextBlockerAttentionDate: blocked ? path.attentionDate : null,
       diagnoses: path.diagnoses,

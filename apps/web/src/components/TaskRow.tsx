@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import type { Task } from "@machbar/shared";
+import { calendarDateForInstant, type Task } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import type { Strings } from "../lib/strings";
-import { formatDate, formatDateTime, isOverdue } from "../lib/format";
+import { formatDate, isOverdue } from "../lib/format";
 import { sortByPosition } from "../lib/taskHelpers";
 import { useTaskActions } from "../lib/useTaskActions";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
@@ -18,12 +18,14 @@ import { useIdentity } from "../lib/identity";
 import { MarkdownNotes } from "./MarkdownNotes";
 import {
   formatExactLocalDate,
+  formatRevisitAt,
   formatRelativeDueDate,
   formatRelativeScheduleDate,
 } from "../lib/relativeDate";
 import { TaskCardTags } from "./TaskCardTags";
 import { MemberAvatar } from "./MemberAvatar";
 import { useLocale } from "../lib/locale";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
 import { RowSwipeBackgrounds, RowKebabButton, RowErrorBanner } from "./WorkItemRowChrome";
@@ -35,6 +37,7 @@ import { WorkItemActionRail } from "./WorkItemActionRail";
 import { InlineSuccessorComposer } from "./InlineSuccessorComposer";
 import type { AttentionTone } from "../lib/attentionTone";
 import type { TaskDetailFocusField } from "../lib/taskDetailContext";
+import type { TaskPlanningTarget } from "../lib/commands";
 
 const LONG_PRESS_MS = 480;
 
@@ -110,6 +113,7 @@ export function TaskRow({
 }: TaskRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
+  const { timezone: householdTimezone } = useHouseholdTimezone();
   // Fold state is scope-owned (see `interactionScope.tsx`), not private to
   // this row -- `h`/`l` keyboard shortcuts and future non-row callers need
   // to read/set it from outside whichever row happens to render this item.
@@ -166,6 +170,15 @@ export function TaskRow({
   const statusError = errors[taskProp.id];
   const organizeError = organize?.errors[taskProp.id];
   const rowError = statusError ?? organizeError;
+  const showTodayRevisitActions =
+    attentionTone === "revisit" &&
+    depth === 0 &&
+    task.kind === "action" &&
+    task.status !== "done" &&
+    task.status !== "cancelled";
+  const unresolvedDependency = task.dependencies.find(
+    (dependency) => !dependency.resolved,
+  );
 
   const organizeEnabled = organize?.enabled ?? false;
   const isDragged = organize?.activeId === taskProp.id;
@@ -221,7 +234,10 @@ export function TaskRow({
         : ownerMember?.name ?? strings.unknownMember;
   const due = formatDate(task.dueDate, locale);
   const scheduled = formatDate(task.scheduledDate, locale);
-  const revisitAt = formatDateTime(task.revisitAt, locale);
+  const revisitAt =
+    task.revisitAt && !showRevisitDate
+      ? formatRevisitAt(task.revisitAt, locale, householdTimezone)
+      : null;
   const projectDueRelative = task.projectDueDate
     ? formatRelativeDueDate(task.projectDueDate, new Date(), locale)
     : null;
@@ -229,12 +245,22 @@ export function TaskRow({
     ? formatExactLocalDate(task.projectDueDate, locale)
     : null;
   const revisitRelative =
-    showRevisitDate && task.externalWait?.revisitDate
-      ? formatRelativeScheduleDate(task.externalWait.revisitDate, new Date(), locale)
+    showRevisitDate && task.revisitAt
+      ? formatRelativeScheduleDate(
+          calendarDateForInstant(task.revisitAt, householdTimezone) ?? task.revisitAt,
+          (() => {
+            const today = calendarDateForInstant(
+              new Date().toISOString(),
+              householdTimezone,
+            );
+            return today ? new Date(`${today}T12:00:00`) : new Date();
+          })(),
+          locale,
+        )
       : null;
   const revisitExact =
-    showRevisitDate && task.externalWait?.revisitDate
-      ? formatExactLocalDate(task.externalWait.revisitDate, locale)
+    showRevisitDate && task.revisitAt
+      ? formatRevisitAt(task.revisitAt, locale, householdTimezone)
       : null;
 
   const clearLongPress = useCallback(() => {
@@ -301,6 +327,8 @@ export function TaskRow({
       | "task.waitingLifecycle"
       | "task.open",
     focusField?: TaskDetailFocusField,
+    taskId = task.id,
+    planningTarget?: TaskPlanningTarget,
   ) => {
     // Move focus to the kebab before the rail unmounts, so a focused-
     // workflow sheet's opener-restore targets a control that stays
@@ -311,12 +339,24 @@ export function TaskRow({
     if (command === "task.open") {
       dispatch({
         type: command,
-        taskId: task.id,
+        taskId,
         ...(focusField ? { focusField } : {}),
       });
       return;
     }
-    dispatch({ type: command, taskId: task.id });
+    dispatch({
+      type: command,
+      taskId,
+      ...(command === "task.plan" && planningTarget
+        ? { target: planningTarget }
+        : {}),
+    });
+  };
+
+  const runRailMutation = (command: "task.startToday" | "task.endWaiting") => {
+    kebabButtonRef.current?.focus();
+    scope.setOpenRail(null);
+    dispatch({ type: command, task });
   };
 
   const [successorComposerOpen, setSuccessorComposerOpen] = useState(false);
@@ -616,7 +656,54 @@ export function TaskRow({
           disabled={busy}
           groupLabel={strings.moreActions}
           actions={
-            isReference
+            showTodayRevisitActions && task.externalWait
+              ? [
+                  {
+                    label: strings.followUp,
+                    onSelect: () => runRailCommand("task.waitingLifecycle"),
+                  },
+                  {
+                    label: strings.endWaiting,
+                    onSelect: () => runRailMutation("task.endWaiting"),
+                  },
+                ]
+              : showTodayRevisitActions && task.blocked && unresolvedDependency
+                ? [
+                    {
+                      label: strings.revisitInspectBlocker,
+                      onSelect: () =>
+                        runRailCommand(
+                          "task.open",
+                          undefined,
+                          unresolvedDependency.dependsOnTaskId,
+                        ),
+                    },
+                    {
+                      label: strings.revisitLater,
+                      onSelect: () => runRailCommand("task.availability"),
+                    },
+                    {
+                      label: strings.revisitProceedAnyway,
+                      onSelect: () => runRailMutation("task.startToday"),
+                    },
+                  ]
+                : showTodayRevisitActions
+                  ? [
+                      {
+                        label: strings.revisitWorkNow,
+                        onSelect: () => runRailMutation("task.startToday"),
+                      },
+                      {
+                        label: strings.revisitLater,
+                        onSelect: () => runRailCommand("task.availability"),
+                      },
+                      {
+                        label: strings.revisitPlanForDay,
+                        onSelect: () =>
+                          runRailCommand("task.plan", undefined, task.id, "scheduled"),
+                      },
+                    ]
+                  : isReference
               ? [
                   { label: strings.railShape, onSelect: () => runRailCommand("task.shape") },
                   { label: strings.railStructure, onSelect: () => runRailCommand("task.structure") },
@@ -634,11 +721,11 @@ export function TaskRow({
                       { label: strings.railUpdate, onSelect: () => runRailCommand("task.open", "notes") },
                       { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
                     ]
-                : [
-                    { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
-                    { label: strings.railStructure, onSelect: () => runRailCommand("task.structure") },
-                    { label: strings.railNote, onSelect: () => runRailCommand("task.open", "notes") },
-                  ]
+                  : [
+                      { label: strings.railPlanning, onSelect: () => runRailCommand("task.plan") },
+                      { label: strings.railStructure, onSelect: () => runRailCommand("task.structure") },
+                      { label: strings.railNote, onSelect: () => runRailCommand("task.open", "notes") },
+                    ]
           }
         />
       ) : null}

@@ -589,8 +589,6 @@ describe("task <-> story role conversion", () => {
       status: "someday",
       dueDate: "2026-10-10",
       scheduledDate: null,
-      notBeforeAt: null,
-      notBeforeDate: null,
     });
     const revertedRow = ctx.handle.sqlite
       .prepare("SELECT role, task_kind FROM work_items WHERE id = ?")

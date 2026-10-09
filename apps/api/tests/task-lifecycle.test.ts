@@ -17,6 +17,29 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     return res.json();
   }
 
+  it("clears an ordinary scheduled date when only a revisit is supplied", async () => {
+    const created = await createTask({
+      title: "Geplante Aufgabe",
+      status: "actionable",
+      scheduledDate: "2026-10-01",
+    });
+
+    const response = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${created.id}`,
+      payload: {
+        expectedRevision: created.revision,
+        revisitAt: "2026-10-02T09:00:00.000Z",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      scheduledDate: null,
+      revisitAt: "2026-10-02T09:00:00.000Z",
+    });
+  });
+
   it("creates global captures with the explicit captured status", async () => {
     const created = await createTask({ title: "Neue Aufgabe", notes: "Notiz" });
     expect(created.status).toBe("captured");

@@ -17,7 +17,7 @@ describe("ProjectDeadlineSheet", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Projektfrist" }),
+      screen.getByRole("heading", { name: "Projekt-Deadline" }),
     ).toBeInTheDocument();
     const dueDate = screen.getByLabelText("Fällig");
     await userEvent.type(dueDate, "irgendwann vielleicht");

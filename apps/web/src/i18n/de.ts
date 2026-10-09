@@ -127,10 +127,12 @@ const base = {
   shared: "Gemeinsam / offen",
   unscheduled: "Weitere machbare Aufgaben",
   followUp: "Nachhaken",
-  whatHappened: "Was ist passiert?",
+  waitingFollowUpNote: "Notiz zum Nachhaken (optional)",
+  waitingFollowUpNotePlaceholder: "Angerufen, Rückmeldung erhalten …",
   continueWaiting: "Weiter warten",
   revisit: "Wiedervorlage",
-  revisitHint: "Blockiert, aber heute wieder zu prüfen.",
+  revisitHint: "Heute erneut entscheiden: angehen, planen oder zurückstellen.",
+  invalidRevisitTime: "Diese lokale Uhrzeit ist in der Haushaltszeitzone ungültig oder doppeldeutig.",
   completedToday: "Heute erledigt",
   completedTodayHint: "Erledigte Aufgaben bei Bedarf wieder aktivieren.",
   nextAction: "Nächster Schritt",
@@ -185,7 +187,7 @@ const base = {
   intakeOmissionInvalidReminderTimezone: (item: string) =>
     `${item}: Ungültige Erinnerungszeitzone wird nicht übernommen.`,
   intakeOmissionRelativeReminderNoDeadline: (item: string) =>
-    `${item}: Erinnerung ohne gültige Frist wird nicht übernommen.`,
+    `${item}: Erinnerung ohne gültige Deadline wird nicht übernommen.`,
   intakeOmissionInvalidAvailability: (item: string) =>
     `${item}: Ungültige Verfügbarkeit wird nicht übernommen.`,
   intakeOmissionInvalidOwner: (item: string) =>
@@ -282,29 +284,44 @@ const base = {
   scopeWork: "Arbeit",
   status: "Status",
   due: "Fällig",
+  chooseRevisitDate: "Datum auswählen …",
+  revisitDateRequired: "Bitte ein Wiedervorlagedatum auswählen.",
   pickDate: "Datum …",
   scheduled: "Geplant für",
-  notBefore: "Wieder ansehen ab",
+  notBefore: "Wiedervorlage",
   planning: "Planung",
-  planningShowFrom: "Wieder ansehen ab",
+  planningShowFrom: "Wiedervorlage",
   planningScheduledFor: "Geplant für",
-  planningDueBy: "Fällig bis",
+  planningDueBy: "Deadline",
+  planningScheduledExplanation: "An diesem Tag möchte ich daran arbeiten.",
+  planningAvailabilityExplanation: "Bis dahin zurückstellen, dann wieder ansehen.",
+  planningAvailabilityExternalExplanation: "Dann prüfen, ob es weitergeht.",
+  planningDeadlineExplanation: "Bis wann muss die Aufgabe erledigt sein?",
+  planningRevisitRemoved: (date: string) =>
+    `Wiedervorlage für ${date} entfernt, weil die Aufgabe eingeplant wurde.`,
+  planningScheduledRemoved: (date: string) =>
+    `Planung für ${date} entfernt, weil eine Wiedervorlage gesetzt wurde.`,
   planningWaitingTitle: "Wartet auf",
   planningAddWaiting: "+ Warten hinzufügen",
   planningEndWaiting: "Warten beenden",
   planningRemoveWaiting: "Entfernen",
-  planningWaitingWillEnd: "Warten wird beendet",
+  planningWaitingWillEnd: "Warten wird beendet.",
+  planningRevisitWillBeRemoved: "Die zugehörige Wiedervorlage wird entfernt.",
   planningUndoWaiting: "Rückgängig",
   planningWaitingExplanation: "Was muss von außen passieren, bevor es weitergeht?",
-  planningAvailabilityExplanationWaiting: "Dann prüfen, ob es weitergeht.",
-  planningAvailabilityExplanation: "Bis dahin zurückstellen, dann wieder ansehen.",
   planningNoRevisit: "Noch keine Wiedervorlage gesetzt.",
   planningSetRevisit: "Wiedervorlage setzen",
+  planningUndoWaitingToSetRevisit:
+    "Zum Setzen einer Wiedervorlage zuerst das Beenden des Wartens rückgängig machen.",
   planningWaitingReasonRequired: "Bitte gib an, worauf die Aufgabe wartet.",
   planningWaitingConflict:
     "Nach dem Beenden des Wartens können Planung und Wiedervorlage nicht gleichzeitig gesetzt bleiben. Entferne eines der beiden Daten.",
-  planningReplacedAvailability: "Wiedervorlage wurde durch die Planung entfernt.",
-  planningReplacedScheduled: "Planung wurde durch die Wiedervorlage entfernt.",
+  remove: "Entfernen",
+  removePlanningDate: "Planungsdatum entfernen",
+  removeRevisitDate: "Wiedervorlage entfernen",
+  removeDeadline: "Deadline entfernen",
+  date: "Datum",
+  time: "Uhrzeit",
   context: "Ort",
   tags: "Tags",
   priority: "Priorität",
@@ -321,6 +338,11 @@ const base = {
   waitingFor: "Wartet auf",
   markAsWaiting: "Als wartend markieren",
   endWaiting: "Warten beenden",
+  revisitWorkNow:  "Jetzt angehen",
+  revisitPlanForDay:  "Für Tag planen",
+  revisitLater:  "Später",
+  revisitInspectBlocker:  "Blocker ansehen",
+  revisitProceedAnyway:  "Trotzdem angehen",
   inherited: "Geerbt",
   actionable: "Machbar",
   someday: "Irgendwann",
@@ -479,7 +501,7 @@ const extra = {
   collapse: "Einklappen",
   expand: "Ausklappen",
   taskDetails: "Details",
-  taskPlanFor: "Eingeplant für",
+  taskPlanFor: "Geplant für",
   dependencySummary: (count: number) =>
     `${count} ${count === 1 ? "offene Abhängigkeit" : "offene Abhängigkeiten"}`,
   subtaskSummary: (count: number) =>
@@ -499,7 +521,7 @@ const extra = {
   recurrenceScheduleRequired:
     "Lege zuerst einen geplanten Termin fest.",
   recurrenceDeadlinePreview: (date: string) =>
-    `Aktuelle inklusive Frist: ${date}`,
+    `Aktuelle inklusive Deadline: ${date}`,
   recurringTaskLeafHint:
     "Wiederkehrende Aufgaben können keine Teilaufgaben enthalten.",
   recurrenceHistory: "Wiederholungsverlauf",
@@ -513,7 +535,7 @@ const extra = {
   recurrenceHitRate: (rate: string) => `${rate} Trefferquote`,
   recurrenceCompletedOn: (date: string) => `Erledigt am ${date}`,
   recurrenceOccurrenceDates: (scheduled: string, deadline: string) =>
-    `Geplant ${scheduled} · Frist ${deadline}`,
+    `Geplant ${scheduled} · Deadline ${deadline}`,
   title: "Titel",
   newTask: "Neue Aufgabe",
   create: "Erstellen",
@@ -730,7 +752,7 @@ const extra = {
   availabilityFutureGroup: "Verfügbarkeit",
   availabilityCustomDate: "Anderes Datum",
   availabilityCustomTime: "Uhrzeit",
-  clearNotBefore: "Ab-Datum entfernen",
+  clearNotBefore: "Wiedervorlage entfernen",
   availabilityMorePlanningOptions: "Planung …",
   structure: "Struktur",
   structureSplit: "Aufteilen",
@@ -808,7 +830,7 @@ const extra = {
   reminderRowConfirm: "Bestätigen",
   reminderDaysBeforeFieldLabel: "Tage vorher",
   reminderTimeFieldLabel: "Uhrzeit",
-  reminderDeadlineRelative: "Fristbezogen",
+  reminderDeadlineRelative: "Deadline-bezogen",
   moreActions: "Weitere Aktionen",
   /**
    * Next Action badge for the project outline (section 7): distinguishes
@@ -919,7 +941,7 @@ const extra = {
     "Verschiebe oder verwirf jede verbleibende offene Aufgabe, bevor das Projekt abgeschlossen wird.",
   completeWithOpenTasksResolved: "Keine offenen Aufgaben mehr — bereit zum Abschließen.",
   cancelTask: "Verwerfen",
-  projectDeadlineTitle: "Projektfrist",
+  projectDeadlineTitle: "Projekt-Deadline",
   taskSummary: "Aufgaben",
   taskSummaryNone: "Noch keine Aufgaben",
   archiveStory: "Archivieren",
@@ -1211,10 +1233,10 @@ const extra = {
     direction: string,
   ) =>
     direction === "earlier"
-      ? `${actor} hat die Frist für „${title}“ auf den ${date} vorgezogen.`
-      : `${actor} hat die Frist für „${title}“ auf den ${date} verschoben.`,
+      ? `${actor} hat die Deadline für „${title}“ auf den ${date} vorgezogen.`
+      : `${actor} hat die Deadline für „${title}“ auf den ${date} verschoben.`,
   activityDigestDeadlineRemoved: (actor: string, title: string) =>
-    `${actor} hat die Frist für „${title}“ entfernt.`,
+    `${actor} hat die Deadline für „${title}“ entfernt.`,
   activityDigestScheduledChanged: (title: string, date: string) =>
     `Der Termin für „${title}“ wurde auf ${date} verschoben.`,
   activityDigestAvailabilityChanged: (title: string, date: string) =>

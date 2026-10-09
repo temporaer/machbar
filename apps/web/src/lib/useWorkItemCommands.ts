@@ -11,6 +11,8 @@ import { useProjectWorkflow } from "./projectWorkflowContext";
 import { useSwipeSettings } from "./swipeSettings";
 import { useOptionalInteractionScope } from "./interactionScope";
 import { taskAvailabilityForLocalDate } from "./taskAvailability";
+import { calendarDateForInstant } from "@machbar/shared";
+import { useHouseholdTimezone } from "./householdTimezone";
 
 /**
  * Every `task.*`/`story.*` command carries the id of the WorkItem it
@@ -30,6 +32,8 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.structure":
     case "task.reminders":
     case "task.waitingLifecycle":
+    case "task.startToday":
+    case "task.endWaiting":
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
@@ -88,6 +92,8 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.structure":
     case "task.reminders":
     case "task.waitingLifecycle":
+    case "task.startToday":
+    case "task.endWaiting":
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
@@ -158,6 +164,8 @@ export function useWorkItemCommands() {
   const navigate = useNavigate();
   const { primarySwipeAction } = useSwipeSettings();
   const scope = useOptionalInteractionScope();
+  const { timezone: householdTimezone, loaded: timezoneLoaded } =
+    useHouseholdTimezone();
 
   /**
    * Opens whatever a lifecycle transition still needs before it can be
@@ -251,6 +259,23 @@ export function useWorkItemCommands() {
           return;
         case "task.waitingLifecycle":
           taskWorkflow.open("waitingLifecycle", command.taskId, "waiting");
+          return;
+        case "task.startToday": {
+          if (!timezoneLoaded) return;
+          const scheduledDate = calendarDateForInstant(
+            new Date().toISOString(),
+            householdTimezone,
+          );
+          if (!scheduledDate) return;
+          taskActions.update(
+            command.task,
+            { revisitAt: null, scheduledDate },
+            { revisitAt: null, scheduledDate },
+          );
+          return;
+        }
+        case "task.endWaiting":
+          void taskActions.resolveExternalWait(command.task);
           return;
         case "task.split":
           taskWorkflow.open("split", command.taskId);
@@ -351,7 +376,11 @@ export function useWorkItemCommands() {
         case "workItem.setRevisitDate":
           if (command.item.role === "task" && command.item.task.externalWait) {
             const revisitAt = command.date
-              ? taskAvailabilityForLocalDate(command.date, "00:00")?.notBeforeAt ?? null
+              ? taskAvailabilityForLocalDate(
+                  command.date,
+                  "00:00",
+                  command.householdTimezone,
+                )?.notBeforeAt ?? null
               : null;
             return taskActions.setExternalWait(command.item.task, {
               waitingFor: command.item.task.externalWait.waitingFor,
@@ -362,7 +391,11 @@ export function useWorkItemCommands() {
           }
           if (command.item.role === "task") {
             const revisitAt = command.date
-              ? taskAvailabilityForLocalDate(command.date, "00:00")?.notBeforeAt ?? null
+              ? taskAvailabilityForLocalDate(
+                  command.date,
+                  "00:00",
+                  command.householdTimezone,
+                )?.notBeforeAt ?? null
               : null;
             return taskActions.update(
               command.item.task,

@@ -4,11 +4,15 @@ import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
 import { useTaskActions } from "../lib/useTaskActions";
 import { localizedErrorMessage } from "../lib/errorMessage";
-import { browserTimezone } from "../lib/browserTimezone";
-import { localDateTimeToIso } from "../lib/localDateTime";
+import {
+  calendarDateForInstant,
+  householdCalendarDateTimeToRevisitAt,
+  localTimeForInstant,
+} from "@machbar/shared";
 import {
   ABSOLUTE_REMINDER_PRESETS,
   DEADLINE_RELATIVE_REMINDER_PRESETS,
+  absolutePresetIsFuture,
   absolutePresetReminderInput,
   relativePresetReminderInput,
   type AbsoluteReminderPreset,
@@ -18,6 +22,7 @@ import { formatReminderLabel, sortRemindersForDisplay } from "../lib/reminderLab
 import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 import { ClockTimePicker } from "./ClockTimePicker";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 
 /** A draft reminder plus a stable React key that survives edits (unlike array index, which shifts on removal). */
 interface DraftReminder {
@@ -52,6 +57,7 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
   const strings = useStrings();
   const { locale } = useLocale();
   const taskActions = useTaskActions();
+  const { timezone: householdTimezone } = useHouseholdTimezone();
   const [draft, setDraft] = useState<DraftReminder[]>(() => toDraft(task.reminders));
   const [editor, setEditor] = useState<EditorState>(() =>
     task.reminders.length === 0 ? { mode: "choosing" } : { mode: "closed" },
@@ -85,11 +91,14 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
   };
 
   const addAbsolutePreset = (preset: AbsoluteReminderPreset) => {
-    upsertReminder(null, absolutePresetReminderInput(preset));
+    upsertReminder(
+      null,
+      absolutePresetReminderInput(preset, new Date(), householdTimezone),
+    );
   };
 
   const addRelativePreset = (preset: DeadlineRelativeReminderPreset) => {
-    upsertReminder(null, relativePresetReminderInput(preset, browserTimezone() ?? "UTC"));
+    upsertReminder(null, relativePresetReminderInput(preset, householdTimezone));
   };
 
   const openCustomAbsolute = (entry?: DraftReminder) => {
@@ -99,8 +108,10 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
     setEditor({
       mode: "customAbsolute",
       key: entry?.key ?? null,
-      date: at ? at.slice(0, 10) : toIsoCalendarDate(initial),
-      time: at ? `${String(initial.getHours()).padStart(2, "0")}:${String(initial.getMinutes()).padStart(2, "0")}` : "19:00",
+      date: at
+        ? calendarDateForInstant(at, householdTimezone) ?? toIsoCalendarDate(initial)
+        : calendarDateForInstant(initial.toISOString(), householdTimezone) ?? toIsoCalendarDate(initial),
+      time: at ? localTimeForInstant(at, householdTimezone) ?? "19:00" : "19:00",
     });
   };
 
@@ -112,7 +123,7 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
       key: entry?.key ?? null,
       daysBefore: isRelative ? reminder.daysBefore : 2,
       time: isRelative ? reminder.time : "09:00",
-      timezone: isRelative ? reminder.timezone : (browserTimezone() ?? "UTC"),
+      timezone: isRelative ? reminder.timezone : householdTimezone,
     });
   };
 
@@ -127,7 +138,11 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
 
   const confirmEditor = () => {
     if (editor.mode === "customAbsolute") {
-      const at = localDateTimeToIso(editor.date, editor.time);
+      const at = householdCalendarDateTimeToRevisitAt(
+        editor.date,
+        editor.time,
+        householdTimezone,
+      );
       if (!at) return;
       upsertReminder(editor.key, { kind: "absolute", at });
     } else if (editor.mode === "customRelative") {
@@ -257,7 +272,11 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
 
         {editor.mode === "choosing" ? (
           <div className="choice-group" role="group" aria-label={strings.addReminder}>
-            {ABSOLUTE_REMINDER_PRESETS.map((preset) => (
+            {ABSOLUTE_REMINDER_PRESETS.filter(
+              (preset) =>
+                preset !== "tonight" ||
+                absolutePresetIsFuture("tonight", new Date(), householdTimezone),
+            ).map((preset) => (
               <button
                 key={preset}
                 type="button"

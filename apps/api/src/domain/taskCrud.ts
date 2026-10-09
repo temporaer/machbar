@@ -808,18 +808,14 @@ export function updateTask(
       .from(schema.taskExternalWaits)
       .where(eq(schema.taskExternalWaits.taskId, id))
       .get();
-    const requestedExternalWait: {
-      waitingFor: string;
-    } | null =
+    const requestedExternalWait: { waitingFor: string } | null =
       input.externalWait === undefined
         ? currentExternalWait
           ? { waitingFor: currentExternalWait.waitingFor?.trim() ?? "" }
           : null
         : input.externalWait === null
           ? null
-          : {
-              waitingFor: input.externalWait.waitingFor?.trim() ?? "",
-            };
+          : { waitingFor: input.externalWait.waitingFor?.trim() ?? "" };
     assertExpectedRevision("task", id, currentTask.revision, input.expectedRevision);
     const effectiveOwnerBefore = effectiveOwnerId(txDb, id);
     const projectHadNextAction =
@@ -930,9 +926,6 @@ export function updateTask(
       ) {
         effectiveScheduledDate = null;
       }
-    }
-    if (input.externalWait === null && currentExternalWait !== undefined) {
-      effectiveRevisitAt = null;
     }
     if (
       (nextStatus === "done" || nextStatus === "cancelled") &&
@@ -1087,10 +1080,7 @@ export function updateTask(
       patch.dueDate = input.dueDate;
       changedFields.push("dueDate");
     }
-    if (
-      input.scheduledDate !== undefined &&
-      effectiveScheduledDate !== currentTask.scheduledDate
-    ) {
+    if (effectiveScheduledDate !== currentTask.scheduledDate) {
       patch.scheduledDate = effectiveScheduledDate;
       changedFields.push("scheduledDate");
     }
@@ -1099,15 +1089,6 @@ export function updateTask(
     ) {
       patch.revisitAt = effectiveRevisitAt;
       changedFields.push("revisitAt");
-    }
-    if (
-      input.externalWait !== undefined &&
-      requestedExternalWait !== null &&
-      currentExternalWait?.waitingFor !== requestedExternalWait.waitingFor
-    ) {
-      changedFields.push("externalWait");
-    } else if (removingExternalWait) {
-      if (!changedFields.includes("externalWait")) changedFields.push("externalWait");
     }
     for (const field of [
       "priority",
@@ -1224,12 +1205,16 @@ export function updateTask(
       }
     }
     if (removingExternalWait) {
+      if (!changedFields.includes("externalWait")) {
+        changedFields.push("externalWait");
+      }
       tx.delete(schema.taskExternalWaits)
         .where(eq(schema.taskExternalWaits.taskId, id))
         .run();
     } else if (
       input.externalWait !== undefined &&
-      requestedExternalWait !== null
+      requestedExternalWait !== null &&
+      currentExternalWait?.waitingFor !== requestedExternalWait.waitingFor
     ) {
       const now = nowIso();
       if (currentExternalWait) {
@@ -1238,14 +1223,11 @@ export function updateTask(
           .where(eq(schema.taskExternalWaits.taskId, id))
           .run();
       } else {
-        tx.insert(schema.taskExternalWaits).values({
-          taskId: id,
-          waitingFor: requestedExternalWait.waitingFor,
-          revisitDate: null,
-          createdAt: now,
-          updatedAt: now,
-        }).run();
+        tx.insert(schema.taskExternalWaits)
+          .values({ taskId: id, waitingFor: requestedExternalWait.waitingFor, createdAt: now, updatedAt: now })
+          .run();
       }
+      changedFields.push("externalWait");
     }
 
     if (tagsChanged) {
@@ -1278,6 +1260,7 @@ export function updateTask(
         : false;
     if (
       Object.keys(patch).length > 0 ||
+      changedFields.includes("externalWait") ||
       tagsChanged ||
       excludedTagsChanged ||
       contextsChanged ||

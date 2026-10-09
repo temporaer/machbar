@@ -4,6 +4,7 @@ import type {
   ReviewItem,
   ReviewReason,
 } from "@machbar/shared";
+import { calendarDateForInstant } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
 import type { TaskBlockerAnalysis } from "./blockers.js";
 import { isTaskInWorkingSystem } from "./workEligibility.js";
@@ -126,6 +127,8 @@ const reasonOrder: Record<ReviewReason, number> = {
 
 export interface BuildReviewItemsOptions {
   today?: string;
+  now?: string;
+  householdTimezone?: string;
 }
 
 export function buildReviewItems(
@@ -134,6 +137,7 @@ export function buildReviewItems(
 ): ReviewItem[] {
   const today =
     options.today ?? new Date().toISOString().slice(0, 10);
+  const now = options.now ?? new Date().toISOString();
   const projectStatuses = new Map(
     [...graph.projectsById.values()].map((project) => [
       project.id,
@@ -149,7 +153,7 @@ export function buildReviewItems(
     if (!isOpen(task)) continue;
     if (!isTaskInWorkingSystem(task, projectStatuses)) continue;
 
-    if (task.externalWait && !task.externalWait.revisitDate) {
+    if (task.externalWait && task.revisitAt === null) {
       items.push(
         taskItem(task, "clarification_repair", "waiting_without_followup", {
           code: "set_followup",
@@ -179,6 +183,15 @@ export function buildReviewItems(
           );
         }
         if (task.projectId !== null) projectsWithRootCause.add(task.projectId);
+      } else if (
+        task.projectId !== null &&
+        graph.blockerAnalysisFor(task.id)?.diagnoses.some(
+          (entry) => entry.reason === "followup_due",
+        )
+      ) {
+        // Due external follow-ups belong to Today, but still explain why
+        // this project has no currently executable next action.
+        projectsWithRootCause.add(task.projectId);
       }
     }
 
@@ -206,7 +219,8 @@ export function buildReviewItems(
     if (!isOpen(task)) continue;
     if (task.projectId === null) continue;
     const project = graph.projectsById.get(task.projectId);
-    const projectRevisitDate = project?.revisitAt?.slice(0, 10) ?? null;
+    const projectRevisitDate =
+      calendarDateForInstant(project?.revisitAt, options.householdTimezone) ?? null;
     if (projectRevisitDate === null) continue;
     if (task.scheduledDate !== null && task.scheduledDate < projectRevisitDate) {
       items.push(
@@ -235,7 +249,8 @@ export function buildReviewItems(
     if (
       project.dueDate !== null &&
       project.revisitAt !== null &&
-      project.dueDate < project.revisitAt.slice(0, 10)
+      project.dueDate <
+      (calendarDateForInstant(project.revisitAt, options.householdTimezone) ?? "")
     ) {
       items.push(
         projectItem(
@@ -286,8 +301,12 @@ export function buildReviewItems(
         const analysis = graph.blockerAnalysisFor(task.id);
         return analysis !== null && isViableProgressTask(task, analysis);
       });
+      const now = Date.parse(options.now ?? new Date().toISOString());
       const hasIntentionalWait = openTasks.some(
-        (task) => task.revisitAt !== null,
+        (task) =>
+          task.externalWait !== null &&
+          task.revisitAt !== null &&
+          Date.parse(task.revisitAt) > now,
       );
       const hasViablePath = hasHealthyProgressPath || hasIntentionalWait;
       if (project.ownerMemberId === null) {
@@ -344,7 +363,7 @@ export function buildReviewItems(
           addDaysIso(today, -BACKLOG_REVIEW_DAYS);
       if (
         project.revisitAt !== null &&
-        project.revisitAt.slice(0, 10) <= today
+        Date.parse(project.revisitAt) <= Date.parse(now)
       ) {
         items.push(
           projectItem(project, "reconsider", "backlog_revisit_reached", {

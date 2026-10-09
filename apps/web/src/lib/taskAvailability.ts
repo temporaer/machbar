@@ -1,4 +1,11 @@
-import { localDateTimeToIso } from "./localDateTime";
+import {
+  DEFAULT_HOUSEHOLD_TIMEZONE,
+  householdCalendarDateTimeToRevisitAt,
+  calendarDateForInstant,
+  localTimeForInstant,
+  moveRevisitToCalendarDate,
+  newDateOnlyRevisitAt,
+} from "@machbar/shared";
 
 export interface TaskAvailabilityValue {
   notBeforeAt: string;
@@ -9,14 +16,32 @@ export interface TaskAvailabilityValue {
 export function taskAvailabilityForLocalDate(
   date: string,
   time: string | null,
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
 ): TaskAvailabilityValue | null {
-  const notBeforeAt = localDateTimeToIso(date, time ?? "00:00");
+  const notBeforeAt = householdCalendarDateTimeToRevisitAt(
+    date,
+    time ?? "06:00",
+    timezone,
+  );
   return notBeforeAt ? { notBeforeAt, notBeforeDate: date } : null;
 }
 
-export function taskAvailabilityClock(instant: string | null): string | null {
-  if (!instant) return null;
-  const value = new Date(instant);
-  if (Number.isNaN(value.getTime())) return null;
-  return `${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}`;
+export function taskAvailabilityClock(
+  instant: string | null,
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
+): string | null {
+  return localTimeForInstant(instant, timezone);
+}
+
+export function taskRevisitForLocalDate(
+  date: string,
+  currentRevisitAt: string | null,
+  timezone: string = DEFAULT_HOUSEHOLD_TIMEZONE,
+): string | null {
+  if (!date) return null;
+  if (!currentRevisitAt) return newDateOnlyRevisitAt(date, timezone);
+  if (calendarDateForInstant(currentRevisitAt, timezone) === date) {
+    return currentRevisitAt;
+  }
+  return moveRevisitToCalendarDate(currentRevisitAt, date, timezone);
 }

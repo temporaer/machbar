@@ -355,6 +355,29 @@ describe("ProjectStoryRow – status-appropriate lifecycle rail", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it.each(["card", "quiet"] as const)(
+    "shows the same household-local backlog revisit in %s cards and opens the existing defer workflow",
+    async (variant) => {
+      const story = makeProject({
+        id: 90,
+        title: "Zurückgestelltes Projekt",
+        status: "backlog",
+        revisitAt: "2026-09-19T22:00:00.000Z",
+      });
+      mockedApi.getProject.mockResolvedValue({ ...story, tasks: [] });
+      renderWithProviders(<Harness story={story} variant={variant} />);
+
+      const revisit = await screen.findByRole("button", {
+        name: "Wiedervorlage: 20.09.2026",
+      });
+      await userEvent.click(revisit);
+
+      expect(
+        await screen.findByRole("dialog", { name: "Wiedervorlage" }),
+      ).toBeInTheDocument();
+    },
+  );
+
   it("opens the focused open-tasks reconciliation — not the structural editor — when open tasks remain", async () => {
     const story = makeProject({
       id: 30,
@@ -874,7 +897,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     expect(mockedApi.returnProjectToBacklog).toHaveBeenCalledWith(43, {
       expectedRevision: 1,
-      scheduledDate: null,
+      revisitAt: null,
     });
     expect(screen.getByText("Auf später verschoben")).toBeInTheDocument();
   });
@@ -1008,7 +1031,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
 
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
-        scheduledDate: "2026-05-01",
+        revisitAt: "2026-05-01T04:00:00Z",
         expectedRevision: 1,
       }),
     );
@@ -1021,7 +1044,7 @@ describe("ProjectStoryRow – left-swipe/kebab command rail", () => {
     );
     await waitFor(() =>
       expect(mockedApi.updateProject).toHaveBeenCalledWith(46, {
-        scheduledDate: null,
+        revisitAt: null,
         expectedRevision: 1,
       }),
     );
@@ -1367,7 +1390,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
           stuckReason: null,
           deferredNextAction: makeTask({
             title: "Morgen anfangen",
-            notBeforeDate: localDateAfter(1),
+            revisitAt: `${localDateAfter(1)}T00:00:00.000Z`,
           }),
         })}
       />,
@@ -1386,7 +1409,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
           nextAction: makeTask({ title: "Jetzt anfangen" }),
           deferredNextAction: makeTask({
             title: "Morgen anfangen",
-            notBeforeDate: localDateAfter(1),
+            revisitAt: `${localDateAfter(1)}T00:00:00.000Z`,
           }),
         })}
       />,
@@ -1406,7 +1429,7 @@ describe("ProjectStoryRow – non-gesture controls, status display and links", (
           stuckReason: null,
           deferredNextAction: makeTask({
             title: "In drei Tagen anfangen",
-            notBeforeDate: localDateAfter(3),
+            revisitAt: `${localDateAfter(3)}T00:00:00.000Z`,
           }),
         })}
       />,

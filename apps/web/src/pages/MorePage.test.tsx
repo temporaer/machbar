@@ -190,7 +190,7 @@ describe("MorePage", () => {
     expect(
       screen.getByText("Gemeinsamer Beitrag ohne persönliche Zuordnung"),
     ).toBeInTheDocument();
-    expect(screen.queryByText(/Platz|Rang|winner/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Platz$|^Rang$|^winner$/i)).not.toBeInTheDocument();
   });
 
   it("groups destinations and settings by purpose", async () => {

@@ -118,7 +118,7 @@ function taskPlanningChild(task: TaskRecord): CleanupPlanningChildContext {
     const externalWait: NonNullable<CleanupPlanningChildContext["externalWait"]> = {};
     const label = task.externalWait.waitingFor?.trim();
     if (label) externalWait.label = label;
-    if (task.externalWait.revisitDate) externalWait.revisitDate = task.externalWait.revisitDate;
+    if (task.revisitAt) externalWait.revisitDate = task.revisitAt;
     if (Object.keys(externalWait).length > 0) result.externalWait = externalWait;
   }
   if (task.scheduledDate) result.scheduledDate = task.scheduledDate;
@@ -273,7 +273,7 @@ export function taskContext(graph: Graph, task: TaskRecord): CleanupItemContext 
       hasDueDate: task.dueDate !== null,
       hasScheduledDate: task.scheduledDate !== null,
       hasExternalWait: task.externalWait !== null,
-      hasRevisitDate: task.externalWait?.revisitDate != null,
+      hasRevisitDate: task.revisitAt != null,
       isBlocked: task.blocked,
       isExecutable: task.executable,
       graphNextActionTitle: computedProject?.nextAction?.title ?? null,

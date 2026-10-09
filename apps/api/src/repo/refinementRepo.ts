@@ -1,6 +1,5 @@
 import type {
   Member,
-  Task,
   TaskSize,
   TaskStatus,
 } from "@machbar/shared";
@@ -61,7 +60,10 @@ export interface RefinementTaskRow {
   updatedAt: string;
   blocked: boolean;
   executable: boolean;
-  externalWait: Task["externalWait"];
+  externalWait: {
+    waitingFor: string | null;
+  } | null;
+  revisitAt: string | null;
   nextBlockerAttentionDate: string | null;
   blockers: Array<
     | { type: "external"; waitingFor: string | null }
@@ -289,6 +291,7 @@ export function getRefinementTasks(
       blocked: task.blocked,
       executable: task.executable,
       externalWait: task.externalWait,
+      revisitAt: task.revisitAt,
       nextBlockerAttentionDate: task.nextBlockerAttentionDate,
       blockers: task.blockers,
       dependencies: task.dependencies,

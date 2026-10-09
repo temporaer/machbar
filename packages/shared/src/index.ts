@@ -558,6 +558,7 @@ export interface ProjectActivationReadiness {
   hasDriver: boolean;
   hasViableProgressPath: boolean;
   hasHealthyFutureWaiting: boolean;
+  hasHealthyFutureRevisit?: boolean;
 }
 
 export interface Project {
@@ -612,8 +613,8 @@ export interface Dependency {
 
 export interface ExternalWait {
   waitingFor: string | null;
-  /** @deprecated Read only during migration; active writes use workItem.revisitAt. */
-  revisitDate: string | null;
+  /** Historical compatibility only; current task responses use Task.revisitAt. */
+  revisitDate?: string | null;
 }
 
 export type TaskBlockerSummary =
@@ -673,6 +674,9 @@ export type TaskReminderInput =
     };
 
 export interface Task {
+  /** Legacy upgrade/input compatibility; current API projections omit these. */
+  notBeforeAt?: string | null;
+  notBeforeDate?: string | null;
   id: number;
   revision: number;
   projectId: number | null;
@@ -692,9 +696,6 @@ export interface Task {
   dueDate: string | null;
   scheduledDate: string | null;
   revisitAt: string | null;
-  notBeforeAt: string | null;
-  /** Local calendar date selected with `notBeforeAt`; used for date-only invariants. */
-  notBeforeDate: string | null;
   externalWait: ExternalWait | null;
   priority: number | null;
   size: TaskSize | null;
@@ -823,7 +824,8 @@ export type WaitingReason =
   | {
       type: "external";
       waitingFor: string | null;
-      revisitDate: string | null;
+      revisitAt?: string | null;
+      revisitDate?: string | null;
     }
   | {
       type: "context";
@@ -939,7 +941,7 @@ export interface Agenda {
   shared: Task[];
   unscheduled: Task[];
   /**
-   * Tasks with a direct external wait whose `revisitDate` is today or earlier.
+   * Tasks with a direct external wait whose canonical revisitAt is today or earlier.
    * They reappear here as an attention signal even though they remain blocked.
    */
   revisit: Task[];
@@ -973,7 +975,7 @@ export interface WeekWorkItemSummary {
   placement: WeekWorkItemPlacement;
   /**
    * The projected/display date this item is shown under. This is the
-   * semantic source date (scheduledDate/dueDate/externalWait.revisitDate,
+   * semantic source date (scheduledDate/dueDate/revisitAt,
    * matching `placement`) clamped forward to "today" when it has passed,
    * so unfinished attention keeps showing up instead of disappearing off
    * the front of the rolling window. The original source date stays
@@ -1027,7 +1029,7 @@ const weekAttentionPlacementPriority: Record<
 
 /**
  * Projects a work item's current single attention placement + display date
- * from its raw source dates (scheduledDate/dueDate/externalWait.revisitDate).
+ * from its raw source dates (scheduledDate/dueDate/revisitAt).
  * Any candidate date before `today` is clamped forward to `today` so
  * unfinished attention carries forward into view instead of disappearing
  * once its stored date falls before the visible window - without mutating
@@ -1037,8 +1039,7 @@ const weekAttentionPlacementPriority: Record<
  * is not silently deprioritized behind a later scheduled/revisit date.
  *
  * Pass only the candidates that are semantically applicable for the item
- * (e.g. a directly-waiting task should omit `scheduledDate`; a non-waiting
- * task should omit `revisitDate`). Returns null when no candidate date
+ * (e.g. a directly-waiting task should omit `scheduledDate`). Returns null when no candidate date
  * exists at all.
  */
 export function projectWeekAttention(

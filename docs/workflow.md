@@ -100,6 +100,15 @@ status is shown.
 person’s planned work, deadlines, due-soon tasks, reached follow-ups, standalone
 available work, and the next useful action from each active project.
 
+Urgent overdue and due-today deadlines precede planned work; planned work
+precedes due Wiedervorlagen, which precede upcoming deadlines. Each task appears
+in only one section, while its row retains secondary deadline, revisit, and
+external-wait context. A due revisit exposes the next decision directly:
+start work today (clearing the revisit and scheduling today atomically), open
+the existing planning or revisit workflow, follow up on an external wait, or
+end that wait. Merely viewing details, editing notes, or changing a title does
+not acknowledge or clear a revisit.
+
 The compact **Meine | Alle** toggle can broaden this to the whole household
 without changing who is signed in or who is recorded as making changes.
 

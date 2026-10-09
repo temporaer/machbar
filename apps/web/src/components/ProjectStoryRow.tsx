@@ -1,12 +1,14 @@
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
+import { calendarDateForInstant } from "@machbar/shared";
 import { storyWorkflowCommand } from "../lib/commands";
 import { useStrings } from "../lib/strings";
 import { formatDate } from "../lib/format";
 import {
   formatCompactWaitDuration,
   formatExactLocalDate,
+  formatRevisitAt,
   formatRelativeDueDate,
   formatRelativeScheduleDate,
   isFutureCalendarDate,
@@ -29,6 +31,7 @@ import { useOptionalInteractionScope } from "../lib/interactionScope";
 import { IconActionGlyph } from "./IconActionButton";
 import { MemberAvatar } from "./MemberAvatar";
 import { useLocale } from "../lib/locale";
+import { useHouseholdTimezone } from "../lib/householdTimezone";
 import "./ProjectStoryRow.css";
 import { useSwipeCoach } from "../lib/swipeCoach";
 import { SwipeCoachHint } from "./SwipeCoachHint";
@@ -96,6 +99,7 @@ export interface ProjectStoryRowProps {
 export function ProjectStoryRow({ story: storyProp, variant = "compact" }: ProjectStoryRowProps) {
   const strings = useStrings();
   const { locale } = useLocale();
+  const { timezone: householdTimezone } = useHouseholdTimezone();
   const { members } = useIdentity();
   const navigate = useNavigate();
   const dispatch = useWorkItemCommands();
@@ -122,7 +126,10 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
   const criteria = story.acceptanceCriteria ?? [];
   const criteriaChecked = criteria.filter((c) => c.checked).length;
   const dueLabel = formatDate(story.dueDate, locale);
-  const scheduledLabel = formatDate(story.scheduledDate, locale);
+  const projectRevisitLabel =
+    story.status === "backlog" && !story.archivedAt && story.revisitAt
+      ? formatRevisitAt(story.revisitAt, locale, householdTimezone)
+      : null;
   const openCount = story.openCount ?? 0;
   const doneCount = story.doneCount ?? 0;
   const totalTasks = openCount + doneCount;
@@ -165,11 +172,17 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
     nextActionScheduleExact
       ? `${strings.nextAction} ${nextActionScheduleRelative} (${nextActionScheduleExact}): ${story.nextAction.title}`
       : null;
-  const deferredNextActionRelative = story.deferredNextAction?.notBeforeDate
-    ? formatRelativeScheduleDate(story.deferredNextAction.notBeforeDate, now, locale)
+  const deferredNextActionDate = story.deferredNextAction?.revisitAt
+    ? calendarDateForInstant(
+        story.deferredNextAction.revisitAt,
+        householdTimezone,
+      )
     : null;
-  const deferredNextActionExact = story.deferredNextAction?.notBeforeDate
-    ? formatExactLocalDate(story.deferredNextAction.notBeforeDate, locale)
+  const deferredNextActionRelative = deferredNextActionDate
+    ? formatRelativeScheduleDate(deferredNextActionDate, now, locale)
+    : null;
+  const deferredNextActionExact = deferredNextActionDate
+    ? formatExactLocalDate(deferredNextActionDate, locale)
     : null;
   const waitingDurationSuffix =
     story.waitingUntil && waitingRelativeDate
@@ -340,7 +353,7 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
           </div>
           {variant !== "card" ||
           dueLabel ||
-          scheduledLabel ||
+          projectRevisitLabel ||
           story.contexts.length > 0 ? (
             <div className="story-row-meta">
               {variant !== "card" ? (
@@ -351,11 +364,6 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
               {dueLabel ? (
                 <span>
                   {strings.due}: {dueLabel}
-                </span>
-              ) : null}
-              {scheduledLabel ? (
-                <span>
-                  {strings.projectRevisitDate}: {scheduledLabel}
                 </span>
               ) : null}
               {variant !== "card" ? (
@@ -431,6 +439,18 @@ export function ProjectStoryRow({ story: storyProp, variant = "compact" }: Proje
             </>
           ) : null}
         </button>
+        {projectRevisitLabel ? (
+          <button
+            type="button"
+            className="story-row-revisit"
+            aria-label={`${strings.projectRevisitDate}: ${projectRevisitLabel}`}
+            disabled={busy}
+            onClick={() => dispatch({ type: "story.defer", story })}
+          >
+            <span>{strings.projectRevisitDate}</span>
+            <span>{projectRevisitLabel}</span>
+          </button>
+        ) : null}
         {driver ? (
           <button
             type="button"

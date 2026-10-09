@@ -351,7 +351,7 @@ export const resolveExternalWaitSchema = z.object({
 });
 
 const externalWaitFollowUpBaseSchema = z.object({
-  content: z.string().trim().min(1, "Follow-up text must not be empty."),
+  content: z.string().trim().optional(),
   expectedRevision: z.number().int().positive().optional(),
 });
 

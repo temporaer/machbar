@@ -48,7 +48,7 @@ describe("caption hints in focused task workflows", () => {
       screen.getByRole("button", { name: /^Planen: 15\./ }),
     );
     await userEvent.click(
-      screen.getByRole("button", { name: "Fällig bis" }),
+      screen.getByRole("button", { name: "+ Deadline hinzufügen" }),
     );
     await userEvent.click(
       screen.getByRole("button", { name: /^Deadline: 18\./ }),

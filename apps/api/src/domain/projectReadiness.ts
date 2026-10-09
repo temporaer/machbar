@@ -8,6 +8,7 @@ export function evaluateProjectActivationReadiness(input: {
   ownerMemberId: number | null;
   candidateTaskIds: readonly number[];
   projectTaskIds: readonly number[];
+  futureRevisitTaskIds?: readonly number[];
   blockerAnalysisByTask: ReadonlyMap<number, TaskBlockerAnalysis>;
   today: string;
 }): ProjectActivationReadiness {
@@ -22,12 +23,15 @@ export function evaluateProjectActivationReadiness(input: {
       analysis.nextBlockerAttentionDate > input.today
     );
   });
+  const hasHealthyFutureRevisit = (input.futureRevisitTaskIds ?? []).length > 0;
   return {
     ready:
-      hasDriver && (hasViableProgressPath || hasHealthyFutureWaiting),
+      hasDriver &&
+      (hasViableProgressPath || hasHealthyFutureWaiting || hasHealthyFutureRevisit),
     hasDriver,
     hasViableProgressPath,
     hasHealthyFutureWaiting,
+    hasHealthyFutureRevisit,
   };
 }
 
@@ -54,6 +58,8 @@ export function getProjectActivationReadiness(
     hasDriver,
     ready:
       hasDriver &&
-      (readiness.hasViableProgressPath || readiness.hasHealthyFutureWaiting),
+      (readiness.hasViableProgressPath ||
+        readiness.hasHealthyFutureWaiting ||
+        readiness.hasHealthyFutureRevisit === true),
   };
 }

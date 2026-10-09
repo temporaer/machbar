@@ -37,6 +37,41 @@ import { addExternalWorkItemRef } from "../domain/externalWorkItemRefs.js";
 import { getHouseholdAiContext } from "../aiContext.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_INTAKE_TIMEZONE = "Europe/Berlin";
+
+function intakeTimezone(db: Db): string {
+  const row = db
+    .select({ value: schema.householdSettings.value })
+    .from(schema.householdSettings)
+    .where(eq(schema.householdSettings.key, "timezone"))
+    .get();
+  const timezone = row?.value ?? DEFAULT_INTAKE_TIMEZONE;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
+    return timezone;
+  } catch {
+    return DEFAULT_INTAKE_TIMEZONE;
+  }
+}
+
+function intakeLocalDateTime(now: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const values = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}:${values.second}`;
+}
 
 function errorInfo(
   code: IntakeErrorInfo["code"],
@@ -222,6 +257,8 @@ export async function createIntakeJob(
     const members = db.select({ name: schema.members.name }).from(schema.members).all();
     const createdAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + DAY_MS).toISOString();
+    const promptNow = new Date();
+    const promptTimezone = intakeTimezone(db);
     db.transaction((tx) => {
       tx.insert(schema.intakeJobs).values({
         id,
@@ -255,8 +292,9 @@ export async function createIntakeJob(
           intakeId: id,
           taskName: "Machbar intake",
           instructions: buildIntakeInstructions({
-            today: new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date()),
-            timezone: "Europe/Berlin",
+            today: new Intl.DateTimeFormat("en-CA", { timeZone: promptTimezone }).format(promptNow),
+            timezone: promptTimezone,
+            currentLocalDateTime: intakeLocalDateTime(promptNow, promptTimezone),
             memberNames: members.map((member) => member.name),
             hasText: input.text !== null,
             attachmentCount: binaryAttachments.length,
@@ -497,6 +535,8 @@ export async function retryIntakeAnalysis(
     })),
     warnings: currentDraft.warnings,
   } : null;
+  const promptNow = new Date();
+  const promptTimezone = intakeTimezone(db);
   db.transaction((tx) => {
     tx.update(schema.intakeJobs).set({
       status: "queued",
@@ -511,8 +551,9 @@ export async function retryIntakeAnalysis(
         intakeId: id,
         taskName: "Machbar intake",
         instructions: buildIntakeInstructions({
-          today: new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin" }).format(new Date()),
-          timezone: "Europe/Berlin",
+          today: new Intl.DateTimeFormat("en-CA", { timeZone: promptTimezone }).format(promptNow),
+          timezone: promptTimezone,
+          currentLocalDateTime: intakeLocalDateTime(promptNow, promptTimezone),
           memberNames: members.map((member) => member.name),
           hasText: job.text !== null,
           attachmentCount: attachments.filter((attachment) => attachment.mimeType !== "text/plain").length,

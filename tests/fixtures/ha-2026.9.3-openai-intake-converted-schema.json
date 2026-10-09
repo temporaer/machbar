@@ -26,13 +26,19 @@
               "description": "Machbar intake field title"
             },
             "description": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field description",
               "default": null
             },
             "location": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field location",
               "default": null
@@ -42,25 +48,37 @@
               "description": "Machbar intake field allDay"
             },
             "startDate": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field startDate",
               "default": null
             },
             "endDate": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field endDate",
               "default": null
             },
             "startDateTime": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field startDateTime",
               "default": null
             },
             "endDateTime": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field endDateTime",
               "default": null
@@ -101,7 +119,11 @@
             },
             "kind": {
               "type": "string",
-              "enum": ["action", "project", "reference"],
+              "enum": [
+                "action",
+                "project",
+                "reference"
+              ],
               "description": "Machbar intake field kind"
             },
             "title": {
@@ -109,43 +131,73 @@
               "description": "Machbar intake field title"
             },
             "notes": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field notes",
               "default": null
             },
             "parentKey": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field parentKey",
               "default": null
             },
             "ownerName": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field ownerName",
               "default": null
             },
             "dueDate": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field dueDate",
               "default": null
             },
             "scheduledDate": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field scheduledDate",
               "default": null
             },
+            "revisitAt": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "nullable": true,
+              "description": "Machbar intake field revisitAt",
+              "default": null
+            },
             "notBeforeDate": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field notBeforeDate",
               "default": null
             },
             "notBeforeAt": {
-              "type": ["string", "null"],
+              "type": [
+                "string",
+                "null"
+              ],
               "nullable": true,
               "description": "Machbar intake field notBeforeAt",
               "default": null
@@ -157,35 +209,56 @@
                 "properties": {
                   "kind": {
                     "type": "string",
-                    "enum": ["absolute", "deadline_relative"],
+                    "enum": [
+                      "absolute",
+                      "deadline_relative"
+                    ],
                     "description": "Machbar intake field kind"
                   },
                   "at": {
-                    "type": ["string", "null"],
+                    "type": [
+                      "string",
+                      "null"
+                    ],
                     "nullable": true,
                     "description": "Machbar intake field at",
                     "default": null
                   },
                   "daysBefore": {
-                    "type": ["integer", "null"],
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
                     "nullable": true,
                     "description": "Machbar intake field daysBefore",
                     "default": null
                   },
                   "time": {
-                    "type": ["string", "null"],
+                    "type": [
+                      "string",
+                      "null"
+                    ],
                     "nullable": true,
                     "description": "Machbar intake field time",
                     "default": null
                   },
                   "timezone": {
-                    "type": ["string", "null"],
+                    "type": [
+                      "string",
+                      "null"
+                    ],
                     "nullable": true,
                     "description": "Machbar intake field timezone",
                     "default": null
                   }
                 },
-                "required": ["kind", "at", "daysBefore", "time", "timezone"],
+                "required": [
+                  "kind",
+                  "at",
+                  "daysBefore",
+                  "time",
+                  "timezone"
+                ],
                 "additionalProperties": false,
                 "strict": true
               },
@@ -215,6 +288,7 @@
             "ownerName",
             "dueDate",
             "scheduledDate",
+            "revisitAt",
             "notBeforeDate",
             "notBeforeAt"
           ],
@@ -233,14 +307,21 @@
               "description": "Machbar intake field message"
             }
           },
-          "required": ["message"],
+          "required": [
+            "message"
+          ],
           "additionalProperties": false,
           "strict": true
         },
         "description": "Machbar intake field warnings"
       }
     },
-    "required": ["summary", "calendarEvents", "workItems", "warnings"],
+    "required": [
+      "summary",
+      "calendarEvents",
+      "workItems",
+      "warnings"
+    ],
     "additionalProperties": false,
     "strict": true
   }

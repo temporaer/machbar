@@ -65,7 +65,7 @@ export function buildWaitingEntries(
         reasons.push({
           type: "external",
           waitingFor: task.externalWait.waitingFor,
-          revisitDate: task.externalWait.revisitDate,
+          revisitAt: task.revisitAt,
         });
       } else if (task.executable && task.effectiveContexts.length > 0) {
         const target =
@@ -91,11 +91,11 @@ export function buildWaitingEntries(
       const externalB = b.reasons.find((reason) => reason.type === "external");
       const attentionA =
         externalA?.type === "external"
-          ? externalA.revisitDate ?? "9999-99-99"
+          ? externalA.revisitAt ?? "9999-99-99"
           : "9999-99-99";
       const attentionB =
         externalB?.type === "external"
-          ? externalB.revisitDate ?? "9999-99-99"
+          ? externalB.revisitAt ?? "9999-99-99"
           : "9999-99-99";
       return (
         attentionA.localeCompare(attentionB) ||

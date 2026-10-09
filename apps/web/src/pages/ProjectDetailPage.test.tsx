@@ -316,7 +316,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: "Projektfrist",
+        name: "Projekt-Deadline",
       }),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Wiedervorlage")).not.toBeInTheDocument();
@@ -402,7 +402,7 @@ describe("ProjectDetailPage task explanations", () => {
         id: 42,
         title: "Sommerfest planen",
         status: "backlog",
-        scheduledDate: "2026-09-20",
+        revisitAt: "2026-09-19T22:00:00.000Z",
       }),
       tasks: [],
     });
@@ -973,11 +973,11 @@ describe("ProjectDetailPage task explanations", () => {
     // same focused workflow as the rail, keyboard and detail value — not a
     // route-specific inspector or a focus field inside the task details.
     const dialog = await screen.findByRole("dialog", {
-      name: `${strings.planning}: Ort reservieren`,
+      name: strings.planning,
     });
-    await waitFor(() =>
-      expect(within(dialog).getByLabelText(strings.planningScheduledFor)).toHaveFocus(),
-    );
+    expect(dialog).toHaveFocus();
+    expect(within(dialog).getByRole("heading", { name: strings.planningScheduledFor }))
+      .toBeInTheDocument();
     expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|7");
     expect(screen.getByLabelText("task-route-state")).toHaveTextContent("none|none");
   });
@@ -1015,14 +1015,10 @@ describe("ProjectDetailPage task explanations", () => {
 
     expect(
       await screen.findByRole("dialog", {
-        name: `${strings.planning}: Moderatorin anfragen`,
+        name: strings.planning,
       }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("dialog", {
-        name: `${strings.planning}: Ablaufideen`,
-      }),
-    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole("dialog", { name: strings.planning })).toHaveLength(1);
     expect(screen.getByLabelText("task-workflow-state")).toHaveTextContent("plan|71");
   });
 
@@ -1034,7 +1030,7 @@ describe("ProjectDetailPage task explanations", () => {
     renderProjectRoute("/projects/42?focus=planning");
 
     const dialog = await screen.findByRole("dialog", {
-      name: `${strings.planning}: Ort reservieren`,
+      name: strings.planning,
     });
     await userEvent.click(
       within(dialog).getByRole("button", {
@@ -1044,13 +1040,12 @@ describe("ProjectDetailPage task explanations", () => {
     expect(dialog).toBeInTheDocument();
 
     await userEvent.click(
-      within(dialog).getByRole("button", { name: strings.confirmDone }),
+      within(dialog).getByRole("button", { name: strings.save }),
     );
 
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(7, {
-        notBeforeAt: null,
-        notBeforeDate: null,
+        revisitAt: null,
         scheduledDate: expect.any(String),
         dueDate: null,
         expectedRevision: 1,
@@ -1090,7 +1085,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     expect(
       await screen.findByRole("dialog", {
-        name: `${strings.planning}: Ort reservieren`,
+        name: strings.planning,
       }),
     ).toBeInTheDocument();
 
@@ -1100,7 +1095,7 @@ describe("ProjectDetailPage task explanations", () => {
 
     expect(
       await screen.findByRole("dialog", {
-        name: `${strings.planning}: Catering bestätigen`,
+        name: strings.planning,
       }),
     ).toBeInTheDocument();
     await waitFor(() =>

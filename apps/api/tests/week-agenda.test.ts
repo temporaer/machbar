@@ -211,7 +211,7 @@ describe("week planning agenda", () => {
         id: waiting.id,
         title: "Biggi nach Reise fragen",
         placement: "revisit",
-        externalWait: { waitingFor: "Biggi", revisitDate: wednesday },
+        externalWait: { waitingFor: "Biggi" },
       }),
     );
     expect(titles(week.unplanned)).not.toContain("Unterkunft irgendwann klaeren");
@@ -457,7 +457,7 @@ describe("week planning agenda", () => {
     expect(item).toMatchObject({
       title: "Handwerker nachfragen",
       placement: "revisit",
-      externalWait: { waitingFor: "Handwerker", revisitDate: wednesday },
+      externalWait: { waitingFor: "Handwerker" },
     });
   });
 
@@ -532,7 +532,7 @@ describe("week planning agenda", () => {
         title: "Laengst faellig zum Nachhaken",
         placement: "revisit",
         attentionDate: monday,
-        externalWait: expect.objectContaining({ revisitDate: "2026-09-02" }),
+        task: expect.objectContaining({ revisitAt: "2026-09-02T00:00:00.000Z" }),
       }),
     );
   });
@@ -634,7 +634,7 @@ describe("week planning agenda", () => {
 
     expect(onRevisitDay).toMatchObject({
       placement: "revisit",
-      externalWait: { waitingFor: "Anbieter", revisitDate: tuesday },
+      externalWait: { waitingFor: "Anbieter" },
       dueDate: friday,
     });
     expect(onDueDay).toBeUndefined();
@@ -655,7 +655,7 @@ describe("week planning agenda", () => {
     expect(item).toMatchObject({
       title: "Rueckmeldung abwarten",
       placement: "due",
-      externalWait: { waitingFor: "Behoerde", revisitDate: null },
+      externalWait: { waitingFor: "Behoerde" },
     });
     expect(titles(week.unplanned)).not.toContain("Rueckmeldung abwarten");
   });

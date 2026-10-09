@@ -1,3 +1,4 @@
+import { calendarDateForInstant, localTimeForInstant } from "@machbar/shared";
 import { getCatalog, type Locale } from "../i18n/catalog";
 import { localeTag } from "./format";
 
@@ -47,6 +48,19 @@ export function formatExactLocalDate(
     month: "2-digit",
     year: "numeric",
   }).format(new Date(date.year, date.month - 1, date.day));
+}
+
+export function formatRevisitAt(
+  value: string,
+  locale: Locale = "de",
+  timezone = "Europe/Berlin",
+): string | null {
+  const date = calendarDateForInstant(value, timezone);
+  if (!date) return null;
+  const formattedDate = formatExactLocalDate(date, locale);
+  if (!formattedDate) return null;
+  const time = localTimeForInstant(value, timezone);
+  return time && time !== "00:00" ? `${formattedDate}, ${time}` : formattedDate;
 }
 
 function futureRelative(days: number, locale: Locale): string {

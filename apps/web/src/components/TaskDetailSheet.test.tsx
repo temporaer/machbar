@@ -731,13 +731,13 @@ describe("TaskDetailSheet", () => {
     // Waiting is blocker data, never a status.
     expect(screen.queryByLabelText("Status")).not.toBeInTheDocument();
     const waitValue = screen.getByRole("button", {
-      name: /Wartet auf.*Vermieter.*05\.09\.2026/,
+      name: /Wartet auf Vermieter.*05\.09\.2026/,
     });
 
     await userEvent.click(waitValue);
 
     expect(
-      await screen.findByRole("heading", { name: "Planung: Freigabe" }),
+      await screen.findByRole("heading", { name: "Planung" }),
     ).toBeInTheDocument();
     expect(screen.getByDisplayValue("Vermieter")).toBeInTheDocument();
   });
@@ -754,11 +754,7 @@ describe("TaskDetailSheet", () => {
 
     // A task with no external wait resolves to the shared planning workflow.
     expect(await screen.findByLabelText("Wartet auf")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Speichern" })).not.toBeDisabled();
-    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
-    expect(
-      await screen.findByText("Bitte gib an, worauf die Aufgabe wartet."),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeDisabled();
     expect(mockedApi.updateTask).not.toHaveBeenCalled();
   });
 
@@ -1126,12 +1122,11 @@ describe("TaskDetailSheet", () => {
     // command that reaches the same sheet as the rail and keyboard.
     expect(screen.queryByLabelText("Eingeplant für")).not.toBeInTheDocument();
     await userEvent.click(
-      screen.getByRole("button", { name: /Eingeplant für.*04\.09\.2026/ }),
+      screen.getByRole("button", { name: /Geplant für.*04\.09\.2026/ }),
     );
 
-    const shortcuts = await screen.findByRole("group", { name: "Schnell planen" });
     await userEvent.click(
-      within(shortcuts).getByRole("button", { name: "Nicht geplant" }),
+      screen.getByRole("button", { name: "Planungsdatum entfernen" }),
     );
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
 
@@ -1156,7 +1151,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: "Planung" }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Planung: Noch nicht verfügbar" }),
+      await screen.findByRole("dialog", { name: "Planung" }),
     ).toBeInTheDocument();
   });
 
@@ -1175,7 +1170,7 @@ describe("TaskDetailSheet", () => {
     await userEvent.click(screen.getByRole("button", { name: /Planung.*18:00/ }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Planung: Abends verfügbar" }),
+      await screen.findByRole("dialog", { name: "Planung" }),
     ).toBeInTheDocument();
   });
 
@@ -1194,11 +1189,11 @@ describe("TaskDetailSheet", () => {
 
     await userEvent.click(
       screen.getByRole("button", {
-        name: /Eingeplant für.*10\.09\.2026.*Fällig 20\.09\.2026/,
+        name: /Geplant für.*10\.09\.2026.*Fällig 20\.09\.2026/,
       }),
     );
 
-    const dueDate = await screen.findByLabelText("Fällig bis");
+    const dueDate = await screen.findByLabelText("Deadline");
     fireEvent.change(dueDate, { target: { value: "13. September 2026" } });
     fireEvent.blur(dueDate);
     await userEvent.click(screen.getByRole("button", { name: "Speichern" }));

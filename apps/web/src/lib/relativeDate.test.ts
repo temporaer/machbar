@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatCompactWaitDuration,
+  formatRevisitAt,
   formatRelativeDueDate,
   formatRelativeScheduleDate,
   isFutureCalendarDate,
@@ -9,6 +10,21 @@ import {
 const TODAY = new Date(2026, 7, 25, 23, 30);
 
 describe("relative calendar dates", () => {
+  it("formats revisits in the household timezone without a midnight time", () => {
+    expect(
+      formatRevisitAt("2026-03-27T23:00:00.000Z", "de", "Europe/Berlin"),
+    ).toBe("28.03.2026");
+    expect(
+      formatRevisitAt("2026-03-27T07:00:00.000Z", "de", "America/Los_Angeles"),
+    ).toBe("27.03.2026");
+  });
+
+  it("includes the household-local time for timed revisits", () => {
+    expect(
+      formatRevisitAt("2026-03-27T17:30:00.000Z", "de", "Europe/Berlin"),
+    ).toBe("27.03.2026, 18:30");
+  });
+
   it.each([
     ["2026-08-22", "3 Tage überfällig"],
     ["2026-08-25", "heute"],

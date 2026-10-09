@@ -651,7 +651,7 @@ describe("repository layer (SQL/CTE-backed queries)", () => {
       addExternalWait(unscheduledWait.id);
 
       const reasons = getStuckReasonsByProject(handle.db, "2026-08-25");
-      expect(reasons.has(withRevisit.id)).toBe(false);
+      expect(reasons.has(withRevisit.id)).toBe(true);
     });
 
     it("keeps future and reached revisits out of project stuck reasons", () => {

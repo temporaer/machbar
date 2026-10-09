@@ -5,6 +5,7 @@ import type {
   WeekWorkItemPlacement,
   WeekWorkItemSummary,
 } from "@machbar/shared";
+import { calendarDateForInstant } from "@machbar/shared";
 import { projectWeekAttention } from "@machbar/shared";
 import type { Graph, ProjectRecord, TaskRecord } from "./graph.js";
 import {
@@ -154,6 +155,7 @@ export interface BuildWeekAgendaOptions {
   memberId?: number;
   scope?: "mine" | "all" | "work";
   today?: string;
+  householdTimezone?: string;
   contextAvailability?: (
     task: TaskRecord,
     target: number | "household",
@@ -189,11 +191,10 @@ export function buildWeekAgenda(
     // Directly-waiting tasks ignore scheduledDate: a wait's revisit date
     // (or its deadline) drives attention, not an incidental schedule.
     const projection = projectWeekAttention(
-      {
-        scheduledDate: waiting ? null : task.scheduledDate,
-        revisitDate: waiting
-          ? task.externalWait?.revisitDate ?? null
-          : task.revisitAt?.slice(0, 10) ?? null,
+        {
+          scheduledDate: waiting ? null : task.scheduledDate,
+          revisitDate:
+            calendarDateForInstant(task.revisitAt, options.householdTimezone) ?? null,
         dueDate: task.dueDate,
       },
       today,
@@ -219,7 +220,7 @@ export function buildWeekAgenda(
         revisitDate:
           story.status === "backlog"
             ? null
-            : story.revisitAt?.slice(0, 10) ?? null,
+            : calendarDateForInstant(story.revisitAt, options.householdTimezone) ?? null,
         dueDate: story.dueDate,
       },
       today,

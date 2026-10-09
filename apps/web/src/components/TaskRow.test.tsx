@@ -518,7 +518,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await userEvent.click(screen.getByRole("button", { name: "Planung" }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Planung: Kurz aufschieben" }),
+      await screen.findByRole("dialog", { name: "Planung" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "In einer Weile" })).toBeInTheDocument();
   });
@@ -537,7 +537,7 @@ describe("TaskRow – primary swipe direction mapping", () => {
     await userEvent.click(screen.getByRole("button", { name: "Weitere Aktionen" }));
     await userEvent.click(screen.getByRole("button", { name: "Planung" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Planung: Struktur ändern" });
+    const dialog = await screen.findByRole("dialog", { name: "Planung" });
     expect(within(dialog).getByLabelText("Geplant für")).toBeInTheDocument();
   });
 
@@ -714,7 +714,7 @@ describe("TaskRow – calm shared card presentation", () => {
     renderWithProviders(<TaskOutline tasks={[task]} emptyMessage="Nichts da" />);
 
     await screen.findByText("Erst abends erledigen");
-    expect(screen.getByText(/Wiedervorlage: .*18:00/)).toBeInTheDocument();
+    expect(screen.getByText(/Wiedervorlage: .*20:00/)).toBeInTheDocument();
   });
 
   it("keeps a long wrapping title complete while tags occupy the upper-right", async () => {

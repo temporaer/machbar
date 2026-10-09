@@ -32,9 +32,9 @@ export function TodayPage() {
     key: "planned" | "overdue" | "dueToday" | "dueSoon";
     label: string;
   }> = [
-    { key: "planned", label: strings.plannedToday },
     { key: "overdue", label: strings.overdue },
     { key: "dueToday", label: strings.dueToday },
+    { key: "planned", label: strings.plannedToday },
     { key: "dueSoon", label: strings.dueSoon },
   ];
   // `IdentityGate` (mounted above every route in `App.tsx`) normally
@@ -121,6 +121,39 @@ export function TodayPage() {
         visibleSectionTasks[section.key].length > 0 ||
         projectsByBucket[section.key].length > 0,
     ) || revisitTasks.length > 0;
+  const renderAgendaSection = (section: (typeof sections)[number]) => (
+    <div className="section" key={section.key}>
+      <div className="section-title">{section.label}</div>
+      {visibleSectionTasks[section.key].length > 0 ? (
+        <TaskOutline
+          tasks={visibleSectionTasks[section.key]}
+          emptyMessage={strings.noItems}
+          preserveRootOrder
+          showSwipeHint={false}
+          compactDescendants
+          attentionTone={toneBySection[section.key]}
+        />
+      ) : null}
+      {projectsByBucket[section.key].length > 0 ? (
+        <div
+          className={`list${
+            visibleSectionTasks[section.key].length > 0
+              ? " today-project-agenda-list"
+              : ""
+          }`}
+        >
+          {projectsByBucket[section.key].map((entry) => (
+            <ProjectAgendaRow
+              key={entry.project.id}
+              entry={entry}
+              owner={resolveProjectOwner(entry.project.ownerMemberId)}
+              attentionTone={toneBySection[section.key]}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
 
   return (
     <InteractionScopeProvider>
@@ -196,46 +229,12 @@ export function TodayPage() {
                 <>
                   {sections
                     .filter(
-                      (s) =>
-                        visibleSectionTasks[s.key].length > 0 ||
-                        projectsByBucket[s.key].length > 0,
+                      (section) =>
+                        section.key !== "dueSoon" &&
+                        (visibleSectionTasks[section.key].length > 0 ||
+                          projectsByBucket[section.key].length > 0),
                     )
-                    .map((s) => (
-                      <div className="section" key={s.key}>
-                        <div className="section-title">{s.label}</div>
-                        {visibleSectionTasks[s.key].length > 0 ? (
-                          <TaskOutline
-                            tasks={visibleSectionTasks[s.key]}
-                            emptyMessage={strings.noItems}
-                            preserveRootOrder
-                            showSwipeHint={false}
-                            compactDescendants
-                            attentionTone={toneBySection[s.key]}
-                          />
-                        ) : null}
-                        {projectsByBucket[s.key].length > 0 ? (
-                          <div
-                            className={`list${
-                              visibleSectionTasks[s.key].length > 0
-                                ? " today-project-agenda-list"
-                                : ""
-                            }`}
-                          >
-
-                            {projectsByBucket[s.key].map((entry) => (
-                              <ProjectAgendaRow
-                                key={entry.project.id}
-                                entry={entry}
-                                owner={resolveProjectOwner(
-                                  entry.project.ownerMemberId,
-                                )}
-                                attentionTone={toneBySection[s.key]}
-                              />
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
+                    .map(renderAgendaSection)}
                   {revisitTasks.length > 0 ? (
                     <div className="section" key="revisit">
                       <div className="section-title">{strings.revisit}</div>
@@ -250,6 +249,14 @@ export function TodayPage() {
                       />
                     </div>
                   ) : null}
+                  {sections
+                    .filter(
+                      (section) =>
+                        section.key === "dueSoon" &&
+                        (visibleSectionTasks[section.key].length > 0 ||
+                          projectsByBucket[section.key].length > 0),
+                    )
+                    .map(renderAgendaSection)}
                   {additionalTasks.length > 0 ? (
                     <details className="section" open={!hasForegroundAttention}>
                       <summary className="section-title disclosure-summary">
