@@ -37,6 +37,7 @@ import { HumanDateInput } from "./HumanDateInput";
 
 type DateField = "scheduled" | "availability" | "deadline";
 type DateValidity = Record<DateField, boolean>;
+type PendingScrollTarget = TaskPlanningTarget | "top" | null;
 
 function cardClass(active: boolean) {
   return `task-planning-card${active ? " task-planning-card-active" : ""}`;
@@ -64,6 +65,7 @@ export function TaskPlanningSheet({
   const availabilityCardRef = useRef<HTMLElement>(null);
   const deadlineCardRef = useRef<HTMLElement>(null);
   const planningFormRef = useRef<HTMLFormElement>(null);
+  const pendingScrollTargetRef = useRef<PendingScrollTarget>(null);
   const initialAvailabilityDate = task.revisitAt
     ? calendarDateForInstant(task.revisitAt, householdTimezone) ?? ""
     : "";
@@ -98,21 +100,31 @@ export function TaskPlanningSheet({
     if (initialTarget === "deadline") {
       setDeadlineOpen(true);
     }
+    pendingScrollTargetRef.current = initialTarget ?? "top";
+  }, [initialTarget]);
+
+  useLayoutEffect(() => {
+    const pendingTarget = pendingScrollTargetRef.current;
+    if (pendingTarget === null) return;
+    if (pendingTarget === "deadline" && !deadlineOpen) return;
+    pendingScrollTargetRef.current = null;
+
+    if (pendingTarget === "top") {
+      const sheet = planningFormRef.current?.closest<HTMLElement>(".sheet");
+      if (sheet) sheet.scrollTop = 0;
+      return;
+    }
+
     const target =
-      initialTarget === "scheduled"
+      pendingTarget === "scheduled"
         ? scheduledCardRef.current
-        : initialTarget === "availability"
+        : pendingTarget === "availability"
           ? availabilityCardRef.current
           : deadlineCardRef.current;
-    const scrollTarget = target ?? planningFormRef.current;
-    if (scrollTarget && typeof scrollTarget.scrollIntoView === "function") {
-      if (!initialTarget) {
-        scrollTarget.scrollIntoView({ block: "start", behavior: "auto" });
-        return;
-      }
-      scrollTarget.scrollIntoView({ block: "nearest", behavior: "auto" });
+    if (target && typeof target.scrollIntoView === "function") {
+      target.scrollIntoView({ block: "nearest", behavior: "auto" });
     }
-  }, [initialTarget]);
+  }, [deadlineOpen, initialTarget]);
 
   useEffect(() => {
     if (availabilityEdited) return;
@@ -170,6 +182,7 @@ export function TaskPlanningSheet({
   const matchesAvailability = (instant: string | null) =>
     Boolean(
       timezoneLoaded &&
+      validity.availability &&
       instant &&
       nextAvailability?.notBeforeAt === instant,
     );
