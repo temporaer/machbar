@@ -9,7 +9,10 @@ import { updateProject } from "../domain/storyCrud.js";
 import { addCriterion, updateCriterionText } from "../domain/storyCapabilities.js";
 import { moveTask } from "../domain/structuralMoves.js";
 import { addDependency, upsertExternalWait } from "../domain/taskCapabilities.js";
-import { convertTaskToStory } from "../domain/roleConversion.js";
+import {
+  beginCommitmentConversion,
+  finishCommitmentConversion,
+} from "./commitmentPreservingConversion.js";
 import type { MutationContext } from "../domain/workItemShared.js";
 import { nowIso } from "../domain/workItemShared.js";
 import { workRefinementProposalSchema } from "@machbar/shared";
@@ -149,7 +152,14 @@ export function updateWorkRefinement(db: Db, id: string, viewerId: number | null
   if (result.changes !== 1) throw AppError.conflict("stale_write_conflict", "The proposal changed. Reload it before saving.");
 }
 
-export function applyWorkRefinement(db: Db, id: string, viewerId: number | null, expectedRevision: number, context: MutationContext) {
+export function applyWorkRefinement(
+  db: Db,
+  id: string,
+  viewerId: number | null,
+  expectedRevision: number,
+  context: MutationContext,
+  projectDriverMemberId?: number,
+) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const job = tx.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get();
@@ -166,6 +176,7 @@ export function applyWorkRefinement(db: Db, id: string, viewerId: number | null,
     const priority: Record<string, number> = { convert_task_to_project: 0, update_task: 1, update_project: 1, create_child: 2, move_task: 3, add_dependency: 4, update_wait: 5, update_project_outcome: 6, advisory: 7 };
     const orderedChanges = [...changes].sort((a, b) => (priority[a.kind] ?? 99) - (priority[b.kind] ?? 99));
     const changedRoleIds = new Set<number>();
+    const conversions = new Map<number, ReturnType<typeof beginCommitmentConversion>>();
     const fieldWrites = new Map<string, string>();
     for (const change of orderedChanges) {
       if (change.kind === "convert_task_to_project") changedRoleIds.add(change.targetId);
@@ -236,7 +247,11 @@ export function applyWorkRefinement(db: Db, id: string, viewerId: number | null,
           ensure(change.targetId);
           const task = txDb.select().from(schema.workItems).where(eq(schema.workItems.id, change.targetId)).get();
           if (!task || task.role !== "task") throw AppError.badRequest("intake_draft_invalid", "Invalid task conversion target.");
-          convertTaskToStory(txDb, task.id, { status: "backlog", title: task.title, notes: task.notes, expectedRevision: task.revision }, context); break;
+          conversions.set(
+            task.id,
+            beginCommitmentConversion(txDb, task.id, projectDriverMemberId, viewerId, context),
+          );
+          break;
         }
         case "create_child": {
           ensure(change.parentTaskId);
@@ -272,6 +287,14 @@ export function applyWorkRefinement(db: Db, id: string, viewerId: number | null,
         }
         case "advisory": break;
       }
+    }
+    for (const conversion of conversions.values()) {
+      const current = txDb.select({ revision: schema.workItems.revision }).from(schema.workItems)
+        .where(eq(schema.workItems.id, conversion.projectId)).get();
+      finishCommitmentConversion(txDb, {
+        ...conversion,
+        projectRevision: current?.revision ?? conversion.projectRevision,
+      }, context);
     }
     const updated = tx.update(schema.intakeJobs).set({ status: "applied", revision: job.revision + 1, updatedAt: nowIso(), applyResultsJson: JSON.stringify({ work: [], calendar: [], paperlessDocumentIds: [] }) })
       .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, expectedRevision), eq(schema.intakeJobs.status, "ready"))).run();

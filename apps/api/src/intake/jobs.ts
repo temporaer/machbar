@@ -358,6 +358,22 @@ export function getIntake(
   const draft = normalizeStoredIntakeDraft(parseJson<unknown>(job.draftJson));
   const error = parseJson<IntakeErrorInfo>(job.errorJson);
   const integration = activeHomeAssistantIntegration(db);
+  const breakdownRows = job.breakdownSnapshotJson ? JSON.parse(job.breakdownSnapshotJson) as Array<{
+    id: number;
+    parentId: number | null;
+    title: string;
+    status: "captured" | "actionable" | "someday";
+    ownerMemberId: number | null;
+    scheduledDate: string | null;
+    revisitAt: string | null;
+    notBeforeAt: string | null;
+    notBeforeDate: string | null;
+    priority: string | null;
+    size: number | null;
+  }> : [];
+  const breakdownSource = job.breakdownTaskId === null
+    ? null
+    : breakdownRows.find((row) => row.id === job.breakdownTaskId) ?? null;
   return {
     id: job.id,
     status: (job.status === "queued" && request?.status === "leased" ? "analyzing" : job.status) as IntakeRecord["status"],
@@ -369,8 +385,16 @@ export function getIntake(
     breakdown: job.breakdownTaskId === null ? null : {
       taskId: job.breakdownTaskId,
       instruction: job.breakdownInstruction ?? "",
+      sourceStatus: breakdownSource?.status ?? "captured",
+      sourceOwnerMemberId: breakdownSource?.ownerMemberId ?? null,
+      scheduledDate: breakdownSource?.scheduledDate ?? null,
+      revisitAt: breakdownSource?.revisitAt ?? null,
+      notBeforeAt: breakdownSource?.notBeforeAt ?? null,
+      notBeforeDate: breakdownSource?.notBeforeDate ?? null,
+      priority: breakdownSource?.priority ?? null,
+      size: breakdownSource?.size ?? null,
       existingChildren: (() => {
-        const rows = job.breakdownSnapshotJson ? JSON.parse(job.breakdownSnapshotJson) as Array<{ id: number; parentId: number | null; title: string; status: string }> : [];
+        const rows = breakdownRows;
         const byParent = new Map<number, typeof rows>();
         for (const row of rows) if (row.parentId !== null) byParent.set(row.parentId, [...(byParent.get(row.parentId) ?? []), row]);
         const result: Array<{ id: number; title: string; status: string; depth: number }> = [];

@@ -45,9 +45,13 @@ describe("reviewed task breakdown", () => {
     return { id, draft };
   }
 
-  const apply = (id: string, draft: IntakeDraft, revision = 1) =>
+  const apply = (id: string, draft: IntakeDraft, revision = 1, projectDriverMemberId?: number) =>
     applyIntake(ctx.handle.db, { dataDir: ctx.dataDir } as never, undefined,
-      new HomeAssistantRequestSignal(), id, { expectedRevision: revision, draft }, {}, null);
+      new HomeAssistantRequestSignal(), id, {
+        expectedRevision: revision,
+        draft,
+        ...(projectDriverMemberId !== undefined ? { projectDriverMemberId } : {}),
+      }, {}, null);
 
   it("applies the enabled root instead of an excluded duplicate", async () => {
     const task = createTask(ctx.handle.db, { title: "Room", status: "actionable" });
@@ -140,6 +144,55 @@ describe("reviewed task breakdown", () => {
     const children = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all();
     expect(children).toHaveLength(2);
     expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
+  });
+
+  it("converts an actionable task into an active project with an explicit driver", async () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
+    const task = createTask(ctx.handle.db, { title: "Plan the holiday", status: "actionable" });
+    ctx.handle.db.update(schema.workItems).set({ scheduledDate: "2027-01-05" })
+      .where(eq(schema.workItems.id, task.id)).run();
+    const { id, draft } = prepare(task.id, true);
+    await apply(id, draft, 1, driver.id);
+    const row = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
+    expect(row.role).toBe("story");
+    expect(row.status).toBe("active");
+    expect(row.ownerMemberId).toBe(driver.id);
+    expect(row.scheduledDate).toBe("2027-01-05");
+    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()).toHaveLength(2);
+  });
+
+  it("rolls back an actionable conversion when no driver is selected", async () => {
+    const task = createTask(ctx.handle.db, { title: "Plan the holiday", status: "actionable" });
+    const { id, draft } = prepare(task.id, true);
+    await expect(apply(id, draft)).rejects.toMatchObject({ code: "project_driver_required" });
+    expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
+    expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("actionable");
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
+  });
+
+  it("rejects actionable conversion while revisit timing still exists", async () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#654321" }).returning().get();
+    const task = createTask(ctx.handle.db, {
+      title: "Plan the holiday",
+      status: "actionable",
+      revisitAt: "2027-01-05T08:00:00.000Z",
+    });
+    const { id, draft } = prepare(task.id, true);
+    await expect(apply(id, draft, 1, driver.id)).rejects.toMatchObject({ code: "role_conversion_invalid" });
+    expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
+    expect(getTaskOrThrow(ctx.handle.db, task.id).revisitAt).toBe("2027-01-05T08:00:00.000Z");
+  });
+
+  it("rolls back actionable conversion when accepted steps provide no viable progress path", async () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#abcdef" }).returning().get();
+    const task = createTask(ctx.handle.db, { title: "Plan the holiday", status: "actionable" });
+    const { id, draft } = prepare(task.id, true);
+    draft.workItems = [draft.workItems[0]!];
+    await expect(apply(id, draft, 1, driver.id)).rejects.toMatchObject({ code: "project_activation_not_ready" });
+    expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
+    expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("actionable");
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
   });
 
   it("rolls back a title edit if a captured task cannot accept children and leaves its proposal editable", async () => {

@@ -1215,7 +1215,19 @@ export interface IntakeApplyResults {
 }
 export interface IntakeRecord {
   /** Present for proposals that edit an existing task rather than create a new root. */
-  breakdown?: { taskId: number; instruction: string; existingChildren: Array<{ id: number; title: string; status: string; depth: number }> } | null;
+  breakdown?: {
+    taskId: number;
+    instruction: string;
+    sourceStatus: "captured" | "actionable" | "someday";
+    sourceOwnerMemberId: number | null;
+    scheduledDate: string | null;
+    revisitAt: string | null;
+    notBeforeAt: string | null;
+    notBeforeDate: string | null;
+    priority: string | null;
+    size: number | null;
+    existingChildren: Array<{ id: number; title: string; status: string; depth: number }>;
+  } | null;
   refinement?: { targetType: "task" | "project"; targetId: number; intent: import("./workRefinement.js").WorkRefinementIntent; proposal: import("./workRefinement.js").WorkRefinementProposal | null } | null;
   id: string;
   status: IntakeStatus;
