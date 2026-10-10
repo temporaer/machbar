@@ -107,6 +107,13 @@ describe("historical reflection briefing", () => {
     const future = insertTestTask(ctx.handle.db, { title: "Deliberately later", status: "actionable", scheduledDate: "2025-04-01", createdAt: old, updatedAt: old });
     const waiting = insertTestTask(ctx.handle.db, { title: "Awaiting reply", status: "actionable", createdAt: old, updatedAt: old });
     ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId: waiting.id, waitingFor: "Versicherung antwortet" }).run();
+    const healthyWait = insertTestTask(ctx.handle.db, { title: "Follow-up established", status: "actionable", revisitAt: "2025-03-10T12:00:00.000Z", createdAt: old, updatedAt: old });
+    ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId: healthyWait.id, waitingFor: "Antwort vom Vermieter" }).run();
+    const overdueWait = insertTestTask(ctx.handle.db, { title: "Follow-up overdue", status: "actionable", revisitAt: "2025-02-20T12:00:00.000Z", createdAt: old, updatedAt: old });
+    ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId: overdueWait.id, waitingFor: "Rückmeldung erwartet" }).run();
+    const brokenProject = insertTestProject(ctx.handle.db, { title: "Blocked project", status: "active", scope: "household", createdAt: old });
+    const brokenChild = insertTestTask(ctx.handle.db, { title: "No follow-up", projectId: brokenProject.id, status: "actionable", createdAt: old, updatedAt: old });
+    ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId: brokenChild.id, waitingFor: "Unklare Antwort" }).run();
     event({ kind: "task_updated", id: active.id, title: active.title, createdAt: "2025-02-10T12:00:00Z", metadata: { scope: "household", changedFields: ["title"], before: { scheduledDate: null }, after: { scheduledDate: null } } });
     event({ kind: "task_updated", id: active.id, title: active.title, createdAt: "2025-02-11T12:00:00Z", metadata: { scope: "household", changedFields: ["reviewedAt"] } });
     event({ kind: "task_dependencies_changed", id: active.id, title: active.title, createdAt: "2025-02-12T12:00:00Z", metadata: { scope: "household", changedFields: ["dependencies"] } });
@@ -114,17 +121,21 @@ describe("historical reflection briefing", () => {
     expect(briefing.history.progress.lastOutcomeProgressAt).toBeNull();
     expect(briefing.history.progress.lastActivityAt).toBe("2025-02-12T12:00:00Z");
     expect(briefing.history.inactiveWork).toContainEqual(expect.objectContaining({ id: active.id, classification: "actionable_no_recorded_progress", lastOutcomeProgressAt: null, lastActivityAt: "2025-02-12T12:00:00Z" }));
-    expect(briefing.history.inactiveWork).toContainEqual(expect.objectContaining({ id: waiting.id, classification: "intentional_wait", waitingReason: "Versicherung antwortet" }));
+    expect(briefing.history.inactiveWork).toContainEqual(expect.objectContaining({ id: waiting.id, classification: "insufficient_evidence", waitingReason: expect.stringContaining("Warten ohne festgelegte Wiedervorlage") }));
+    expect(briefing.history.inactiveWork).toContainEqual(expect.objectContaining({ id: healthyWait.id, classification: "intentional_wait", waitingReason: expect.stringContaining("Antwort vom Vermieter") }));
+    expect(briefing.history.inactiveWork).toContainEqual(expect.objectContaining({ id: overdueWait.id, classification: "insufficient_evidence", waitingReason: expect.stringContaining("Wiedervorlage ist fällig") }));
+    expect(briefing.history.inactiveWork).toContainEqual(expect.objectContaining({ id: brokenProject.id, classification: "insufficient_evidence", waitingReason: expect.stringContaining("Warten ohne festgelegte Wiedervorlage") }));
     expect(briefing.history.inactiveWork).toContainEqual(expect.objectContaining({ id: future.id, classification: "future_planned", scheduledDate: "2025-04-01" }));
     expect(briefing.history.inactiveWork.filter((x) => x.classification === "actionable_no_recorded_progress").map((x) => x.id)).toContain(active.id);
     expect(briefing.markdown).toContain("Unassigned action");
     expect(briefing.markdown).toContain("Awaiting reply");
+    expect(briefing.markdown).toContain("Warte- und Blockerpfade mit Klärungsbedarf");
     expect(briefing.markdown).toContain("Deliberately later");
   });
 
   it("attributes verified child outcomes to their historical project context", () => {
     const mira = member("Mira");
-    const project = insertTestProject(ctx.handle.db, { title: "Backup-Konzept", status: "active", scope: "household" });
+    const project = insertTestProject(ctx.handle.db, { title: "Backup-Konzept", status: "active", scope: "household", createdAt: "2025-01-01T00:00:00.000Z" });
     const child = insertTestTask(ctx.handle.db, { title: "Restore testen", projectId: project.id, status: "done" });
     event({ kind: "task_status_changed", id: child.id, title: child.title, createdAt: "2025-02-10T12:00:00Z", metadata: { scope: "household", projectContextId: project.id, previousStatus: "actionable", nextStatus: "done" } });
     event({ kind: "project_acceptance_criterion_checked", id: project.id, title: project.title, type: "project", createdAt: "2025-02-11T12:00:00Z", metadata: { scope: "household", checked: true } });
@@ -133,6 +144,38 @@ describe("historical reflection briefing", () => {
     expect(briefing.history.progress.lastOutcomeProgressAt).toBe("2025-02-11T12:00:00Z");
     expect(briefing.history.progress.checkedAcceptanceCriteria).toContainEqual(expect.objectContaining({ projectId: project.id, projectTitle: project.title, date: "2025-02-11" }));
     expect(briefing.history.finiteCompletions.some((x) => x.type === "project" && x.id === project.id)).toBe(false);
+    expect(briefing.history.inactiveWork).toContainEqual(expect.objectContaining({ id: project.id, classification: "insufficient_evidence", lastOutcomeProgressAt: "2025-02-11T12:00:00Z" }));
+  });
+
+  it("uses a separate 14-day inactivity age threshold for every reporting window", () => {
+    const mira = member("Mira");
+    const task = insertTestTask(ctx.handle.db, { title: "45-day stalled action", status: "actionable", createdAt: "2025-01-15T00:00:00.000Z", updatedAt: "2025-01-15T00:00:00.000Z" });
+    const project = insertTestProject(ctx.handle.db, { title: "45-day active project", status: "active", scope: "household", createdAt: "2025-01-15T00:00:00.000Z" });
+    insertTestTask(ctx.handle.db, { title: "Project action", projectId: project.id, status: "actionable", createdAt: "2025-01-15T00:00:00.000Z", updatedAt: "2025-01-15T00:00:00.000Z" });
+    for (const days of [30, 90, 180] as const) {
+      const briefing = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days, scope: "household", now: new Date("2025-03-01T12:00:00Z") });
+      expect(briefing.history.inactiveWork.map((item) => item.id)).toContain(task.id);
+      expect(briefing.history.inactiveWork.map((item) => item.id)).toContain(project.id);
+    }
+  });
+
+  it("does not select an actionable child from a backlog project as a current next action", () => {
+    const mira = member("Mira");
+    const backlogProject = insertTestProject(ctx.handle.db, { title: "Backlog project", status: "backlog", scope: "household" });
+    const backlogChild = insertTestTask(ctx.handle.db, { title: "Backlog child action", projectId: backlogProject.id, status: "actionable" });
+    const standalone = insertTestTask(ctx.handle.db, { title: "Standalone action", status: "actionable" });
+    const briefing = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days: 30, scope: "household", now: new Date("2025-03-01T12:00:00Z") });
+    expect(briefing.current.executableNextActions.map((item) => item.id)).toContain(standalone.id);
+    expect(briefing.current.executableNextActions.map((item) => item.id)).not.toContain(backlogChild.id);
+  });
+
+  it("does not count project completion as an administrative change", () => {
+    const mira = member("Mira");
+    const project = insertTestProject(ctx.handle.db, { title: "Completed project", status: "completed", scope: "household" });
+    event({ kind: "project_status_changed", id: project.id, title: project.title, type: "project", createdAt: "2025-02-10T12:00:00Z", metadata: { scope: "household", previousStatus: "active", nextStatus: "completed" } });
+    const briefing = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days: 30, scope: "household", now: new Date("2025-03-01T12:00:00Z") });
+    expect(briefing.history.finiteCompletions).toContainEqual(expect.objectContaining({ id: project.id, type: "project" }));
+    expect(briefing.history.activityCounts.administrative).toBe(0);
   });
 
   it("fails historical private visibility closed across transfer, scope change, deletion and missing provenance", () => {
@@ -158,6 +201,20 @@ describe("historical reflection briefing", () => {
     expect(JSON.stringify(forMira)).not.toContain("Explizit nicht mehr zugewiesen");
     expect(JSON.stringify(forMira)).toContain("Gelöschtes Privates");
     expect(forMira.history.evidence.incomplete).toBe(true);
+  });
+
+  it("reauthorizes secondary project and newly-executable task references", () => {
+    const mira = member("Mira");
+    const sam = member("Sam");
+    const visibleTask = insertTestTask(ctx.handle.db, { title: "Visible household event", scope: "household", status: "done" });
+    const privateProject = insertTestProject(ctx.handle.db, { title: "Sam's private project", status: "active", scope: "work", ownerMemberId: sam.id });
+    const privateTask = insertTestTask(ctx.handle.db, { title: "Sam's newly executable task", scope: "work", ownerMemberId: sam.id, ownerInheritanceMode: "explicit", status: "actionable" });
+    event({ kind: "task_status_changed", id: visibleTask.id, title: visibleTask.title, createdAt: "2025-02-10T12:00:00Z", metadata: { scope: "household", projectContextId: privateProject.id, newlyExecutableTaskIds: [privateTask.id], previousStatus: "actionable", nextStatus: "done" } });
+    const briefing = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days: 30, scope: "household", now: new Date("2025-03-01T12:00:00Z") });
+    expect(briefing.history.progress.projectsWithRecordedChildOutcomes).toEqual([]);
+    expect(briefing.history.progress.verifiedUnblocking).toEqual([]);
+    expect(JSON.stringify(briefing)).not.toContain("Sam's private project");
+    expect(JSON.stringify(briefing)).not.toContain("Sam's newly executable task");
   });
 
   it("keeps the latest completed cycle and does not invent links for role-converted items", () => {
@@ -187,7 +244,7 @@ describe("historical reflection briefing", () => {
     expect(briefing.history.finiteCompletions).toHaveLength(15);
     expect(briefing.markdown).toContain("Aufgezeichnete endliche Ergebnisse (15)");
     expect(briefing.markdown).toContain("3 weitere Einträge ausgelassen.");
-    expect(briefing.markdown.indexOf("Ergebnis 00")).toBeLessThan(briefing.markdown.indexOf("Ergebnis 11"));
+    expect(briefing.markdown.indexOf("Ergebnis 14")).toBeLessThan(briefing.markdown.indexOf("Ergebnis 03"));
     expect(briefing.markdown).not.toContain("](#/");
   });
 

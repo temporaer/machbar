@@ -6,10 +6,13 @@ import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { Graph, type TaskRecord, type ProjectRecord } from "../domain/graph.js";
 import { getEffectiveOwners } from "../repo/effectiveRepo.js";
+import { isTaskInWorkingSystem } from "../domain/workEligibility.js";
 
 export interface ReflectionBriefingOptions { subjectMemberId: number; days: 30 | 90 | 180; scope: ReflectionBriefingScope; now?: Date }
 type Scope = "household" | "work";
 type CurrentVisibility = { scope: Scope; owner: number | null };
+/** A work item needs a short runway before being described as an old commitment. */
+const INACTIVE_COMMITMENT_AGE_DAYS = 14;
 
 function localDate(date: Date, timezone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
@@ -62,8 +65,30 @@ function visibleScope(metadata: ActivityEventMetadata, entityId: number | null, 
   if (metadata.changedFields?.includes("scope")) return null;
   return eventScope;
 }
+function visibleReference(id: number, metadata: ActivityEventMetadata, current: Map<number, CurrentVisibility>, subject: number): boolean {
+  const row = current.get(id);
+  if (!row || (metadata.scope !== "household" && metadata.scope !== "work") || row.scope !== metadata.scope) return false;
+  if (metadata.scope === "household") return true;
+  const eventOwner = snapshotOwner(metadata);
+  return row.owner === subject && eventOwner.known && eventOwner.owner === subject;
+}
+function blockerReason(analysis: ReturnType<Graph["blockerAnalysisFor"]>): string {
+  if (!analysis) return "Blockerstatus nicht ausreichend dokumentiert";
+  const labels: Record<string, string> = {
+    waiting_without_followup: "Warten ohne festgelegte Wiedervorlage",
+    followup_due: "Wiedervorlage ist fällig",
+    missing_task: "Abhängige Aufgabe fehlt",
+    cycle: "Zyklische Abhängigkeit",
+    backlog_project: "Abhängigkeit liegt in einem Backlog-Projekt",
+    terminal_project: "Abhängigkeit liegt in einem abgeschlossenen Projekt",
+    captured: "Abhängigkeit ist noch im Eingang",
+    someday: "Abhängigkeit ist auf irgendwann verschoben",
+  };
+  const reasons = [...new Set(analysis.diagnoses.map((diagnosis) => labels[diagnosis.reason] ?? diagnosis.reason))];
+  return reasons.length ? reasons.join("; ") : "Blockierung ohne bestätigten gesunden Wartepfad";
+}
 function eventItemId(event: { entityId: number | null; metadata: ActivityEventMetadata }): number | null { return event.metadata.affectedWorkItemId ?? event.entityId; }
-const adminKinds = new Set(["task_created", "project_created", "task_updated", "project_updated", "task_moved", "task_dependencies_changed", "task_tags_changed", "task_contexts_changed", "project_tags_changed", "project_contexts_changed", "task_kind_changed", "project_acceptance_criterion_added", "project_acceptance_criterion_updated", "project_acceptance_criterion_removed", "project_status_changed", "task_external_wait_started", "task_external_wait_updated", "task_external_wait_resolved"]);
+const adminKinds = new Set(["task_created", "project_created", "task_updated", "project_updated", "task_moved", "task_dependencies_changed", "task_tags_changed", "task_contexts_changed", "project_tags_changed", "project_contexts_changed", "task_kind_changed", "project_acceptance_criterion_added", "project_acceptance_criterion_updated", "project_acceptance_criterion_removed", "task_external_wait_started", "task_external_wait_updated", "task_external_wait_resolved"]);
 function isOutcome(event: { kind: string; entityType: string; metadata: ActivityEventMetadata }): boolean {
   if (event.kind === "task_status_changed" && event.metadata.nextStatus === "done" && !event.metadata.recurrenceOccurrenceId) return true;
   if (event.kind === "project_status_changed" && event.metadata.nextStatus === "completed") return true;
@@ -73,11 +98,13 @@ function markdownRef(id: number | null, type: "task" | "project"): string { retu
 function bounded<T>(lines: string[], label: string, values: T[], limit: number, format: (item: T) => string): void {
   lines.push(`### ${label} (${values.length})`);
   if (!values.length) { lines.push("- Keine dokumentierten Einträge."); return; }
-  // Stable order: dated evidence chronologically, then title, then numeric ID.
+  // Stable order: newest dated evidence first, then title, then numeric ID.
   const ordered = [...values].sort((left, right) => {
-    const a = left as { date?: string; title?: string; id?: number; taskId?: number };
-    const b = right as { date?: string; title?: string; id?: number; taskId?: number };
-    const dateOrder = (a.date ?? "").localeCompare(b.date ?? "");
+    const a = left as { date?: string; occurredAt?: string; lastActivityAt?: string | null; lastOutcomeProgressAt?: string | null; title?: string; id?: number; taskId?: number };
+    const b = right as { date?: string; occurredAt?: string; lastActivityAt?: string | null; lastOutcomeProgressAt?: string | null; title?: string; id?: number; taskId?: number };
+    const aDate = a.date ?? a.occurredAt ?? a.lastActivityAt ?? a.lastOutcomeProgressAt ?? "";
+    const bDate = b.date ?? b.occurredAt ?? b.lastActivityAt ?? b.lastOutcomeProgressAt ?? "";
+    const dateOrder = bDate.localeCompare(aDate);
     return dateOrder || (a.title ?? "").localeCompare(b.title ?? "", "de") || (a.id ?? a.taskId ?? 0) - (b.id ?? b.taskId ?? 0);
   });
   for (const item of ordered.slice(0, limit)) lines.push(`- ${format(item)}`);
@@ -96,6 +123,8 @@ function renderMarkdown(b: Omit<ReflectionBriefing, "markdown">): string {
   lines.push("", "## Verpflichtungen, die Aufmerksamkeit brauchen");
   const actionable = h.inactiveWork.filter((x) => x.classification === "actionable_no_recorded_progress");
   bounded(lines, "Ausführbar, ohne aufgezeichnetes Ergebnis im Zeitraum", actionable, 12, (x) => `„${x.title}“ (${markdownRef(x.id, x.type)}; Status ${x.status})${x.lastOutcomeProgressAt ? ` · letztes verifiziertes Ergebnis ${x.lastOutcomeProgressAt.slice(0, 10)}` : " · im verfügbaren Verlauf kein Ergebnis verifizierbar"}${x.lastActivityAt ? ` · letzte Aktivität ${x.lastActivityAt.slice(0, 10)}` : ""}${x.waitingReason ? ` · ${x.waitingReason}` : ""}${x.evidenceLimitations.length ? ` · Einschränkung: ${x.evidenceLimitations.join("; ")}` : ""}.`);
+  const unclearWaits = h.inactiveWork.filter((x) => x.classification === "insufficient_evidence" && x.waitingReason !== null);
+  bounded(lines, "Warte- und Blockerpfade mit Klärungsbedarf", unclearWaits, 10, (x) => `„${x.title}“ (${markdownRef(x.id, x.type)}; Status ${x.status}) · ${x.waitingReason}.`);
   const repeats = new Map<number, typeof h.postponements>(); for (const p of h.postponements) repeats.set(p.id, [...(repeats.get(p.id) ?? []), p]);
   const repeated = [...repeats.values()].filter((v) => v.length > 1).sort((a, b) => b.length - a.length || a[0]!.title.localeCompare(b[0]!.title, "de"));
   bounded(lines, "Mehrfach ausdrücklich verschoben", repeated, 10, (items) => `„${items[0]!.title}“ (${markdownRef(items[0]!.id, items[0]!.type)} · ${items.length} Verschiebungen; zuletzt ${items.at(-1)!.from} → ${items.at(-1)!.to}).`);
@@ -124,7 +153,8 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
   const tasks = graph.allTasks().filter((t) => inScope(t.scope)); const projects = [...graph.projectsById.values()].filter((p) => inScope(p.scope));
   const fact = (t: TaskRecord) => factForTask(t, graph, memberNames);
   const activeProjects = projects.filter((p) => p.status === "active").map((p) => factForProject(p, graph, memberNames));
-  const executableNextActions = tasks.filter((t) => t.kind === "action" && t.status === "actionable" && t.executable && !t.blocked && !t.needsClarification).filter((t) => t.projectId === null || graph.nextActionFor(t.projectId)?.id === t.id || t.additionalNextAction).map(fact);
+  const projectStatusById = new Map([...graph.projectsById.values()].map((project) => [project.id, project.status]));
+  const executableNextActions = tasks.filter((t) => isTaskInWorkingSystem(t, projectStatusById) && t.kind === "action" && t.status === "actionable" && t.executable && !t.blocked && !t.needsClarification).filter((t) => t.projectId === null || graph.nextActionFor(t.projectId)?.id === t.id || t.additionalNextAction).map(fact);
   const waitingItems = tasks.filter((t) => t.status === "actionable" && (t.externalWait !== null || t.blocked || (t.revisitAt !== null && t.revisitAt > now.toISOString()))).map(fact);
   const backlog = [...projects.filter((p) => p.status === "backlog").map((p) => factForProject(p, graph, memberNames)), ...tasks.filter((t) => t.status === "someday" || t.status === "captured").map(fact)];
   const areaCommitments = [...projects.filter((p) => p.status === "active" && p.effectiveTags.some((tag) => tag.kind === "area")).map((p) => factForProject(p, graph, memberNames)), ...tasks.filter((t) => t.status === "actionable" && t.effectiveAreaTags.length > 0 && (t.scope === "household" || t.effectiveOwnerId === options.subjectMemberId)).map(fact)];
@@ -184,18 +214,28 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
   const projectsWithRecordedChildOutcomes: ReflectionBriefing["history"]["progress"]["projectsWithRecordedChildOutcomes"] = [];
   const checkedAcceptanceCriteria: ReflectionBriefing["history"]["progress"]["checkedAcceptanceCriteria"] = [];
   const verifiedUnblocking: ReflectionBriefing["history"]["progress"]["verifiedUnblocking"] = [];
+  const verifiedUnblockingEventIds = new Set<number>();
   for (const e of inWindow) {
     const id = eventItemId(e); const date = e.createdAt;
     if (isOutcome(e) && id !== null) outcomeDates.set(id, date);
     if (e.kind === "project_acceptance_criterion_checked" && e.metadata.checked === true && id !== null) checkedAcceptanceCriteria.push({ projectId: id, projectTitle: e.entityTitle, date: localDate(new Date(date), timezone) });
     if (id !== null) activityDates.set(id, date);
     const projectId = e.metadata.projectContextId;
-    if (isOutcome(e) && e.entityType === "task" && projectId !== undefined && projectId !== null && currentType.get(projectId) === "project") projectsWithRecordedChildOutcomes.push({ id: projectId, title: currentRows.find((r) => r.id === projectId) ? (projects.find((p) => p.id === projectId)?.title ?? `Projekt ${projectId}`) : `Projekt ${projectId}`, date: localDate(new Date(date), timezone), childId: id!, childTitle: e.entityTitle });
-    if (e.kind === "task_external_wait_resolved" && id !== null) { enablingDates.set(id, date); verifiedUnblocking.push({ id, type: currentType.get(id) ?? "task", title: e.entityTitle, date: localDate(new Date(date), timezone), reason: "Externe Wartebedingung explizit aufgelöst", href: currentType.get(id) === "task" ? `#/tasks/${id}` : null }); }
-    if ((e.kind === "task_dependencies_changed" || e.kind === "task_status_changed") && (e.metadata.newlyExecutableTaskIds?.length ?? 0) > 0) for (const taskId of e.metadata.newlyExecutableTaskIds!) { enablingDates.set(taskId, date); verifiedUnblocking.push({ id: taskId, type: "task", title: currentRows.find((r) => r.id === taskId) ? (graph.tasksById.get(taskId)?.title ?? `Aufgabe ${taskId}`) : `Aufgabe ${taskId}`, date: localDate(new Date(date), timezone), reason: "Aktivität dokumentiert neu ausführbare Arbeit nach Auflösung eines Blockers", href: currentType.has(taskId) ? `#/tasks/${taskId}` : null }); }
+    if (isOutcome(e) && e.entityType === "task" && projectId !== undefined && projectId !== null && currentType.get(projectId) === "project" && visibleReference(projectId, e.metadata, currentVisibility, options.subjectMemberId)) projectsWithRecordedChildOutcomes.push({ id: projectId, occurredAt: date, title: currentRows.find((r) => r.id === projectId) ? (projects.find((p) => p.id === projectId)?.title ?? `Projekt ${projectId}`) : `Projekt ${projectId}`, date: localDate(new Date(date), timezone), childId: id!, childTitle: e.entityTitle });
+    if (e.kind === "task_external_wait_resolved" && id !== null) { verifiedUnblockingEventIds.add(e.id); enablingDates.set(id, date); verifiedUnblocking.push({ id, type: currentType.get(id) ?? "task", title: e.entityTitle, date: localDate(new Date(date), timezone), reason: "Externe Wartebedingung explizit aufgelöst", href: currentType.get(id) === "task" ? `#/tasks/${id}` : null }); }
+    if ((e.kind === "task_dependencies_changed" || e.kind === "task_status_changed") && (e.metadata.newlyExecutableTaskIds?.length ?? 0) > 0) {
+      for (const taskId of e.metadata.newlyExecutableTaskIds!) {
+        if (currentType.get(taskId) !== "task" || !visibleReference(taskId, e.metadata, currentVisibility, options.subjectMemberId)) continue;
+        const title = graph.tasksById.get(taskId)?.title;
+        if (!title) continue;
+        verifiedUnblockingEventIds.add(e.id);
+        enablingDates.set(taskId, date);
+        verifiedUnblocking.push({ id: taskId, type: "task", title, date: localDate(new Date(date), timezone), reason: "Aktivität dokumentiert neu ausführbare Arbeit nach Auflösung eines Blockers", href: `#/tasks/${taskId}` });
+      }
+    }
   }
   const inactiveWork: ReflectionBriefing["history"]["inactiveWork"] = [];
-  const oldEnough = (createdAt: string) => now.getTime() - Date.parse(createdAt) >= options.days * 86400000;
+  const oldEnough = (createdAt: string) => now.getTime() - Date.parse(createdAt) >= INACTIVE_COMMITMENT_AGE_DAYS * 86400000;
   const candidates: Array<{ item: TaskRecord | ProjectRecord; type: "task" | "project" }> = [
     ...projects.filter((p) => p.status === "active" && oldEnough(p.createdAt)).map((item) => ({ item, type: "project" as const })),
     ...tasks.filter((t) => t.kind === "action" && t.repeatAfterDays === null && t.status === "actionable" && oldEnough(t.createdAt)).map((item) => ({ item, type: "task" as const })),
@@ -210,11 +250,11 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
   });
   for (const { item, type } of candidates) {
     const itemEvents = byId.get(item.id) ?? [];
-    const priorOutcomeDates = priorVisible.filter((e) => eventItemId(e) === item.id || (type === "project" && e.metadata.projectContextId === item.id)).map((e) => e.createdAt);
-    const lastOutcomeProgressAt = [...priorOutcomeDates, ...[...outcomeDates.entries()].filter(([id]) => id === item.id).map(([, date]) => date), ...(type === "project" ? [...projectsWithRecordedChildOutcomes].filter((x) => x.id === item.id).map((x) => x.date) : [])].sort().at(-1) ?? null;
+    const priorOutcomeDates = priorVisible.filter((e) => eventItemId(e) === item.id || (type === "project" && e.metadata.projectContextId === item.id && visibleReference(item.id, e.metadata, currentVisibility, options.subjectMemberId))).map((e) => e.createdAt);
+    const lastOutcomeProgressAt = [...priorOutcomeDates, ...[...outcomeDates.entries()].filter(([id]) => id === item.id).map(([, date]) => date), ...(type === "project" ? [...projectsWithRecordedChildOutcomes].filter((x) => x.id === item.id).map((x) => x.occurredAt) : [])].sort().at(-1) ?? null;
     const hadOutcomeInWindow = outcomeDates.has(item.id) || (type === "project" && projectsWithRecordedChildOutcomes.some((x) => x.id === item.id));
-    const projectEvents = type === "project" ? inWindow.filter((e) => e.metadata.projectContextId === item.id) : [];
-    const lastWorkEnablingProgressAt = enablingDates.get(item.id) ?? projectEvents.filter((e) => e.kind === "task_external_wait_resolved" || (e.metadata.newlyExecutableTaskIds?.length ?? 0) > 0).map((e) => e.createdAt).sort().at(-1) ?? null;
+    const projectEvents = type === "project" ? inWindow.filter((e) => e.metadata.projectContextId === item.id && visibleReference(item.id, e.metadata, currentVisibility, options.subjectMemberId)) : [];
+    const lastWorkEnablingProgressAt = enablingDates.get(item.id) ?? projectEvents.filter((e) => verifiedUnblockingEventIds.has(e.id)).map((e) => e.createdAt).sort().at(-1) ?? null;
     const lastActivityAt = [activityDates.get(item.id) ?? null, ...projectEvents.map((e) => e.createdAt)].filter((x): x is string => x !== null).sort().at(-1) ?? null;
     let classification: ReflectionBriefing["history"]["inactiveWork"][number]["classification"];
     let waitingReason: string | null = null;
@@ -222,12 +262,14 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
     if (type === "task") {
       const t = item as TaskRecord; plannedDate = t.scheduledDate; revisitAt = t.revisitAt; dueDate = t.dueDate;
       const blocker = graph.blockerAnalysisFor(t.id);
-      if (t.externalWait) { classification = "intentional_wait"; waitingReason = t.externalWait.waitingFor; }
+      if (t.externalWait && blocker?.healthyProgressPath) { classification = "intentional_wait"; waitingReason = `${t.externalWait.waitingFor ?? "Externe Rückmeldung"}${blocker.nextBlockerAttentionDate ? ` · Wiedervorlage ${blocker.nextBlockerAttentionDate}` : ""}`; }
+      else if (t.externalWait) { classification = "insufficient_evidence"; waitingReason = blockerReason(blocker); }
       else if (t.dependencies.some((d) => !d.resolved) && blocker?.healthyProgressPath) { classification = "intentional_wait"; waitingReason = "Gesunde blockierende Abhängigkeit"; }
+      else if (t.dependencies.some((d) => !d.resolved)) { classification = "insufficient_evidence"; waitingReason = blockerReason(blocker); }
       else if (t.revisitAt && t.revisitAt > now.toISOString()) { classification = "intentional_wait"; waitingReason = `Wiedervorlage am ${t.revisitAt}`; }
       else if ((t.notBeforeAt && t.notBeforeAt > now.toISOString()) || (t.notBeforeDate && t.notBeforeDate > endDate) || (t.scheduledDate && t.scheduledDate > endDate)) { classification = "future_planned"; plannedDate = t.scheduledDate ?? t.notBeforeDate ?? null; revisitAt = t.revisitAt; }
       else if (t.status === "actionable" && !t.blocked && t.executable) classification = hadOutcomeInWindow ? "insufficient_evidence" : "actionable_no_recorded_progress";
-      else if (t.status === "actionable" && t.blocked) { classification = "intentional_wait"; waitingReason = t.dependencies.filter((d) => !d.resolved).map((d) => d.title ?? `Aufgabe ${d.dependsOnTaskId}`).join(", ") || "Blockierung dokumentiert"; }
+      else if (t.status === "actionable" && t.blocked) { classification = "insufficient_evidence"; waitingReason = blockerReason(blocker); }
       else classification = "insufficient_evidence";
     } else {
       const p = item as ProjectRecord; plannedDate = p.scheduledDate; revisitAt = p.revisitAt; dueDate = p.dueDate;
@@ -235,8 +277,11 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
       else if (p.scheduledDate && p.scheduledDate > endDate) classification = "future_planned";
       else {
         const childTasks = graph.tasksForProject(p.id); const actionableChild = childTasks.some((t) => t.repeatAfterDays === null && t.status === "actionable" && t.executable && !t.blocked);
-        const waitingChild = childTasks.some((t) => t.status === "actionable" && (t.externalWait || t.blocked));
-        if (waitingChild && !actionableChild) { classification = "intentional_wait"; waitingReason = "Aktuelle nächste Arbeit wartet auf externe Rückmeldung oder Abhängigkeit"; }
+        const blockedChildren = childTasks.filter((t) => t.status === "actionable" && (t.externalWait || t.blocked));
+        const healthyBlockedChildren = blockedChildren.filter((t) => graph.blockerAnalysisFor(t.id)?.healthyProgressPath === true);
+        const unhealthyBlockedChildren = blockedChildren.filter((t) => graph.blockerAnalysisFor(t.id)?.healthyProgressPath !== true);
+        if (unhealthyBlockedChildren.length > 0 && !actionableChild) { classification = "insufficient_evidence"; waitingReason = unhealthyBlockedChildren.map((t) => `${t.title}: ${blockerReason(graph.blockerAnalysisFor(t.id))}`).join("; "); }
+        else if (healthyBlockedChildren.length > 0 && !actionableChild && healthyBlockedChildren.length === blockedChildren.length) { classification = "intentional_wait"; waitingReason = "Aktuelle nächste Arbeit wartet auf eine gesunde Wiedervorlage oder Abhängigkeit"; }
         else if (actionableChild) classification = hadOutcomeInWindow ? "insufficient_evidence" : "actionable_no_recorded_progress";
         else classification = "insufficient_evidence";
       }
@@ -245,7 +290,7 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
     if (excludedHistorical) limitations.push("Ein Teil der Historie wurde wegen fehlender oder nicht passender Berechtigungsnachweise ausgelassen.");
     inactiveWork.push({ id: item.id, type, title: item.title, href: `#/${type === "project" ? "projects" : "tasks"}/${item.id}`, classification, status: item.status, lastOutcomeProgressAt, lastWorkEnablingProgressAt, lastActivityAt, scheduledDate: plannedDate, revisitAt, dueDate, waitingReason, evidenceLimitations: limitations });
   }
-  const counts = { administrative: inWindow.filter((e) => adminKinds.has(e.kind) || (e.kind === "task_status_changed" && e.metadata.nextStatus !== "done" && !e.metadata.recurrenceOccurrenceId) || e.metadata.changedFields?.some((f) => ["ownerMemberId", "reviewedAt", "tagIds", "contextIds", "title", "notes"].includes(f))).length, finiteOutcomes: finiteCompletions.length, milestones: inWindow.filter((e) => e.kind === "project_status_changed" && ["active", "completed"].includes(String(e.metadata.nextStatus))).length, recurringOccurrences: recurringWork.reduce((sum, x) => sum + x.completed + x.missed, 0), explicitPostponements: postponements.length, unresolvedActiveWork: inactiveWork.filter((x) => x.classification === "actionable_no_recorded_progress").length };
+  const counts = { administrative: inWindow.filter((e) => adminKinds.has(e.kind) || (e.kind === "project_status_changed" && e.metadata.nextStatus !== "completed") || (e.kind === "task_status_changed" && e.metadata.nextStatus !== "done" && !e.metadata.recurrenceOccurrenceId) || e.metadata.changedFields?.some((f) => ["ownerMemberId", "reviewedAt", "tagIds", "contextIds", "title", "notes"].includes(f))).length, finiteOutcomes: finiteCompletions.length, milestones: inWindow.filter((e) => e.kind === "project_status_changed" && ["active", "completed"].includes(String(e.metadata.nextStatus))).length, recurringOccurrences: recurringWork.reduce((sum, x) => sum + x.completed + x.missed, 0), explicitPostponements: postponements.length, unresolvedActiveWork: inactiveWork.filter((x) => x.classification === "actionable_no_recorded_progress").length };
   const base: Omit<ReflectionBriefing, "markdown"> = { generatedAt: now.toISOString(), subject, scope: options.scope, timezone, window: { days: options.days, startDate, endDate }, current: { activeProjects, executableNextActions, waitingItems, backlog, areaCommitments }, history: {
     finiteCompletions, bulkCompletionGroups, recurringWork, inactiveWork, postponements,
     progress: { lastOutcomeProgressAt: [...outcomeDates.values()].sort().at(-1) ?? null, lastWorkEnablingProgressAt: [...enablingDates.values()].sort().at(-1) ?? null, lastActivityAt: [...activityDates.values()].sort().at(-1) ?? null, projectsWithRecordedChildOutcomes, checkedAcceptanceCriteria, verifiedUnblocking },

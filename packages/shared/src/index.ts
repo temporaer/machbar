@@ -495,7 +495,7 @@ export interface ReflectionBriefing {
       lastOutcomeProgressAt: string | null;
       lastWorkEnablingProgressAt: string | null;
       lastActivityAt: string | null;
-      projectsWithRecordedChildOutcomes: Array<{ id: number; title: string; date: string; childId: number; childTitle: string }>;
+      projectsWithRecordedChildOutcomes: Array<{ id: number; title: string; date: string; occurredAt: string; childId: number; childTitle: string }>;
       checkedAcceptanceCriteria: Array<{ projectId: number; projectTitle: string; date: string }>;
       verifiedUnblocking: Array<{ id: number; type: "task" | "project"; title: string; date: string; reason: string; href: string | null }>;
     };
