@@ -102,6 +102,27 @@ describe("WorkRefinementReview", () => {
     expect(screen.queryByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).not.toBeInTheDocument();
   });
 
+  it.each(["captured", "someday"] as const)("warns about task-only metadata for a %s conversion", (status) => {
+    const current = record();
+    current.text = JSON.stringify({
+      id: 4,
+      title: "Haustür",
+      status,
+      ownerMemberId: null,
+      priority: 1,
+      size: "M",
+      children: [],
+    });
+    current.refinement!.proposal!.changes = [{
+      kind: "convert_task_to_project",
+      targetId: 4,
+      rationale: "Ermöglicht mehrere Schritte.",
+      accepted: true,
+    }];
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    expect(screen.getByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).toBeInTheDocument();
+  });
+
   it("shows the concise leave-alone confirmation and original-item link", () => {
     const current = record("leave_alone");
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);

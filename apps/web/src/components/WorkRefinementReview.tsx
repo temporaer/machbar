@@ -122,7 +122,9 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const hasUnsupportedTiming = activeConversion && (
     source?.revisitAt != null || source?.notBeforeAt != null || source?.notBeforeDate != null
   );
-  const hasTaskOnlyMetadata = activeConversion && (
+  const acceptedTaskConversion =
+    conversion?.accepted === true && refinement.targetType === "task";
+  const hasTaskOnlyMetadata = acceptedTaskConversion && (
     source?.priority != null || source?.size != null
   );
   const canRegenerate = record.status === "ready" || record.status === "analysis_failed";
