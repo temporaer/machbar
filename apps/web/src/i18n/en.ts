@@ -850,6 +850,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   refinementWait: "Update waiting information",
   refinementOutcome: "Clarify project outcome",
   refinementAdvisory: "Review recommendation manually",
+  refinementConflict: "The proposal changed in the meantime. Your local edits were preserved. Review them and save again.",
   taskBreakdownHelp: "Describe the edits you want. AI proposes small, actionable steps using the task and your household guidance. It cannot research the web. Review everything before applying; existing steps stay in place.",
   taskBreakdownInstructions: "Instructions",
   taskBreakdownPlaceholder: "Create concrete, actionable steps that each take about 20 minutes.",

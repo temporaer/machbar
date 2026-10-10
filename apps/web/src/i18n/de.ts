@@ -832,6 +832,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   refinementWait: "Warteinformation aktualisieren",
   refinementOutcome: "Projektziel konkretisieren",
   refinementAdvisory: "Empfehlung manuell prüfen",
+  refinementConflict: "Der Vorschlag wurde inzwischen geändert. Deine lokalen Änderungen bleiben erhalten. Prüfe sie und speichere sie erneut.",
   taskBreakdownHelp: "Beschreibe die gewünschten Änderungen. Die KI schlägt anhand der Aufgabe und eurer Haushaltsvorgaben kleine, ausführbare Schritte vor. Sie kann nicht im Web recherchieren. Prüfe alles vor dem Übernehmen; bestehende Schritte bleiben erhalten.",
   taskBreakdownInstructions: "Anweisungen",
   taskBreakdownPlaceholder: "Erstelle konkrete, ausführbare Schritte für jeweils etwa 20 Minuten.",

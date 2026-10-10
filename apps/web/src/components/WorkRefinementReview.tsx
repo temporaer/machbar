@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { intakeErrorIssues, type IntakeRecord, type WorkRefinementChange } from "@machbar/shared";
 import { api } from "../lib/api";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
@@ -13,35 +13,193 @@ const labels = {
   update_project_outcome: "refinementOutcome", advisory: "refinementAdvisory",
 } as const;
 
+type RefinementProposal = NonNullable<
+  NonNullable<IntakeRecord["refinement"]>["proposal"]
+>;
+
+type ServerProposalBaseline = {
+  recordId: string;
+  revision: number;
+  proposal: RefinementProposal | null;
+  signature: string;
+};
+
+function semanticSignature(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => semanticSignature(item)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${semanticSignature(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? String(value);
+}
+
 export function WorkRefinementReview({ record, onChange }: { record: IntakeRecord; onChange: (record: IntakeRecord) => void }) {
   const strings = useStrings();
   const { members } = useIdentity();
   const navigate = useNavigate();
   const refinement = record.refinement;
-  const [proposalDraft, setProposalDraft] = useState(refinement?.proposal ?? null);
-  useEffect(() => { setProposalDraft(refinement?.proposal ?? null); }, [record.revision, record.status, refinement?.proposal]);
-  const proposal = proposalDraft ?? refinement?.proposal;
+  const serverProposal = refinement?.proposal ?? null;
+  const [proposalDraft, setProposalDraft] = useState<RefinementProposal | null>(serverProposal);
+  const proposalDraftRef = useRef<RefinementProposal | null>(serverProposal);
+  const draftGenerationRef = useRef(0);
+  const serverBaselineRef = useRef<ServerProposalBaseline>({
+    recordId: record.id,
+    revision: record.revision,
+    proposal: serverProposal,
+    signature: semanticSignature(serverProposal),
+  });
+  const allowServerReplacementRef = useRef(false);
+  const [conflict, setConflict] = useState(false);
+  const proposal = serverBaselineRef.current.recordId === record.id
+    ? (proposalDraft ?? refinement?.proposal)
+    : serverProposal;
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [projectDriverMemberId, setProjectDriverMemberId] = useState<number | null>(null);
+  const incomingProposalSignature = semanticSignature(serverProposal);
+
+  const setDraft = useCallback((next: RefinementProposal | null, userEdit = true) => {
+    proposalDraftRef.current = next;
+    if (userEdit) draftGenerationRef.current += 1;
+    setProposalDraft(next);
+  }, []);
+
+  useEffect(() => {
+    const incomingBaseline: ServerProposalBaseline = {
+      recordId: record.id,
+      revision: record.revision,
+      proposal: serverProposal,
+      signature: incomingProposalSignature,
+    };
+    const previous = serverBaselineRef.current;
+
+    if (previous.recordId !== record.id) {
+      serverBaselineRef.current = incomingBaseline;
+      setDraft(serverProposal, false);
+      setConflict(false);
+      setAnswer("");
+      setError(null);
+      return;
+    }
+
+    if (allowServerReplacementRef.current) {
+      allowServerReplacementRef.current = false;
+      serverBaselineRef.current = incomingBaseline;
+      setDraft(serverProposal, false);
+      setConflict(false);
+      return;
+    }
+
+    if (
+      record.revision < previous.revision ||
+      (record.revision === previous.revision &&
+        incomingProposalSignature === previous.signature)
+    ) {
+      return;
+    }
+
+    const currentDraftSignature = semanticSignature(proposalDraftRef.current);
+    const draftIsDirty = currentDraftSignature !== previous.signature;
+    serverBaselineRef.current = incomingBaseline;
+
+    if (!draftIsDirty) {
+      setDraft(serverProposal, false);
+      setConflict(false);
+      return;
+    }
+
+    // A revision can advance while the server proposal remains equivalent.
+    // That is not a content conflict, and the local draft must stay intact.
+    if (incomingProposalSignature === previous.signature) return;
+
+    if (incomingProposalSignature === currentDraftSignature) {
+      setDraft(serverProposal, false);
+      setConflict(false);
+    } else {
+      setConflict(true);
+    }
+  }, [
+    incomingProposalSignature,
+    record.id,
+    record.revision,
+    setDraft,
+  ]);
+
   if (!refinement || !proposal) return null;
   const update = (index: number, patch: Partial<WorkRefinementChange>) => {
     const changes = proposal.changes.map((item, i) => i === index ? { ...item, ...patch } as WorkRefinementChange : item);
-    setProposalDraft({ ...proposal, changes });
+    setDraft({ ...proposal, changes });
   };
+
+  const acknowledgeServerProposal = (
+    next: IntakeRecord,
+    generationAtRequest: number,
+    fallbackProposal: RefinementProposal,
+    options: { allowReplacement?: boolean } = {},
+  ) => {
+    const nextProposal = next.refinement?.proposal ?? fallbackProposal;
+    serverBaselineRef.current = {
+      recordId: next.id,
+      revision: next.revision,
+      proposal: nextProposal,
+      signature: semanticSignature(nextProposal),
+    };
+    if (options.allowReplacement) {
+      allowServerReplacementRef.current = true;
+    } else if (draftGenerationRef.current === generationAtRequest) {
+      setDraft(nextProposal, false);
+    }
+    setConflict(false);
+    onChange(next);
+  };
+
+  const persistLatestProposal = async (): Promise<IntakeRecord | null> => {
+    let latestRecord = record;
+    while (true) {
+      const currentProposal = proposalDraftRef.current;
+      if (!currentProposal) return null;
+      const generationAtRequest = draftGenerationRef.current;
+      latestRecord = await api.updateWorkRefinement(latestRecord.id, {
+        expectedRevision: latestRecord.revision,
+        proposal: currentProposal,
+      });
+      acknowledgeServerProposal(
+        latestRecord,
+        generationAtRequest,
+        currentProposal,
+      );
+      if (draftGenerationRef.current === generationAtRequest) return latestRecord;
+    }
+  };
+
   const save = async () => {
+    const currentProposal = proposalDraftRef.current;
+    if (!currentProposal) return;
+    const generationAtRequest = draftGenerationRef.current;
     setBusy(true); setError(null);
     try {
-      const next = await api.updateWorkRefinement(record.id, { expectedRevision: record.revision, proposal }); onChange(next); setProposalDraft(next.refinement?.proposal ?? null);
-    } catch (cause) { setError(localizedErrorMessage(cause, strings)); }
+      const next = await api.updateWorkRefinement(record.id, {
+        expectedRevision: record.revision,
+        proposal: currentProposal,
+      });
+      acknowledgeServerProposal(next, generationAtRequest, currentProposal);
+    } catch (cause) {
+      if (isStaleWriteConflict(cause)) setConflict(true);
+      setError(localizedErrorMessage(cause, strings));
+    }
     finally { setBusy(false); }
   };
   const apply = async () => {
     setBusy(true); setError(null);
     try {
-      const current = await api.updateWorkRefinement(record.id, { expectedRevision: record.revision, proposal });
-      onChange(current);
+      const current = await persistLatestProposal();
+      if (!current) return;
       onChange(await api.applyWorkRefinement(record.id, {
         expectedRevision: current.revision,
         ...(projectDriverMemberId !== null ? { projectDriverMemberId } : {}),
@@ -52,12 +210,16 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const regenerate = async () => {
     setBusy(true); setError(null);
     try {
-      const saved = await api.updateWorkRefinement(record.id, { expectedRevision: record.revision, proposal });
-      onChange(saved);
+      const saved = await persistLatestProposal();
+      if (!saved) return;
+      allowServerReplacementRef.current = true;
       onChange(await api.retryIntake(record.id, answer));
       setAnswer("");
     }
-    catch (cause) { setError(localizedErrorMessage(cause, strings)); }
+    catch (cause) {
+      allowServerReplacementRef.current = false;
+      setError(localizedErrorMessage(cause, strings));
+    }
     finally { setBusy(false); }
   };
   const discard = async () => {
@@ -146,6 +308,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
           ))}
         </section>
       ) : null}
+      {conflict ? <p role="alert" className="error-text">{strings.refinementConflict}</p> : null}
       {!leaveAlone ? proposal.changes.map((change, index) => <article className="card stack" key={`${change.kind}-${index}`}>
         {change.kind === "convert_task_to_project" && change.targetId === refinement.targetId && change.accepted ? (
           <section className="card stack">
@@ -175,7 +338,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         {change.kind === "create_child" && proposal.changes.some((candidate) => candidate.kind === "convert_task_to_project" && candidate.targetId === change.parentTaskId) ? <p className="muted">{strings.refinementRequiresConversion}</p> : null}
         <label className="inline-row"><input type="checkbox" checked={change.accepted} disabled={change.kind === "advisory" || busy} onChange={(event) => {
           const checked = event.target.checked;
-          setProposalDraft({ ...proposal, changes: proposal.changes.map((candidate, candidateIndex) => ({
+          setDraft({ ...proposal, changes: proposal.changes.map((candidate, candidateIndex) => ({
             ...candidate,
             accepted: candidateIndex === index ? checked
               : !checked && change.kind === "convert_task_to_project" && candidate.kind === "create_child" && candidate.parentTaskId === change.targetId ? false
