@@ -7,6 +7,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.machbar.const import DOMAIN
+from custom_components.machbar.intake import AdapterError
 from custom_components.machbar.worker import RequestWorker
 
 
@@ -88,5 +89,28 @@ async def test_worker_does_not_swallow_cancellation(hass):
                     "leaseToken": "token",
                 }
             )
-
     worker.client.complete_request.assert_not_awaited()
+
+
+async def test_worker_preserves_refinement_validation_error_for_api_retry(hass):
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={"origin": "http://x", "token": "t"}, options={},
+    )
+    with patch("custom_components.machbar.async_get_clientsession", return_value=object()):
+        worker = RequestWorker(hass, entry)
+    worker.client.complete_request = AsyncMock()
+    with patch(
+        "custom_components.machbar.worker.async_analyze",
+        AsyncMock(side_effect=AdapterError(
+            "ai_task_invalid_response", "Invalid work refinement response.",
+            path=["changes", 0, "kind"], expected_type="a supported change kind",
+        )),
+    ):
+        await worker._handle({
+            "id": "refinement", "kind": "intake_analyze",
+            "payload": {"analysisMode": "work_refinement"}, "leaseToken": "lease",
+        })
+    body = worker.client.complete_request.await_args.args[1]
+    assert body["outcome"] == "failed"
+    assert body["error"]["code"] == "ai_task_invalid_response"
+    assert body["error"]["details"]["path"] == ["changes", 0, "kind"]

@@ -1,4 +1,5 @@
 import type { Task } from "@machbar/shared";
+import { canBreakDownTask } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useWorkItemCommands } from "../lib/useWorkItemCommands";
 import { isCapturedInboxItem } from "../lib/taskHelpers";
@@ -28,6 +29,17 @@ export function TaskStructureSheet({ task, onClose }: { task: Task; onClose: () 
   return (
     <BottomSheet title={`${strings.structure}: ${task.title}`} onClose={onClose}>
       <div className="stack">
+        {canBreakDownTask(task) ? (
+          <button type="button" className="btn"
+            onClick={() => dispatch({ type: "task.breakdown", taskId: task.id })}>
+            {strings.taskBreakdown}
+          </button>
+        ) : null}
+        {task.kind !== "reference" ? (
+          <button type="button" className="btn" onClick={() => dispatch({ type: "task.refine", taskId: task.id })}>
+            {strings.workRefinement}
+          </button>
+        ) : null}
         {!hideSplit ? (
           <button
             type="button"

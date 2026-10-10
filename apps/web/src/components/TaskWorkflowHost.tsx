@@ -9,6 +9,8 @@ import { TaskPlanningSheet } from "./TaskPlanningSheet";
 import { TaskStructureSheet } from "./TaskStructureSheet";
 import { TaskRemindersSheet } from "./TaskRemindersSheet";
 import { TaskSplitSheet } from "./TaskSplitSheet";
+import { TaskBreakdownSheet } from "./TaskBreakdownSheet";
+import { WorkRefinementSheet } from "./WorkRefinementSheet";
 import { TaskRecurrenceSheet } from "./TaskRecurrenceSheet";
 import { TaskPrioritySheet } from "./TaskPrioritySheet";
 import { TaskTagsSheet } from "./TaskTagsSheet";
@@ -81,6 +83,10 @@ export function TaskWorkflowHost() {
           onClose={close}
         />
       );
+    case "breakdown":
+      return <TaskBreakdownSheet task={task} onClose={close} />;
+    case "refinement":
+      return <WorkRefinementSheet targetType="task" targetId={task.id} revision={task.revision} title={task.title} onClose={close} />;
     case "assignOwner":
       return (
         <TaskOwnerSheet

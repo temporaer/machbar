@@ -1,5 +1,38 @@
 # Machbar — Architecture
 
+## Reviewed task breakdown
+
+`canBreakDownTask` in the shared intake contract owns target eligibility for
+both the structure menu and API: recurring actions and captured actions nested
+under tasks or projects cannot start proposals. Apply selects only the enabled
+reserved root. After a recoverable Apply failure, review refreshes the recovered
+job revision before allowing another edit.
+
+`task.breakdown` opens `TaskBreakdownSheet` through `TaskWorkflowHost`.
+`useTaskBreakdown` starts a proposal at `POST /api/intake/task/:taskId` with
+free-form instructions and the task revision. The endpoint checks viewer access
+and open-action eligibility, then creates an ordinary intake job bound to that
+task, storing its subtree snapshot and editing instructions.
+
+Generation reuses Home Assistant `intake_analyze` and the structured intake plan.
+Intake, breakdown, and cleanup-round prompts share actionability, sizing, and
+finite-outcome guidance from `aiWorkGuidance.ts`, plus household AI context.
+Source notes and existing children are data, not instructions. No web research
+is assumed.
+
+The proposal contains one reserved `existing-task` root and 1–30 immediate
+action steps. Review supports title/notes edits and a task/project choice for
+the original root; children use the existing proposal editors. Existing children
+remain untouched. Calendar events, references, and deeper nesting are rejected.
+
+Apply rechecks visibility and the persisted subtree snapshot, then edits or
+converts the original and appends accepted steps through canonical domain
+functions in one transaction. Conversion preserves the ID, uses existing
+restrictions, and creates a backlog project. Conversion retains and clears
+fields according to the usual role-conversion rules. Failed transactions return
+the proposal to editable state; repeated Apply cannot duplicate steps.
+Regeneration refreshes source context and the snapshot, requiring a new review.
+
 This document is the technical deep dive for contributors. For product
 concepts, start with the [household workflow](workflow.md). For operating the
 application, see [deployment](deployment.md) and

@@ -22,6 +22,8 @@ export function IntakeProposalReview({
   onChange,
   onReminderChange,
   diagnosticHref,
+  breakdown = false,
+  existingChildren = [],
 }: {
   draft: IntakeDraft;
   members: Member[];
@@ -36,6 +38,8 @@ export function IntakeProposalReview({
     reminderRowIds: readonly string[],
   ) => void;
   diagnosticHref: string;
+  breakdown?: boolean;
+  existingChildren?: Array<{ id: number; title: string; status: string; depth: number }>;
 }) {
   const strings = useStrings();
   const workItemDepth = workItemDepths(draft.workItems);
@@ -61,7 +65,16 @@ export function IntakeProposalReview({
   return (
     <>
       <header className="intake-review-header">
-        <h1>{strings.intakeReady}</h1>
+        <h1>{breakdown ? strings.taskBreakdownReview : strings.intakeReady}</h1>
+        {breakdown ? <p>{strings.taskBreakdownReviewHelp}</p> : null}
+        {breakdown && existingChildren.length > 0 ? (
+          <section aria-label={strings.taskBreakdownExistingChildren} className="stack">
+            <strong>{strings.taskBreakdownExistingChildren}</strong>
+            <ul>{existingChildren.map((child) => <li key={child.id} style={{ marginInlineStart: `${child.depth}rem` }}>
+              {child.title} <small>{child.status}</small>
+            </li>)}</ul>
+          </section>
+        ) : null}
         {draft.summary.trim() ? (
           <p className="intake-review-summary">{draft.summary}</p>
         ) : null}
@@ -114,6 +127,19 @@ export function IntakeProposalReview({
               <IntakeWorkItemCard
                 key={item.key}
                 item={item}
+                breakdownRole={breakdown ? (item.key === "existing-task" ? "root" : "step") : undefined}
+                onMove={breakdown && item.key !== "existing-task" ? (delta) => {
+                  const siblings = draft.workItems.map((candidate, at) => ({ candidate, at }))
+                    .filter(({ candidate }) => candidate.key !== "existing-task");
+                  const siblingIndex = siblings.findIndex(({ candidate }) => candidate.key === item.key);
+                  const nextSibling = siblingIndex + delta;
+                  if (nextSibling < 0 || nextSibling >= siblings.length) return;
+                  const nextItems = [...draft.workItems];
+                  const from = siblings[siblingIndex]!.at;
+                  const to = siblings[nextSibling]!.at;
+                  [nextItems[from], nextItems[to]] = [nextItems[to]!, nextItems[from]!];
+                  onChange({ ...draft, workItems: nextItems });
+                } : undefined}
                 index={index}
                 depth={workItemDepth[index] ?? 0}
                 parentTitle={parentTitle}

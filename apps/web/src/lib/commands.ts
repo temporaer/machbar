@@ -48,6 +48,8 @@ export type WorkItemCommand =
   | { type: "task.startToday"; task: Task }
   | { type: "task.endWaiting"; task: Task }
   | { type: "task.split"; taskId: number }
+  | { type: "task.breakdown"; taskId: number }
+  | { type: "task.refine"; taskId: number }
   | { type: "task.assignOwner"; taskId: number }
   | { type: "task.changeProject"; taskId: number }
   | { type: "task.recurrence"; taskId: number }
@@ -77,6 +79,7 @@ export type WorkItemCommand =
   | { type: "story.archive"; story: ProjectWithActions }
   | { type: "story.defer"; story: ProjectWithActions }
   | { type: "story.structure"; story: ProjectWithActions }
+  | { type: "story.refine"; story: ProjectWithActions }
   | { type: "story.assignDriver"; story: ProjectWithActions }
   | { type: "story.planWork"; story: ProjectWithActions }
   | { type: "story.editOutcome"; story: ProjectWithActions }

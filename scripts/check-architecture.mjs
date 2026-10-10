@@ -91,6 +91,7 @@ const WORKFLOW_SHEET_HOSTS = new Map([
   ["TaskAvailabilitySheet", "TaskWorkflowHost"],
   ["TaskStructureSheet", "TaskWorkflowHost"],
   ["TaskSplitSheet", "TaskWorkflowHost"],
+  ["TaskBreakdownSheet", "TaskWorkflowHost"],
   ["TaskRecurrenceSheet", "TaskWorkflowHost"],
   ["TaskPrioritySheet", "TaskWorkflowHost"],
   ["TaskTagsSheet", "TaskWorkflowHost"],

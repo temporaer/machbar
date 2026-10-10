@@ -3,6 +3,65 @@ import type { IntakePlan } from "@machbar/shared";
 import { buildIntakeInstructions } from "../src/intake/prompt.js";
 
 describe("intake AI instructions", () => {
+  it("lets breakdown run without instructions and return no unnecessary children", () => {
+    const prompt = buildIntakeInstructions({
+      today: "2026-10-10", memberNames: [], hasText: true, attachmentCount: 0,
+      breakdownInstruction: "",
+    });
+    expect(prompt).toContain("zero or a small number");
+    expect(prompt).toContain("No additional instructions were supplied");
+    expect(prompt).toContain("Do not repeat open or completed work");
+  });
+  it("uses semantic refinement guidance for tasks and existing project outlines", () => {
+    const prompt = buildIntakeInstructions({ today: "2026-10-10", memberNames: [], hasText: true, attachmentCount: 0,
+      refinement: { targetType: "project", intent: "structure", context: '{"status":"active","tasks":[{"status":"done"}]}' } });
+    expect(prompt).toContain("existing outline is authoritative");
+    expect(prompt).toContain("completed");
+    expect(prompt).toContain("clarification disposition");
+    expect(prompt).toContain("leave_alone");
+    expect(prompt).toContain("structure");
+    const next = buildIntakeInstructions({ today: "2026-10-10", memberNames: [], hasText: true, attachmentCount: 0,
+      refinement: { targetType: "task", intent: "next_action", context: '{"title":"Backup-Konzept"}' } });
+    expect(next).toContain("identify one executable action");
+    expect(next).toContain("one create_child recommendation at most");
+  });
+  it("regenerates refinement from current context, original focus, previous choices and latest answer", () => {
+    const instructions = buildIntakeInstructions({
+      today: "2026-10-10", memberNames: [], hasText: true, attachmentCount: 0,
+      refinement: {
+        targetType: "task", intent: "improve", instruction: "Clarify the handoff",
+        context: '{"title":"Current graph"}',
+        previousProposal: '{"summary":"Earlier idea","changes":[{"title":"First suggestion","accepted":false}]}',
+        feedback: "Keep the first suggestion but replace the third",
+        validationFeedback: [{ path: ["changes", 0], code: "schema_invalid", message: "Use a valid target." }],
+        validationMessage: "A captured task needs an accepted project conversion before adding children.",
+      },
+    });
+    expect(instructions).toContain("complete replacement proposal, never a patch");
+    expect(instructions).toContain("Current graph");
+    expect(instructions).toContain("Clarify the handoff");
+    expect(instructions).toContain("First suggestion");
+    expect(instructions).toContain("Keep the first suggestion but replace the third");
+    expect(instructions).toContain("changes[0] | schema_invalid | Use a valid target.");
+    expect(instructions).toContain("A captured task needs an accepted project conversion");
+  });
+  it("shares quality guidance and adds bounded editing semantics for task breakdown", () => {
+    const input = { today: "2026-10-10", memberNames: ["Alex"], hasText: true, attachmentCount: 0,
+      aiContext: { householdDescription: "", longTermDirection: "", suggestionGuidance: "Prefer 20-minute steps" } };
+    const intake = buildIntakeInstructions(input);
+    const breakdown = buildIntakeInstructions({ ...input, breakdownInstruction: "Make this a project" });
+    for (const prompt of [intake, breakdown]) {
+      expect(prompt).toContain("A good task describes a concrete action");
+      expect(prompt).toContain("do not split appropriately sized work");
+      expect(prompt).toContain("distinguishing diagnosis, research, decision, execution, and follow-up");
+      expect(prompt).toContain("no web research capability");
+      expect(prompt).toContain("Prefer 20-minute steps");
+    }
+    expect(breakdown).toContain('key "existing-task"');
+    expect(breakdown).toContain("must not be emitted as new items");
+    expect(breakdown).toContain("Make this a project");
+    expect(intake).not.toContain("EDIT AN EXISTING TASK");
+  });
   it("keeps interpretation guidance concise", () => {
     const instructions = buildIntakeInstructions({
       today: "2026-09-28",
@@ -61,6 +120,49 @@ describe("intake AI instructions", () => {
     expect(instructions).toContain("### Long-term direction");
     expect(instructions).not.toContain("### AI suggestion preferences");
     expect(instructions).toContain("required JSON schemas");
+  });
+
+  it("includes all configured household AI context in refinement as background", () => {
+    const instructions = buildIntakeInstructions({
+      today: "2026-09-28",
+      memberNames: [],
+      hasText: true,
+      attachmentCount: 0,
+      aiContext: {
+        householdDescription: "We coordinate school and daycare routines.",
+        longTermDirection: "Make family logistics calmer.",
+        suggestionGuidance: "Prefer small, practical next steps.",
+      },
+      refinement: {
+        targetType: "task",
+        intent: "improve",
+        instruction: "Clarify who hands over the form.",
+        context: '{"title":"Kita-Formular"}',
+        previousProposal: '{"summary":"Earlier proposal"}',
+        feedback: "Keep the title suggestion and adjust the rest.",
+      },
+    });
+    expect(instructions).toContain("## Household context from the user");
+    expect(instructions).toContain("### Household description\n\n\"\"\"\nWe coordinate school and daycare routines.");
+    expect(instructions).toContain("### Long-term direction\n\n\"\"\"\nMake family logistics calmer.");
+    expect(instructions).toContain("### AI suggestion preferences\n\n\"\"\"\nPrefer small, practical next steps.");
+    expect(instructions).toContain("Treat household context as background only");
+    expect(instructions).toContain("explicit user instructions, and domain rules take precedence");
+    expect(instructions).toContain("Clarify who hands over the form.");
+    expect(instructions).toContain("Keep the title suggestion and adjust the rest.");
+  });
+
+  it("omits the household context section from refinement when all configured fields are empty", () => {
+    const instructions = buildIntakeInstructions({
+      today: "2026-09-28",
+      memberNames: [],
+      hasText: true,
+      attachmentCount: 0,
+      aiContext: { householdDescription: "  ", longTermDirection: "", suggestionGuidance: null },
+      refinement: { targetType: "task", intent: "improve", context: '{"title":"Kita-Formular"}' },
+    });
+    expect(instructions).not.toContain("## Household context from the user");
+    expect(instructions).not.toContain("Treat household context as background only");
   });
 
   it("does not add a household context section when no context is supplied", () => {

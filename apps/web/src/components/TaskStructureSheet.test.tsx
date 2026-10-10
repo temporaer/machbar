@@ -37,6 +37,7 @@ vi.mock("../lib/api", () => ({
     activateProject: vi.fn(),
     updateProject: vi.fn(),
     convertStoryToTask: vi.fn(),
+    startWorkRefinement: vi.fn(),
   },
 }));
 
@@ -124,6 +125,21 @@ describe("TaskStructureSheet routing", () => {
     expect(
       await screen.findByRole("dialog", { name: "Projekt zur Aufgabe machen" }),
     ).toBeInTheDocument();
+  });
+
+  it("routes AI refinement from the structure sheet through the shared workflow", async () => {
+    const task = makeTask({ id: 88, title: "Backup-Konzept verbessern", revision: 4 });
+    mockedApi.getTask.mockResolvedValue(task);
+    mockedApi.startWorkRefinement.mockResolvedValue({ id: "refinement-job" });
+    renderStructure(task.id);
+
+    await userEvent.click(screen.getByRole("button", { name: "open structure" }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.workRefinement }));
+    await userEvent.click(await screen.findByRole("button", { name: strings.taskBreakdownGenerate }));
+
+    await waitFor(() => expect(mockedApi.startWorkRefinement).toHaveBeenCalledWith("task", 88, {
+      expectedRevision: 4, intent: "improve",
+    }));
   });
 
   it("converts a clean project with its edited title and notes", async () => {
@@ -499,6 +515,18 @@ describe("TaskStructureSheet routing", () => {
     expect(
       await screen.findByRole("dialog", { name: "In anderes Projekt verschieben" }),
     ).toBeInTheDocument();
+  });
+
+  it.each([
+    { repeatAfterDays: 7 },
+    { status: "captured" as const, parentTaskId: 61 },
+    { status: "captured" as const, projectId: 2 },
+  ])("hides AI breakdown when no proposal can be applied: %j", async (overrides) => {
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 77, ...overrides }));
+    renderStructure(77);
+    await userEvent.click(screen.getByRole("button", { name: "open structure" }));
+    await screen.findByRole("dialog");
+    expect(screen.queryByRole("button", { name: strings.taskBreakdown })).not.toBeInTheDocument();
   });
 
   it("hides split and conversion for a reference task but still offers move", async () => {

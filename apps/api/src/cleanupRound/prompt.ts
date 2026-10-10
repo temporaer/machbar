@@ -1,5 +1,6 @@
 import type { CleanupItemContext, CleanupValidationIssue, HouseholdAiContext } from "@machbar/shared";
 import { householdAiContextSection } from "../aiContext.js";
+import { AI_WORK_GUIDANCE } from "../aiWorkGuidance.js";
 import {
   cleanupConfidences,
   cleanupInferredFlows,
@@ -36,9 +37,7 @@ Look for the one missing thought that would make the item easier to continue.
 
 Would a tired human understand the intent, decision, outcome, and next useful thought without reconstructing the plan from memory? If yes, return leave_alone. If not, identify what kind of thinking is missing.
 
-A good task describes a concrete action: a verb, an object, enough context to start, and no hidden decision disguised as action. Examples: "Keller" -> "Werkzeugkiste im Keller sortieren"; "Backup" -> "Backup-Status in Proxmox prüfen"; "Schule" -> "Frau Pfistermeister wegen Formular antworten". Do not merely polish wording; notice when wording reveals the item is not yet actionable.
-
-A good project describes a finite outcome: what will be different, what "done" means, what the next concrete action is, and whether it is still mostly thinking or can be executed. Example: "Haustür" -> "Neue Haustür auswählen und Montage abschließen", done when "Tür ist montiert, dicht, bezahlt, alte Tür entsorgt." If a project is vague, ask for goal clarification; do not invent a plan.
+${AI_WORK_GUIDANCE}
 
 Thinking vs execution: uphill work is deciding, choosing, comparing, understanding, asking someone, clarifying constraints. Downhill work is ordering, booking, sending, buying, checking off known steps. Use this only as a lens and translate it into one concrete coaching question: uphill -> "What decision is missing?"; downhill -> "Is this ready to order into steps?"; mixed -> "Should we separate clarification from execution?"`;
 

@@ -21,6 +21,10 @@ import { HomeAssistantRequestSignal } from "../integrations/homeAssistantRequest
 import { intakeDraftStructureSchema, isValidIanaTimezone } from "../schemas.js";
 import { z } from "zod";
 import { normalizeIntakeDraftInput } from "@machbar/shared";
+import { breakdownSourceText, breakdownTask } from "../intake/breakdown.js";
+import { workRefinementInputSchema } from "@machbar/shared";
+import { applyWorkRefinement, updateWorkRefinement } from "../intake/refinement.js";
+import { buildRefinementSnapshot } from "../intake/refinementSnapshot.js";
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif", "application/pdf", "text/plain"]);
@@ -90,6 +94,39 @@ export function registerIntakeRoutes(
   paperless: PaperlessClient | undefined,
   signal: HomeAssistantRequestSignal = new HomeAssistantRequestSignal(),
 ): void {
+  app.post<{ Params: { taskId: string } }>("/api/intake/task/:taskId", async (request, reply) => {
+    const taskId = parseOrThrow(z.coerce.number().int().positive(), request.params.taskId);
+    const body = parseOrThrow(z.object({
+      expectedRevision: z.number().int().positive(),
+      instruction: z.string().trim().max(2_000).optional(),
+    }).strict(), request.body);
+    const memberId = request.authMember?.id ?? actor(request);
+    const task = breakdownTask(db, taskId, memberId);
+    await purgeExpiredIntakes(db, env);
+    const id = await createIntakeJob(db, env, signal, {
+      text: breakdownSourceText(task), files: [],
+      actorMemberId: actor(request), createdByMemberId: memberId,
+      scope: task.scope,
+      breakdown: { taskId, expectedRevision: body.expectedRevision, instruction: body.instruction ?? null },
+    });
+    reply.status(201);
+    return { id };
+  });
+  app.post<{ Params: { targetType: string; targetId: string } }>("/api/intake/refinement/:targetType/:targetId", async (request, reply) => {
+    const targetType = parseOrThrow(z.enum(["task", "project"]), request.params.targetType);
+    const targetId = parseOrThrow(z.coerce.number().int().positive(), request.params.targetId);
+    const body = parseOrThrow(workRefinementInputSchema.extend({ expectedRevision: z.number().int().positive() }), request.body);
+    const memberId = request.authMember?.id ?? actor(request);
+    const { scope, revision, snapshot } = buildRefinementSnapshot(db, targetType, targetId, memberId);
+    if (revision !== body.expectedRevision) throw AppError.conflict("stale_write_conflict", "The item changed before refinement started.");
+    await purgeExpiredIntakes(db, env);
+    const id = await createIntakeJob(db, env, signal, {
+      text: snapshot, files: [], actorMemberId: actor(request), createdByMemberId: memberId,
+      scope, refinement: { targetType, targetId, intent: body.intent, instruction: body.instruction, snapshot },
+    });
+    reply.status(201);
+    return { id };
+  });
   app.register(async (instance) => {
     await instance.register(multipart, { limits: { files: 5, fileSize: MAX_BYTES, fields: 3 }, throwFileSizeLimit: false });
     instance.post("/api/intake", { bodyLimit: MAX_BYTES * 5 + 1024 * 1024 }, async (request, reply) => {
@@ -119,6 +156,18 @@ export function registerIntakeRoutes(
       hasFiles: Boolean(db.select({ id: schema.intakeAttachments.id }).from(schema.intakeAttachments)
         .where(eq(schema.intakeAttachments.intakeJobId, request.params.id)).get()),
     });
+    return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/intake/:id/refinement", async (request) => {
+    const body = parseOrThrow(z.object({ expectedRevision: z.number().int().positive(), proposal: z.unknown() }).strict(), request.body);
+    updateWorkRefinement(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, body.expectedRevision, body.proposal);
+    return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
+  });
+
+  app.post<{ Params: { id: string } }>("/api/intake/:id/refinement/apply", async (request) => {
+    const body = parseOrThrow(z.object({ expectedRevision: z.number().int().positive() }).strict(), request.body);
+    applyWorkRefinement(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, body.expectedRevision, { actorMemberId: request.activityActor?.id ?? null });
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
   });
 

@@ -485,6 +485,14 @@ export const api = {
     for (const file of input.files ?? []) body.append("files", file, file.name);
     return request<{ id: string }>("/intake", { method: "POST", body });
   },
+  startTaskBreakdown: (taskId: number, body: { expectedRevision: number; instruction?: string }) =>
+    request<{ id: string }>(`/intake/task/${taskId}`, {
+      method: "POST", body: JSON.stringify(body),
+    }),
+  startWorkRefinement: (targetType: "task" | "project", targetId: number, body: { expectedRevision: number; intent: "improve" | "next_action" | "structure"; instruction?: string }) =>
+    request<{ id: string }>(`/intake/refinement/${targetType}/${targetId}`, {
+      method: "POST", body: JSON.stringify(body),
+    }),
   getIntake: (id: string) => request<IntakeRecord>(`/intake/${encodeURIComponent(id)}`),
   updateIntakeDraft: (
     id: string,
@@ -507,6 +515,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(hint === undefined ? {} : { hint: hint?.trim() || null }),
     }),
+  updateWorkRefinement: (id: string, body: { expectedRevision: number; proposal: NonNullable<IntakeRecord["refinement"]>["proposal"] }) =>
+    request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/refinement`, { method: "PATCH", body: JSON.stringify(body) }),
+  applyWorkRefinement: (id: string, body: { expectedRevision: number }) =>
+    request<IntakeRecord>(`/intake/${encodeURIComponent(id)}/refinement/apply`, { method: "POST", body: JSON.stringify(body) }),
   deleteIntake: (id: string) =>
     request<void>(`/intake/${encodeURIComponent(id)}`, { method: "DELETE" }),
   createCleanupRound: () =>

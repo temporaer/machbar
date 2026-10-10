@@ -10,6 +10,7 @@ import type {
   IntakeRecord,
   WorkItemScope,
 } from "@machbar/shared";
+import { unacceptedWorkRefinementProposal, workRefinementProposalSchema, type WorkRefinementIntent } from "@machbar/shared";
 import {
   buildDraftFromPlan,
   intakeErrorIssues,
@@ -35,6 +36,9 @@ import { buildIntakeInstructions } from "./prompt.js";
 import { deleteJobFiles, writeAttachment } from "./storage.js";
 import { addExternalWorkItemRef } from "../domain/externalWorkItemRefs.js";
 import { getHouseholdAiContext } from "../aiContext.js";
+import { assertBreakdownDraft, breakdownSnapshot, breakdownSourceText, breakdownTask } from "./breakdown.js";
+import { assertRefinementContext } from "./refinement.js";
+import { buildRefinementSnapshot } from "./refinementSnapshot.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_INTAKE_TIMEZONE = "Europe/Berlin";
@@ -224,9 +228,18 @@ export async function createIntakeJob(
     actorMemberId: number | null;
     createdByMemberId: number | null;
     scope: WorkItemScope;
+    breakdown?: { taskId: number; expectedRevision: number; instruction: string | null };
+    refinement?: { targetType: "task" | "project"; targetId: number; intent: WorkRefinementIntent; instruction?: string; snapshot: string };
   },
 ): Promise<string> {
   const integration = activeHomeAssistantIntegration(db);
+  const sourceTask = input.breakdown
+    ? breakdownTask(db, input.breakdown.taskId, input.createdByMemberId)
+    : null;
+  if (sourceTask && sourceTask.revision !== input.breakdown!.expectedRevision) {
+    throw AppError.conflict("stale_write_conflict", "The task changed before starting the breakdown.");
+  }
+  const sourceSnapshot = sourceTask ? breakdownSnapshot(db, sourceTask.id) : null;
   if (!integration) throw AppError.conflict("home_assistant_not_connected", "Home Assistant is not connected.");
   if (integration.protocolVersion !== 3) throw AppError.conflict("home_assistant_protocol_outdated", "The Home Assistant integration must be updated.");
   const capabilities = integration.capabilitiesJson ? JSON.parse(integration.capabilitiesJson) as {
@@ -269,6 +282,14 @@ export async function createIntakeJob(
         revision: 1,
         text: input.text,
         retryHint: null,
+        breakdownTaskId: sourceTask?.id ?? null,
+        breakdownSnapshotJson: sourceSnapshot,
+        breakdownInstruction: input.breakdown?.instruction ?? null,
+        refinementTargetType: input.refinement?.targetType ?? null,
+        refinementTargetId: input.refinement?.targetId ?? null,
+        refinementIntent: input.refinement?.intent ?? null,
+        refinementInstruction: input.refinement?.instruction?.trim() || null,
+        refinementSnapshotJson: input.refinement?.snapshot ?? null,
         createdAt,
         updatedAt: createdAt,
         expiresAt,
@@ -299,7 +320,15 @@ export async function createIntakeJob(
             hasText: input.text !== null,
             attachmentCount: binaryAttachments.length,
             aiContext: getHouseholdAiContext(db),
+            breakdownInstruction: sourceTask ? input.breakdown?.instruction ?? "" : undefined,
+            refinement: input.refinement ? {
+              targetType: input.refinement.targetType,
+              intent: input.refinement.intent,
+              ...(input.refinement.instruction ? { instruction: input.refinement.instruction } : {}),
+              context: input.refinement.snapshot,
+            } : undefined,
           }),
+          ...(input.refinement ? { analysisMode: "work_refinement" } : {}),
           text: input.text,
           attachments: attachmentRows.filter((attachment) => attachment.mimeType !== "text/plain")
             .map(({ id, filename, mimeType, sizeBytes }) => ({ id, filename, mimeType, sizeBytes })),
@@ -337,6 +366,30 @@ export function getIntake(
     expiresAt: job.expiresAt,
     text: job.text,
     retryHint: job.retryHint,
+    breakdown: job.breakdownTaskId === null ? null : {
+      taskId: job.breakdownTaskId,
+      instruction: job.breakdownInstruction ?? "",
+      existingChildren: (() => {
+        const rows = job.breakdownSnapshotJson ? JSON.parse(job.breakdownSnapshotJson) as Array<{ id: number; parentId: number | null; title: string; status: string }> : [];
+        const byParent = new Map<number, typeof rows>();
+        for (const row of rows) if (row.parentId !== null) byParent.set(row.parentId, [...(byParent.get(row.parentId) ?? []), row]);
+        const result: Array<{ id: number; title: string; status: string; depth: number }> = [];
+        const visit = (parentId: number, depth: number) => {
+          for (const row of byParent.get(parentId) ?? []) {
+            result.push({ id: row.id, title: row.title, status: row.status, depth });
+            visit(row.id, depth + 1);
+          }
+        };
+        visit(job.breakdownTaskId!, 0);
+        return result;
+      })(),
+    },
+    refinement: job.refinementTargetType && job.refinementTargetId !== null && job.refinementIntent ? {
+      targetType: job.refinementTargetType,
+      targetId: job.refinementTargetId,
+      intent: job.refinementIntent as WorkRefinementIntent,
+      proposal: parseJson(job.refinementJson),
+    } : null,
     attachments: db.select().from(schema.intakeAttachments).where(eq(schema.intakeAttachments.intakeJobId, id)).all()
       .map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })),
     draft,
@@ -348,6 +401,33 @@ export function getIntake(
 }
 
 export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSelect, plan: unknown): void {
+  if (job.refinementTargetType !== null) {
+    const parsed = workRefinementProposalSchema.safeParse(plan);
+    if (!parsed.success || parsed.data.intent !== job.refinementIntent) {
+      db.update(schema.intakeJobs).set({
+        status: "analysis_failed",
+        errorJson: JSON.stringify(errorInfo("intake_plan_invalid", "The AI Task returned an invalid refinement proposal.")),
+        updatedAt: nowIso(), revision: job.revision + 1,
+      }).where(eq(schema.intakeJobs.id, job.id)).run();
+      return;
+    }
+    const proposal = unacceptedWorkRefinementProposal(parsed.data);
+    try {
+      assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"), false, db);
+    } catch (error) {
+      db.update(schema.intakeJobs).set({
+        status: "analysis_failed",
+        errorJson: JSON.stringify(errorInfo("intake_plan_invalid", error instanceof Error ? error.message : "The refinement is structurally incompatible.")),
+        updatedAt: nowIso(), revision: job.revision + 1,
+      }).where(eq(schema.intakeJobs.id, job.id)).run();
+      return;
+    }
+    db.update(schema.intakeJobs).set({
+      status: "ready", refinementJson: JSON.stringify(proposal), errorJson: null,
+      updatedAt: nowIso(), revision: job.revision + 1,
+    }).where(eq(schema.intakeJobs.id, job.id)).run();
+    return;
+  }
   const members = db.select({ id: schema.members.id, name: schema.members.name }).from(schema.members).all();
   const normalizedInput = normalizeIntakePlanInput(plan, {
     ownerNames: members.map((member) => member.name),
@@ -380,6 +460,20 @@ export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSel
   }
   const normalized = normalizeIntakePlan(parsed.data as IntakePlan);
   const draft = buildDraftFromPlan(normalized.plan, members);
+  if (job.breakdownTaskId !== null) {
+    try {
+      const source = breakdownTask(db, job.breakdownTaskId, job.createdByMemberId);
+      assertBreakdownDraft(draft, source);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid task breakdown.";
+      db.update(schema.intakeJobs).set({
+        status: "analysis_failed",
+        errorJson: JSON.stringify(errorInfo("intake_plan_invalid", message)),
+        updatedAt: nowIso(), revision: job.revision + 1,
+      }).where(eq(schema.intakeJobs.id, job.id)).run();
+      return;
+    }
+  }
   db.update(schema.intakeJobs).set({
     status: "ready",
     planJson: JSON.stringify(normalized.plan),
@@ -537,11 +631,26 @@ export async function retryIntakeAnalysis(
   } : null;
   const promptNow = new Date();
   const promptTimezone = intakeTimezone(db);
+  const sourceTask = job.breakdownTaskId !== null
+    ? breakdownTask(db, job.breakdownTaskId, viewerMemberId)
+    : null;
+  const sourceText = sourceTask ? breakdownSourceText(sourceTask) : job.text;
+  const sourceSnapshot = sourceTask ? breakdownSnapshot(db, sourceTask.id) : null;
+  const previousRefinementProposal = job.refinementJson
+    ? parseJson<unknown>(job.refinementJson)
+    : null;
+  let freshRefinementSnapshot: ReturnType<typeof buildRefinementSnapshot> | null = null;
   db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    freshRefinementSnapshot = job.refinementTargetType && job.refinementTargetId !== null
+      ? buildRefinementSnapshot(txDb, job.refinementTargetType, job.refinementTargetId, viewerMemberId)
+      : null;
     tx.update(schema.intakeJobs).set({
       status: "queued",
       errorJson: null,
       retryHint,
+      ...(sourceTask ? { text: sourceText, breakdownSnapshotJson: sourceSnapshot } : {}),
+      ...(freshRefinementSnapshot ? { text: freshRefinementSnapshot.snapshot, scope: freshRefinementSnapshot.scope, refinementSnapshotJson: freshRefinementSnapshot.snapshot } : {}),
       revision: job.revision + 1,
       updatedAt: nowIso(),
     }).where(eq(schema.intakeJobs.id, id)).run();
@@ -560,8 +669,21 @@ export async function retryIntakeAnalysis(
           validationIssues,
           currentProposal,
           userInstruction: retryHint,
+          aiContext: getHouseholdAiContext(db),
+          breakdownInstruction: job.breakdownTaskId !== null ? job.breakdownInstruction ?? "" : undefined,
+          refinement: job.refinementTargetType && job.refinementIntent ? {
+            targetType: job.refinementTargetType,
+            intent: job.refinementIntent as WorkRefinementIntent,
+            ...(job.refinementInstruction ? { instruction: job.refinementInstruction } : {}),
+            context: freshRefinementSnapshot?.snapshot ?? "{}",
+            ...(previousRefinementProposal ? { previousProposal: JSON.stringify(previousRefinementProposal) } : {}),
+            ...(retryHint ? { feedback: retryHint } : {}),
+            ...(validationIssues.length ? { validationFeedback: validationIssues } : {}),
+            ...(previousError?.message ? { validationMessage: previousError.message } : {}),
+          } : undefined,
         }),
-        text: job.text,
+        ...(job.refinementTargetType ? { analysisMode: "work_refinement" } : {}),
+        text: freshRefinementSnapshot?.snapshot ?? sourceText,
         attachments: attachments
           .filter((attachment) => attachment.mimeType !== "text/plain")
           .map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })),

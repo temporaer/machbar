@@ -28,6 +28,7 @@ import { uploadAndResolveDocument } from "../paperless/upload.js";
 import { nowIso } from "../domain/workItemShared.js";
 import { attachmentPath } from "./storage.js";
 import { normalizeStoredIntakeDraft, recoverExpiredApplyClaim } from "./jobs.js";
+import { applyBreakdown, assertBreakdownDraft } from "./breakdown.js";
 
 const APPLY_CLAIM_MS = 10 * 60 * 1000;
 
@@ -132,6 +133,7 @@ export async function applyIntake(
     ? incompletePreparation.blockingIssues
     : intakeSelectedDraftIssues(draftToValidate, validationOptions);
   if (issues.length > 0) throw AppError.badRequest("intake_draft_invalid", "The intake draft is invalid.", { issues });
+  if (stored.breakdownTaskId !== null) assertBreakdownDraft(draftToValidate);
 
   const enabledEvents = draftToValidate.calendarEvents.filter((event) => event.enabled);
   const integration = enabledEvents.length > 0 ? activeHomeAssistantIntegration(db) : null;
@@ -224,6 +226,15 @@ export async function applyIntake(
     if (jobNow.createdByMemberId !== viewerMemberId) throw AppError.notFound("intake_not_found", "The intake was not found.");
     if (jobNow.status !== "applying") throw AppError.conflict("intake_state_conflict", "The intake apply claim was lost.");
     if (jobNow.revision !== claim.claimRevision || jobNow.applyClaimToken !== claim.claimToken) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
+    if (jobNow.breakdownTaskId !== null) {
+      results = applyBreakdown(tx as unknown as Db, jobNow, draft, context, viewerMemberId);
+      tx.update(schema.intakeJobs).set({
+        status: "applied", applyResultsJson: JSON.stringify(results),
+        applyClaimToken: null, applyClaimExpiresAt: null, errorJson: null,
+        revision: claim.claimRevision + 1, updatedAt: nowIso(),
+      }).where(eq(schema.intakeJobs.id, id)).run();
+      return;
+    }
     const existingKeys = new Set(results.work.map((item) => item.key));
     const enabled = draft.workItems.filter((item) => item.enabled);
     const byKey = new Map(enabled.map((item) => [item.key, item]));
@@ -345,6 +356,20 @@ export async function applyIntake(
     if (updated.changes !== 1) throw AppError.conflict("stale_write_conflict", "The intake has changed since it was read.");
   });
   } catch (error) {
+    if (stored.breakdownTaskId !== null) {
+      // Breakdown has no external side effects. A failed transaction can be
+      // edited or regenerated; never freeze it as a partially applied intake.
+      db.update(schema.intakeJobs).set({
+        status: "ready", acceptedDraftJson: null,
+        applyClaimToken: null, applyClaimExpiresAt: null,
+        revision: claim.claimRevision + 1, updatedAt: nowIso(),
+      }).where(and(
+        eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.status, "applying"),
+        eq(schema.intakeJobs.applyClaimToken, claim.claimToken),
+        eq(schema.intakeJobs.revision, claim.claimRevision),
+      )).run();
+      throw error;
+    }
     fail(error);
     throw error;
   }

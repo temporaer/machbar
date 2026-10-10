@@ -24,6 +24,7 @@ import {
 import { LoadingState } from "../components/AsyncStates";
 import { BottomSheet } from "../components/BottomSheet";
 import { IntakeDiagnosticLink } from "../components/IntakeDiagnosticLink";
+import { WorkRefinementReview } from "../components/WorkRefinementReview";
 import { IntakeProposalReview } from "./IntakeProposalReview";
 import { type DateValidityChange } from "./IntakeReviewFields";
 
@@ -511,6 +512,18 @@ export function IntakeReviewPage() {
         state.reload();
       } else {
         setApplyError(localizedErrorMessage(cause, strings));
+        if (record.breakdown) {
+          // Failed breakdown transactions release their claim and advance the
+          // revision. Refresh before enabling edits so the next save is current.
+          try {
+            const recovered = await api.getIntake(id);
+            recordRef.current = recovered;
+            revisionRef.current = recovered.revision;
+            setRecord(recovered);
+          } catch {
+            state.reload();
+          }
+        }
       }
     } finally {
       applyingRef.current = false;
@@ -547,7 +560,7 @@ export function IntakeReviewPage() {
     setBusy(true);
     try { await api.deleteIntake(id); navigate("/today"); } finally { setBusy(false); }
   };
-  if (record.status === "analysis_failed" && !draft) {
+  if (record.status === "analysis_failed" && !draft && !record.refinement?.proposal) {
     const validationIssues = record.error ? intakeErrorIssues(record.error) : [];
     return (
       <section className="card stack" role="alert">
@@ -613,9 +626,13 @@ export function IntakeReviewPage() {
         </div>
       ) : null}
       {record.applyResults?.work.map((item) => <Link key={item.key} to={item.role === "story" ? `/projects/${item.workItemId}` : `/tasks/${item.workItemId}`}>{record.draft?.workItems.find((work) => work.key === item.key)?.title ?? item.key}</Link>)}
+      {record.refinement ? <Link className="btn btn-primary" to={record.refinement.targetType === "project" ? `/projects/${record.refinement.targetId}` : `/tasks/${record.refinement.targetId}`}>{strings.refinementOpenOriginal}</Link> : null}
       {record.status === "partially_applied" ? <button className="btn btn-primary" disabled={busy} onClick={() => void retryApply()}>{strings.intakeRetryApply}</button> : null}
       <Link className="btn" to="/today">{strings.toMachbar}</Link>
     </section>;
+  }
+  if (record.refinement?.proposal && ["ready", "analysis_failed"].includes(record.status)) {
+    return <WorkRefinementReview record={record} onChange={(next) => { recordRef.current = next; revisionRef.current = next.revision; setRecord(next); }} />;
   }
   if (!draft) return <LoadingState />;
   return (
@@ -672,6 +689,8 @@ export function IntakeReviewPage() {
           onChange={updateDraft}
           onReminderChange={updateReminderDraft}
           diagnosticHref={diagnosticHref}
+          breakdown={Boolean(record.breakdown)}
+          existingChildren={record.breakdown?.existingChildren ?? []}
         />
       </fieldset>
       {applyError ? (
@@ -748,7 +767,7 @@ export function IntakeReviewPage() {
               disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs}
               onClick={() => void applyInitial(false)}
             >
-              {strings.intakeApplyCount(enabledProposalCount)}
+              {record.breakdown ? strings.taskBreakdownApply : strings.intakeApplyCount(enabledProposalCount)}
             </button>
           )}
           <button

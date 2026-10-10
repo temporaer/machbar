@@ -134,6 +134,27 @@
       "when": 1791485261639,
       "tag": "0018_add_revisit_and_household_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1791622800000,
+      "tag": "0019_task_breakdown",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1791631449622,
+      "tag": "0020_work_refinement",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1791635118042,
+      "tag": "0021_refinement_instruction",
+      "breakpoints": true
     }
   ]
 }

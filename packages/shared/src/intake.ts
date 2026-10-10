@@ -1,4 +1,4 @@
-import type { TaskReminderInput } from "./index.js";
+import type { Task, TaskReminderInput } from "./index.js";
 import type { CleanupRoundAiResponse, CleanupRoundAnalyzePayload } from "./cleanupRound.js";
 import {
   isAbsentOwnerSuggestion,
@@ -14,6 +14,14 @@ export const INTAKE_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/;
 export const INTAKE_MAX_CALENDAR_EVENTS = 20;
 export const INTAKE_MAX_WORK_ITEMS = 50;
 export const INTAKE_MAX_WARNINGS = 20;
+
+/** A target must support new children or identity-preserving project conversion. */
+export function canBreakDownTask(task: Pick<Task, "kind" | "status" | "repeatAfterDays" | "parentTaskId" | "projectId" | "externalWait" | "dependencies" | "reminders">): boolean {
+  return task.kind === "action" && task.status !== "done" && task.status !== "cancelled"
+    && task.repeatAfterDays === null
+    && (task.status !== "captured" || (task.parentTaskId === null && task.projectId === null
+      && task.externalWait === null && task.dependencies.length === 0 && task.reminders.length === 0));
+}
 
 export type IntakeWorkItemKind = "action" | "project" | "reference";
 
@@ -1206,6 +1214,9 @@ export interface IntakeApplyResults {
   paperlessDocumentIds: number[];
 }
 export interface IntakeRecord {
+  /** Present for proposals that edit an existing task rather than create a new root. */
+  breakdown?: { taskId: number; instruction: string; existingChildren: Array<{ id: number; title: string; status: string; depth: number }> } | null;
+  refinement?: { targetType: "task" | "project"; targetId: number; intent: import("./workRefinement.js").WorkRefinementIntent; proposal: import("./workRefinement.js").WorkRefinementProposal | null } | null;
   id: string;
   status: IntakeStatus;
   revision: number;

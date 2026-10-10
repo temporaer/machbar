@@ -27,6 +27,9 @@ export function ProjectStructureSheet({
   return (
     <BottomSheet title={`${strings.structure}: ${story.title}`} onClose={onClose}>
       <div className="stack">
+        <button type="button" className="btn" onClick={() => dispatch({ type: "story.refine", story })}>
+          {strings.workRefinement}
+        </button>
         <button
           type="button"
           className="btn"
