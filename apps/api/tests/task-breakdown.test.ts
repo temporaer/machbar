@@ -48,6 +48,36 @@ describe("reviewed task breakdown", () => {
     applyIntake(ctx.handle.db, { dataDir: ctx.dataDir } as never, undefined,
       new HomeAssistantRequestSignal(), id, { expectedRevision: revision, draft }, {}, null);
 
+  it("applies the enabled root instead of an excluded duplicate", async () => {
+    const task = createTask(ctx.handle.db, { title: "Room", status: "actionable" });
+    const { id, draft } = prepare(task.id);
+    draft.workItems[0]!.title = "Reviewed room";
+    draft.workItems.unshift({ ...item("existing-task", null, "Excluded title"), enabled: false, kind: "project" });
+    await apply(id, draft);
+    expect(getTaskOrThrow(ctx.handle.db, task.id).title).toBe("Reviewed room");
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(2);
+  });
+
+  it.each(["recurring", "captured-child", "captured-in-project"])("rejects %s targets before creating an AI job", async (target) => {
+    const parent = createTask(ctx.handle.db, { title: "Parent", status: "actionable" });
+    const project = createProject(ctx.handle.db, { title: "Project" });
+    const task = target === "captured-child"
+      ? createChildTask(ctx.handle.db, parent.id, { title: "Child" })
+      : createTask(ctx.handle.db, { title: "Target", status: "actionable",
+          ...(target === "captured-in-project" ? { projectId: project.id } : {}) });
+    ctx.handle.db.update(schema.workItems).set(target === "recurring"
+      ? { repeatAfterDays: 7, allowedDeviationDays: 1 }
+      : { status: "captured" }).where(eq(schema.workItems.id, task.id)).run();
+    const response = await ctx.app.inject({
+      method: "POST", url: `/api/intake/task/${task.id}`,
+      payload: { expectedRevision: task.revision, instruction: "Make steps" },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.code).toBe("task_promotion_invalid");
+    expect(ctx.handle.db.select().from(schema.intakeJobs).all()).toHaveLength(0);
+    expect(ctx.handle.db.select().from(schema.homeAssistantRequests).all()).toHaveLength(0);
+  });
+
   it("appends only accepted steps in order and preserves the original identity, children, and metadata", async () => {
     const task = createTask(ctx.handle.db, {
       title: "Repair the room", notes: "Keep this context", status: "actionable", dueDate: "2027-01-01",

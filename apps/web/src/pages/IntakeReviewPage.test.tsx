@@ -1146,6 +1146,37 @@ describe("IntakeReviewPage", () => {
     expect(screen.queryByText(message)).not.toBeInTheDocument();
   });
 
+  it("saves the first corrective edit with the recovered breakdown revision after Apply fails", async () => {
+    const breakdownDraft: IntakeDraft = {
+      ...draft, calendarEvents: [], warnings: [],
+      workItems: draft.workItems.map((item, index) => ({ ...item,
+        key: index === 0 ? "existing-task" : "step",
+        parentKey: index === 0 ? null : "existing-task",
+        ownerMemberId: null, dueDate: null, relatedCalendarKeys: [],
+      })),
+    };
+    const initial = { ...record(), breakdown: { taskId: 7, instruction: "Small steps" }, draft: breakdownDraft };
+    mockedApi.getIntake.mockResolvedValueOnce(initial as never)
+      .mockResolvedValue({ ...initial, revision: 4 } as never);
+    mockedApi.applyIntake.mockRejectedValueOnce(
+      Object.assign(new Error("Cannot convert"), { name: "ApiError", code: "role_conversion_invalid" }),
+    );
+    mockedApi.updateIntakeDraft.mockImplementation(async (_id, body) => ({
+      ...initial, revision: 5, draft: body.draft,
+    } as never));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Geprüfte Änderungen übernehmen" }));
+    await waitFor(() => expect(mockedApi.getIntake).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Geprüfte Änderungen übernehmen" })).toBeEnabled());
+    const editor = await openEditor("Formular mitbringen");
+    vi.useFakeTimers();
+    await changeTitle(editor, "Corrected step");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(mockedApi.updateIntakeDraft).toHaveBeenCalledTimes(1);
+    expect(mockedApi.updateIntakeDraft.mock.calls[0]?.[1]).toMatchObject({ expectedRevision: 4 });
+    expect(mockedApi.updateIntakeDraft.mock.calls[0]?.[1].draft.workItems[1]!.title).toBe("Corrected step");
+  });
+
   it("renders validation errors against the actual non-first calendar event", async () => {
     const secondEvent = {
       ...draft.calendarEvents[0]!,

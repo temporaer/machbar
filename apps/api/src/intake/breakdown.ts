@@ -1,5 +1,6 @@
 import { inArray } from "drizzle-orm";
 import type { IntakeApplyResults, IntakeDraft, Task } from "@machbar/shared";
+import { canBreakDownTask } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -21,8 +22,8 @@ export function breakdownSnapshot(db: Db, taskId: number): string {
 export function breakdownTask(db: Db, taskId: number, viewerMemberId: number | null) {
   const task = Graph.load(db, undefined, viewerMemberId ?? undefined).tasksById.get(taskId);
   if (!task) throw AppError.notFound("task_not_found", "The requested task was not found.");
-  if (task.kind !== "action" || task.status === "done" || task.status === "cancelled") {
-    throw AppError.conflict("task_promotion_invalid", "Only open action tasks can be broken down.");
+  if (!canBreakDownTask(task)) {
+    throw AppError.conflict("task_promotion_invalid", "Breakdown requires an open, non-recurring action that can accept steps or become a project.");
   }
   return task;
 }
@@ -72,7 +73,7 @@ export function applyBreakdown(
   if (breakdownSnapshot(db, task.id) !== job.breakdownSnapshotJson) {
     throw AppError.conflict("stale_write_conflict", "The task or its steps changed. Start a new breakdown and review the updated proposal.");
   }
-  const root = draft.workItems.find((item) => item.key === BREAKDOWN_ROOT_KEY)!;
+  const root = draft.workItems.find((item) => item.enabled && item.key === BREAKDOWN_ROOT_KEY)!;
   const converted = root.kind === "project";
   if (converted) {
     convertTaskToStory(db, task.id, {

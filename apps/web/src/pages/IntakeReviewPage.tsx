@@ -513,6 +513,18 @@ export function IntakeReviewPage() {
         state.reload();
       } else {
         setApplyError(localizedErrorMessage(cause, strings));
+        if (record.breakdown) {
+          // Failed breakdown transactions release their claim and advance the
+          // revision. Refresh before enabling edits so the next save is current.
+          try {
+            const recovered = await api.getIntake(id);
+            recordRef.current = recovered;
+            revisionRef.current = recovered.revision;
+            setRecord(recovered);
+          } catch {
+            state.reload();
+          }
+        }
       }
     } finally {
       applyingRef.current = false;

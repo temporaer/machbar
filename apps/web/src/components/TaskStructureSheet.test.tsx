@@ -501,6 +501,18 @@ describe("TaskStructureSheet routing", () => {
     ).toBeInTheDocument();
   });
 
+  it.each([
+    { repeatAfterDays: 7 },
+    { status: "captured" as const, parentTaskId: 61 },
+    { status: "captured" as const, projectId: 2 },
+  ])("hides AI breakdown when no proposal can be applied: %j", async (overrides) => {
+    mockedApi.getTask.mockResolvedValue(makeTask({ id: 77, ...overrides }));
+    renderStructure(77);
+    await userEvent.click(screen.getByRole("button", { name: "open structure" }));
+    await screen.findByRole("dialog");
+    expect(screen.queryByRole("button", { name: strings.taskBreakdown })).not.toBeInTheDocument();
+  });
+
   it("hides split and conversion for a reference task but still offers move", async () => {
     const task = makeTask({
       id: 77,

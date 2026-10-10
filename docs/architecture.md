@@ -2,6 +2,12 @@
 
 ## Reviewed task breakdown
 
+`canBreakDownTask` in the shared intake contract owns target eligibility for
+both the structure menu and API: recurring actions and captured actions nested
+under tasks or projects cannot start proposals. Apply selects only the enabled
+reserved root. After a recoverable Apply failure, review refreshes the recovered
+job revision before allowing another edit.
+
 `task.breakdown` opens `TaskBreakdownSheet` through `TaskWorkflowHost`.
 `useTaskBreakdown` starts a proposal at `POST /api/intake/task/:taskId` with
 free-form instructions and the task revision. The endpoint checks viewer access
