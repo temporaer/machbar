@@ -7,8 +7,10 @@ import { buildAgenda } from "../src/domain/agenda.js";
 import { Graph } from "../src/domain/graph.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
+const TEST_NOW = "2026-10-09T12:00:00+02:00";
+
 beforeAll(() => {
-  vi.setSystemTime(new Date("2026-10-09T12:00:00+02:00"));
+  vi.setSystemTime(new Date(TEST_NOW));
 });
 
 afterAll(() => {
@@ -17,7 +19,7 @@ afterAll(() => {
 
 function todayIso(): string {
   return calendarDateForInstant(
-    new Date().toISOString(),
+    new Date(TEST_NOW).toISOString(),
     DEFAULT_HOUSEHOLD_TIMEZONE,
   )!;
 }
