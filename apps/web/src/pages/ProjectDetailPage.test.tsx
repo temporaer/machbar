@@ -41,6 +41,7 @@ vi.mock("../lib/api", () => ({
     checkCriterion: vi.fn(),
     updateProject: vi.fn(),
     completeProject: vi.fn(),
+    startWorkRefinement: vi.fn(),
     getActivity: vi.fn(),
     uploadPaperlessDocument: vi.fn(),
     searchPaperlessDocuments: vi.fn(),
@@ -196,6 +197,7 @@ describe("ProjectDetailPage task explanations", () => {
       makeTask({ id, projectId: 42, ...(input as Partial<Task>) }),
     );
     mockedApi.getActivity.mockResolvedValue({ items: [], nextCursor: null });
+    mockedApi.startWorkRefinement.mockResolvedValue({ id: "refinement-job" });
     mockedApi.uploadPaperlessDocument.mockResolvedValue({
       id: 73,
       title: "plan",
@@ -421,6 +423,150 @@ describe("ProjectDetailPage task explanations", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: strings.projectDeadlineTitle }))
       .not.toBeInTheDocument();
+  });
+
+  it("exposes next-step capture and structure actions beside the project tasks", async () => {
+    renderProjectRoute("/projects/42");
+
+    const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
+    const section = tasks.closest("section")!;
+    expect(
+      within(section).getByRole("button", { name: strings.addNextAction }),
+    ).toBeInTheDocument();
+    expect(
+      within(section).getByRole("button", { name: strings.structure }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      within(section).getByRole("button", { name: strings.structure }),
+    );
+    expect(
+      await screen.findByRole("dialog", {
+        name: `${strings.structure}: Sommerfest planen`,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps all project structure workflows reachable from the detail page", async () => {
+    renderProjectRoute("/projects/42");
+
+    const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
+    const section = tasks.closest("section")!;
+    await userEvent.click(
+      within(section).getByRole("button", { name: strings.structure }),
+    );
+
+    const structureSheet = await screen.findByRole("dialog", {
+      name: `${strings.structure}: Sommerfest planen`,
+    });
+    expect(
+      within(structureSheet).getByRole("button", { name: strings.workRefinement }),
+    ).toBeInTheDocument();
+    expect(
+      within(structureSheet).getByRole("button", { name: strings.structurePlanWork }),
+    ).toBeInTheDocument();
+    expect(
+      within(structureSheet).getByRole("button", {
+        name: strings.structureEditOutcome,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(structureSheet).getByRole("button", {
+        name: strings.convertProjectToTask,
+      }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      within(structureSheet).getByRole("button", {
+        name: strings.workRefinement,
+      }),
+    );
+    expect(
+      await screen.findByRole("dialog", {
+        name: `${strings.workRefinement} Sommerfest planen`,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("combobox")).toHaveValue("improve");
+
+    await userEvent.selectOptions(screen.getByRole("combobox"), "next_action");
+    await userEvent.click(
+      screen.getByRole("button", { name: strings.taskBreakdownGenerate }),
+    );
+    await waitFor(() =>
+      expect(mockedApi.startWorkRefinement).toHaveBeenCalledWith("project", 42, {
+        expectedRevision: 1,
+        intent: "next_action",
+      }),
+    );
+  });
+
+  it("starts project-scoped next-action capture without duplicating task creation", async () => {
+    renderProjectRoute("/projects/42");
+
+    const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
+    const section = tasks.closest("section")!;
+    await userEvent.click(
+      within(section).getByRole("button", { name: strings.addNextAction }),
+    );
+
+    expect(
+      await screen.findByPlaceholderText(strings.quickAddPlaceholder),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("project-route")).toHaveTextContent(
+      "/projects/42?focus=next-action",
+    );
+  });
+
+  it("opens the existing project-to-task conversion from Struktur", async () => {
+    mockedApi.getProject.mockResolvedValue({
+      ...makeProject({ id: 42, title: "Sommerfest planen", ownerMemberId: 1 }),
+      tasks: [],
+    });
+    renderProjectRoute("/projects/42");
+
+    const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
+    const section = tasks.closest("section")!;
+    await userEvent.click(
+      within(section).getByRole("button", { name: strings.structure }),
+    );
+    const structureSheet = await screen.findByRole("dialog", {
+      name: `${strings.structure}: Sommerfest planen`,
+    });
+    await userEvent.click(
+      within(structureSheet).getByRole("button", {
+        name: strings.convertProjectToTask,
+      }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: strings.convertProjectToTaskTitle,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps detail-page project actions hidden for completed and archived projects", async () => {
+    for (const status of ["completed", "archived"] as const) {
+      mockedApi.getProject.mockResolvedValueOnce({
+        ...makeProject({
+          id: 42,
+          title: `${status} project`,
+          status,
+          archivedAt: status === "archived" ? "2026-09-01T00:00:00.000Z" : null,
+        }),
+        tasks: [],
+      });
+      const { unmount } = renderProjectRoute("/projects/42");
+      const tasks = await screen.findByRole("heading", { name: strings.taskSummary });
+      const section = tasks.closest("section")!;
+      expect(
+        within(section).queryByRole("button", { name: strings.addNextAction }),
+      ).not.toBeInTheDocument();
+      expect(
+        within(section).queryByRole("button", { name: strings.structure }),
+      ).not.toBeInTheDocument();
+      unmount();
+    }
   });
 
   it("loads project and recorded task activity only after opening the disclosure", async () => {

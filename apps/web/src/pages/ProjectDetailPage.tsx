@@ -754,6 +754,34 @@ export function ProjectDetailPage() {
                 title={strings.taskSummary}
                 headingLevel={2}
                 hints={[{ text: strings.projectTasksHint }]}
+                actions={
+                  project.status !== "completed" &&
+                  project.status !== "archived" &&
+                  !project.archivedAt ? (
+                    <div className="row project-task-header-actions">
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={projectMutationPending}
+                        onClick={() =>
+                          dispatch({ type: "story.planWork", story: project })
+                        }
+                      >
+                        {strings.addNextAction}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={projectMutationPending}
+                        onClick={() =>
+                          dispatch({ type: "story.structure", story: project })
+                        }
+                      >
+                        {strings.structure}
+                      </button>
+                    </div>
+                  ) : null
+                }
               />
               {project.childStories?.length ? (
                 <ul className="project-story-list">

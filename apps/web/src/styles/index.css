@@ -590,6 +590,11 @@ a {
   gap: 8px;
 }
 
+.project-task-header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .page-header-button {
   display: inline-grid;
   width: 44px;
