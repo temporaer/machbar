@@ -41,6 +41,7 @@ import type { ProjectWithActions } from "./api";
 export type ProjectWorkflowKind =
   | "defer"
   | "structure"
+  | "refinement"
   | "assignDriver"
   | "editOutcome"
   | "convertToTask"

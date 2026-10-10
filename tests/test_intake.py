@@ -13,7 +13,7 @@ from probatio import Required as ProbatioRequired
 from probatio import Schema as ProbatioSchema
 from probatio import to_openapi
 
-from custom_components.machbar.intake import INTAKE_STRUCTURE, AdapterError, normalize_plan
+from custom_components.machbar.intake import INTAKE_STRUCTURE, WORK_REFINEMENT_STRUCTURE, AdapterError, normalize_plan
 
 
 def _probatio_schema_from_voluptuous(schema):
@@ -682,3 +682,23 @@ def test_normalize_plan_matches_shared_nullable_placeholder_fixture():
         for field in _NULLABLE_WORK_FIELDS:
             assert item[field] is None
     INTAKE_STRUCTURE(normalized)
+
+
+def test_work_refinement_schema_accepts_typed_edits_and_clarifications():
+    proposal = {
+        "intent": "improve",
+        "summary": "Die nächste Handlung ist noch unklar.",
+        "disposition": "clarification",
+        "question": "Geht es noch um die Auswahl oder nur um die Montage?",
+        "changes": [],
+    }
+    assert WORK_REFINEMENT_STRUCTURE(proposal) == proposal
+
+    change = {
+        "kind": "update_task",
+        "targetId": 12,
+        "title": "Kita-Formular im Sekretariat abgeben",
+        "rationale": "Macht die Handlung konkret.",
+    }
+    proposal.update({"disposition": "changes", "question": None, "changes": [change]})
+    assert WORK_REFINEMENT_STRUCTURE(proposal)["changes"] == [change]

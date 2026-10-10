@@ -103,6 +103,42 @@ INTAKE_STRUCTURE = vol.Schema(
 )
 
 
+def _refinement_change_schema() -> vol.Schema:
+    return vol.Schema(
+        {
+            _field("kind", str): vol.In(("update_task", "update_project", "convert_task_to_project", "create_child", "move_task", "add_dependency", "update_wait", "update_project_outcome", "advisory")),
+            _field("rationale", str): str,
+            vol.Optional("accepted"): bool,
+            vol.Optional("targetId"): int,
+            vol.Optional("taskId"): int,
+            vol.Optional("parentTaskId"): vol.Any(int, None),
+            vol.Optional("projectId"): vol.Any(int, None),
+            vol.Optional("dependsOnTaskId"): int,
+            vol.Optional("position"): int,
+            vol.Optional("title"): str,
+            vol.Optional("notes"): vol.Any(str, None),
+            vol.Optional("waitingFor"): str,
+            vol.Optional("revisitAt"): vol.Any(str, None),
+            vol.Optional("outcome"): str,
+            vol.Optional("criterionId"): int,
+            vol.Optional("affectedIds"): [int],
+        },
+        extra=vol.PREVENT_EXTRA,
+    )
+
+
+WORK_REFINEMENT_STRUCTURE = vol.Schema(
+    {
+        _field("intent", str): vol.In(("improve", "next_action", "structure")),
+        _field("summary", str): str,
+        _field("disposition", str): vol.In(("changes", "clarification", "leave_alone")),
+        _field("question", vol.Any(str, None)): vol.Any(str, None),
+        _field("changes", [_refinement_change_schema()]): [_refinement_change_schema()],
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+
+
 class AdapterError(Exception):
     """An AI Task or calendar adapter error."""
 
@@ -524,6 +560,8 @@ async def async_analyze(hass: Any, client: Any, entity_id: str | None, payload: 
     if attachments and not capabilities["supportsAttachments"]:
         raise AdapterError("ai_task_attachments_unsupported")
     instructions = payload.get("instructions", "")
+    analysis_mode = payload.get("analysisMode")
+    structure = WORK_REFINEMENT_STRUCTURE if analysis_mode == "work_refinement" else INTAKE_STRUCTURE
     text = payload.get("text")
     if text:
         instructions += f"\n\n=== SOURCE CONTENT ===\n<<<\n{text}\n>>>"
@@ -532,12 +570,12 @@ async def async_analyze(hass: Any, client: Any, entity_id: str | None, payload: 
         try:
             result = await ai_task.task.async_generate_data(
                 hass, task_name=payload["taskName"], entity_id=entity_id,
-                instructions=instructions, structure=INTAKE_STRUCTURE
+                instructions=instructions, structure=structure
             )
         except Exception as err:
             _LOGGER.exception("Machbar AI Task generation failed")
             raise AdapterError("ai_task_failed") from err
-        return normalize_plan(result.data)
+        return result.data if analysis_mode == "work_refinement" else normalize_plan(result.data)
 
     from homeassistant.components import conversation
     from homeassistant.helpers.chat_session import async_get_chat_session
@@ -567,13 +605,13 @@ async def async_analyze(hass: Any, client: Any, entity_id: str | None, payload: 
                     session,
                     GenDataTask(
                         name=payload["taskName"], instructions=instructions,
-                        structure=INTAKE_STRUCTURE, attachments=ha_attachments,
+                        structure=structure, attachments=ha_attachments,
                     ),
                 )
         except Exception as err:
             _LOGGER.exception("Machbar AI Task generation failed")
             raise AdapterError("ai_task_failed") from err
-        return normalize_plan(result.data)
+        return result.data if analysis_mode == "work_refinement" else normalize_plan(result.data)
     except AdapterError:
         raise
     except Exception as err:

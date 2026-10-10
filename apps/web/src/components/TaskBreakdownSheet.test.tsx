@@ -27,7 +27,7 @@ describe("TaskBreakdownSheet", () => {
       </Routes>, { locale: "en" },
     );
     const generate = screen.getByRole("button", { name: "Prepare proposal" });
-    expect(generate).toBeDisabled();
+    expect(generate).toBeEnabled();
     fireEvent.change(screen.getByLabelText("Instructions"), { target: { value: "Make 20-minute steps" } });
     fireEvent.click(generate);
     expect(await screen.findByText("Review proposal")).toBeInTheDocument();
@@ -35,6 +35,18 @@ describe("TaskBreakdownSheet", () => {
       expectedRevision: 3, instruction: "Make 20-minute steps",
     });
     expect(close).toHaveBeenCalledOnce();
+  });
+  it("starts a default proposal without free-text instructions", async () => {
+    vi.mocked(api.startTaskBreakdown).mockResolvedValue({ id: "default" });
+    renderWithProviders(
+      <Routes>
+        <Route path="/" element={<TaskBreakdownSheet task={makeTask({ id: 7 })} onClose={vi.fn()} />} />
+        <Route path="/intake/:id" element={<p>Default proposal</p>} />
+      </Routes>, { locale: "en" },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Prepare proposal" }));
+    expect(await screen.findByText("Default proposal")).toBeInTheDocument();
+    expect(api.startTaskBreakdown).toHaveBeenCalledWith(7, { expectedRevision: 1 });
   });
   it("keeps instructions after failure and Cancel creates nothing", async () => {
     vi.mocked(api.startTaskBreakdown).mockRejectedValue(new Error("Bridge offline"));

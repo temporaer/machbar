@@ -22,6 +22,9 @@ import { intakeDraftStructureSchema, isValidIanaTimezone } from "../schemas.js";
 import { z } from "zod";
 import { normalizeIntakeDraftInput } from "@machbar/shared";
 import { breakdownSourceText, breakdownTask } from "../intake/breakdown.js";
+import { Graph } from "../domain/graph.js";
+import { workRefinementInputSchema } from "@machbar/shared";
+import { applyWorkRefinement, updateWorkRefinement } from "../intake/refinement.js";
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif", "application/pdf", "text/plain"]);
@@ -95,7 +98,7 @@ export function registerIntakeRoutes(
     const taskId = parseOrThrow(z.coerce.number().int().positive(), request.params.taskId);
     const body = parseOrThrow(z.object({
       expectedRevision: z.number().int().positive(),
-      instruction: z.string().trim().min(1).max(2_000),
+      instruction: z.string().trim().max(2_000).optional(),
     }).strict(), request.body);
     const memberId = request.authMember?.id ?? actor(request);
     const task = breakdownTask(db, taskId, memberId);
@@ -104,7 +107,68 @@ export function registerIntakeRoutes(
       text: breakdownSourceText(task), files: [],
       actorMemberId: actor(request), createdByMemberId: memberId,
       scope: task.scope,
-      breakdown: { taskId, ...body },
+      breakdown: { taskId, expectedRevision: body.expectedRevision, instruction: body.instruction ?? null },
+    });
+    reply.status(201);
+    return { id };
+  });
+  app.post<{ Params: { targetType: string; targetId: string } }>("/api/intake/refinement/:targetType/:targetId", async (request, reply) => {
+    const targetType = parseOrThrow(z.enum(["task", "project"]), request.params.targetType);
+    const targetId = parseOrThrow(z.coerce.number().int().positive(), request.params.targetId);
+    const body = parseOrThrow(workRefinementInputSchema.extend({ expectedRevision: z.number().int().positive() }), request.body);
+    const memberId = request.authMember?.id ?? actor(request);
+    const graph = Graph.load(db, undefined, memberId ?? undefined);
+    let target: Record<string, unknown>;
+    let scope: "household" | "work";
+    let revision: number | undefined;
+    if (targetType === "task") {
+      const task = graph.tasksById.get(targetId);
+      if (!task) throw AppError.notFound("task_not_found", "The requested task was not found.");
+      revision = task.revision;
+      scope = task.scope;
+      const describe = (item: typeof task): unknown => ({
+        id: item.id, revision: item.revision, title: item.title, notes: item.notes, status: item.status,
+        kind: item.kind, externalWait: item.externalWait, dependencies: item.dependencies,
+        dueDate: item.dueDate, scheduledDate: item.scheduledDate, ownerMemberId: item.ownerMemberId,
+        revisitAt: item.revisitAt, ownerInheritanceMode: item.ownerInheritanceMode, inheritedOwnerId: item.inheritedOwnerId,
+        parentTaskId: item.parentTaskId, projectId: item.projectId, repeatAfterDays: item.repeatAfterDays,
+        reminders: item.reminders,
+        children: item.children.map((child) => describe(child)),
+      });
+      target = describe(task) as Record<string, unknown>;
+    } else {
+      const project = graph.projectsById.get(targetId);
+      if (!project) throw AppError.notFound("project_not_found", "The requested project was not found.");
+      revision = project.revision;
+      scope = project.scope;
+      const tasks = graph.tasksByProject.get(targetId) ?? [];
+      const describe = (item: (typeof tasks)[number]): unknown => ({
+        id: item.id, revision: item.revision, title: item.title, notes: item.notes, status: item.status,
+        kind: item.kind, externalWait: item.externalWait, dependencies: item.dependencies,
+        dueDate: item.dueDate, scheduledDate: item.scheduledDate, ownerMemberId: item.ownerMemberId,
+        children: item.children.map((child) => describe(child)),
+      });
+      const describeProject = (item: typeof project): unknown => {
+        const tasks = graph.tasksByProject.get(item.id) ?? [];
+        const next = graph.nextActionFor(item.id);
+        return {
+          id: item.id, revision: item.revision, title: item.title, notes: item.notes,
+          status: item.status, ownerMemberId: item.ownerMemberId, dueDate: item.dueDate,
+          revisitAt: item.revisitAt,
+          outcome: item.acceptanceCriteria,
+          currentNextAction: next ? { id: next.id, title: next.title, status: next.status } : null,
+          tasks: tasks.filter((candidate) => candidate.parentTaskId === null).map((candidate) => describe(candidate)),
+          projects: item.childStories.map((child) => describeProject(child)),
+        };
+      };
+      target = describeProject(project) as Record<string, unknown>;
+    }
+    if (revision !== body.expectedRevision) throw AppError.conflict("stale_write_conflict", "The item changed before refinement started.");
+    const snapshot = JSON.stringify(target);
+    await purgeExpiredIntakes(db, env);
+    const id = await createIntakeJob(db, env, signal, {
+      text: snapshot, files: [], actorMemberId: actor(request), createdByMemberId: memberId,
+      scope, refinement: { targetType, targetId, intent: body.intent, instruction: body.instruction, snapshot },
     });
     reply.status(201);
     return { id };
@@ -138,6 +202,18 @@ export function registerIntakeRoutes(
       hasFiles: Boolean(db.select({ id: schema.intakeAttachments.id }).from(schema.intakeAttachments)
         .where(eq(schema.intakeAttachments.intakeJobId, request.params.id)).get()),
     });
+    return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
+  });
+
+  app.patch<{ Params: { id: string } }>("/api/intake/:id/refinement", async (request) => {
+    const body = parseOrThrow(z.object({ expectedRevision: z.number().int().positive(), proposal: z.unknown() }).strict(), request.body);
+    updateWorkRefinement(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, body.expectedRevision, body.proposal);
+    return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
+  });
+
+  app.post<{ Params: { id: string } }>("/api/intake/:id/refinement/apply", async (request) => {
+    const body = parseOrThrow(z.object({ expectedRevision: z.number().int().positive() }).strict(), request.body);
+    applyWorkRefinement(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, body.expectedRevision, { actorMemberId: request.activityActor?.id ?? null });
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
   });
 

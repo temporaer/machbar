@@ -35,6 +35,11 @@ export function TaskStructureSheet({ task, onClose }: { task: Task; onClose: () 
             {strings.taskBreakdown}
           </button>
         ) : null}
+        {task.kind !== "reference" ? (
+          <button type="button" className="btn" onClick={() => dispatch({ type: "task.refine", taskId: task.id })}>
+            {strings.workRefinement}
+          </button>
+        ) : null}
         {!hideSplit ? (
           <button
             type="button"

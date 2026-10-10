@@ -31,6 +31,7 @@ export type TaskWorkflowKind =
   | "waitingLifecycle"
   | "split"
   | "breakdown"
+  | "refinement"
   | "assignOwner"
   | "changeProject"
   | "recurrence"

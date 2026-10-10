@@ -36,6 +36,7 @@ export function IntakeWorkItemCard({
   onReminderChange,
   onKindChange,
   breakdownRole,
+  onMove,
 }: {
   item: IntakeDraftWorkItem;
   index: number;
@@ -54,6 +55,7 @@ export function IntakeWorkItemCard({
   ) => void;
   onKindChange: (kind: IntakeDraftWorkItem["kind"]) => void;
   breakdownRole?: "root" | "step" | undefined;
+  onMove?: ((delta: -1 | 1) => void) | undefined;
 }) {
   const strings = useStrings();
   const editableMetadata = breakdownRole !== "root";
@@ -192,6 +194,10 @@ export function IntakeWorkItemCard({
           </p>
         ) : null}
         <div className="intake-card-actions">
+          {onMove ? <>
+            <button type="button" className="btn btn-ghost" aria-label={strings.intakeMoveUp} onClick={() => onMove(-1)}>↑</button>
+            <button type="button" className="btn btn-ghost" aria-label={strings.intakeMoveDown} onClick={() => onMove(1)}>↓</button>
+          </> : null}
           {editableMetadata && item.kind !== "reference" && !item.ownerMemberId ? (
             <DetailPropertyPill
               variant="unset"

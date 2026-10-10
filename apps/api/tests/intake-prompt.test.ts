@@ -3,6 +3,28 @@ import type { IntakePlan } from "@machbar/shared";
 import { buildIntakeInstructions } from "../src/intake/prompt.js";
 
 describe("intake AI instructions", () => {
+  it("lets breakdown run without instructions and return no unnecessary children", () => {
+    const prompt = buildIntakeInstructions({
+      today: "2026-10-10", memberNames: [], hasText: true, attachmentCount: 0,
+      breakdownInstruction: "",
+    });
+    expect(prompt).toContain("zero or a small number");
+    expect(prompt).toContain("No additional instructions were supplied");
+    expect(prompt).toContain("Do not repeat open or completed work");
+  });
+  it("uses semantic refinement guidance for tasks and existing project outlines", () => {
+    const prompt = buildIntakeInstructions({ today: "2026-10-10", memberNames: [], hasText: true, attachmentCount: 0,
+      refinement: { targetType: "project", intent: "structure", context: '{"status":"active","tasks":[{"status":"done"}]}' } });
+    expect(prompt).toContain("existing outline is authoritative");
+    expect(prompt).toContain("completed");
+    expect(prompt).toContain("clarification disposition");
+    expect(prompt).toContain("leave_alone");
+    expect(prompt).toContain("structure");
+    const next = buildIntakeInstructions({ today: "2026-10-10", memberNames: [], hasText: true, attachmentCount: 0,
+      refinement: { targetType: "task", intent: "next_action", context: '{"title":"Backup-Konzept"}' } });
+    expect(next).toContain("identify one executable action");
+    expect(next).toContain("one create_child recommendation at most");
+  });
   it("shares quality guidance and adds bounded editing semantics for task breakdown", () => {
     const input = { today: "2026-10-10", memberNames: ["Alex"], hasText: true, attachmentCount: 0,
       aiContext: { householdDescription: "", longTermDirection: "", suggestionGuidance: "Prefer 20-minute steps" } };
@@ -10,7 +32,8 @@ describe("intake AI instructions", () => {
     const breakdown = buildIntakeInstructions({ ...input, breakdownInstruction: "Make this a project" });
     for (const prompt of [intake, breakdown]) {
       expect(prompt).toContain("A good task describes a concrete action");
-      expect(prompt).toContain("small enough for one practical work session");
+      expect(prompt).toContain("do not split appropriately sized work");
+      expect(prompt).toContain("distinguishing diagnosis, research, decision, execution, and follow-up");
       expect(prompt).toContain("no web research capability");
       expect(prompt).toContain("Prefer 20-minute steps");
     }

@@ -35,6 +35,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.startToday":
     case "task.endWaiting":
     case "task.breakdown":
+    case "task.refine":
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
@@ -63,6 +64,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "story.archive":
     case "story.defer":
     case "story.structure":
+    case "story.refine":
     case "story.assignDriver":
     case "story.planWork":
     case "story.editOutcome":
@@ -96,6 +98,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.startToday":
     case "task.endWaiting":
     case "task.breakdown":
+    case "task.refine":
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
@@ -118,6 +121,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "story.archive":
     case "story.defer":
     case "story.structure":
+    case "story.refine":
     case "story.assignDriver":
     case "story.planWork":
     case "story.editOutcome":
@@ -281,6 +285,9 @@ export function useWorkItemCommands() {
           return;
         case "task.breakdown":
           taskWorkflow.open("breakdown", command.taskId);
+          return;
+        case "task.refine":
+          taskWorkflow.open("refinement", command.taskId);
           return;
         case "task.split":
           taskWorkflow.open("split", command.taskId);
@@ -456,6 +463,9 @@ export function useWorkItemCommands() {
           return;
         case "story.structure":
           projectWorkflow.open("structure", command.story.id);
+          return;
+        case "story.refine":
+          projectWorkflow.open("refinement", command.story.id);
           return;
         case "story.assignDriver":
           projectWorkflow.open("assignDriver", command.story.id);

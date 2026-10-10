@@ -24,6 +24,7 @@ import {
 import { LoadingState } from "../components/AsyncStates";
 import { BottomSheet } from "../components/BottomSheet";
 import { IntakeDiagnosticLink } from "../components/IntakeDiagnosticLink";
+import { WorkRefinementReview } from "../components/WorkRefinementReview";
 import { IntakeProposalReview } from "./IntakeProposalReview";
 import { type DateValidityChange } from "./IntakeReviewFields";
 
@@ -377,8 +378,6 @@ export function IntakeReviewPage() {
 
   const enabledProposalCount = (draft?.calendarEvents.filter((event) => event.enabled).length ?? 0) +
     (draft?.workItems.filter((item) => item.enabled).length ?? 0);
-  const hasBreakdownSteps = !record?.breakdown ||
-    Boolean(draft?.workItems.some((item) => item.enabled && item.key !== "existing-task"));
   if (state.loading && !record) return <LoadingState />;
   if (state.error && !record) {
     return <section className="card stack" role="alert"><h1>{strings.intakeExpired}</h1><p>{state.error}</p><Link className="btn" to="/today">{strings.toMachbar}</Link></section>;
@@ -561,7 +560,7 @@ export function IntakeReviewPage() {
     setBusy(true);
     try { await api.deleteIntake(id); navigate("/today"); } finally { setBusy(false); }
   };
-  if (record.status === "analysis_failed" && !draft) {
+  if (record.status === "analysis_failed" && !draft && !record.refinement?.proposal) {
     const validationIssues = record.error ? intakeErrorIssues(record.error) : [];
     return (
       <section className="card stack" role="alert">
@@ -631,6 +630,9 @@ export function IntakeReviewPage() {
       <Link className="btn" to="/today">{strings.toMachbar}</Link>
     </section>;
   }
+  if (record.refinement?.proposal && ["ready", "analysis_failed"].includes(record.status)) {
+    return <WorkRefinementReview record={record} onChange={(next) => { recordRef.current = next; revisionRef.current = next.revision; setRecord(next); }} />;
+  }
   if (!draft) return <LoadingState />;
   return (
     <section className="stack intake-review">
@@ -687,6 +689,7 @@ export function IntakeReviewPage() {
           onReminderChange={updateReminderDraft}
           diagnosticHref={diagnosticHref}
           breakdown={Boolean(record.breakdown)}
+          existingChildren={record.breakdown?.existingChildren ?? []}
         />
       </fieldset>
       {applyError ? (
@@ -751,7 +754,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || record.status !== "ready" || hasInvalidInputs || !hasBreakdownSteps}
+              disabled={busy || record.status !== "ready" || hasInvalidInputs}
               onClick={() => void applyInitial(true)}
             >
               {strings.intakeAcceptIncomplete}
@@ -760,7 +763,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs || !hasBreakdownSteps}
+              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs}
               onClick={() => void applyInitial(false)}
             >
               {record.breakdown ? strings.taskBreakdownApply : strings.intakeApplyCount(enabledProposalCount)}

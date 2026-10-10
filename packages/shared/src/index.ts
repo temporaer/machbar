@@ -952,6 +952,7 @@ export interface Agenda {
 export type WeekWorkItemRole = "task" | "story";
 
 export * from "./intake.js";
+export * from "./workRefinement.js";
 export * from "./cleanupRound.js";
 export * from "./inputNormalization.js";
 export * from "./revisit.js";

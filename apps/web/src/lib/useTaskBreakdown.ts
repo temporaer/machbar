@@ -19,7 +19,8 @@ export function useTaskBreakdown() {
     setError(null);
     try {
       const result = await api.startTaskBreakdown(task.id, {
-        expectedRevision: task.revision, instruction,
+        expectedRevision: task.revision,
+        ...(instruction.trim() ? { instruction: instruction.trim() } : {}),
       });
       navigate(`/intake/${result.id}`);
       return true;

@@ -1,10 +1,11 @@
 # Household workflow
 
-## Break down a task with instructions
+## Break down a task
 
-Choose **Struktur → Mit KI aufteilen…** on an open action task and describe the
-edits you want. For example: “Make steps I can finish in 20 minutes; turn this
-into a project and add a step to compare options.”
+Choose **Struktur → Mit KI aufteilen…** on an open action task to get a useful
+default proposal. You can add an optional focus, for example: “Make steps I can
+finish in 20 minutes; turn this into a project and add a step to compare
+options.”
 
 The paired Home Assistant AI Task prepares an editable proposal, following the
 same actionability, sizing, and project-outcome guidance as other AI workflows,
@@ -19,8 +20,9 @@ must become projects before receiving steps.
 
 Nothing changes during generation or when discarding a proposal. Apply is
 atomic. If the original task or its steps changed meanwhile, use **Änderungen
-anfragen** to regenerate and review again. No additional AI credentials or
-Home Assistant integration update is required.
+anfragen** to regenerate and review again. No additional AI credentials are
+needed; the paired Home Assistant integration must support version 0.5.2 or
+newer for AI work refinement.
 
 Machbar is built around a simple problem: household work is shared, but
 responsibility and next steps are often not.
@@ -387,6 +389,26 @@ registry as the shortcuts. `g` opens a short route-prefix hint, `c` opens the
 contextual capture sheet, and `s`/`a`/`n` jump from the active task to its
 existing planning, assignment, or notes flow. Structural commands are shown only
 inside outlines where structural editing is valid.
+
+## AI-assisted work refinement
+
+Tasks and projects offer **Mit KI verbessern…** from their structure workflow.
+The default intention looks for the single most useful improvement; the same
+sheet can instead find a next action or inspect project structure. Instructions
+are optional. Machbar sends only the selected task/project outline and relevant
+status, dependency, waiting, owner, date, next-action and completion context to
+the configured Home Assistant AI Task. It does not send unrelated household
+work.
+
+AI results are typed proposals attached to the existing intake job. They can
+ask a focused clarification question, recommend no change, propose edits and
+new actions, or surface advisory changes that require manual resolution.
+Nothing changes until the person reviews and accepts specific executable
+changes. Apply checks that the captured outline is still current and uses the
+canonical task/project domain operations in one database transaction. AI does
+not schedule work or perform project lifecycle transitions. Existing
+breakdown remains a specialized action; its original task identity and
+children are preserved.
 
 ## Sharing
 

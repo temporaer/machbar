@@ -41,15 +41,18 @@ export function breakdownSourceText(task: ReturnType<typeof breakdownTask>): str
 }
 
 /** Breakdown edits one existing root and appends a flat list of new actions. */
-export function assertBreakdownDraft(draft: IntakeDraft): void {
+export function assertBreakdownDraft(draft: IntakeDraft, source?: ReturnType<typeof breakdownTask>): void {
   const enabled = draft.workItems.filter((item) => item.enabled);
   const root = enabled.find((item) => item.key === BREAKDOWN_ROOT_KEY);
   if (!root || root.parentKey !== null || !["action", "project"].includes(root.kind)
-    || enabled.length < 2 || enabled.length > 31
+    || enabled.length > 31
     || enabled.some((item) => item !== root && (item.kind !== "action" || item.parentKey !== root.key))
     || enabled.some((item) => item.needsClarification)
     || draft.calendarEvents.some((item) => item.enabled) || draft.retainSourceInPaperless) {
-    throw AppError.badRequest("intake_draft_invalid", "Keep the existing root and 1–30 immediate action steps; calendar events, references, and nested projects are not supported in a breakdown.");
+    throw AppError.badRequest("intake_draft_invalid", "Keep the existing root and up to 30 immediate action steps; calendar events, references, and nested projects are not supported in a breakdown.");
+  }
+  if (source?.status === "captured" && root.kind !== "project") {
+    throw AppError.badRequest("intake_draft_invalid", "A captured task must be explicitly converted to a project before it can receive steps.");
   }
   // The existing item's metadata is preserved. Expose only its title, notes,
   // and role in review rather than silently accepting edits to ignored fields.
@@ -68,8 +71,8 @@ export function applyBreakdown(
   context: MutationContext,
   viewerMemberId: number | null,
 ): IntakeApplyResults {
-  assertBreakdownDraft(draft);
   const task = breakdownTask(db, job.breakdownTaskId!, viewerMemberId);
+  assertBreakdownDraft(draft, task);
   if (breakdownSnapshot(db, task.id) !== job.breakdownSnapshotJson) {
     throw AppError.conflict("stale_write_conflict", "The task or its steps changed. Start a new breakdown and review the updated proposal.");
   }

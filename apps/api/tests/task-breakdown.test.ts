@@ -58,6 +58,16 @@ describe("reviewed task breakdown", () => {
     expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(2);
   });
 
+  it("accepts a useful proposal with no new children", async () => {
+    const task = createTask(ctx.handle.db, { title: "Send the signed form", status: "actionable" });
+    const { id, draft } = prepare(task.id);
+    draft.workItems = [draft.workItems[0]!];
+    await apply(id, draft);
+    expect(getTaskOrThrow(ctx.handle.db, task.id).title).toBe(task.title);
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
+    expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
+  });
+
   it.each(["recurring", "captured-child", "captured-in-project"])("rejects %s targets before creating an AI job", async (target) => {
     const parent = createTask(ctx.handle.db, { title: "Parent", status: "actionable" });
     const project = createProject(ctx.handle.db, { title: "Project" });
@@ -118,7 +128,7 @@ describe("reviewed task breakdown", () => {
     const task = createTask(ctx.handle.db, { title: "Holiday" });
     const { id, draft } = prepare(task.id);
     draft.workItems[0]!.title = "Updated holiday";
-    await expect(apply(id, draft)).rejects.toMatchObject({ code: "task_promotion_invalid" });
+    await expect(apply(id, draft)).rejects.toMatchObject({ code: "intake_draft_invalid" });
     expect(getTaskOrThrow(ctx.handle.db, task.id).title).toBe("Holiday");
     expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
     expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");

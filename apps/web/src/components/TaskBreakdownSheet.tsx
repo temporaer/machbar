@@ -12,7 +12,6 @@ export function TaskBreakdownSheet({ task, onClose }: { task: Task; onClose: () 
     <BottomSheet title={strings.taskBreakdown} onClose={() => !pending && onClose()}>
       <form className="stack" onSubmit={(event) => {
         event.preventDefault();
-        if (!instruction.trim()) return;
         void start(task, instruction).then((started) => { if (started) onClose(); });
       }}>
         <p>{task.title}</p>
@@ -26,7 +25,7 @@ export function TaskBreakdownSheet({ task, onClose }: { task: Task; onClose: () 
         {error ? <p role="alert">{error}</p> : null}
         <div className="row">
           <button type="button" className="btn" disabled={pending} onClick={onClose}>{strings.cancel}</button>
-          <button type="submit" className="btn btn-primary" disabled={pending || !instruction.trim()}>
+          <button type="submit" className="btn btn-primary" disabled={pending}>
             {strings.taskBreakdownGenerate}
           </button>
         </div>
