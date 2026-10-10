@@ -626,6 +626,7 @@ export function IntakeReviewPage() {
         </div>
       ) : null}
       {record.applyResults?.work.map((item) => <Link key={item.key} to={item.role === "story" ? `/projects/${item.workItemId}` : `/tasks/${item.workItemId}`}>{record.draft?.workItems.find((work) => work.key === item.key)?.title ?? item.key}</Link>)}
+      {record.refinement ? <Link className="btn btn-primary" to={record.refinement.targetType === "project" ? `/projects/${record.refinement.targetId}` : `/tasks/${record.refinement.targetId}`}>{strings.refinementOpenOriginal}</Link> : null}
       {record.status === "partially_applied" ? <button className="btn btn-primary" disabled={busy} onClick={() => void retryApply()}>{strings.intakeRetryApply}</button> : null}
       <Link className="btn" to="/today">{strings.toMachbar}</Link>
     </section>;

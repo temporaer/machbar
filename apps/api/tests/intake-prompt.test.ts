@@ -25,6 +25,26 @@ describe("intake AI instructions", () => {
     expect(next).toContain("identify one executable action");
     expect(next).toContain("one create_child recommendation at most");
   });
+  it("regenerates refinement from current context, original focus, previous choices and latest answer", () => {
+    const instructions = buildIntakeInstructions({
+      today: "2026-10-10", memberNames: [], hasText: true, attachmentCount: 0,
+      refinement: {
+        targetType: "task", intent: "improve", instruction: "Clarify the handoff",
+        context: '{"title":"Current graph"}',
+        previousProposal: '{"summary":"Earlier idea","changes":[{"title":"First suggestion","accepted":false}]}',
+        feedback: "Keep the first suggestion but replace the third",
+        validationFeedback: [{ path: ["changes", 0], code: "schema_invalid", message: "Use a valid target." }],
+        validationMessage: "A captured task needs an accepted project conversion before adding children.",
+      },
+    });
+    expect(instructions).toContain("complete replacement proposal, never a patch");
+    expect(instructions).toContain("Current graph");
+    expect(instructions).toContain("Clarify the handoff");
+    expect(instructions).toContain("First suggestion");
+    expect(instructions).toContain("Keep the first suggestion but replace the third");
+    expect(instructions).toContain("changes[0] | schema_invalid | Use a valid target.");
+    expect(instructions).toContain("A captured task needs an accepted project conversion");
+  });
   it("shares quality guidance and adds bounded editing semantics for task breakdown", () => {
     const input = { today: "2026-10-10", memberNames: ["Alex"], hasText: true, attachmentCount: 0,
       aiContext: { householdDescription: "", longTermDirection: "", suggestionGuidance: "Prefer 20-minute steps" } };

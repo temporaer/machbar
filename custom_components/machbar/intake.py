@@ -575,7 +575,7 @@ async def async_analyze(hass: Any, client: Any, entity_id: str | None, payload: 
         except Exception as err:
             _LOGGER.exception("Machbar AI Task generation failed")
             raise AdapterError("ai_task_failed") from err
-        return result.data if analysis_mode == "work_refinement" else normalize_plan(result.data)
+        return _normalize_ai_result(result.data, analysis_mode, structure)
 
     from homeassistant.components import conversation
     from homeassistant.helpers.chat_session import async_get_chat_session
@@ -611,7 +611,7 @@ async def async_analyze(hass: Any, client: Any, entity_id: str | None, payload: 
         except Exception as err:
             _LOGGER.exception("Machbar AI Task generation failed")
             raise AdapterError("ai_task_failed") from err
-        return result.data if analysis_mode == "work_refinement" else normalize_plan(result.data)
+        return _normalize_ai_result(result.data, analysis_mode, structure)
     except AdapterError:
         raise
     except Exception as err:
@@ -621,3 +621,12 @@ async def async_analyze(hass: Any, client: Any, entity_id: str | None, payload: 
             *(hass.async_add_executor_job(path.unlink, True) for path in paths),
             return_exceptions=True,
         )
+
+
+def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -> dict[str, Any]:
+    if analysis_mode != "work_refinement":
+        return normalize_plan(data)
+    try:
+        return structure(data)
+    except vol.Invalid as err:
+        raise _invalid(list(err.path), "the work refinement structure", str(err)) from err

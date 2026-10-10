@@ -8,6 +8,7 @@ import { createProject } from "../src/domain/storyCrud.js";
 import { applyIntake } from "../src/intake/apply.js";
 import { assertBreakdownDraft, breakdownSnapshot, breakdownTask } from "../src/intake/breakdown.js";
 import { getIntake, onIntakeAnalyzed } from "../src/intake/jobs.js";
+import { applyWorkRefinement, updateWorkRefinement } from "../src/intake/refinement.js";
 import { HomeAssistantRequestSignal } from "../src/integrations/homeAssistantRequests.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -66,6 +67,23 @@ describe("reviewed task breakdown", () => {
     expect(getTaskOrThrow(ctx.handle.db, task.id).title).toBe(task.title);
     expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
     expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
+  });
+
+  it("keeps a captured task captured for a zero-child or title-only proposal", async () => {
+    const task = createTask(ctx.handle.db, { title: "Kita-Formular" });
+    const empty = prepare(task.id);
+    empty.draft.workItems = [empty.draft.workItems[0]!];
+    await apply(empty.id, empty.draft);
+    expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("captured");
+    expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
+
+    const edited = prepare(task.id);
+    edited.draft.workItems = [edited.draft.workItems[0]!];
+    edited.draft.workItems[0]!.title = "Kita-Formular im Sekretariat abgeben";
+    await apply(edited.id, edited.draft);
+    expect(getTaskOrThrow(ctx.handle.db, task.id).title).toBe("Kita-Formular im Sekretariat abgeben");
+    expect(getTaskOrThrow(ctx.handle.db, task.id).status).toBe("captured");
+    expect(getTaskOrThrow(ctx.handle.db, task.id).kind).toBe("action");
   });
 
   it.each(["recurring", "captured-child", "captured-in-project"])("rejects %s targets before creating an AI job", async (target) => {
@@ -233,5 +251,65 @@ describe("reviewed task breakdown", () => {
     expect(refreshed.breakdownSnapshotJson).toBe(breakdownSnapshot(ctx.handle.db, task.id));
     expect(refreshed.breakdownInstruction).toBe("Make 20-minute steps");
     expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(1);
+  });
+
+  it("regenerates refinement with fresh child context and preserves the prior conversation", async () => {
+    const code = (await ctx.app.inject({ method: "POST", url: "/api/integrations/home-assistant/pairing-code" })).json().code;
+    await ctx.app.inject({ method: "POST", url: "/api/integrations/home-assistant/pair", payload: { pairingCode: code, protocolVersion: 3 } });
+    const task = createTask(ctx.handle.db, { title: "Kita-Formular", status: "actionable" });
+    const child = createChildTask(ctx.handle.db, task.id, { title: "Formular ausfüllen" });
+    const created = await ctx.app.inject({ method: "POST", url: `/api/intake/refinement/task/${task.id}`, payload: { intent: "improve", instruction: "Keep the focus on the handoff", expectedRevision: task.revision } });
+    expect(created.statusCode).toBe(201);
+    const id = created.json().id as string;
+    const initialRequest = ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.intakeJobId, id)).get()!;
+    const initialJob = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!;
+    expect(initialJob.refinementInstruction).toBe("Keep the focus on the handoff");
+    onIntakeAnalyzed(ctx.handle.db, initialJob, {
+      intent: "improve", summary: "Formular klarer benennen", disposition: "changes", question: null,
+      changes: [{ kind: "update_task", targetId: child.id, title: "Formular ausfüllen und im Sekretariat abgeben", rationale: "Erfasst die geplante Übergabe.", accepted: false }],
+    });
+    const changedChild = getTaskOrThrow(ctx.handle.db, child.id);
+    updateTask(ctx.handle.db, child.id, { title: "Formular prüfen", expectedRevision: changedChild.revision });
+    const retry = await ctx.app.inject({ method: "POST", url: `/api/intake/${id}/retry`, payload: { hint: "Keep the first suggestion but replace the third" } });
+    expect(retry.statusCode).toBe(200);
+    const regeneratedJob = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!;
+    const regeneratedRequest = ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.intakeJobId, id)).orderBy(schema.homeAssistantRequests.createdAt).all().at(-1)!;
+    const payload = JSON.parse(regeneratedRequest.payloadJson);
+    expect(regeneratedJob.refinementSnapshotJson).toBe(payload.text);
+    expect(payload.text).toContain("Formular prüfen");
+    expect(payload.instructions).toContain("Keep the focus on the handoff");
+    expect(payload.instructions).toContain("Keep the first suggestion but replace the third");
+    expect(payload.instructions).toContain("Formular ausfüllen und im Sekretariat abgeben");
+    expect(payload.instructions).toContain('"accepted":false');
+    expect(JSON.parse(initialRequest.payloadJson).instructions).toContain("Keep the focus on the handoff");
+
+    onIntakeAnalyzed(ctx.handle.db, regeneratedJob, {
+      intent: "improve", summary: "Übergabe klar benennen", disposition: "changes", question: null,
+      changes: [{ kind: "update_task", targetId: child.id, title: "Formular prüfen und im Sekretariat abgeben", rationale: "Berücksichtigt die aktuelle bestehende Aufgabe.", accepted: false }],
+    });
+    const ready = getIntake(ctx.handle.db, id, null);
+    const proposal = ready.refinement!.proposal!;
+    proposal.changes[0]!.accepted = true;
+    updateWorkRefinement(ctx.handle.db, id, null, ready.revision, proposal);
+    applyWorkRefinement(ctx.handle.db, id, null, ready.revision + 1, {});
+    expect(getTaskOrThrow(ctx.handle.db, child.id).title).toBe("Formular prüfen und im Sekretariat abgeben");
+  });
+
+  it("still rejects changes made after a regenerated refinement snapshot", async () => {
+    const code = (await ctx.app.inject({ method: "POST", url: "/api/integrations/home-assistant/pairing-code" })).json().code;
+    await ctx.app.inject({ method: "POST", url: "/api/integrations/home-assistant/pair", payload: { pairingCode: code, protocolVersion: 3 } });
+    const task = createTask(ctx.handle.db, { title: "Prepare backup restore test", status: "actionable" });
+    const created = await ctx.app.inject({ method: "POST", url: `/api/intake/refinement/task/${task.id}`, payload: { intent: "next_action", expectedRevision: task.revision } });
+    const id = created.json().id as string;
+    const initialJob = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!;
+    onIntakeAnalyzed(ctx.handle.db, initialJob, { intent: "next_action", summary: "Propose restore check", disposition: "changes", question: null, changes: [{ kind: "create_child", parentTaskId: task.id, title: "Restore a file from backup", rationale: "Check recoverability.", accepted: false }] });
+    await ctx.app.inject({ method: "POST", url: `/api/intake/${id}/retry`, payload: { hint: "Use current context" } });
+    const regenerated = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!;
+    onIntakeAnalyzed(ctx.handle.db, regenerated, { intent: "next_action", summary: "Propose restore check", disposition: "changes", question: null, changes: [{ kind: "create_child", parentTaskId: task.id, title: "Restore a file from backup", rationale: "Check recoverability.", accepted: true }] });
+    const ready = getIntake(ctx.handle.db, id, null);
+    const current = getTaskOrThrow(ctx.handle.db, task.id);
+    updateTask(ctx.handle.db, task.id, { notes: "Changed after regeneration", expectedRevision: current.revision });
+    expect(() => applyWorkRefinement(ctx.handle.db, id, null, ready.revision, {})).toThrow(/changed/i);
+    expect(getTaskOrThrow(ctx.handle.db, task.id).children).toHaveLength(0);
   });
 });

@@ -279,6 +279,7 @@ export const intakeJobs = sqliteTable(
     refinementTargetType: text("refinement_target_type", { enum: ["task", "project"] }),
     refinementTargetId: integer("refinement_target_id"),
     refinementIntent: text("refinement_intent"),
+    refinementInstruction: text("refinement_instruction"),
     refinementSnapshotJson: text("refinement_snapshot_json"),
     refinementJson: text("refinement_json"),
     planJson: text("plan_json"),

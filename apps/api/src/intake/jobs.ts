@@ -38,6 +38,7 @@ import { addExternalWorkItemRef } from "../domain/externalWorkItemRefs.js";
 import { getHouseholdAiContext } from "../aiContext.js";
 import { assertBreakdownDraft, breakdownSnapshot, breakdownSourceText, breakdownTask } from "./breakdown.js";
 import { assertRefinementContext } from "./refinement.js";
+import { buildRefinementSnapshot } from "./refinementSnapshot.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_INTAKE_TIMEZONE = "Europe/Berlin";
@@ -287,6 +288,7 @@ export async function createIntakeJob(
         refinementTargetType: input.refinement?.targetType ?? null,
         refinementTargetId: input.refinement?.targetId ?? null,
         refinementIntent: input.refinement?.intent ?? null,
+        refinementInstruction: input.refinement?.instruction?.trim() || null,
         refinementSnapshotJson: input.refinement?.snapshot ?? null,
         createdAt,
         updatedAt: createdAt,
@@ -411,7 +413,7 @@ export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSel
     }
     const proposal = unacceptedWorkRefinementProposal(parsed.data);
     try {
-      assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"));
+      assertRefinementContext(proposal, job.refinementTargetType, job.refinementTargetId!, JSON.parse(job.refinementSnapshotJson ?? "null"), false, db);
     } catch (error) {
       db.update(schema.intakeJobs).set({
         status: "analysis_failed",
@@ -634,12 +636,21 @@ export async function retryIntakeAnalysis(
     : null;
   const sourceText = sourceTask ? breakdownSourceText(sourceTask) : job.text;
   const sourceSnapshot = sourceTask ? breakdownSnapshot(db, sourceTask.id) : null;
+  const previousRefinementProposal = job.refinementJson
+    ? parseJson<unknown>(job.refinementJson)
+    : null;
+  let freshRefinementSnapshot: ReturnType<typeof buildRefinementSnapshot> | null = null;
   db.transaction((tx) => {
+    const txDb = tx as unknown as Db;
+    freshRefinementSnapshot = job.refinementTargetType && job.refinementTargetId !== null
+      ? buildRefinementSnapshot(txDb, job.refinementTargetType, job.refinementTargetId, viewerMemberId)
+      : null;
     tx.update(schema.intakeJobs).set({
       status: "queued",
       errorJson: null,
       retryHint,
       ...(sourceTask ? { text: sourceText, breakdownSnapshotJson: sourceSnapshot } : {}),
+      ...(freshRefinementSnapshot ? { text: freshRefinementSnapshot.snapshot, scope: freshRefinementSnapshot.scope, refinementSnapshotJson: freshRefinementSnapshot.snapshot } : {}),
       revision: job.revision + 1,
       updatedAt: nowIso(),
     }).where(eq(schema.intakeJobs.id, id)).run();
@@ -663,12 +674,16 @@ export async function retryIntakeAnalysis(
           refinement: job.refinementTargetType && job.refinementIntent ? {
             targetType: job.refinementTargetType,
             intent: job.refinementIntent as WorkRefinementIntent,
-            ...(retryHint ? { instruction: retryHint } : {}),
-            context: job.refinementSnapshotJson ?? job.text ?? "{}",
+            ...(job.refinementInstruction ? { instruction: job.refinementInstruction } : {}),
+            context: freshRefinementSnapshot?.snapshot ?? "{}",
+            ...(previousRefinementProposal ? { previousProposal: JSON.stringify(previousRefinementProposal) } : {}),
+            ...(retryHint ? { feedback: retryHint } : {}),
+            ...(validationIssues.length ? { validationFeedback: validationIssues } : {}),
+            ...(previousError?.message ? { validationMessage: previousError.message } : {}),
           } : undefined,
         }),
         ...(job.refinementTargetType ? { analysisMode: "work_refinement" } : {}),
-        text: sourceText,
+        text: freshRefinementSnapshot?.snapshot ?? sourceText,
         attachments: attachments
           .filter((attachment) => attachment.mimeType !== "text/plain")
           .map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })),

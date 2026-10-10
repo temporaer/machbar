@@ -51,7 +51,8 @@ export function assertBreakdownDraft(draft: IntakeDraft, source?: ReturnType<typ
     || draft.calendarEvents.some((item) => item.enabled) || draft.retainSourceInPaperless) {
     throw AppError.badRequest("intake_draft_invalid", "Keep the existing root and up to 30 immediate action steps; calendar events, references, and nested projects are not supported in a breakdown.");
   }
-  if (source?.status === "captured" && root.kind !== "project") {
+  const additions = enabled.filter((item) => item !== root);
+  if (source?.status === "captured" && additions.length > 0 && root.kind !== "project") {
     throw AppError.badRequest("intake_draft_invalid", "A captured task must be explicitly converted to a project before it can receive steps.");
   }
   // The existing item's metadata is preserved. Expose only its title, notes,

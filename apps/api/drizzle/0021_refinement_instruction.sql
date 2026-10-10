@@ -1,0 +1,1 @@
+ALTER TABLE `intake_jobs` ADD `refinement_instruction` text;
