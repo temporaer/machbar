@@ -22,6 +22,7 @@ export function IntakeProposalReview({
   onChange,
   onReminderChange,
   diagnosticHref,
+  breakdown = false,
 }: {
   draft: IntakeDraft;
   members: Member[];
@@ -36,6 +37,7 @@ export function IntakeProposalReview({
     reminderRowIds: readonly string[],
   ) => void;
   diagnosticHref: string;
+  breakdown?: boolean;
 }) {
   const strings = useStrings();
   const workItemDepth = workItemDepths(draft.workItems);
@@ -61,7 +63,8 @@ export function IntakeProposalReview({
   return (
     <>
       <header className="intake-review-header">
-        <h1>{strings.intakeReady}</h1>
+        <h1>{breakdown ? strings.taskBreakdownReview : strings.intakeReady}</h1>
+        {breakdown ? <p>{strings.taskBreakdownReviewHelp}</p> : null}
         {draft.summary.trim() ? (
           <p className="intake-review-summary">{draft.summary}</p>
         ) : null}
@@ -114,6 +117,7 @@ export function IntakeProposalReview({
               <IntakeWorkItemCard
                 key={item.key}
                 item={item}
+                breakdownRole={breakdown ? (item.key === "existing-task" ? "root" : "step") : undefined}
                 index={index}
                 depth={workItemDepth[index] ?? 0}
                 parentTitle={parentTitle}

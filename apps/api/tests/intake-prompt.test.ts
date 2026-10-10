@@ -3,6 +3,22 @@ import type { IntakePlan } from "@machbar/shared";
 import { buildIntakeInstructions } from "../src/intake/prompt.js";
 
 describe("intake AI instructions", () => {
+  it("shares quality guidance and adds bounded editing semantics for task breakdown", () => {
+    const input = { today: "2026-10-10", memberNames: ["Alex"], hasText: true, attachmentCount: 0,
+      aiContext: { householdDescription: "", longTermDirection: "", suggestionGuidance: "Prefer 20-minute steps" } };
+    const intake = buildIntakeInstructions(input);
+    const breakdown = buildIntakeInstructions({ ...input, breakdownInstruction: "Make this a project" });
+    for (const prompt of [intake, breakdown]) {
+      expect(prompt).toContain("A good task describes a concrete action");
+      expect(prompt).toContain("small enough for one practical work session");
+      expect(prompt).toContain("no web research capability");
+      expect(prompt).toContain("Prefer 20-minute steps");
+    }
+    expect(breakdown).toContain('key "existing-task"');
+    expect(breakdown).toContain("must not be emitted as new items");
+    expect(breakdown).toContain("Make this a project");
+    expect(intake).not.toContain("EDIT AN EXISTING TASK");
+  });
   it("keeps interpretation guidance concise", () => {
     const instructions = buildIntakeInstructions({
       today: "2026-09-28",

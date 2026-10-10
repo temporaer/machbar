@@ -35,6 +35,7 @@ export function IntakeWorkItemCard({
   onChange,
   onReminderChange,
   onKindChange,
+  breakdownRole,
 }: {
   item: IntakeDraftWorkItem;
   index: number;
@@ -52,8 +53,10 @@ export function IntakeWorkItemCard({
     reminderRowIds: readonly string[],
   ) => void;
   onKindChange: (kind: IntakeDraftWorkItem["kind"]) => void;
+  breakdownRole?: "root" | "step" | undefined;
 }) {
   const strings = useStrings();
+  const editableMetadata = breakdownRole !== "root";
   const { locale } = useLocale();
   const [editor, setEditor] = useState<Editor | null>(null);
   const closeEditor = () => setEditor(null);
@@ -105,19 +108,19 @@ export function IntakeWorkItemCard({
         aria-disabled={!item.enabled}
       >
         <div className="intake-proposal-heading">
-          <input
+          {breakdownRole === "root" ? <span>{strings.taskBreakdownExisting}</span> : <input
             type="checkbox"
             checked={item.enabled}
             aria-label={`${strings.intakeInclude}: ${item.title}`}
             onChange={(event) =>
               onChange({ ...item, enabled: event.target.checked })
             }
-          />
+          />}
           <h3>{item.title}</h3>
         </div>
         <div className="detail-meta-row intake-proposal-meta">
           <span className="detail-meta-static">{kindLabel}</span>
-          {item.kind !== "reference" && owner ? (
+          {editableMetadata && item.kind !== "reference" && owner ? (
             <DetailPropertyPill
               ariaLabel={`${strings.owner}: ${owner.name}`}
               onClick={() => setEditor("owner")}
@@ -125,7 +128,7 @@ export function IntakeWorkItemCard({
               <MemberLabel member={owner} />
             </DetailPropertyPill>
           ) : null}
-          {item.kind !== "reference" && item.dueDate !== null ? (
+          {editableMetadata && item.kind !== "reference" && item.dueDate !== null ? (
             <DetailPropertyPill
               label={strings.due}
               ariaLabel={`${strings.due}: ${due}`}
@@ -134,7 +137,7 @@ export function IntakeWorkItemCard({
               {due}
             </DetailPropertyPill>
           ) : null}
-          {item.kind !== "reference" && item.scheduledDate !== null ? (
+          {editableMetadata && item.kind !== "reference" && item.scheduledDate !== null ? (
             <DetailPropertyPill
               label={strings.scheduled}
               ariaLabel={`${strings.scheduled}: ${scheduled}`}
@@ -143,7 +146,7 @@ export function IntakeWorkItemCard({
               {scheduled}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && (item.revisitAt ?? item.notBeforeDate) != null ? (
+          {editableMetadata && item.kind === "action" && (item.revisitAt ?? item.notBeforeDate) != null ? (
             <DetailPropertyPill
               label={strings.notBefore}
               ariaLabel={`${strings.notBefore}: ${notBefore}`}
@@ -152,7 +155,7 @@ export function IntakeWorkItemCard({
               {notBefore}{availabilityTime ? ` · ${availabilityTime}` : ""}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && reminders.length ? (
+          {editableMetadata && item.kind === "action" && reminders.length ? (
             <DetailPropertyPill
               label={strings.reminder}
               ariaLabel={`${strings.reminder}: ${reminders.join(", ")}`}
@@ -189,7 +192,7 @@ export function IntakeWorkItemCard({
           </p>
         ) : null}
         <div className="intake-card-actions">
-          {item.kind !== "reference" && !item.ownerMemberId ? (
+          {editableMetadata && item.kind !== "reference" && !item.ownerMemberId ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.owner}`}
@@ -198,7 +201,7 @@ export function IntakeWorkItemCard({
               + {strings.owner}
             </DetailPropertyPill>
           ) : null}
-          {item.kind !== "reference" && item.dueDate === null ? (
+          {editableMetadata && item.kind !== "reference" && item.dueDate === null ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.due}`}
@@ -207,7 +210,7 @@ export function IntakeWorkItemCard({
               + {strings.due}
             </DetailPropertyPill>
           ) : null}
-          {item.kind !== "reference" && item.scheduledDate === null ? (
+          {editableMetadata && item.kind !== "reference" && item.scheduledDate === null ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.scheduled}`}
@@ -216,7 +219,7 @@ export function IntakeWorkItemCard({
               + {strings.scheduled}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && (item.revisitAt ?? item.notBeforeDate) == null ? (
+          {editableMetadata && item.kind === "action" && (item.revisitAt ?? item.notBeforeDate) == null ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.notBefore}`}
@@ -225,7 +228,7 @@ export function IntakeWorkItemCard({
               + {strings.notBefore}
             </DetailPropertyPill>
           ) : null}
-          {item.kind === "action" && !item.reminders.length ? (
+          {editableMetadata && item.kind === "action" && !item.reminders.length ? (
             <DetailPropertyPill
               variant="unset"
               ariaLabel={`+ ${strings.reminder}`}
@@ -252,6 +255,8 @@ export function IntakeWorkItemCard({
           onChange={onChange}
           onKindChange={onKindChange}
           onClose={closeEditor}
+          allowedKinds={breakdownRole === "root" ? ["action", "project"] : breakdownRole === "step" ? ["action"] : undefined}
+          allowClarification={!breakdownRole}
         />
       ) : null}
       {editor === "owner" ? (

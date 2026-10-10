@@ -377,6 +377,8 @@ export function IntakeReviewPage() {
 
   const enabledProposalCount = (draft?.calendarEvents.filter((event) => event.enabled).length ?? 0) +
     (draft?.workItems.filter((item) => item.enabled).length ?? 0);
+  const hasBreakdownSteps = !record?.breakdown ||
+    Boolean(draft?.workItems.some((item) => item.enabled && item.key !== "existing-task"));
   if (state.loading && !record) return <LoadingState />;
   if (state.error && !record) {
     return <section className="card stack" role="alert"><h1>{strings.intakeExpired}</h1><p>{state.error}</p><Link className="btn" to="/today">{strings.toMachbar}</Link></section>;
@@ -672,6 +674,7 @@ export function IntakeReviewPage() {
           onChange={updateDraft}
           onReminderChange={updateReminderDraft}
           diagnosticHref={diagnosticHref}
+          breakdown={Boolean(record.breakdown)}
         />
       </fieldset>
       {applyError ? (
@@ -736,7 +739,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || record.status !== "ready" || hasInvalidInputs}
+              disabled={busy || record.status !== "ready" || hasInvalidInputs || !hasBreakdownSteps}
               onClick={() => void applyInitial(true)}
             >
               {strings.intakeAcceptIncomplete}
@@ -745,10 +748,10 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs}
+              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs || !hasBreakdownSteps}
               onClick={() => void applyInitial(false)}
             >
-              {strings.intakeApplyCount(enabledProposalCount)}
+              {record.breakdown ? strings.taskBreakdownApply : strings.intakeApplyCount(enabledProposalCount)}
             </button>
           )}
           <button

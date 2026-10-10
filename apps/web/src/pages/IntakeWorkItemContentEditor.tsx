@@ -13,6 +13,8 @@ export function IntakeWorkItemContentEditor({
   onChange,
   onKindChange,
   onClose,
+  allowedKinds = ["action", "project", "reference"],
+  allowClarification = true,
 }: {
   item: IntakeDraftWorkItem;
   index: number;
@@ -20,6 +22,8 @@ export function IntakeWorkItemContentEditor({
   onChange: (item: IntakeDraftWorkItem) => void;
   onKindChange: (kind: IntakeDraftWorkItem["kind"]) => void;
   onClose: () => void;
+  allowedKinds?: IntakeDraftWorkItem["kind"][] | undefined;
+  allowClarification?: boolean;
 }) {
   const strings = useStrings();
   const [titleEditing, setTitleEditing] = useState(false);
@@ -87,15 +91,16 @@ export function IntakeWorkItemContentEditor({
           <span className="field-label">{strings.intakeType}</span>
           <select
             value={item.kind}
+            disabled={allowedKinds.length === 1}
             onChange={(event) =>
               onKindChange(
                 event.target.value as IntakeDraftWorkItem["kind"],
               )
             }
           >
-            <option value="action">{strings.task}</option>
-            <option value="project">{strings.project}</option>
-            <option value="reference">{strings.materialLabel}</option>
+            {allowedKinds.includes("action") ? <option value="action">{strings.task}</option> : null}
+            {allowedKinds.includes("project") ? <option value="project">{strings.project}</option> : null}
+            {allowedKinds.includes("reference") ? <option value="reference">{strings.materialLabel}</option> : null}
           </select>
         </label>
 
@@ -153,7 +158,7 @@ export function IntakeWorkItemContentEditor({
           <IntakeIssueText issues={issues} path={[...path, "notes"]} />
         </section>
 
-        {item.kind === "action" ? (
+        {allowClarification && item.kind === "action" ? (
           <label>
             <input
               type="checkbox"

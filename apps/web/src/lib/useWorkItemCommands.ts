@@ -34,6 +34,7 @@ function commandWorkItemId(command: WorkItemCommand): number | null {
     case "task.waitingLifecycle":
     case "task.startToday":
     case "task.endWaiting":
+    case "task.breakdown":
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
@@ -94,6 +95,7 @@ function commandWorkItemRole(command: WorkItemCommand): "task" | "story" | null 
     case "task.waitingLifecycle":
     case "task.startToday":
     case "task.endWaiting":
+    case "task.breakdown":
     case "task.split":
     case "task.assignOwner":
     case "task.changeProject":
@@ -276,6 +278,9 @@ export function useWorkItemCommands() {
         }
         case "task.endWaiting":
           void taskActions.resolveExternalWait(command.task);
+          return;
+        case "task.breakdown":
+          taskWorkflow.open("breakdown", command.taskId);
           return;
         case "task.split":
           taskWorkflow.open("split", command.taskId);

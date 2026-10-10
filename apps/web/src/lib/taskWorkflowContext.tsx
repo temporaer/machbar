@@ -30,6 +30,7 @@ export type TaskWorkflowKind =
   | "reminders"
   | "waitingLifecycle"
   | "split"
+  | "breakdown"
   | "assignOwner"
   | "changeProject"
   | "recurrence"

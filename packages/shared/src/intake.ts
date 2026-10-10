@@ -1206,6 +1206,8 @@ export interface IntakeApplyResults {
   paperlessDocumentIds: number[];
 }
 export interface IntakeRecord {
+  /** Present for proposals that edit an existing task rather than create a new root. */
+  breakdown?: { taskId: number; instruction: string } | null;
   id: string;
   status: IntakeStatus;
   revision: number;

@@ -485,6 +485,10 @@ export const api = {
     for (const file of input.files ?? []) body.append("files", file, file.name);
     return request<{ id: string }>("/intake", { method: "POST", body });
   },
+  startTaskBreakdown: (taskId: number, body: { expectedRevision: number; instruction: string }) =>
+    request<{ id: string }>(`/intake/task/${taskId}`, {
+      method: "POST", body: JSON.stringify(body),
+    }),
   getIntake: (id: string) => request<IntakeRecord>(`/intake/${encodeURIComponent(id)}`),
   updateIntakeDraft: (
     id: string,

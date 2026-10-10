@@ -35,6 +35,7 @@ import { buildIntakeInstructions } from "./prompt.js";
 import { deleteJobFiles, writeAttachment } from "./storage.js";
 import { addExternalWorkItemRef } from "../domain/externalWorkItemRefs.js";
 import { getHouseholdAiContext } from "../aiContext.js";
+import { assertBreakdownDraft, breakdownSnapshot, breakdownSourceText, breakdownTask } from "./breakdown.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_INTAKE_TIMEZONE = "Europe/Berlin";
@@ -224,9 +225,17 @@ export async function createIntakeJob(
     actorMemberId: number | null;
     createdByMemberId: number | null;
     scope: WorkItemScope;
+    breakdown?: { taskId: number; expectedRevision: number; instruction: string };
   },
 ): Promise<string> {
   const integration = activeHomeAssistantIntegration(db);
+  const sourceTask = input.breakdown
+    ? breakdownTask(db, input.breakdown.taskId, input.createdByMemberId)
+    : null;
+  if (sourceTask && sourceTask.revision !== input.breakdown!.expectedRevision) {
+    throw AppError.conflict("stale_write_conflict", "The task changed before starting the breakdown.");
+  }
+  const sourceSnapshot = sourceTask ? breakdownSnapshot(db, sourceTask.id) : null;
   if (!integration) throw AppError.conflict("home_assistant_not_connected", "Home Assistant is not connected.");
   if (integration.protocolVersion !== 3) throw AppError.conflict("home_assistant_protocol_outdated", "The Home Assistant integration must be updated.");
   const capabilities = integration.capabilitiesJson ? JSON.parse(integration.capabilitiesJson) as {
@@ -269,6 +278,9 @@ export async function createIntakeJob(
         revision: 1,
         text: input.text,
         retryHint: null,
+        breakdownTaskId: sourceTask?.id ?? null,
+        breakdownSnapshotJson: sourceSnapshot,
+        breakdownInstruction: input.breakdown?.instruction ?? null,
         createdAt,
         updatedAt: createdAt,
         expiresAt,
@@ -299,6 +311,7 @@ export async function createIntakeJob(
             hasText: input.text !== null,
             attachmentCount: binaryAttachments.length,
             aiContext: getHouseholdAiContext(db),
+            breakdownInstruction: input.breakdown?.instruction,
           }),
           text: input.text,
           attachments: attachmentRows.filter((attachment) => attachment.mimeType !== "text/plain")
@@ -337,6 +350,10 @@ export function getIntake(
     expiresAt: job.expiresAt,
     text: job.text,
     retryHint: job.retryHint,
+    breakdown: job.breakdownTaskId === null ? null : {
+      taskId: job.breakdownTaskId,
+      instruction: job.breakdownInstruction ?? "",
+    },
     attachments: db.select().from(schema.intakeAttachments).where(eq(schema.intakeAttachments.intakeJobId, id)).all()
       .map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })),
     draft,
@@ -380,6 +397,19 @@ export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSel
   }
   const normalized = normalizeIntakePlan(parsed.data as IntakePlan);
   const draft = buildDraftFromPlan(normalized.plan, members);
+  if (job.breakdownTaskId !== null) {
+    try {
+      assertBreakdownDraft(draft);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid task breakdown.";
+      db.update(schema.intakeJobs).set({
+        status: "analysis_failed",
+        errorJson: JSON.stringify(errorInfo("intake_plan_invalid", message)),
+        updatedAt: nowIso(), revision: job.revision + 1,
+      }).where(eq(schema.intakeJobs.id, job.id)).run();
+      return;
+    }
+  }
   db.update(schema.intakeJobs).set({
     status: "ready",
     planJson: JSON.stringify(normalized.plan),
@@ -537,11 +567,17 @@ export async function retryIntakeAnalysis(
   } : null;
   const promptNow = new Date();
   const promptTimezone = intakeTimezone(db);
+  const sourceTask = job.breakdownTaskId !== null
+    ? breakdownTask(db, job.breakdownTaskId, viewerMemberId)
+    : null;
+  const sourceText = sourceTask ? breakdownSourceText(sourceTask) : job.text;
+  const sourceSnapshot = sourceTask ? breakdownSnapshot(db, sourceTask.id) : null;
   db.transaction((tx) => {
     tx.update(schema.intakeJobs).set({
       status: "queued",
       errorJson: null,
       retryHint,
+      ...(sourceTask ? { text: sourceText, breakdownSnapshotJson: sourceSnapshot } : {}),
       revision: job.revision + 1,
       updatedAt: nowIso(),
     }).where(eq(schema.intakeJobs.id, id)).run();
@@ -560,8 +596,10 @@ export async function retryIntakeAnalysis(
           validationIssues,
           currentProposal,
           userInstruction: retryHint,
+          aiContext: getHouseholdAiContext(db),
+          breakdownInstruction: job.breakdownInstruction,
         }),
-        text: job.text,
+        text: sourceText,
         attachments: attachments
           .filter((attachment) => attachment.mimeType !== "text/plain")
           .map(({ id: attachmentId, filename, mimeType, sizeBytes }) => ({ id: attachmentId, filename, mimeType, sizeBytes })),

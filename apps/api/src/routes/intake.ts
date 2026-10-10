@@ -21,6 +21,7 @@ import { HomeAssistantRequestSignal } from "../integrations/homeAssistantRequest
 import { intakeDraftStructureSchema, isValidIanaTimezone } from "../schemas.js";
 import { z } from "zod";
 import { normalizeIntakeDraftInput } from "@machbar/shared";
+import { breakdownSourceText, breakdownTask } from "../intake/breakdown.js";
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "image/gif", "application/pdf", "text/plain"]);
@@ -90,6 +91,24 @@ export function registerIntakeRoutes(
   paperless: PaperlessClient | undefined,
   signal: HomeAssistantRequestSignal = new HomeAssistantRequestSignal(),
 ): void {
+  app.post<{ Params: { taskId: string } }>("/api/intake/task/:taskId", async (request, reply) => {
+    const taskId = parseOrThrow(z.coerce.number().int().positive(), request.params.taskId);
+    const body = parseOrThrow(z.object({
+      expectedRevision: z.number().int().positive(),
+      instruction: z.string().trim().min(1).max(2_000),
+    }).strict(), request.body);
+    const memberId = request.authMember?.id ?? actor(request);
+    const task = breakdownTask(db, taskId, memberId);
+    await purgeExpiredIntakes(db, env);
+    const id = await createIntakeJob(db, env, signal, {
+      text: breakdownSourceText(task), files: [],
+      actorMemberId: actor(request), createdByMemberId: memberId,
+      scope: task.scope,
+      breakdown: { taskId, ...body },
+    });
+    reply.status(201);
+    return { id };
+  });
   app.register(async (instance) => {
     await instance.register(multipart, { limits: { files: 5, fileSize: MAX_BYTES, fields: 3 }, throwFileSizeLimit: false });
     instance.post("/api/intake", { bodyLimit: MAX_BYTES * 5 + 1024 * 1024 }, async (request, reply) => {

@@ -1,5 +1,27 @@
 # Household workflow
 
+## Break down a task with instructions
+
+Choose **Struktur → Mit KI aufteilen…** on an open action task and describe the
+edits you want. For example: “Make steps I can finish in 20 minutes; turn this
+into a project and add a step to compare options.”
+
+The paired Home Assistant AI Task prepares an editable proposal, following the
+same actionability, sizing, and project-outcome guidance as other AI workflows,
+including your household preferences. It cannot research the web; it can add
+research as work for you to do.
+
+Review the original task's title and notes, choose whether it stays a task or
+becomes a project, and edit or exclude suggested steps before choosing
+**Geprüfte Änderungen übernehmen**. Existing steps are preserved. Conversion
+uses the usual restrictions and creates a backlog project. Captured Inbox tasks
+must become projects before receiving steps.
+
+Nothing changes during generation or when discarding a proposal. Apply is
+atomic. If the original task or its steps changed meanwhile, use **Änderungen
+anfragen** to regenerate and review again. No additional AI credentials or
+Home Assistant integration update is required.
+
 Machbar is built around a simple problem: household work is shared, but
 responsibility and next steps are often not.
 

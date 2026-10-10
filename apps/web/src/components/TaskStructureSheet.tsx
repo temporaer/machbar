@@ -28,6 +28,12 @@ export function TaskStructureSheet({ task, onClose }: { task: Task; onClose: () 
   return (
     <BottomSheet title={`${strings.structure}: ${task.title}`} onClose={onClose}>
       <div className="stack">
+        {task.kind === "action" && task.status !== "done" && task.status !== "cancelled" ? (
+          <button type="button" className="btn"
+            onClick={() => dispatch({ type: "task.breakdown", taskId: task.id })}>
+            {strings.taskBreakdown}
+          </button>
+        ) : null}
         {!hideSplit ? (
           <button
             type="button"
