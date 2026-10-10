@@ -719,9 +719,12 @@ def test_work_refinement_generation_schema_survives_ha_structured_output_adjustm
     assert converted["properties"]["intent"]["type"] == "string"
     assert converted["properties"]["disposition"]["type"] == "string"
     change = converted["properties"]["changes"]["items"]
-    assert change["additionalProperties"] is True
+    assert change["additionalProperties"] is False
     assert change["properties"]["kind"]["type"] == "string"
-    assert "enum" not in change["properties"]["kind"]
+    assert change["properties"]["kind"]["enum"] == [
+        "update_task", "update_project", "convert_task_to_project", "create_child",
+        "move_task", "add_dependency", "update_wait", "update_project_outcome", "advisory",
+    ]
 
     provider_shape = {
         "intent": "improve",
@@ -737,7 +740,6 @@ def test_work_refinement_generation_schema_survives_ha_structured_output_adjustm
             "notes": None,
             "projectId": None,
             "waitingFor": None,
-            "providerMetadata": "ignored by the adapter",
         }],
     }
     assert WORK_REFINEMENT_STRUCTURE(provider_shape)["changes"][0]["accepted"] is None
@@ -754,12 +756,13 @@ def test_work_refinement_schema_accepts_no_change_dispositions(disposition):
     assert WORK_REFINEMENT_STRUCTURE(proposal) == proposal
 
 
-def test_work_refinement_schema_leaves_semantic_validation_to_api():
+def test_work_refinement_schema_rejects_unknown_change_kind():
     proposal = {
         "intent": "structure", "summary": "Review", "disposition": "changes",
         "question": None, "changes": [{"kind": "rewrite_everything", "rationale": "bad"}],
     }
-    assert WORK_REFINEMENT_STRUCTURE(proposal) == proposal
+    with pytest.raises(vol.Invalid):
+        WORK_REFINEMENT_STRUCTURE(proposal)
     with pytest.raises(vol.Invalid):
         WORK_REFINEMENT_STRUCTURE({"intent": "improve"})
 
@@ -772,7 +775,7 @@ async def test_async_analyze_routes_refinement_and_regular_modes(hass):
         "intent": "improve", "summary": "Klarer benennen", "disposition": "changes",
         "question": None,
         "changes": [{"kind": "update_task", "targetId": 12, "title": "Kita-Formular abgeben",
-                     "notes": None, "projectId": None, "providerMetadata": "preserve for API validation",
+                     "notes": None, "projectId": None,
                      "rationale": "Der nächste Schritt wird klar."}],
     }
     regular = json.loads((Path(__file__).resolve().parents[1] / "packages/shared/fixtures/intake-plan/valid-all-day.json").read_text())
@@ -782,14 +785,13 @@ async def test_async_analyze_routes_refinement_and_regular_modes(hass):
         result = await async_analyze(hass, None, "ai_task.test", {"taskName": "Machbar", "instructions": "Review", "analysisMode": "work_refinement"})
         assert result["changes"][0]["accepted"] is False
         assert "projectId" not in result["changes"][0]
-        assert result["changes"][0]["providerMetadata"] == "preserve for API validation"
         assert generated.await_args_list[0].kwargs["structure"] is WORK_REFINEMENT_STRUCTURE
         normal = await async_analyze(hass, None, "ai_task.test", {"taskName": "Machbar", "instructions": "Review"})
         assert normal["summary"] == regular["summary"]
         assert generated.await_args_list[1].kwargs["structure"] is INTAKE_STRUCTURE
 
 
-async def test_async_analyze_preserves_provider_compatible_refinement_values_for_api_validation(hass):
+async def test_async_analyze_rejects_unknown_refinement_kind(hass):
     from homeassistant.components import ai_task
 
     hass.data[ai_task.DATA_COMPONENT] = SimpleNamespace(get_entity=lambda _entity_id: None)
@@ -797,5 +799,7 @@ async def test_async_analyze_preserves_provider_compatible_refinement_values_for
                  "changes": [{"kind": "unknown", "rationale": "not supported"}]}
     with patch("custom_components.machbar.intake.ai_task_capabilities", return_value={"state": "ok", "supportsAttachments": False}), \
          patch("homeassistant.components.ai_task.task.async_generate_data", AsyncMock(return_value=SimpleNamespace(data=malformed))):
-        result = await async_analyze(hass, None, "ai_task.test", {"taskName": "Machbar", "instructions": "Review", "analysisMode": "work_refinement"})
-    assert result["changes"][0]["kind"] == "unknown"
+        with pytest.raises(AdapterError) as err:
+            await async_analyze(hass, None, "ai_task.test", {"taskName": "Machbar", "instructions": "Review", "analysisMode": "work_refinement"})
+    assert err.value.code == "ai_task_invalid_response"
+    assert err.value.path == ["changes", 0, "kind"]

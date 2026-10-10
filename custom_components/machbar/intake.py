@@ -106,7 +106,7 @@ INTAKE_STRUCTURE = vol.Schema(
 def _refinement_change_schema() -> vol.Schema:
     return vol.Schema(
         {
-            _field("kind", str): str,
+            _field("kind", str): vol.In(("update_task", "update_project", "convert_task_to_project", "create_child", "move_task", "add_dependency", "update_wait", "update_project_outcome", "advisory")),
             _field("rationale", str): str,
             vol.Optional("accepted"): vol.Any(bool, None),
             vol.Optional("targetId"): vol.Any(int, None),
@@ -123,7 +123,7 @@ def _refinement_change_schema() -> vol.Schema:
             vol.Optional("criterionId"): vol.Any(int, None),
             vol.Optional("affectedIds"): vol.Any([int], None),
         },
-        extra=vol.ALLOW_EXTRA,
+        extra=vol.PREVENT_EXTRA,
     )
 
 

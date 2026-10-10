@@ -5,7 +5,7 @@
   "question": null,
   "changes": [
     {
-      "kind": "update_task",
+      "kind": "update_project",
       "targetId": 1000000348,
       "title": "Kellertreppe freiräumen und Entsorgungsweg festlegen",
       "notes": null,

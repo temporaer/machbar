@@ -13,7 +13,7 @@ import {
   normalizeWorkRefinementProposalInput,
   workRefinementProposalSchema,
 } from "@machbar/shared";
-import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
+import { closeTestContext, createTestContext, insertTestProject, type TestContext } from "./helpers.js";
 
 describe("AI work refinement proposals", () => {
   let ctx: TestContext;
@@ -77,10 +77,29 @@ describe("AI work refinement proposals", () => {
       expect(change?.accepted).toBe(false);
       expect(change).not.toHaveProperty("projectId");
       expect(change).not.toHaveProperty("waitingFor");
-      if (change?.kind === "update_task") {
+      if (change?.kind === "update_project") {
         expect(change.targetId).toBe(1000000348);
       }
     }
+  });
+
+  it("accepts the synthetic cellar-staircase project refinement end to end", () => {
+    const project = insertTestProject(ctx.handle.db, { id: 1000000348, title: "Kellertreppe", status: "backlog" });
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "project", project.id, null).snapshot;
+    const id = randomUUID();
+    const proposal = JSON.parse(readFileSync(new URL("../../../packages/shared/fixtures/work-refinement/cellar-staircase-1000000348.json", import.meta.url), "utf8")) as unknown;
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "analyzing", revision: 1,
+      text: snapshot, refinementTargetType: "project", refinementTargetId: project.id, refinementIntent: "improve",
+      refinementSnapshotJson: snapshot, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+
+    onIntakeAnalyzed(ctx.handle.db, ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!, proposal);
+
+    const ready = getIntake(ctx.handle.db, id, null);
+    expect(ready.status).toBe("ready");
+    expect(ready.refinement?.proposal?.changes[0]?.accepted).toBe(false);
   });
 
   it("persists field-level diagnostics for invalid refinement proposals", () => {
@@ -125,6 +144,43 @@ describe("AI work refinement proposals", () => {
     const mismatch = getIntake(ctx.handle.db, mismatchId, null);
     expect(mismatch.error?.message).toContain("wrong intent");
     expect(mismatch.error?.details?.issues?.[0]?.path).toEqual(["intent"]);
+  });
+
+  it("passes persisted refinement issues into corrective retry instructions", async () => {
+    const task = createTask(ctx.handle.db, { title: "Cellar staircase", status: "actionable" });
+    const id = randomUUID();
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    const now = new Date().toISOString();
+    ctx.handle.db.insert(schema.homeAssistantIntegrations).values({
+      instanceId: "retry-test",
+      tokenHash: "retry-test-token",
+      protocolVersion: 3,
+      connectedAt: now,
+      capabilitiesJson: JSON.stringify({ intake: { aiTask: { state: "ok" } } }),
+    }).run();
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "analyzing", revision: 1,
+      text: snapshot, refinementTargetType: "task", refinementTargetId: task.id, refinementIntent: "improve",
+      refinementSnapshotJson: snapshot, createdAt: now, updatedAt: now,
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+    onIntakeAnalyzed(ctx.handle.db, ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!, {
+      intent: "improve",
+      summary: "Klarer machen",
+      disposition: "changes",
+      question: null,
+      changes: [{ kind: "update_task", rationale: "Der nächste Schritt wird sichtbar." }],
+    });
+
+    const response = await ctx.app.inject({ method: "POST", url: `/api/intake/${id}/retry` });
+    expect(response.statusCode).toBe(200);
+    const request = ctx.handle.db.select().from(schema.homeAssistantRequests)
+      .where(eq(schema.homeAssistantRequests.intakeJobId, id))
+      .get();
+    expect(request).toBeDefined();
+    const instructions = JSON.parse(request!.payloadJson).instructions as string;
+    expect(instructions).toContain("changes[0].targetId");
+    expect(instructions).toContain("Required");
   });
 
   it("stores unaccepted recommendations and applies selected updates and children atomically", () => {
