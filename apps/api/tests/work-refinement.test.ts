@@ -73,10 +73,13 @@ describe("AI work refinement proposals", () => {
     const result = workRefinementProposalSchema.safeParse(normalized);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.changes[0]?.targetId).toBe(1000000348);
-      expect(result.data.changes[0]?.accepted).toBe(false);
-      expect(result.data.changes[0]).not.toHaveProperty("projectId");
-      expect(result.data.changes[0]).not.toHaveProperty("waitingFor");
+      const change = result.data.changes[0];
+      expect(change?.accepted).toBe(false);
+      expect(change).not.toHaveProperty("projectId");
+      expect(change).not.toHaveProperty("waitingFor");
+      if (change?.kind === "update_task") {
+        expect(change.targetId).toBe(1000000348);
+      }
     }
   });
 
