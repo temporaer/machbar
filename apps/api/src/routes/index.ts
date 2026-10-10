@@ -23,6 +23,7 @@ import type { HomeAssistantRequestSignal } from "../integrations/homeAssistantRe
 import { registerIntakeRoutes } from "./intake.js";
 import { registerCleanupRoundRoutes } from "./cleanupRounds.js";
 import { registerAiContextRoutes } from "./aiContext.js";
+import { registerReflectionRoutes } from "./reflection.js";
 
 export function registerRoutes(
   app: FastifyInstance,
@@ -34,6 +35,7 @@ export function registerRoutes(
   homeAssistantRequestSignal?: HomeAssistantRequestSignal,
 ) {
   registerActivityRoutes(app, db);
+  registerReflectionRoutes(app, db);
   registerContributionRoutes(app, db);
   registerMemberRoutes(app, db);
   registerTagRoutes(app, db);

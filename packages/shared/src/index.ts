@@ -139,6 +139,8 @@ export type ApiErrorCode =
   | "member_name_conflict"
   | "member_name_required"
   | "member_not_found"
+  | "reflection_briefing_query_invalid"
+  | "reflection_work_scope_forbidden"
   | "member_oidc_managed"
   | "mcp_oauth_insufficient_scope"
   | "mcp_oauth_invalid_token"
@@ -428,6 +430,107 @@ export interface ActivityEvent {
 export interface ActivityPage {
   items: ActivityEvent[];
   nextCursor: string | null;
+}
+
+export type ReflectionBriefingScope = "household" | "work" | "all";
+
+export interface ReflectionWorkItemFact {
+  id: number;
+  type: "task" | "project";
+  title: string;
+  notes?: string | null;
+  status: string;
+  scope: WorkItemScope;
+  href: string;
+  owner: { id: number; name: string } | null;
+  areaTags: string[];
+  dueDate: string | null;
+  scheduledDate: string | null;
+  revisitAt: string | null;
+  notBeforeAt?: string | null;
+  notBeforeDate?: string | null;
+  project: { id: number; title: string } | null;
+  waitingFor?: string | null;
+  dependencies?: Array<{ id: number; title: string; resolved: boolean }>;
+  completionCriteria?: Array<{ text: string; checked: boolean }>;
+}
+
+export interface ReflectionBriefing {
+  generatedAt: string;
+  subject: { id: number; name: string };
+  scope: ReflectionBriefingScope;
+  timezone: string;
+  window: { days: 30 | 90 | 180; startDate: string; endDate: string };
+  current: {
+    activeProjects: ReflectionWorkItemFact[];
+    executableNextActions: ReflectionWorkItemFact[];
+    waitingItems: ReflectionWorkItemFact[];
+    backlog: ReflectionWorkItemFact[];
+    areaCommitments: ReflectionWorkItemFact[];
+  };
+  history: {
+    finiteCompletions: Array<{
+      id: number | null;
+      type: "task" | "project";
+      title: string;
+      date: string;
+      href: string | null;
+      currentItemAvailable: boolean;
+    }>;
+    bulkCompletionGroups: Array<{
+      id: number;
+      title: string;
+      date: string;
+      count: number;
+      href: string | null;
+    }>;
+    recurringWork: Array<{
+      taskId: number;
+      title: string;
+      completed: number;
+      missed: number;
+      representatives: Array<{ date: string; result: "hit" | "miss" }>;
+    }>;
+    progress: {
+      lastOutcomeProgressAt: string | null;
+      lastWorkEnablingProgressAt: string | null;
+      lastActivityAt: string | null;
+      projectsWithRecordedChildOutcomes: Array<{ id: number; title: string; date: string; occurredAt: string; childId: number; childTitle: string }>;
+      checkedAcceptanceCriteria: Array<{ projectId: number; projectTitle: string; date: string }>;
+      verifiedUnblocking: Array<{ id: number; type: "task" | "project"; title: string; date: string; reason: string; href: string | null }>;
+    };
+    inactiveWork: Array<{
+      id: number;
+      type: "task" | "project";
+      title: string;
+      href: string;
+      classification: "actionable_no_recorded_progress" | "intentional_wait" | "future_planned" | "insufficient_evidence";
+      status: string | "unavailable";
+      lastOutcomeProgressAt: string | null;
+      lastWorkEnablingProgressAt: string | null;
+      lastActivityAt: string | null;
+      scheduledDate: string | null;
+      revisitAt: string | null;
+      dueDate: string | null;
+      waitingReason: string | null;
+      evidenceLimitations: string[];
+    }>;
+    postponements: Array<{
+      id: number;
+      type: "task" | "project";
+      title: string;
+      date: string;
+      from: string;
+      to: string;
+      href: string | null;
+    }>;
+    activityCounts: { administrative: number; finiteOutcomes: number; milestones: number; recurringOccurrences: number; explicitPostponements: number; unresolvedActiveWork: number };
+    evidence: {
+      incomplete: boolean;
+      notes: string[];
+    };
+  };
+  markdown: string;
 }
 
 export interface ContributionCategoryTotals {

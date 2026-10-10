@@ -1433,6 +1433,8 @@ const en = {
     activity_actor_not_found: "The selected person could not be found.",
     activity_cursor_invalid: "The activity page is invalid.",
     activity_query_invalid: "The activity filters are invalid.",
+    reflection_briefing_query_invalid: "The reflection briefing query is invalid.",
+    reflection_work_scope_forbidden: "Private-work reflection is available only to the selected member.",
     activity_digest_query_invalid: "The changes could not be loaded.",
     activity_digest_ack_invalid: "The changes could not be marked as read.",
     activity_digest_member_required: "Select a member first.",

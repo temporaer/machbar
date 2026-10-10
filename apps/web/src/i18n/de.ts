@@ -1431,6 +1431,8 @@ const extra = {
     activity_actor_not_found: "Die ausgewählte Person wurde nicht gefunden.",
     activity_cursor_invalid: "Die Aktivitätsseite ist ungültig.",
     activity_query_invalid: "Die Aktivitätsfilter sind ungültig.",
+    reflection_briefing_query_invalid: "Die Rückblick-Abfrage ist ungültig.",
+    reflection_work_scope_forbidden: "Der Rückblick auf private Arbeit ist nur für die ausgewählte Person verfügbar.",
     activity_digest_query_invalid: "Die Änderungen konnten nicht geladen werden.",
     activity_digest_ack_invalid: "Die Änderungen konnten nicht als gelesen markiert werden.",
     activity_digest_member_required: "Bitte wähle zuerst eine Person aus.",
