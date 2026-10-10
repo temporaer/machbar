@@ -25,6 +25,17 @@ describe("intake AI instructions", () => {
     expect(next).toContain("identify one executable action");
     expect(next).toContain("one create_child recommendation at most");
   });
+  it("keeps refinement operation fields and identifiers unambiguous", () => {
+    const prompt = buildIntakeInstructions({
+      today: "2026-10-10", memberNames: [], hasText: true, attachmentCount: 0,
+      refinement: { targetType: "project", intent: "structure", context: "{}" },
+    });
+    expect(prompt).toContain("only when both tasks already exist");
+    expect(prompt).toContain("Never reference a newly proposed create_child");
+    expect(prompt).toContain("position only there");
+    expect(prompt).toContain("update_project_outcome for acceptance criteria with outcome");
+    expect(prompt).toContain("convert_task_to_project only for the role change");
+  });
   it("regenerates refinement from current context, original focus, previous choices and latest answer", () => {
     const instructions = buildIntakeInstructions({
       today: "2026-10-10", memberNames: [], hasText: true, attachmentCount: 0,

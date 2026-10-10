@@ -103,27 +103,80 @@ INTAKE_STRUCTURE = vol.Schema(
 )
 
 
-def _refinement_change_schema() -> vol.Schema:
-    return vol.Schema(
-        {
-            _field("kind", str): vol.In(("update_task", "update_project", "convert_task_to_project", "create_child", "move_task", "add_dependency", "update_wait", "update_project_outcome", "advisory")),
-            _field("rationale", str): str,
-            vol.Optional("accepted"): vol.Any(bool, None),
-            vol.Optional("targetId"): vol.Any(int, None),
-            vol.Optional("taskId"): vol.Any(int, None),
-            vol.Optional("parentTaskId"): vol.Any(int, None),
-            vol.Optional("projectId"): vol.Any(int, None),
-            vol.Optional("dependsOnTaskId"): vol.Any(int, None),
-            vol.Optional("position"): vol.Any(int, None),
-            vol.Optional("title"): vol.Any(str, None),
-            vol.Optional("notes"): vol.Any(str, None),
-            vol.Optional("waitingFor"): vol.Any(str, None),
-            vol.Optional("revisitAt"): vol.Any(str, None),
-            vol.Optional("outcome"): vol.Any(str, None),
-            vol.Optional("criterionId"): vol.Any(int, None),
-            vol.Optional("affectedIds"): vol.Any([int], None),
-        },
-        extra=vol.PREVENT_EXTRA,
+_REFINEMENT_CHANGE_FIELDS: dict[str, dict[str, tuple[bool, Any]]] = {
+    "update_task": {
+        "targetId": (True, int),
+        "title": (False, vol.Any(str, None)),
+        "notes": (False, vol.Any(str, None)),
+    },
+    "update_project": {
+        "targetId": (True, int),
+        "title": (False, vol.Any(str, None)),
+        "notes": (False, vol.Any(str, None)),
+    },
+    "convert_task_to_project": {
+        "targetId": (True, int),
+    },
+    "create_child": {
+        "parentTaskId": (True, int),
+        "title": (True, str),
+        "notes": (False, vol.Any(str, None)),
+    },
+    "move_task": {
+        "targetId": (True, int),
+        "parentTaskId": (True, vol.Any(int, None)),
+        "projectId": (True, vol.Any(int, None)),
+        "position": (True, int),
+    },
+    "add_dependency": {
+        "taskId": (True, int),
+        "dependsOnTaskId": (True, int),
+    },
+    "update_wait": {
+        "taskId": (True, int),
+        "waitingFor": (True, str),
+        "revisitAt": (False, vol.Any(str, None)),
+    },
+    "update_project_outcome": {
+        "projectId": (True, int),
+        "criterionId": (False, vol.Any(int, None)),
+        "outcome": (True, str),
+    },
+    "advisory": {
+        "affectedIds": (True, [int]),
+        "title": (True, str),
+    },
+}
+
+_REFINEMENT_OPTIONAL_NULL_FIELDS = {"title", "criterionId"}
+_REFINEMENT_ALL_FIELDS = {
+    "kind",
+    "rationale",
+    "accepted",
+    *{field for fields in _REFINEMENT_CHANGE_FIELDS.values() for field in fields},
+}
+
+
+def _refinement_change_variant_schema(
+    kind: str, fields: dict[str, tuple[bool, Any]]
+) -> vol.Schema:
+    shape: dict[Any, Any] = {
+        _field("kind", vol.In((kind,))): vol.In((kind,)),
+        _field("rationale", str): str,
+        vol.Optional("accepted"): vol.Any(bool, None),
+    }
+    for name, (required, validator) in fields.items():
+        marker = _field(name, validator) if required else vol.Optional(name)
+        shape[marker] = validator
+    return vol.Schema(shape, extra=vol.PREVENT_EXTRA)
+
+
+def _refinement_change_schema() -> Any:
+    return vol.Any(
+        *(
+            _refinement_change_variant_schema(kind, fields)
+            for kind, fields in _REFINEMENT_CHANGE_FIELDS.items()
+        )
     )
 
 
@@ -626,43 +679,34 @@ async def async_analyze(hass: Any, client: Any, entity_id: str | None, payload: 
 def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -> dict[str, Any]:
     if analysis_mode != "work_refinement":
         return normalize_plan(data)
+    if not isinstance(data, dict) or not isinstance(data.get("changes"), list):
+        try:
+            structure(data)
+        except vol.Invalid as err:
+            raise _invalid(list(err.path), "the work refinement structure", str(err)) from err
+        raise _invalid(["changes"], "an array", value=data.get("changes"))
+
+    normalized_changes = []
+    for change in data["changes"]:
+        if not isinstance(change, dict):
+            normalized_changes.append(change)
+            continue
+        normalized = dict(change)
+        kind = normalized.get("kind")
+        allowed = _REFINEMENT_CHANGE_FIELDS.get(kind, {})
+        for field in _REFINEMENT_ALL_FIELDS:
+            if normalized.get(field) is None and (
+                field not in allowed or field in _REFINEMENT_OPTIONAL_NULL_FIELDS
+            ):
+                normalized.pop(field, None)
+        accepted = normalized.get("accepted", _MISSING)
+        if accepted is _MISSING or accepted is None or isinstance(accepted, bool):
+            normalized["accepted"] = False
+        normalized_changes.append(normalized)
+
+    candidate = {**data, "changes": normalized_changes}
     try:
-        normalized = structure(data)
+        normalized = structure(candidate)
     except vol.Invalid as err:
         raise _invalid(list(err.path), "the work refinement structure", str(err)) from err
-    changes = normalized["changes"]
-    allowed_fields = {
-        "update_task": {"kind", "rationale", "accepted", "targetId", "title", "notes"},
-        "update_project": {"kind", "rationale", "accepted", "targetId", "title", "notes"},
-        "convert_task_to_project": {"kind", "rationale", "accepted", "targetId"},
-        "create_child": {"kind", "rationale", "accepted", "parentTaskId", "title", "notes"},
-        "move_task": {"kind", "rationale", "accepted", "targetId", "parentTaskId", "projectId", "position"},
-        "add_dependency": {"kind", "rationale", "accepted", "taskId", "dependsOnTaskId"},
-        "update_wait": {"kind", "rationale", "accepted", "taskId", "waitingFor", "revisitAt"},
-        "update_project_outcome": {"kind", "rationale", "accepted", "projectId", "criterionId", "outcome"},
-        "advisory": {"kind", "rationale", "accepted", "affectedIds", "title"},
-    }
-    all_fields = {
-        "kind", "rationale", "accepted", "targetId", "taskId", "parentTaskId",
-        "projectId", "dependsOnTaskId", "position", "title", "notes", "waitingFor",
-        "revisitAt", "outcome", "criterionId", "affectedIds",
-    }
-    optional_non_nullable_fields = {"title", "criterionId"}
-    normalized["changes"] = [
-        {
-            **{
-                key: value
-                for key, value in change.items()
-                if key not in all_fields
-                or value is not None
-                or (
-                    value is None
-                    and key in allowed_fields.get(change.get("kind"), set())
-                    and key not in optional_non_nullable_fields
-                )
-            },
-            "accepted": False,
-        }
-        for change in changes
-    ]
     return normalized

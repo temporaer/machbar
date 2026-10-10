@@ -20,6 +20,7 @@ from custom_components.machbar.intake import (
     WORK_REFINEMENT_STRUCTURE,
     AdapterError,
     async_analyze,
+    _normalize_ai_result,
     normalize_plan,
 )
 
@@ -38,11 +39,11 @@ def _probatio_schema_from_voluptuous(schema):
                 marker_type = (
                     ProbatioRequired if isinstance(marker, vol.Required) else ProbatioOptional
                 )
-                marker = marker_type(
-                    marker.schema,
-                    default=getattr(marker, "default", ...),
-                    description=getattr(marker, "description", None),
-                )
+                marker_kwargs = {"description": getattr(marker, "description", None)}
+                default = getattr(marker, "default", vol.UNDEFINED)
+                if default is not vol.UNDEFINED:
+                    marker_kwargs["default"] = default
+                marker = marker_type(marker.schema, **marker_kwargs)
             converted[marker] = _probatio_schema_from_voluptuous(validator)
         return converted
     if isinstance(schema, list):
@@ -58,6 +59,10 @@ def _probatio_schema_from_voluptuous(schema):
 
 def _ha_2026_9_3_adjust_schema(schema):
     """Test-only reproduction of HA Core 2026.9.3's OpenAI schema adjustment."""
+    if "anyOf" in schema:
+        for variant in schema["anyOf"]:
+            _ha_2026_9_3_adjust_schema(variant)
+        return
     if schema["type"] == "object":
         schema.setdefault("strict", True)
         schema.setdefault("additionalProperties", False)
@@ -719,12 +724,32 @@ def test_work_refinement_generation_schema_survives_ha_structured_output_adjustm
     assert converted["properties"]["intent"]["type"] == "string"
     assert converted["properties"]["disposition"]["type"] == "string"
     change = converted["properties"]["changes"]["items"]
-    assert change["additionalProperties"] is False
-    assert change["properties"]["kind"]["type"] == "string"
-    assert change["properties"]["kind"]["enum"] == [
-        "update_task", "update_project", "convert_task_to_project", "create_child",
-        "move_task", "add_dependency", "update_wait", "update_project_outcome", "advisory",
-    ]
+    variants = change["anyOf"]
+    assert len(variants) == 9
+    expected_fields = {
+        "update_task": {"kind", "rationale", "accepted", "targetId", "title", "notes"},
+        "update_project": {"kind", "rationale", "accepted", "targetId", "title", "notes"},
+        "convert_task_to_project": {"kind", "rationale", "accepted", "targetId"},
+        "create_child": {"kind", "rationale", "accepted", "parentTaskId", "title", "notes"},
+        "move_task": {"kind", "rationale", "accepted", "targetId", "parentTaskId", "projectId", "position"},
+        "add_dependency": {"kind", "rationale", "accepted", "taskId", "dependsOnTaskId"},
+        "update_wait": {"kind", "rationale", "accepted", "taskId", "waitingFor", "revisitAt"},
+        "update_project_outcome": {"kind", "rationale", "accepted", "projectId", "criterionId", "outcome"},
+        "advisory": {"kind", "rationale", "accepted", "affectedIds", "title"},
+    }
+    for variant in variants:
+        kind = variant["properties"]["kind"]["enum"][0]
+        assert set(variant["properties"]) == expected_fields[kind]
+        assert variant["additionalProperties"] is False
+        assert variant["properties"]["kind"]["enum"] == [kind]
+    assert "title" not in variants[7]["properties"]
+    assert "notes" not in variants[7]["properties"]
+    assert "position" not in variants[7]["properties"]
+    assert "title" not in variants[2]["properties"]
+    assert "notes" not in variants[2]["properties"]
+    dependency = variants[5]
+    assert dependency["properties"]["taskId"]["type"] == "integer"
+    assert dependency["properties"]["dependsOnTaskId"]["type"] == "integer"
 
     provider_shape = {
         "intent": "improve",
@@ -742,7 +767,80 @@ def test_work_refinement_generation_schema_survives_ha_structured_output_adjustm
             "waitingFor": None,
         }],
     }
-    assert WORK_REFINEMENT_STRUCTURE(provider_shape)["changes"][0]["accepted"] is None
+    normalized = _normalize_ai_result(provider_shape, "work_refinement", WORK_REFINEMENT_STRUCTURE)
+    assert normalized["changes"][0]["accepted"] is False
+    assert "projectId" not in normalized["changes"][0]
+    assert "waitingFor" not in normalized["changes"][0]
+
+
+def test_work_refinement_adapter_rejects_non_null_fields_from_another_variant():
+    malformed = {
+        "intent": "improve",
+        "summary": "Klarer benennen",
+        "disposition": "changes",
+        "question": None,
+        "changes": [{
+            "kind": "update_project_outcome",
+            "projectId": 12,
+            "outcome": "Erledigt, wenn sichtbar.",
+            "title": "Nicht erlaubt",
+            "rationale": "Die Bedingung wird prüfbar.",
+        }],
+    }
+    with pytest.raises(AdapterError) as err:
+        _normalize_ai_result(malformed, "work_refinement", WORK_REFINEMENT_STRUCTURE)
+    assert err.value.code == "ai_task_invalid_response"
+    assert err.value.path[:2] == ["changes", 0]
+
+
+def test_work_refinement_adapter_rejects_missing_required_identifier():
+    malformed = {
+        "intent": "improve",
+        "summary": "Abhängigkeit prüfen",
+        "disposition": "changes",
+        "question": None,
+        "changes": [{
+            "kind": "add_dependency",
+            "taskId": None,
+            "dependsOnTaskId": 13,
+            "rationale": "Verknüpft die vorhandenen Aufgaben.",
+        }],
+    }
+    with pytest.raises(AdapterError) as err:
+        _normalize_ai_result(malformed, "work_refinement", WORK_REFINEMENT_STRUCTURE)
+    assert err.value.code == "ai_task_invalid_response"
+    assert err.value.path[:2] == ["changes", 0]
+
+
+@pytest.mark.parametrize(
+    ("kind", "fields"),
+    [
+        ("update_task", {"targetId": 12, "title": "Task", "notes": None}),
+        ("update_project", {"targetId": 12, "title": "Project", "notes": None}),
+        ("convert_task_to_project", {"targetId": 12}),
+        ("create_child", {"parentTaskId": 12, "title": "Child", "notes": None}),
+        ("move_task", {"targetId": 12, "parentTaskId": None, "projectId": None, "position": 0}),
+        ("add_dependency", {"taskId": 12, "dependsOnTaskId": 13}),
+        ("update_wait", {"taskId": 12, "waitingFor": "Reply", "revisitAt": None}),
+        ("update_project_outcome", {"projectId": 12, "criterionId": None, "outcome": "Done"}),
+        ("advisory", {"affectedIds": [12], "title": "Review"}),
+    ],
+)
+def test_work_refinement_adapter_accepts_each_typed_variant(kind, fields):
+    proposal = {
+        "intent": "structure",
+        "summary": "Typed proposal",
+        "disposition": "changes",
+        "question": None,
+        "changes": [{
+            "kind": kind,
+            "rationale": "A focused recommendation.",
+            "accepted": True,
+            **fields,
+        }],
+    }
+    normalized = _normalize_ai_result(proposal, "work_refinement", WORK_REFINEMENT_STRUCTURE)
+    assert normalized["changes"][0]["accepted"] is False
 
 
 @pytest.mark.parametrize("disposition", ["clarification", "leave_alone"])
