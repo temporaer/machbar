@@ -163,10 +163,9 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
   const currentVisibility = new Map<number, CurrentVisibility>(currentRows.map((r) => [r.id, { scope: r.scope as Scope, owner: r.role === "task" ? owners.get(r.id)?.ownerId ?? null : r.ownerMemberId }]));
   const lower = new Date(`${startDate}T00:00:00Z`); lower.setUTCDate(lower.getUTCDate() - 1); const upper = new Date(`${shiftDate(endDate, 1)}T00:00:00Z`); upper.setUTCDate(upper.getUTCDate() + 1);
   const eventRows = db.select().from(schema.activityEvents).where(and(gte(schema.activityEvents.createdAt, lower.toISOString()), lt(schema.activityEvents.createdAt, upper.toISOString()))).all();
-  let excludedHistorical = false;
   const inWindow = eventRows.filter((e) => { const d = localDate(new Date(e.createdAt), timezone); return d >= startDate && d <= endDate; }).filter((e) => {
     const scope = visibleScope(e.metadata, e.entityId, currentVisibility, options.subjectMemberId);
-    if (!scope || !inScope(scope)) { excludedHistorical = true; return false; } return true;
+    return scope !== null && inScope(scope);
   }).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id - b.id);
 
   const currentType = new Map(currentRows.map((r) => [r.id, r.role === "story" ? "project" as const : "task" as const]));
@@ -238,15 +237,14 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
   const oldEnough = (createdAt: string) => now.getTime() - Date.parse(createdAt) >= INACTIVE_COMMITMENT_AGE_DAYS * 86400000;
   const candidates: Array<{ item: TaskRecord | ProjectRecord; type: "task" | "project" }> = [
     ...projects.filter((p) => p.status === "active" && oldEnough(p.createdAt)).map((item) => ({ item, type: "project" as const })),
-    ...tasks.filter((t) => t.kind === "action" && t.repeatAfterDays === null && t.status === "actionable" && oldEnough(t.createdAt)).map((item) => ({ item, type: "task" as const })),
+    ...tasks.filter((t) => isTaskInWorkingSystem(t, projectStatusById) && t.kind === "action" && t.repeatAfterDays === null && t.status === "actionable" && oldEnough(t.createdAt)).map((item) => ({ item, type: "task" as const })),
   ];
   // Report the last verified outcome date even when it predates the selected lookback.
   // Project attribution still depends solely on the recorded historical projectContextId.
   const priorRows = db.select().from(schema.activityEvents).where(lt(schema.activityEvents.createdAt, lower.toISOString())).all();
   const priorVisible = priorRows.filter((e) => {
     const scope = visibleScope(e.metadata, e.entityId, currentVisibility, options.subjectMemberId);
-    if (!scope || !inScope(scope)) { excludedHistorical = true; return false; }
-    return isOutcome(e);
+    return scope !== null && inScope(scope) && isOutcome(e);
   });
   for (const { item, type } of candidates) {
     const itemEvents = byId.get(item.id) ?? [];
@@ -287,13 +285,12 @@ export function buildReflectionBriefing(db: Db, options: ReflectionBriefingOptio
       }
     }
     const limitations = itemEvents.length === 0 ? ["Kein sichtbares Ereignis im Zeitraum; das belegt nicht, dass keine Arbeit stattfand."] : [];
-    if (excludedHistorical) limitations.push("Ein Teil der Historie wurde wegen fehlender oder nicht passender Berechtigungsnachweise ausgelassen.");
     inactiveWork.push({ id: item.id, type, title: item.title, href: `#/${type === "project" ? "projects" : "tasks"}/${item.id}`, classification, status: item.status, lastOutcomeProgressAt, lastWorkEnablingProgressAt, lastActivityAt, scheduledDate: plannedDate, revisitAt, dueDate, waitingReason, evidenceLimitations: limitations });
   }
   const counts = { administrative: inWindow.filter((e) => adminKinds.has(e.kind) || (e.kind === "project_status_changed" && e.metadata.nextStatus !== "completed") || (e.kind === "task_status_changed" && e.metadata.nextStatus !== "done" && !e.metadata.recurrenceOccurrenceId) || e.metadata.changedFields?.some((f) => ["ownerMemberId", "reviewedAt", "tagIds", "contextIds", "title", "notes"].includes(f))).length, finiteOutcomes: finiteCompletions.length, milestones: inWindow.filter((e) => e.kind === "project_status_changed" && ["active", "completed"].includes(String(e.metadata.nextStatus))).length, recurringOccurrences: recurringWork.reduce((sum, x) => sum + x.completed + x.missed, 0), explicitPostponements: postponements.length, unresolvedActiveWork: inactiveWork.filter((x) => x.classification === "actionable_no_recorded_progress").length };
   const base: Omit<ReflectionBriefing, "markdown"> = { generatedAt: now.toISOString(), subject, scope: options.scope, timezone, window: { days: options.days, startDate, endDate }, current: { activeProjects, executableNextActions, waitingItems, backlog, areaCommitments }, history: {
     finiteCompletions, bulkCompletionGroups, recurringWork, inactiveWork, postponements,
     progress: { lastOutcomeProgressAt: [...outcomeDates.values()].sort().at(-1) ?? null, lastWorkEnablingProgressAt: [...enablingDates.values()].sort().at(-1) ?? null, lastActivityAt: [...activityDates.values()].sort().at(-1) ?? null, projectsWithRecordedChildOutcomes, checkedAcceptanceCriteria, verifiedUnblocking },
-    activityCounts: counts, evidence: { incomplete: true, notes: ["Die Historie beschreibt dokumentierte Machbar-Ereignisse, nicht alle tatsächlich geleistete Arbeit.", ...(excludedHistorical ? ["Ein Teil möglicher historischer Ereignisse wurde wegen fehlender Provenienz oder aktueller Sichtbarkeit nicht berücksichtigt."] : []), ...(occurrenceRows.some((r) => !visibleOccurrenceIds.has(r.id)) ? ["Einige Wiederholungsvorkommen haben keinen sichtbaren Aktivitätsnachweis und wurden ausgelassen."] : [])] } } };
+    activityCounts: counts, evidence: { incomplete: true, notes: ["Die Historie beschreibt dokumentierte Machbar-Ereignisse, nicht alle tatsächlich geleistete Arbeit.", "Berücksichtigt werden nur historische Einträge mit ausreichend geprüfter Sichtbarkeit; die verfügbare Historie kann dadurch unvollständig sein."] } } };
   return { ...base, markdown: renderMarkdown(base) };
 }

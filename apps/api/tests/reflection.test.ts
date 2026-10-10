@@ -159,14 +159,32 @@ describe("historical reflection briefing", () => {
     }
   });
 
-  it("does not select an actionable child from a backlog project as a current next action", () => {
+  it("does not select or report an actionable child from a backlog project as active work", () => {
     const mira = member("Mira");
-    const backlogProject = insertTestProject(ctx.handle.db, { title: "Backlog project", status: "backlog", scope: "household" });
-    const backlogChild = insertTestTask(ctx.handle.db, { title: "Backlog child action", projectId: backlogProject.id, status: "actionable" });
+    const old = "2025-01-15T00:00:00.000Z";
+    const backlogProject = insertTestProject(ctx.handle.db, { title: "Backlog project", status: "backlog", scope: "household", createdAt: old });
+    const backlogChild = insertTestTask(ctx.handle.db, { title: "Backlog child action", projectId: backlogProject.id, status: "actionable", createdAt: old, updatedAt: old });
     const standalone = insertTestTask(ctx.handle.db, { title: "Standalone action", status: "actionable" });
-    const briefing = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days: 30, scope: "household", now: new Date("2025-03-01T12:00:00Z") });
-    expect(briefing.current.executableNextActions.map((item) => item.id)).toContain(standalone.id);
-    expect(briefing.current.executableNextActions.map((item) => item.id)).not.toContain(backlogChild.id);
+    for (const days of [30, 90, 180] as const) {
+      const briefing = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days, scope: "household", now: new Date("2025-03-01T12:00:00Z") });
+      expect(briefing.current.executableNextActions.map((item) => item.id)).toContain(standalone.id);
+      expect(briefing.current.executableNextActions.map((item) => item.id)).not.toContain(backlogChild.id);
+      expect(briefing.history.inactiveWork.map((item) => item.id)).not.toContain(backlogChild.id);
+    }
+  });
+
+  it("keeps household briefings identical when another member adds private activity", () => {
+    const mira = member("Mira");
+    const sam = member("Sam");
+    const now = new Date("2025-03-01T12:00:00Z");
+    const before = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days: 30, scope: "household", now });
+
+    const privateTask = insertTestTask(ctx.handle.db, { title: "Sams privater Vorgang", scope: "work", ownerMemberId: sam.id, ownerInheritanceMode: "explicit" });
+    event({ kind: "task_status_changed", id: privateTask.id, title: privateTask.title, createdAt: "2025-02-10T12:00:00Z", metadata: { scope: "work", before: { effectiveOwnerId: sam.id }, after: { effectiveOwnerId: sam.id }, previousStatus: "actionable", nextStatus: "done" } });
+
+    const after = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days: 30, scope: "household", now });
+    expect(after).toEqual(before);
+    expect(JSON.stringify(after)).not.toContain("Sams privater Vorgang");
   });
 
   it("does not count project completion as an administrative change", () => {
