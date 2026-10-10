@@ -31,6 +31,7 @@ export interface ConvertTaskToStoryInput {
   title?: string;
   notes?: string;
   expectedRevision?: number;
+  preserveScheduledDate?: boolean;
 }
 
 type TaskToStoryInvalidReason =
@@ -155,7 +156,7 @@ export function convertTaskToStory(
         archivedAt: null,
         needsClarification: false,
         ownerMemberId,
-        scheduledDate: null,
+        scheduledDate: input.preserveScheduledDate ? task.scheduledDate : null,
         revisitAt: null,
         notBeforeAt: null,
         notBeforeDate: null,

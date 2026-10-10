@@ -1,4 +1,4 @@
-import type { Task, TaskReminderInput } from "./index.js";
+import type { Task, TaskReminderInput, TaskSize } from "./index.js";
 import type { CleanupRoundAiResponse, CleanupRoundAnalyzePayload } from "./cleanupRound.js";
 import {
   isAbsentOwnerSuggestion,
@@ -1215,7 +1215,19 @@ export interface IntakeApplyResults {
 }
 export interface IntakeRecord {
   /** Present for proposals that edit an existing task rather than create a new root. */
-  breakdown?: { taskId: number; instruction: string; existingChildren: Array<{ id: number; title: string; status: string; depth: number }> } | null;
+  breakdown?: {
+    taskId: number;
+    instruction: string;
+    sourceStatus: "captured" | "actionable" | "someday";
+    sourceOwnerMemberId: number | null;
+    scheduledDate: string | null;
+    revisitAt: string | null;
+    notBeforeAt: string | null;
+    notBeforeDate: string | null;
+    priority: number | null;
+    size: TaskSize | null;
+    existingChildren: Array<{ id: number; title: string; status: string; depth: number }>;
+  } | null;
   refinement?: { targetType: "task" | "project"; targetId: number; intent: import("./workRefinement.js").WorkRefinementIntent; proposal: import("./workRefinement.js").WorkRefinementProposal | null } | null;
   id: string;
   status: IntakeStatus;

@@ -148,6 +148,7 @@ export function IntakeReviewPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [retryHint, setRetryHint] = useState("");
+  const [projectDriverMemberId, setProjectDriverMemberId] = useState<number | null>(null);
   const [changeRequestOpen, setChangeRequestOpen] = useState(false);
   const [changeRequest, setChangeRequest] = useState("");
   const [invalidDateKeys, setInvalidDateKeys] = useState<Set<string>>(() => new Set());
@@ -267,6 +268,12 @@ export function IntakeReviewPage() {
   );
   const latestIssuesRef = useRef(issues);
   latestIssuesRef.current = issues;
+  const breakdownRoot = draft?.workItems.find((item) => item.enabled && item.parentKey === null);
+  const breakdownRequiresDriver =
+    Boolean(record?.breakdown) &&
+    record?.breakdown?.sourceStatus === "actionable" &&
+    record?.breakdown?.sourceOwnerMemberId === null &&
+    breakdownRoot?.kind === "project";
 
   useEffect(() => {
     if (state.data) {
@@ -467,7 +474,7 @@ export function IntakeReviewPage() {
     }
   };
   const applyInitial = async (acceptIncomplete = false) => {
-    if (record.status !== "ready" || !draft || busy || hasInvalidInputs || applyingRef.current || retryInFlightRef.current) return;
+    if (record.status !== "ready" || !draft || busy || hasInvalidInputs || applyingRef.current || retryInFlightRef.current || (breakdownRequiresDriver && projectDriverMemberId === null)) return;
     if (!acceptIncomplete && selectedIssues.length > 0) return;
     if (acceptIncomplete && !canAcceptIncomplete) return;
     applyingRef.current = true;
@@ -499,6 +506,7 @@ export function IntakeReviewPage() {
         expectedRevision,
         draft: latestDraft,
         timezone,
+        ...(projectDriverMemberId !== null ? { projectDriverMemberId } : {}),
         ...(acceptIncomplete ? { acceptIncomplete: true } : {}),
       });
       recordRef.current = nextRecord;
@@ -626,7 +634,12 @@ export function IntakeReviewPage() {
         </div>
       ) : null}
       {record.applyResults?.work.map((item) => <Link key={item.key} to={item.role === "story" ? `/projects/${item.workItemId}` : `/tasks/${item.workItemId}`}>{record.draft?.workItems.find((work) => work.key === item.key)?.title ?? item.key}</Link>)}
-      {record.refinement ? <Link className="btn btn-primary" to={record.refinement.targetType === "project" ? `/projects/${record.refinement.targetId}` : `/tasks/${record.refinement.targetId}`}>{strings.refinementOpenOriginal}</Link> : null}
+      {record.refinement ? <Link className="btn btn-primary" to={
+        record.applyResults?.work.find((item) => item.workItemId === record.refinement?.targetId)?.role === "story" ||
+        (record.applyResults === null && record.refinement.targetType === "project")
+          ? `/projects/${record.refinement.targetId}`
+          : `/tasks/${record.refinement.targetId}`
+      }>{strings.refinementOpenOriginal}</Link> : null}
       {record.status === "partially_applied" ? <button className="btn btn-primary" disabled={busy} onClick={() => void retryApply()}>{strings.intakeRetryApply}</button> : null}
       <Link className="btn" to="/today">{strings.toMachbar}</Link>
     </section>;
@@ -691,6 +704,14 @@ export function IntakeReviewPage() {
           diagnosticHref={diagnosticHref}
           breakdown={Boolean(record.breakdown)}
           existingChildren={record.breakdown?.existingChildren ?? []}
+          sourceStatus={record.breakdown?.sourceStatus ?? "captured"}
+          sourceOwnerMemberId={record.breakdown?.sourceOwnerMemberId ?? null}
+          projectDriverMemberId={projectDriverMemberId}
+          onProjectDriverChange={setProjectDriverMemberId}
+          sourceHasTaskOnlyMetadata={
+            record.breakdown?.priority !== null ||
+            record.breakdown?.size !== null
+          }
         />
       </fieldset>
       {applyError ? (
@@ -755,7 +776,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || record.status !== "ready" || hasInvalidInputs}
+              disabled={busy || record.status !== "ready" || hasInvalidInputs || breakdownRequiresDriver && projectDriverMemberId === null}
               onClick={() => void applyInitial(true)}
             >
               {strings.intakeAcceptIncomplete}
@@ -764,7 +785,7 @@ export function IntakeReviewPage() {
             <button
               type="button"
               className="btn btn-primary intake-approval-button"
-              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs}
+              disabled={busy || record.status !== "ready" || selectedIssues.length > 0 || hasInvalidInputs || breakdownRequiresDriver && projectDriverMemberId === null}
               onClick={() => void applyInitial(false)}
             >
               {record.breakdown ? strings.taskBreakdownApply : strings.intakeApplyCount(enabledProposalCount)}

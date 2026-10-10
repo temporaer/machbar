@@ -4,6 +4,8 @@ import type { IntakeRecord, WorkRefinementChange } from "@machbar/shared";
 import { api } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
+import { useIdentity } from "../lib/identity";
+import { MemberChoiceGroup } from "./MemberChoiceGroup";
 
 const labels = {
   update_task: "refinementTitle", update_project: "refinementTitle", convert_task_to_project: "refinementConvert", create_child: "refinementCreate",
@@ -13,6 +15,7 @@ const labels = {
 
 export function WorkRefinementReview({ record, onChange }: { record: IntakeRecord; onChange: (record: IntakeRecord) => void }) {
   const strings = useStrings();
+  const { members } = useIdentity();
   const navigate = useNavigate();
   const refinement = record.refinement;
   const [proposalDraft, setProposalDraft] = useState(refinement?.proposal ?? null);
@@ -21,6 +24,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [projectDriverMemberId, setProjectDriverMemberId] = useState<number | null>(null);
   if (!refinement || !proposal) return null;
   const update = (index: number, patch: Partial<WorkRefinementChange>) => {
     const changes = proposal.changes.map((item, i) => i === index ? { ...item, ...patch } as WorkRefinementChange : item);
@@ -38,7 +42,10 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     try {
       const current = await api.updateWorkRefinement(record.id, { expectedRevision: record.revision, proposal });
       onChange(current);
-      onChange(await api.applyWorkRefinement(record.id, { expectedRevision: current.revision }));
+      onChange(await api.applyWorkRefinement(record.id, {
+        expectedRevision: current.revision,
+        ...(projectDriverMemberId !== null ? { projectDriverMemberId } : {}),
+      }));
     } catch (cause) { setError(localizedErrorMessage(cause, strings)); }
     finally { setBusy(false); }
   };
@@ -95,6 +102,31 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     .sort((a, b) => a[1].position - b[1].position);
   const targetPath = refinement.targetType === "project" ? `/projects/${refinement.targetId}` : `/tasks/${refinement.targetId}`;
   const leaveAlone = proposal.disposition === "leave_alone";
+  let source: Record<string, unknown> | null = null;
+  try {
+    source = record.text ? JSON.parse(record.text) as Record<string, unknown> : null;
+  } catch {
+    source = null;
+  }
+  const sourceStatus = source?.status;
+  const sourceOwnerMemberId = typeof source?.ownerMemberId === "number" ? source.ownerMemberId : null;
+  const conversion = proposal.changes.find(
+    (change) => change.kind === "convert_task_to_project" &&
+      change.targetId === refinement.targetId,
+  );
+  const activeConversion =
+    conversion?.accepted === true &&
+    refinement.targetType === "task" &&
+    sourceStatus === "actionable";
+  const requiresDriver = activeConversion && sourceOwnerMemberId === null;
+  const hasUnsupportedTiming = activeConversion && (
+    source?.revisitAt != null || source?.notBeforeAt != null || source?.notBeforeDate != null
+  );
+  const acceptedTaskConversion =
+    conversion?.accepted === true && refinement.targetType === "task";
+  const hasTaskOnlyMetadata = acceptedTaskConversion && (
+    source?.priority != null || source?.size != null
+  );
   const canRegenerate = record.status === "ready" || record.status === "analysis_failed";
   const hasRetryFeedback = answer.trim().length > 0;
   return <main className="page stack">
@@ -106,6 +138,31 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
       </>}
       {record.error ? <p role="alert" className="error-text">{record.error.message}</p> : null}
       {!leaveAlone ? proposal.changes.map((change, index) => <article className="card stack" key={`${change.kind}-${index}`}>
+        {change.kind === "convert_task_to_project" && change.targetId === refinement.targetId && change.accepted ? (
+          <section className="card stack">
+            <strong>{activeConversion ? strings.aiProjectWillBeActive : strings.aiProjectWillBeBacklog}</strong>
+            {activeConversion && sourceOwnerMemberId !== null ? (
+              <p>{strings.aiProjectDriverLabel}: {members.find((member) => member.id === sourceOwnerMemberId)?.name ?? sourceOwnerMemberId}</p>
+            ) : null}
+            {requiresDriver ? (
+              <>
+                <p>{strings.aiProjectDriverHint}</p>
+                <MemberChoiceGroup
+                  label={strings.aiProjectDriverLabel}
+                  idPrefix="refinement-project-driver"
+                  members={members}
+                  value={projectDriverMemberId}
+                  onChange={(memberId) => {
+                    if (memberId !== null) setProjectDriverMemberId(memberId);
+                  }}
+                  unassignedLabel={null}
+                />
+              </>
+            ) : null}
+            {hasUnsupportedTiming ? <p role="alert">{strings.aiProjectTimingWarning}</p> : null}
+            {hasTaskOnlyMetadata ? <p role="status">{strings.aiProjectMetadataWarning}</p> : null}
+          </section>
+        ) : null}
         {change.kind === "create_child" && proposal.changes.some((candidate) => candidate.kind === "convert_task_to_project" && candidate.targetId === change.parentTaskId) ? <p className="muted">{strings.refinementRequiresConversion}</p> : null}
         <label className="inline-row"><input type="checkbox" checked={change.accepted} disabled={change.kind === "advisory" || busy} onChange={(event) => {
           const checked = event.target.checked;
@@ -141,7 +198,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         {leaveAlone
           ? <button className="btn btn-primary" disabled={busy || record.status !== "ready"} onClick={() => void apply()}>{strings.refinementDone}</button>
           : <>
-            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || invalidSelection} onClick={() => void apply()}>{strings.refinementApply}</button>
+            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || invalidSelection || hasUnsupportedTiming || requiresDriver && projectDriverMemberId === null} onClick={() => void apply()}>{strings.refinementApply}</button>
             <button className="btn" disabled={busy} onClick={() => void save()}>{strings.save}</button>
             <button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button>
           </>}

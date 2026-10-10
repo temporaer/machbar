@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { IntakeApplyResults, IntakeDraft, Task } from "@machbar/shared";
 import { canBreakDownTask } from "@machbar/shared";
 import type { Db } from "../db/client.js";
@@ -6,7 +6,11 @@ import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
 import { createChildTask, createTask, updateTask } from "../domain/taskCrud.js";
-import { convertTaskToStory } from "../domain/roleConversion.js";
+import { updateProject } from "../domain/storyCrud.js";
+import {
+  beginCommitmentConversion,
+  finishCommitmentConversion,
+} from "./commitmentPreservingConversion.js";
 import type { MutationContext } from "../domain/workItemShared.js";
 import { getDescendantIds } from "../repo/treeRepo.js";
 
@@ -71,6 +75,7 @@ export function applyBreakdown(
   draft: IntakeDraft,
   context: MutationContext,
   viewerMemberId: number | null,
+  projectDriverMemberId?: number,
 ): IntakeApplyResults {
   const task = breakdownTask(db, job.breakdownTaskId!, viewerMemberId);
   assertBreakdownDraft(draft, task);
@@ -79,11 +84,13 @@ export function applyBreakdown(
   }
   const root = draft.workItems.find((item) => item.enabled && item.key === BREAKDOWN_ROOT_KEY)!;
   const converted = root.kind === "project";
+  let conversion: ReturnType<typeof beginCommitmentConversion> | null = null;
   if (converted) {
-    convertTaskToStory(db, task.id, {
-      status: "backlog", title: root.title, notes: root.notes ?? "",
-      expectedRevision: task.revision,
+    conversion = beginCommitmentConversion(db, task.id, projectDriverMemberId, viewerMemberId, context);
+    const project = updateProject(db, task.id, {
+      title: root.title, notes: root.notes ?? "", expectedRevision: conversion.projectRevision,
     }, context);
+    conversion = { ...conversion, projectRevision: project.revision };
   } else if (root.title !== task.title || (root.notes ?? "") !== task.notes) {
     updateTask(db, task.id, {
       title: root.title, notes: root.notes ?? "", expectedRevision: task.revision,
@@ -105,6 +112,15 @@ export function applyBreakdown(
       ? createTask(db, { ...input, projectId: task.id }, context)
       : createChildTask(db, task.id, input, context);
     results.work.push({ key: item.key, kind: "action", workItemId: child.id, role: "task" });
+  }
+  if (conversion) {
+    const project = conversion.projectId;
+    const current = db.select({ revision: schema.workItems.revision }).from(schema.workItems)
+      .where(eq(schema.workItems.id, project)).get();
+    finishCommitmentConversion(db, {
+      ...conversion,
+      projectRevision: current?.revision ?? conversion.projectRevision,
+    }, context);
   }
   return results;
 }

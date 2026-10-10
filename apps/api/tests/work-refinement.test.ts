@@ -86,6 +86,34 @@ describe("AI work refinement proposals", () => {
     expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all().map((row) => row.title)).toEqual(["Klären, ob noch die Auswahl oder nur die Montage ansteht"]);
   });
 
+  it("activates an actionable conversion with the selected driver without assigning children to that driver", () => {
+    const driver = ctx.handle.db.insert(schema.members).values({ name: "Driver", color: "#123456" }).returning().get();
+    const task = createTask(ctx.handle.db, { title: "Sommerfest", status: "actionable" });
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    const id = randomUUID();
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "ready", revision: 1,
+      text: snapshot, refinementTargetType: "task", refinementTargetId: task.id,
+      refinementIntent: "structure", refinementSnapshotJson: snapshot,
+      refinementJson: JSON.stringify({
+        intent: "structure", summary: "Make the plan actionable.", disposition: "changes", question: null,
+        changes: [
+          { kind: "convert_task_to_project", targetId: task.id, rationale: "Several steps are needed.", accepted: true },
+          { kind: "create_child", parentTaskId: task.id, title: "Choose a date", notes: null, rationale: "Start with the first decision.", accepted: true },
+        ],
+      }),
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+
+    applyWorkRefinement(ctx.handle.db, id, null, 1, {}, driver.id);
+    const converted = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.id, task.id)).get()!;
+    const child = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).get()!;
+    expect(converted.role).toBe("story");
+    expect(converted.status).toBe("active");
+    expect(converted.ownerMemberId).toBe(driver.id);
+    expect(child.ownerMemberId).toBeNull();
+  });
+
   it("rejects a selected captured-task child when its conversion is excluded", () => {
     const task = createTask(ctx.handle.db, { title: "Neue Haustür", status: "captured" });
     const id = randomUUID();

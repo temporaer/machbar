@@ -1662,6 +1662,99 @@ describe("IntakeReviewPage", () => {
     expect(screen.getByRole("link", { name: "Zu Machbar" })).toHaveAttribute("href", "/today");
   });
 
+  it("shows active conversion and requires a driver for an ownerless actionable breakdown", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      breakdown: {
+        taskId: 27,
+        instruction: "Make steps",
+        sourceStatus: "actionable",
+        sourceOwnerMemberId: null,
+        scheduledDate: null,
+        revisitAt: null,
+        notBeforeAt: null,
+        notBeforeDate: null,
+        priority: null,
+        size: null,
+        existingChildren: [],
+      },
+      draft: {
+        ...draft,
+        workItems: [{ ...draft.workItems[0]!, key: "existing-task", kind: "project" }],
+      },
+    } as never);
+    renderPage();
+    expect(await screen.findByText("Wird aktives Projekt – bleibt in deiner aktiven Arbeit.")).toBeInTheDocument();
+    expect(screen.getByText("Die verantwortliche Person koordiniert und schützt den Fortschritt; sie muss nicht alle Schritte selbst ausführen.")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Wer sorgt dafür, dass dieses Projekt abgeschlossen wird?" })).toBeInTheDocument();
+  });
+
+  it("shows backlog conversion for a someday breakdown without requiring a driver", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record(),
+      breakdown: {
+        taskId: 27,
+        instruction: "Make steps",
+        sourceStatus: "someday",
+        sourceOwnerMemberId: null,
+        scheduledDate: null,
+        revisitAt: null,
+        notBeforeAt: null,
+        notBeforeDate: null,
+        priority: null,
+        size: null,
+        existingChildren: [],
+      },
+      draft: {
+        ...draft,
+        workItems: [{ ...draft.workItems[0]!, key: "existing-task", kind: "project" }],
+      },
+    } as never);
+    renderPage();
+    expect(await screen.findByText("Wird Backlog-Projekt.")).toBeInTheDocument();
+    expect(screen.queryByText("Wähle eine verantwortliche Person für das Projekt.")).not.toBeInTheDocument();
+  });
+
+  it("opens the applied refinement at the resulting project route", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record("applied"),
+      draft: null,
+      refinement: {
+        targetType: "task",
+        targetId: 27,
+        intent: "structure",
+        proposal: null,
+      },
+      applyResults: {
+        work: [{ key: "refinement-target", kind: "project", workItemId: 27, role: "story" }],
+        calendar: [],
+        paperlessDocumentIds: [],
+      },
+    } as never);
+    renderPage();
+    expect(await screen.findByRole("link", { name: "Zur ursprünglichen Aufgabe" })).toHaveAttribute("href", "/projects/27");
+  });
+
+  it("keeps an ordinary applied refinement on the task route", async () => {
+    mockedApi.getIntake.mockResolvedValue({
+      ...record("applied"),
+      draft: null,
+      refinement: {
+        targetType: "task",
+        targetId: 27,
+        intent: "improve",
+        proposal: null,
+      },
+      applyResults: {
+        work: [{ key: "refinement-target", kind: "action", workItemId: 27, role: "task" }],
+        calendar: [],
+        paperlessDocumentIds: [],
+      },
+    } as never);
+    renderPage();
+    expect(await screen.findByRole("link", { name: "Zur ursprünglichen Aufgabe" })).toHaveAttribute("href", "/tasks/27");
+  });
+
   it("provides an exit for calendar-only applied results with no created work", async () => {
     mockedApi.getIntake.mockResolvedValue({
       ...record("applied"),

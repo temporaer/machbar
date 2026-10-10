@@ -32,6 +32,7 @@ import {
 } from "../integrations/homeAssistantRequests.js";
 import { intakePlanStructureSchema } from "../schemas.js";
 import { nowIso } from "../domain/workItemShared.js";
+import { lifecycleToTaskStatus, type WorkItemLifecycle } from "../domain/workItem.js";
 import { buildIntakeInstructions } from "./prompt.js";
 import { deleteJobFiles, writeAttachment } from "./storage.js";
 import { addExternalWorkItemRef } from "../domain/externalWorkItemRefs.js";
@@ -358,6 +359,22 @@ export function getIntake(
   const draft = normalizeStoredIntakeDraft(parseJson<unknown>(job.draftJson));
   const error = parseJson<IntakeErrorInfo>(job.errorJson);
   const integration = activeHomeAssistantIntegration(db);
+  const breakdownRows = job.breakdownSnapshotJson ? JSON.parse(job.breakdownSnapshotJson) as Array<{
+    id: number;
+    parentId: number | null;
+    title: string;
+    status: WorkItemLifecycle;
+    ownerMemberId: number | null;
+    scheduledDate: string | null;
+    revisitAt: string | null;
+    notBeforeAt: string | null;
+    notBeforeDate: string | null;
+    priority: number | null;
+    size: "S" | "M" | "L" | "XL" | null;
+  }> : [];
+  const breakdownSource = job.breakdownTaskId === null
+    ? null
+    : breakdownRows.find((row) => row.id === job.breakdownTaskId) ?? null;
   return {
     id: job.id,
     status: (job.status === "queued" && request?.status === "leased" ? "analyzing" : job.status) as IntakeRecord["status"],
@@ -369,8 +386,19 @@ export function getIntake(
     breakdown: job.breakdownTaskId === null ? null : {
       taskId: job.breakdownTaskId,
       instruction: job.breakdownInstruction ?? "",
+      sourceStatus: (() => {
+        const status = breakdownSource ? lifecycleToTaskStatus(breakdownSource.status) : "captured";
+        return status === "captured" || status === "actionable" || status === "someday" ? status : "captured";
+      })(),
+      sourceOwnerMemberId: breakdownSource?.ownerMemberId ?? null,
+      scheduledDate: breakdownSource?.scheduledDate ?? null,
+      revisitAt: breakdownSource?.revisitAt ?? null,
+      notBeforeAt: breakdownSource?.notBeforeAt ?? null,
+      notBeforeDate: breakdownSource?.notBeforeDate ?? null,
+      priority: breakdownSource?.priority ?? null,
+      size: breakdownSource?.size ?? null,
       existingChildren: (() => {
-        const rows = job.breakdownSnapshotJson ? JSON.parse(job.breakdownSnapshotJson) as Array<{ id: number; parentId: number | null; title: string; status: string }> : [];
+        const rows = breakdownRows;
         const byParent = new Map<number, typeof rows>();
         for (const row of rows) if (row.parentId !== null) byParent.set(row.parentId, [...(byParent.get(row.parentId) ?? []), row]);
         const result: Array<{ id: number; title: string; status: string; depth: number }> = [];

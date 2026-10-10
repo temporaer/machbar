@@ -79,6 +79,50 @@ describe("WorkRefinementReview", () => {
     expect(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" })).toBeDisabled();
   });
 
+  it("warns about task-only metadata while an actionable conversion is selected", async () => {
+    const current = record();
+    current.text = JSON.stringify({
+      id: 4,
+      title: "Haustür",
+      status: "actionable",
+      ownerMemberId: 1,
+      priority: 2,
+      size: "L",
+      children: [],
+    });
+    current.refinement!.proposal!.changes = [{
+      kind: "convert_task_to_project",
+      targetId: 4,
+      rationale: "Ermöglicht mehrere Schritte.",
+      accepted: true,
+    }];
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    expect(screen.getByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox"));
+    expect(screen.queryByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).not.toBeInTheDocument();
+  });
+
+  it.each(["captured", "someday"] as const)("warns about task-only metadata for a %s conversion", (status) => {
+    const current = record();
+    current.text = JSON.stringify({
+      id: 4,
+      title: "Haustür",
+      status,
+      ownerMemberId: null,
+      priority: 1,
+      size: "M",
+      children: [],
+    });
+    current.refinement!.proposal!.changes = [{
+      kind: "convert_task_to_project",
+      targetId: 4,
+      rationale: "Ermöglicht mehrere Schritte.",
+      accepted: true,
+    }];
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+    expect(screen.getByText("Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.")).toBeInTheDocument();
+  });
+
   it("shows the concise leave-alone confirmation and original-item link", () => {
     const current = record("leave_alone");
     renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);

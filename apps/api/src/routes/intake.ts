@@ -166,8 +166,18 @@ export function registerIntakeRoutes(
   });
 
   app.post<{ Params: { id: string } }>("/api/intake/:id/refinement/apply", async (request) => {
-    const body = parseOrThrow(z.object({ expectedRevision: z.number().int().positive() }).strict(), request.body);
-    applyWorkRefinement(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, body.expectedRevision, { actorMemberId: request.activityActor?.id ?? null });
+    const body = parseOrThrow(z.object({
+      expectedRevision: z.number().int().positive(),
+      projectDriverMemberId: z.number().int().positive().optional(),
+    }).strict(), request.body);
+    applyWorkRefinement(
+      db,
+      request.params.id,
+      request.authMember?.id ?? request.activityActor?.id ?? null,
+      body.expectedRevision,
+      { actorMemberId: request.activityActor?.id ?? null },
+      body.projectDriverMemberId,
+    );
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));
   });
 
@@ -177,6 +187,7 @@ export function registerIntakeRoutes(
       draft: intakeDraftInputSchema.optional(),
       acceptIncomplete: z.boolean().optional(),
       timezone: z.string().min(1).max(255).refine(isValidIanaTimezone, "Timezone must be a valid IANA zone name.").optional(),
+      projectDriverMemberId: z.number().int().positive().optional(),
     }).strict(), request.body);
     await applyIntake(db, env, paperless, signal, request.params.id, body, { actorMemberId: request.activityActor?.id ?? null }, request.authMember?.id ?? request.activityActor?.id ?? null, request.log);
     return getIntake(db, request.params.id, request.authMember?.id ?? request.activityActor?.id ?? null, Boolean(paperless));

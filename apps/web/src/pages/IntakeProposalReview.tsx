@@ -10,6 +10,7 @@ import { IntakeCalendarCard } from "./IntakeCalendarCard";
 import { IntakeIssueText, type DateValidityChange } from "./IntakeReviewFields";
 import { IntakeWorkItemCard } from "./IntakeWorkItemCard";
 import { IntakeDiagnosticLink } from "../components/IntakeDiagnosticLink";
+import { MemberChoiceGroup } from "../components/MemberChoiceGroup";
 
 export function IntakeProposalReview({
   draft,
@@ -24,6 +25,11 @@ export function IntakeProposalReview({
   diagnosticHref,
   breakdown = false,
   existingChildren = [],
+  sourceStatus,
+  sourceOwnerMemberId,
+  projectDriverMemberId,
+  onProjectDriverChange,
+  sourceHasTaskOnlyMetadata = false,
 }: {
   draft: IntakeDraft;
   members: Member[];
@@ -40,6 +46,11 @@ export function IntakeProposalReview({
   diagnosticHref: string;
   breakdown?: boolean;
   existingChildren?: Array<{ id: number; title: string; status: string; depth: number }>;
+  sourceStatus?: "captured" | "actionable" | "someday";
+  sourceOwnerMemberId?: number | null;
+  projectDriverMemberId?: number | null;
+  onProjectDriverChange?: (memberId: number) => void;
+  sourceHasTaskOnlyMetadata?: boolean;
 }) {
   const strings = useStrings();
   const workItemDepth = workItemDepths(draft.workItems);
@@ -61,6 +72,10 @@ export function IntakeProposalReview({
     invalidDateKeys.has(`work:${item.key}:availability`) ||
     [...invalidDateKeys].some((key) =>
       key.startsWith(`work:${item.key}:reminder-date`));
+  const root = draft.workItems.find((item) => item.enabled && item.parentKey === null);
+  const conversionSelected = root?.kind === "project";
+  const actionableConversion = conversionSelected && sourceStatus === "actionable";
+  const requiresDriver = actionableConversion && sourceOwnerMemberId === null;
 
   return (
     <>
@@ -73,6 +88,31 @@ export function IntakeProposalReview({
             <ul>{existingChildren.map((child) => <li key={child.id} style={{ marginInlineStart: `${child.depth}rem` }}>
               {child.title} <small>{child.status}</small>
             </li>)}</ul>
+          </section>
+        ) : null}
+        {breakdown && root?.kind === "action" ? <p className="muted">{strings.aiTaskRemainingAction}</p> : null}
+        {breakdown && conversionSelected ? (
+          <section className="card stack" aria-label={strings.aiProjectDriverLabel}>
+            <strong>{actionableConversion ? strings.aiProjectWillBeActive : strings.aiProjectWillBeBacklog}</strong>
+            {sourceHasTaskOnlyMetadata ? <p role="status">{strings.aiProjectMetadataWarning}</p> : null}
+            {actionableConversion && sourceOwnerMemberId !== null ? (
+              <p>{strings.aiProjectDriverLabel}: {members.find((member) => member.id === sourceOwnerMemberId)?.name ?? sourceOwnerMemberId}</p>
+            ) : null}
+            {requiresDriver && onProjectDriverChange ? (
+              <>
+                <p>{strings.aiProjectDriverHint}</p>
+                <MemberChoiceGroup
+                  label={strings.aiProjectDriverLabel}
+                  idPrefix="intake-project-driver"
+                  members={members}
+                  value={projectDriverMemberId ?? null}
+                  onChange={(memberId) => {
+                    if (memberId !== null) onProjectDriverChange(memberId);
+                  }}
+                  unassignedLabel={null}
+                />
+              </>
+            ) : null}
           </section>
         ) : null}
         {draft.summary.trim() ? (
