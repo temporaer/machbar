@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { createChildTask, createTask, getTaskOrThrow } from "../src/domain/taskCrud.js";
@@ -8,12 +9,179 @@ import * as schema from "../src/db/schema.js";
 import { onIntakeAnalyzed, getIntake } from "../src/intake/jobs.js";
 import { applyWorkRefinement, updateWorkRefinement } from "../src/intake/refinement.js";
 import { buildRefinementSnapshot } from "../src/intake/refinementSnapshot.js";
-import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
+import {
+  normalizeWorkRefinementProposalInput,
+  workRefinementProposalSchema,
+} from "@machbar/shared";
+import { closeTestContext, createTestContext, insertTestProject, type TestContext } from "./helpers.js";
 
 describe("AI work refinement proposals", () => {
   let ctx: TestContext;
   beforeEach(() => { ctx = createTestContext(); });
   afterEach(async () => closeTestContext(ctx));
+
+  it.each([
+    ["update_task", { targetId: 12, title: "Klarer", notes: null }],
+    ["update_project", { targetId: 12, title: "Klarer", notes: null }],
+    ["convert_task_to_project", { targetId: 12 }],
+    ["create_child", { parentTaskId: 12, title: "Nächster Schritt", notes: null }],
+    ["move_task", { targetId: 12, parentTaskId: null, projectId: null, position: 0 }],
+    ["add_dependency", { taskId: 12, dependsOnTaskId: 13 }],
+    ["update_wait", { taskId: 12, waitingFor: "Rückmeldung", revisitAt: null }],
+    ["update_project_outcome", { projectId: 12, criterionId: null, outcome: "Erledigt, wenn sichtbar." }],
+    ["advisory", { affectedIds: [12], title: "Prüfen" }],
+  ] as const)("normalizes provider-nullable fields for %s", (kind, fields) => {
+    const proposal = {
+      intent: "improve",
+      summary: "Vorschlag",
+      disposition: "changes",
+      question: null,
+      changes: [{
+        kind,
+        rationale: "Macht den nächsten Schritt klar.",
+        accepted: true,
+        ...fields,
+        ...(kind === "update_task" ? { projectId: null, waitingFor: null } : {}),
+      }],
+    };
+    const normalized = normalizeWorkRefinementProposalInput(proposal);
+    const result = workRefinementProposalSchema.safeParse(normalized);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.changes[0]?.accepted).toBe(false);
+  });
+
+  it("keeps non-null irrelevant fields for strict rejection", () => {
+    const normalized = normalizeWorkRefinementProposalInput({
+      intent: "improve",
+      summary: "Vorschlag",
+      disposition: "changes",
+      question: null,
+      changes: [{
+        kind: "update_task",
+        targetId: 12,
+        title: "Klarer",
+        rationale: "Macht den nächsten Schritt klar.",
+        projectId: 99,
+      }],
+    });
+    expect(workRefinementProposalSchema.safeParse(normalized).success).toBe(false);
+  });
+
+  it("normalizes the synthetic cellar-staircase provider fixture", () => {
+    const fixture = JSON.parse(readFileSync(new URL("../../../packages/shared/fixtures/work-refinement/cellar-staircase-1000000348.json", import.meta.url), "utf8")) as unknown;
+    const normalized = normalizeWorkRefinementProposalInput(fixture);
+    const result = workRefinementProposalSchema.safeParse(normalized);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const change = result.data.changes[0];
+      expect(change?.accepted).toBe(false);
+      expect(change).not.toHaveProperty("projectId");
+      expect(change).not.toHaveProperty("waitingFor");
+      if (change?.kind === "update_project") {
+        expect(change.targetId).toBe(1000000348);
+      }
+    }
+  });
+
+  it("accepts the synthetic cellar-staircase project refinement end to end", () => {
+    const project = insertTestProject(ctx.handle.db, { id: 1000000348, title: "Kellertreppe", status: "backlog" });
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "project", project.id, null).snapshot;
+    const id = randomUUID();
+    const proposal = JSON.parse(readFileSync(new URL("../../../packages/shared/fixtures/work-refinement/cellar-staircase-1000000348.json", import.meta.url), "utf8")) as unknown;
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "analyzing", revision: 1,
+      text: snapshot, refinementTargetType: "project", refinementTargetId: project.id, refinementIntent: "improve",
+      refinementSnapshotJson: snapshot, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+
+    onIntakeAnalyzed(ctx.handle.db, ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!, proposal);
+
+    const ready = getIntake(ctx.handle.db, id, null);
+    expect(ready.status).toBe("ready");
+    expect(ready.refinement?.proposal?.changes[0]?.accepted).toBe(false);
+  });
+
+  it("persists field-level diagnostics for invalid refinement proposals", () => {
+    const task = createTask(ctx.handle.db, { title: "Cellar staircase", status: "actionable" });
+    const id = randomUUID();
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "analyzing", revision: 1,
+      text: snapshot, refinementTargetType: "task", refinementTargetId: task.id, refinementIntent: "improve",
+      refinementSnapshotJson: snapshot, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+
+    onIntakeAnalyzed(ctx.handle.db, ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!, {
+      intent: "improve",
+      summary: "Klarer machen",
+      disposition: "changes",
+      question: null,
+      changes: [{ kind: "update_task", rationale: "Der nächste Schritt wird sichtbar." }],
+    });
+
+    const failed = getIntake(ctx.handle.db, id, null);
+    expect(failed.status).toBe("analysis_failed");
+    expect(failed.error?.code).toBe("intake_plan_invalid");
+    expect(failed.error?.details?.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: ["changes", 0, "targetId"],
+        code: "schema_invalid",
+      }),
+    ]));
+
+    const mismatchId = randomUUID();
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id: mismatchId, createdByMemberId: null, actorMemberId: null, scope: "household", status: "analyzing", revision: 1,
+      text: snapshot, refinementTargetType: "task", refinementTargetId: task.id, refinementIntent: "improve",
+      refinementSnapshotJson: snapshot, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+    onIntakeAnalyzed(ctx.handle.db, ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, mismatchId)).get()!, {
+      intent: "structure", summary: "Andere Absicht", disposition: "leave_alone", question: null, changes: [],
+    });
+    const mismatch = getIntake(ctx.handle.db, mismatchId, null);
+    expect(mismatch.error?.message).toContain("wrong intent");
+    expect(mismatch.error?.details?.issues?.[0]?.path).toEqual(["intent"]);
+  });
+
+  it("passes persisted refinement issues into corrective retry instructions", async () => {
+    const task = createTask(ctx.handle.db, { title: "Cellar staircase", status: "actionable" });
+    const id = randomUUID();
+    const snapshot = buildRefinementSnapshot(ctx.handle.db, "task", task.id, null).snapshot;
+    const now = new Date().toISOString();
+    ctx.handle.db.insert(schema.homeAssistantIntegrations).values({
+      instanceId: "retry-test",
+      tokenHash: "retry-test-token",
+      protocolVersion: 3,
+      connectedAt: now,
+      capabilitiesJson: JSON.stringify({ intake: { aiTask: { state: "ok" } } }),
+    }).run();
+    ctx.handle.db.insert(schema.intakeJobs).values({
+      id, createdByMemberId: null, actorMemberId: null, scope: "household", status: "analyzing", revision: 1,
+      text: snapshot, refinementTargetType: "task", refinementTargetId: task.id, refinementIntent: "improve",
+      refinementSnapshotJson: snapshot, createdAt: now, updatedAt: now,
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    }).run();
+    onIntakeAnalyzed(ctx.handle.db, ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!, {
+      intent: "improve",
+      summary: "Klarer machen",
+      disposition: "changes",
+      question: null,
+      changes: [{ kind: "update_task", rationale: "Der nächste Schritt wird sichtbar." }],
+    });
+
+    const response = await ctx.app.inject({ method: "POST", url: `/api/intake/${id}/retry` });
+    expect(response.statusCode).toBe(200);
+    const request = ctx.handle.db.select().from(schema.homeAssistantRequests)
+      .where(eq(schema.homeAssistantRequests.intakeJobId, id))
+      .get();
+    expect(request).toBeDefined();
+    const instructions = JSON.parse(request!.payloadJson).instructions as string;
+    expect(instructions).toContain("changes[0].targetId");
+    expect(instructions).toContain("Required");
+  });
 
   it("stores unaccepted recommendations and applies selected updates and children atomically", () => {
     const task = createTask(ctx.handle.db, { title: "Backup-Konzept verbessern", notes: "PBS läuft", status: "actionable" });

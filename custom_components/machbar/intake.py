@@ -108,20 +108,20 @@ def _refinement_change_schema() -> vol.Schema:
         {
             _field("kind", str): vol.In(("update_task", "update_project", "convert_task_to_project", "create_child", "move_task", "add_dependency", "update_wait", "update_project_outcome", "advisory")),
             _field("rationale", str): str,
-            vol.Optional("accepted"): bool,
-            vol.Optional("targetId"): int,
-            vol.Optional("taskId"): int,
+            vol.Optional("accepted"): vol.Any(bool, None),
+            vol.Optional("targetId"): vol.Any(int, None),
+            vol.Optional("taskId"): vol.Any(int, None),
             vol.Optional("parentTaskId"): vol.Any(int, None),
             vol.Optional("projectId"): vol.Any(int, None),
-            vol.Optional("dependsOnTaskId"): int,
-            vol.Optional("position"): int,
-            vol.Optional("title"): str,
+            vol.Optional("dependsOnTaskId"): vol.Any(int, None),
+            vol.Optional("position"): vol.Any(int, None),
+            vol.Optional("title"): vol.Any(str, None),
             vol.Optional("notes"): vol.Any(str, None),
-            vol.Optional("waitingFor"): str,
+            vol.Optional("waitingFor"): vol.Any(str, None),
             vol.Optional("revisitAt"): vol.Any(str, None),
-            vol.Optional("outcome"): str,
-            vol.Optional("criterionId"): int,
-            vol.Optional("affectedIds"): [int],
+            vol.Optional("outcome"): vol.Any(str, None),
+            vol.Optional("criterionId"): vol.Any(int, None),
+            vol.Optional("affectedIds"): vol.Any([int], None),
         },
         extra=vol.PREVENT_EXTRA,
     )
@@ -627,6 +627,42 @@ def _normalize_ai_result(data: Any, analysis_mode: Any, structure: vol.Schema) -
     if analysis_mode != "work_refinement":
         return normalize_plan(data)
     try:
-        return structure(data)
+        normalized = structure(data)
     except vol.Invalid as err:
         raise _invalid(list(err.path), "the work refinement structure", str(err)) from err
+    changes = normalized["changes"]
+    allowed_fields = {
+        "update_task": {"kind", "rationale", "accepted", "targetId", "title", "notes"},
+        "update_project": {"kind", "rationale", "accepted", "targetId", "title", "notes"},
+        "convert_task_to_project": {"kind", "rationale", "accepted", "targetId"},
+        "create_child": {"kind", "rationale", "accepted", "parentTaskId", "title", "notes"},
+        "move_task": {"kind", "rationale", "accepted", "targetId", "parentTaskId", "projectId", "position"},
+        "add_dependency": {"kind", "rationale", "accepted", "taskId", "dependsOnTaskId"},
+        "update_wait": {"kind", "rationale", "accepted", "taskId", "waitingFor", "revisitAt"},
+        "update_project_outcome": {"kind", "rationale", "accepted", "projectId", "criterionId", "outcome"},
+        "advisory": {"kind", "rationale", "accepted", "affectedIds", "title"},
+    }
+    all_fields = {
+        "kind", "rationale", "accepted", "targetId", "taskId", "parentTaskId",
+        "projectId", "dependsOnTaskId", "position", "title", "notes", "waitingFor",
+        "revisitAt", "outcome", "criterionId", "affectedIds",
+    }
+    optional_non_nullable_fields = {"title", "criterionId"}
+    normalized["changes"] = [
+        {
+            **{
+                key: value
+                for key, value in change.items()
+                if key not in all_fields
+                or value is not None
+                or (
+                    value is None
+                    and key in allowed_fields.get(change.get("kind"), set())
+                    and key not in optional_non_nullable_fields
+                )
+            },
+            "accepted": False,
+        }
+        for change in changes
+    ]
+    return normalized

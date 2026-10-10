@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import type { IntakeRecord, WorkRefinementChange } from "@machbar/shared";
+import { intakeErrorIssues, type IntakeRecord, type WorkRefinementChange } from "@machbar/shared";
 import { api } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
@@ -136,7 +136,16 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         <h2>{proposal.summary}</h2>
         {proposal.question ? <><strong>{strings.refinementQuestionLabel}</strong><p>{proposal.question}</p></> : null}
       </>}
-      {record.error ? <p role="alert" className="error-text">{record.error.message}</p> : null}
+      {record.error ? (
+        <section role="alert" className="stack">
+          <p className="error-text">{record.error.message}</p>
+          {intakeErrorIssues(record.error).map((issue, index) => (
+            <p key={`${issue.path.join(".")}-${issue.code}-${index}`}>
+              <code>{issue.path.length ? issue.path.join(".") : "(proposal)"}</code>: {issue.message}
+            </p>
+          ))}
+        </section>
+      ) : null}
       {!leaveAlone ? proposal.changes.map((change, index) => <article className="card stack" key={`${change.kind}-${index}`}>
         {change.kind === "convert_task_to_project" && change.targetId === refinement.targetId && change.accepted ? (
           <section className="card stack">

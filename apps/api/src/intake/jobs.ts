@@ -10,7 +10,12 @@ import type {
   IntakeRecord,
   WorkItemScope,
 } from "@machbar/shared";
-import { unacceptedWorkRefinementProposal, workRefinementProposalSchema, type WorkRefinementIntent } from "@machbar/shared";
+import {
+  normalizeWorkRefinementProposalInput,
+  unacceptedWorkRefinementProposal,
+  workRefinementProposalSchema,
+  type WorkRefinementIntent,
+} from "@machbar/shared";
 import {
   buildDraftFromPlan,
   intakeErrorIssues,
@@ -85,6 +90,16 @@ function errorInfo(
   details?: IntakeErrorInfo["details"],
 ): IntakeErrorInfo {
   return { code, message, retryable, ...(details ? { details } : {}) };
+}
+
+function refinementSchemaIssues(
+  issues: readonly { path: readonly (string | number)[]; message: string }[],
+): IntakeIssue[] {
+  return issues.slice(0, 50).map((issue) => ({
+    path: [...issue.path],
+    code: "schema_invalid",
+    message: issue.message.slice(0, 500),
+  }));
 }
 
 function parseJson<T>(value: string | null): T | null {
@@ -430,11 +445,25 @@ export function getIntake(
 
 export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSelect, plan: unknown): void {
   if (job.refinementTargetType !== null) {
-    const parsed = workRefinementProposalSchema.safeParse(plan);
-    if (!parsed.success || parsed.data.intent !== job.refinementIntent) {
+    const parsed = workRefinementProposalSchema.safeParse(normalizeWorkRefinementProposalInput(plan));
+    const issues = !parsed.success
+      ? refinementSchemaIssues(parsed.error.issues)
+      : parsed.data.intent !== job.refinementIntent
+        ? [{
+            path: ["intent"],
+            code: "schema_invalid" as const,
+            message: `The proposal intent must be '${job.refinementIntent}'.`,
+          }]
+        : [];
+    if (issues.length > 0) {
       db.update(schema.intakeJobs).set({
         status: "analysis_failed",
-        errorJson: JSON.stringify(errorInfo("intake_plan_invalid", "The AI Task returned an invalid refinement proposal.")),
+        errorJson: JSON.stringify(errorInfo(
+          "intake_plan_invalid",
+          parsed.success ? "The AI Task returned a refinement proposal for the wrong intent." : "The AI Task returned an invalid refinement proposal.",
+          true,
+          { issues },
+        )),
         updatedAt: nowIso(), revision: job.revision + 1,
       }).where(eq(schema.intakeJobs.id, job.id)).run();
       return;
@@ -445,7 +474,18 @@ export function onIntakeAnalyzed(db: Db, job: typeof schema.intakeJobs.$inferSel
     } catch (error) {
       db.update(schema.intakeJobs).set({
         status: "analysis_failed",
-        errorJson: JSON.stringify(errorInfo("intake_plan_invalid", error instanceof Error ? error.message : "The refinement is structurally incompatible.")),
+        errorJson: JSON.stringify(errorInfo(
+          "intake_plan_invalid",
+          error instanceof Error ? error.message : "The refinement is structurally incompatible.",
+          true,
+          {
+            issues: [{
+              path: ["context"],
+              code: "schema_invalid",
+              message: error instanceof Error ? error.message : "The refinement is structurally incompatible.",
+            }],
+          },
+        )),
         updatedAt: nowIso(), revision: job.revision + 1,
       }).where(eq(schema.intakeJobs.id, job.id)).run();
       return;
