@@ -1,5 +1,21 @@
 # Household workflow
 
+## Historical reflection briefing (API)
+
+`GET /api/reflection/briefing?memberId=<id>&days=90&scope=household` returns a
+read-only structured summary and a Markdown rendering. The lookback can be 30,
+90, or 180 local calendar days; the household timezone setting defines the
+window. The explicit subject member anchors owner-aware views and private-work
+visibility. `scope=work` includes only that member's private work, while
+`scope=all` combines it with household work and is restricted to that member.
+
+The briefing separates finite outcomes from recurring occurrences, reports
+explicit postponements independently from deadlines and revisit dates, and
+measures inactive work using recorded meaningful activity events. When
+activity is unavailable, the response labels the evidence limitation instead
+of treating `updatedAt` as proof of progress. The endpoint does not mutate work
+or infer why work changed.
+
 ## Break down a task
 
 Choose **Struktur → Mit KI aufteilen…** on an open action task to get a useful
