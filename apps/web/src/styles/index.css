@@ -1274,6 +1274,84 @@ details[open] > .disclosure-summary::after {
   resize: vertical;
 }
 
+.reflection-start-page > .card {
+  gap: 14px;
+}
+
+.reflection-choice-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.reflection-choice-field legend {
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.reflection-scope-options {
+  flex-wrap: wrap;
+}
+
+.reflection-privacy-note {
+  margin: 2px 0 0;
+}
+
+.reflection-private-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.reflection-private-confirm input {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+}
+
+.reflection-prompt-preview,
+.reflection-briefing-preview {
+  min-width: 0;
+}
+
+.reflection-prompt-preview,
+.reflection-briefing-preview {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.reflection-prompt-preview h3,
+.reflection-briefing-preview h3 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+.reflection-prompt-preview p,
+.reflection-briefing-preview p {
+  margin: 0 0 8px;
+}
+
+.reflection-briefing-preview textarea {
+  min-height: 280px;
+  max-height: 55vh;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.reflection-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .task-planning-form {
   gap: 10px;
 }

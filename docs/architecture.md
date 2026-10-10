@@ -198,6 +198,18 @@ External systems remain authoritative for their domains: Home Assistant
 chooses and runs the AI provider and owns the calendar event; Machbar owns the
 review and the resulting household work.
 
+## Historical reflection export
+
+`GET /api/reflection/briefing` remains the sole source for historical reflection
+facts. `ReflectionStartPage` selects its reporting window and scope, previews
+the complete content, and only then enables native share, clipboard, or file
+export. Household scope is the default. A scope containing private work shows
+the selected data and requires explicit consent before export. The coaching
+instruction is localized frontend content and is packaged separately from the
+deterministic briefing; Machbar does not contact an AI provider. The wrap-up
+requested from an external coach is only a human-readable draft in this phase,
+not a defined import protocol.
+
 ## 3. SQLite Data Model — Hierarchy and Inheritance
 
 ### Entity hierarchy

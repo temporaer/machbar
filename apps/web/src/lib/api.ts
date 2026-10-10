@@ -1,6 +1,8 @@
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import type {
   ActivityPage,
+  ReflectionBriefing,
+  ReflectionBriefingScope,
   ActivityDigest,
   HouseholdAiContext,
   Agenda,
@@ -656,6 +658,11 @@ export const api = {
       `/refinement/tasks${query({ ownerId: filters?.ownerId, projectId: filters?.projectId, tagIds: filters?.tagIds })}`,
     ),
   getReviewItems: () => request<ReviewItem[]>("/review"),
+  getReflectionBriefing: (memberId: number, days: 30 | 90 | 180, scope: ReflectionBriefingScope) =>
+    request<ReflectionBriefing>(
+      `/reflection/briefing${query({ memberId, days, scope })}`,
+      { headers: { [ACTIVITY_ACTOR_HEADER]: String(memberId) } },
+    ),
   getMoreCounts: () =>
     request<MoreCounts>("/views/more-counts"),
   getHouseholdAiContext: () =>

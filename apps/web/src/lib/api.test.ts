@@ -62,6 +62,14 @@ describe("api request() Content-Type handling", () => {
     expect(headersOf(readFetch)).not.toHaveProperty("X-Machbar-Client-Id");
   });
 
+  it("binds a reflection briefing request to its selected member", async () => {
+    const fetchMock = mockFetchOnce({ text: async () => JSON.stringify({}) });
+    await api.getReflectionBriefing(7, 30, "work");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/reflection/briefing?memberId=7&days=30&scope=work");
+    expect(headersOf(fetchMock)).toMatchObject({ [ACTIVITY_ACTOR_HEADER]: "7" });
+  });
+
   describe("api request() activity actor header", () => {
     afterEach(() => {
       window.localStorage.clear();

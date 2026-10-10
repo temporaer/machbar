@@ -49,6 +49,20 @@ describe("NativeShareButton", () => {
     expect(screen.getByRole("status")).toHaveTextContent("In die Zwischenablage kopiert");
   });
 
+  it("treats dismissing the native share sheet as cancellation, not a failure", async () => {
+    const share = vi.fn().mockRejectedValue(new DOMException("dismissed", "AbortError"));
+    Object.defineProperty(navigator, "share", { configurable: true, value: share });
+    render(<NativeShareButton title="Reflexion" text="Preview" />);
+
+    const button = screen.getByRole("button", { name: "Teilen" });
+    await userEvent.click(button);
+
+    await waitFor(() => expect(share).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(button).toBeEnabled();
+  });
+
   it("can lift transient feedback into a sheet header status area", async () => {
     Object.defineProperty(navigator, "share", { configurable: true, value: undefined });
     Object.defineProperty(navigator, "clipboard", {
