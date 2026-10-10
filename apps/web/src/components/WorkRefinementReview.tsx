@@ -94,20 +94,18 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
     .filter(([id, value]) => id !== change.targetId && value.parentTaskId === change.parentTaskId && value.projectId === change.projectId)
     .sort((a, b) => a[1].position - b[1].position);
   const targetPath = refinement.targetType === "project" ? `/projects/${refinement.targetId}` : `/tasks/${refinement.targetId}`;
-  if (proposal.disposition === "leave_alone") return <main className="page stack">
-    <section className="card stack"><h1>{strings.refinementLeaveAlone}</h1><p>{proposal.summary}</p>
-      <Link className="btn" to={targetPath}>{strings.refinementOpenOriginal}</Link>
-      <button className="btn btn-primary" disabled={busy || record.status !== "ready"} onClick={() => void apply()}>{strings.refinementDone}</button>
-      {error ? <p role="alert" className="error-text">{error}</p> : null}
-    </section>
-  </main>;
+  const leaveAlone = proposal.disposition === "leave_alone";
+  const canRegenerate = record.status === "ready" || record.status === "analysis_failed";
+  const hasRetryFeedback = answer.trim().length > 0;
   return <main className="page stack">
-    <header className="stack"><p className="eyebrow">{strings.workRefinement}</p><h1>{refinement.targetType === "project" ? strings.project : strings.task}</h1></header>
+    {!leaveAlone ? <header className="stack"><p className="eyebrow">{strings.workRefinement}</p><h1>{refinement.targetType === "project" ? strings.project : strings.task}</h1></header> : null}
     <section className="card stack">
-      <h2>{proposal.summary}</h2>
+      {leaveAlone ? <><h1>{strings.refinementLeaveAlone}</h1><p>{proposal.summary}</p><Link className="btn" to={targetPath}>{strings.refinementOpenOriginal}</Link></> : <>
+        <h2>{proposal.summary}</h2>
+        {proposal.question ? <><strong>{strings.refinementQuestionLabel}</strong><p>{proposal.question}</p></> : null}
+      </>}
       {record.error ? <p role="alert" className="error-text">{record.error.message}</p> : null}
-      {proposal.question ? <><strong>{strings.refinementQuestionLabel}</strong><p>{proposal.question}</p></> : null}
-      {proposal.changes.map((change, index) => <article className="card stack" key={`${change.kind}-${index}`}>
+      {!leaveAlone ? proposal.changes.map((change, index) => <article className="card stack" key={`${change.kind}-${index}`}>
         {change.kind === "create_child" && proposal.changes.some((candidate) => candidate.kind === "convert_task_to_project" && candidate.targetId === change.parentTaskId) ? <p className="muted">{strings.refinementRequiresConversion}</p> : null}
         <label className="inline-row"><input type="checkbox" checked={change.accepted} disabled={change.kind === "advisory" || busy} onChange={(event) => {
           const checked = event.target.checked;
@@ -135,14 +133,18 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
           })}
         </select></label> : null}
         {change.kind === "advisory" ? <p>{change.title}</p> : null}
-      </article>)}
+      </article>) : null}
       <label className="stack"><span>{proposal.question ? strings.refinementAnswerLabel : strings.refinementFeedbackLabel}</span><textarea value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder={proposal.question ?? strings.workRefinementPlaceholder} /></label>
       {error ? <p role="alert" className="error-text">{error}</p> : null}
       <div className="actions">
-        {answer.trim() ? <button className="btn" disabled={busy} onClick={() => void regenerate()}>{proposal.question ? strings.refinementRegenerate : strings.refinementRegenerateFeedback}</button> : null}
-        <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || invalidSelection} onClick={() => void apply()}>{strings.refinementApply}</button>
-        <button className="btn" disabled={busy} onClick={() => void save()}>{strings.save}</button>
-        <button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button>
+        {hasRetryFeedback || record.status === "analysis_failed" ? <button className="btn" disabled={busy || !canRegenerate} onClick={() => void regenerate()}>{hasRetryFeedback ? proposal.question ? strings.refinementRegenerate : strings.refinementRegenerateFeedback : strings.intakeRetry}</button> : null}
+        {leaveAlone
+          ? <button className="btn btn-primary" disabled={busy || record.status !== "ready"} onClick={() => void apply()}>{strings.refinementDone}</button>
+          : <>
+            <button className="btn btn-primary" disabled={busy || record.status !== "ready" || proposal.disposition === "clarification" || invalidSelection} onClick={() => void apply()}>{strings.refinementApply}</button>
+            <button className="btn" disabled={busy} onClick={() => void save()}>{strings.save}</button>
+            <button className="btn" disabled={busy} onClick={() => void discard()}>{strings.intakeDiscard}</button>
+          </>}
       </div>
     </section>
   </main>;

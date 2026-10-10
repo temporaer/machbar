@@ -78,9 +78,10 @@ export function assertRefinementContext(proposal: WorkRefinementProposal, target
           if (ancestor.scope !== task.scope || (ancestor.projectId ?? null) !== change.projectId) throw AppError.badRequest("intake_plan_invalid", "The proposed parent and project destination do not match.");
           if (ancestor.repeatAfterDays != null) throw AppError.badRequest("intake_plan_invalid", "Recurring tasks cannot contain subtasks.");
           const visited = new Set<number>();
-          while (ancestor.parentTaskId != null) {
+          while (true) {
             if (ancestor.id === change.targetId || visited.has(Number(ancestor.id))) throw AppError.badRequest("intake_plan_invalid", "The proposed move would create a hierarchy cycle.");
             visited.add(Number(ancestor.id));
+            if (ancestor.parentTaskId == null) break;
             ancestor = node(Number(ancestor.parentTaskId));
           }
         }

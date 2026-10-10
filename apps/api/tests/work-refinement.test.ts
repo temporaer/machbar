@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { createChildTask, createTask, getTaskOrThrow } from "../src/domain/taskCrud.js";
+import { createProject } from "../src/domain/storyCrud.js";
 import { addDependency } from "../src/domain/taskCapabilities.js";
 import * as schema from "../src/db/schema.js";
 import { onIntakeAnalyzed, getIntake } from "../src/intake/jobs.js";
@@ -113,6 +114,41 @@ describe("AI work refinement proposals", () => {
     ctx.handle.db.insert(schema.intakeJobs).values({ id, createdByMemberId: null, scope: "household", status: "ready", revision: 1, text: snapshot, refinementTargetType: "task", refinementTargetId: parent.id, refinementIntent: "structure", refinementSnapshotJson: snapshot, refinementJson: JSON.stringify(proposal), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString() }).run();
     expect(() => applyWorkRefinement(ctx.handle.db, id, null, 1, {})).toThrow(/cycle/i);
     expect(getTaskOrThrow(ctx.handle.db, first.id).title).toBe("First");
+  });
+
+  it("rejects moves under direct or deep descendants during validation and permits an unrelated parent", () => {
+    const project = createProject(ctx.handle.db, { title: "Move validation" });
+    const root = createTask(ctx.handle.db, { projectId: project.id, title: "Root", status: "actionable" });
+    const child = createChildTask(ctx.handle.db, root.id, { title: "Child", status: "actionable" });
+    const grandchild = createChildTask(ctx.handle.db, child.id, { title: "Grandchild", status: "actionable" });
+    const unrelated = createTask(ctx.handle.db, { projectId: project.id, title: "Unrelated parent", status: "actionable" });
+
+    const createMoveJob = (targetId: number, parentTaskId: number) => {
+      const id = randomUUID();
+      const snapshot = buildRefinementSnapshot(ctx.handle.db, "project", project.id, null).snapshot;
+      const proposal = { intent: "structure", summary: "Reorder existing work", disposition: "changes", question: null, changes: [
+        { kind: "move_task", targetId, parentTaskId, projectId: project.id, position: 0, rationale: "Place this step under its parent.", accepted: true },
+      ] };
+      ctx.handle.db.insert(schema.intakeJobs).values({ id, createdByMemberId: null, scope: "household", status: "ready", revision: 1, text: snapshot, refinementTargetType: "project", refinementTargetId: project.id, refinementIntent: "structure", refinementSnapshotJson: snapshot, refinementJson: JSON.stringify(proposal), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString() }).run();
+      return id;
+    };
+
+    for (const [targetId, proposedParentId] of [
+      [root.id, child.id],
+      [root.id, grandchild.id],
+      [child.id, grandchild.id],
+    ]) {
+      const id = createMoveJob(targetId!, proposedParentId!);
+      expect(() => applyWorkRefinement(ctx.handle.db, id, null, 1, {})).toThrow(/hierarchy cycle/i);
+      expect(getIntake(ctx.handle.db, id, null).status).toBe("ready");
+      expect(ctx.handle.db.select({ parentId: schema.workItems.parentId }).from(schema.workItems).where(eq(schema.workItems.id, targetId!)).get()?.parentId).toBe(targetId === root.id ? project.id : root.id);
+    }
+
+    const validMoveId = createMoveJob(root.id, unrelated.id);
+    applyWorkRefinement(ctx.handle.db, validMoveId, null, 1, {});
+    expect(ctx.handle.db.select({ parentId: schema.workItems.parentId }).from(schema.workItems).where(eq(schema.workItems.id, root.id)).get()?.parentId).toBe(unrelated.id);
+    expect(getIntake(ctx.handle.db, validMoveId, null).status).toBe("applied");
+    expect(getTaskOrThrow(ctx.handle.db, child.id).parentTaskId).toBe(root.id);
   });
 
   it("rejects recurring-task children and external waits during proposal validation", () => {
