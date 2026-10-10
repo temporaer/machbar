@@ -6,6 +6,37 @@ export type WorkRefinementIntent = z.infer<typeof workRefinementIntentSchema>;
 const note = z.string().max(4_000);
 const title = z.string().trim().min(1).max(200);
 const changeBase = { rationale: z.string().trim().min(1).max(800), accepted: z.boolean().default(false) };
+const refinementChangeFields = [
+  "kind",
+  "rationale",
+  "accepted",
+  "targetId",
+  "taskId",
+  "parentTaskId",
+  "projectId",
+  "dependsOnTaskId",
+  "position",
+  "title",
+  "notes",
+  "waitingFor",
+  "revisitAt",
+  "outcome",
+  "criterionId",
+  "affectedIds",
+] as const;
+const optionalNonNullableRefinementChangeFields = new Set(["title", "criterionId"]);
+
+const allowedRefinementChangeFields: Record<string, ReadonlySet<string>> = {
+  update_task: new Set(["kind", "rationale", "accepted", "targetId", "title", "notes"]),
+  update_project: new Set(["kind", "rationale", "accepted", "targetId", "title", "notes"]),
+  convert_task_to_project: new Set(["kind", "rationale", "accepted", "targetId"]),
+  create_child: new Set(["kind", "rationale", "accepted", "parentTaskId", "title", "notes"]),
+  move_task: new Set(["kind", "rationale", "accepted", "targetId", "parentTaskId", "projectId", "position"]),
+  add_dependency: new Set(["kind", "rationale", "accepted", "taskId", "dependsOnTaskId"]),
+  update_wait: new Set(["kind", "rationale", "accepted", "taskId", "waitingFor", "revisitAt"]),
+  update_project_outcome: new Set(["kind", "rationale", "accepted", "projectId", "criterionId", "outcome"]),
+  advisory: new Set(["kind", "rationale", "accepted", "affectedIds", "title"]),
+};
 
 export const workRefinementChangeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("update_task"), targetId: z.number().int().positive(), title: title.optional(), notes: note.nullable().optional(), ...changeBase }).strict(),
@@ -49,6 +80,41 @@ export const workRefinementInputSchema = z.object({
   intent: workRefinementIntentSchema,
   instruction: z.string().trim().max(2_000).optional(),
 }).strict();
+
+/**
+ * Compacts the provider-compatible refinement envelope without weakening the
+ * application contract. HA structured output may include every union field as
+ * null; only fields known to be irrelevant for a recognized kind are removed.
+ * Non-null mismatches and unknown fields remain for strict Zod validation.
+ */
+export function normalizeWorkRefinementProposalInput(value: unknown): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return value;
+  const proposal = value as Record<string, unknown>;
+  if (!Array.isArray(proposal.changes)) return value;
+
+  return {
+    ...proposal,
+    changes: proposal.changes.map((rawChange) => {
+      if (rawChange === null || typeof rawChange !== "object" || Array.isArray(rawChange)) {
+        return rawChange;
+      }
+      const change = rawChange as Record<string, unknown>;
+      const kind = change.kind;
+      const allowed = typeof kind === "string" ? allowedRefinementChangeFields[kind] : undefined;
+      const normalized = { ...change };
+      if (allowed) {
+        for (const field of refinementChangeFields) {
+          if (normalized[field] !== null) continue;
+          if (!allowed.has(field) || optionalNonNullableRefinementChangeFields.has(field)) {
+            delete normalized[field];
+          }
+        }
+      }
+      normalized.accepted = false;
+      return normalized;
+    }),
+  };
+}
 
 /** AI output is data; never let the model mark its own recommendations accepted. */
 export function unacceptedWorkRefinementProposal(value: unknown): WorkRefinementProposal {

@@ -1,0 +1,18 @@
+{
+  "intent": "improve",
+  "summary": "Die nächste Handlung für die Kellertreppe sollte klarer werden.",
+  "disposition": "changes",
+  "question": null,
+  "changes": [
+    {
+      "kind": "update_task",
+      "targetId": 1000000348,
+      "title": "Kellertreppe freiräumen und Entsorgungsweg festlegen",
+      "notes": null,
+      "projectId": null,
+      "waitingFor": null,
+      "accepted": true,
+      "rationale": "Die Handlung macht das Aufräumziel ausführbar."
+    }
+  ]
+}
