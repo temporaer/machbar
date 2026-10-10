@@ -89,6 +89,7 @@ async def test_worker_does_not_swallow_cancellation(hass):
                     "leaseToken": "token",
                 }
             )
+    worker.client.complete_request.assert_not_awaited()
 
 
 async def test_worker_preserves_refinement_validation_error_for_api_retry(hass):
@@ -113,5 +114,3 @@ async def test_worker_preserves_refinement_validation_error_for_api_retry(hass):
     assert body["outcome"] == "failed"
     assert body["error"]["code"] == "ai_task_invalid_response"
     assert body["error"]["details"]["path"] == ["changes", 0, "kind"]
-
-    worker.client.complete_request.assert_not_awaited()
