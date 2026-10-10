@@ -44,9 +44,12 @@ export function buildIntakeInstructions(input: {
   refinement?: { targetType: "task" | "project"; intent: "improve" | "next_action" | "structure"; instruction?: string; context: string; previousProposal?: string; feedback?: string; validationFeedback?: readonly IntakeIssue[]; validationMessage?: string };
 }): string {
   if (input.refinement) {
+    const aiContextSection = householdAiContextSection(input.aiContext);
     return [
       AI_WORK_GUIDANCE,
       "You are Machbar's thoughtful planning coach. Return a small, context-aware typed refinement proposal as JSON matching the supplied structure.",
+      ...(aiContextSection ? ["Treat household context as background only. The current work-item context, explicit user instructions, and domain rules take precedence; household context never authorizes inventing facts."] : []),
+      ...(aiContextSection ? [aiContextSection] : []),
       "The existing outline is authoritative. Never recreate existing tasks. Consider open, waiting, completed, and cancelled work, dependencies, external waits, current next action, and project outcome from the supplied context.",
       "Choose only the most useful change: improve wording, add a concrete next action, clarify a decision or prerequisite, improve ordering, or simplify. Distinguish diagnosis, decisions, execution and follow-up. Do not invent facts, owners, deadlines, dates, or certainty. Avoid duplicating completed or planned work.",
       "For a captured standalone task, propose convert_task_to_project explicitly before any child steps, and only when domain restrictions permit it. Never silently convert; never propose children under a captured task.",

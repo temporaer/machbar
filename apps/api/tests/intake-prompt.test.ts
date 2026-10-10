@@ -122,6 +122,49 @@ describe("intake AI instructions", () => {
     expect(instructions).toContain("required JSON schemas");
   });
 
+  it("includes all configured household AI context in refinement as background", () => {
+    const instructions = buildIntakeInstructions({
+      today: "2026-09-28",
+      memberNames: [],
+      hasText: true,
+      attachmentCount: 0,
+      aiContext: {
+        householdDescription: "We coordinate school and daycare routines.",
+        longTermDirection: "Make family logistics calmer.",
+        suggestionGuidance: "Prefer small, practical next steps.",
+      },
+      refinement: {
+        targetType: "task",
+        intent: "improve",
+        instruction: "Clarify who hands over the form.",
+        context: '{"title":"Kita-Formular"}',
+        previousProposal: '{"summary":"Earlier proposal"}',
+        feedback: "Keep the title suggestion and adjust the rest.",
+      },
+    });
+    expect(instructions).toContain("## Household context from the user");
+    expect(instructions).toContain("### Household description\n\n\"\"\"\nWe coordinate school and daycare routines.");
+    expect(instructions).toContain("### Long-term direction\n\n\"\"\"\nMake family logistics calmer.");
+    expect(instructions).toContain("### AI suggestion preferences\n\n\"\"\"\nPrefer small, practical next steps.");
+    expect(instructions).toContain("Treat household context as background only");
+    expect(instructions).toContain("explicit user instructions, and domain rules take precedence");
+    expect(instructions).toContain("Clarify who hands over the form.");
+    expect(instructions).toContain("Keep the title suggestion and adjust the rest.");
+  });
+
+  it("omits the household context section from refinement when all configured fields are empty", () => {
+    const instructions = buildIntakeInstructions({
+      today: "2026-09-28",
+      memberNames: [],
+      hasText: true,
+      attachmentCount: 0,
+      aiContext: { householdDescription: "  ", longTermDirection: "", suggestionGuidance: null },
+      refinement: { targetType: "task", intent: "improve", context: '{"title":"Kita-Formular"}' },
+    });
+    expect(instructions).not.toContain("## Household context from the user");
+    expect(instructions).not.toContain("Treat household context as background only");
+  });
+
   it("does not add a household context section when no context is supplied", () => {
     const instructions = buildIntakeInstructions({
       today: "2026-09-28",

@@ -256,6 +256,12 @@ describe("reviewed task breakdown", () => {
   it("regenerates refinement with fresh child context and preserves the prior conversation", async () => {
     const code = (await ctx.app.inject({ method: "POST", url: "/api/integrations/home-assistant/pairing-code" })).json().code;
     await ctx.app.inject({ method: "POST", url: "/api/integrations/home-assistant/pair", payload: { pairingCode: code, protocolVersion: 3 } });
+    ctx.handle.db.insert(schema.householdAiContext).values({
+      id: 1,
+      householdDescription: "School and daycare handoffs are shared.",
+      longTermDirection: "Keep family logistics calm.",
+      suggestionGuidance: "Prefer small, practical steps.",
+    }).run();
     const task = createTask(ctx.handle.db, { title: "Kita-Formular", status: "actionable" });
     const child = createChildTask(ctx.handle.db, task.id, { title: "Formular ausfüllen" });
     const created = await ctx.app.inject({ method: "POST", url: `/api/intake/refinement/task/${task.id}`, payload: { intent: "improve", instruction: "Keep the focus on the handoff", expectedRevision: task.revision } });
@@ -264,6 +270,10 @@ describe("reviewed task breakdown", () => {
     const initialRequest = ctx.handle.db.select().from(schema.homeAssistantRequests).where(eq(schema.homeAssistantRequests.intakeJobId, id)).get()!;
     const initialJob = ctx.handle.db.select().from(schema.intakeJobs).where(eq(schema.intakeJobs.id, id)).get()!;
     expect(initialJob.refinementInstruction).toBe("Keep the focus on the handoff");
+    const initialInstructions = JSON.parse(initialRequest.payloadJson).instructions as string;
+    expect(initialInstructions).toContain("School and daycare handoffs are shared.");
+    expect(initialInstructions).toContain("Keep family logistics calm.");
+    expect(initialInstructions).toContain("Prefer small, practical steps.");
     onIntakeAnalyzed(ctx.handle.db, initialJob, {
       intent: "improve", summary: "Formular klarer benennen", disposition: "changes", question: null,
       changes: [{ kind: "update_task", targetId: child.id, title: "Formular ausfüllen und im Sekretariat abgeben", rationale: "Erfasst die geplante Übergabe.", accepted: false }],
@@ -279,6 +289,9 @@ describe("reviewed task breakdown", () => {
     expect(payload.text).toContain("Formular prüfen");
     expect(payload.instructions).toContain("Keep the focus on the handoff");
     expect(payload.instructions).toContain("Keep the first suggestion but replace the third");
+    expect(payload.instructions).toContain("School and daycare handoffs are shared.");
+    expect(payload.instructions).toContain("Keep family logistics calm.");
+    expect(payload.instructions).toContain("Prefer small, practical steps.");
     expect(payload.instructions).toContain("Formular ausfüllen und im Sekretariat abgeben");
     expect(payload.instructions).toContain('"accepted":false');
     expect(JSON.parse(initialRequest.payloadJson).instructions).toContain("Keep the focus on the handoff");
