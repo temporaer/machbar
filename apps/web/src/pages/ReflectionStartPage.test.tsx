@@ -88,4 +88,51 @@ describe("ReflectionStartPage", () => {
     await user.click(screen.getByRole("button", { name: "Kopieren" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(exactPreview));
   });
+
+  it("requires fresh consent after switching away and back by scope or period", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ReflectionStartPage />);
+
+    await screen.findByRole("textbox", { name: "Vollständiger Inhalt zum Teilen" });
+    await user.click(screen.getByRole("button", { name: "Haushalt + meine Arbeit" }));
+    let consent = await screen.findByRole("checkbox", { name: /privaten Arbeitsdaten enthalten/ });
+    await user.click(consent);
+    expect(screen.getByRole("button", { name: "Kopieren" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Haushalt" }));
+    await user.click(screen.getByRole("button", { name: "Haushalt + meine Arbeit" }));
+    consent = await screen.findByRole("checkbox", { name: /privaten Arbeitsdaten enthalten/ });
+    expect(consent).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Kopieren" })).toBeDisabled();
+
+    await user.click(consent);
+    await user.click(screen.getByRole("button", { name: "30 Tage" }));
+    await user.click(screen.getByRole("button", { name: "90 Tage" }));
+    consent = await screen.findByRole("checkbox", { name: /privaten Arbeitsdaten enthalten/ });
+    expect(consent).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Kopieren" })).toBeDisabled();
+  });
+
+  it("requires consent again when retrying produces a refreshed private briefing", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.getReflectionBriefing)
+      .mockImplementationOnce(async (_memberId, days, scope) => makeBriefing(scope, days))
+      .mockImplementationOnce(async (_memberId, days, scope) => makeBriefing(scope, days))
+      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockImplementationOnce(async (_memberId, days, scope) => makeBriefing(scope, days));
+    renderWithProviders(<ReflectionStartPage />);
+
+    await screen.findByRole("textbox", { name: "Vollständiger Inhalt zum Teilen" });
+    await user.click(screen.getByRole("button", { name: "Haushalt + meine Arbeit" }));
+    const consent = await screen.findByRole("checkbox", { name: /privaten Arbeitsdaten enthalten/ });
+    await user.click(consent);
+    expect(screen.getByRole("button", { name: "Kopieren" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "30 Tage" }));
+    const retry = await screen.findByRole("button", { name: "Erneut versuchen" });
+    await user.click(retry);
+    const refreshedConsent = await screen.findByRole("checkbox", { name: /privaten Arbeitsdaten enthalten/ });
+    expect(refreshedConsent).not.toBeChecked();
+    expect(screen.getByRole("button", { name: "Kopieren" })).toBeDisabled();
+  });
 });

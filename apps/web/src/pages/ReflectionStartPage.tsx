@@ -21,11 +21,18 @@ export function ReflectionStartPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
-  const [privateShareConsentKey, setPrivateShareConsentKey] = useState<string | null>(null);
+  const [privateShareConsent, setPrivateShareConsent] = useState<{ requestKey: string; briefing: ReflectionBriefing } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const requestId = useRef(0);
   const queryKey = `${currentMemberId ?? "none"}:${days}:${scope}`;
-  const requestKey = `${queryKey}:${retry}`;
+  const selectionRef = useRef({ queryKey, revision: 0 });
+  const [selectionRevision, setSelectionRevision] = useState(0);
+  if (selectionRef.current.queryKey !== queryKey) {
+    selectionRef.current = { queryKey, revision: selectionRef.current.revision + 1 };
+    setSelectionRevision(selectionRef.current.revision);
+    setPrivateShareConsent(null);
+  }
+  const requestKey = `${queryKey}:${retry}:${selectionRevision}`;
 
   useEffect(() => {
     const id = ++requestId.current;
@@ -66,7 +73,9 @@ export function ReflectionStartPage() {
   );
   const includesPrivateWork = scope !== "household";
   const briefingMatchesSelection = briefing !== null && briefingQueryKey === requestKey;
-  const mayExport = briefingMatchesSelection && (!includesPrivateWork || privateShareConsentKey === requestKey);
+  const mayExport = briefingMatchesSelection && (!includesPrivateWork || (
+    privateShareConsent?.requestKey === requestKey && privateShareConsent.briefing === briefing
+  ));
 
   const copy = async () => {
     setStatus(null);
@@ -104,7 +113,7 @@ export function ReflectionStartPage() {
           <div className="choice-group" role="group" aria-label={strings.reflectionPeriod}>
             {([30, 90, 180] as const).map((value) => (
               <button key={value} type="button" className="choice-chip" aria-pressed={days === value}
-                onClick={() => setDays(value)}>
+                onClick={() => { setPrivateShareConsent(null); setDays(value); }}>
                 {strings.reflectionDays(value)}
               </button>
             ))}
@@ -120,7 +129,7 @@ export function ReflectionStartPage() {
               ["all", strings.reflectionScopeAll],
             ] as const).map(([value, label]) => (
               <button key={value} type="button" className="choice-chip" aria-pressed={scope === value}
-                onClick={() => setScope(value)}>
+                onClick={() => { setPrivateShareConsent(null); setScope(value); }}>
                 {label}
               </button>
             ))}
@@ -140,8 +149,10 @@ export function ReflectionStartPage() {
         <>
           {includesPrivateWork ? (
             <label className="card reflection-private-confirm">
-              <input type="checkbox" checked={privateShareConsentKey === requestKey}
-                onChange={(event) => setPrivateShareConsentKey(event.target.checked ? requestKey : null)} />
+              <input type="checkbox" checked={privateShareConsent?.requestKey === requestKey && privateShareConsent.briefing === briefing}
+                onChange={(event) => setPrivateShareConsent(event.target.checked && briefing
+                  ? { requestKey, briefing }
+                  : null)} />
               <span>{strings.reflectionPrivateShareConsent}</span>
             </label>
           ) : null}
