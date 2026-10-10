@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import type { WorkRefinementProposal } from "@machbar/shared";
+import type { IntakeApplyResults, WorkRefinementProposal } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -296,7 +296,20 @@ export function applyWorkRefinement(
         projectRevision: current?.revision ?? conversion.projectRevision,
       }, context);
     }
-    const updated = tx.update(schema.intakeJobs).set({ status: "applied", revision: job.revision + 1, updatedAt: nowIso(), applyResultsJson: JSON.stringify({ work: [], calendar: [], paperlessDocumentIds: [] }) })
+    const target = tx.select({
+      role: schema.workItems.role,
+    }).from(schema.workItems).where(eq(schema.workItems.id, job.refinementTargetId!)).get();
+    const applyResults: IntakeApplyResults = {
+      work: target ? [{
+        key: "refinement-target",
+        kind: target.role === "story" ? "project" : "action",
+        workItemId: job.refinementTargetId!,
+        role: target.role === "story" ? "story" : "task",
+      }] : [],
+      calendar: [],
+      paperlessDocumentIds: [],
+    };
+    const updated = tx.update(schema.intakeJobs).set({ status: "applied", revision: job.revision + 1, updatedAt: nowIso(), applyResultsJson: JSON.stringify(applyResults) })
       .where(and(eq(schema.intakeJobs.id, id), eq(schema.intakeJobs.revision, expectedRevision), eq(schema.intakeJobs.status, "ready"))).run();
     if (updated.changes !== 1) throw AppError.conflict("stale_write_conflict", "The proposal changed while applying.");
     return { appliedChangeCount: changes.length };

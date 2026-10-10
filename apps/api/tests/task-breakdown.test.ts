@@ -73,6 +73,16 @@ describe("reviewed task breakdown", () => {
     expect(getIntake(ctx.handle.db, id, null).status).toBe("applied");
   });
 
+  it("exposes stored task lifecycle statuses through the public breakdown contract", () => {
+    const actionable = createTask(ctx.handle.db, { title: "Actionable", status: "actionable" });
+    const someday = createTask(ctx.handle.db, { title: "Someday", status: "someday" });
+    const actionablePrepared = prepare(actionable.id);
+    const somedayPrepared = prepare(someday.id);
+
+    expect(getIntake(ctx.handle.db, actionablePrepared.id, null).breakdown?.sourceStatus).toBe("actionable");
+    expect(getIntake(ctx.handle.db, somedayPrepared.id, null).breakdown?.sourceStatus).toBe("someday");
+  });
+
   it("keeps a captured task captured for a zero-child or title-only proposal", async () => {
     const task = createTask(ctx.handle.db, { title: "Kita-Formular" });
     const empty = prepare(task.id);

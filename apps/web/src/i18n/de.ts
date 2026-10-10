@@ -824,6 +824,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   aiProjectDriverRequired: "Wähle eine verantwortliche Person für das Projekt.",
   aiTaskRemainingAction: "Bleibt Aufgabe und behält ihren aktuellen Status.",
   aiProjectMetadataWarning: "Priorität und Aufgabengröße werden bei der Umwandlung in ein Projekt nicht übernommen.",
+  aiProjectTimingWarning: "Diese Aufgabe hat eine Wiedervorlage oder Verfügbarkeit. Kläre sie zuerst, bevor du sie in ein Projekt umwandelst.",
   position: "Position",
   refinementCreate: "Nächsten Schritt hinzufügen",
   refinementMove: "Vorhandene Aufgabe verschieben",

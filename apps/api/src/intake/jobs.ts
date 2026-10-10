@@ -32,6 +32,7 @@ import {
 } from "../integrations/homeAssistantRequests.js";
 import { intakePlanStructureSchema } from "../schemas.js";
 import { nowIso } from "../domain/workItemShared.js";
+import { lifecycleToTaskStatus, type WorkItemLifecycle } from "../domain/workItem.js";
 import { buildIntakeInstructions } from "./prompt.js";
 import { deleteJobFiles, writeAttachment } from "./storage.js";
 import { addExternalWorkItemRef } from "../domain/externalWorkItemRefs.js";
@@ -362,14 +363,14 @@ export function getIntake(
     id: number;
     parentId: number | null;
     title: string;
-    status: "captured" | "actionable" | "someday";
+    status: WorkItemLifecycle;
     ownerMemberId: number | null;
     scheduledDate: string | null;
     revisitAt: string | null;
     notBeforeAt: string | null;
     notBeforeDate: string | null;
-    priority: string | null;
-    size: number | null;
+    priority: number | null;
+    size: "S" | "M" | "L" | "XL" | null;
   }> : [];
   const breakdownSource = job.breakdownTaskId === null
     ? null
@@ -385,7 +386,10 @@ export function getIntake(
     breakdown: job.breakdownTaskId === null ? null : {
       taskId: job.breakdownTaskId,
       instruction: job.breakdownInstruction ?? "",
-      sourceStatus: breakdownSource?.status ?? "captured",
+      sourceStatus: (() => {
+        const status = breakdownSource ? lifecycleToTaskStatus(breakdownSource.status) : "captured";
+        return status === "captured" || status === "actionable" || status === "someday" ? status : "captured";
+      })(),
       sourceOwnerMemberId: breakdownSource?.ownerMemberId ?? null,
       scheduledDate: breakdownSource?.scheduledDate ?? null,
       revisitAt: breakdownSource?.revisitAt ?? null,

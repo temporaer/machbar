@@ -842,6 +842,7 @@ When the person ends the reflection, provide a concise human-readable summary an
   aiProjectDriverRequired: "Choose an accountable project driver.",
   aiTaskRemainingAction: "Remains a task and keeps its current status.",
   aiProjectMetadataWarning: "Priority and task size are not carried over when converting to a project.",
+  aiProjectTimingWarning: "This task has revisit or availability timing. Resolve it before converting the task into a project.",
   position: "Position",
   refinementCreate: "Add next action",
   refinementMove: "Move existing task",

@@ -1,4 +1,4 @@
-import type { Task, TaskReminderInput } from "./index.js";
+import type { Task, TaskReminderInput, TaskSize } from "./index.js";
 import type { CleanupRoundAiResponse, CleanupRoundAnalyzePayload } from "./cleanupRound.js";
 import {
   isAbsentOwnerSuggestion,
@@ -1224,8 +1224,8 @@ export interface IntakeRecord {
     revisitAt: string | null;
     notBeforeAt: string | null;
     notBeforeDate: string | null;
-    priority: string | null;
-    size: number | null;
+    priority: number | null;
+    size: TaskSize | null;
     existingChildren: Array<{ id: number; title: string; status: string; depth: number }>;
   } | null;
   refinement?: { targetType: "task" | "project"; targetId: number; intent: import("./workRefinement.js").WorkRefinementIntent; proposal: import("./workRefinement.js").WorkRefinementProposal | null } | null;
