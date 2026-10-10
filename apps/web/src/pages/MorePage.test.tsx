@@ -124,6 +124,15 @@ describe("MorePage", () => {
     );
   });
 
+  it("links to the standalone historical reflection export", async () => {
+    renderWithProviders(<MorePage />);
+
+    expect(await screen.findByRole("link", { name: /Reflexion starten/ })).toHaveAttribute(
+      "href",
+      "/more/reflection",
+    );
+  });
+
   it("shows the consolidated Review count and exhaustive inventory", async () => {
     renderWithProviders(<MorePage />);
 

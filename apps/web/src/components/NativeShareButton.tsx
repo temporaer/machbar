@@ -7,12 +7,14 @@ export function NativeShareButton({
   title,
   text,
   url,
+  disabled = false,
   showStatus = true,
   onStatusChange,
 }: {
   title: string;
   text: string;
   url?: string;
+  disabled?: boolean;
   showStatus?: boolean;
   onStatusChange?: (status: string | null) => void;
 }) {
@@ -54,7 +56,7 @@ export function NativeShareButton({
       <IconActionButton
         kind="share"
         label={strings.share}
-        disabled={busy}
+        disabled={busy || disabled}
         onClick={() => void share()}
       />
       {showStatus && status ? (

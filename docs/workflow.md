@@ -439,6 +439,18 @@ Machbar participates in both directions:
 Deep-link recipients still need network and authentication access to the same
 Machbar deployment.
 
+**Reflexion starten** (under Mehr) assembles the existing deterministic
+historical briefing for 30, 90, or 180 days. Household work is the default;
+including the selected member's private work requires an explicit scope choice
+and a separate confirmation. The page previews the complete package before
+sharing. Its coaching instruction is clearly separated from the factual
+briefing and encourages discussion of values, responsibilities, trade-offs,
+and optional behavior changes without inferring motives or treating activity
+counts as priorities. Nothing is sent until the person taps Share, Copy, or a
+download action. Share uses the browser/Android share sheet when available;
+ChatGPT is only one possible target. The coaching wrap-up remains a human
+handover draft until a later phase defines Machbar's import format.
+
 When the optional Paperless-ngx integration is configured, the Markdown editor
 can capture a phone photo, choose an image or file, or reference an existing
 Paperless document. Paperless stores the bytes; Machbar notes contain only

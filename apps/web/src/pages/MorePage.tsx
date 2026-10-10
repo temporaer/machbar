@@ -53,6 +53,13 @@ export function MorePage() {
               <span aria-hidden="true">›</span>
             </span>
           </Link>
+          <Link to="/more/reflection" className="list-link more-list-link">
+            <span>
+              <strong>{strings.reflectionStart}</strong>
+              <small className="list-link-description">{strings.reflectionStartDescription}</small>
+            </span>
+            <span aria-hidden="true">›</span>
+          </Link>
           {homeAssistant?.intakeReady ? (
             <Link to="/more/cleanup-round" className="list-link more-list-link">
               <span>
