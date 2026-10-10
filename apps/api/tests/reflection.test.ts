@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { ACTIVITY_ACTOR_HEADER } from "@machbar/shared";
 import * as schema from "../src/db/schema.js";
+import { convertTaskToStory } from "../src/domain/roleConversion.js";
 import { buildReflectionBriefing } from "../src/reflection/briefing.js";
 import { closeTestContext, createTestContext, insertTestProject, insertTestTask, type TestContext } from "./helpers.js";
 
@@ -102,7 +103,7 @@ describe("historical reflection briefing", () => {
   it("separates planning activity, outcome evidence, healthy waits and future plans", () => {
     const mira = member("Mira");
     const old = "2024-01-01T00:00:00.000Z";
-    const active = insertTestTask(ctx.handle.db, { title: "Unassigned action", status: "actionable", createdAt: old, updatedAt: old });
+    const active = insertTestTask(ctx.handle.db, { title: "Unassigned action", status: "actionable", dueDate: "2025-02-01", createdAt: old, updatedAt: old });
     const future = insertTestTask(ctx.handle.db, { title: "Deliberately later", status: "actionable", scheduledDate: "2025-04-01", createdAt: old, updatedAt: old });
     const waiting = insertTestTask(ctx.handle.db, { title: "Awaiting reply", status: "actionable", createdAt: old, updatedAt: old });
     ctx.handle.db.insert(schema.taskExternalWaits).values({ taskId: waiting.id, waitingFor: "Versicherung antwortet" }).run();
@@ -126,9 +127,12 @@ describe("historical reflection briefing", () => {
     const project = insertTestProject(ctx.handle.db, { title: "Backup-Konzept", status: "active", scope: "household" });
     const child = insertTestTask(ctx.handle.db, { title: "Restore testen", projectId: project.id, status: "done" });
     event({ kind: "task_status_changed", id: child.id, title: child.title, createdAt: "2025-02-10T12:00:00Z", metadata: { scope: "household", projectContextId: project.id, previousStatus: "actionable", nextStatus: "done" } });
+    event({ kind: "project_acceptance_criterion_checked", id: project.id, title: project.title, type: "project", createdAt: "2025-02-11T12:00:00Z", metadata: { scope: "household", checked: true } });
     const briefing = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days: 30, scope: "household", now: new Date("2025-03-01T12:00:00Z") });
     expect(briefing.history.progress.projectsWithRecordedChildOutcomes).toContainEqual(expect.objectContaining({ id: project.id, childId: child.id, childTitle: "Restore testen" }));
-    expect(briefing.history.progress.lastOutcomeProgressAt).toBe("2025-02-10T12:00:00Z");
+    expect(briefing.history.progress.lastOutcomeProgressAt).toBe("2025-02-11T12:00:00Z");
+    expect(briefing.history.progress.checkedAcceptanceCriteria).toContainEqual(expect.objectContaining({ projectId: project.id, projectTitle: project.title, date: "2025-02-11" }));
+    expect(briefing.history.finiteCompletions.some((x) => x.type === "project" && x.id === project.id)).toBe(false);
   });
 
   it("fails historical private visibility closed across transfer, scope change, deletion and missing provenance", () => {
@@ -165,6 +169,15 @@ describe("historical reflection briefing", () => {
     const briefing = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days: 30, scope: "household", now: new Date("2025-03-01T12:00:00Z") });
     expect(briefing.history.finiteCompletions.filter((x) => x.id === item.id)).toHaveLength(1);
     expect(briefing.history.finiteCompletions.find((x) => x.id === item.id)?.date).toBe("2025-02-03");
+  });
+
+  it("does not reuse a task route after the canonical task-to-project conversion", () => {
+    const mira = member("Mira");
+    const item = insertTestTask(ctx.handle.db, { title: "Historisch erledigter Entwurf", status: "actionable" });
+    event({ kind: "task_status_changed", id: item.id, title: item.title, createdAt: "2025-02-01T10:00:00Z", metadata: { scope: "household", previousStatus: "actionable", nextStatus: "done" } });
+    convertTaskToStory(ctx.handle.db, item.id, { status: "backlog" });
+    const briefing = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days: 30, scope: "household", now: new Date("2025-03-01T12:00:00Z") });
+    expect(briefing.history.finiteCompletions).toContainEqual(expect.objectContaining({ id: item.id, type: "task", href: null, currentItemAvailable: false }));
   });
 
   it("bounds Markdown examples with total and omitted counts while keeping JSON complete", () => {
