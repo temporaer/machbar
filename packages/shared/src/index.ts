@@ -475,13 +475,14 @@ export interface ReflectionBriefing {
       title: string;
       date: string;
       href: string | null;
+      currentItemAvailable: boolean;
     }>;
     bulkCompletionGroups: Array<{
       id: number;
       title: string;
       date: string;
       count: number;
-      href: string;
+      href: string | null;
     }>;
     recurringWork: Array<{
       taskId: number;
@@ -490,13 +491,29 @@ export interface ReflectionBriefing {
       missed: number;
       representatives: Array<{ date: string; result: "hit" | "miss" }>;
     }>;
+    progress: {
+      lastOutcomeProgressAt: string | null;
+      lastWorkEnablingProgressAt: string | null;
+      lastActivityAt: string | null;
+      projectsWithRecordedChildOutcomes: Array<{ id: number; title: string; date: string; childId: number; childTitle: string }>;
+      checkedAcceptanceCriteria: Array<{ projectId: number; projectTitle: string; date: string }>;
+      verifiedUnblocking: Array<{ id: number; type: "task" | "project"; title: string; date: string; reason: string; href: string | null }>;
+    };
     inactiveWork: Array<{
       id: number;
       type: "task" | "project";
       title: string;
       href: string;
-      lastMeaningfulProgressAt: string | null;
-      evidence: "known" | "no_recorded_progress";
+      classification: "actionable_no_recorded_progress" | "intentional_wait" | "future_planned" | "insufficient_evidence";
+      status: string | "unavailable";
+      lastOutcomeProgressAt: string | null;
+      lastWorkEnablingProgressAt: string | null;
+      lastActivityAt: string | null;
+      scheduledDate: string | null;
+      revisitAt: string | null;
+      dueDate: string | null;
+      waitingReason: string | null;
+      evidenceLimitations: string[];
     }>;
     postponements: Array<{
       id: number;
@@ -505,9 +522,9 @@ export interface ReflectionBriefing {
       date: string;
       from: string;
       to: string;
-      href: string;
+      href: string | null;
     }>;
-    activityCounts: { administrative: number; finiteOutcomes: number; milestones: number };
+    activityCounts: { administrative: number; finiteOutcomes: number; milestones: number; recurringOccurrences: number; explicitPostponements: number; unresolvedActiveWork: number };
     evidence: {
       incomplete: boolean;
       notes: string[];
