@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { intakeErrorIssues, type IntakeRecord, type WorkRefinementChange } from "@machbar/shared";
 import { api } from "../lib/api";
-import { localizedErrorMessage } from "../lib/errorMessage";
+import { isStaleWriteConflict, localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import { useIdentity } from "../lib/identity";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
@@ -13,58 +13,231 @@ const labels = {
   update_project_outcome: "refinementOutcome", advisory: "refinementAdvisory",
 } as const;
 
+type RefinementProposal = NonNullable<
+  NonNullable<IntakeRecord["refinement"]>["proposal"]
+>;
+
+type ServerProposalBaseline = {
+  recordId: string;
+  revision: number;
+  proposal: RefinementProposal | null;
+  signature: string;
+};
+
+function semanticSignature(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => semanticSignature(item)).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${semanticSignature(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value) ?? String(value);
+}
+
 export function WorkRefinementReview({ record, onChange }: { record: IntakeRecord; onChange: (record: IntakeRecord) => void }) {
   const strings = useStrings();
   const { members } = useIdentity();
   const navigate = useNavigate();
   const refinement = record.refinement;
-  const [proposalDraft, setProposalDraft] = useState(refinement?.proposal ?? null);
-  useEffect(() => { setProposalDraft(refinement?.proposal ?? null); }, [record.revision, record.status, refinement?.proposal]);
-  const proposal = proposalDraft ?? refinement?.proposal;
+  const serverProposal = refinement?.proposal ?? null;
+  const [proposalDraft, setProposalDraft] = useState<RefinementProposal | null>(serverProposal);
+  const proposalDraftRef = useRef<RefinementProposal | null>(serverProposal);
+  const draftGenerationRef = useRef(0);
+  const serverBaselineRef = useRef<ServerProposalBaseline>({
+    recordId: record.id,
+    revision: record.revision,
+    proposal: serverProposal,
+    signature: semanticSignature(serverProposal),
+  });
+  const allowServerReplacementRef = useRef(false);
+  const [conflict, setConflict] = useState(false);
+  const proposal = serverBaselineRef.current.recordId === record.id
+    ? (proposalDraft ?? refinement?.proposal)
+    : serverProposal;
   const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
+  const [operation, setOperation] = useState<"save" | "apply" | "regenerate" | "discard" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [projectDriverMemberId, setProjectDriverMemberId] = useState<number | null>(null);
+  const incomingProposalSignature = semanticSignature(serverProposal);
+  const editorLocked = busy && (operation === "apply" || operation === "regenerate" || operation === "discard");
+  const latestObservedRevisionRef = useRef(record.revision);
+
+  const setDraft = useCallback((next: RefinementProposal | null, userEdit = true) => {
+    proposalDraftRef.current = next;
+    if (userEdit) draftGenerationRef.current += 1;
+    setProposalDraft(next);
+  }, []);
+
+  useEffect(() => {
+    const incomingBaseline: ServerProposalBaseline = {
+      recordId: record.id,
+      revision: record.revision,
+      proposal: serverProposal,
+      signature: incomingProposalSignature,
+    };
+    const previous = serverBaselineRef.current;
+
+    if (previous.recordId !== record.id) {
+      serverBaselineRef.current = incomingBaseline;
+      latestObservedRevisionRef.current = record.revision;
+      setDraft(serverProposal, false);
+      setConflict(false);
+      setAnswer("");
+      setError(null);
+      return;
+    }
+
+    latestObservedRevisionRef.current = Math.max(latestObservedRevisionRef.current, record.revision);
+    if (allowServerReplacementRef.current) {
+      allowServerReplacementRef.current = false;
+      serverBaselineRef.current = incomingBaseline;
+      setDraft(serverProposal, false);
+      setConflict(false);
+      return;
+    }
+
+    if (
+      record.revision < previous.revision ||
+      (record.revision === previous.revision &&
+        incomingProposalSignature === previous.signature)
+    ) {
+      return;
+    }
+
+    const currentDraftSignature = semanticSignature(proposalDraftRef.current);
+    const draftIsDirty = currentDraftSignature !== previous.signature;
+    serverBaselineRef.current = incomingBaseline;
+
+    if (!draftIsDirty) {
+      setDraft(serverProposal, false);
+      setConflict(false);
+      return;
+    }
+
+    // A revision can advance while the server proposal remains equivalent.
+    // That is not a content conflict, and the local draft must stay intact.
+    if (incomingProposalSignature === previous.signature) return;
+
+    if (incomingProposalSignature === currentDraftSignature) {
+      setDraft(serverProposal, false);
+      setConflict(false);
+    } else {
+      setConflict(true);
+    }
+  }, [
+    incomingProposalSignature,
+    record.id,
+    record.revision,
+    setDraft,
+  ]);
+
   if (!refinement || !proposal) return null;
   const update = (index: number, patch: Partial<WorkRefinementChange>) => {
     const changes = proposal.changes.map((item, i) => i === index ? { ...item, ...patch } as WorkRefinementChange : item);
-    setProposalDraft({ ...proposal, changes });
+    setDraft({ ...proposal, changes });
   };
+
+  const acknowledgeServerProposal = (
+    next: IntakeRecord,
+    generationAtRequest: number,
+    fallbackProposal: RefinementProposal,
+    options: { allowReplacement?: boolean } = {},
+  ) => {
+    if (next.id === record.id && next.revision < latestObservedRevisionRef.current) {
+      setConflict(true);
+      return false;
+    }
+    const nextProposal = next.refinement?.proposal ?? fallbackProposal;
+    serverBaselineRef.current = {
+      recordId: next.id,
+      revision: next.revision,
+      proposal: nextProposal,
+      signature: semanticSignature(nextProposal),
+    };
+    if (options.allowReplacement) {
+      allowServerReplacementRef.current = true;
+    } else if (draftGenerationRef.current === generationAtRequest) {
+      setDraft(nextProposal, false);
+    }
+    setConflict(false);
+    onChange(next);
+    return true;
+  };
+
+  const persistLatestProposal = async (): Promise<IntakeRecord | null> => {
+    let latestRecord = record;
+    while (true) {
+      const currentProposal = proposalDraftRef.current;
+      if (!currentProposal) return null;
+      const generationAtRequest = draftGenerationRef.current;
+      latestRecord = await api.updateWorkRefinement(latestRecord.id, {
+        expectedRevision: latestRecord.revision,
+        proposal: currentProposal,
+      });
+      const acknowledged = acknowledgeServerProposal(
+        latestRecord,
+        generationAtRequest,
+        currentProposal,
+      );
+      if (!acknowledged) return null;
+      if (draftGenerationRef.current === generationAtRequest) return latestRecord;
+    }
+  };
+
   const save = async () => {
-    setBusy(true); setError(null);
+    const currentProposal = proposalDraftRef.current;
+    if (!currentProposal) return;
+    const generationAtRequest = draftGenerationRef.current;
+    setOperation("save"); setBusy(true); setError(null);
     try {
-      const next = await api.updateWorkRefinement(record.id, { expectedRevision: record.revision, proposal }); onChange(next); setProposalDraft(next.refinement?.proposal ?? null);
-    } catch (cause) { setError(localizedErrorMessage(cause, strings)); }
-    finally { setBusy(false); }
+      const next = await api.updateWorkRefinement(record.id, {
+        expectedRevision: record.revision,
+        proposal: currentProposal,
+      });
+      acknowledgeServerProposal(next, generationAtRequest, currentProposal);
+    } catch (cause) {
+      if (isStaleWriteConflict(cause)) setConflict(true);
+      setError(localizedErrorMessage(cause, strings));
+    }
+    finally { setBusy(false); setOperation(null); }
   };
   const apply = async () => {
-    setBusy(true); setError(null);
+    setOperation("apply"); setBusy(true); setError(null);
     try {
-      const current = await api.updateWorkRefinement(record.id, { expectedRevision: record.revision, proposal });
-      onChange(current);
+      const current = await persistLatestProposal();
+      if (!current) return;
       onChange(await api.applyWorkRefinement(record.id, {
         expectedRevision: current.revision,
         ...(projectDriverMemberId !== null ? { projectDriverMemberId } : {}),
       }));
     } catch (cause) { setError(localizedErrorMessage(cause, strings)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setOperation(null); }
   };
   const regenerate = async () => {
-    setBusy(true); setError(null);
+    setOperation("regenerate"); setBusy(true); setError(null);
     try {
-      const saved = await api.updateWorkRefinement(record.id, { expectedRevision: record.revision, proposal });
-      onChange(saved);
+      const saved = await persistLatestProposal();
+      if (!saved) return;
+      allowServerReplacementRef.current = true;
       onChange(await api.retryIntake(record.id, answer));
       setAnswer("");
     }
-    catch (cause) { setError(localizedErrorMessage(cause, strings)); }
-    finally { setBusy(false); }
+    catch (cause) {
+      allowServerReplacementRef.current = false;
+      setError(localizedErrorMessage(cause, strings));
+    }
+    finally { setBusy(false); setOperation(null); }
   };
   const discard = async () => {
-    setBusy(true);
+    setOperation("discard"); setBusy(true);
     try { await api.deleteIntake(record.id); navigate("/today"); }
     catch (cause) { setError(localizedErrorMessage(cause, strings)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setOperation(null); }
   };
   const label = (change: WorkRefinementChange) => strings[labels[change.kind]];
   const contextLabels = new Map<number, { title: string; path: string; position: number; parentTaskId: number | null; projectId: number | null }>();
@@ -146,6 +319,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
           ))}
         </section>
       ) : null}
+      {conflict ? <p role="alert" className="error-text">{strings.refinementConflict}</p> : null}
       {!leaveAlone ? proposal.changes.map((change, index) => <article className="card stack" key={`${change.kind}-${index}`}>
         {change.kind === "convert_task_to_project" && change.targetId === refinement.targetId && change.accepted ? (
           <section className="card stack">
@@ -161,6 +335,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
                   idPrefix="refinement-project-driver"
                   members={members}
                   value={projectDriverMemberId}
+                  disabled={editorLocked}
                   onChange={(memberId) => {
                     if (memberId !== null) setProjectDriverMemberId(memberId);
                   }}
@@ -175,7 +350,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         {change.kind === "create_child" && proposal.changes.some((candidate) => candidate.kind === "convert_task_to_project" && candidate.targetId === change.parentTaskId) ? <p className="muted">{strings.refinementRequiresConversion}</p> : null}
         <label className="inline-row"><input type="checkbox" checked={change.accepted} disabled={change.kind === "advisory" || busy} onChange={(event) => {
           const checked = event.target.checked;
-          setProposalDraft({ ...proposal, changes: proposal.changes.map((candidate, candidateIndex) => ({
+          setDraft({ ...proposal, changes: proposal.changes.map((candidate, candidateIndex) => ({
             ...candidate,
             accepted: candidateIndex === index ? checked
               : !checked && change.kind === "convert_task_to_project" && candidate.kind === "create_child" && candidate.parentTaskId === change.targetId ? false
@@ -187,11 +362,11 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
           return <small key={key}>{context ? <Link to={context.path} target="_blank" rel="noreferrer">{context.title}</Link> : `#${value}`}</small>;
         })}
         <p>{change.rationale}</p>
-        {"title" in change ? <label className="stack"><span>{strings.title}</span><input value={change.title} onChange={(event) => update(index, { title: event.target.value })} /></label> : null}
-        {"notes" in change && change.notes !== undefined ? <label className="stack"><span>{strings.notes}</span><textarea value={change.notes ?? ""} onChange={(event) => update(index, { notes: event.target.value })} /></label> : null}
-        {change.kind === "update_wait" ? <label className="stack"><span>{strings.refinementWait}</span><input value={change.waitingFor} onChange={(event) => update(index, { waitingFor: event.target.value })} /></label> : null}
-        {change.kind === "update_project_outcome" ? <label className="stack"><span>{strings.refinementOutcome}</span><textarea value={change.outcome} onChange={(event) => update(index, { outcome: event.target.value })} /></label> : null}
-        {change.kind === "move_task" ? <label className="stack"><span>{strings.refinementMoveDestination}</span><select value={change.position} onChange={(event) => update(index, { position: Number(event.target.value) })}>
+        {"title" in change ? <label className="stack"><span>{strings.title}</span><input disabled={editorLocked} value={change.title} onChange={(event) => update(index, { title: event.target.value })} /></label> : null}
+        {"notes" in change && change.notes !== undefined ? <label className="stack"><span>{strings.notes}</span><textarea disabled={editorLocked} value={change.notes ?? ""} onChange={(event) => update(index, { notes: event.target.value })} /></label> : null}
+        {change.kind === "update_wait" ? <label className="stack"><span>{strings.refinementWait}</span><input disabled={editorLocked} value={change.waitingFor} onChange={(event) => update(index, { waitingFor: event.target.value })} /></label> : null}
+        {change.kind === "update_project_outcome" ? <label className="stack"><span>{strings.refinementOutcome}</span><textarea disabled={editorLocked} value={change.outcome} onChange={(event) => update(index, { outcome: event.target.value })} /></label> : null}
+        {change.kind === "move_task" ? <label className="stack"><span>{strings.refinementMoveDestination}</span><select disabled={editorLocked} value={change.position} onChange={(event) => update(index, { position: Number(event.target.value) })}>
           {Array.from({ length: moveSiblings(change).length + 1 }, (_, position) => {
             const siblings = moveSiblings(change);
             const text = position === 0 ? strings.refinementMoveBeginning : position >= siblings.length ? strings.refinementMoveEnd : `${strings.refinementMoveAfter} ${contextLabels.get(siblings[position - 1]![0])?.title ?? ""}`;
@@ -200,7 +375,7 @@ export function WorkRefinementReview({ record, onChange }: { record: IntakeRecor
         </select></label> : null}
         {change.kind === "advisory" ? <p>{change.title}</p> : null}
       </article>) : null}
-      <label className="stack"><span>{proposal.question ? strings.refinementAnswerLabel : strings.refinementFeedbackLabel}</span><textarea value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder={proposal.question ?? strings.workRefinementPlaceholder} /></label>
+      <label className="stack"><span>{proposal.question ? strings.refinementAnswerLabel : strings.refinementFeedbackLabel}</span><textarea disabled={editorLocked} value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder={proposal.question ?? strings.workRefinementPlaceholder} /></label>
       {error ? <p role="alert" className="error-text">{error}</p> : null}
       <div className="actions">
         {hasRetryFeedback || record.status === "analysis_failed" ? <button className="btn" disabled={busy || !canRegenerate} onClick={() => void regenerate()}>{hasRetryFeedback ? proposal.question ? strings.refinementRegenerate : strings.refinementRegenerateFeedback : strings.intakeRetry}</button> : null}

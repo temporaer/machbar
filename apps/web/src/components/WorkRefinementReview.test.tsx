@@ -26,8 +26,189 @@ function record(disposition: "changes" | "clarification" | "leave_alone" = "chan
   } as IntakeRecord;
 }
 
+function withProposalTitle(current: IntakeRecord, title: string, revision = 3): IntakeRecord {
+  const next = structuredClone(current);
+  const refinement = next.refinement;
+  if (!refinement?.proposal) throw new Error("test record has no proposal");
+  const first = refinement.proposal.changes[0];
+  if (!first || !("title" in first)) throw new Error("test record has no titled change");
+  next.revision = revision;
+  next.refinement = {
+    ...refinement,
+    proposal: {
+      ...refinement.proposal,
+      changes: [{ ...first, title }, ...refinement.proposal.changes.slice(1)],
+    },
+  };
+  return next;
+}
+
 describe("WorkRefinementReview", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("preserves edited fields across an equivalent background refresh", async () => {
+    const current = record();
+    const { rerender } = renderWithProviders(
+      <WorkRefinementReview record={current} onChange={vi.fn()} />,
+    );
+    const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
+    await userEvent.clear(title);
+    await userEvent.type(title, "Kita-Formular persönlich abgeben");
+
+    const refreshed = structuredClone(current);
+    rerender(<WorkRefinementReview record={refreshed} onChange={vi.fn()} />);
+
+    expect(screen.getByDisplayValue("Kita-Formular persönlich abgeben")).toBeInTheDocument();
+  });
+
+  it("keeps local edits and checkbox selections on same-revision refetches", async () => {
+    const current = record();
+    const { rerender } = renderWithProviders(
+      <WorkRefinementReview record={current} onChange={vi.fn()} />,
+    );
+    const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
+    await userEvent.clear(title);
+    await userEvent.type(title, "Kita-Formular selbst abgeben");
+    await userEvent.click(screen.getByRole("checkbox"));
+
+    rerender(<WorkRefinementReview record={structuredClone(current)} onChange={vi.fn()} />);
+
+    expect(screen.getByDisplayValue("Kita-Formular selbst abgeben")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox")).toBeChecked();
+  });
+
+  it("preserves edits made while Save is in flight and acknowledges the older response", async () => {
+    const current = record();
+    let resolveSave: ((value: IntakeRecord) => void) | undefined;
+    mockedApi.updateWorkRefinement.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSave = resolve;
+      }),
+    );
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+
+    const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
+    await userEvent.clear(title);
+    await userEvent.type(title, "Kita-Formular B");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    await userEvent.clear(title);
+    await userEvent.type(title, "Kita-Formular C");
+
+    resolveSave?.(withProposalTitle(current, "Kita-Formular B"));
+
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("Kita-Formular C")).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeEnabled();
+  });
+
+  it("reports a remote proposal conflict without replacing local edits", async () => {
+    const current = record();
+    const { rerender } = renderWithProviders(
+      <WorkRefinementReview record={current} onChange={vi.fn()} />,
+    );
+    const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
+    await userEvent.clear(title);
+    await userEvent.type(title, "Lokale Änderung");
+
+    rerender(<WorkRefinementReview record={withProposalTitle(current, "Entfernte Änderung")} onChange={vi.fn()} />);
+
+    expect(screen.getByDisplayValue("Lokale Änderung")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Vorschlag wurde inzwischen geändert");
+  });
+
+  it("updates a clean editor when a newer server proposal arrives", async () => {
+    const current = record();
+    const { rerender } = renderWithProviders(
+      <WorkRefinementReview record={current} onChange={vi.fn()} />,
+    );
+    rerender(<WorkRefinementReview record={withProposalTitle(current, "Neue Serverfassung")} onChange={vi.fn()} />);
+
+    expect(await screen.findByDisplayValue("Neue Serverfassung")).toBeInTheDocument();
+  });
+
+  it("allows an intentional regeneration to replace the acknowledged proposal", async () => {
+    const current = record();
+    const regenerated = withProposalTitle(current, "Neu erzeugter Vorschlag");
+    regenerated.revision = 4;
+    mockedApi.updateWorkRefinement.mockResolvedValue(withProposalTitle(current, "Gespeicherte Änderung"));
+    mockedApi.retryIntake.mockResolvedValue(regenerated);
+    const onChange = vi.fn();
+    const { rerender } = renderWithProviders(
+      <WorkRefinementReview record={current} onChange={onChange} />,
+    );
+
+    await userEvent.type(screen.getByLabelText("Änderungswunsch"), "Bitte konkreter.");
+    await userEvent.click(screen.getByRole("button", { name: "Vorschlag mit Feedback neu erstellen" }));
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(regenerated));
+    rerender(<WorkRefinementReview record={regenerated} onChange={onChange} />);
+
+    expect(screen.getByDisplayValue("Neu erzeugter Vorschlag")).toBeInTheDocument();
+  });
+
+  it("freezes the editor from the start of Apply", async () => {
+    const current = record();
+    let resolveUpdate: ((value: IntakeRecord) => void) | undefined;
+    mockedApi.updateWorkRefinement.mockImplementation(() => new Promise((resolve) => {
+      resolveUpdate = resolve;
+    }));
+    mockedApi.applyWorkRefinement.mockResolvedValue({ ...current, status: "applied", revision: 5 } as IntakeRecord);
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+    const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
+    await waitFor(() => expect(title).toBeDisabled());
+    resolveUpdate?.(withProposalTitle(current, "Änderung beim Start"));
+
+    await waitFor(() => expect(mockedApi.applyWorkRefinement).toHaveBeenCalledWith("job", { expectedRevision: 3 }));
+  });
+
+  it("freezes the editor after the final persistence step until Apply completes", async () => {
+    const current = record();
+    let resolveApply: ((value: IntakeRecord) => void) | undefined;
+    mockedApi.updateWorkRefinement.mockResolvedValue(withProposalTitle(current, "Gespeicherte Änderung"));
+    mockedApi.applyWorkRefinement.mockReturnValue(new Promise((resolve) => {
+      resolveApply = resolve;
+    }));
+    renderWithProviders(<WorkRefinementReview record={current} onChange={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Ausgewählte Änderungen übernehmen" }));
+    const title = screen.getByDisplayValue("Gespeicherte Änderung");
+    await waitFor(() => expect(title).toBeDisabled());
+    expect(title).toHaveValue("Gespeicherte Änderung");
+
+    resolveApply?.({ ...current, status: "applied", revision: 4 } as IntakeRecord);
+    await waitFor(() => expect(mockedApi.applyWorkRefinement).toHaveBeenCalledWith("job", { expectedRevision: 3 }));
+  });
+
+  it("rejects a stale Save response after a newer remote revision was observed", async () => {
+    const current = record();
+    let resolveSave: ((value: IntakeRecord) => void) | undefined;
+    const onChange = vi.fn();
+    mockedApi.updateWorkRefinement.mockReturnValue(new Promise((resolve) => {
+      resolveSave = resolve;
+    }));
+    const { rerender } = renderWithProviders(
+      <WorkRefinementReview record={current} onChange={onChange} />,
+    );
+    const title = screen.getByDisplayValue("Kita-Formular im Sekretariat abgeben");
+    await userEvent.clear(title);
+    await userEvent.type(title, "Lokale Änderung");
+    await userEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    rerender(
+      <WorkRefinementReview
+        record={withProposalTitle(current, "Entfernte Änderung", 4)}
+        onChange={onChange}
+      />,
+    );
+    resolveSave?.(withProposalTitle(current, "Veraltete Antwort", 3));
+
+    await waitFor(() => expect(screen.getByDisplayValue("Lokale Änderung")).toBeInTheDocument());
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("Vorschlag wurde inzwischen geändert");
+  });
+
   it("lets the user accept an individual edit and applies the reviewed proposal", async () => {
     const current = record();
     mockedApi.updateWorkRefinement.mockImplementation(async (_id, body) => ({ ...current, revision: 3, refinement: { ...current.refinement!, proposal: body.proposal } } as IntakeRecord));
