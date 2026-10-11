@@ -26,6 +26,7 @@ import type {
   PaperlessDocumentSummary,
   PaperlessIntegrationStatus,
   Project,
+  ProjectActivationDecisionSnapshot,
   ProjectActivationReadiness,
   ProjectActivationResolution,
   ProjectAgendaEntry,
@@ -293,6 +294,8 @@ export type StuckProjectWithActions = StuckProject & {
 };
 export type ProjectDetail = ProjectWithActions & {
   tasks: Task[];
+  activationDecisionSnapshot?: ProjectActivationDecisionSnapshot;
+  directActivationDecisionSnapshot?: ProjectActivationDecisionSnapshot;
   childStories?: ProjectWithActions[];
   ancestors?: WorkItemAncestor[];
   externalRefs?: ExternalWorkItemRef[];

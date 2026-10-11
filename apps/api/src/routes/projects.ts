@@ -40,6 +40,7 @@ import {
 } from "../schemas.js";
 import { parseOrThrow } from "../validation.js";
 import { listExternalWorkItemRefs } from "../domain/externalWorkItemRefs.js";
+import { projectActivationDecisionSnapshot } from "../domain/commitmentActivation.js";
 
 function parseId(raw: string): number {
   const id = Number.parseInt(raw, 10);
@@ -97,6 +98,8 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
     }
     return {
       ...project,
+      activationDecisionSnapshot: projectActivationDecisionSnapshot(db, id),
+      directActivationDecisionSnapshot: projectActivationDecisionSnapshot(db, id, "explicit_activation"),
       externalRefs: listExternalWorkItemRefs(db, project.id),
       tasks: (graph.rootsByProject.get(id) ?? []).map(attachRefs),
     };

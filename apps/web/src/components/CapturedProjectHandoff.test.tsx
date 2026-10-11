@@ -132,6 +132,7 @@ describe("CapturedProjectHandoff", () => {
           hasDriver: false,
           hasViableProgressPath: progress === "executable",
           hasHealthyFutureWaiting: progress === "future waiting",
+          requiredDecisions: ["driver"],
         },
       });
       mockedApi.getMembers.mockResolvedValue([makeMember({ id: 1, name: "Mira" })]);

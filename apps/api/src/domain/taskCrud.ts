@@ -29,11 +29,12 @@ import { deletePendingTaskReminderEvents } from "../notifications/outbox.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import { assertReferenceCapableInput } from "./taskKindGuard.js";
 import { assertActionTask } from "./taskKindGuard.js";
+import { activateCommittedProjectChain } from "./commitmentActivation.js";
 import {
-  activateCommittedProjectChain,
-  assertProjectActivationResolutionFresh,
-  projectNeedsProgressPath,
-} from "./commitmentActivation.js";
+  committedTaskStatus,
+  evaluateCommitmentTransition,
+  hasExecutionCommitment,
+} from "./commitmentTransition.js";
 import {
   MutationContext,
   actor,
@@ -359,19 +360,6 @@ function assertCapturedTaskShape(
   }
 }
 
-function isExecutionCommitment(input: {
-  kind: TaskKind;
-  dueDate: string | null;
-  scheduledDate: string | null;
-  revisitAt?: string | null;
-  reminders: readonly unknown[];
-}): boolean {
-  return input.kind === "action" && (
-    input.dueDate !== null || input.scheduledDate !== null ||
-    (input.reminders.length > 0 && input.revisitAt == null)
-  );
-}
-
 export function nextPositionForGroup(
   db: Db,
   parentTaskId: number | null,
@@ -450,15 +438,14 @@ function insertTask(
           input.needsClarification,
           projectId === null && parentTaskId === null ? "captured" : "actionable",
         );
-  const status = isExecutionCommitment({
+  const executionCommitment = hasExecutionCommitment({
     kind,
     dueDate: kind === "reference" ? null : input.dueDate ?? null,
     scheduledDate: kind === "reference" ? null : input.scheduledDate ?? null,
     revisitAt: input.revisitAt ?? input.notBeforeAt ?? input.notBeforeDate ?? null,
     reminders: input.reminders ?? [],
-  }) && (requestedStatus === "captured" || requestedStatus === "someday")
-    ? "actionable"
-    : requestedStatus;
+  });
+  const status = committedTaskStatus(requestedStatus, executionCommitment);
   const repeatAfterDays = kind === "reference" ? null : input.repeatAfterDays ?? null;
   const allowedDeviationDays =
     kind === "reference" ? null : input.allowedDeviationDays ?? null;
@@ -542,39 +529,32 @@ function insertTask(
   return getTaskOrThrow(db, task.id);
 }
 
-/** Creates a user-authored progress action inside a caller's atomic transition. */
-export function createCommitmentNextAction(
-  db: Db,
-  projectId: number,
-  title: string,
-  context?: MutationContext,
+function commitmentSubjectForTask(
+  task: {
+    id: number;
+    kind: TaskKind;
+    status: TaskStatus;
+    dueDate: string | null;
+    scheduledDate: string | null;
+    revisitAt: string | null;
+    repeatAfterDays: number | null;
+    reminders: readonly unknown[];
+  },
+  newExecutionCommitment: boolean,
+  initialStatus: TaskStatus = task.status,
+  explicitlyReopened = false,
 ) {
-  const task = insertTask(db, { projectId, title, status: "actionable" });
-  recordActivity(db, {
-    actorMemberId: actor(context),
-    kind: "task_created",
-    entityType: "task",
-    entityTitle: task.title,
-    taskId: task.id,
-    projectId: task.projectId,
-    metadata: {},
-  });
-  return task;
-}
-
-function applyCommitmentProgressPath(
-  db: Db,
-  projectId: number,
-  resolution: ProjectActivationResolution | undefined,
-  context?: MutationContext,
-): void {
-  const title = resolution?.nextActionTitle?.trim();
-  if (!title) return;
-  assertProjectActivationResolutionFresh(db, projectId, resolution);
-  const project = getProjectOrThrow(db, projectId);
-  if (projectNeedsProgressPath(db, projectId, project.ownerMemberId)) {
-    createCommitmentNextAction(db, projectId, title, context);
-  }
+  return {
+    type: "task" as const,
+    id: task.id,
+    status: initialStatus,
+    targetStatus: task.status,
+    executionCommitment: hasExecutionCommitment(task),
+    newExecutionCommitment,
+    revisitAt: task.revisitAt,
+    recurring: task.repeatAfterDays !== null,
+    explicitlyReopened,
+  };
 }
 
 export function createTask(
@@ -628,15 +608,14 @@ export function createTask(
         personalEligible: true,
       });
     }
-    if (task.projectId !== null && isExecutionCommitment({
+    if (task.projectId !== null && hasExecutionCommitment({
       kind: task.kind,
       dueDate: task.dueDate,
       scheduledDate: task.scheduledDate,
       revisitAt: task.revisitAt,
       reminders: task.reminders,
     })) {
-      applyCommitmentProgressPath(txDb, task.projectId, input.activationResolution, context);
-      activateCommittedProjectChain(txDb, task.projectId, context, input.activationResolution);
+      activateCommittedProjectChain(txDb, task.projectId, context, input.activationResolution, commitmentSubjectForTask(task, true));
     }
     return task;
   });
@@ -734,15 +713,14 @@ export function createChildTask(
         personalEligible: true,
       });
     }
-    if (task.projectId !== null && isExecutionCommitment({
+    if (task.projectId !== null && hasExecutionCommitment({
       kind: task.kind,
       dueDate: task.dueDate,
       scheduledDate: task.scheduledDate,
       revisitAt: task.revisitAt,
       reminders: task.reminders,
     })) {
-      applyCommitmentProgressPath(txDb, task.projectId, input.activationResolution, context);
-      activateCommittedProjectChain(txDb, task.projectId, context, input.activationResolution);
+      activateCommittedProjectChain(txDb, task.projectId, context, input.activationResolution, commitmentSubjectForTask(task, true));
     }
     return task;
   });
@@ -840,15 +818,14 @@ export function createTaskSuccessor(
         personalEligible: true,
       });
     }
-    if (successor.projectId !== null && isExecutionCommitment({
+    if (successor.projectId !== null && hasExecutionCommitment({
       kind: successor.kind,
       dueDate: successor.dueDate,
       scheduledDate: successor.scheduledDate,
       revisitAt: successor.revisitAt,
       reminders: successor.reminders,
     })) {
-      applyCommitmentProgressPath(txDb, successor.projectId, input.activationResolution, context);
-      activateCommittedProjectChain(txDb, successor.projectId, context, input.activationResolution);
+      activateCommittedProjectChain(txDb, successor.projectId, context, input.activationResolution, commitmentSubjectForTask(successor, true));
     }
     return successor;
   });
@@ -1062,7 +1039,7 @@ export function updateTask(
         ? input.dueDate
         : currentTask.dueDate;
     const remindersAfter = input.reminders ?? currentTask.reminders;
-    const executionCommitmentAfter = isExecutionCommitment({
+    const executionCommitmentAfter = hasExecutionCommitment({
       kind: currentTask.kind,
       dueDate: effectiveDueDate,
       scheduledDate: effectiveScheduledDate,
@@ -1073,23 +1050,31 @@ export function updateTask(
       (input.dueDate !== undefined && input.dueDate !== currentTask.dueDate && input.dueDate !== null) ||
       (input.scheduledDate !== undefined && input.scheduledDate !== currentTask.scheduledDate && input.scheduledDate !== null) ||
       (input.reminders !== undefined && currentTask.reminders.length === 0 && input.reminders.length > 0 && effectiveRevisitAt === null);
-    if (
-      addsExecutionCommitment &&
-      (currentTask.status === "done" || currentTask.status === "cancelled") &&
-      nextStatus !== "actionable"
-    ) {
+    const requestedTargetStatus = nextStatus ?? currentTask.status;
+    const taskTransition = evaluateCommitmentTransition({
+      today: new Date().toISOString().slice(0, 10),
+      subject: {
+        type: "task",
+        id,
+        status: currentTask.status,
+        targetStatus: requestedTargetStatus,
+        executionCommitment: executionCommitmentAfter,
+        newExecutionCommitment: addsExecutionCommitment,
+        revisitAt: effectiveRevisitAt,
+        recurring: nextRepeatAfterDays !== null,
+        explicitlyReopened: nextStatus === "actionable",
+      },
+      projects: [],
+    }, "commitment");
+    if (taskTransition.kind === "conflict" && taskTransition.reason === "terminal_task_requires_reopen") {
       throw AppError.conflict(
         "task_reopen_required",
         "Reopen this completed or cancelled task before adding an execution commitment.",
         { taskId: id, currentStatus: currentTask.status, requiredStatus: "actionable" },
       );
     }
-    const effectiveTargetStatus = nextStatus ?? currentTask.status;
-    if (
-      executionCommitmentAfter &&
-      (effectiveTargetStatus === "captured" || effectiveTargetStatus === "someday")
-    ) {
-      nextStatus = "actionable";
+    if (taskTransition.kind === "ready" && taskTransition.plan.taskStatus !== requestedTargetStatus) {
+      nextStatus = taskTransition.plan.taskStatus ?? nextStatus;
     }
     if (currentExternalWait && nextRepeatAfterDays !== null) {
       throw AppError.conflict(
@@ -1763,7 +1748,7 @@ export function updateTask(
       updated.projectId !== null &&
       updated.status !== "done" &&
       updated.status !== "cancelled" &&
-      isExecutionCommitment({
+      hasExecutionCommitment({
         kind: updated.kind,
         dueDate: updated.dueDate,
         scheduledDate: updated.scheduledDate,
@@ -1771,8 +1756,13 @@ export function updateTask(
         reminders: updated.reminders,
       })
     ) {
-      applyCommitmentProgressPath(txDb, updated.projectId, input.activationResolution, context);
-      activateCommittedProjectChain(txDb, updated.projectId, context, input.activationResolution);
+      activateCommittedProjectChain(
+        txDb,
+        updated.projectId,
+        context,
+        input.activationResolution,
+        commitmentSubjectForTask(updated, addsExecutionCommitment, currentTask.status, nextStatus === "actionable"),
+      );
     }
     return updated;
   });
