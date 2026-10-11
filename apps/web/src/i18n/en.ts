@@ -1020,6 +1020,10 @@ When the person ends the reflection, provide a concise human-readable summary an
   assignDriver: "Assign a project lead",
   assignDriverToActivateHint:
     "Assign a project lead before making this project active.",
+  commitmentResolutionTitle: "A decision is needed before starting",
+  commitmentResolutionHint: "Your draft is kept. Choose missing project leads and, if needed, write a concrete next action.",
+  commitmentDriverFor: (title: string) => `Lead for “${title}”`,
+  commitmentNextActionLabel: "What concrete next action will move the project forward?",
   driverLockedHint:
     "The project lead can only be removed after moving the project back to “Later / not active yet.”",
   noDriver: "Unassigned",
@@ -1542,6 +1546,8 @@ When the person ends the reflection, provide a concise human-readable summary an
     project_driver_required: "The project needs a lead first.",
     project_activation_not_ready:
       "Add an executable next step or a healthy waiting path before starting.",
+    project_commitment_resolution_required:
+      "This commitment still needs a project lead or an executable next step. Your changes were not saved.",
     project_completion_criteria_incomplete:
       "Check, edit, or remove every open criterion before completing.",
     project_not_found: "The project could not be found.",
@@ -1594,6 +1600,8 @@ When the person ends the reflection, provide a concise human-readable summary an
     task_parent_self: "A task cannot be its own parent.",
     task_promotion_invalid:
       "This inbox item cannot be converted to a project in its current state.",
+    task_reopen_required:
+      "Explicitly reopen this completed or cancelled task before adding a new execution commitment.",
     scope_mismatch:
       "A task cannot be moved between household and work scope.",
     scope_edit_root_only:

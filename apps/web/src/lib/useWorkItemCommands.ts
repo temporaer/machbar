@@ -194,14 +194,10 @@ export function useWorkItemCommands() {
           projectWorkflow.open("completeWithOpenTasks", story.id);
           return true;
         case "progressPath":
-          if (
-            taskWorkflow.current?.kind === "convertToProject" &&
-            taskWorkflow.current.taskId === story.id
-          ) {
-            taskWorkflow.close();
-            if (taskDetail.openTaskId === story.id) taskDetail.close();
-          }
-          navigate(`/projects/${story.id}?focus=next-action`);
+          projectWorkflow.open(
+            action === "reopen" ? "reopenWithDriver" : "activateWithDriver",
+            story.id,
+          );
           return true;
         case "driver":
           projectWorkflow.open(
@@ -213,7 +209,7 @@ export function useWorkItemCommands() {
           return false;
       }
     },
-    [navigate, projectWorkflow, taskWorkflow, taskDetail],
+    [projectWorkflow],
   );
 
   const continueStoryLifecycle = useCallback(
@@ -223,11 +219,7 @@ export function useWorkItemCommands() {
       ownerMemberId?: number | null,
     ) => {
       if (!resolveStoryPrerequisite(story, action, ownerMemberId)) {
-        void projectActions
-          .runAction(story, action, ownerMemberId)
-          .then((result) => {
-            if (result) projectWorkflow.cancelContinuation();
-          });
+        void projectActions.runAction(story, action, ownerMemberId);
       }
     },
     [projectActions, projectWorkflow, resolveStoryPrerequisite],
@@ -428,11 +420,6 @@ export function useWorkItemCommands() {
           }
           return;
         case "story.activate":
-          projectWorkflow.beginContinuation({
-            projectId: command.story.id,
-            action: "activate",
-            resume: (story) => continueStoryLifecycle(story, "activate"),
-          });
           continueStoryLifecycle(command.story, "activate", command.ownerMemberId);
           return;
         case "story.deferProject":
@@ -448,11 +435,6 @@ export function useWorkItemCommands() {
           }
           return;
         case "story.reopen":
-          projectWorkflow.beginContinuation({
-            projectId: command.story.id,
-            action: "reopen",
-            resume: (story) => continueStoryLifecycle(story, "reopen"),
-          });
           continueStoryLifecycle(command.story, "reopen", command.ownerMemberId);
           return;
         case "story.archive":

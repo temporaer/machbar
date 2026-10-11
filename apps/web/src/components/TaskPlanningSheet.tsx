@@ -30,10 +30,17 @@ import {
   absolutePresetIsFuture,
 } from "../lib/reminderPresets";
 import type { TaskPlanningTarget } from "../lib/commands";
+import { refreshTaskRevisionAfterConflict } from "../lib/taskMutations";
 import { BottomSheet } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { HumanDateInput } from "./HumanDateInput";
+import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
+import {
+  refreshProjectActivationPrompt,
+  projectActivationResolutionFromPrompt,
+  type ProjectActivationPrompt,
+} from "../lib/projectActivationResolution";
 
 type DateField = "scheduled" | "availability" | "deadline";
 type DateValidity = Record<DateField, boolean>;
@@ -78,6 +85,8 @@ export function TaskPlanningSheet({
   const [availabilityEdited, setAvailabilityEdited] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
+  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
+  const [expectedTaskRevision, setExpectedTaskRevision] = useState(task.revision);
   const hasExistingWait = task.externalWait !== null;
   const canAddWaiting =
     task.kind === "action" &&
@@ -134,6 +143,8 @@ export function TaskPlanningSheet({
     }
     setPendingScrollTarget(initialTarget ?? "top");
   }, [initialTarget]);
+
+  useEffect(() => setExpectedTaskRevision(task.revision), [task.revision]);
 
   useLayoutEffect(() => {
     const pendingTarget = pendingScrollTarget;
@@ -453,6 +464,14 @@ export function TaskPlanningSheet({
         ...(externalWait !== undefined ? { externalWait } : {}),
         ...(cleanedTitle !== task.title ? { title: cleanedTitle } : {}),
       };
+      const activationResolution = activationPrompt
+        ? projectActivationResolutionFromPrompt(activationPrompt)
+        : null;
+      if (activationPrompt && !activationResolution) {
+        setError(strings.commitmentResolutionHint);
+        return;
+      }
+      const apiPatch = activationResolution ? { ...patch, activationResolution } : patch;
       const optimisticPatch = {
         ...patch,
         ...(externalWait !== undefined
@@ -464,9 +483,22 @@ export function TaskPlanningSheet({
             }
           : {}),
       };
-      await taskActions.update(task, patch, optimisticPatch, true);
+      await taskActions.update(
+        { ...task, revision: expectedTaskRevision },
+        apiPatch,
+        optimisticPatch,
+        true,
+      );
       onClose();
     } catch (cause) {
+      const refreshedRevision = await refreshTaskRevisionAfterConflict(cause, task.id);
+      if (refreshedRevision !== null) {
+        setExpectedTaskRevision(refreshedRevision);
+      }
+      const prompt = refreshedRevision !== null || task.projectId === null
+        ? null
+        : await refreshProjectActivationPrompt(cause, task.projectId, activationPrompt);
+      if (prompt) setActivationPrompt(prompt);
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
@@ -872,6 +904,10 @@ export function TaskPlanningSheet({
             </>
           )}
         </section>
+
+        {activationPrompt ? (
+          <ProjectActivationDecisionFields prompt={activationPrompt} disabled={saving} onChange={setActivationPrompt} />
+        ) : null}
 
         {error ? (
           <div className="task-row-error" role="alert">

@@ -21,6 +21,13 @@ import {
 } from "../lib/captureSyntax";
 import { MemberChoiceGroup } from "./MemberChoiceGroup";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
+import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
+import {
+  projectActivationPromptFromError,
+  projectActivationResolutionFromPrompt,
+  type ProjectActivationPrompt,
+} from "../lib/projectActivationResolution";
+import type { ProjectActivationResolution } from "@machbar/shared";
 
 export type CaptureResult =
   | {
@@ -77,6 +84,7 @@ export function CaptureForm({
   const [dueDateValid, setDueDateValid] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const [openModifier, setOpenModifier] = useState<
     "member" | "context" | "schedule" | "project" | null
   >(null);
@@ -118,6 +126,7 @@ export function CaptureForm({
   const taskInput = (
     needsClarification: boolean,
     preparedNotes: string,
+    activationResolution?: ProjectActivationResolution,
   ): CreateTaskInput => ({
     title: capturedTitle,
     ...(preparedNotes ? { notes: preparedNotes } : {}),
@@ -126,6 +135,7 @@ export function CaptureForm({
     createdByMemberId: currentMemberId,
     status: needsClarification ? "captured" : "actionable",
     ...(defaultScope ? { scope: defaultScope } : {}),
+    ...(activationResolution ? { activationResolution } : {}),
     dueDate: syntaxMetadata.dueDate ?? dueDate,
     scheduledDate: syntaxMetadata.scheduledDate ?? null,
     ...(syntaxMetadata.size !== undefined ? { size: syntaxMetadata.size } : {}),
@@ -149,10 +159,18 @@ export function CaptureForm({
     try {
       const preparedNotes = prepareNotes ? await prepareNotes(notes) : notes;
       const task = await api.createTask(
-        taskInput(needsClarification, preparedNotes),
+        taskInput(
+          needsClarification,
+          preparedNotes,
+          activationPrompt
+            ? projectActivationResolutionFromPrompt(activationPrompt) ?? undefined
+            : undefined,
+        ),
       );
       onCaptured({ kind: "task", task, needsClarification });
     } catch (cause) {
+      const refreshedPrompt = projectActivationPromptFromError(cause, activationPrompt);
+      if (refreshedPrompt) setActivationPrompt(refreshedPrompt);
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
@@ -415,6 +433,13 @@ export function CaptureForm({
           />
         </div>
       ) : null}
+      {activationPrompt ? (
+        <ProjectActivationDecisionFields
+          prompt={activationPrompt}
+          disabled={saving}
+          onChange={setActivationPrompt}
+        />
+      ) : null}
       {error ? <p className="capture-error" role="alert">{error}</p> : null}
       <div className="capture-actions">
         <button type="button" className="btn" onClick={onCancel}>
@@ -429,7 +454,8 @@ export function CaptureForm({
           type="submit"
           className="btn btn-primary"
           aria-label={strings.create}
-          disabled={saving || !capturedTitle || !dueDateValid}
+          disabled={saving || !capturedTitle || !dueDateValid ||
+            (activationPrompt !== null && projectActivationResolutionFromPrompt(activationPrompt) === null)}
         >
           {strings.create}
         </button>

@@ -52,13 +52,20 @@ describe("week planning agenda", () => {
   }
 
   async function createProject(payload: Record<string, unknown>) {
+    const { dueDate, ...createPayload } = payload;
     const res = await ctx.app.inject({
       method: "POST",
       url: "/api/projects",
-      payload,
+      payload: createPayload,
     });
     expect(res.statusCode).toBe(201);
-    return res.json();
+    const project = res.json();
+    if (dueDate !== undefined) {
+      ctx.handle.sqlite.prepare("UPDATE work_items SET due_date = ? WHERE id = ?")
+        .run(dueDate, project.id);
+      project.dueDate = dueDate;
+    }
+    return project;
   }
 
   function activateProject(project: { id: number }) {
@@ -176,7 +183,8 @@ describe("week planning agenda", () => {
   });
 
   it("places explicitly dated tasks from backlog stories without adding their unscheduled siblings to the planning pool", async () => {
-    const story = await createProject({ title: "All-Hands planen" });
+    const owner = await createMember("Mira");
+    const story = await createProject({ title: "All-Hands planen", ownerMemberId: owner.id });
     const scheduled = await createTask({
       title: "Fuer All-Hands anmelden",
       projectId: story.id,
@@ -196,6 +204,8 @@ describe("week planning agenda", () => {
     });
 
     const week = await getWeek();
+
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${story.id}` })).json().status).toBe("active");
 
     expect(week.days[1].items).toContainEqual(
       expect.objectContaining({

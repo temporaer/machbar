@@ -113,6 +113,18 @@ export const homeAssistantSyncTaskSchema = z
     }
   });
 
+const projectActivationResolutionSchema = z.object({
+  expectedProjects: z.array(z.object({
+    projectId: z.number().int().positive(),
+    revision: z.number().int().positive(),
+  })),
+  drivers: z.array(z.object({
+    projectId: z.number().int().positive(),
+    ownerMemberId: z.number().int().positive(),
+  })),
+  nextActionTitle: z.string().trim().min(1).optional(),
+}).strict();
+
 export const createProjectSchema = z.object({
   title: z.string().min(1, "Project title must not be empty."),
   notes: z.string().optional(),
@@ -124,6 +136,7 @@ export const createProjectSchema = z.object({
   revisitAt: isoDateTime.nullable().optional(),
   tagIds: z.array(z.number().int()).optional(),
   contextIds: z.array(z.number().int().positive()).optional(),
+  activationResolution: projectActivationResolutionSchema.optional(),
 });
 
 export const updateProjectSchema = z.object({
@@ -137,6 +150,7 @@ export const updateProjectSchema = z.object({
   tagIds: z.array(z.number().int()).optional(),
   contextIds: z.array(z.number().int().positive()).optional(),
   expectedRevision: z.number().int().positive().optional(),
+  activationResolution: projectActivationResolutionSchema.optional(),
 });
 
 export const appendNotesSchema = z.object({
@@ -146,6 +160,7 @@ export const appendNotesSchema = z.object({
 export const activateProjectSchema = z.object({
   ownerMemberId: z.number().int().nullable().optional(),
   expectedRevision: z.number().int().positive().optional(),
+  activationResolution: projectActivationResolutionSchema.optional(),
 });
 
 export const projectLifecycleSchema = z.object({
@@ -249,6 +264,7 @@ export const createTaskSchema = z.object({
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
   allowedDeviationDays: z.number().int().min(0).nullable().optional(),
   reminders: taskRemindersSchema.optional(),
+  activationResolution: projectActivationResolutionSchema.optional(),
   tagIds: z.array(z.number().int()).optional(),
   contextIds: z.array(z.number().int().positive()).optional(),
 });
@@ -281,6 +297,7 @@ export const updateTaskSchema = z.object({
   repeatAfterDays: z.number().int().min(1).nullable().optional(),
   allowedDeviationDays: z.number().int().min(0).nullable().optional(),
   reminders: taskRemindersSchema.optional(),
+  activationResolution: projectActivationResolutionSchema.optional(),
   additionalNextAction: z.boolean().optional(),
   tagIds: z.array(z.number().int()).optional(),
   excludedTagIds: z.array(z.number().int()).optional(),

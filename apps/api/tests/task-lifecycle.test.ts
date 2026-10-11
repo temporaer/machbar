@@ -64,16 +64,82 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(getRes.statusCode).toBe(404);
   });
 
-  it("keeps reminders on captured actions through edits and recapture", async () => {
+  it("applies execution commitments to new and existing captures without promoting revisits", async () => {
+    const dated = await createTask({ title: "Dated capture", scheduledDate: "2026-12-01" });
+    expect(dated.status).toBe("actionable");
+    expect(dated.scheduledDate).toBe("2026-12-01");
+
+    const someday = await createTask({ title: "Someday work", status: "someday" });
+    const planned = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${someday.id}`,
+      payload: { expectedRevision: someday.revision, dueDate: "2026-11-15" },
+    });
+    expect(planned.statusCode).toBe(200);
+    expect(planned.json()).toMatchObject({ status: "actionable", dueDate: "2026-11-15" });
+
+    const revisit = await createTask({ title: "Reconsider later" });
+    const deferred = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${revisit.id}`,
+      payload: { expectedRevision: revisit.revision, revisitAt: "2026-11-15T09:00:00.000Z" },
+    });
+    expect(deferred.statusCode).toBe(200);
+    expect(deferred.json()).toMatchObject({ status: "captured", scheduledDate: null });
+  });
+
+  it("keeps an execution commitment actionable when a status patch also asks to park it", async () => {
+    const combined = await createTask({ title: "Combined patch" });
+    const combinedResponse = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${combined.id}`,
+      payload: {
+        expectedRevision: combined.revision,
+        status: "someday",
+        dueDate: "2026-12-01",
+      },
+    });
+    expect(combinedResponse.statusCode).toBe(200);
+    expect(combinedResponse.json()).toMatchObject({ status: "actionable", dueDate: "2026-12-01" });
+
+    const scheduled = await createTask({
+      title: "Already planned",
+      status: "actionable",
+      scheduledDate: "2026-12-02",
+    });
+    const statusOnly = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${scheduled.id}`,
+      payload: { expectedRevision: scheduled.revision, status: "captured" },
+    });
+    expect(statusOnly.statusCode).toBe(200);
+    expect(statusOnly.json()).toMatchObject({ status: "actionable", scheduledDate: "2026-12-02" });
+  });
+
+  it("requires an explicit reopen before adding an execution commitment to terminal work", async () => {
+    const task = await createTask({ title: "Already done", status: "done" });
+    const response = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: { expectedRevision: task.revision, scheduledDate: "2026-11-15" },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatchObject({
+      code: "task_reopen_required",
+      details: { taskId: task.id, currentStatus: "done", requiredStatus: "actionable" },
+    });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json())
+      .toMatchObject({ status: "done", scheduledDate: null });
+  });
+
+  it("turns captures with execution reminders actionable and preserves reminder edits", async () => {
     const reminder = { kind: "absolute", at: "2026-10-01T08:00:00.000Z" } as const;
     const created = await createTask({
       title: "Noch klären",
       status: "captured",
       needsClarification: true,
-      reminders: [reminder],
     });
     expect(created.status).toBe("captured");
-    expect(created.reminders).toEqual([expect.objectContaining(reminder)]);
 
     const edited = await ctx.app.inject({
       method: "PATCH",
@@ -84,15 +150,17 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
       },
     });
     expect(edited.statusCode).toBe(200);
-    expect(edited.json().status).toBe("captured");
+    expect(edited.json().status).toBe("actionable");
     expect(edited.json().reminders).toHaveLength(2);
 
     const actionable = await ctx.app.inject({
       method: "PATCH",
       url: `/api/tasks/${created.id}`,
-      payload: { expectedRevision: edited.json().revision, status: "actionable" },
+      payload: { expectedRevision: edited.json().revision, status: "captured", reminders: [] },
     });
     expect(actionable.statusCode).toBe(200);
+    expect(actionable.json().status).toBe("captured");
+    expect(actionable.json().reminders).toHaveLength(0);
     const recaptured = await ctx.app.inject({
       method: "PATCH",
       url: `/api/tasks/${created.id}`,
@@ -100,7 +168,29 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     });
     expect(recaptured.statusCode).toBe(200);
     expect(recaptured.json().status).toBe("captured");
-    expect(recaptured.json().reminders).toHaveLength(2);
+    expect(recaptured.json().reminders).toHaveLength(0);
+  });
+
+  it("keeps a revisit notification from turning reconsideration into an execution commitment", async () => {
+    const created = await createTask({
+      title: "Später erneut ansehen",
+      status: "captured",
+      revisitAt: "2026-12-01T09:00:00.000Z",
+    });
+    const updated = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${created.id}`,
+      payload: {
+        expectedRevision: created.revision,
+        reminders: [{ kind: "absolute", at: "2026-12-01T09:00:00.000Z" }],
+      },
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({
+      status: "captured",
+      revisitAt: "2026-12-01T09:00:00.000Z",
+      reminders: [{ kind: "absolute", at: "2026-12-01T09:00:00.000Z" }],
+    });
   });
 
   it("defaults project and child tasks to clarified actionable tasks", async () => {

@@ -1,5 +1,21 @@
 # Machbar — Architecture
 
+## Commitment-driven project activation
+
+`apps/api/src/domain/taskCrud.ts` promotes an open captured or Someday action to
+actionable when it receives an execution plan, deadline, or execution reminder.
+The same canonical task mutations call
+`apps/api/src/domain/commitmentActivation.ts`, which checks the affected
+project/ancestor chain and starts the backlog projects transactionally. A
+project deadline uses this path as well, but never counts as its own progress
+path. Missing drivers or a concrete next action return structured decisions
+without writing the task, date, driver, or step. The focused editors preserve
+their drafts and retry the same API operation with the selected decisions.
+
+Revisit dates remain reconsideration, not execution commitments. Adding a
+reminder while a revisit is present does not promote the task. Project
+activation does not bypass task blockers or future-date agenda eligibility.
+
 ## Reviewed task breakdown
 
 `canBreakDownTask` in the shared intake contract owns target eligibility for

@@ -20,7 +20,7 @@ import type { Env } from "../env.js";
 import { AppError } from "../errors.js";
 import { activeHomeAssistantIntegration } from "../integrations/homeAssistant.js";
 import { enqueueHomeAssistantRequest, type HomeAssistantRequestSignal } from "../integrations/homeAssistantRequests.js";
-import { appendProjectNotes, createProject } from "../domain/storyCrud.js";
+import { appendProjectNotes, createProject, updateProject } from "../domain/storyCrud.js";
 import { appendTaskNotes, createChildTask, createTask } from "../domain/taskCrud.js";
 import type { MutationContext } from "../domain/workItemShared.js";
 import type { PaperlessClient } from "../paperless/client.js";
@@ -253,6 +253,7 @@ export async function applyIntake(
       if (!progressed) throw AppError.badRequest("intake_draft_invalid", "The enabled work hierarchy is cyclic.");
     }
     const ids = new Map(results.work.map((item) => [item.key, item.workItemId]));
+    const pendingProjectDeadlines: Array<{ projectId: number; dueDate: string }> = [];
     const paperlessDocs = results.paperlessDocumentIds.map((documentId) => ({ id: documentId, title: "", originalFileName: "", mimeType: null } as PaperlessDocumentSummary));
     let retentionTarget: number | null = null;
     for (const item of sorted) {
@@ -271,10 +272,16 @@ export async function applyIntake(
           notes,
           parentId: parent?.kind === "project" ? parentId : null,
           ...(item.ownerMemberId === null ? {} : { ownerMemberId: item.ownerMemberId }),
-          dueDate: item.dueDate,
+          // The complete accepted tree is built below. Apply the project's
+          // own deadline after its child actions exist so readiness is
+          // evaluated against the final atomic graph.
+          dueDate: null,
           revisitAt: item.revisitAt ?? item.notBeforeAt ?? null,
           scope: isRoot ? jobNow.scope as "household" | "work" : undefined,
         }, context);
+        if (item.dueDate !== null) {
+          pendingProjectDeadlines.push({ projectId: project.id, dueDate: item.dueDate });
+        }
         created = { id: project.id, title: project.title, role: "story" };
       } else {
         const base = item.kind === "reference" ? {
@@ -305,6 +312,9 @@ export async function applyIntake(
       ids.set(item.key, created.id);
       results.work.push({ key: item.key, kind: item.kind, workItemId: created.id, role: created.role === "story" ? "story" : "task" });
       retentionTarget ??= isRoot ? created.id : null;
+    }
+    for (const { projectId, dueDate } of pendingProjectDeadlines) {
+      updateProject(tx as unknown as Db, projectId, { dueDate }, context);
     }
     if (draft.retainSourceInPaperless && retentionTarget !== null && paperlessDocs.length > 0) {
       const row = tx.select({ role: schema.workItems.role, notes: schema.workItems.notes })

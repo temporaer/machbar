@@ -436,7 +436,7 @@ describe("task external waits", () => {
     });
   });
 
-  it("removes the wait but keeps the work plan when leaving actionable", async () => {
+  it("keeps planned work actionable until the commitment is removed before parking", async () => {
     const task = await createTask({
       title: "Später entscheiden",
       scheduledDate: "2026-09-12",
@@ -459,11 +459,24 @@ describe("task external waits", () => {
       },
     });
     expect(transitioned.json()).toMatchObject({
-      status: "someday",
-      externalWait: null,
+      status: "actionable",
+      externalWait: { waitingFor: "Rückmeldung" },
       scheduledDate: "2026-09-12",
-      blocked: false,
+      blocked: true,
     });
+
+    const parked = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${task.id}`,
+      payload: {
+        expectedRevision: transitioned.json().revision,
+        status: "someday",
+        scheduledDate: null,
+        externalWait: null,
+      },
+    });
+    expect(parked.statusCode).toBe(200);
+    expect(parked.json()).toMatchObject({ status: "someday", externalWait: null, scheduledDate: null, blocked: false });
   });
 
   it("rejects waits on non-actionable and recurring tasks", async () => {

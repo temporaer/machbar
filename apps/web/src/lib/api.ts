@@ -27,6 +27,7 @@ import type {
   PaperlessIntegrationStatus,
   Project,
   ProjectActivationReadiness,
+  ProjectActivationResolution,
   ProjectAgendaEntry,
   ProjectStatus,
   PushConfig,
@@ -208,6 +209,7 @@ export interface CreateTaskInput {
   repeatAfterDays?: number | null;
   allowedDeviationDays?: number | null;
   reminders?: TaskReminderInput[];
+  activationResolution?: ProjectActivationResolution;
   tagIds?: number[];
   contextIds?: number[];
   contextInheritanceMode?: InheritanceMode;
@@ -258,6 +260,7 @@ export interface CreateProjectInput {
   revisitAt?: string | null;
   tagIds?: number[];
   contextIds?: number[];
+  activationResolution?: ProjectActivationResolution;
 }
 
 export type UpdateProjectInput = Partial<CreateProjectInput> & {
@@ -320,6 +323,7 @@ export interface ProjectWorkflowInput {
 
 export interface ActivateProjectInput extends ProjectWorkflowInput {
   ownerMemberId?: number | null;
+  activationResolution?: ProjectActivationResolution;
 }
 
 /**

@@ -78,6 +78,18 @@ const calendarDate = z
 const taskId = z.number().int().positive();
 const projectId = z.number().int().positive();
 const expectedRevision = z.number().int().positive();
+const activationResolutionSchema = z.object({
+  expectedProjects: z.array(z.object({ projectId, revision: expectedRevision })),
+  drivers: z.array(z.object({ projectId, ownerMemberId: z.number().int().positive() })),
+  nextActionTitle: z.string().trim().min(1).optional(),
+}).describe("Decisions for atomically activating backlog projects affected by this commitment.");
+
+function commitmentResolutionError(error: unknown) {
+  if (error instanceof AppError && error.code === "project_commitment_resolution_required") {
+    return result({ error: { code: error.code, message: error.message, details: error.details ?? {} } });
+  }
+  throw error;
+}
 const mcpAbsoluteAtSchema = z.string().min(1).describe(
   "Absolute reminder time as an RFC3339/ISO timestamp; seconds and an offset may be omitted.",
 );
@@ -633,7 +645,7 @@ export function createMachbarMcpServer({
     "machbar_create_project",
     {
       description:
-        "Create a project. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. Unsupported task-only fields are ignored.",
+        "Create a project. A new deadline commitment may return project_commitment_resolution_required; retry with the returned project revisions, explicit driver decisions, and a concrete nextActionTitle when requested. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. Unsupported task-only fields are ignored.",
       inputSchema: {
         title: z.string().min(1),
         notes: z.string().optional(),
@@ -643,6 +655,7 @@ export function createMachbarMcpServer({
         dueDate: mcpNullableCalendarDate,
         revisitAt: z.string().datetime().nullable().optional(),
         contextIds: mcpNullableNumberArray("Physical context IDs, or [] to set an empty collection."),
+        activationResolution: activationResolutionSchema.optional(),
       },
     },
     async (input) => {
@@ -663,20 +676,26 @@ export function createMachbarMcpServer({
           ? memberId
           : resolveMcpOwner(db, input.ownerMemberId, input.ownerName);
       const ownerMemberId = resolvedOwner ?? null;
-      const created = createProject(
-        db,
-        {
-          title: input.title,
-          notes: input.notes,
-          parentId: input.parentProjectId,
-          ownerMemberId,
-          dueDate,
-          revisitAt,
-          contextIds: input.contextIds ?? undefined,
-          scope: agentScope,
-        },
-        mutationContext,
-      );
+      let created: ReturnType<typeof createProject>;
+      try {
+        created = createProject(
+          db,
+          {
+            title: input.title,
+            notes: input.notes,
+            parentId: input.parentProjectId,
+            ownerMemberId,
+            dueDate,
+            revisitAt,
+            contextIds: input.contextIds ?? undefined,
+            activationResolution: input.activationResolution,
+            scope: agentScope,
+          },
+          mutationContext,
+        );
+      } catch (error) {
+        return commitmentResolutionError(error);
+      }
       return result(compactProject(scopedProjectOrThrow(created.id)));
     },
   );
@@ -695,6 +714,7 @@ export function createMachbarMcpServer({
         dueDate: mcpNullableCalendarDate,
         revisitAt: z.string().datetime().nullable().optional(),
         contextIds: mcpNullableNumberArray("Physical context IDs, or [] to clear the collection."),
+        activationResolution: activationResolutionSchema.optional(),
       },
     },
     async ({ projectId, expectedRevision, ...input }) => {
@@ -715,10 +735,11 @@ export function createMachbarMcpServer({
           : agentScope === "work"
             ? undefined
             : resolveMcpOwner(db, input.ownerMemberId, ownerName);
-      updateProject(
-        db,
-        projectId,
-        {
+      try {
+        updateProject(
+          db,
+          projectId,
+          {
           ...metadata,
           dueDate,
           revisitAt,
@@ -727,9 +748,12 @@ export function createMachbarMcpServer({
             : {}),
           ...(ownerMemberId !== undefined ? { ownerMemberId } : {}),
           expectedRevision,
-        },
-        mutationContext,
-      );
+          },
+          mutationContext,
+        );
+      } catch (error) {
+        return commitmentResolutionError(error);
+      }
       return result(compactProject(scopedProjectOrThrow(projectId)));
     },
   );
@@ -800,7 +824,7 @@ export function createMachbarMcpServer({
     "machbar_create_task",
     {
       description:
-        "Create a task. Set activateIfReady=true only for a concrete, single-step action that can be performed without further clarification, decision, decomposition, or triage. Leave it false or omitted for vague captures, ideas, multi-step outcomes, clarification, or Inbox review; do not estimate duration or use a two-minute rule. Do not invent metadata to justify activation. Examples: \"Buy milk\" and \"Add batteries to the shopping list\" can be activated; \"Call the dentist tomorrow\" can be activated with its explicitly requested date; \"Figure out the summer holiday\", \"Need to sort out the heating thing\", and \"Remember that we should think about replacing the router\" should remain Inbox. If uncertain, prefer Inbox. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. Use revisitAt for a follow-up instant and supply timezone when a local value is used. Reminders may be absolute or deadline-relative.",
+        "Create a task. Set activateIfReady=true only for a concrete, single-step action that can be performed without further clarification, decision, decomposition, or triage. Leave it false or omitted for vague captures, ideas, multi-step outcomes, clarification, or Inbox review; do not estimate duration or use a two-minute rule. An explicit work plan, deadline, or execution reminder still promotes open captured/Someday work. When such a commitment affects a backlog project, supply activationResolution with the current revisions, chosen drivers, and a concrete nextActionTitle when requested; otherwise the tool returns its decision requirements without writing. Revisit dates and their notifications are reconsideration, not execution commitments. Do not invent metadata to justify activation. Examples: \"Buy milk\" and \"Add batteries to the shopping list\" can be activated; \"Call the dentist tomorrow\" can be activated with its explicitly requested date; \"Figure out the summer holiday\", \"Need to sort out the heating thing\", and \"Remember that we should think about replacing the router\" should remain Inbox. If uncertain, prefer Inbox. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. Use revisitAt for a follow-up instant and supply timezone when a local value is used. Reminders may be absolute or deadline-relative.",
       inputSchema: {
         title: z.string().min(1),
         notes: z.string().optional(),
@@ -829,6 +853,7 @@ export function createMachbarMcpServer({
         size: z.enum(["S", "M", "L", "XL"]).nullable().optional(),
         tagIds: mcpNullableNumberArray("Tag IDs. Null means omitted; [] explicitly creates an empty collection."),
         contextIds: mcpNullableNumberArray("Physical context IDs. Null means omitted; [] explicitly creates an empty collection."),
+        activationResolution: activationResolutionSchema.optional(),
       },
     },
     async (input) => {
@@ -875,9 +900,11 @@ export function createMachbarMcpServer({
       const ownerMemberId = resolvedOwner ?? null;
       const initialStatus =
         activateIfReady === true ? "actionable" : "captured";
-      const created = createTask(
-        db,
-        {
+      let created;
+      try {
+        created = createTask(
+          db,
+          {
           ...taskInput,
           dueDate: normalizedDueDate,
           scheduledDate: normalizedScheduledDate,
@@ -897,9 +924,12 @@ export function createMachbarMcpServer({
             : {}),
           scope: agentScope,
           createdByMemberId: memberId,
-        },
-        mutationContext,
-      );
+          },
+          mutationContext,
+        );
+      } catch (error) {
+        return commitmentResolutionError(error);
+      }
       return result(
         compactTaskMutation(
           scopedTaskOrThrow(created.id),
@@ -1041,6 +1071,7 @@ export function createMachbarMcpServer({
         additionalNextAction: mcpNullableBoolean.describe(
           "Null means omitted and preserves the existing value; explicit false and true retain their meaning.",
         ),
+        activationResolution: activationResolutionSchema.optional(),
       },
     },
     async ({ taskId, ...input }) => {
@@ -1063,6 +1094,7 @@ export function createMachbarMcpServer({
         tagIds,
         contextIds,
         additionalNextAction,
+        activationResolution,
         ...metadata
       } = input;
       const normalizedDueDate = normalizeMcpCalendarDate(dueDate, "dueDate");
@@ -1080,10 +1112,11 @@ export function createMachbarMcpServer({
           : revisitAt !== undefined
           ? normalizeMcpTimestamp(revisitAt, "revisitAt", timezone)
           : availability.notBeforeAt ?? null;
-      updateTask(
-        db,
-        taskId,
-        {
+      try {
+        updateTask(
+          db,
+          taskId,
+          {
           ...metadata,
           dueDate: normalizedDueDate,
           scheduledDate: normalizedScheduledDate,
@@ -1103,9 +1136,12 @@ export function createMachbarMcpServer({
           ...(contextIds !== null && contextIds !== undefined
             ? { contextInheritanceMode: "explicit" as const }
             : {}),
-        },
-        mutationContext,
-      );
+          },
+          mutationContext,
+        );
+      } catch (error) {
+        return commitmentResolutionError(error);
+      }
 
       return result(compactTaskMutation(scopedTaskOrThrow(taskId)));
     },
@@ -1126,9 +1162,10 @@ export function createMachbarMcpServer({
         daysBefore: z.number().int().nonnegative().optional(),
         time: z.string().optional(),
         timezone: mcpTimezoneSchema.optional(),
+        activationResolution: activationResolutionSchema.optional(),
       },
     },
-    async ({ taskId, expectedRevision, operation, reminderId, kind, at, daysBefore, time, timezone }) => {
+    async ({ taskId, expectedRevision, operation, reminderId, kind, at, daysBefore, time, timezone, activationResolution }) => {
       const task = scopedTaskOrThrow(taskId);
       let reminder: TaskReminderInput | undefined;
       if (kind === "deadline_relative") {
@@ -1151,6 +1188,7 @@ export function createMachbarMcpServer({
           at: normalizeMcpTimestamp(at, "reminder", timezone, "task_reminder_invalid"),
         };
       }
+      try {
       if (operation === "add") {
         if (!reminder) {
           throw AppError.badRequest(
@@ -1167,6 +1205,7 @@ export function createMachbarMcpServer({
               reminder,
             ],
             expectedRevision,
+            activationResolution,
           },
           mutationContext,
         );
@@ -1190,7 +1229,7 @@ export function createMachbarMcpServer({
           id: reminderId,
           ...reminder,
         };
-        updateTask(db, taskId, { reminders, expectedRevision }, mutationContext);
+        updateTask(db, taskId, { reminders, expectedRevision, activationResolution }, mutationContext);
       } else {
         if (reminderId === undefined) {
           throw AppError.badRequest(
@@ -1206,7 +1245,10 @@ export function createMachbarMcpServer({
             { taskId, reminderId },
           );
         }
-        updateTask(db, taskId, { reminders, expectedRevision }, mutationContext);
+        updateTask(db, taskId, { reminders, expectedRevision, activationResolution }, mutationContext);
+      }
+      } catch (error) {
+        return commitmentResolutionError(error);
       }
      return result(
        compactTaskMutation(scopedTaskOrThrow(taskId), true),

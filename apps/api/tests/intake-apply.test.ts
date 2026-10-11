@@ -636,7 +636,7 @@ describe("intake apply", () => {
     const setup = await prepare();
     const signal = new HomeAssistantRequestSignal();
     const d = draft([
-      { key: "project", kind: "project", title: "Calendar project", notes: null, parentKey: null, dueDate: "2026-10-10", scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: ["event"], enabled: true, ownerMemberId: setup.member.id },
+      { key: "project", kind: "project", title: "Calendar project", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: ["event"], enabled: true, ownerMemberId: setup.member.id },
       { key: "disabled-task", kind: "action", title: "Disabled task", notes: null, parentKey: null, dueDate: null, scheduledDate: null, notBeforeDate: null, notBeforeAt: null, reminders: [], needsClarification: false, relatedCalendarKeys: ["event", "disabled-event"], enabled: false, ownerMemberId: null },
     ], [{
       key: "event", title: "Appointment", description: "Accepted event detail", location: "Library", allDay: false,
@@ -685,7 +685,7 @@ describe("intake apply", () => {
       draft: d,
     })).toThrowError(/only be edited before Apply starts/);
     const changedDraft = draft([
-      { ...d.workItems[0]!, title: "Changed project", dueDate: "2026-12-31", ownerMemberId: null },
+      { ...d.workItems[0]!, title: "Changed project", dueDate: null, ownerMemberId: null },
       ...d.workItems.slice(1),
     ], [
       { ...d.calendarEvents[0]!, title: "Changed appointment", description: "Unaccepted", relatedWorkKeys: ["disabled-task"] },
@@ -732,7 +732,7 @@ describe("intake apply", () => {
     expect(refs[0]!.metadataJson).toContain("rec-1");
     expect(disabledTask).toBeUndefined();
     expect(project.ownerMemberId).toBe(setup.member.id);
-    expect(project.dueDate).toBe("2026-10-10");
+    expect(project.dueDate).toBeNull();
     const projectDetail = await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` });
     expect(projectDetail.json().externalRefs).toHaveLength(1);
   });

@@ -14,6 +14,10 @@ import {
   recordContribution,
 } from "../repo/index.js";
 import { getProjectOrThrow } from "./storyCrud.js";
+import { applyProjectActivation } from "./commitmentActivation.js";
+import { projectNeedsProgressPath } from "./commitmentActivation.js";
+import { createCommitmentNextAction } from "./taskCrud.js";
+import type { ProjectActivationResolution } from "@machbar/shared";
 import {
   MutationContext,
   actor,
@@ -77,6 +81,7 @@ function assertWorkflowAction(
 export interface ActivateProjectInput {
   ownerMemberId?: number | null;
   expectedRevision?: number;
+  activationResolution?: ProjectActivationResolution;
 }
 
 /**
@@ -97,46 +102,19 @@ export function activateProject(
     const project = getProjectOrThrow(txDb, id);
     assertExpectedRevision("project", id, project.revision, input.expectedRevision);
     assertWorkflowAction(project, "activate");
-    const ownerMemberId =
-      input.ownerMemberId !== undefined ? input.ownerMemberId : project.ownerMemberId;
-    assertProjectActivationReady(txDb, id, ownerMemberId);
-    tx.update(schema.workItems)
-      .set({
-        status: "active",
-        archivedAt: null,
-        revisitAt: null,
-        ownerMemberId,
-        revision: sql`${schema.workItems.revision} + 1`,
-        updatedAt: nowIso(),
-      })
-      .where(eq(schema.workItems.id, id))
-      .run();
-    const updated = getProjectOrThrow(txDb, id);
-    const activityEventId = recordActivity(txDb, {
-      actorMemberId: actor(context),
-      kind: "project_status_changed",
-      entityType: "project",
-      entityTitle: updated.title,
-      projectId: id,
-      metadata: {
-        previousStatus: project.status as ProjectStatus,
-        nextStatus: "active",
-        ...(ownerMemberId !== project.ownerMemberId
-          ? { changedFields: ["ownerMemberId"] }
-          : {}),
-      },
-    });
-    if (project.ownerMemberId === null && ownerMemberId !== null) {
-      recordContribution(txDb, {
-        activityEventId,
-        actorMemberId: actor(context),
-        category: "planning",
-        reason: "project_driver_assigned",
-        entityType: "project",
-        entityId: id,
-        personalEligible: true,
-      });
+    const resolutionDriver = input.activationResolution?.drivers.find((decision) => decision.projectId === id)?.ownerMemberId;
+    const ownerMemberId = input.ownerMemberId !== undefined
+      ? input.ownerMemberId
+      : resolutionDriver ?? project.ownerMemberId;
+    if (
+      input.activationResolution?.nextActionTitle &&
+      projectNeedsProgressPath(txDb, id, ownerMemberId)
+    ) {
+      createCommitmentNextAction(txDb, id, input.activationResolution.nextActionTitle, context);
     }
+    assertProjectActivationReady(txDb, id, ownerMemberId);
+    applyProjectActivation(txDb, project, ownerMemberId!, context);
+    const updated = getProjectOrThrow(txDb, id);
     return updated;
   });
 }
@@ -265,36 +243,26 @@ export function reopenProject(
   context?: MutationContext,
   expectedRevision?: number,
   ownerMemberId?: number | null,
+  activationResolution?: ProjectActivationResolution,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
     assertExpectedRevision("project", id, project.revision, expectedRevision);
     assertWorkflowAction(project, "reopen");
-    const nextOwnerMemberId =
-      ownerMemberId !== undefined ? ownerMemberId : project.ownerMemberId;
+    const resolutionDriver = activationResolution?.drivers.find((decision) => decision.projectId === id)?.ownerMemberId;
+    const nextOwnerMemberId = ownerMemberId !== undefined
+      ? ownerMemberId
+      : resolutionDriver ?? project.ownerMemberId;
+    if (
+      activationResolution?.nextActionTitle &&
+      projectNeedsProgressPath(txDb, id, nextOwnerMemberId)
+    ) {
+      createCommitmentNextAction(txDb, id, activationResolution.nextActionTitle, context);
+    }
     assertProjectActivationReady(txDb, id, nextOwnerMemberId);
-    tx.update(schema.workItems)
-      .set({
-        status: "active",
-        archivedAt: null,
-        completedAt: null,
-        revisitAt: null,
-        ownerMemberId: nextOwnerMemberId,
-        revision: sql`${schema.workItems.revision} + 1`,
-        updatedAt: nowIso(),
-      })
-      .where(eq(schema.workItems.id, id))
-      .run();
+    const activityEventId = applyProjectActivation(txDb, project, nextOwnerMemberId!, context);
     const updated = getProjectOrThrow(txDb, id);
-    const activityEventId = recordActivity(txDb, {
-      actorMemberId: actor(context),
-      kind: "project_status_changed",
-      entityType: "project",
-      entityTitle: updated.title,
-      projectId: id,
-      metadata: { previousStatus: "completed", nextStatus: "active" },
-    });
     neutralizeContribution(txDb, {
       activityEventId,
       reason: "project_completed",
