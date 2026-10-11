@@ -470,6 +470,105 @@ describe("project workflow (HTTP routes)", () => {
       .toEqual([{ title: nextActionTitle }]);
   });
 
+  it("refreshes task commitment decisions before inserting a proposed action when an ancestor changed", async () => {
+    const member = await createMemberRoute("Lena");
+    const parent = await createProjectRoute({ title: "Haus", ownerMemberId: member.id });
+    const child = await createProjectRoute({ title: "Keller", parentId: parent.id, ownerMemberId: member.id });
+    const prerequisite = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { projectId: child.id, title: "Freigabe erhalten", status: "someday" },
+    });
+    expect(prerequisite.statusCode).toBe(201);
+    const blocked = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { projectId: child.id, title: "Material bestellen", status: "actionable" },
+    });
+    expect(blocked.statusCode).toBe(201);
+    const dependency = await ctx.app.inject({
+      method: "POST",
+      url: `/api/tasks/${blocked.json().id}/dependencies`,
+      payload: { dependsOnTaskId: prerequisite.json().id },
+    });
+    expect(dependency.statusCode).toBe(201);
+
+    const request = {
+      expectedRevision: dependency.json().revision,
+      dueDate: "2026-12-20",
+    };
+    const initial = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${blocked.json().id}`,
+      payload: request,
+    });
+    expect(initial.statusCode).toBe(409);
+    expect(initial.json().error).toMatchObject({
+      code: "project_commitment_resolution_required",
+      details: {
+        projects: expect.arrayContaining([
+          expect.objectContaining({ projectId: child.id, required: ["progressPath"] }),
+        ]),
+      },
+    });
+
+    const parentEdit = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${parent.id}`,
+      payload: { expectedRevision: parent.revision, notes: "Antwort steht noch aus" },
+    });
+    expect(parentEdit.statusCode).toBe(200);
+    const nextActionTitle = "Alternative Bezugsquelle prüfen";
+    const staleRetry = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${blocked.json().id}`,
+      payload: {
+        ...request,
+        activationResolution: {
+          expectedProjects: initial.json().error.details.expectedProjects,
+          drivers: [],
+          nextActionTitle,
+        },
+      },
+    });
+    expect(staleRetry.statusCode).toBe(409);
+    expect(staleRetry.json().error.details).toMatchObject({
+      reason: "project_snapshot_stale",
+      projects: expect.arrayContaining([
+        expect.objectContaining({ projectId: child.id, required: ["progressPath"] }),
+      ]),
+      expectedProjects: expect.arrayContaining([
+        expect.objectContaining({ projectId: child.id, revision: child.revision }),
+        expect.objectContaining({ projectId: parent.id, revision: parentEdit.json().revision }),
+      ]),
+    });
+    expect(ctx.handle.sqlite.prepare("SELECT title FROM work_items WHERE role = 'task' ORDER BY id").all())
+      .toEqual([{ title: "Freigabe erhalten" }, { title: "Material bestellen" }]);
+
+    const accepted = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${blocked.json().id}`,
+      payload: {
+        ...request,
+        activationResolution: {
+          expectedProjects: staleRetry.json().error.details.expectedProjects,
+          drivers: [],
+          nextActionTitle,
+        },
+      },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ dueDate: "2026-12-20" });
+    expect(ctx.handle.sqlite.prepare("SELECT title FROM work_items WHERE role = 'task' ORDER BY id").all())
+      .toEqual([
+        { title: "Freigabe erhalten" },
+        { title: "Material bestellen" },
+        { title: nextActionTitle },
+      ]);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${child.id}` })).json().status).toBe("active");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${parent.id}` })).json().status).toBe("active");
+  });
+
   it("activates an already-dated backlog project when its deadline is changed", async () => {
     const member = await createMemberRoute("Lena");
     const project = await createProjectRoute({

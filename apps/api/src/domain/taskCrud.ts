@@ -29,7 +29,11 @@ import { deletePendingTaskReminderEvents } from "../notifications/outbox.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import { assertReferenceCapableInput } from "./taskKindGuard.js";
 import { assertActionTask } from "./taskKindGuard.js";
-import { activateCommittedProjectChain, projectNeedsProgressPath } from "./commitmentActivation.js";
+import {
+  activateCommittedProjectChain,
+  assertProjectActivationResolutionFresh,
+  projectNeedsProgressPath,
+} from "./commitmentActivation.js";
 import {
   MutationContext,
   actor,
@@ -566,6 +570,7 @@ function applyCommitmentProgressPath(
 ): void {
   const title = resolution?.nextActionTitle?.trim();
   if (!title) return;
+  assertProjectActivationResolutionFresh(db, projectId, resolution);
   const project = getProjectOrThrow(db, projectId);
   if (projectNeedsProgressPath(db, projectId, project.ownerMemberId)) {
     createCommitmentNextAction(db, projectId, title, context);
