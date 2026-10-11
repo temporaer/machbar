@@ -9,6 +9,7 @@ import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { recordActivity, recordContribution } from "../repo/index.js";
 import { getProjectActivationReadiness } from "./projectReadiness.js";
+import { insertTaskRow } from "./taskRowInsert.js";
 import { type MutationContext, actor, nowIso } from "./workItemShared.js";
 import {
   evaluateCommitmentTransition,
@@ -328,32 +329,12 @@ export function createCommitmentNextAction(db: Db, projectId: number, title: str
     .where(and(eq(schema.workItems.id, projectId), eq(schema.workItems.role, "story")))
     .get();
   if (!project) throw AppError.notFound("project_not_found", "The project was not found.", { projectId });
-  const positions = db.select({ position: schema.workItems.position })
-    .from(schema.workItems)
-    .where(and(eq(schema.workItems.role, "task"), eq(schema.workItems.parentId, projectId)))
-    .all();
-  const task = db.insert(schema.workItems).values({
-    role: "task",
-    taskKind: "action",
+  const task = insertTaskRow(db, {
     parentId: projectId,
     title: title.trim(),
-    notes: "",
-    status: "active",
-    needsClarification: false,
-    ownerMemberId: null,
-    ownerInheritanceMode: "inherit",
-    physicalContextInheritanceMode: "inherit",
+    status: "actionable",
     scope: project.scope,
-    createdByMemberId: null,
-    dueDate: null,
-    scheduledDate: null,
-    revisitAt: null,
-    priority: null,
-    size: null,
-    repeatAfterDays: null,
-    allowedDeviationDays: null,
-    position: positions.reduce((max, row) => Math.max(max, row.position), -1) + 1,
-  }).returning().get();
+  });
   recordActivity(db, {
     actorMemberId: actor(context),
     kind: "task_created",

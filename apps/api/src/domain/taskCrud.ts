@@ -30,6 +30,7 @@ import { getProjectOrThrow } from "./storyCrud.js";
 import { assertReferenceCapableInput } from "./taskKindGuard.js";
 import { assertActionTask } from "./taskKindGuard.js";
 import { activateCommittedProjectChain } from "./commitmentActivation.js";
+import { insertTaskRow, nextTaskPosition, storedTaskStatus } from "./taskRowInsert.js";
 import {
   committedTaskStatus,
   evaluateCommitmentTransition,
@@ -329,19 +330,6 @@ function normalizeTaskStatus(
   return fallback;
 }
 
-function taskStatusToStored(status: TaskStatus): "captured" | "active" | "backlog" | "done" | "cancelled" {
-  switch (status) {
-    case "actionable":
-      return "active";
-    case "someday":
-      return "backlog";
-    case "captured":
-    case "done":
-    case "cancelled":
-      return status;
-  }
-}
-
 function assertCapturedTaskShape(
   status: TaskStatus,
   input: {
@@ -365,16 +353,7 @@ export function nextPositionForGroup(
   parentTaskId: number | null,
   projectId: number | null,
 ): number {
-  // SQLite's `= NULL` never matches, so sibling grouping is filtered in JS
-  // rather than expressed as a drizzle `eq()` predicate.
-  const parentId = parentTaskId ?? projectId;
-  const rows = db
-    .select({ position: schema.workItems.position })
-    .from(schema.workItems)
-    .where(and(eq(schema.workItems.role, "task"), parentId === null ? sql`${schema.workItems.parentId} IS NULL` : eq(schema.workItems.parentId, parentId)))
-    .all();
-  const filtered = rows;
-  return filtered.reduce((max, r) => Math.max(max, r.position), -1) + 1;
+  return nextTaskPosition(db, parentTaskId ?? projectId);
 }
 
 function insertTask(
@@ -414,17 +393,6 @@ function insertTask(
   // explicitly, and mark it "explicit" so effective-ownership derivations
   // (which a root task's default "inherit" mode would otherwise resolve
   // to nobody) actually see it.
-  const autoAssignedOwner =
-    isRoot && scope === "work" && input.ownerMemberId === undefined
-      ? input.createdByMemberId ?? null
-      : null;
-  const ownerMemberId = input.ownerMemberId ?? autoAssignedOwner;
-  const ownerInheritanceMode =
-    input.ownerInheritanceMode ??
-    (autoAssignedOwner !== null ? "explicit" : "inherit");
-
-  const position =
-    positionOverride ?? nextPositionForGroup(db, parentTaskId, projectId);
   // A reference is never actionable work, so it always uses the neutral
   // "captured" stored status rather than participating in the
   // captured/actionable/someday lifecycle; it is excluded from every work
@@ -479,37 +447,31 @@ function insertTask(
     );
   }
 
-  const task = db
-    .insert(schema.workItems)
-    .values({
-      role: "task",
-      taskKind: kind,
-      parentId: parentTaskId ?? projectId,
-      title: input.title.trim(),
-      notes: input.notes ?? "",
-      status: taskStatusToStored(status),
-      needsClarification: status === "captured",
-      ownerMemberId,
-      ownerInheritanceMode,
-      physicalContextInheritanceMode: input.contextInheritanceMode ?? "inherit",
-      createdByMemberId: input.createdByMemberId ?? null,
-      scope,
-      dueDate:
-        kind === "reference"
-          ? null
-          : recurrence.enabled
-            ? recurrence.dueDate
-            : input.dueDate ?? null,
-      scheduledDate,
-      revisitAt,
-      priority: kind === "reference" ? null : input.priority ?? null,
-      size: kind === "reference" ? null : input.size ?? null,
-      repeatAfterDays,
-      allowedDeviationDays,
-      position,
-    })
-    .returning()
-    .get();
+  const task = insertTaskRow(db, {
+    taskKind: kind,
+    parentId: parentTaskId ?? projectId,
+    title: input.title,
+    notes: input.notes,
+    status,
+    scope,
+    ownerMemberId: input.ownerMemberId,
+    ownerInheritanceMode: input.ownerInheritanceMode,
+    physicalContextInheritanceMode: input.contextInheritanceMode ?? "inherit",
+    createdByMemberId: input.createdByMemberId,
+    dueDate:
+      kind === "reference"
+        ? null
+        : recurrence.enabled
+          ? recurrence.dueDate
+          : input.dueDate ?? null,
+    scheduledDate,
+    revisitAt,
+    priority: kind === "reference" ? null : input.priority ?? null,
+    size: kind === "reference" ? null : input.size ?? null,
+    repeatAfterDays,
+    allowedDeviationDays,
+    position: positionOverride,
+  });
 
   if (input.reminders && input.reminders.length > 0) {
     insertReminders(db, task.id, input.reminders);
@@ -1112,7 +1074,7 @@ export function updateTask(
       (input.externalWait === null ||
         (statusChanged && nextStatus !== "actionable"));
     if (statusChanged && nextStatus !== undefined && !recurringCompletion) {
-      patch.status = taskStatusToStored(nextStatus);
+      patch.status = storedTaskStatus(nextStatus);
       patch.needsClarification = nextStatus === "captured";
       patch.completedAt = nextStatus === "done" ? nowIso() : null;
       patch.cancelledAt = nextStatus === "cancelled" ? nowIso() : null;

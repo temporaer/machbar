@@ -126,4 +126,29 @@ describe("pure commitment transition decisions", () => {
       subject: { ...input.subject, explicitlyReopened: true },
     }, "commitment", { resolution: resolution([5], "Nächste Aktion") })).toMatchObject({ kind: "ready" });
   });
+
+  it("distinguishes an omitted direct driver from an explicit null owner", () => {
+    const projectSnapshot = snapshot({
+      subject: {
+        type: "project",
+        id: 5,
+        status: "backlog",
+        targetStatus: "backlog",
+        executionCommitment: true,
+        newExecutionCommitment: true,
+        revisitAt: null,
+        recurring: false,
+        explicitlyReopened: false,
+      },
+      projects: [{ ...snapshot().projects[0]!, hasViableProgressPath: true }],
+    });
+    expect(evaluateCommitmentTransition(projectSnapshot, "explicit_activation")).toMatchObject({
+      kind: "ready",
+      plan: { projectActivations: [{ projectId: 5, ownerMemberId: 1 }] },
+    });
+    expect(evaluateCommitmentTransition(projectSnapshot, "explicit_activation", { ownerMemberId: null })).toMatchObject({
+      kind: "needs_decisions",
+      decisionSnapshot: { projects: [{ projectId: 5, required: ["driver"] }] },
+    });
+  });
 });

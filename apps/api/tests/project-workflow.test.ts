@@ -682,6 +682,34 @@ describe("project workflow (HTTP routes)", () => {
     });
   });
 
+  it("treats an explicitly cleared driver as missing and leaves the project unchanged", async () => {
+    const anna = await createMemberRoute("Anna");
+    const project = await createProjectRoute({ ownerMemberId: anna.id });
+    const beforeRevision = project.revision;
+
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/activate`,
+      payload: { ownerMemberId: null },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatchObject({
+      code: "project_driver_required",
+      details: { projectId: project.id },
+    });
+
+    const after = await ctx.app.inject({
+      method: "GET",
+      url: `/api/projects/${project.id}`,
+    });
+    expect(after.statusCode).toBe(200);
+    expect(after.json()).toMatchObject({
+      status: "backlog",
+      ownerMemberId: anna.id,
+      revision: beforeRevision,
+    });
+  });
+
   it("activates a project by supplying a driver in the same call", async () => {
     const anna = await createMemberRoute("Anna");
     const project = await createProjectRoute();

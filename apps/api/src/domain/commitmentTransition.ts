@@ -151,9 +151,9 @@ export function evaluateCommitmentTransition(
   }
 
   const assignments = resolution?.drivers ?? [];
-  const ownerByProject = new Map(assignments.map(({ projectId, ownerMemberId }) => [projectId, ownerMemberId]));
+  const ownerByProject = new Map<number, number | null>(assignments.map(({ projectId, ownerMemberId }) => [projectId, ownerMemberId]));
   const overrideProjectId = snapshot.subject.type === "project" ? snapshot.subject.id : null;
-  if (overrideProjectId !== null && decisions.ownerMemberId != null) {
+  if (overrideProjectId !== null && decisions.ownerMemberId !== undefined) {
     ownerByProject.set(overrideProjectId, decisions.ownerMemberId);
   }
   if (
@@ -173,7 +173,9 @@ export function evaluateCommitmentTransition(
   let nextAction: CommitmentTransitionPlan["nextAction"] = null;
 
   for (const project of backlog) {
-    const ownerMemberId = ownerByProject.get(project.projectId) ?? project.ownerMemberId;
+    const ownerMemberId = ownerByProject.has(project.projectId)
+      ? ownerByProject.get(project.projectId)!
+      : project.ownerMemberId;
     const proposedPath = project.projectId === targetProjectId && proposedTitle !== "";
     const hasExistingPath = hasProjectProgressPath(project) || viableChildParentId === project.projectId;
     const hasPath = hasExistingPath || proposedPath;
