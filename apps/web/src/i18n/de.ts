@@ -1014,6 +1014,10 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   driver: "Verantwortlich",
   assignDriver: "Verantwortliche Person zuweisen",
   assignDriverToActivateHint: "Für die Aktivierung muss zuerst eine verantwortliche Person zugewiesen werden.",
+  commitmentResolutionTitle: "Vor dem Start noch entscheiden",
+  commitmentResolutionHint: "Dein Entwurf bleibt erhalten. Wähle fehlende Verantwortliche und formuliere bei Bedarf einen konkreten nächsten Schritt.",
+  commitmentDriverFor: (title: string) => `Verantwortlich für „${title}“`,
+  commitmentNextActionLabel: "Welcher konkrete nächste Schritt bringt das Projekt voran?",
   driverLockedHint:
     "Die verantwortliche Person kann erst entfernt werden, wenn das Projekt wieder auf „Später / noch nicht aktiv“ steht.",
   noDriver: "Niemand zugewiesen",
@@ -1543,6 +1547,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
       "Das Projekt braucht zuerst eine verantwortliche Person.",
     project_activation_not_ready:
       "Füge vor dem Start einen ausführbaren nächsten Schritt oder einen gesunden Wartepfad hinzu.",
+    project_commitment_resolution_required:
+      "Für diesen verbindlichen Plan fehlen noch eine verantwortliche Person oder ein ausführbarer nächster Schritt. Deine Änderungen wurden nicht gespeichert.",
     project_completion_criteria_incomplete:
       "Prüfe, bearbeite oder entferne vor dem Abschluss alle offenen Kriterien.",
     project_not_found: "Das Projekt wurde nicht gefunden.",
@@ -1599,6 +1605,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
       "Eine Aufgabe kann nicht ihre eigene übergeordnete Aufgabe sein.",
     task_promotion_invalid:
       "Dieser Eingangseintrag kann in seinem aktuellen Zustand nicht in ein Projekt umgewandelt werden.",
+    task_reopen_required:
+      "Öffne die erledigte oder abgebrochene Aufgabe ausdrücklich wieder, bevor du einen neuen Ausführungstermin hinzufügst.",
     scope_mismatch:
       "Eine Aufgabe kann nicht zwischen Haushalt und Arbeit verschoben werden.",
     scope_edit_root_only:

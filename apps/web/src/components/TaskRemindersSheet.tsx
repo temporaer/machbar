@@ -23,6 +23,12 @@ import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 import { ClockTimePicker } from "./ClockTimePicker";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
+import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
+import {
+  projectActivationPromptFromError,
+  projectActivationResolutionFromPrompt,
+  type ProjectActivationPrompt,
+} from "../lib/projectActivationResolution";
 
 /** A draft reminder plus a stable React key that survives edits (unlike array index, which shifts on removal). */
 interface DraftReminder {
@@ -64,6 +70,7 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
 
   const hasDeadline = task.dueDate !== null;
   const sorted = sortRemindersForDisplay(
@@ -225,9 +232,23 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
     setError(null);
     try {
       const reminders = draft.map((entry) => entry.reminder);
-      await taskActions.update(task, { reminders }, { reminders: task.reminders }, true);
+      const activationResolution = activationPrompt
+        ? projectActivationResolutionFromPrompt(activationPrompt)
+        : null;
+      if (activationPrompt && !activationResolution) {
+        setError(strings.commitmentResolutionHint);
+        return;
+      }
+      await taskActions.update(
+        task,
+        { reminders, ...(activationResolution ? { activationResolution } : {}) },
+        { reminders: task.reminders },
+        true,
+      );
       onClose();
     } catch (cause) {
+      const prompt = projectActivationPromptFromError(cause);
+      if (prompt) setActivationPrompt(prompt);
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
@@ -315,6 +336,10 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
           >
             {strings.addReminder}
           </button>
+        ) : null}
+
+        {activationPrompt ? (
+          <ProjectActivationDecisionFields prompt={activationPrompt} disabled={saving} onChange={setActivationPrompt} />
         ) : null}
 
         {error ? (

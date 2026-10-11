@@ -393,20 +393,25 @@ describe("TaskStructureSheet routing", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Zum Projekt machen" }));
     await userEvent.click(await screen.findByRole("button", { name: "Aktivieren" }));
 
-    const picker = await screen.findByRole("dialog", { name: strings.assignDriver });
-    expect(within(picker).getByText(strings.assignDriverToActivateHint)).toBeInTheDocument();
+    const picker = await screen.findByRole("dialog");
+    expect(within(picker).getByText(strings.commitmentResolutionHint)).toBeInTheDocument();
     expect(mockedApi.convertTaskToStory).toHaveBeenCalledWith(72, {
       status: "backlog",
       expectedRevision: 1,
     });
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
 
-    await userEvent.click(within(picker).getByRole("button", { name: /Mira/ }));
+    await userEvent.selectOptions(within(picker).getByLabelText(strings.commitmentDriverFor(project.title)), "1");
+    await userEvent.click(within(picker).getByRole("button", { name: strings.activateStory }));
 
     await waitFor(() =>
       expect(mockedApi.activateProject).toHaveBeenCalledWith(72, {
         expectedRevision: 2,
         ownerMemberId: 1,
+        activationResolution: {
+          expectedProjects: [{ projectId: 72, revision: 2 }],
+          drivers: [{ projectId: 72, ownerMemberId: 1 }],
+        },
       }),
     );
     expect(mockedApi.updateProject).not.toHaveBeenCalled();
@@ -438,7 +443,7 @@ describe("TaskStructureSheet routing", () => {
     expect(screen.queryByRole("dialog", { name: strings.assignDriver })).not.toBeInTheDocument();
   });
 
-  it("collects the missing driver then guides an unprepared conversion to its next action", async () => {
+  it("collects the missing driver and progress path for an unprepared conversion", async () => {
     const project = makeProject({
       id: 72,
       status: "backlog",
@@ -463,19 +468,20 @@ describe("TaskStructureSheet routing", () => {
     await userEvent.click(screen.getByRole("button", { name: "open structure" }));
     await userEvent.click(await screen.findByRole("button", { name: "Zum Projekt machen" }));
     await userEvent.click(await screen.findByRole("button", { name: "Aktivieren" }));
-    const picker = await screen.findByRole("dialog", { name: strings.assignDriver });
-    await userEvent.click(within(picker).getByRole("button", { name: /Mira/ }));
-
-    await waitFor(() =>
-      expect(mockedApi.updateProject).toHaveBeenCalledWith(72, {
-        expectedRevision: 2,
-        ownerMemberId: 1,
-      }),
-    );
-    expect(await screen.findByText("/projects/72?focus=next-action")).toBeInTheDocument();
-    expect(screen.getByText("Open task: none")).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Schritt …")).not.toBeInTheDocument();
-    expect(mockedApi.activateProject).not.toHaveBeenCalled();
+    const picker = await screen.findByRole("dialog");
+    await userEvent.selectOptions(within(picker).getByLabelText(strings.commitmentDriverFor(project.title)), "1");
+    await userEvent.type(within(picker).getByLabelText(strings.commitmentNextActionLabel), "Ersten Schritt festlegen");
+    await userEvent.click(within(picker).getByRole("button", { name: strings.activateStory }));
+    expect(mockedApi.activateProject).toHaveBeenCalledWith(72, {
+      expectedRevision: 2,
+      ownerMemberId: 1,
+      activationResolution: {
+        expectedProjects: [{ projectId: 72, revision: 2 }],
+        drivers: [{ projectId: 72, ownerMemberId: 1 }],
+        nextActionTitle: "Ersten Schritt festlegen",
+      },
+    });
+    expect(mockedApi.updateProject).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 

@@ -16,8 +16,7 @@ import { CompleteWithOpenTasksSheet } from "./CompleteWithOpenTasksSheet";
 import { WorkRefinementSheet } from "./WorkRefinementSheet";
 import { useStrings } from "../lib/strings";
 import { canClearDriver } from "../lib/projectWorkflow";
-import { hasProjectProgressPath } from "../lib/projectCommitments";
-import type { ProjectWithActions } from "../lib/api";
+import { ProjectActivationSheet } from "./ProjectActivationSheet";
 
 /**
  * Project counterpart of `TaskWorkflowHost.tsx` — the single place that
@@ -130,37 +129,13 @@ export function ProjectWorkflowHost() {
     case "reopenWithDriver": {
       const action = workflow.current.kind === "reopenWithDriver" ? "reopen" : "activate";
       return (
-        <MemberSelectionSheet
-          title={strings.assignDriver}
-          label={strings.driver}
-          idPrefix={`project-workflow-${action}-driver-${story.id}`}
-          members={members}
-          value={story.ownerMemberId}
-          unassignedLabel={null}
-          hint={strings.assignDriverToActivateHint}
-          onClose={workflow.closeCurrent}
-          onCancel={close}
-          onSelect={async (ownerMemberId) => {
-            if (workflow.continuation?.projectId === story.id) {
-              if (hasProjectProgressPath(story)) {
-                const result = await projectActions.runAction(story, action, ownerMemberId);
-                if (result) {
-                  workflow.closeCurrent();
-                  workflow.cancelContinuation();
-                }
-              } else {
-                const assigned = await projectActions.assignDriver(story, ownerMemberId);
-                const updated =
-                  (assigned as ProjectWithActions | undefined) ??
-                  (await api.getProject(story.id)) ??
-                  { ...story, ownerMemberId, revision: story.revision + 1 };
-                workflow.closeCurrent();
-                workflow.resumeContinuation(updated);
-              }
-            } else {
-              await projectActions.runAction(story, action, ownerMemberId);
-            }
-          }}
+        <ProjectActivationSheet
+          story={story}
+          action={action}
+          onClose={close}
+          onActivate={(ownerMemberId, resolution) =>
+            projectActions.runAction(story, action, ownerMemberId, resolution, true).then(() => undefined)
+          }
         />
       );
     }

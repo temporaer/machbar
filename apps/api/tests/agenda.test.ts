@@ -350,13 +350,14 @@ describe("Heute agenda: query-derived planned + blocked revisit reminders", () =
     expect(await bucketsContaining("Noch zu entscheiden")).toEqual([]);
   });
 
-  it("excludes standalone someday work even when it has a due date", async () => {
-    await createTask({
+  it("promotes standalone Someday work when it receives a deadline", async () => {
+    const task = await createTask({
       title: "Irgendwann fällig",
       status: "someday",
       dueDate: today,
     });
-    expect(await bucketsContaining("Irgendwann fällig")).toEqual([]);
+    expect(task.status).toBe("actionable");
+    expect(await bucketsContaining("Irgendwann fällig")).toEqual(["dueToday"]);
   });
 
   it("does not treat future-scheduled assigned work as unscheduled", async () => {

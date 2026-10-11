@@ -176,7 +176,8 @@ describe("week planning agenda", () => {
   });
 
   it("places explicitly dated tasks from backlog stories without adding their unscheduled siblings to the planning pool", async () => {
-    const story = await createProject({ title: "All-Hands planen" });
+    const owner = await createMember("Mira");
+    const story = await createProject({ title: "All-Hands planen", ownerMemberId: owner.id });
     const scheduled = await createTask({
       title: "Fuer All-Hands anmelden",
       projectId: story.id,
@@ -196,6 +197,8 @@ describe("week planning agenda", () => {
     });
 
     const week = await getWeek();
+
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${story.id}` })).json().status).toBe("active");
 
     expect(week.days[1].items).toContainEqual(
       expect.objectContaining({

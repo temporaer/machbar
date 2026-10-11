@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, type ReactNode } from "react";
 import { api } from "./api";
+import type { ProjectActivationResolution } from "@machbar/shared";
 import type { ProjectWithActions, ProjectWorkflowAction, UpdateProjectInput } from "./api";
 import { statusAfterAction, workflowActionsByStatus } from "./projectWorkflow";
 import { useRetainedMutations } from "./useRetainedMutations";
@@ -55,6 +56,7 @@ function useProjectActionsState() {
       story: ProjectWithActions,
       action: ProjectWorkflowAction,
       ownerMemberId?: number | null,
+      activationResolution?: ProjectActivationResolution,
     ) => {
       const input = { expectedRevision: story.revision };
       switch (action) {
@@ -62,6 +64,7 @@ function useProjectActionsState() {
           return api.activateProject(story.id, {
             ...input,
             ...(ownerMemberId !== undefined ? { ownerMemberId } : {}),
+            ...(activationResolution ? { activationResolution } : {}),
           });
         case "return_to_backlog":
           return api.returnProjectToBacklog(story.id, input);
@@ -71,6 +74,7 @@ function useProjectActionsState() {
           return api.reopenProject(story.id, {
             ...input,
             ...(ownerMemberId !== undefined ? { ownerMemberId } : {}),
+            ...(activationResolution ? { activationResolution } : {}),
           });
         case "archive":
         default:
@@ -91,6 +95,8 @@ function useProjectActionsState() {
       story: ProjectWithActions,
       action: ProjectWorkflowAction,
       ownerMemberId?: number | null,
+      activationResolution?: ProjectActivationResolution,
+      throwOnError = false,
     ) => {
       const nextStatus = statusAfterAction[action];
       const optimistic: ProjectWithActions = {
@@ -104,8 +110,9 @@ function useProjectActionsState() {
       return run({
         id: story.id,
         optimistic: { story: optimistic, action },
-        mutate: () => call(story, action, ownerMemberId),
+        mutate: () => call(story, action, ownerMemberId, activationResolution),
         confirmed: (confirmed) => ({ story: confirmed, action }),
+        throwOnError,
       });
     },
     [call, run],
@@ -113,8 +120,8 @@ function useProjectActionsState() {
 
   /** Right-swipe / primary-button activation, optionally assigning the driver in the same call. */
   const activate = useCallback(
-    (story: ProjectWithActions, ownerMemberId?: number | null) =>
-      runAction(story, "activate", ownerMemberId),
+    (story: ProjectWithActions, ownerMemberId?: number | null, activationResolution?: ProjectActivationResolution) =>
+      runAction(story, "activate", ownerMemberId, activationResolution),
     [runAction],
   );
 
@@ -161,8 +168,11 @@ function useProjectActionsState() {
   const schedule = useCallback(
     (
       story: ProjectWithActions,
-      patch: { dueDate?: string | null; revisitAt?: string | null },
-    ) => update(story, patch, patch, true),
+      patch: UpdateProjectInput,
+    ) => update(story, patch, {
+      ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate } : {}),
+      ...(patch.revisitAt !== undefined ? { revisitAt: patch.revisitAt } : {}),
+    }, true),
     [update],
   );
 

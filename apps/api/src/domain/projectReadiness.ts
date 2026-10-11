@@ -24,14 +24,17 @@ export function evaluateProjectActivationReadiness(input: {
     );
   });
   const hasHealthyFutureRevisit = (input.futureRevisitTaskIds ?? []).length > 0;
+  const hasProgressPath = hasViableProgressPath || hasHealthyFutureWaiting || hasHealthyFutureRevisit;
+  const requiredDecisions: Array<"driver" | "progressPath"> = [];
+  if (!hasDriver) requiredDecisions.push("driver");
+  if (!hasProgressPath) requiredDecisions.push("progressPath");
   return {
-    ready:
-      hasDriver &&
-      (hasViableProgressPath || hasHealthyFutureWaiting || hasHealthyFutureRevisit),
+    ready: hasDriver && hasProgressPath,
     hasDriver,
     hasViableProgressPath,
     hasHealthyFutureWaiting,
     hasHealthyFutureRevisit,
+    requiredDecisions,
   };
 }
 
@@ -56,6 +59,12 @@ export function getProjectActivationReadiness(
   return {
     ...readiness,
     hasDriver,
+    requiredDecisions: [
+      ...(!hasDriver ? ["driver" as const] : []),
+      ...(!(readiness.hasViableProgressPath || readiness.hasHealthyFutureWaiting || readiness.hasHealthyFutureRevisit)
+        ? ["progressPath" as const]
+        : []),
+    ],
     ready:
       hasDriver &&
       (readiness.hasViableProgressPath ||

@@ -151,17 +151,22 @@ describe("CapturedProjectHandoff", () => {
       );
 
       await userEvent.click(screen.getByRole("button", { name: "Starten" }));
-      const picker = await screen.findByRole("dialog", { name: strings.assignDriver });
-      expect(within(picker).getByText(strings.assignDriverToActivateHint)).toBeInTheDocument();
-      expect(within(picker).queryByRole("button", { name: strings.noDriver })).not.toBeInTheDocument();
+      const picker = await screen.findByRole("dialog");
+      expect(within(picker).getByText(strings.commitmentResolutionHint)).toBeInTheDocument();
+      expect(within(picker).getByLabelText(strings.commitmentDriverFor(project.title))).toBeInTheDocument();
       expect(mockedApi.activateProject).not.toHaveBeenCalled();
 
-      await userEvent.click(within(picker).getByRole("button", { name: /Mira/ }));
+      await userEvent.selectOptions(within(picker).getByLabelText(strings.commitmentDriverFor(project.title)), "1");
+      await userEvent.click(within(picker).getByRole("button", { name: strings.activateStory }));
 
       await waitFor(() =>
         expect(mockedApi.activateProject).toHaveBeenCalledWith(42, {
           expectedRevision: 1,
           ownerMemberId: 1,
+          activationResolution: {
+            expectedProjects: [{ projectId: 42, revision: 1 }],
+            drivers: [{ projectId: 42, ownerMemberId: 1 }],
+          },
         }),
       );
       await waitFor(() => expect(picker).not.toBeInTheDocument());
@@ -216,13 +221,13 @@ describe("CapturedProjectHandoff", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Starten" }));
-    const picker = await screen.findByRole("dialog", { name: strings.assignDriver });
+    const picker = await screen.findByRole("dialog");
     await userEvent.click(within(picker).getByRole("button", { name: "Abbrechen" }));
 
     expect(picker).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Starten" })).toBeEnabled();
     expect(mockedApi.activateProject).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Starten" }));
-    expect(await screen.findByRole("dialog", { name: strings.assignDriver })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 });

@@ -17,7 +17,7 @@ describe("working-system task eligibility", () => {
     await closeTestContext(ctx);
   });
 
-  it("keeps backlog project tasks out of operational queues until activation", async () => {
+  it("activates committed backlog work while preserving planned, waiting, and captured eligibility", async () => {
     const member = (
       await ctx.app.inject({
         method: "POST",
@@ -72,26 +72,20 @@ describe("working-system task eligibility", () => {
         url: `/api/agenda/today?scope=all&date=${today}`,
       })
     ).json();
-    expect([
-      ...agendaBefore.planned,
-      ...agendaBefore.overdue,
-      ...agendaBefore.dueToday,
-      ...agendaBefore.dueSoon,
-      ...agendaBefore.shared,
-      ...agendaBefore.unscheduled,
-      ...agendaBefore.revisit,
-    ]).toEqual([]);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("active");
+    expect(agendaBefore.planned.map((task: { id: number }) => task.id)).toContain(actionable.id);
+    expect(agendaBefore.revisit.map((task: { id: number }) => task.id)).toContain(waiting.id);
 
     expect(
       (
         await ctx.app.inject({ method: "GET", url: "/api/waiting" })
-      ).json(),
-    ).toEqual([]);
+      ).json().map((entry: { task: { id: number } }) => entry.task.id),
+    ).toContain(waiting.id);
     expect(
       (
         await ctx.app.inject({ method: "GET", url: "/api/inbox" })
-      ).json(),
-    ).toEqual([]);
+      ).json().map((task: { id: number }) => task.id),
+    ).toContain(captured.id);
     expect(
       (
         await ctx.app.inject({
@@ -100,8 +94,8 @@ describe("working-system task eligibility", () => {
         })
       )
         .json()
-        .map((entry: { task: { id: number } }) => entry.task.id),
-    ).toEqual([]);
+        .map((entry: { id: number }) => entry.id),
+    ).toEqual(expect.arrayContaining([actionable.id, waiting.id, captured.id]));
 
     const detail = (
       await ctx.app.inject({
@@ -124,48 +118,5 @@ describe("working-system task eligibility", () => {
       expect.arrayContaining([actionable.id, waiting.id, captured.id]),
     );
 
-    const activated = await ctx.app.inject({
-      method: "POST",
-      url: `/api/projects/${project.id}/activate`,
-      payload: {},
-    });
-    expect(activated.statusCode).toBe(200);
-
-    const agendaAfter = (
-      await ctx.app.inject({
-        method: "GET",
-        url: `/api/agenda/today?scope=all&date=${today}`,
-      })
-    ).json();
-    expect(agendaAfter.planned.map((task: { id: number }) => task.id)).toContain(
-      actionable.id,
-    );
-    expect(
-      agendaAfter.revisit.map((task: { id: number }) => task.id),
-    ).toContain(waiting.id);
-    expect(
-      (
-        await ctx.app.inject({ method: "GET", url: "/api/waiting" })
-      )
-        .json()
-        .map((entry: { task: { id: number } }) => entry.task.id),
-    ).toContain(waiting.id);
-    expect(
-      (
-        await ctx.app.inject({ method: "GET", url: "/api/inbox" })
-      )
-        .json()
-        .map((task: { id: number }) => task.id),
-    ).toContain(captured.id);
-    expect(
-      (
-        await ctx.app.inject({
-          method: "GET",
-          url: "/api/refinement/tasks",
-        })
-      )
-        .json()
-        .map((task: { id: number }) => task.id),
-    ).toEqual(expect.arrayContaining([actionable.id, waiting.id, captured.id]));
   });
 });

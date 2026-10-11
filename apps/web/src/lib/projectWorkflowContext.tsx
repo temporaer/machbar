@@ -1,6 +1,5 @@
 import { createContext, useContext, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import type { ProjectWithActions } from "./api";
 
 /**
  * Project counterpart of `taskWorkflowContext.tsx`. Every `story.*`
@@ -15,9 +14,9 @@ import type { ProjectWithActions } from "./api";
  * navigation to the project's next-action focus, not a sheet.
  *
  * `activateWithDriver`/`reopenWithDriver` are not separate user intents:
- * they are how `story.activate`/`story.reopen` resolve when the story still
- * needs a driver (see `lifecyclePrerequisite()`), collecting one and
- * committing the transition atomically in the same call.
+ * they are how `story.activate`/`story.reopen` resolve when readiness needs
+ * a driver or progress path (see `lifecyclePrerequisite()`), collecting all
+ * missing decisions before the canonical transition call.
  *
  * `completeWithCriteria` is the analogous continuation for `story.complete`
  * when acceptance criteria remain unchecked: it opens the focused checklist
@@ -53,12 +52,6 @@ export type ProjectWorkflowKind =
   | "completeWithCriteria"
   | "completeWithOpenTasks";
 
-export type ProjectLifecycleContinuation = {
-  projectId: number;
-  action: "activate" | "reopen";
-  resume: (story: ProjectWithActions) => void | Promise<void>;
-};
-
 export interface ProjectWorkflowState {
   kind: ProjectWorkflowKind;
   projectId: number;
@@ -69,37 +62,20 @@ interface ProjectWorkflowContextValue {
   open: (kind: ProjectWorkflowKind, projectId: number) => void;
   close: () => void;
   closeCurrent: () => void;
-  continuation: ProjectLifecycleContinuation | null;
-  beginContinuation: (continuation: ProjectLifecycleContinuation) => void;
-  cancelContinuation: () => void;
-  resumeContinuation: (story: ProjectWithActions) => void;
 }
 
 const ProjectWorkflowContext = createContext<ProjectWorkflowContextValue | null>(null);
 
 export function ProjectWorkflowProvider({ children }: { children: ReactNode }) {
   const [current, setCurrent] = useState<ProjectWorkflowState | null>(null);
-  const [continuation, setContinuation] = useState<ProjectLifecycleContinuation | null>(null);
   const value = useMemo<ProjectWorkflowContextValue>(
     () => ({
       current,
       open: (kind, projectId) => setCurrent({ kind, projectId }),
       closeCurrent: () => setCurrent(null),
-      close: () => {
-        setCurrent(null);
-        setContinuation(null);
-      },
-      continuation,
-      beginContinuation: setContinuation,
-      cancelContinuation: () => setContinuation(null),
-      resumeContinuation: (story) => {
-        const active = continuation;
-        if (active?.projectId === story.id) {
-          void active.resume(story);
-        }
-      },
+      close: () => setCurrent(null),
     }),
-    [current, continuation],
+    [current],
   );
   return <ProjectWorkflowContext.Provider value={value}>{children}</ProjectWorkflowContext.Provider>;
 }

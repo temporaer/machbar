@@ -213,6 +213,7 @@ export function registerProjectRoutes(app: FastifyInstance, db: Db) {
         { actorMemberId: request.activityActor?.id ?? null },
         body.expectedRevision,
         body.ownerMemberId,
+        body.activationResolution,
       );
       const graph = Graph.load(db, undefined, viewerMemberId(request));
       return projectWithIssues(graph, id);

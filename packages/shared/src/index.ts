@@ -172,6 +172,8 @@ export type ApiErrorCode =
   | "project_driver_locked"
   | "project_driver_required"
   | "project_activation_not_ready"
+  | "project_commitment_resolution_required"
+  | "task_reopen_required"
   | "project_completion_criteria_incomplete"
   | "project_not_found"
   | "project_title_required"
@@ -662,6 +664,17 @@ export interface ProjectActivationReadiness {
   hasViableProgressPath: boolean;
   hasHealthyFutureWaiting: boolean;
   hasHealthyFutureRevisit?: boolean;
+  requiredDecisions?: Array<"driver" | "progressPath">;
+}
+
+/** Explicit decisions collected before a commitment can activate a project chain. */
+export interface ProjectActivationResolution {
+  /** Revisions returned with `project_commitment_resolution_required`. */
+  expectedProjects: Array<{ projectId: number; revision: number }>;
+  /** Explicitly selected drivers; the acting member is never inferred. */
+  drivers: Array<{ projectId: number; ownerMemberId: number }>;
+  /** A user-authored next action to create in the affected project if readiness requires one. */
+  nextActionTitle?: string;
 }
 
 export interface Project {

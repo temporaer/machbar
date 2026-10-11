@@ -34,6 +34,12 @@ import { BottomSheet } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { HumanDateInput } from "./HumanDateInput";
+import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
+import {
+  projectActivationPromptFromError,
+  projectActivationResolutionFromPrompt,
+  type ProjectActivationPrompt,
+} from "../lib/projectActivationResolution";
 
 type DateField = "scheduled" | "availability" | "deadline";
 type DateValidity = Record<DateField, boolean>;
@@ -78,6 +84,7 @@ export function TaskPlanningSheet({
   const [availabilityEdited, setAvailabilityEdited] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
+  const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
   const hasExistingWait = task.externalWait !== null;
   const canAddWaiting =
     task.kind === "action" &&
@@ -453,6 +460,14 @@ export function TaskPlanningSheet({
         ...(externalWait !== undefined ? { externalWait } : {}),
         ...(cleanedTitle !== task.title ? { title: cleanedTitle } : {}),
       };
+      const activationResolution = activationPrompt
+        ? projectActivationResolutionFromPrompt(activationPrompt)
+        : null;
+      if (activationPrompt && !activationResolution) {
+        setError(strings.commitmentResolutionHint);
+        return;
+      }
+      const apiPatch = activationResolution ? { ...patch, activationResolution } : patch;
       const optimisticPatch = {
         ...patch,
         ...(externalWait !== undefined
@@ -464,9 +479,11 @@ export function TaskPlanningSheet({
             }
           : {}),
       };
-      await taskActions.update(task, patch, optimisticPatch, true);
+      await taskActions.update(task, apiPatch, optimisticPatch, true);
       onClose();
     } catch (cause) {
+      const prompt = projectActivationPromptFromError(cause);
+      if (prompt) setActivationPrompt(prompt);
       setError(localizedErrorMessage(cause, strings));
     } finally {
       setSaving(false);
@@ -872,6 +889,10 @@ export function TaskPlanningSheet({
             </>
           )}
         </section>
+
+        {activationPrompt ? (
+          <ProjectActivationDecisionFields prompt={activationPrompt} disabled={saving} onChange={setActivationPrompt} />
+        ) : null}
 
         {error ? (
           <div className="task-row-error" role="alert">

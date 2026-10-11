@@ -4,7 +4,7 @@
  * in `storyCapabilities.ts`.
  */
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import type { ProjectStatus, WorkItemScope } from "@machbar/shared";
+import type { ProjectActivationResolution, ProjectStatus, WorkItemScope } from "@machbar/shared";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -27,6 +27,9 @@ import {
   sortedIds,
   touchProject,
 } from "./workItemShared.js";
+import { activateCommittedProjectChain } from "./commitmentActivation.js";
+import { projectNeedsProgressPath } from "./commitmentActivation.js";
+import { createCommitmentNextAction } from "./taskCrud.js";
 
 // ---------------------------------------------------------------------------
 // Projects
@@ -70,6 +73,7 @@ export interface CreateProjectInput {
   revisitAt?: string | null;
   tagIds?: number[];
   contextIds?: number[];
+  activationResolution?: ProjectActivationResolution;
   /** Only meaningful for a root project (no `parentId`); a nested project
    * always inherits its parent's scope regardless of this field. */
   scope?: WorkItemScope;
@@ -200,6 +204,7 @@ export interface UpdateProjectInput {
   tagIds?: number[];
   contextIds?: number[];
   expectedRevision?: number;
+  activationResolution?: ProjectActivationResolution;
 }
 
 /**
@@ -250,6 +255,28 @@ export function updateProject(
         "Project revisit dates are only valid while the project is in the backlog.",
         { projectId: id, currentStatus: project.status, requiredStatus: "backlog" },
       );
+    }
+    if (
+      project.status === "backlog" &&
+      project.dueDate === null &&
+      input.dueDate !== undefined &&
+      input.dueDate !== null
+    ) {
+      // The transaction keeps the date draft and any activation decisions
+      // atomic. Readiness is evaluated before writing the date because a
+      // project deadline is not itself a progress path.
+      if (
+        input.activationResolution?.nextActionTitle &&
+        projectNeedsProgressPath(txDb, id, project.ownerMemberId)
+      ) {
+        createCommitmentNextAction(
+          txDb,
+          id,
+          input.activationResolution.nextActionTitle,
+          context,
+        );
+      }
+      activateCommittedProjectChain(txDb, id, context, input.activationResolution);
     }
     const patch: Partial<typeof schema.workItems.$inferInsert> = {};
     const changedFields: string[] = [];

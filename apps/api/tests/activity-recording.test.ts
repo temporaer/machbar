@@ -85,7 +85,7 @@ describe("atomic activity recording", () => {
   });
 
   it("coalesces meaningful edits and never stores note content", () => {
-    const task = createTask(ctx.handle.db, { title: "Vorher", notes: "Alt" });
+    const task = createTask(ctx.handle.db, { title: "Vorher", notes: "Alt", status: "actionable" });
     updateTask(ctx.handle.db, task.id, {
       title: "Nachher",
       notes: "streng vertraulicher Notiztext",
@@ -397,32 +397,23 @@ describe("atomic activity recording", () => {
         payload: { title: "Projekt" },
       })
     ).json();
+    const action = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: { title: "Activation path", projectId: project.id, status: "actionable" },
+    });
+    expect(action.statusCode).toBe(201);
     await ctx.app.inject({
       method: "PATCH",
       url: `/api/projects/${project.id}`,
-      payload: {
-        ownerMemberId: owner.id,
-        dueDate: "2026-09-02",
-      },
+      payload: { ownerMemberId: owner.id },
     });
+    const currentProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
+    await ctx.app.inject({ method: "PATCH", url: `/api/projects/${project.id}`, payload: { expectedRevision: currentProject.revision, dueDate: "2026-09-02" } });
     await ctx.app.inject({
       method: "PATCH",
       url: `/api/projects/${project.id}`,
       payload: { tagIds: [tag.id] },
-    });
-    await ctx.app.inject({
-      method: "POST",
-      url: "/api/tasks",
-      payload: {
-        title: "Activation path",
-        projectId: project.id,
-        status: "actionable",
-      },
-    });
-    await ctx.app.inject({
-      method: "POST",
-      url: `/api/projects/${project.id}/activate`,
-      payload: {},
     });
     const criterionResponse = await ctx.app.inject({
       method: "POST",

@@ -187,7 +187,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     expect(screen.getByText("Aktiv gemacht")).toBeInTheDocument();
   });
 
-  it("continues activation from the lifecycle rail as soon as a missing driver is selected", async () => {
+  it("collects a missing driver before activation from the lifecycle rail", async () => {
     const story = makeProject({
       id: 13,
       title: "Homeoffice-Ecke einrichten",
@@ -202,28 +202,19 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     swipe(container, 100);
     fireEvent.click(within(screen.getByRole("group", { name: "Status" })).getByRole("button", { name: "Aktiv machen" }));
 
-    const dialog = await screen.findByRole("dialog", {
-      name: "Verantwortliche Person zuweisen",
-    });
-    // Activating without a driver is illegal, so no "Niemand zugewiesen" chip
-    // is offered here — only the household members.
-    const group = screen.getByRole("group", { name: "Verantwortlich" });
-    expect(within(group).queryByRole("combobox")).not.toBeInTheDocument();
-    expect(
-      within(group).queryByRole("button", { name: "Niemand zugewiesen" }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(group)
-        .getAllByRole("button")
-        .map((b) => b.textContent),
-    ).toEqual(["Mira", "Noah"]);
-
-    await userEvent.click(within(group).getByRole("button", { name: "Noah" }));
+    const dialog = await screen.findByRole("dialog");
+    const driver = within(dialog).getByLabelText("Verantwortlich für „Homeoffice-Ecke einrichten“");
+    await userEvent.selectOptions(driver, "2");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Aktiv machen" }));
 
     await waitFor(() =>
       expect(mockedApi.activateProject).toHaveBeenCalledWith(13, {
         expectedRevision: 1,
         ownerMemberId: 2,
+        activationResolution: {
+          expectedProjects: [{ projectId: 13, revision: 1 }],
+          drivers: [{ projectId: 13, ownerMemberId: 2 }],
+        },
       }),
     );
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
