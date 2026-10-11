@@ -403,6 +403,73 @@ describe("project workflow (HTTP routes)", () => {
     expect(tasks).toEqual([{ title: "Materialbedarf prüfen" }]);
   });
 
+  it("refreshes ancestor decisions from the rolled-back graph while preserving a proposed next action", async () => {
+    const member = await createMemberRoute("Lena");
+    const parent = await createProjectRoute({ title: "Haus", ownerMemberId: member.id });
+    const child = await createProjectRoute({ title: "Keller", parentId: parent.id, ownerMemberId: member.id });
+    const initial = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${child.id}`,
+      payload: { expectedRevision: child.revision, dueDate: "2026-12-20" },
+    });
+    expect(initial.statusCode).toBe(409);
+    expect(initial.json().error.details.projects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ projectId: child.id, required: ["progressPath"] }),
+      expect.objectContaining({ projectId: parent.id, required: ["progressPath"] }),
+    ]));
+
+    const parentEdit = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${parent.id}`,
+      payload: { expectedRevision: parent.revision, notes: "Neue Information" },
+    });
+    expect(parentEdit.statusCode).toBe(200);
+    const nextActionTitle = "Materialbedarf prüfen";
+    const staleRetry = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${child.id}`,
+      payload: {
+        expectedRevision: child.revision,
+        dueDate: "2026-12-20",
+        activationResolution: {
+          expectedProjects: initial.json().error.details.expectedProjects,
+          drivers: [],
+          nextActionTitle,
+        },
+      },
+    });
+    expect(staleRetry.statusCode).toBe(409);
+    expect(staleRetry.json().error.details).toMatchObject({
+      reason: "project_snapshot_stale",
+      projects: expect.arrayContaining([
+        expect.objectContaining({ projectId: child.id, required: ["progressPath"] }),
+        expect.objectContaining({ projectId: parent.id, required: ["progressPath"] }),
+      ]),
+      expectedProjects: [
+        expect.objectContaining({ projectId: child.id, revision: child.revision }),
+        expect.objectContaining({ projectId: parent.id, revision: parentEdit.json().revision }),
+      ],
+    });
+    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'task'").all()).toHaveLength(0);
+
+    const accepted = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${child.id}`,
+      payload: {
+        expectedRevision: child.revision,
+        dueDate: "2026-12-20",
+        activationResolution: {
+          expectedProjects: staleRetry.json().error.details.expectedProjects,
+          drivers: [],
+          nextActionTitle,
+        },
+      },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(ctx.handle.sqlite.prepare("SELECT title FROM work_items WHERE role = 'task'").all())
+      .toEqual([{ title: nextActionTitle }]);
+  });
+
   it("activates an already-dated backlog project when its deadline is changed", async () => {
     const member = await createMemberRoute("Lena");
     const project = await createProjectRoute({

@@ -29,6 +29,7 @@ import {
 } from "./workItemShared.js";
 import {
   activateCommittedProjectChain,
+  assertProjectActivationResolutionFresh,
   projectActivationDecisionSnapshot,
   projectNeedsProgressPath,
 } from "./commitmentActivation.js";
@@ -184,6 +185,7 @@ export function createProject(
       // A newly-created deadline is a commitment too. If the user supplied a
       // first action alongside the activation decisions, keep both it and the
       // project transition in this transaction.
+      assertProjectActivationResolutionFresh(txDb, project.id, input.activationResolution);
       if (
         input.activationResolution?.nextActionTitle &&
         projectNeedsProgressPath(txDb, project.id, project.ownerMemberId)
@@ -301,6 +303,7 @@ export function updateProject(
       // The transaction keeps the date draft and any activation decisions
       // atomic. Readiness is evaluated before writing the date because a
       // project deadline is not itself a progress path.
+      assertProjectActivationResolutionFresh(txDb, id, input.activationResolution);
       if (
         input.activationResolution?.nextActionTitle &&
         projectNeedsProgressPath(txDb, id, project.ownerMemberId)

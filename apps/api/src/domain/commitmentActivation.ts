@@ -115,6 +115,38 @@ export function projectNeedsProgressPath(
   );
 }
 
+/** Check the reviewed project chain before callers create a temporary progress
+ * action. A stale decision response must describe the graph that remains after
+ * the transaction rolls back, not that uncommitted action. */
+export function assertProjectActivationResolutionFresh(
+  db: Db,
+  projectId: number,
+  resolution?: ProjectActivationResolution,
+): void {
+  if (!resolution) return;
+  const chain = projectChain(db, projectId);
+  const backlog = chain.filter((project) => statusOf(project) === "backlog");
+  const revisionByProject = new Map(resolution.expectedProjects.map((entry) => [entry.projectId, entry.revision]));
+  if (
+    revisionByProject.size !== resolution.expectedProjects.length ||
+    revisionByProject.size !== backlog.length ||
+    backlog.some((project) => revisionByProject.get(project.id) !== project.revision) ||
+    [...revisionByProject.keys()].some((id) => !backlog.some((project) => project.id === id))
+  ) {
+    const refreshed = projectActivationDecisionSnapshot(db, projectId);
+    throw AppError.conflict(
+      "project_commitment_resolution_required",
+      "Refresh the project decisions before committing this work plan.",
+      {
+        reason: "project_snapshot_stale",
+        expectedProjectIds: [...revisionByProject.keys()],
+        affectedProjectIds: refreshed.expectedProjects.map(({ projectId: id }) => id),
+        ...refreshed,
+      },
+    );
+  }
+}
+
 /** The single low-level activation write used by explicit and commitment-driven activation. */
 export function applyProjectActivation(
   db: Db,
@@ -191,25 +223,7 @@ export function activateCommittedProjectChain(
         { reason: "duplicate_project_decision" },
       );
     }
-    const revisionByProject = new Map(resolution.expectedProjects.map((entry) => [entry.projectId, entry.revision]));
-    if (
-      revisionByProject.size !== backlog.length ||
-      backlog.some((project) => !revisionByProject.has(project.id)) ||
-      [...revisionByProject.keys()].some((id) => !backlog.some((project) => project.id === id)) ||
-      backlog.some((project) => revisionByProject.get(project.id) !== project.revision)
-    ) {
-      const refreshed = projectActivationDecisionSnapshot(db, projectId);
-      throw AppError.conflict(
-        "project_commitment_resolution_required",
-        "Refresh the project decisions before committing this work plan.",
-        {
-          reason: "project_snapshot_stale",
-          expectedProjectIds: [...revisionByProject.keys()],
-          affectedProjectIds: refreshed.expectedProjects.map(({ projectId: id }) => id),
-          ...refreshed,
-        },
-      );
-    }
+    assertProjectActivationResolutionFresh(db, projectId, resolution);
   }
 
   const missing: Array<{

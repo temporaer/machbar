@@ -30,6 +30,7 @@ import {
   absolutePresetIsFuture,
 } from "../lib/reminderPresets";
 import type { TaskPlanningTarget } from "../lib/commands";
+import { refreshTaskRevisionAfterConflict } from "../lib/taskMutations";
 import { BottomSheet } from "./BottomSheet";
 import { CaptionHintSuggestions } from "./CaptionHintSuggestions";
 import { ScheduleShortcuts } from "./ScheduleShortcuts";
@@ -85,6 +86,7 @@ export function TaskPlanningSheet({
   const [scheduledDate, setScheduledDate] = useState(task.scheduledDate ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
+  const [expectedTaskRevision, setExpectedTaskRevision] = useState(task.revision);
   const hasExistingWait = task.externalWait !== null;
   const canAddWaiting =
     task.kind === "action" &&
@@ -141,6 +143,8 @@ export function TaskPlanningSheet({
     }
     setPendingScrollTarget(initialTarget ?? "top");
   }, [initialTarget]);
+
+  useEffect(() => setExpectedTaskRevision(task.revision), [task.revision]);
 
   useLayoutEffect(() => {
     const pendingTarget = pendingScrollTarget;
@@ -479,10 +483,19 @@ export function TaskPlanningSheet({
             }
           : {}),
       };
-      await taskActions.update(task, apiPatch, optimisticPatch, true);
+      await taskActions.update(
+        { ...task, revision: expectedTaskRevision },
+        apiPatch,
+        optimisticPatch,
+        true,
+      );
       onClose();
     } catch (cause) {
-      const prompt = task.projectId === null
+      const refreshedRevision = await refreshTaskRevisionAfterConflict(cause, task.id);
+      if (refreshedRevision !== null) {
+        setExpectedTaskRevision(refreshedRevision);
+      }
+      const prompt = refreshedRevision !== null || task.projectId === null
         ? null
         : await refreshProjectActivationPrompt(cause, task.projectId, activationPrompt);
       if (prompt) setActivationPrompt(prompt);

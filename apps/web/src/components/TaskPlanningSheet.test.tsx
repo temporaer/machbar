@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { householdCalendarDateTimeToRevisitAt } from "@machbar/shared";
 import { api } from "../lib/api";
@@ -11,6 +11,7 @@ vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
     getTags: vi.fn(),
+    getTask: vi.fn(),
     updateTask: vi.fn(),
   },
 }));
@@ -427,6 +428,33 @@ describe("TaskPlanningSheet", () => {
         expect.not.objectContaining({ externalWait: expect.anything() }),
       ),
     );
+  });
+
+  it("keeps the planning draft and retries with a refreshed task revision after a conflict", async () => {
+    const user = userEvent.setup();
+    const task = makeTask({ id: 204, revision: 4 });
+    mockedApi.getTask.mockResolvedValue({ ...task, revision: 5 } as never);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
+      .mockResolvedValueOnce({ ...task, revision: 6 } as never);
+    renderWithProviders(<TaskPlanningSheet task={task} onClose={vi.fn()} />);
+
+    await user.click(within(card("Deadline")).getByRole("button", { name: "+ Deadline hinzufügen" }));
+    await user.type(within(card("Deadline")).getByRole("textbox"), "20.10.2026");
+    await user.tab();
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+
+    await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
+    expect(within(card("Deadline")).getByRole("textbox")).toHaveValue("20.10.2026");
+    expect(screen.getByRole("button", { name: "Speichern" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Speichern" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.updateTask.mock.calls[0]?.[1]).toMatchObject({ expectedRevision: 4 });
+    expect(mockedApi.updateTask.mock.calls[1]?.[1]).toMatchObject({
+      expectedRevision: 5,
+      dueDate: "2026-10-20",
+    });
   });
 
   it("clears the visible revisit when ending a wait and restores it on undo", async () => {

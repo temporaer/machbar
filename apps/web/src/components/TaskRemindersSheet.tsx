@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Task, TaskReminderInput } from "@machbar/shared";
 import { useStrings } from "../lib/strings";
 import { useLocale } from "../lib/locale";
@@ -20,6 +20,7 @@ import {
 } from "../lib/reminderPresets";
 import { formatReminderLabel, sortRemindersForDisplay } from "../lib/reminderLabels";
 import { BottomSheet } from "./BottomSheet";
+import { refreshTaskRevisionAfterConflict } from "../lib/taskMutations";
 import { HumanDateInput } from "./HumanDateInput";
 import { ClockTimePicker } from "./ClockTimePicker";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
@@ -71,6 +72,9 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activationPrompt, setActivationPrompt] = useState<ProjectActivationPrompt | null>(null);
+  const [expectedTaskRevision, setExpectedTaskRevision] = useState(task.revision);
+
+  useEffect(() => setExpectedTaskRevision(task.revision), [task.revision]);
 
   const hasDeadline = task.dueDate !== null;
   const sorted = sortRemindersForDisplay(
@@ -240,14 +244,18 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
         return;
       }
       await taskActions.update(
-        task,
+        { ...task, revision: expectedTaskRevision },
         { reminders, ...(activationResolution ? { activationResolution } : {}) },
         { reminders: task.reminders },
         true,
       );
       onClose();
     } catch (cause) {
-      const prompt = task.projectId === null
+      const refreshedRevision = await refreshTaskRevisionAfterConflict(cause, task.id);
+      if (refreshedRevision !== null) {
+        setExpectedTaskRevision(refreshedRevision);
+      }
+      const prompt = refreshedRevision !== null || task.projectId === null
         ? null
         : await refreshProjectActivationPrompt(cause, task.projectId, activationPrompt);
       if (prompt) setActivationPrompt(prompt);

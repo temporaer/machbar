@@ -10,6 +10,7 @@ vi.mock("../lib/api", () => ({
   api: {
     getMembers: vi.fn(),
     getTags: vi.fn(),
+    getTask: vi.fn(),
     updateTask: vi.fn(),
   },
 }));
@@ -73,6 +74,25 @@ describe("TaskRemindersSheet", () => {
       .reminders;
     expect(reminders).toHaveLength(1);
     expect(reminders[0]!.kind).toBe("absolute");
+  });
+
+  it("preserves reminder edits and retries with a refreshed task revision after a conflict", async () => {
+    const task = makeTask({ id: 17, revision: 3, reminders: [] });
+    mockedApi.getTask.mockResolvedValue({ ...task, revision: 4 } as never);
+    mockedApi.updateTask
+      .mockRejectedValueOnce(Object.assign(new Error("stale"), { code: "stale_write_conflict" }))
+      .mockResolvedValueOnce({ ...task, revision: 5 } as never);
+    renderWithProviders(<TaskRemindersSheet task={task} onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Morgen früh" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await waitFor(() => expect(mockedApi.getTask).toHaveBeenCalledWith(task.id));
+    expect(screen.getByText(/Morgen früh/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Fertig" }));
+    await waitFor(() => expect(mockedApi.updateTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.updateTask.mock.calls[0]?.[1]).toMatchObject({ expectedRevision: 3 });
+    expect(mockedApi.updateTask.mock.calls[1]?.[1]).toMatchObject({ expectedRevision: 4 });
   });
 
   it("only offers deadline-relative presets when the task currently has a deadline", async () => {
