@@ -953,13 +953,16 @@ describe("MCP integration", () => {
       arguments: {
         title: "Project metadata",
         ownerMemberId: owner.id,
-        dueDate: "2026-10-20",
         contextIds: [context.id],
       },
     });
     const project = (
       created.structuredContent as { result: { id: number; revision: number } }
     ).result;
+    ctx.handle.db.update(schema.workItems)
+      .set({ dueDate: "2026-10-20" })
+      .where(eq(schema.workItems.id, project.id))
+      .run();
 
     const preserved = await client.callTool({
       name: "machbar_update_project",
@@ -1012,6 +1015,40 @@ describe("MCP integration", () => {
       result: expect.objectContaining({ title: "Narrow project schema" }),
     });
 
+    await client.close();
+    await server.close();
+  });
+
+  it("returns project-creation commitment decisions as structured MCP data and accepts a retry", async () => {
+    const owner = await createMember();
+    const { client, server } = await connectMcp(owner.id);
+    const input = {
+      title: "Datiertes Projekt",
+      ownerMemberId: owner.id,
+      dueDate: "2026-12-01",
+    };
+    const first = await client.callTool({ name: "machbar_create_project", arguments: input });
+    const details = (first.structuredContent as { result: {
+      error: { code: string; details: { expectedProjects: Array<{ projectId: number; revision: number }> } };
+    } }).result.error;
+    expect(details.code).toBe("project_commitment_resolution_required");
+    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'story'").all()).toHaveLength(0);
+
+    const retried = await client.callTool({
+      name: "machbar_create_project",
+      arguments: {
+        ...input,
+        activationResolution: {
+          expectedProjects: details.details.expectedProjects,
+          drivers: [],
+          nextActionTitle: "Ersten Schritt festlegen",
+        },
+      },
+    });
+    expect(retried.isError).not.toBe(true);
+    expect(retried.structuredContent).toMatchObject({
+      result: { title: "Datiertes Projekt", status: "active" },
+    });
     await client.close();
     await server.close();
   });

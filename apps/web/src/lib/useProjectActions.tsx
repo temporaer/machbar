@@ -57,8 +57,9 @@ function useProjectActionsState() {
       action: ProjectWorkflowAction,
       ownerMemberId?: number | null,
       activationResolution?: ProjectActivationResolution,
+      expectedRevision?: number,
     ) => {
-      const input = { expectedRevision: story.revision };
+      const input = { expectedRevision: expectedRevision ?? story.revision };
       switch (action) {
         case "activate":
           return api.activateProject(story.id, {
@@ -97,6 +98,7 @@ function useProjectActionsState() {
       ownerMemberId?: number | null,
       activationResolution?: ProjectActivationResolution,
       throwOnError = false,
+      expectedRevision?: number,
     ) => {
       const nextStatus = statusAfterAction[action];
       const optimistic: ProjectWithActions = {
@@ -110,7 +112,7 @@ function useProjectActionsState() {
       return run({
         id: story.id,
         optimistic: { story: optimistic, action },
-        mutate: () => call(story, action, ownerMemberId, activationResolution),
+        mutate: () => call(story, action, ownerMemberId, activationResolution, expectedRevision),
         confirmed: (confirmed) => ({ story: confirmed, action }),
         throwOnError,
       });
@@ -149,7 +151,7 @@ function useProjectActionsState() {
         mutate: () =>
           api.updateProject(story.id, {
             ...patch,
-            expectedRevision: story.revision,
+            expectedRevision: patch.expectedRevision ?? story.revision,
           }),
         confirmed: (confirmed) => ({ story: confirmed }),
           retainUntilRefresh: true,

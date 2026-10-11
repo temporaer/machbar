@@ -645,7 +645,7 @@ export function createMachbarMcpServer({
     "machbar_create_project",
     {
       description:
-        "Create a project. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. Unsupported task-only fields are ignored.",
+        "Create a project. A new deadline commitment may return project_commitment_resolution_required; retry with the returned project revisions, explicit driver decisions, and a concrete nextActionTitle when requested. In household scope, owner omission means explicitly shared and the OAuth identity is not necessarily the speaker; work scope always uses the authenticated member. Dates are YYYY-MM-DD only. Unsupported task-only fields are ignored.",
       inputSchema: {
         title: z.string().min(1),
         notes: z.string().optional(),
@@ -655,6 +655,7 @@ export function createMachbarMcpServer({
         dueDate: mcpNullableCalendarDate,
         revisitAt: z.string().datetime().nullable().optional(),
         contextIds: mcpNullableNumberArray("Physical context IDs, or [] to set an empty collection."),
+        activationResolution: activationResolutionSchema.optional(),
       },
     },
     async (input) => {
@@ -675,20 +676,26 @@ export function createMachbarMcpServer({
           ? memberId
           : resolveMcpOwner(db, input.ownerMemberId, input.ownerName);
       const ownerMemberId = resolvedOwner ?? null;
-      const created = createProject(
-        db,
-        {
-          title: input.title,
-          notes: input.notes,
-          parentId: input.parentProjectId,
-          ownerMemberId,
-          dueDate,
-          revisitAt,
-          contextIds: input.contextIds ?? undefined,
-          scope: agentScope,
-        },
-        mutationContext,
-      );
+      let created: ReturnType<typeof createProject>;
+      try {
+        created = createProject(
+          db,
+          {
+            title: input.title,
+            notes: input.notes,
+            parentId: input.parentProjectId,
+            ownerMemberId,
+            dueDate,
+            revisitAt,
+            contextIds: input.contextIds ?? undefined,
+            activationResolution: input.activationResolution,
+            scope: agentScope,
+          },
+          mutationContext,
+        );
+      } catch (error) {
+        return commitmentResolutionError(error);
+      }
       return result(compactProject(scopedProjectOrThrow(created.id)));
     },
   );

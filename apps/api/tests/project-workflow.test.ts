@@ -164,7 +164,53 @@ describe("project workflow (HTTP routes)", () => {
       .toMatchObject({ status: "active", ownerMemberId: member.id });
   });
 
-  it("rejects a commitment retry if the affected project changed after decisions were requested", async () => {
+  it("requires decisions before persisting a newly created project deadline, then creates the next action and activates atomically", async () => {
+    const member = await createMemberRoute("Mira");
+    const payload = {
+      title: "Keller renovieren",
+      ownerMemberId: member.id,
+      dueDate: "2026-12-15",
+    };
+    const before = ctx.handle.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM work_items WHERE role = 'story'")
+      .get() as { count: number };
+
+    const rejected = await ctx.app.inject({ method: "POST", url: "/api/projects", payload });
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json().error).toMatchObject({
+      code: "project_commitment_resolution_required",
+      details: {
+        projects: [{ title: "Keller renovieren", required: ["progressPath"] }],
+        expectedProjects: [{ revision: expect.any(Number) }],
+      },
+    });
+    expect(ctx.handle.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM work_items WHERE role = 'story'")
+      .get()).toEqual(before);
+
+    const decision = rejected.json().error.details;
+    const retried = await ctx.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      payload: {
+        ...payload,
+        activationResolution: {
+          expectedProjects: decision.expectedProjects,
+          drivers: [],
+          nextActionTitle: "Maße aufnehmen",
+        },
+      },
+    });
+    expect(retried.statusCode).toBe(201);
+    expect(retried.json()).toMatchObject({ title: "Keller renovieren", status: "active" });
+    const project = (await ctx.app.inject({ method: "GET", url: `/api/projects/${retried.json().id}` })).json();
+    expect(project.tasks.map((task: { title: string }) => task.title)).toContain("Maße aufnehmen");
+    expect(ctx.handle.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM work_items WHERE role = 'story'")
+      .get()).toEqual({ count: before.count + 1 });
+  });
+
+  it("returns refreshed project decisions when a project changes while a commitment is being reviewed", async () => {
     const member = await createMemberRoute("Mira");
     const project = await createProjectRoute({ title: "Haus", ownerMemberId: null });
     const request = {
@@ -194,10 +240,86 @@ describe("project workflow (HTTP routes)", () => {
       },
     });
     expect(retried.statusCode).toBe(409);
-    expect(retried.json().error.code).toBe("stale_write_conflict");
+    expect(retried.json().error).toMatchObject({
+      code: "project_commitment_resolution_required",
+      details: {
+        reason: "project_snapshot_stale",
+        projects: [{ projectId: project.id, title: "Haus", required: ["driver"] }],
+        expectedProjects: [{ projectId: project.id, revision: changed.json().revision }],
+      },
+    });
     expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'task'").all()).toHaveLength(0);
     expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json())
       .toMatchObject({ status: "backlog", ownerMemberId: null, notes: "Kontext geändert" });
+
+    const refreshed = retried.json().error.details.expectedProjects;
+    const accepted = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        ...request,
+        activationResolution: {
+          expectedProjects: refreshed,
+          drivers: [{ projectId: project.id, ownerMemberId: member.id }],
+        },
+      },
+    });
+    expect(accepted.statusCode).toBe(201);
+    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'task'").all()).toHaveLength(1);
+  });
+
+  it("refreshes the decision chain when an ancestor is activated during review", async () => {
+    const member = await createMemberRoute("Mira");
+    const parent = await createProjectRoute({ title: "Haus", ownerMemberId: member.id });
+    const child = await createProjectRoute({ title: "Küche", parentId: parent.id, ownerMemberId: null });
+    const request = {
+      projectId: child.id,
+      title: "Arbeitsfläche ausmessen",
+      dueDate: "2026-12-01",
+    };
+    const initial = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: request });
+    expect(initial.statusCode).toBe(409);
+    expect(initial.json().error.details.expectedProjects).toHaveLength(2);
+
+    // Simulate a concurrent canonical activation changing both status and
+    // revision while the user is choosing the child project's driver.
+    ctx.handle.sqlite.prepare("UPDATE work_items SET status = 'active', revision = revision + 1 WHERE id = ?")
+      .run(parent.id);
+    const staleRetry = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        ...request,
+        activationResolution: {
+          expectedProjects: initial.json().error.details.expectedProjects,
+          drivers: [{ projectId: child.id, ownerMemberId: member.id }],
+        },
+      },
+    });
+    expect(staleRetry.statusCode).toBe(409);
+    expect(staleRetry.json().error).toMatchObject({
+      code: "project_commitment_resolution_required",
+      details: {
+        reason: "project_snapshot_stale",
+        expectedProjects: [{ projectId: child.id, revision: child.revision }],
+      },
+    });
+    expect(ctx.handle.sqlite.prepare("SELECT id FROM work_items WHERE role = 'task'").all()).toHaveLength(0);
+
+    const accepted = await ctx.app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        ...request,
+        activationResolution: {
+          expectedProjects: staleRetry.json().error.details.expectedProjects,
+          drivers: [{ projectId: child.id, ownerMemberId: member.id }],
+        },
+      },
+    });
+    expect(accepted.statusCode).toBe(201);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${parent.id}` })).json().status).toBe("active");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${child.id}` })).json().status).toBe("active");
   });
 
   it("creates a user-authored progress path and activates when a project deadline is the commitment", async () => {
@@ -220,6 +342,88 @@ describe("project workflow (HTTP routes)", () => {
     expect(response.json()).toMatchObject({ status: "active", dueDate: "2026-12-20" });
     const tasks = ctx.handle.sqlite.prepare("SELECT title, status FROM work_items WHERE role = 'task'").all();
     expect(tasks).toEqual([{ title: "Kellerregal ausmessen", status: "active" }]);
+  });
+
+  it("refreshes the project deadline draft and decisions after another edit", async () => {
+    const member = await createMemberRoute("Lena");
+    const project = await createProjectRoute({ title: "Keller", ownerMemberId: member.id });
+    const initial = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${project.id}`,
+      payload: { expectedRevision: project.revision, dueDate: "2026-12-20" },
+    });
+    expect(initial.statusCode).toBe(409);
+    expect(initial.json().error.code).toBe("project_commitment_resolution_required");
+
+    const edit = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${project.id}`,
+      payload: { expectedRevision: project.revision, notes: "Neue Information" },
+    });
+    expect(edit.statusCode).toBe(200);
+    const staleRetry = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${project.id}`,
+      payload: {
+        expectedRevision: project.revision,
+        dueDate: "2026-12-20",
+        activationResolution: {
+          expectedProjects: initial.json().error.details.expectedProjects,
+          drivers: [],
+          nextActionTitle: "Materialbedarf prüfen",
+        },
+      },
+    });
+    expect(staleRetry.statusCode).toBe(409);
+    expect(staleRetry.json().error).toMatchObject({
+      code: "project_commitment_resolution_required",
+      details: {
+        targetRevision: edit.json().revision,
+        projects: [{ projectId: project.id, required: ["progressPath"] }],
+        expectedProjects: [{ projectId: project.id, revision: edit.json().revision }],
+      },
+    });
+
+    const refreshed = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${project.id}`,
+      payload: {
+        expectedRevision: staleRetry.json().error.details.targetRevision,
+        dueDate: "2026-12-20",
+        activationResolution: {
+          expectedProjects: staleRetry.json().error.details.expectedProjects,
+          drivers: [],
+          nextActionTitle: "Materialbedarf prüfen",
+        },
+      },
+    });
+    expect(refreshed.statusCode).toBe(200);
+    expect(refreshed.json()).toMatchObject({ status: "active", dueDate: "2026-12-20" });
+    const tasks = ctx.handle.sqlite.prepare("SELECT title FROM work_items WHERE role = 'task'").all();
+    expect(tasks).toEqual([{ title: "Materialbedarf prüfen" }]);
+  });
+
+  it("activates an already-dated backlog project when its deadline is changed", async () => {
+    const member = await createMemberRoute("Lena");
+    const project = await createProjectRoute({
+      title: "Steuer",
+      ownerMemberId: member.id,
+    });
+    // Simulate a dated backlog project left behind by the previous behavior.
+    ctx.handle.sqlite.prepare("UPDATE work_items SET due_date = ? WHERE id = ?")
+      .run("2026-12-01", project.id);
+    await addProgressTask(project.id);
+
+    const response = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/projects/${project.id}`,
+      payload: {
+        expectedRevision: project.revision,
+        dueDate: "2026-12-20",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ status: "active", dueDate: "2026-12-20" });
   });
 
   it("does not treat a project deadline as a progress path and rolls back when no path exists", async () => {

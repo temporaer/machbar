@@ -88,6 +88,34 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(deferred.json()).toMatchObject({ status: "captured", scheduledDate: null });
   });
 
+  it("keeps an execution commitment actionable when a status patch also asks to park it", async () => {
+    const combined = await createTask({ title: "Combined patch" });
+    const combinedResponse = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${combined.id}`,
+      payload: {
+        expectedRevision: combined.revision,
+        status: "someday",
+        dueDate: "2026-12-01",
+      },
+    });
+    expect(combinedResponse.statusCode).toBe(200);
+    expect(combinedResponse.json()).toMatchObject({ status: "actionable", dueDate: "2026-12-01" });
+
+    const scheduled = await createTask({
+      title: "Already planned",
+      status: "actionable",
+      scheduledDate: "2026-12-02",
+    });
+    const statusOnly = await ctx.app.inject({
+      method: "PATCH",
+      url: `/api/tasks/${scheduled.id}`,
+      payload: { expectedRevision: scheduled.revision, status: "captured" },
+    });
+    expect(statusOnly.statusCode).toBe(200);
+    expect(statusOnly.json()).toMatchObject({ status: "actionable", scheduledDate: "2026-12-02" });
+  });
+
   it("requires an explicit reopen before adding an execution commitment to terminal work", async () => {
     const task = await createTask({ title: "Already done", status: "done" });
     const response = await ctx.app.inject({

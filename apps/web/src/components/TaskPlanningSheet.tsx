@@ -36,7 +36,7 @@ import { ScheduleShortcuts } from "./ScheduleShortcuts";
 import { HumanDateInput } from "./HumanDateInput";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import {
-  projectActivationPromptFromError,
+  refreshProjectActivationPrompt,
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
@@ -482,7 +482,9 @@ export function TaskPlanningSheet({
       await taskActions.update(task, apiPatch, optimisticPatch, true);
       onClose();
     } catch (cause) {
-      const prompt = projectActivationPromptFromError(cause);
+      const prompt = task.projectId === null
+        ? null
+        : await refreshProjectActivationPrompt(cause, task.projectId, activationPrompt);
       if (prompt) setActivationPrompt(prompt);
       setError(localizedErrorMessage(cause, strings));
     } finally {

@@ -1247,16 +1247,17 @@ describe("Heute agenda: compiled project prompts", () => {
   }
 
   async function createActiveProject(payload: Record<string, unknown>) {
+    const { dueDate, ...createPayload } = payload;
     const response = await ctx.app.inject({
       method: "POST",
       url: "/api/projects",
-      payload,
+      payload: createPayload,
     });
     expect(response.statusCode).toBe(201);
     const project = response.json();
     ctx.handle.sqlite
-      .prepare("UPDATE work_items SET status = 'active' WHERE id = ?")
-      .run(project.id);
+      .prepare("UPDATE work_items SET status = 'active', due_date = ? WHERE id = ?")
+      .run(dueDate ?? null, project.id);
     return project;
   }
 

@@ -133,8 +133,8 @@ export function ProjectWorkflowHost() {
           story={story}
           action={action}
           onClose={close}
-          onActivate={(ownerMemberId, resolution) =>
-            projectActions.runAction(story, action, ownerMemberId, resolution, true).then(() => undefined)
+          onActivate={(ownerMemberId, resolution, expectedRevision) =>
+            projectActions.runAction(story, action, ownerMemberId, resolution, true, expectedRevision).then(() => undefined)
           }
         />
       );

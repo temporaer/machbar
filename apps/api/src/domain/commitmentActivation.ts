@@ -5,7 +5,7 @@ import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
 import { recordActivity, recordContribution } from "../repo/index.js";
 import { getProjectActivationReadiness } from "./projectReadiness.js";
-import { type MutationContext, actor, assertExpectedRevision, nowIso } from "./workItemShared.js";
+import { type MutationContext, actor, nowIso } from "./workItemShared.js";
 
 type ProjectRow = {
   id: number;
@@ -50,6 +50,56 @@ function projectChain(db: Db, projectId: number): ProjectRow[] {
     currentId = project.parentId;
   }
   return chain;
+}
+
+export interface ProjectActivationDecisionSnapshot {
+  projects: Array<{
+    projectId: number;
+    title: string;
+    revision: number;
+    ownerMemberId: number | null;
+    required: Array<"driver" | "progressPath">;
+  }>;
+  expectedProjects: Array<{ projectId: number; revision: number }>;
+  targetRevision: number;
+}
+
+/** Current requirements and revisions to let a client refresh a stale
+ * decision sheet without losing the source draft. */
+export function projectActivationDecisionSnapshot(
+  db: Db,
+  projectId: number,
+): ProjectActivationDecisionSnapshot {
+  const chain = projectChain(db, projectId);
+  const target = chain[0];
+  if (!target) throw AppError.notFound("project_not_found", "The project was not found.", { projectId });
+  const backlog = chain.filter((project) => statusOf(project) === "backlog");
+  const projects: ProjectActivationDecisionSnapshot["projects"] = [];
+  let viableChildParentId: number | null =
+    chain[0] && statusOf(chain[0]) === "active" ? chain[0].parentId : null;
+  for (const project of backlog) {
+    const readiness = getProjectActivationReadiness(db, project.id, project.ownerMemberId);
+    const hasPath = readiness.hasViableProgressPath || readiness.hasHealthyFutureWaiting ||
+      readiness.hasHealthyFutureRevisit || viableChildParentId === project.id;
+    viableChildParentId = hasPath ? project.parentId : null;
+    const required: Array<"driver" | "progressPath"> = [];
+    if (project.ownerMemberId === null) required.push("driver");
+    if (!hasPath) required.push("progressPath");
+    if (required.length > 0) {
+      projects.push({
+        projectId: project.id,
+        title: project.title,
+        revision: project.revision,
+        ownerMemberId: project.ownerMemberId,
+        required,
+      });
+    }
+  }
+  return {
+    projects,
+    expectedProjects: backlog.map(({ id, revision }) => ({ projectId: id, revision })),
+    targetRevision: target.revision,
+  };
 }
 
 export function projectNeedsProgressPath(
@@ -145,21 +195,20 @@ export function activateCommittedProjectChain(
     if (
       revisionByProject.size !== backlog.length ||
       backlog.some((project) => !revisionByProject.has(project.id)) ||
-      [...revisionByProject.keys()].some((id) => !backlog.some((project) => project.id === id))
+      [...revisionByProject.keys()].some((id) => !backlog.some((project) => project.id === id)) ||
+      backlog.some((project) => revisionByProject.get(project.id) !== project.revision)
     ) {
+      const refreshed = projectActivationDecisionSnapshot(db, projectId);
       throw AppError.conflict(
         "project_commitment_resolution_required",
         "Refresh the project decisions before committing this work plan.",
         {
-          reason: "project_snapshot_incomplete",
+          reason: "project_snapshot_stale",
           expectedProjectIds: [...revisionByProject.keys()],
-          affectedProjectIds: backlog.map(({ id }) => id),
+          affectedProjectIds: refreshed.expectedProjects.map(({ projectId: id }) => id),
+          ...refreshed,
         },
       );
-    }
-    for (const project of backlog) {
-      const expectedRevision = revisionByProject.get(project.id);
-      assertExpectedRevision("project", project.id, project.revision, expectedRevision!);
     }
   }
 

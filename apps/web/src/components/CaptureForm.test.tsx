@@ -2,17 +2,21 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CaptureForm } from "./CaptureForm";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 import { makeTask } from "../test/fixtures";
 
-vi.mock("../lib/api", () => ({
-  api: {
-    createTask: vi.fn(),
-    getTags: vi.fn(),
-    getProjects: vi.fn(),
-    getHomeAssistantStatus: vi.fn(),
-  },
-}));
+vi.mock("../lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/api")>();
+  return {
+    ...actual,
+    api: {
+      createTask: vi.fn(),
+      getTags: vi.fn(),
+      getProjects: vi.fn(),
+      getHomeAssistantStatus: vi.fn(),
+    },
+  };
+});
 
 vi.mock("../lib/identity", () => ({
   useIdentity: () => ({
@@ -92,6 +96,93 @@ describe("CaptureForm", () => {
         expect.objectContaining({ dueDate: "2026-09-15" }),
       ),
     );
+  });
+
+  it("keeps a dated project capture draft and completes project decisions in the same form", async () => {
+    mockedApi.createTask
+      .mockRejectedValueOnce(new ApiError(
+        409,
+        "Project decisions are required.",
+        "project_commitment_resolution_required",
+        {
+          projects: [{
+            projectId: 42,
+            title: "Keller",
+            revision: 3,
+            ownerMemberId: null,
+            required: ["driver", "progressPath"],
+          }],
+          expectedProjects: [{ projectId: 42, revision: 3 }],
+        },
+      ))
+      .mockResolvedValueOnce(makeTask({ projectId: 42, status: "actionable" }));
+    const onCaptured = vi.fn();
+    render(
+      <CaptureForm
+        initialTitle="Maße aufnehmen"
+        initialDueDate="2026-12-01"
+        showDueDate
+        projectId={42}
+        onCancel={vi.fn()}
+        onCaptured={onCaptured}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+    expect(await screen.findByText("Vor dem Start noch entscheiden")).toBeInTheDocument();
+    expect(mockedApi.createTask).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Erstellen" })).toBeDisabled();
+
+    await userEvent.selectOptions(screen.getByLabelText("Verantwortlich für „Keller“"), "2");
+    await userEvent.type(
+      screen.getByLabelText("Welcher konkrete nächste Schritt bringt das Projekt voran?"),
+      "Maße prüfen",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+
+    await waitFor(() => expect(mockedApi.createTask).toHaveBeenCalledTimes(2));
+    expect(mockedApi.createTask).toHaveBeenLastCalledWith(expect.objectContaining({
+      title: "Maße aufnehmen",
+      projectId: 42,
+      dueDate: "2026-12-01",
+      activationResolution: {
+        expectedProjects: [{ projectId: 42, revision: 3 }],
+        drivers: [{ projectId: 42, ownerMemberId: 2 }],
+        nextActionTitle: "Maße prüfen",
+      },
+    }));
+    expect(onCaptured).toHaveBeenCalledTimes(1);
+  });
+
+  it("can cancel a blocked dated capture without submitting a second time", async () => {
+    mockedApi.createTask.mockRejectedValueOnce(new ApiError(
+      409,
+      "Project decisions are required.",
+      "project_commitment_resolution_required",
+      {
+        projects: [{ projectId: 42, title: "Keller", revision: 3, ownerMemberId: null, required: ["driver"] }],
+        expectedProjects: [{ projectId: 42, revision: 3 }],
+      },
+    ));
+    const onCancel = vi.fn();
+    const onCaptured = vi.fn();
+    render(
+      <CaptureForm
+        initialTitle="Material bestellen"
+        initialDueDate="2026-12-01"
+        showDueDate
+        projectId={42}
+        onCancel={onCancel}
+        onCaptured={onCaptured}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Erstellen" }));
+    expect(await screen.findByLabelText("Verantwortlich für „Keller“")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Abbrechen" }));
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(mockedApi.createTask).toHaveBeenCalledOnce();
+    expect(onCaptured).not.toHaveBeenCalled();
   });
 
   it("creates project-scoped tasks as actionable without a defer option", async () => {

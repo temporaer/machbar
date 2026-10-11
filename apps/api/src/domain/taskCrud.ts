@@ -1079,10 +1079,10 @@ export function updateTask(
         { taskId: id, currentStatus: currentTask.status, requiredStatus: "actionable" },
       );
     }
+    const effectiveTargetStatus = nextStatus ?? currentTask.status;
     if (
       executionCommitmentAfter &&
-      (currentTask.status === "captured" || currentTask.status === "someday") &&
-      nextStatus !== "done" && nextStatus !== "cancelled"
+      (effectiveTargetStatus === "captured" || effectiveTargetStatus === "someday")
     ) {
       nextStatus = "actionable";
     }

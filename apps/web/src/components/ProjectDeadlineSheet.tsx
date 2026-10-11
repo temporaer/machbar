@@ -6,8 +6,8 @@ import { BottomSheet } from "./BottomSheet";
 import { HumanDateInput } from "./HumanDateInput";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import {
-  projectActivationPromptFromError,
   projectActivationResolutionFromPrompt,
+  refreshProjectActivationPrompt,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
 import type { ProjectActivationResolution } from "@machbar/shared";
@@ -20,7 +20,7 @@ export function ProjectDeadlineSheet({
 }: {
   story: Project;
   onClose: () => void;
-  onSave: (patch: { dueDate: string | null; activationResolution?: ProjectActivationResolution }) => Promise<void>;
+  onSave: (patch: { dueDate: string | null; activationResolution?: ProjectActivationResolution; expectedRevision?: number }) => Promise<void>;
 }) {
   const strings = useStrings();
   const [saving, setSaving] = useState(false);
@@ -37,7 +37,7 @@ export function ProjectDeadlineSheet({
     try {
       await onSave(patch);
     } catch (cause) {
-      const prompt = projectActivationPromptFromError(cause);
+      const prompt = await refreshProjectActivationPrompt(cause, story.id, activationPrompt);
       if (prompt) setActivationPrompt(prompt);
       setError(localizedErrorMessage(cause, strings));
     } finally {
@@ -76,6 +76,9 @@ export function ProjectDeadlineSheet({
               disabled={saving || projectActivationResolutionFromPrompt(activationPrompt) === null}
               onClick={() => void commit({
                 dueDate: dueDate || null,
+                ...(activationPrompt.targetRevision !== undefined
+                  ? { expectedRevision: activationPrompt.targetRevision }
+                  : {}),
                 ...(projectActivationResolutionFromPrompt(activationPrompt)
                   ? { activationResolution: projectActivationResolutionFromPrompt(activationPrompt)! }
                   : {}),

@@ -27,8 +27,11 @@ import {
   sortedIds,
   touchProject,
 } from "./workItemShared.js";
-import { activateCommittedProjectChain } from "./commitmentActivation.js";
-import { projectNeedsProgressPath } from "./commitmentActivation.js";
+import {
+  activateCommittedProjectChain,
+  projectActivationDecisionSnapshot,
+  projectNeedsProgressPath,
+} from "./commitmentActivation.js";
 import { createCommitmentNextAction } from "./taskCrud.js";
 
 // ---------------------------------------------------------------------------
@@ -177,6 +180,27 @@ export function createProject(
     };
     if (returned.status === "active") {
       assertProjectActivationReady(txDb, project.id, project.ownerMemberId);
+    } else if (returned.status === "backlog" && returned.dueDate !== null) {
+      // A newly-created deadline is a commitment too. If the user supplied a
+      // first action alongside the activation decisions, keep both it and the
+      // project transition in this transaction.
+      if (
+        input.activationResolution?.nextActionTitle &&
+        projectNeedsProgressPath(txDb, project.id, project.ownerMemberId)
+      ) {
+        createCommitmentNextAction(
+          txDb,
+          project.id,
+          input.activationResolution.nextActionTitle,
+          context,
+        );
+      }
+      activateCommittedProjectChain(
+        txDb,
+        project.id,
+        context,
+        input.activationResolution,
+      );
     }
     const activityEventId = recordActivity(txDb, {
       actorMemberId: actor(context),
@@ -230,6 +254,19 @@ export function updateProject(
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const project = getProjectOrThrow(txDb, id);
+    if (
+      input.expectedRevision !== undefined &&
+      input.expectedRevision !== project.revision &&
+      project.status === "backlog" &&
+      input.dueDate !== undefined &&
+      input.dueDate !== null
+    ) {
+      throw AppError.conflict(
+        "project_commitment_resolution_required",
+        "The project changed while its deadline was being planned. Refresh the project decisions and retry.",
+        { reason: "project_snapshot_stale", ...projectActivationDecisionSnapshot(txDb, id) },
+      );
+    }
     assertExpectedRevision("project", id, project.revision, input.expectedRevision);
     if (input.title !== undefined && input.title.trim() === "") {
       throw AppError.badRequest(
@@ -258,7 +295,6 @@ export function updateProject(
     }
     if (
       project.status === "backlog" &&
-      project.dueDate === null &&
       input.dueDate !== undefined &&
       input.dueDate !== null
     ) {

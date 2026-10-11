@@ -25,7 +25,7 @@ import { ClockTimePicker } from "./ClockTimePicker";
 import { useHouseholdTimezone } from "../lib/householdTimezone";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
 import {
-  projectActivationPromptFromError,
+  refreshProjectActivationPrompt,
   projectActivationResolutionFromPrompt,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
@@ -247,7 +247,9 @@ export function TaskRemindersSheet({ task, onClose }: { task: Task; onClose: () 
       );
       onClose();
     } catch (cause) {
-      const prompt = projectActivationPromptFromError(cause);
+      const prompt = task.projectId === null
+        ? null
+        : await refreshProjectActivationPrompt(cause, task.projectId, activationPrompt);
       if (prompt) setActivationPrompt(prompt);
       setError(localizedErrorMessage(cause, strings));
     } finally {

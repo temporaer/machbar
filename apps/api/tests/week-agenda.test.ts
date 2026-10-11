@@ -52,13 +52,20 @@ describe("week planning agenda", () => {
   }
 
   async function createProject(payload: Record<string, unknown>) {
+    const { dueDate, ...createPayload } = payload;
     const res = await ctx.app.inject({
       method: "POST",
       url: "/api/projects",
-      payload,
+      payload: createPayload,
     });
     expect(res.statusCode).toBe(201);
-    return res.json();
+    const project = res.json();
+    if (dueDate !== undefined) {
+      ctx.handle.sqlite.prepare("UPDATE work_items SET due_date = ? WHERE id = ?")
+        .run(dueDate, project.id);
+      project.dueDate = dueDate;
+    }
+    return project;
   }
 
   function activateProject(project: { id: number }) {

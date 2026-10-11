@@ -4,8 +4,8 @@ import type { ProjectWithActions, ProjectWorkflowAction } from "../lib/api";
 import { localizedErrorMessage } from "../lib/errorMessage";
 import { useStrings } from "../lib/strings";
 import {
-  projectActivationPromptFromError,
   projectActivationResolutionFromPrompt,
+  refreshProjectActivationPrompt,
   type ProjectActivationPrompt,
 } from "../lib/projectActivationResolution";
 import { ProjectActivationDecisionFields } from "./ProjectActivationDecisionFields";
@@ -46,7 +46,7 @@ export function ProjectActivationSheet({
   story: ProjectWithActions;
   action: Extract<ProjectWorkflowAction, "activate" | "reopen">;
   onClose: () => void;
-  onActivate: (ownerMemberId: number | null, resolution: ProjectActivationResolution) => Promise<void>;
+  onActivate: (ownerMemberId: number | null, resolution: ProjectActivationResolution, expectedRevision?: number) => Promise<void>;
 }) {
   const strings = useStrings();
   const [saving, setSaving] = useState(false);
@@ -63,10 +63,11 @@ export function ProjectActivationSheet({
     setSaving(true);
     setError(null);
     try {
-      await onActivate(selectedDriver(story, prompt), resolution);
+      const targetRevision = prompt.expectedProjects.find((entry) => entry.projectId === story.id)?.revision ?? prompt.targetRevision;
+      await onActivate(selectedDriver(story, prompt), resolution, targetRevision);
       onClose();
     } catch (cause) {
-      const refreshedPrompt = projectActivationPromptFromError(cause);
+      const refreshedPrompt = await refreshProjectActivationPrompt(cause, story.id, prompt);
       if (refreshedPrompt) setPrompt(refreshedPrompt);
       setError(localizedErrorMessage(cause, strings));
     } finally {

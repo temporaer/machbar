@@ -18,7 +18,7 @@ describe("task <-> story role conversion", () => {
     return ctx.app.inject({ method: "POST", url, payload });
   }
 
-  it("converts a captured tree to an active story without a wrapper task", async () => {
+  it("converts a committed actionable tree to an active story without a wrapper task", async () => {
     const member = (
       await post("/api/members", { name: "Mira" })
     ).json();
@@ -54,17 +54,11 @@ describe("task <-> story role conversion", () => {
         title: "Abkleben",
       })
     ).json();
-    await ctx.app.inject({
-      method: "PATCH",
-      url: `/api/tasks/${root.id}`,
-      payload: { status: "captured" },
-    });
-
     const converted = await post(`/api/tasks/${root.id}/convert-to-story`, {
       status: "active",
       title: "Kinderzimmer fertig renovieren",
       notes: "Aktualisierte Notizen",
-      expectedRevision: 2,
+      expectedRevision: root.revision,
     });
 
     expect(converted.statusCode).toBe(201);
@@ -567,10 +561,13 @@ describe("task <-> story role conversion", () => {
       await post("/api/projects", {
         title: "Wieder zur Aufgabe",
         status: "backlog",
-        dueDate: "2026-10-10",
-        scheduledDate: "2026-09-15",
       })
     ).json();
+    ctx.handle.db
+      .update(schema.workItems)
+      .set({ dueDate: "2026-10-10", scheduledDate: "2026-09-15" })
+      .where(eq(schema.workItems.id, project.id))
+      .run();
     ctx.handle.db
       .update(schema.workItems)
       .set({
