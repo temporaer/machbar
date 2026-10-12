@@ -331,8 +331,19 @@ export const convertTaskToStorySchema = z.object({
   status: z.enum(["active", "backlog"]),
   title: z.string().min(1).optional(),
   notes: z.string().optional(),
+  preservedStepTitle: z.string().trim().min(1).optional(),
+  dependencyMappings: z.array(z.object({
+    dependencyId: z.number().int().positive(),
+    targetTaskId: z.number().int().positive(),
+    sourceEndpoint: z.enum(["task", "dependsOnTask"]),
+  }).strict()).default([]),
+  expectedDescendantRevisions: z.array(z.object({
+    taskId: z.number().int().positive(),
+    revision: z.number().int().positive(),
+  }).strict()).optional(),
+  activationResolution: projectActivationResolutionSchema.optional(),
   expectedRevision: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const convertStoryToTaskSchema = z.object({
   title: z.string().min(1).optional(),

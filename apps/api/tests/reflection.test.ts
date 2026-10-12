@@ -250,6 +250,7 @@ describe("historical reflection briefing", () => {
     const mira = member("Mira");
     const item = insertTestTask(ctx.handle.db, { title: "Historisch erledigter Entwurf", status: "actionable" });
     event({ kind: "task_status_changed", id: item.id, title: item.title, createdAt: "2025-02-01T10:00:00Z", metadata: { scope: "household", previousStatus: "actionable", nextStatus: "done" } });
+    ctx.handle.db.update(schema.workItems).set({ status: "captured" }).where(eq(schema.workItems.id, item.id)).run();
     convertTaskToStory(ctx.handle.db, item.id, { status: "backlog" });
     const briefing = buildReflectionBriefing(ctx.handle.db, { subjectMemberId: mira.id, days: 30, scope: "household", now: new Date("2025-03-01T12:00:00Z") });
     expect(briefing.history.finiteCompletions).toContainEqual(expect.objectContaining({ id: item.id, type: "task", href: null, currentItemAvailable: false }));

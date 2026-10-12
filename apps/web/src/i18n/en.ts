@@ -578,10 +578,12 @@ const en = {
   convertToProject: "Treat as project",
   convertToProjectBacklog: "Move to backlog",
   convertToProjectActive: "Activate",
+  convertToProjectPreservedStep: "Keep the original task as a work step",
+  convertToProjectDependencyTarget: "Map dependency to",
   convertToProjectUnsupportedStatus:
     "Completed or discarded tasks cannot be converted to projects.",
-  convertToProjectTaskOnlyRelations:
-    "Remove waits, dependencies, recurrence, or reminders first.",
+  convertToProjectCommitmentActive:
+    "Existing execution commitments will be preserved, so the project stays active.",
   convertToProjectNotStandalone:
     "Only standalone tasks without a parent task or project can become a project.",
   convertProjectToTask: "Make task",

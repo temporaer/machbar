@@ -75,7 +75,7 @@ export function beginCommitmentConversion(
   const project = convertTaskToStory(db, taskId, {
     status: "backlog",
     expectedRevision: task.revision,
-    preserveScheduledDate: true,
+    deferActivation: true,
   }, context);
   let projectRevision = project.revision;
   if (driverMemberId !== null && project.ownerMemberId !== driverMemberId) {

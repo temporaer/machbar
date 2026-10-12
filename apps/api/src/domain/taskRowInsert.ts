@@ -17,10 +17,13 @@ type TaskRowInput = {
   dueDate?: string | null;
   scheduledDate?: string | null;
   revisitAt?: string | null;
+  notBeforeAt?: string | null;
+  notBeforeDate?: string | null;
   priority?: number | null;
   size?: string | null;
   repeatAfterDays?: number | null;
   allowedDeviationDays?: number | null;
+  additionalNextAction?: boolean;
   position?: number;
 };
 
@@ -68,10 +71,13 @@ export function insertTaskRow(db: Db, input: TaskRowInput) {
     dueDate: input.dueDate ?? null,
     scheduledDate: input.scheduledDate ?? null,
     revisitAt: input.revisitAt ?? null,
+    notBeforeAt: input.notBeforeAt ?? null,
+    notBeforeDate: input.notBeforeDate ?? null,
     priority: input.priority ?? null,
     size: input.size ?? null,
     repeatAfterDays: input.repeatAfterDays ?? null,
     allowedDeviationDays: input.allowedDeviationDays ?? null,
+    additionalNextAction: input.additionalNextAction ?? false,
     position: input.position ?? nextTaskPosition(db, input.parentId),
   }).returning().get();
   return row;

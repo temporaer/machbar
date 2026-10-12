@@ -255,6 +255,10 @@ export interface ConvertTaskToStoryInput {
   status: "active" | "backlog";
   title?: string;
   notes?: string;
+  preservedStepTitle?: string;
+  dependencyMappings?: Array<{ dependencyId: number; targetTaskId: number; sourceEndpoint: "task" | "dependsOnTask" }>;
+  expectedDescendantRevisions?: Array<{ taskId: number; revision: number }>;
+  activationResolution?: ProjectActivationResolution;
   expectedRevision?: number;
 }
 
