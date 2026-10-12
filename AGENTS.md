@@ -48,6 +48,12 @@ This repository is set up for an autonomous verify-until-green agent loop.
 - When review comments arrive, address them, re-run `bash scripts/verify.sh`,
   and only then re-request review.
 
+The review-to-fix loop is automated by the
+[`Codex address review feedback`](.github/workflows/codex-address-review.yml)
+workflow; see [`docs/loop-engineering.md`](docs/loop-engineering.md) for how it
+is triggered and the one-time setup it requires (repo secret `OPENAI_API_KEY`
+and enabling Codex auto-review in the Codex cloud UI).
+
 ### Review rules
 
 For the Codex PR reviewer:
