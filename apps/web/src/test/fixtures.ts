@@ -110,6 +110,7 @@ export function makeTask(overrides: Partial<Task> = {}): Task {
     ...overrides,
     status,
     needsClarification: overrides.needsClarification ?? status === "captured",
+    clarificationRevisitDate: overrides.clarificationRevisitDate ?? null,
     discussionRequested: overrides.discussionRequested ?? false,
   };
 }
