@@ -14,7 +14,7 @@ import {
 } from "../repo/index.js";
 import { getTaskOrThrow, listDescendants, updateTask } from "./taskCrud.js";
 import { assertActionTask } from "./taskKindGuard.js";
-import { assertAcceptanceCriteriaChecked } from "./acceptanceCriteria.js";
+import { assertAcceptanceCriteriaChecked, checkCriteriaForCompletion } from "./acceptanceCriteria.js";
 import { Graph } from "./graph.js";
 import {
   MutationContext,
@@ -90,22 +90,24 @@ export function completeTask(
   context?: MutationContext,
   completedOn?: string,
   expectedRevision?: number,
+  criteriaToCheck: readonly number[] = [],
 ) {
   const current = getTaskOrThrow(db, id);
   assertActionTask(current, "complete");
   if (current.repeatAfterDays !== null) {
-    return updateTask(
-      db,
-      id,
-      { status: "done", completedOn, expectedRevision },
-      context,
-    );
+    return db.transaction((tx) => {
+      const txDb = tx as unknown as Db;
+      const task = getTaskOrThrow(txDb, id);
+      assertExpectedRevision("task", id, task.revision, expectedRevision);
+      if (task.status !== "done") checkCriteriaForCompletion(txDb, id, criteriaToCheck, context);
+      return updateTask(txDb, id, { status: "done", completedOn, expectedRevision: task.revision }, context);
+    });
   }
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
     assertExpectedRevision("task", id, task.revision, expectedRevision);
-    if (task.status !== "done") assertAcceptanceCriteriaChecked(txDb, id);
+    if (task.status !== "done") checkCriteriaForCompletion(txDb, id, criteriaToCheck, context);
     const graphBefore = Graph.load(txDb);
     const dependentTaskIds = tx
       .select({ taskId: schema.taskDependencies.taskId })

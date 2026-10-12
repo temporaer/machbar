@@ -188,11 +188,8 @@ export function useWorkItemCommands() {
       ownerMemberId?: number | null,
     ): boolean => {
       switch (lifecyclePrerequisite(story, action, ownerMemberId)) {
-        case "openCriteria":
-          projectWorkflow.open("completeWithCriteria", story.id);
-          return true;
-        case "openTasks":
-          projectWorkflow.open("completeWithOpenTasks", story.id);
+        case "completionDecisions":
+          projectWorkflow.open("completeWithDecisions", story.id);
           return true;
         case "progressPath":
           projectWorkflow.open(
@@ -227,7 +224,7 @@ export function useWorkItemCommands() {
   );
 
   const requestTaskCompletion = useCallback((task: Task) => {
-    if (task.status === "captured" || task.status === "done" || task.status === "cancelled") {
+    if (task.status === "done" || task.status === "cancelled") {
       taskActions.requestToggle(task);
       return;
     }
@@ -442,7 +439,7 @@ export function useWorkItemCommands() {
           continueStoryLifecycle(command.story, "activate", command.ownerMemberId);
           return;
         case "story.deferProject":
-          if (command.story.status === "active") {
+          if (command.story.status === "active" || command.story.status === "archived") {
             projectWorkflow.open("defer", command.story.id);
           } else {
             void projectActions.runAction(command.story, "return_to_backlog");

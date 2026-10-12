@@ -737,6 +737,7 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     noDate: "Kein Datum",
   },
   projectDeferQuestion: "Bis wann zurückstellen?",
+  withdrawProjectCommitments: "Pläne, Deadlines, Wiederholungen und Erinnerungen für dieses Projekt zurückziehen",
   projectDeferWithoutRevisit: "Ohne Wiedervorlage",
   projectDeferShortcutLabels: {
     tomorrow: "Morgen",
@@ -1053,8 +1054,11 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   taskCompleteWithCriteriaTitle: "Aufgabe abschließen",
   completeWithOpenTasksTitle: "Offene Aufgaben klären",
   completeWithOpenTasksHint:
-    "Verschiebe oder verwirf jede verbleibende offene Aufgabe, bevor das Projekt abgeschlossen wird.",
+    "Lege fest, was mit jedem offenen Aufgabenbereich geschehen soll.",
+  completeWithOpenTasksBranchHint:
+    "Die Auswahl gilt auch für offene Unteraufgaben dieses Bereichs.",
   completeWithOpenTasksResolved: "Keine offenen Aufgaben mehr — bereit zum Abschließen.",
+  moveTaskToInbox: "In Eingang verschieben",
   cancelTask: "Verwerfen",
   projectDeadlineTitle: "Projekt-Deadline",
   taskSummary: "Aufgaben",
@@ -1572,6 +1576,14 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
       "Füge vor dem Start einen ausführbaren nächsten Schritt oder einen gesunden Wartepfad hinzu.",
     project_commitment_resolution_required:
       "Für diesen verbindlichen Plan fehlen noch eine verantwortliche Person oder ein ausführbarer nächster Schritt. Deine Änderungen wurden nicht gespeichert.",
+    project_commitments_prevent_parking:
+      "Dieses Projekt enthält noch verbindliche Termine oder Erinnerungen. Entscheide im Zurückstellen-Dialog ausdrücklich, ob sie zurückgezogen werden sollen.",
+    project_completion_resolution_required:
+      "Lege zuerst für jeden offenen Aufgabenbereich fest, ob er verworfen oder in den Eingang verschoben wird.",
+    project_completion_resolution_invalid:
+      "Die Auswahl offener Aufgaben passt nicht mehr zum aktuellen Projekt. Lade den aktuellen Stand und prüfe deine Auswahl.",
+    completion_criteria_invalid:
+      "Ein ausgewähltes Kriterium gehört nicht zu diesem Eintrag.",
     project_completion_criteria_incomplete:
       "Prüfe, bearbeite oder entferne vor dem Abschluss alle offenen Kriterien.",
     task_completion_criteria_incomplete:

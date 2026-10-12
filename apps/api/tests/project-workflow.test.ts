@@ -943,6 +943,121 @@ describe("project workflow (HTTP routes)", () => {
     expect(reopened.ownerMemberId).toBe(anna.id);
   });
 
+  it("requires all project completion choices first, then applies criteria and child resolution atomically", async () => {
+    const project = await createProjectRoute({ title: "Abschluss", status: "active" });
+    const childResponse = await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: { projectId: project.id, title: "Offene Aufgabe", status: "actionable" } });
+    const child = childResponse.json();
+    const criterionResponse = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/criteria`, payload: { text: "Ergebnis übergeben" } });
+    const criterion = criterionResponse.json().acceptanceCriteria[0];
+    const current = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
+
+    const rejected = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/complete`, payload: { expectedRevision: current.revision } });
+    expect(rejected.statusCode).toBe(409);
+    expect(rejected.json().error.code).toBe("project_completion_resolution_required");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("active");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` })).json().status).toBe("actionable");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().acceptanceCriteria[0].checked).toBe(false);
+
+    const rollback = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${project.id}/complete`, payload: {
+        expectedRevision: current.revision,
+        expectedTaskRevisions: [{ taskId: child.id, revision: child.revision }],
+        descendantResolutions: [{ taskId: child.id, action: "cancel", expectedRevision: child.revision }],
+      },
+    });
+    expect(rollback.statusCode).toBe(409);
+    expect(rollback.json().error.code).toBe("project_completion_criteria_incomplete");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` })).json().status).toBe("actionable");
+
+    const completed = await ctx.app.inject({
+      method: "POST",
+      url: `/api/projects/${project.id}/complete`,
+      payload: {
+        expectedRevision: current.revision,
+        criteriaToCheck: [criterion.id],
+        expectedTaskRevisions: [{ taskId: child.id, revision: child.revision }],
+        descendantResolutions: [{ taskId: child.id, action: "cancel", expectedRevision: child.revision }],
+      },
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({ status: "completed", acceptanceCriteria: [{ checked: true }] });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${child.id}` })).json().status).toBe("cancelled");
+  });
+
+  it("keeps a project active while execution commitments remain and withdraws them only by explicit choice", async () => {
+    const project = await createProjectRoute({ title: "Geplantes Projekt", status: "active", dueDate: "2026-12-20" });
+    const created = await ctx.app.inject({
+      method: "POST", url: "/api/tasks", payload: {
+        projectId: project.id, title: "Termin vorbereiten", status: "actionable", dueDate: "2026-11-10", scheduledDate: "2026-11-01",
+        repeatAfterDays: 30, allowedDeviationDays: 2,
+        reminders: [{ kind: "absolute", at: "2026-10-20T09:00:00.000Z" }],
+      },
+    });
+    const task = created.json();
+    const first = await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/return-to-backlog`, payload: { expectedRevision: project.revision, revisitAt: "2026-11-15T09:00:00.000Z" } });
+    expect(first.statusCode).toBe(409);
+    expect(first.json().error.code).toBe("project_commitments_prevent_parking");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("active");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json().scheduledDate).toBe("2026-11-01");
+
+    const parked = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${project.id}/return-to-backlog`, payload: {
+        expectedRevision: project.revision, revisitAt: "2026-11-15T09:00:00.000Z", withdrawCommitments: true,
+        expectedTaskRevisions: [{ taskId: task.id, revision: task.revision }],
+      },
+    });
+    expect(parked.statusCode).toBe(200);
+    expect(parked.json()).toMatchObject({ status: "backlog", dueDate: null, revisitAt: "2026-11-15T09:00:00.000Z" });
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({ dueDate: null, scheduledDate: null, repeatAfterDays: null, reminders: [] });
+  });
+
+  it("moves a selected open task branch to Inbox atomically with project completion", async () => {
+    const project = await createProjectRoute({ title: "Abschluss mit Restarbeit", status: "active" });
+    const task = (await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: { projectId: project.id, title: "Rückfrage", status: "actionable" } })).json();
+    const current = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
+    const response = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${project.id}/complete`, payload: {
+        expectedRevision: current.revision,
+        expectedTaskRevisions: [{ taskId: task.id, revision: task.revision }],
+        descendantResolutions: [{ taskId: task.id, action: "move_to_inbox", expectedRevision: task.revision }],
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().status).toBe("completed");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({ id: task.id, status: "actionable", projectId: null, parentTaskId: null });
+  });
+
+  it("rejects a stale child snapshot without partial completion and accepts a refreshed retry", async () => {
+    const project = await createProjectRoute({ title: "Stale completion", status: "active" });
+    const task = (await ctx.app.inject({ method: "POST", url: "/api/tasks", payload: { projectId: project.id, title: "Angebot prüfen", status: "actionable" } })).json();
+    const snapshot = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
+    await ctx.app.inject({ method: "PATCH", url: `/api/tasks/${task.id}`, payload: { expectedRevision: task.revision, notes: "Neue Information" } });
+    const stale = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${project.id}/complete`, payload: {
+        expectedRevision: snapshot.revision,
+        expectedTaskRevisions: [{ taskId: task.id, revision: task.revision }],
+        descendantResolutions: [{ taskId: task.id, action: "cancel", expectedRevision: task.revision }],
+      },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error.code).toBe("stale_write_conflict");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json().status).toBe("active");
+    const currentTask = (await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json();
+    expect(currentTask).toMatchObject({ status: "actionable", notes: "Neue Information" });
+
+    const currentProject = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
+    const retried = await ctx.app.inject({
+      method: "POST", url: `/api/projects/${project.id}/complete`, payload: {
+        expectedRevision: currentProject.revision,
+        expectedTaskRevisions: [{ taskId: currentTask.id, revision: currentTask.revision }],
+        descendantResolutions: [{ taskId: currentTask.id, action: "cancel", expectedRevision: currentTask.revision }],
+      },
+    });
+    expect(retried.statusCode).toBe(200);
+    expect(retried.json().status).toBe("completed");
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json().status).toBe("cancelled");
+  });
+
   it("rejects reopening a completed project without a viable progress or waiting path", async () => {
     const anna = await createMemberRoute("Reopen owner");
     const project = await createProjectRoute({

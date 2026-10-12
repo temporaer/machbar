@@ -135,10 +135,10 @@ export function canClearDriver(story: Project): boolean {
  * Resolving this centrally (in `useWorkItemCommands()`) rather than inside
  * every row/page keeps the state-sensitive lifecycle family a single
  * semantic command: a caller dispatches `story.complete`, and *whether*
- * that opens the criteria editor first is decided in one place — see
+ * that opens the completion decision sheet is decided in one place — see
  * `docs/architecture-rules.md`'s canonical-command invariant.
  */
-export type LifecyclePrerequisite = "openCriteria" | "openTasks" | "progressPath" | "driver" | null;
+export type LifecyclePrerequisite = "completionDecisions" | "progressPath" | "driver" | null;
 
 export function lifecyclePrerequisite(
   story: ProjectWithActions,
@@ -147,21 +147,12 @@ export function lifecyclePrerequisite(
 ): LifecyclePrerequisite {
   if (
     action === "complete" &&
-    (story.acceptanceCriteria ?? []).some((criterion) => !criterion.checked)
+    ((story.acceptanceCriteria ?? []).some((criterion) => !criterion.checked) ||
+      (story.openCount ?? 0) > 0)
   ) {
-    // Completing with unchecked criteria needs the focused checklist
-    // workflow (`completeWithCriteria`), not the structural editor — see
-    // `resolveStoryPrerequisite()` in `useWorkItemCommands.ts`.
-    return "openCriteria";
-  }
-  if (action === "complete" && (story.openCount ?? 0) > 0) {
-    // Completion is outcome-based — not every child task must be Done —
-    // but leaving open tasks attached silently is exactly how legacy data
-    // ends up flagged as `completed_project_open_work`. The focused
-    // `completeWithOpenTasks` workflow lets the user cancel or move the
-    // remaining open work before completing, instead of the normal path
-    // ever creating that inconsistency.
-    return "openTasks";
+    // Criteria checks and open-task dispositions are one local draft sent
+    // with the canonical completion command.
+    return "completionDecisions";
   }
   if (action === "activate" || action === "reopen") {
     const required = new Set(story.activationReadiness.requiredDecisions ?? []);

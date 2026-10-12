@@ -18,17 +18,10 @@ import type { ReactNode } from "react";
  * a driver or progress path (see `lifecyclePrerequisite()`), collecting all
  * missing decisions before the canonical transition call.
  *
- * `completeWithCriteria` is the analogous continuation for `story.complete`
- * when acceptance criteria remain unchecked: it opens the focused checklist
- * (`CompleteWithCriteriaSheet`), not the structural `editOutcome` editor, and
- * commits the same `story.complete` transition once every criterion is
- * checked.
- *
- * `completeWithOpenTasks` is a further continuation for `story.complete`:
- * when criteria are satisfied (or absent) but open child tasks remain, it
- * opens `CompleteWithOpenTasksSheet` so the user explicitly cancels or moves
- * the remaining open work — completion never silently leaves that
- * inconsistency behind — then commits the same `story.complete` transition.
+ * `completeWithDecisions` is one continuation for `story.complete` when
+ * criteria need checking or open task branches need a disposition. It keeps
+ * both kinds of choice locally and submits them with the same canonical
+ * completion transition.
  *
  * `structure` backs the fixed row rail's `Struktur` button: it opens
  * `ProjectStructureSheet`, which only ever dispatches `story.planWork`/
@@ -49,8 +42,7 @@ export type ProjectWorkflowKind =
   | "contexts"
   | "activateWithDriver"
   | "reopenWithDriver"
-  | "completeWithCriteria"
-  | "completeWithOpenTasks";
+  | "completeWithDecisions";
 
 export interface ProjectWorkflowState {
   kind: ProjectWorkflowKind;

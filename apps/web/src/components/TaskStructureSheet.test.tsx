@@ -443,7 +443,7 @@ describe("TaskStructureSheet routing", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: "Boden frei" }));
     await waitFor(() => expect(finish).toBeEnabled());
     await userEvent.click(finish);
-    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledWith(90, "leave_open", undefined, 2));
+    await waitFor(() => expect(mockedApi.completeTask).toHaveBeenCalledWith(90, "leave_open", undefined, 1, [91]));
   });
 
   it("keeps the authored task draft when a conversion conflict refreshes the project", async () => {

@@ -473,6 +473,18 @@ describe("task CRUD and lifecycle (complete/reopen/cancel)", () => {
     expect(stillOpen.json().status).toBe("actionable");
   });
 
+  it("checks retained task criteria atomically with completion", async () => {
+    const task = await createTask({ title: "Criteria completion", status: "actionable" });
+    const criterion = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/criteria`, payload: { text: "Result geprüft" } });
+    const incomplete = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete`, payload: { expectedRevision: criterion.json().revision } });
+    expect(incomplete.statusCode).toBe(409);
+    expect((await ctx.app.inject({ method: "GET", url: `/api/tasks/${task.id}` })).json()).toMatchObject({ status: "active", acceptanceCriteria: [{ checked: false }] });
+
+    const completed = await ctx.app.inject({ method: "POST", url: `/api/tasks/${task.id}/complete`, payload: { expectedRevision: criterion.json().revision, criteriaToCheck: [criterion.json().acceptanceCriteria[0].id] } });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({ status: "done", acceptanceCriteria: [{ checked: true }] });
+  });
+
   it("leaves children untouched when completing with leave_open", async () => {
     const parent = await createTask({ title: "Elternaufgabe 2", status: "actionable" });
     const childRes = await ctx.app.inject({

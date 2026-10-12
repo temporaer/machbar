@@ -371,13 +371,25 @@ completion. If project criteria remain after Project → Task conversion, the
 same criteria remain editable and are enforced when completing the task.
 If open tasks remain when completion is requested, Machbar asks the
 driver to explicitly cancel or move each one first rather than silently leaving
-inconsistent work attached to a finished project — completion stays
-outcome-based, so not every task must be Done, but nothing open is left behind
-unremarked. Starting a project requires a driver plus an executable progress
-path or intentional healthy future waiting.
+inconsistent work attached to a finished project. These choices and any
+unchecked criteria remain a local draft until the person confirms completion;
+the server applies the selected task moves/cancellations, criterion checks,
+and project completion in one transaction. Closing the sheet or a stale
+revision leaves all work untouched. Completion stays outcome-based, so not
+every task must be Done, but no open task branch is left attached without an
+explicit disposition. Starting a project requires a driver plus an executable
+progress path or intentional healthy future waiting.
 
 **Backlog** is the one reversible "later / not active" state; normal
 activation rules apply whenever a backlog project is picked back up.
+Returning an active project to backlog preserves its task dates, deadlines,
+recurrence and reminders by default. When any such execution commitments are
+present, the project remains active until the person explicitly selects
+"commitments zurückziehen" in the same defer flow; that choice clears the
+project deadline and the affected task plans, recurrence and reminders
+atomically while keeping task identities, history, wait state and revisit
+information. A project revisit notification alone does not count as an
+execution commitment.
 **Archived** means retired: abandoned or historical work that is not expected
 to return to activity. A completed project may still be archived. Restoring an
 archived project always returns it to backlog first — there is no direct

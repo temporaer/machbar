@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, type ReactNode } from "react";
 import { api } from "./api";
 import type { ProjectActivationResolution } from "@machbar/shared";
-import type { ProjectWithActions, ProjectWorkflowAction, UpdateProjectInput } from "./api";
+import type { ProjectWithActions, ProjectWorkflowAction, ProjectWorkflowInput, UpdateProjectInput } from "./api";
 import { statusAfterAction, workflowActionsByStatus } from "./projectWorkflow";
 import { useRetainedMutations } from "./useRetainedMutations";
 
@@ -58,8 +58,9 @@ function useProjectActionsState() {
       ownerMemberId?: number | null,
       activationResolution?: ProjectActivationResolution,
       expectedRevision?: number,
+      workflowInput?: Partial<ProjectWorkflowInput>,
     ) => {
-      const input = { expectedRevision: expectedRevision ?? story.revision };
+      const input = { expectedRevision: expectedRevision ?? story.revision, ...workflowInput };
       switch (action) {
         case "activate":
           return api.activateProject(story.id, {
@@ -99,6 +100,7 @@ function useProjectActionsState() {
       activationResolution?: ProjectActivationResolution,
       throwOnError = false,
       expectedRevision?: number,
+      workflowInput?: Partial<ProjectWorkflowInput>,
     ) => {
       const nextStatus = statusAfterAction[action];
       const optimistic: ProjectWithActions = {
@@ -112,7 +114,7 @@ function useProjectActionsState() {
       return run({
         id: story.id,
         optimistic: { story: optimistic, action },
-        mutate: () => call(story, action, ownerMemberId, activationResolution, expectedRevision),
+        mutate: () => call(story, action, ownerMemberId, activationResolution, expectedRevision, workflowInput),
         confirmed: (confirmed) => ({ story: confirmed, action }),
         throwOnError,
       });
@@ -179,7 +181,7 @@ function useProjectActionsState() {
   );
 
   const returnToBacklog = useCallback(
-    (story: ProjectWithActions, revisitAt: string | null) =>
+    (story: ProjectWithActions, revisitAt: string | null, withdrawCommitments = false, expectedTaskRevisions?: Array<{ taskId: number; revision: number }>) =>
       run({
         id: story.id,
         optimistic: {
@@ -196,8 +198,11 @@ function useProjectActionsState() {
           api.returnProjectToBacklog(story.id, {
             expectedRevision: story.revision,
             revisitAt,
+            withdrawCommitments,
+            ...(expectedTaskRevisions !== undefined ? { expectedTaskRevisions } : {}),
           }),
         confirmed: (confirmed) => ({ story: confirmed, action: "return_to_backlog" }),
+        throwOnError: true,
       }),
     [run],
   );

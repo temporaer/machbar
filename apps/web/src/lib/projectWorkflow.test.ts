@@ -20,7 +20,7 @@ describe("lifecyclePrerequisite — story.complete", () => {
     expect(lifecyclePrerequisite(story, "complete")).toBeNull();
   });
 
-  it("requires the focused completion checklist when a criterion is unchecked", () => {
+  it("requires the focused completion decision sheet when a criterion is unchecked", () => {
     const story = makeProject({
       status: "active",
       ownerMemberId: 1,
@@ -29,7 +29,7 @@ describe("lifecyclePrerequisite — story.complete", () => {
         makeCriterion({ checked: false }),
       ],
     });
-    expect(lifecyclePrerequisite(story, "complete")).toBe("openCriteria");
+    expect(lifecyclePrerequisite(story, "complete")).toBe("completionDecisions");
   });
 });
 
