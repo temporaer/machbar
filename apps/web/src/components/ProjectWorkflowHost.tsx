@@ -83,7 +83,8 @@ export function ProjectWorkflowHost() {
     case "completeWithCriteria":
       return (
         <CompleteWithCriteriaSheet
-          story={story}
+          workItem={story}
+          workItemType="project"
           onClose={close}
           onComplete={async () => {
             await projectActions.runAction(story, "complete");

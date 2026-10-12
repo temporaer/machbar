@@ -29,6 +29,7 @@ import { deletePendingTaskReminderEvents } from "../notifications/outbox.js";
 import { getProjectOrThrow } from "./storyCrud.js";
 import { assertReferenceCapableInput } from "./taskKindGuard.js";
 import { assertActionTask } from "./taskKindGuard.js";
+import { assertAcceptanceCriteriaChecked } from "./acceptanceCriteria.js";
 import { activateCommittedProjectChain } from "./commitmentActivation.js";
 import { insertTaskRow, nextTaskPosition, storedTaskStatus } from "./taskRowInsert.js";
 import {
@@ -1124,6 +1125,9 @@ export function updateTask(
     }
     const statusChanged =
       nextStatus !== undefined && nextStatus !== currentTask.status;
+    if (statusChanged && nextStatus === "done") {
+      assertAcceptanceCriteriaChecked(txDb, id);
+    }
     const removingExternalWait =
       currentExternalWait !== undefined &&
       (input.externalWait === null ||

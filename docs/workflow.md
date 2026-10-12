@@ -367,7 +367,9 @@ Projects move through backlog, active, completed, and archived states. Machbar
 does not automatically complete a project when its tasks are done; a person
 reviews the outcome against its acceptance criteria. Criteria are optional, but
 once present they are binding: every remaining criterion must be checked before
-completion. If open tasks remain when completion is requested, Machbar asks the
+completion. If project criteria remain after Project → Task conversion, the
+same criteria remain editable and are enforced when completing the task.
+If open tasks remain when completion is requested, Machbar asks the
 driver to explicitly cancel or move each one first rather than silently leaving
 inconsistent work attached to a finished project — completion stays
 outcome-based, so not every task must be Done, but nothing open is left behind

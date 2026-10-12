@@ -1,8 +1,5 @@
-/**
- * Ordered, structured acceptance criteria ("Erledigt, wenn ...") attached to a
- * story, replacing free-text completion criteria.
- */
-import { and, eq, or } from "drizzle-orm";
+/** Ordered, structured completion criteria shared by projects and tasks. */
+import { and, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import * as schema from "../db/schema.js";
 import { AppError } from "../errors.js";
@@ -11,29 +8,70 @@ import {
   recordActivity,
   recordContribution,
 } from "../repo/index.js";
-import { getProjectOrThrow } from "./storyCrud.js";
 import {
   MutationContext,
   actor,
   nowIso,
   touchProject,
+  touchTask,
 } from "./workItemShared.js";
 
 // ---------------------------------------------------------------------------
 // Acceptance criteria (ordered, structured; replaces free-text description)
 // ---------------------------------------------------------------------------
 
-function getCriterionOrThrow(db: Db, projectId: number, criterionId: number) {
+type CriterionOwner = { id: number; title: string; role: "story" | "task"; taskKind: string | null };
+
+function getCriterionOwnerOrThrow(db: Db, workItemId: number): CriterionOwner {
+  const owner = db.select({
+    id: schema.workItems.id,
+    title: schema.workItems.title,
+    role: schema.workItems.role,
+    taskKind: schema.workItems.taskKind,
+  }).from(schema.workItems).where(eq(schema.workItems.id, workItemId)).get();
+  if (!owner || (owner.role === "task" && owner.taskKind !== "action")) {
+    throw AppError.notFound("acceptance_criterion_not_found", "Completion criteria require a project or action task.", { workItemId });
+  }
+  return owner as CriterionOwner;
+}
+
+function touchCriterionOwner(db: Db, owner: CriterionOwner) {
+  if (owner.role === "story") touchProject(db, owner.id);
+  else touchTask(db, owner.id);
+}
+
+function recordCriterionActivity(
+  db: Db,
+  owner: CriterionOwner,
+  verb: "added" | "updated" | "checked" | "removed",
+  context?: MutationContext,
+  metadata?: Record<string, unknown>,
+) {
+  const entityType = owner.role === "story" ? "project" : "task";
+  const kind = entityType === "project"
+    ? `project_acceptance_criterion_${verb}` as const
+    : `task_acceptance_criterion_${verb}` as const;
+  return recordActivity(db, {
+    actorMemberId: actor(context),
+    kind,
+    entityType,
+    entityTitle: owner.title,
+    ...(entityType === "project" ? { projectId: owner.id } : { taskId: owner.id }),
+    metadata,
+  });
+}
+
+function getCriterionOrThrow(db: Db, workItemId: number, criterionId: number) {
   const criterion = db
     .select()
     .from(schema.workItemAcceptanceCriteria)
     .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
     .get();
-  if (!criterion || criterion.workItemId !== projectId) {
+  if (!criterion || criterion.workItemId !== workItemId) {
     throw AppError.notFound(
       "acceptance_criterion_not_found",
-      "The requested acceptance criterion was not found in this project.",
-      { projectId, criterionId },
+      "The requested completion criterion was not found in this work item.",
+      { workItemId, criterionId },
     );
   }
   return criterion;
@@ -50,45 +88,57 @@ function normalizeCriterionText(text: string): string {
   return trimmed;
 }
 
-/** Appends a new criterion at the end of the project's ordered list. */
+export function assertAcceptanceCriteriaChecked(
+  db: Db,
+  workItemId: number,
+  ownerType: "project" | "task" = "task",
+): void {
+  const criteria = db.select({ id: schema.workItemAcceptanceCriteria.id, checked: schema.workItemAcceptanceCriteria.checked })
+    .from(schema.workItemAcceptanceCriteria)
+    .where(eq(schema.workItemAcceptanceCriteria.workItemId, workItemId))
+    .all();
+  const incompleteIds = criteria.filter((criterion) => !criterion.checked).map((criterion) => criterion.id);
+  if (incompleteIds.length > 0) {
+    throw AppError.conflict(
+      ownerType === "task" ? "task_completion_criteria_incomplete" : "project_completion_criteria_incomplete",
+      `Every completion criterion must be checked before completing this ${ownerType}.`,
+      { [ownerType === "task" ? "taskId" : "projectId"]: workItemId, criteriaCount: criteria.length, incompleteCriterionIds: incompleteIds },
+    );
+  }
+}
+
+/** Appends a new criterion at the end of the work item's ordered list. */
 export function addCriterion(
   db: Db,
-  projectId: number,
+  workItemId: number,
   text: string,
   context?: MutationContext,
 ) {
   const trimmed = normalizeCriterionText(text);
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    const project = getProjectOrThrow(txDb, projectId);
+    const owner = getCriterionOwnerOrThrow(txDb, workItemId);
     const maxPosition = tx
       .select({ position: schema.workItemAcceptanceCriteria.position })
       .from(schema.workItemAcceptanceCriteria)
-      .where(eq(schema.workItemAcceptanceCriteria.workItemId, projectId))
+      .where(eq(schema.workItemAcceptanceCriteria.workItemId, workItemId))
       .all()
       .reduce((max, c) => Math.max(max, c.position), -1);
     const criterion = tx
       .insert(schema.workItemAcceptanceCriteria)
-      .values({ workItemId: projectId, text: trimmed, position: maxPosition + 1 })
+      .values({ workItemId, text: trimmed, position: maxPosition + 1 })
       .returning()
       .get();
-    touchProject(txDb, projectId);
-    const activityEventId = recordActivity(txDb, {
-      actorMemberId: actor(context),
-      kind: "project_acceptance_criterion_added",
-      entityType: "project",
-      entityTitle: project.title,
-      projectId,
-      metadata: {},
-    });
-    if (maxPosition === -1) {
+    touchCriterionOwner(txDb, owner);
+    const activityEventId = recordCriterionActivity(txDb, owner, "added", context);
+    if (maxPosition === -1 && owner.role === "story") {
       recordContribution(txDb, {
         activityEventId,
         actorMemberId: actor(context),
         category: "planning",
         reason: "project_outcome_added",
         entityType: "project",
-        entityId: projectId,
+        entityId: workItemId,
         personalEligible: true,
       });
     }
@@ -99,7 +149,7 @@ export function addCriterion(
 /** Edits a criterion's text without changing its position/checked state. */
 export function updateCriterionText(
   db: Db,
-  projectId: number,
+  workItemId: number,
   criterionId: number,
   text: string,
   context?: MutationContext,
@@ -107,8 +157,8 @@ export function updateCriterionText(
   const trimmed = normalizeCriterionText(text);
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    const project = getProjectOrThrow(txDb, projectId);
-    const criterion = getCriterionOrThrow(txDb, projectId, criterionId);
+    const owner = getCriterionOwnerOrThrow(txDb, workItemId);
+    const criterion = getCriterionOrThrow(txDb, workItemId, criterionId);
     if (criterion.text === trimmed) return criterion;
     tx.update(schema.workItemAcceptanceCriteria)
       .set({ text: trimmed, updatedAt: nowIso() })
@@ -119,15 +169,8 @@ export function updateCriterionText(
       .from(schema.workItemAcceptanceCriteria)
       .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
       .get()!;
-    touchProject(txDb, projectId);
-    recordActivity(txDb, {
-      actorMemberId: actor(context),
-      kind: "project_acceptance_criterion_updated",
-      entityType: "project",
-      entityTitle: project.title,
-      projectId,
-      metadata: {},
-    });
+    touchCriterionOwner(txDb, owner);
+    recordCriterionActivity(txDb, owner, "updated", context);
     return updated;
   });
 }
@@ -135,15 +178,15 @@ export function updateCriterionText(
 /** Checks/unchecks a single criterion (completion itself stays manual). */
 export function setCriterionChecked(
   db: Db,
-  projectId: number,
+  workItemId: number,
   criterionId: number,
   checked: boolean,
   context?: MutationContext,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    const project = getProjectOrThrow(txDb, projectId);
-    const criterion = getCriterionOrThrow(txDb, projectId, criterionId);
+    const owner = getCriterionOwnerOrThrow(txDb, workItemId);
+    const criterion = getCriterionOrThrow(txDb, workItemId, criterionId);
     if (criterion.checked === checked) return criterion;
     tx.update(schema.workItemAcceptanceCriteria)
       .set({ checked, updatedAt: nowIso() })
@@ -154,15 +197,8 @@ export function setCriterionChecked(
       .from(schema.workItemAcceptanceCriteria)
       .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
       .get()!;
-    touchProject(txDb, projectId);
-    recordActivity(txDb, {
-      actorMemberId: actor(context),
-      kind: "project_acceptance_criterion_checked",
-      entityType: "project",
-      entityTitle: project.title,
-      projectId,
-      metadata: { checked },
-    });
+    touchCriterionOwner(txDb, owner);
+    recordCriterionActivity(txDb, owner, "checked", context, { checked });
     return updated;
   });
 }
@@ -175,16 +211,16 @@ export function setCriterionChecked(
  */
 export function reorderCriteria(
   db: Db,
-  projectId: number,
+  workItemId: number,
   orderedCriterionIds: number[],
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    getProjectOrThrow(txDb, projectId);
+    const owner = getCriterionOwnerOrThrow(txDb, workItemId);
     const existing = tx
       .select()
       .from(schema.workItemAcceptanceCriteria)
-      .where(eq(schema.workItemAcceptanceCriteria.workItemId, projectId))
+      .where(eq(schema.workItemAcceptanceCriteria.workItemId, workItemId))
       .all();
     const existingIds = new Set(existing.map((c) => c.id));
     const uniqueRequestedIds = new Set(orderedCriterionIds);
@@ -197,7 +233,7 @@ export function reorderCriteria(
         "acceptance_criteria_order_invalid",
         "The criterion order must contain every existing criterion exactly once.",
         {
-          projectId,
+          workItemId,
           requestedCriterionIds: orderedCriterionIds,
           existingCriterionIds: existing.map((criterion) => criterion.id),
         },
@@ -209,11 +245,11 @@ export function reorderCriteria(
         .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
         .run();
     });
-    touchProject(txDb, projectId);
+    touchCriterionOwner(txDb, owner);
     return tx
       .select()
       .from(schema.workItemAcceptanceCriteria)
-      .where(eq(schema.workItemAcceptanceCriteria.workItemId, projectId))
+      .where(eq(schema.workItemAcceptanceCriteria.workItemId, workItemId))
       .all()
       .sort((a, b) => a.position - b.position);
   });
@@ -222,21 +258,21 @@ export function reorderCriteria(
 /** Removes a criterion and compacts the remaining positions (no gaps). */
 export function removeCriterion(
   db: Db,
-  projectId: number,
+  workItemId: number,
   criterionId: number,
   context?: MutationContext,
 ) {
   return db.transaction((tx) => {
     const txDb = tx as unknown as Db;
-    const project = getProjectOrThrow(txDb, projectId);
-    getCriterionOrThrow(txDb, projectId, criterionId);
+    const owner = getCriterionOwnerOrThrow(txDb, workItemId);
+    getCriterionOrThrow(txDb, workItemId, criterionId);
     tx.delete(schema.workItemAcceptanceCriteria)
       .where(eq(schema.workItemAcceptanceCriteria.id, criterionId))
       .run();
     const remaining = tx
       .select()
       .from(schema.workItemAcceptanceCriteria)
-      .where(eq(schema.workItemAcceptanceCriteria.workItemId, projectId))
+      .where(eq(schema.workItemAcceptanceCriteria.workItemId, workItemId))
       .all()
       .sort((a, b) => a.position - b.position);
     remaining.forEach((criterion, index) => {
@@ -247,21 +283,14 @@ export function removeCriterion(
           .run();
       }
     });
-    touchProject(txDb, projectId);
-    const activityEventId = recordActivity(txDb, {
-      actorMemberId: actor(context),
-      kind: "project_acceptance_criterion_removed",
-      entityType: "project",
-      entityTitle: project.title,
-      projectId,
-      metadata: {},
-    });
-    if (remaining.length === 0) {
+    touchCriterionOwner(txDb, owner);
+    const activityEventId = recordCriterionActivity(txDb, owner, "removed", context);
+    if (remaining.length === 0 && owner.role === "story") {
       neutralizeContribution(txDb, {
         activityEventId,
         reason: "project_outcome_added",
         entityType: "project",
-        entityId: projectId,
+        entityId: workItemId,
       });
     }
   });

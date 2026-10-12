@@ -141,14 +141,18 @@ export function formatActivityDescription(
     case "project_contexts_changed":
       return strings.activityText.projectContextsChanged;
     case "project_acceptance_criterion_added":
+    case "task_acceptance_criterion_added":
       return strings.activityText.criterionAdded;
     case "project_acceptance_criterion_updated":
+    case "task_acceptance_criterion_updated":
       return strings.activityText.criterionUpdated;
     case "project_acceptance_criterion_checked":
+    case "task_acceptance_criterion_checked":
       return event.metadata.checked === false
         ? strings.activityText.criterionReopened
         : strings.activityText.criterionChecked;
     case "project_acceptance_criterion_removed":
+    case "task_acceptance_criterion_removed":
       return strings.activityText.criterionRemoved;
     case "work_item_role_converted":
       return event.entity.type === "project"

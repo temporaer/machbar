@@ -499,8 +499,13 @@ decision. Project dates never become task dates.
   reminders, external waits, recurrence history and dependencies by moving
   them to a retained action step, with optional per-dependency assignment to
   an existing open action. It preserves the project deadline and existing
-  children. Reverse conversion remains conservative until its criteria and
-  child obligations are executable on action tasks.
+  children. Reverse conversion retains task descendants, the existing task
+  identity, tags/contexts, planning dates, external waits, reminders,
+  recurrence state, occurrence history, and criteria. Criteria remain
+  editable/checkable on the converted task and task completion rejects any
+  unchecked criterion; unsupported nested-project, archived-status, and
+  conflicting work-plan/revisit mappings roll back without changing the
+  project.
 - External waits use revision-aware `PUT /api/tasks/:id/external-wait` and
   `DELETE /api/tasks/:id/external-wait` resources. Starting/updating a wait can
   change its description and its own revisit date atomically; resolving it
@@ -672,8 +677,11 @@ archived ◄──archive── (backlog | active | completed)
   through the dedicated workflow endpoints (`/activate`, `/complete`,
   `/reopen`, `/return-to-backlog`, `/archive`).
 - Nothing auto-completes a story; completion is always an explicit human decision.
-- Acceptance criteria are optional. When none exist, completion is allowed;
-  when one or more exist, every remaining criterion must be checked first.
+- Acceptance criteria are optional on projects and converted action tasks.
+  When none exist, completion is allowed; when one or more exist, every
+  remaining criterion must be checked first. Project criteria remain attached
+  through Project → Task conversion and use the same editor/check API after
+  conversion.
 - `archived` only exposes `return_to_backlog`; there is no `archived → active`
   transition. Reactivating an archived project always goes through backlog
   first.
@@ -970,6 +978,11 @@ nicht aktiv** section, and completed/archived stories remain folded.
   `task.changeProject` command) before the primary "Projekt abschließen"
   action becomes enabled. Every entry point still dispatches the same semantic
   `story.complete` command.
+- Task completion with retained criteria is resolved centrally in
+  `useWorkItemCommands()`: unchecked criteria open the shared
+  `CompleteWithCriteriaSheet`, then dispatch the same `task.toggleDone`
+  command after the criteria are checked. The API independently validates
+  criteria inside the canonical task completion transaction.
 - Every row shows its status; inside the retention window the same badge shows what just happened (`Aktiviert`, `Abgeschlossen`, `Wieder geöffnet`, `Zurück im Backlog`, `Archiviert`).
 
 #### Filtering and ordering the list
@@ -1105,9 +1118,9 @@ Interactions target one field at a time instead of opening the full detail sheet
 | `TaskOwnerChoiceGroup` | Task-owner chips for inherited owner, shared/unassigned, and explicit members |
 | `MemberSelectionSheet` | Reusable household-member picker for project-driver and other non-inheritable member choices |
 | `MemberChoiceGroup` | The tap-chip choice group rendered by assignment surfaces |
-| `AcceptanceCriteriaEditor` | Reusable ordered criteria editor, rendered by `StoryCriteriaSheet` |
+| `AcceptanceCriteriaEditor` | Reusable ordered criteria editor, rendered by `StoryCriteriaSheet` and the task-detail criteria disclosure |
 | `StoryCriteriaSheet` | Targeted criteria popup for a story row |
-| `CompleteWithCriteriaSheet` | Focused `story.complete` continuation when criteria remain unchecked: shares the `AcceptanceCriteriaChecklist` check/uncheck UI and commits the same completion transition once all criteria are checked |
+| `CompleteWithCriteriaSheet` | Focused project/task completion continuation when criteria remain unchecked: shares the `AcceptanceCriteriaChecklist` and commits the canonical completion command after the user checks all criteria |
 | `CompleteWithOpenTasksSheet` | Focused `story.complete` continuation when criteria are satisfied/absent but open child tasks remain: lets the driver cancel or move each task (reusing `useTaskActions().requestCancel` and `task.changeProject`) and commits the same completion transition once no open tasks remain |
 | `ProjectDeferSheet` | Canonical backlog-project Wiedervorlage (`scheduledDate`) editor |
 | `ProjectDeadlineSheet` | Project deadline (`dueDate`) only |
@@ -1401,13 +1414,22 @@ dependent item is not visible to the current viewer. Active commitments and
 explicit activation use the shared project-readiness transition, and the
 conversion transaction rolls back if the required driver, path, mapping, or
 revision is missing. Reverse conversion (story → task) remains conservative
-until retained criteria can be checked by task completion; it must not erase
-children or criteria. Routes:
+while retaining all task children and acceptance criteria on the same row.
+When a backlog project becomes a Someday task, unplanned actionable descendants
+are parked with it; dated, reminded, recurring, explicitly selected next-action,
+and externally waiting descendants retain their existing operational state.
+Completed tasks retain the project's recorded `completed_at`, even when its
+title or notes changed after completion.
+The converted action task exposes the criteria in its detail and completion
+sheet, edits/checks them through the shared work-item criteria domain, and
+cannot complete with an unchecked criterion. Nested projects, archived
+projects, recurrence with children, and conflicting schedule/revisit mappings
+are rejected atomically. Routes:
 `POST /api/tasks/:id/convert-to-story`, `POST /api/projects/:id/convert-to-task`.
-The web workflow is opened by `story.convertToTask`; it preflights those
-project-only structures and routes blocked cases to the existing structure or
-goal editor instead of discarding data. A clean project can edit its title and
-notes before calling the canonical conversion endpoint.
+The web workflow is opened by `story.convertToTask`; its review identifies
+which child tasks and criteria will remain. It keeps title and notes drafts on
+revision conflicts and calls the canonical conversion endpoint only after
+explicit acceptance.
 
 **Semantic commands.** `apps/web/src/lib/commands.ts` defines a pure,
 React-free `WorkItemCommand` union (`task.*`, `story.*`, `outline.*`,

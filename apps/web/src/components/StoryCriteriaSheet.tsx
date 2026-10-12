@@ -28,7 +28,8 @@ export function StoryCriteriaSheet({ story, onClose }: { story: Project; onClose
           </p>
         ) : null}
         <AcceptanceCriteriaEditor
-          projectId={story.id}
+          ownerType="project"
+          workItemId={story.id}
           criteria={story.acceptanceCriteria}
           onError={setError}
           autoFocusNewCriterion

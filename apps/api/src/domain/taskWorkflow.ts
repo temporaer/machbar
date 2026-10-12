@@ -14,6 +14,7 @@ import {
 } from "../repo/index.js";
 import { getTaskOrThrow, listDescendants, updateTask } from "./taskCrud.js";
 import { assertActionTask } from "./taskKindGuard.js";
+import { assertAcceptanceCriteriaChecked } from "./acceptanceCriteria.js";
 import { Graph } from "./graph.js";
 import {
   MutationContext,
@@ -104,6 +105,7 @@ export function completeTask(
     const txDb = tx as unknown as Db;
     const task = getTaskOrThrow(txDb, id);
     assertExpectedRevision("task", id, task.revision, expectedRevision);
+    if (task.status !== "done") assertAcceptanceCriteriaChecked(txDb, id);
     const graphBefore = Graph.load(txDb);
     const dependentTaskIds = tx
       .select({ taskId: schema.taskDependencies.taskId })
@@ -151,6 +153,9 @@ export function completeTask(
           recurringTaskIds: recurringOpenChildren.map((child) => child.id),
         },
       );
+    }
+    if (descendantsPolicy === "complete_children") {
+      for (const child of openChildren) assertAcceptanceCriteriaChecked(txDb, child.id);
     }
     const now = nowIso();
     if (!descendantsOnly) {

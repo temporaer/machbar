@@ -41,6 +41,10 @@ export const activityEventKinds = [
   "project_acceptance_criterion_updated",
   "project_acceptance_criterion_checked",
   "project_acceptance_criterion_removed",
+  "task_acceptance_criterion_added",
+  "task_acceptance_criterion_updated",
+  "task_acceptance_criterion_checked",
+  "task_acceptance_criterion_removed",
   "work_item_role_converted",
   "task_kind_changed",
 ] as const;
@@ -175,6 +179,7 @@ export type ApiErrorCode =
   | "project_commitment_resolution_required"
   | "task_reopen_required"
   | "project_completion_criteria_incomplete"
+  | "task_completion_criteria_incomplete"
   | "project_not_found"
   | "project_title_required"
   | "project_transition_invalid"
@@ -651,7 +656,9 @@ export interface ContextAvailability {
 
 export interface AcceptanceCriterion {
   id: number;
-  projectId: number;
+  workItemId: number;
+  /** @deprecated Use workItemId; retained for older project-facing clients. */
+  projectId?: number;
   text: string;
   checked: boolean;
   position: number;
@@ -860,6 +867,7 @@ export interface Task {
   executable: boolean;
   nextBlockerAttentionDate: string | null;
   blockers: TaskBlockerSummary[];
+  acceptanceCriteria: AcceptanceCriterion[];
   dependencies: Dependency[];
   children: Task[];
   projectTitle?: string | null;

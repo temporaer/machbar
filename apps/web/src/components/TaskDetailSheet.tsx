@@ -61,6 +61,7 @@ import { appendTextBlock } from "../lib/shareTarget";
 import { MarkdownAttachmentSheet } from "./MarkdownAttachmentSheet";
 import { PaperlessAttachmentStrip } from "./PaperlessAttachmentStrip";
 import { WorkItemDetailDisclosure } from "./WorkItemDetailSection";
+import { AcceptanceCriteriaEditor } from "./AcceptanceCriteriaEditor";
 import { ActionTileGrid } from "./ActionTileGrid";
 import { formatReminderSummary } from "../lib/reminderLabels";
 import { parseReferenceContent } from "../lib/referenceContent";
@@ -123,6 +124,7 @@ export function TaskDetailSheet() {
   const [textFieldsBaseline, setTextFieldsBaseline] = useState<TextFieldsSnapshot | null>(null);
   const [savingTextFields, setSavingTextFields] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [criteriaError, setCriteriaError] = useState<string | null>(null);
   const [titleEditing, setTitleEditing] = useState(false);
   const [notesEditing, setNotesEditing] = useState(false);
   const [attachmentOpen, setAttachmentOpen] = useState(false);
@@ -947,6 +949,26 @@ export function TaskDetailSheet() {
             )}
           </section>
 
+          {!isReference && task.acceptanceCriteria.length > 0 ? (
+            <WorkItemDetailDisclosure
+              title={strings.taskCriteria}
+              summary={strings.taskCriteriaSummary(
+                task.acceptanceCriteria.filter((criterion) => criterion.checked).length,
+                task.acceptanceCriteria.length,
+              )}
+              defaultOpen
+              resetKey={task.id}
+            >
+              {criteriaError ? <p role="alert" className="capture-error">{criteriaError}</p> : null}
+              <AcceptanceCriteriaEditor
+                ownerType="task"
+                workItemId={task.id}
+                criteria={task.acceptanceCriteria}
+                onError={setCriteriaError}
+              />
+            </WorkItemDetailDisclosure>
+          ) : null}
+
           <WorkItemDetailDisclosure
             title={strings.subtasks}
             summary={
@@ -972,7 +994,7 @@ export function TaskDetailSheet() {
                         className={`task-row-checkbox${child.status === "done" ? " done" : ""}${child.status === "cancelled" ? " cancelled" : ""}`}
                         aria-label={child.status === "done" || child.status === "cancelled" ? strings.reopen : strings.done}
                         onClick={() => {
-                          taskActions.requestToggle(child);
+                          dispatch({ type: "task.toggleDone", task: child });
                           reload();
                         }}
                       >

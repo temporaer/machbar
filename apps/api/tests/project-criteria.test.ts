@@ -7,7 +7,7 @@ import {
   reorderCriteria,
   setCriterionChecked,
   updateCriterionText,
-} from "../src/domain/storyCapabilities.js";
+} from "../src/domain/acceptanceCriteria.js";
 import { createProject } from "../src/domain/storyCrud.js";
 import { closeTestContext, createTestContext, type TestContext } from "./helpers.js";
 
@@ -187,7 +187,7 @@ describe("project acceptance criteria (HTTP routes)", () => {
     expect(res.json().error).toMatchObject({
       code: "acceptance_criteria_order_invalid",
       details: {
-        projectId: project.id,
+        workItemId: project.id,
         requestedCriterionIds: [999999],
       },
     });
@@ -244,7 +244,7 @@ describe("project acceptance criteria (HTTP routes)", () => {
     expect(res.statusCode).toBe(404);
     expect(res.json().error).toMatchObject({
       code: "acceptance_criterion_not_found",
-      details: { projectId: projectB.id, criterionId },
+      details: { workItemId: projectB.id, criterionId },
     });
   });
 

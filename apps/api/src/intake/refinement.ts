@@ -6,7 +6,7 @@ import { AppError } from "../errors.js";
 import { Graph } from "../domain/graph.js";
 import { updateTask, createChildTask, createTask } from "../domain/taskCrud.js";
 import { updateProject } from "../domain/storyCrud.js";
-import { addCriterion, updateCriterionText } from "../domain/storyCapabilities.js";
+import { addCriterion, updateCriterionText } from "../domain/acceptanceCriteria.js";
 import { moveTask } from "../domain/structuralMoves.js";
 import { addDependency, upsertExternalWait } from "../domain/taskCapabilities.js";
 import {

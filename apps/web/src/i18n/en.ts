@@ -589,13 +589,16 @@ const en = {
   convertProjectToTask: "Make task",
   convertProjectToTaskTitle: "Convert project to task",
   convertProjectToTaskReady:
-    "This project has no child tasks and no goal criteria. It can be converted to a task without losing structure.",
-  convertProjectToTaskBlocked:
-    "This project cannot yet be converted into a single task.",
-  convertProjectToTaskHasChildren: "This project still has child tasks.",
-  convertProjectToTaskHasCriteria: "This project still has goal criteria.",
-  convertProjectToTaskOpenStructure: "Open structure",
-  convertProjectToTaskEditGoal: "Edit goal",
+    "The project identity is preserved. Child tasks remain subtasks; goal criteria stay editable and are enforced when completing the task.",
+  convertProjectToTaskChildrenPreserved: (count: number) => `${count} child tasks will be preserved.`,
+  convertProjectToTaskCriteriaPreserved: (count: number) => `${count} criteria will stay editable and must be checked before completion.`,
+  convertProjectToTaskFieldConflict: "This field changed while you were editing. Choose which version to keep",
+  convertProjectToTaskUseLatest: "Use server version",
+  convertProjectToTaskKeepMyEdit: "Keep my edit",
+  convertProjectToTaskUnsupported:
+    "Nested or archived projects cannot be converted directly here. Restore the project or resolve its placement first.",
+  convertProjectToTaskPlanningConflict:
+    "A work plan and revisit cannot both be represented by one ordinary task. Resolve the project's planning first.",
   needsClarification: "Needs clarification",
   clarifyEmpty: "The inbox is empty. Nice work!",
   waitingEmpty: "Nothing is waiting right now.",
@@ -1049,6 +1052,11 @@ When the person ends the reflection, provide a concise human-readable summary an
   completeWithCriteriaTitle: "Complete project",
   completeWithCriteriaHint: "All criteria must be checked before the project can be completed.",
   completeProjectAction: "Complete project",
+  completeTaskAction: "Complete task",
+  taskCriteria: "Done when",
+  taskCriteriaSummary: (checked: number, total: number) => `${checked}/${total} criteria`,
+  taskCriteriaCompletionHint: "Every criterion must be checked before this task can be completed.",
+  taskCompleteWithCriteriaTitle: "Complete task",
   completeWithOpenTasksTitle: "Resolve open tasks",
   completeWithOpenTasksHint:
     "Move or cancel every remaining open task before completing the project.",
@@ -1564,6 +1572,8 @@ When the person ends the reflection, provide a concise human-readable summary an
     project_commitment_resolution_required:
       "This commitment still needs a project lead or an executable next step. Your changes were not saved.",
     project_completion_criteria_incomplete:
+      "Check, edit, or remove every open criterion before completing.",
+    task_completion_criteria_incomplete:
       "Check, edit, or remove every open criterion before completing.",
     project_not_found: "The project could not be found.",
     project_title_required: "Enter a project title.",

@@ -53,6 +53,19 @@ import {
 import { parseOrThrow } from "../validation.js";
 import { listExternalWorkItemRefs } from "../domain/externalWorkItemRefs.js";
 import { createTaskStepBatchForTask } from "../domain/taskStepBatch.js";
+import {
+  addCriterion,
+  removeCriterion,
+  reorderCriteria,
+  setCriterionChecked,
+  updateCriterionText,
+} from "../domain/acceptanceCriteria.js";
+import {
+  addCriterionSchema,
+  checkCriterionSchema,
+  reorderCriteriaSchema,
+  updateCriterionSchema,
+} from "../schemas.js";
 
 function parseId(raw: string): number {
   const id = Number.parseInt(raw, 10);
@@ -95,6 +108,48 @@ function taskOrThrow(
 export function registerTaskRoutes(app: FastifyInstance, db: Db) {
   app.get<{ Params: { id: string } }>("/api/tasks/:id", async (request) => {
     const id = parseId(request.params.id);
+    return taskOrThrow(db, id, viewerMemberId(request));
+  });
+
+  // Converted projects keep their checkable completion criteria on the same
+  // work item id. Task routes use the same canonical criteria mutations as
+  // project routes, with visibility checked before any write.
+  app.post<{ Params: { id: string } }>("/api/tasks/:id/criteria", async (request, reply) => {
+    const id = parseId(request.params.id);
+    taskOrThrow(db, id, viewerMemberId(request));
+    const body = parseOrThrow(addCriterionSchema, request.body);
+    addCriterion(db, id, body.text, { actorMemberId: request.activityActor?.id ?? null });
+    reply.status(201);
+    return taskOrThrow(db, id, viewerMemberId(request));
+  });
+  app.post<{ Params: { id: string } }>("/api/tasks/:id/criteria/order", async (request) => {
+    const id = parseId(request.params.id);
+    taskOrThrow(db, id, viewerMemberId(request));
+    const body = parseOrThrow(reorderCriteriaSchema, request.body);
+    reorderCriteria(db, id, body.orderedCriterionIds);
+    return taskOrThrow(db, id, viewerMemberId(request));
+  });
+  app.patch<{ Params: { id: string; criterionId: string } }>("/api/tasks/:id/criteria/:criterionId", async (request) => {
+    const id = parseId(request.params.id);
+    taskOrThrow(db, id, viewerMemberId(request));
+    const criterionId = parseId(request.params.criterionId);
+    const body = parseOrThrow(updateCriterionSchema, request.body);
+    updateCriterionText(db, id, criterionId, body.text, { actorMemberId: request.activityActor?.id ?? null });
+    return taskOrThrow(db, id, viewerMemberId(request));
+  });
+  app.post<{ Params: { id: string; criterionId: string } }>("/api/tasks/:id/criteria/:criterionId/check", async (request) => {
+    const id = parseId(request.params.id);
+    taskOrThrow(db, id, viewerMemberId(request));
+    const criterionId = parseId(request.params.criterionId);
+    const body = parseOrThrow(checkCriterionSchema, request.body);
+    setCriterionChecked(db, id, criterionId, body.checked, { actorMemberId: request.activityActor?.id ?? null });
+    return taskOrThrow(db, id, viewerMemberId(request));
+  });
+  app.delete<{ Params: { id: string; criterionId: string } }>("/api/tasks/:id/criteria/:criterionId", async (request) => {
+    const id = parseId(request.params.id);
+    taskOrThrow(db, id, viewerMemberId(request));
+    const criterionId = parseId(request.params.criterionId);
+    removeCriterion(db, id, criterionId, { actorMemberId: request.activityActor?.id ?? null });
     return taskOrThrow(db, id, viewerMemberId(request));
   });
 

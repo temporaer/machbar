@@ -1,7 +1,7 @@
 /**
  * Story ("project") CRUD: create/update/delete and free-text notes.
  * Lifecycle transitions live in `storyWorkflow.ts`; acceptance criteria live
- * in `storyCapabilities.ts`.
+ * in `acceptanceCriteria.ts`.
  */
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { ProjectActivationResolution, ProjectStatus, WorkItemScope } from "@machbar/shared";

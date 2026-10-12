@@ -358,7 +358,7 @@ describe("ProjectStoryRow – Backlog Review (compact variant)", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Punkt hinzufügen" }));
 
-    await waitFor(() => expect(mockedApi.addCriterion).toHaveBeenCalledWith(18, "Papierkram entsorgt"));
+    await waitFor(() => expect(mockedApi.addCriterion).toHaveBeenCalledWith("project", 18, "Papierkram entsorgt"));
     expect(screen.queryByTestId("project-page")).not.toBeInTheDocument();
   });
 

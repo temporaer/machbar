@@ -484,11 +484,11 @@ describe("api project workflow/criteria/refinement contracts", () => {
 
   it("hits the ordered acceptance-criteria endpoints", async () => {
     const fetchMock = mockFetchOnce({ text: async () => JSON.stringify({}) });
-    await api.addCriterion(1, "Kisten gepackt");
-    await api.updateCriterion(1, 9, "Kisten sind gepackt");
-    await api.checkCriterion(1, 9, true);
-    await api.reorderCriteria(1, [9, 8]);
-    await api.removeCriterion(1, 9);
+    await api.addCriterion("project", 1, "Kisten gepackt");
+    await api.updateCriterion("project", 1, 9, "Kisten sind gepackt");
+    await api.checkCriterion("project", 1, 9, true);
+    await api.reorderCriteria("project", 1, [9, 8]);
+    await api.removeCriterion("project", 1, 9);
 
     const calls = fetchMock.mock.calls as [string, RequestInit][];
     expect(calls.map(([url, init]) => [url, init.method])).toEqual([

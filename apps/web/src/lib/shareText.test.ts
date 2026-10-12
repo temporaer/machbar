@@ -52,6 +52,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     externalWait: null,
     nextBlockerAttentionDate: null,
     blockers: [],
+    acceptanceCriteria: [],
     dependencies: [],
     incomingDependencies: [],
     children: [],

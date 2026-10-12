@@ -8,25 +8,25 @@ import { sortByPosition } from "../lib/taskHelpers";
 import { useCriterionCheck } from "../lib/useCriterionCheck";
 
 /**
- * The ordered acceptance-criteria list of a story — progress, per-criterion
+ * The ordered acceptance-criteria list of a project or converted action task — progress, per-criterion
  * check/edit/reorder/remove, and the "add another" row. Structured criteria
- * replaced the old free-text project description, so this is the *only*
- * place a story's intent is spelled out, which is why it is shared verbatim
- * between the full `ProjectEditSheet` and the Backlog-review row's targeted
- * `StoryCriteriaSheet` instead of being duplicated (or, worse, only being
- * reachable by navigating away from the backlog list).
+ * are structured, individually checkable completion conditions. This editor
+ * is shared by `StoryCriteriaSheet` and the task-detail criteria disclosure,
+ * so retained criteria remain editable after role conversion.
  *
  * Checkbox, order, removal, and addition mutations write through immediately.
  * Text drafts require an explicit save. Successful mutations `bump()` the
  * global refresh bus, so persisted criteria remain owned by the parent.
  */
 export function AcceptanceCriteriaEditor({
-  projectId,
+  ownerType,
+  workItemId,
   criteria: criteriaProp,
   onError,
   autoFocusNewCriterion = false,
 }: {
-  projectId: number;
+  ownerType: "project" | "task";
+  workItemId: number;
   criteria: AcceptanceCriterion[];
   /** Reports a failed mutation to the surrounding sheet (`null` clears it). */
   onError: (message: string | null) => void;
@@ -43,7 +43,7 @@ export function AcceptanceCriteriaEditor({
     check: checkCriterion,
     pendingId: checkingCriterionId,
     error: criterionCheckError,
-  } = useCriterionCheck(projectId);
+  } = useCriterionCheck(ownerType, workItemId);
 
   const criteria = sortByPosition(criteriaProp);
   const total = criteria.length;
@@ -79,7 +79,7 @@ export function AcceptanceCriteriaEditor({
     const draft = drafts[criterion.id];
     if (draft === undefined || draft.trim() === "") return;
     if (draft.trim() !== criterion.text) {
-      const saved = await run(() => api.updateCriterion(projectId, criterion.id, draft.trim()));
+      const saved = await run(() => api.updateCriterion(ownerType, workItemId, criterion.id, draft.trim()));
       if (!saved) return;
     }
     setDrafts((previous) => {
@@ -99,7 +99,8 @@ export function AcceptanceCriteriaEditor({
     reordered.splice(target, 0, moved);
     return run(() =>
       api.reorderCriteria(
-        projectId,
+        ownerType,
+        workItemId,
         reordered.map((c) => c.id),
       ),
     );
@@ -108,7 +109,7 @@ export function AcceptanceCriteriaEditor({
   const addCriterion = async () => {
     const text = newCriterionText.trim();
     if (!text) return;
-    const added = await run(() => api.addCriterion(projectId, text));
+    const added = await run(() => api.addCriterion(ownerType, workItemId, text));
     if (added) setNewCriterionText("");
   };
 
@@ -226,7 +227,7 @@ export function AcceptanceCriteriaEditor({
             className="icon-btn"
             aria-label={strings.removeCriterion}
             disabled={busy || editing}
-            onClick={() => void run(() => api.removeCriterion(projectId, criterion.id))}
+            onClick={() => void run(() => api.removeCriterion(ownerType, workItemId, criterion.id))}
           >
             ×
           </button>

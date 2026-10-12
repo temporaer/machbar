@@ -490,21 +490,24 @@ export class Graph {
       .select()
       .from(schema.workItemAcceptanceCriteria)
       .all();
-    const criteriaByProject = new Map<number, AcceptanceCriterion[]>();
+    const criteriaByWorkItem = new Map<number, AcceptanceCriterion[]>();
     for (const row of criteriaRows) {
-      const list = criteriaByProject.get(row.workItemId) ?? [];
+      const list = criteriaByWorkItem.get(row.workItemId) ?? [];
       list.push({
         id: row.id,
-        projectId: row.workItemId,
+        workItemId: row.workItemId,
+        ...(rawProjects.some((project) => project.id === row.workItemId)
+          ? { projectId: row.workItemId }
+          : {}),
         text: row.text,
         checked: row.checked,
         position: row.position,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       });
-      criteriaByProject.set(row.workItemId, list);
+      criteriaByWorkItem.set(row.workItemId, list);
     }
-    for (const list of criteriaByProject.values()) {
+    for (const list of criteriaByWorkItem.values()) {
       list.sort((a, b) => a.position - b.position);
     }
 
@@ -644,7 +647,7 @@ export class Graph {
             ?.filter((tag) => tag.kind === "area") ?? [],
         ),
         primaryAreaTag: null,
-        acceptanceCriteria: criteriaByProject.get(p.id) ?? [],
+        acceptanceCriteria: criteriaByWorkItem.get(p.id) ?? [],
         availableActions: availableProjectWorkflowActions(p.status),
         activationReadiness: graph.activationReadinessByProject.get(p.id)!,
         childStories: [],
@@ -810,6 +813,7 @@ export class Graph {
         nextBlockerAttentionDate:
           execution?.nextBlockerAttentionDate ?? null,
         blockers,
+        acceptanceCriteria: criteriaByWorkItem.get(raw.id) ?? [],
         dependencies,
         incomingDependencies,
         children: [],

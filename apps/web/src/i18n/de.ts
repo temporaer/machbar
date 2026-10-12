@@ -577,13 +577,16 @@ const extra = {
   convertProjectToTask: "Zur Aufgabe machen",
   convertProjectToTaskTitle: "Projekt zur Aufgabe machen",
   convertProjectToTaskReady:
-    "Dieses Projekt hat keine Unteraufgaben und keine Zielkriterien. Es kann ohne Strukturverlust in eine Aufgabe umgewandelt werden.",
-  convertProjectToTaskBlocked:
-    "Dieses Projekt kann noch nicht in eine einzelne Aufgabe umgewandelt werden.",
-  convertProjectToTaskHasChildren: "Dieses Projekt hat noch Unteraufgaben.",
-  convertProjectToTaskHasCriteria: "Dieses Projekt hat noch Zielkriterien.",
-  convertProjectToTaskOpenStructure: "Struktur öffnen",
-  convertProjectToTaskEditGoal: "Ziel bearbeiten",
+    "Die Projektidentität bleibt erhalten. Unteraufgaben werden Teilaufgaben; Zielkriterien bleiben prüfbar und gelten beim Abschließen.",
+  convertProjectToTaskChildrenPreserved: (count: number) => `${count} Unteraufgaben bleiben erhalten.`,
+  convertProjectToTaskCriteriaPreserved: (count: number) => `${count} Zielkriterien bleiben bearbeitbar und müssen vor dem Abschließen abgehakt sein.`,
+  convertProjectToTaskFieldConflict: "Dieses Feld wurde zwischenzeitlich geändert. Entscheide, welche Fassung du behalten möchtest",
+  convertProjectToTaskUseLatest: "Serverfassung verwenden",
+  convertProjectToTaskKeepMyEdit: "Meine Änderung beibehalten",
+  convertProjectToTaskUnsupported:
+    "Verschachtelte oder archivierte Projekte können hier nicht direkt umgewandelt werden. Stelle das Projekt zuerst wieder her oder löse seine Einordnung.",
+  convertProjectToTaskPlanningConflict:
+    "Arbeitsplan und Wiedervorlage lassen sich nicht beide auf dieselbe gewöhnliche Aufgabe übertragen. Ändere zuerst die Planung des Projekts.",
   needsClarification: "Zu klären",
   clarifyEmpty: "Der Eingang ist leer. Gute Arbeit!",
   waitingEmpty: "Nichts wartet gerade.",
@@ -1043,6 +1046,11 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
   completeWithCriteriaTitle: "Projekt abschließen",
   completeWithCriteriaHint: "Alle Kriterien müssen abgehakt sein, bevor das Projekt abgeschlossen werden kann.",
   completeProjectAction: "Projekt abschließen",
+  completeTaskAction: "Aufgabe abschließen",
+  taskCriteria: "Erledigt, wenn",
+  taskCriteriaSummary: (checked: number, total: number) => `${checked}/${total} Kriterien`,
+  taskCriteriaCompletionHint: "Alle Kriterien müssen abgehakt sein, bevor die Aufgabe abgeschlossen werden kann.",
+  taskCompleteWithCriteriaTitle: "Aufgabe abschließen",
   completeWithOpenTasksTitle: "Offene Aufgaben klären",
   completeWithOpenTasksHint:
     "Verschiebe oder verwirf jede verbleibende offene Aufgabe, bevor das Projekt abgeschlossen wird.",
@@ -1565,6 +1573,8 @@ Wenn die Person die Reflexion beendet, erstelle eine knappe, gut lesbare Zusamme
     project_commitment_resolution_required:
       "Für diesen verbindlichen Plan fehlen noch eine verantwortliche Person oder ein ausführbarer nächster Schritt. Deine Änderungen wurden nicht gespeichert.",
     project_completion_criteria_incomplete:
+      "Prüfe, bearbeite oder entferne vor dem Abschluss alle offenen Kriterien.",
+    task_completion_criteria_incomplete:
       "Prüfe, bearbeite oder entferne vor dem Abschluss alle offenen Kriterien.",
     project_not_found: "Das Projekt wurde nicht gefunden.",
     project_title_required: "Bitte gib einen Projekttitel ein.",
