@@ -946,8 +946,20 @@ describe("project workflow (HTTP routes)", () => {
     expect(completed.ownerMemberId).toBe(anna.id);
     expect(completed.availableActions.sort()).toEqual(["archive", "reopen"].sort());
 
+    const completedDetail = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
     const reopened = (
-      await ctx.app.inject({ method: "POST", url: `/api/projects/${project.id}/reopen` })
+      await ctx.app.inject({
+        method: "POST",
+        url: `/api/projects/${project.id}/reopen`,
+        payload: {
+          expectedRevision: completed.revision,
+          activationResolution: {
+            expectedProjects: completedDetail.directActivationDecisionSnapshot.expectedProjects,
+            drivers: [],
+            nextActionTitle: "Weiterführen",
+          },
+        },
+      })
     ).json();
     expect(reopened.status).toBe("active");
     expect(reopened.ownerMemberId).toBe(anna.id);
@@ -1222,13 +1234,24 @@ describe("project workflow (HTTP routes)", () => {
       "return-to-backlog",
       "archive",
     ]) {
-      const payload = action === "complete"
-        ? {
+      let payload: Record<string, unknown> = { expectedRevision: project.revision };
+      if (action === "complete") {
+        payload = {
             expectedRevision: project.revision,
             expectedTaskRevisions: [{ taskId: progressTask.id, revision: progressTask.revision }],
             descendantResolutions: [{ taskId: progressTask.id, action: "move_to_inbox" as const, expectedRevision: progressTask.revision }],
-          }
-        : { expectedRevision: project.revision };
+        };
+      } else if (action === "reopen") {
+        const completedDetail = (await ctx.app.inject({ method: "GET", url: `/api/projects/${project.id}` })).json();
+        payload = {
+          expectedRevision: project.revision,
+          activationResolution: {
+            expectedProjects: completedDetail.directActivationDecisionSnapshot.expectedProjects,
+            drivers: [],
+            nextActionTitle: "Next action after reopening",
+          },
+        };
+      }
       const response = await ctx.app.inject({
         method: "POST",
         url: `/api/projects/${project.id}/${action}`,
