@@ -58,7 +58,6 @@ describe("caption hints in focused task workflows", () => {
     await waitFor(() =>
       expect(mockedApi.updateTask).toHaveBeenCalledWith(41, {
         scheduledDate: "2026-09-15",
-        revisitAt: null,
         dueDate: "2026-09-18",
         title: "Fenster putzen",
         expectedRevision: 3,
