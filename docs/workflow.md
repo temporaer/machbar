@@ -64,6 +64,15 @@ the same transaction as its first child; **Als Projekt behandeln** is an
 optional branch through the existing guarded conversion. Unsupported
 conversions leave the original task and the whole step batch intact.
 
+Converting a standalone task into a project keeps its numeric identity,
+content, material, owner, deadline, descendants and history. Task-level work
+plans, reminders, waits, recurrence (including recorded occurrences) and
+dependencies move to a preserved action step. Each dependency may instead be
+assigned to an existing open action in the retained outline. A previously
+actionable task remains an active commitment; the same operation asks for a
+driver or an authored next action when project readiness needs one. A failed,
+cancelled or stale conversion leaves the task and its relations unchanged.
+
 When creation would also activate a project chain, the server evaluates the
 transition and returns any missing decisions. The composer displays those
 requirements and retries the same create operation with the explicit choices;

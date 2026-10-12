@@ -566,10 +566,12 @@ const extra = {
   convertToProject: "Als Projekt behandeln",
   convertToProjectBacklog: "Ins Backlog",
   convertToProjectActive: "Aktivieren",
+  convertToProjectPreservedStep: "Bisherige Aufgabe als Arbeitsschritt fortführen",
+  convertToProjectDependencyTarget: "Abhängigkeit zuordnen",
+  convertToProjectOutgoingDependency: "Diese Aufgabe hängt ab von",
+  convertToProjectIncomingDependency: "Andere Aufgabe wartet auf diese Aufgabe",
   convertToProjectUnsupportedStatus:
     "Erledigte oder verworfene Aufgaben können nicht in Projekte umgewandelt werden.",
-  convertToProjectTaskOnlyRelations:
-    "Entferne zuerst Warten, Abhängigkeiten, Wiederholung oder Erinnerung.",
   convertToProjectNotStandalone:
     "Nur eigenständige Aufgaben ohne Elternaufgabe und Projekt können zu einem Projekt werden.",
   convertProjectToTask: "Zur Aufgabe machen",

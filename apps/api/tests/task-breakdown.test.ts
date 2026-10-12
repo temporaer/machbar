@@ -167,8 +167,10 @@ describe("reviewed task breakdown", () => {
     expect(row.role).toBe("story");
     expect(row.status).toBe("active");
     expect(row.ownerMemberId).toBe(driver.id);
-    expect(row.scheduledDate).toBe("2027-01-05");
-    expect(ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all()).toHaveLength(2);
+    expect(row.scheduledDate).toBeNull();
+    const children = ctx.handle.db.select().from(schema.workItems).where(eq(schema.workItems.parentId, task.id)).all();
+    expect(children).toHaveLength(3);
+    expect(children.find((child) => child.title === task.title)?.scheduledDate).toBe("2027-01-05");
   });
 
   it("rolls back an actionable conversion when no driver is selected", async () => {
